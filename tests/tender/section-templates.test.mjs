@@ -1,8 +1,10 @@
-// Шаблоны разделов (section_templates, миграция 20261107): «Понятийное соглашение» в «Документах раздела» →
-// «Материалы» у «Тендеров — Основное строительство» и «Шаблон Было-Стало» в новом окне «Документы» реестра
+// Шаблоны разделов (section_templates, миграция 20261107): «Шаблон Было-Стало» в окне «Документы» реестра
 // «Заявка на ДС» (одна вкладка «Материалы», как у тендеров). Файл — s3_documents (owner_type 'general',
 // doc_category 'section_template'): скачивает каждый, прикрепляет, заменяет и удаляет администратор; новый файл
 // заменяет прежний. Таблицы ещё нет — файл не прикрепить, администратору подсказка про миграцию.
+// «Понятийное соглашение» (тендеры ОС и «Договоры и ДС») с 27.10.2026 — ссылка, а не файл: одна на оба раздела
+// (app_settings 'concept_agreement_template_link'); адрес — «Открыть», сетевой путь — «Скопировать путь»; файл,
+// прикреплённый раньше, виден, пока администратор его не удалит. «Шаблон ДГП» — файл в «Документах» договоров.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -80,38 +82,111 @@ describe('Шаблоны разделов в «Документах» тенде
     .filter((d) => d.doc_category === 'section_template')
     .map((d) => ({ owner_type: d.owner_type, owner_id: d.owner_id, file_name: d.file_name })))
 
-  it('тендеры: «Понятийное соглашение» в «Материалах» — прикрепить, скачать, заменить, удалить', async () => {
+  it('«Понятийное соглашение» — ссылка, одна на тендеры и договоры: указать, открыть, сетевой путь, убрать', async () => {
     const { page, errors, dialogs, close } = await openTenders()
     try {
       await page.locator('button.btn-view-toggle', { hasText: 'Документы' }).click()
       assert.equal(await page.locator('.tdm-tab.is-active').textContent(), 'Материалы')
       const c = card(page, 'tenders_concept_agreement')
-      await c.locator('.tdm-tpl-empty', { hasText: 'Файл ещё не прикреплён' }).waitFor({ timeout: 10000 })
+      await c.locator('.tdm-tpl-empty', { hasText: 'Ссылка ещё не указана' }).waitFor({ timeout: 10000 })
       assert.equal(await c.locator('.tdm-card-title').textContent(), 'Понятийное соглашение')
-      // Плитка — рядом с шаблоном письма и структурой хранения, в той же сетке.
       assert.deepEqual(await page.locator('.tdm-cards > .tdm-card .tdm-card-title').allTextContents(),
         ['Шаблон письма', 'Структура хранения документов', 'Напоминание об обзвоне', 'Понятийное соглашение'])
+      // Файла у шаблона-ссылки не прикрепить.
+      assert.equal(await page.getByTestId('template-input-tenders_concept_agreement').count(), 0)
 
-      await page.getByTestId('template-input-tenders_concept_agreement').setInputFiles([word('Понятийное соглашение.docx')])
-      await c.locator('.tdm-tpl-name', { hasText: 'Понятийное соглашение.docx' }).waitFor({ timeout: 10000 })
-      assert.deepEqual(await templateDocs(page), [{ owner_type: 'general', owner_id: 'tpl-concept', file_name: 'Понятийное соглашение.docx' }])
-      assert.deepEqual(await c.locator('.tdm-tpl-actions button').allTextContents(), [' Скачать', ' Заменить', ''])
+      await c.getByRole('button', { name: 'Указать ссылку' }).click()
+      const input = c.getByRole('textbox', { name: 'Ссылка на шаблон «Понятийное соглашение»' })
+      await input.fill('понятийка.docx')
+      await c.getByRole('button', { name: 'Сохранить' }).click()
+      await c.getByRole('alert').waitFor({ timeout: 5000 })
+      assert.match(await c.getByRole('alert').textContent(), /https:\/\/|сетевой путь/)
+      await input.fill('https://docs.example.invalid/pc.docx')
+      await c.getByRole('button', { name: 'Сохранить' }).click()
+      const open = c.getByRole('link', { name: 'Открыть' })
+      await open.waitFor({ timeout: 10000 })
+      assert.equal(await open.getAttribute('href'), 'https://docs.example.invalid/pc.docx')
+      assert.equal(await open.getAttribute('target'), '_blank')
+      assert.deepEqual(await page.evaluate(() => window.__fakeDb.app_settings
+        .filter((r) => r.key === 'concept_agreement_template_link').map((r) => r.value)), ['https://docs.example.invalid/pc.docx'])
 
+      // Сетевой путь браузер не откроет — «Скопировать путь».
+      await c.getByRole('button', { name: 'Изменить' }).click()
+      await input.fill('\\\\192.168.2.55\\SharA_Tender\\Шаблоны\\ПС.docx')
+      await c.getByRole('button', { name: 'Сохранить' }).click()
+      await c.getByRole('button', { name: 'Скопировать путь' }).waitFor({ timeout: 10000 })
+      assert.equal(await c.getByRole('link', { name: 'Открыть' }).count(), 0)
+
+      await c.getByRole('button', { name: 'Убрать ссылку на шаблон «Понятийное соглашение»' }).click()
+      assert.match(dialogs.at(-1), /Убрать ссылку на шаблон «Понятийное соглашение»/)
+      await c.locator('.tdm-tpl-empty', { hasText: 'Ссылка ещё не указана' }).waitFor({ timeout: 10000 })
+      assert.deepEqual(await templateDocs(page), [], 'файлов шаблон-ссылка не создаёт')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('прежний файл «Понятийного соглашения» виден под ссылкой: скачать, администратор удаляет', async () => {
+    const files = [{ id: 'f-pc', owner_type: 'general', owner_id: 'tpl-concept', doc_category: 'section_template',
+      s3_key: 'general/tpl-concept/1-ПС.docx', file_name: 'ПС.docx', size_bytes: 10240, created_at: '2026-10-27T08:00:00Z' }]
+    const { page, errors, close } = await openTenders({ files })
+    try {
+      await page.evaluate(() => {
+        window.__fakeDb.app_settings.push({ key: 'concept_agreement_template_link', value: 'https://docs.example.invalid/pc.docx' })
+        window.__fakeFiles = { ...(window.__fakeFiles || {}), 'general/tpl-concept/1-ПС.docx': 'data:application/octet-stream;base64,UEsDBA==' }
+      })
+      await page.locator('button.btn-view-toggle', { hasText: 'Документы' }).click()
+      const c = card(page, 'tenders_concept_agreement')
+      await c.locator('.tdm-tpl-legacy .tdm-tpl-name', { hasText: 'ПС.docx' }).waitFor({ timeout: 10000 })
+      await c.getByRole('link', { name: 'Открыть' }).waitFor()
       const download = page.waitForEvent('download')
-      await c.getByRole('button', { name: 'Скачать' }).click()
-      assert.equal((await download).suggestedFilename(), 'Понятийное соглашение.docx')
-
-      // Замена: после подтверждения — новый файл, прежний удалён и из хранилища.
-      const oldKey = await page.evaluate(() => window.__fakeDb.s3_documents.find((d) => d.doc_category === 'section_template').s3_key)
-      await page.getByTestId('template-input-tenders_concept_agreement').setInputFiles([word('ПС ред.2.docx', 'вторая')])
-      await c.locator('.tdm-tpl-name', { hasText: 'ПС ред.2.docx' }).waitFor({ timeout: 10000 })
-      assert.match(dialogs.at(-1), /^Заменить файл шаблона\?\n«Понятийное соглашение\.docx» → «ПС ред\.2\.docx»$/)
-      assert.deepEqual(await templateDocs(page), [{ owner_type: 'general', owner_id: 'tpl-concept', file_name: 'ПС ред.2.docx' }])
-      assert.equal(await page.evaluate((k) => Boolean(window.__fakeFiles?.[k]), oldKey), false, 'прежний файл удалён из хранилища')
-
-      await c.getByRole('button', { name: 'Удалить файл шаблона «Понятийное соглашение»' }).click()
-      await c.locator('.tdm-tpl-empty').waitFor({ timeout: 10000 })
+      await c.locator('.tdm-tpl-legacy').getByRole('button', { name: 'Скачать' }).click()
+      assert.equal((await download).suggestedFilename(), 'ПС.docx')
+      await c.getByRole('button', { name: 'Удалить прежний файл шаблона «Понятийное соглашение»' }).click()
+      await c.locator('.tdm-tpl-legacy').waitFor({ state: 'detached', timeout: 10000 })
       assert.deepEqual(await templateDocs(page), [])
+      await c.getByRole('link', { name: 'Открыть' }).waitFor()
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('договоры: «Документы» в шапке — та же ссылка «Понятийного соглашения», «Шаблон ДГП» — файл', async () => {
+    const templates = [...TEMPLATES, { id: 'tpl-dgp', code: 'contracts_dgp', title: 'Шаблон ДГП' }]
+    const { page, errors, close } = await openPage('route=/contracts&contracts=6&latency=0', '.contracts-table tbody tr.contract-row', { templates })
+    try {
+      await page.evaluate(() => window.__fakeDb.app_settings.push({ key: 'concept_agreement_template_link', value: 'https://docs.example.invalid/pc.docx' }))
+      const header = page.locator('.registry-header')
+      for (const gone of ['Структура хранения', 'Приложения', 'Импорт Excel', 'Загрузка ПСДЦ']) {
+        assert.equal(await header.getByText(gone, { exact: true }).count(), 0, `«${gone}» — в окне «Документы», не в шапке`)
+      }
+      await header.getByRole('button', { name: 'Документы' }).click()
+      const modal = page.getByRole('dialog', { name: 'Документы раздела' })
+      await modal.waitFor({ timeout: 10000 })
+      assert.deepEqual(await modal.locator('.tdm-cards > .tdm-card .tdm-card-title').allTextContents(),
+        ['Понятийное соглашение', 'Шаблон ДГП', 'Структура хранения документов', 'Стандартные приложения', 'Импорт из Excel', 'Загрузка ПСДЦ'])
+      const pc = card(page, 'tenders_concept_agreement')
+      assert.equal(await pc.getByRole('link', { name: 'Открыть' }).getAttribute('href'), 'https://docs.example.invalid/pc.docx')
+
+      const dgp = card(page, 'contracts_dgp')
+      await dgp.locator('.tdm-tpl-empty', { hasText: 'Файл ещё не прикреплён' }).waitFor({ timeout: 10000 })
+      await page.getByTestId('template-input-contracts_dgp').setInputFiles([word('ДГП.docx')])
+      await dgp.locator('.tdm-tpl-name', { hasText: 'ДГП.docx' }).waitFor({ timeout: 10000 })
+      assert.deepEqual(await templateDocs(page), [{ owner_type: 'general', owner_id: 'tpl-dgp', file_name: 'ДГП.docx' }])
+
+      // Плитка открывает своё окно, «Документы» закрываются.
+      await modal.locator('.tdm-card', { hasText: 'Структура хранения документов' }).click()
+      await modal.waitFor({ state: 'detached', timeout: 5000 })
+      await page.getByText('01_Понятийное соглашение').first().waitFor({ timeout: 5000 })
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('договоры: строки «Шаблона ДГП» ещё нет — подсказка про миграцию 20261109', async () => {
+    const { page, errors, close } = await openPage('route=/contracts&contracts=3&latency=0', '.contracts-table tbody tr.contract-row')
+    try {
+      await page.locator('.registry-header').getByRole('button', { name: 'Документы' }).click()
+      const dgp = card(page, 'contracts_dgp')
+      await dgp.locator('.tdm-tpl-hint').waitFor({ timeout: 10000 })
+      assert.match(await dgp.locator('.tdm-tpl-hint').textContent(), /миграция 20261109_contracts_dc_requests/)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
@@ -132,7 +207,7 @@ describe('Шаблоны разделов в «Документах» тенде
     const t = await openTenders({}, '&canEdit=0')
     try {
       await t.page.locator('button.btn-view-toggle', { hasText: 'Документы' }).click()
-      await card(t.page, 'tenders_concept_agreement').locator('.tdm-tpl-empty', { hasText: 'Файл ещё не прикреплён — его добавит администратор' }).waitFor({ timeout: 10000 })
+      await card(t.page, 'tenders_concept_agreement').locator('.tdm-tpl-empty', { hasText: 'Ссылка ещё не указана — её добавит администратор' }).waitFor({ timeout: 10000 })
       assert.equal(await card(t.page, 'tenders_concept_agreement').locator('button').count(), 0)
       assert.deepEqual([...errors, ...t.errors], [])
     } finally { await t.close() }

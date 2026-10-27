@@ -7,7 +7,7 @@ import {
 import { IconMail, IconFolderTree, IconPhone, IconFileText } from './icons/ToolbarIcons'
 import SiteContactsTab from './SiteContactsTab'
 import SectionTemplateCards from './SectionTemplateCards'
-import { SECTION_TEMPLATE } from '../services/sectionTemplates'
+import { CONCEPT_AGREEMENT_TEMPLATE } from '../utils/sectionTemplateItems'
 import './TenderDocsModal.css'
 
 // task 435: «Документы» раздела тендеров — три вкладки в одном окне:
@@ -18,8 +18,8 @@ import './TenderDocsModal.css'
 // В «Основном строительстве» — ещё «Контакт площадки» (SiteContactsTab): кто встречает
 // подрядчика на объекте по каждому подразделению ВОР; назначает администратор, контакт
 // уходит в письмо подрядчикам. В других направлениях вкладки нет: подразделения ВОР — только
-// у основного строительства. Там же в «Материалах» — шаблон «Понятийное соглашение» (Word):
-// скачивает каждый, прикрепляет и заменяет администратор (SectionTemplateCards, миграция 20261107).
+// у основного строительства. Там же в «Материалах» — шаблон «Понятийное соглашение»: ссылка на документ,
+// одна с «Документами» договоров; указывает администратор (SectionTemplateCards, app_settings).
 //
 // В направлении «Совместные тендеры» добавляется четвёртая вкладка со своей
 // инструкцией (utils/jointTenderGuide.js). Она открывается там первой: правила
@@ -81,12 +81,7 @@ const TENDER_ANALYSIS = [
   'Зеркально отражает в тендерной документации вендор-лист Заказчика или Застройщика',
 ]
 
-const CONCEPT_AGREEMENT = [{
-  code: SECTION_TEMPLATE.conceptAgreement,
-  title: 'Понятийное соглашение',
-  desc: 'Шаблон документа в Word — скачать и заполнить по тендеру',
-  icon: <IconFileText size={18} />,
-}]
+const CONCEPT_AGREEMENT = [{ ...CONCEPT_AGREEMENT_TEMPLATE, icon: <IconFileText size={18} /> }]
 
 export default function TenderDocsModal({
   onClose,

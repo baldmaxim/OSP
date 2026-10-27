@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import AutoGrowTextarea from '../AutoGrowTextarea'
 import CounterpartyContracts from './CounterpartyContracts'
+import CounterpartyDcRequests from './CounterpartyDcRequests'
 import CounterpartyVatSelect from './CounterpartyVatSelect'
 import { VAT_NONE, vatSelectValue, vatText } from '../../utils/counterpartyVat'
 import { phoneHref } from '../../utils/phoneFormat'
@@ -22,12 +23,14 @@ function Field({ label, children }) {
 // договоры с ДС. Аффилированные — группа связанных контрагентов (counterparty_relations, читается группами —
 // utils/counterpartyGroups.js). Записи делает страница (onSave…, onAdd…, onRemove…, onContractLinkChange):
 // у неё список контрагентов и журнал правок; договоры прикрепляет и открепляет сам раздел «Договоры и ДС».
+// Ниже договоров — заявки на ДС контрагента по его договорам (при праве просмотра «Заявок на ДС»).
 export default function CounterpartyGeneralTab({
   counterparty,
   counterparties,
   canEdit,
   isAdmin,
   canViewContracts,
+  canViewDcRequests = false,
   isPhone,
   vatSupported,
   affiliates,
@@ -220,6 +223,14 @@ export default function CounterpartyGeneralTab({
               isAdmin={isAdmin} onLinkChange={onContractLinkChange} />
           : <div className="cpg-muted">Нет доступа к разделу «Договоры и ДС».</div>}
       </section>
+
+      {/* Заявки на ДС по договорам контрагента: какие отработаны, какие занесены в ДС (миграция 20261109). */}
+      {canViewDcRequests && (
+        <section className="cpg-section cpg-contracts cpg-dcr">
+          <h4 className="cpg-section-title">Заявки на ДС</h4>
+          <CounterpartyDcRequests key={cp.id} counterpartyId={cp.id} isPhone={isPhone} />
+        </section>
+      )}
     </div>
   )
 }

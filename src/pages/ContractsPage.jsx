@@ -12,8 +12,9 @@ import SignalLinkCell from '../components/SignalLinkCell'
 import LarixLinkCell from '../components/LarixLinkCell'
 import RootFolderPathButton from '../components/RootFolderPathButton'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
+import ContractDocsModal from '../components/ContractDocsModal'
 import { CONTRACTS_STRUCTURE } from '../utils/docStorageStructures'
-import { IconDocsStack, IconFolderTree, IconColumns, IconColumnsWide } from '../components/icons/ToolbarIcons'
+import { IconDocsStack, IconColumns, IconColumnsWide } from '../components/icons/ToolbarIcons'
 // Модалка импорта тянет тяжёлый xlsx-js-style — грузим лениво, только при открытии.
 const ContractsImportModal = lazy(() => import('../components/ContractsImportModal'))
 import { fetchCounterpartyDocSummary, deleteDocument } from '../services/s3'
@@ -414,6 +415,8 @@ function ContractRegistry() {
   // Справочник «Структура хранения документов» + корень хранилища, который в
   // нём показывается (значение поднимается из RootFolderPathButton).
   const [showStorageStructure, setShowStorageStructure] = useState(false)
+  // «Документы раздела»: шаблоны, структура хранения, приложения, импорт Excel и загрузка ПСДЦ — одним окном.
+  const [showDocsMenu, setShowDocsMenu] = useState(false)
   const [rootFolderPath, setRootFolderPath] = useState('')
   const [attachmentsObjectId, setAttachmentsObjectId] = useState('')
   const [objectAttachments, setObjectAttachments] = useState([])
@@ -2004,42 +2007,17 @@ function ContractRegistry() {
             {hideTailColumns ? <IconColumnsWide size={15} /> : <IconColumns size={15} />}
             {hideTailColumns ? 'Все столбцы' : 'Скрыть столбцы'}
           </button>
+          {/* Структура хранения, приложения, импорт Excel, загрузка ПСДЦ и шаблоны — в окне «Документы»,
+              как у «Тендеров — Основное строительство»: шапка не разъезжается на две строки. */}
           <button
-            onClick={() => setShowStorageStructure(true)}
-            className="btn-secondary"
+            type="button"
+            onClick={() => setShowDocsMenu(true)}
+            className="btn-secondary contracts-docs-btn"
             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
-            title="Единый порядок папок в сетевом хранилище"
+            title="Шаблоны (понятийное соглашение, ДГП), структура хранения, приложения, импорт Excel и загрузка ПСДЦ"
           >
-            <IconFolderTree size={15} /> Структура хранения
+            <IconDocsStack size={15} /> Документы
           </button>
-          <button
-            onClick={handleOpenAttachmentsModal}
-            className="btn-secondary"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
-            title="Стандартные приложения для каждого объекта"
-          >
-            <IconDocsStack size={15} /> Приложения
-          </button>
-          {!isDeletedTab && canEditContracts && (
-            <button
-              onClick={() => { ensureFormRefs(); setShowImportModal(true) }}
-              className="btn-secondary"
-              style={{ padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
-              title="Пакетное создание договоров и ДС из Excel-файла"
-            >
-              Импорт Excel
-            </button>
-          )}
-          {!isDeletedTab && canEditContracts && (
-            <Link
-              to="/contracts/psdc-batch"
-              className="btn-secondary"
-              style={{ display: 'inline-flex', alignItems: 'center', padding: '0.5rem 0.875rem', fontSize: '0.8125rem', textDecoration: 'none' }}
-              title="Массовая загрузка существующих ПСДЦ пакетом с сопоставлением файлов и документов"
-            >
-              Загрузка ПСДЦ
-            </Link>
-          )}
           {!isDeletedTab && canEditContracts && (
             <button className="btn-primary" onClick={handleAddNew}>
               + Добавить договор
@@ -3375,6 +3353,17 @@ function ContractRegistry() {
             </form>
           </div>
         </div>
+      )}
+
+      {showDocsMenu && (
+        <ContractDocsModal
+          onClose={() => setShowDocsMenu(false)}
+          onOpenStorageStructure={() => { setShowDocsMenu(false); setShowStorageStructure(true) }}
+          onOpenAttachments={() => { setShowDocsMenu(false); handleOpenAttachmentsModal() }}
+          onOpenImport={() => { setShowDocsMenu(false); ensureFormRefs(); setShowImportModal(true) }}
+          canImport={!isDeletedTab && canEditContracts}
+          canEditTemplates={isAdmin}
+        />
       )}
 
       {/* Справочник: как раскладывать документы по папкам в хранилище */}

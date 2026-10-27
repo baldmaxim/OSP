@@ -3106,3 +3106,64 @@
 .dc-requests-page.ui-work .dcr-col-sub-comment { width: 12rem; }
 .dc-requests-page.ui-work .dcr-table.has-sub { min-width: 120.25rem; }
 .dc-requests-page.ui-work.dcr-dense .dcr-table.has-sub { min-width: 121rem; }
+
+/* Договор и номер ДС — раздельно (миграция 20261109). Колонки «Задачи» больше нет (4.75–5rem), колонка
+   «Договор» — 8.5rem: «№ СУ2-ЗИЛ33-СП-Э005-9 от 12.11.2025» в две строки. Таблица шире на 3.5–3.75rem. */
+.dc-requests-page.ui-work .dcr-col-contract { width: 8.5rem; }
+.dc-requests-page.ui-work .dcr-table { min-width: 102.25rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-table { min-width: 103.25rem; }
+.dc-requests-page.ui-work .dcr-table.has-sub { min-width: 123.75rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-table.has-sub { min-width: 124.75rem; }
+
+.dc-requests-page .dcr-cell-contract { position: relative; }
+.dc-requests-page .dcr-contract-select { padding-right: 1.25rem; }
+.dc-requests-page .dcr-contract-link {
+  color: var(--ui-link, var(--primary-color));
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: break-word;
+}
+.dc-requests-page .dcr-contract-link:hover { text-decoration: underline; }
+.dc-requests-page .dcr-contract-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.125rem;
+  color: var(--ui-link, var(--primary-color));
+  font-size: 0.75rem;
+}
+.dc-requests-page .dcr-contract-none { font-size: 0.75rem; color: var(--text-secondary); }
+
+/* «Занесена в ДС» — плашка-ссылка под номером ДС; «связать с ДС» — тихая ссылка-кнопка. */
+.dc-requests-page .dcr-in-ds {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-top: 0.25rem;
+  padding: 0 0.375rem;
+  border: 1px solid rgba(22, 163, 74, 0.35);
+  border-radius: 999px;
+  color: #166534;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.dc-requests-page .dcr-in-ds:hover { background: rgba(22, 163, 74, 0.08); }
+[data-theme='dark'] .dc-requests-page .dcr-in-ds { color: #86efac; }
+.dc-requests-page .dcr-in-ds-link {
+  display: block;
+  margin-top: 0.25rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-link, var(--primary-color));
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+.dc-requests-page .dcr-in-ds-link:hover { text-decoration: underline; }
+
+/* Подразделение — плашкой под описанием, как подразделение ВОР в реестре тендеров (VorDivisionChip). */
+.dc-requests-page .dcr-division { margin-top: 0.25rem; }

@@ -291,6 +291,7 @@
 .compact-table td.col-checkbox,
 .compact-table td.col-website,
 .compact-table td.col-status,
+.compact-table td.col-contract,
 .compact-table td.col-actions {
   vertical-align: middle;
 }
@@ -346,6 +347,7 @@
 .col-contact-email { width: 14%; font-size: 0.75rem; }
 .col-website { width: 4rem; text-align: center; }
 .col-status { width: 6rem; }                           /* «Активный ▾» — 76px */
+.col-contract { width: 4.75rem; text-align: center; } /* «ДОГОВОР» в шапке — 62px */
 .col-actions { width: 4.25rem; text-align: center; }   /* две кнопки по 24px */
 
 /* Row states */
@@ -1703,4 +1705,61 @@
     text-decoration: none;
   }
   .cp-mlist-more { display: flex; justify-content: center; padding: 0.75rem; }
+}
+
+/* Заключённые договоры с компанией: галочка в колонке «Договор» (и в строке на телефоне) и фильтр «С договором». */
+.cp-contract-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 999px;
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+[data-theme='dark'] .cp-contract-mark { background: rgba(34, 197, 94, 0.18); color: #86efac; }
+.cp-contract-mark svg { flex: none; }
+
+.cp-contract-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 36px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.cp-contract-filter:hover:not(:disabled) { border-color: var(--primary-color); color: var(--text-primary); }
+.cp-contract-filter:disabled { opacity: 0.55; cursor: default; }
+.cp-contract-filter.is-active {
+  border-color: #16a34a;
+  background: rgba(22, 163, 74, 0.1);
+  color: #15803d;
+  font-weight: 600;
+}
+[data-theme='dark'] .cp-contract-filter.is-active { background: rgba(34, 197, 94, 0.16); color: #86efac; border-color: #22c55e; }
+.cp-contract-filter-count {
+  min-width: 1.25rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: inherit;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+@media (max-width: 640px) {
+  /* Поиск и вид работ делят строку поровну, кнопка «С договором» — по своей ширине. */
+  .counterparties-toolbar .toolbar-center > .cp-contract-filter { flex: none !important; height: 40px; padding: 0 0.5rem; }
 }

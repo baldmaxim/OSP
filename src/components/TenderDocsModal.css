@@ -505,3 +505,6 @@
      прокручивается внутри карточки (см. .tdm-table-wrap). */
   .tdm-table--steps { min-width: 30rem; }
 }
+
+/* Плитка-ссылка («Загрузка ПСДЦ» в «Документах» договоров) — как кнопка-плитка, без подчёркивания. */
+a.tdm-card.tdm-card--link { color: inherit; text-decoration: none; }

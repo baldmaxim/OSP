@@ -1,6 +1,6 @@
 // Шаблоны разделов (миграция 20261107_section_templates): файлы, которые раздел даёт скачать всем, —
-// «Понятийное соглашение» в «Документах раздела» тендеров (вкладка «Материалы») и «Шаблон Было-Стало» в
-// «Документах» заявок на ДС.
+// «Шаблон Было-Стало» в «Документах» заявок на ДС и «Шаблон ДГП» в «Документах» договоров (20261109).
+// «Понятийное соглашение» (тендеры ОС и договоры) с 27.10.2026 — не файл, а ссылка: см. ниже, app_settings.
 //
 // Строка section_templates — постоянный якорь шаблона (строки заводит миграция, код знает страница); сам
 // файл — s3_documents (owner_type 'general', owner_id = id строки, doc_category 'section_template').
@@ -12,13 +12,51 @@ import { deleteDocument, requestDownloadUrl, uploadFile } from './s3'
 export const SECTION_TEMPLATES_TABLE = 'section_templates'
 export const SECTION_TEMPLATE_CATEGORY = 'section_template'
 
-export const SECTION_TEMPLATES_MIGRATION_HINT =
-  'Прикрепить файл можно будет после обновления базы (миграция 20261107_section_templates).'
+export const SECTION_TEMPLATES_MIGRATION = '20261107_section_templates'
+export const sectionTemplatesMigrationHint = (migration = SECTION_TEMPLATES_MIGRATION) =>
+  `Прикрепить файл можно будет после обновления базы (миграция ${migration}).`
 
-// Коды — те же, что в миграции.
+// Коды — те же, что в миграциях (20261107, «Шаблон ДГП» — 20261109).
 export const SECTION_TEMPLATE = {
   conceptAgreement: 'tenders_concept_agreement',
   wasBecame: 'dc_was_became',
+  contractsDgp: 'contracts_dgp',
+}
+
+// ── Шаблон-ссылка ─────────────────────────────────────────────────────────────────────────────────────
+// «Понятийное соглашение» — ссылкой на документ (http(s)) или сетевым путём (\\сервер\папка), а не файлом:
+// одна ссылка на «Тендеры — Основное строительство» и «Договоры и ДС» — правка в одном разделе видна в другом.
+// Хранится в app_settings (key/value), как путь к общей папке раздела; миграция не нужна. Указывает и меняет
+// администратор. Файл, прикреплённый к шаблону раньше, плитка показывает, пока администратор его не удалит.
+export const SECTION_TEMPLATE_LINK_KEY = {
+  conceptAgreement: 'concept_agreement_template_link',
+}
+
+export const isWebLink = (v) => /^https?:\/\/\S+$/i.test(String(v || '').trim())
+export const isNetworkPath = (v) => /^\\\\[^\\\s]+\\\S/.test(String(v || '').trim())
+
+// Ссылка из поля ввода → { value } (пустое — null: ссылку убрали) или { error }.
+export function parseTemplateLink(raw) {
+  const value = String(raw || '').trim()
+  if (!value) return { value: null }
+  if (value.length > 2000) return { error: 'Ссылка слишком длинная — не больше 2000 знаков.' }
+  if (isWebLink(value) || isNetworkPath(value)) return { value }
+  return { error: 'Укажите ссылку целиком, начиная с https://, или сетевой путь вида \\\\сервер\\папка\\файл.docx.' }
+}
+
+// → Map(ключ → ссылка); ключа нет в app_settings — нет и в Map.
+export async function fetchTemplateLinks(keys) {
+  if (!keys.length) return new Map()
+  const { data, error } = await db.from('app_settings').select('key, value').in('key', keys)
+  if (error) throw error
+  return new Map((data || []).filter(r => r.value).map(r => [r.key, r.value]))
+}
+
+export async function saveTemplateLink(key, value) {
+  const { error } = await db
+    .from('app_settings')
+    .upsert({ key, value: value || null, updated_at: new Date().toISOString() })
+  if (error) throw error
 }
 
 // Шаблон — документ: Word, а для «Было-Стало» бывает и таблица.

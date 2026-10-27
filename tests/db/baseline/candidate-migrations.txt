@@ -23,3 +23,4 @@
 20261106_dc_request_number.sql
 20261107_section_templates.sql
 20261108_dc_request_submission_check.sql
+20261109_contracts_dc_requests.sql

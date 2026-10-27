@@ -336,6 +336,36 @@
 .cpg-contract-card-obj { font-size: 0.8125rem; color: var(--text-secondary); overflow-wrap: anywhere; }
 .cpg-contract-card-sum { font-size: 0.8125rem; font-variant-numeric: tabular-nums; color: var(--text-primary); }
 
+/* «Заявки на ДС» под договорами: строка договора — шапка группы; статус заявки и «В ДС» — плашками. */
+.cpg-dcr-bar { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; margin: -0.25rem 0 0.5rem; }
+.cpg-dcr-count { font-size: 0.75rem; color: var(--text-secondary); }
+.cpg-col-dcr-no { width: 5.5rem; }
+.cpg-col-dcr-ds { width: 9rem; }
+.cpg-col-dcr-obj { width: 15%; }
+.cpg-col-dcr-in-ds { width: 12rem; }
+.cpg-dcr-table tr.cpg-dcr-group td {
+  background: var(--bg-tertiary);
+  font-size: 0.8125rem;
+}
+.cpg-dcr-group-meta { margin-left: 0.75rem; font-size: 0.75rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.cpg-dcr-nocontract { font-weight: 500; color: var(--text-secondary); }
+.cpg-dcr-ds { white-space: normal; }
+.cpg-dcr-state {
+  display: inline-block;
+  padding: 0.0625rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+}
+.cpg-dcr-state.is-work { color: #1d4ed8; border-color: rgba(37, 99, 235, 0.35); }
+.cpg-dcr-state.is-done { color: #166534; border-color: rgba(22, 163, 74, 0.35); }
+[data-theme='dark'] .cpg-dcr-state.is-work { color: #93c5fd; }
+[data-theme='dark'] .cpg-dcr-state.is-done { color: #86efac; }
+
 @media (max-width: 900px) {
   .cpg-grid { grid-template-columns: minmax(0, 1fr); }
 }

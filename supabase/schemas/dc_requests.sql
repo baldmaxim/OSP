@@ -32,6 +32,11 @@ CREATE TABLE IF NOT EXISTS dc_requests (
   submission_by UUID,
   submission_by_name TEXT,
   submission_at TIMESTAMPTZ,
+  -- Договор и номер ДС раздельно (миграция 20261109): договор реестра «Договоры и ДС», к которому подаётся заявка
+  -- (ds_number — номер самого ДС), ДС реестра, в которое заявка занесена, и подразделение (коды подразделений ВОР).
+  contract_id UUID REFERENCES contracts(id) ON DELETE SET NULL,
+  amendment_id UUID REFERENCES contracts(id) ON DELETE SET NULL,
+  division TEXT CHECK (division IS NULL OR division IN ('monolith', 'nvf_spk', 'general', 'hvac_water', 'electrical', 'finishing')),
   created_by_name TEXT,
   deleted_at TIMESTAMPTZ,                    -- soft-delete: заявка во вкладке «Удаленные»
   created_at TIMESTAMPTZ DEFAULT NOW(),

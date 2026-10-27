@@ -16,6 +16,7 @@ import { buildRelationGroups, groupMatesOf, planRemoveFromGroup } from '../utils
 import { VAT_NONE, vatFromSelect, vatSelectValue, vatText } from '../utils/counterpartyVat'
 import { docTitle } from '../utils/counterpartyDocs'
 import CounterpartyGeneralTab from '../components/counterparty/CounterpartyGeneralTab'
+import { loadConcludedContractCounts } from '../services/counterpartyContracts'
 import CounterpartyVatSelect from '../components/counterparty/CounterpartyVatSelect'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
@@ -201,6 +202,20 @@ function MultiValueInput({ value, onChange, type, placeholder, format, addLabel,
   )
 }
 
+// Галочка «есть заключённые договоры с компанией» (utils/counterpartyDocs: isConcludedContract) — в реестре и
+// в списке на телефоне. Сами договоры — в карточке, «Общая информация» → «Договоры и ДС». count — их число.
+function ContractMark({ count }) {
+  if (!count) return null
+  const title = `Заключённых договоров с компанией: ${count}. Список — в карточке контрагента`
+  return (
+    <span className="cp-contract-mark" title={title} role="img" aria-label={title}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+      {count > 1 && <span className="cp-contract-mark-n">{count}</span>}
+    </span>
+  )
+}
+
 function CounterpartiesPage() {
   const { isAdmin, canEdit, canView, userProfile } = useRole()
   // task 333: гейт add/edit/delete и inline-editing для раздела «counterparties».
@@ -228,6 +243,10 @@ function CounterpartiesPage() {
   const [cardsByCp, setCardsByCp] = useState(() => new Map())
   // task 422: сводка документов СБ/должной осмотрительности — map по owner_id.
   const [docSummaryByCp, setDocSummaryByCp] = useState(() => new Map())
+  // Заключённые договоры с компанией: Map(id контрагента → число) — галочка «Договор» и фильтр «С договором».
+  // null — ещё грузятся, 'error' — не загрузились (фильтр недоступен, список работает).
+  const [contractCounts, setContractCounts] = useState(null)
+  const [onlyWithContract, setOnlyWithContract] = useState(false)
   const fileInputRef = useRef(null)
 
   const [counterpartyFormData, setCounterpartyFormData] = useState(EMPTY_CP_FORM)
@@ -292,7 +311,18 @@ function CounterpartiesPage() {
     fetchCounterparties()
     fetchRelations()
     fetchWorkTypesDirectory()
+    fetchContractCounts()
   }, [])
+
+  // Отдельно от списка: договоров тысячи, а список контрагентов не должен их ждать.
+  const fetchContractCounts = async () => {
+    try {
+      setContractCounts(await loadConcludedContractCounts())
+    } catch (err) {
+      console.warn('Не удалось загрузить договоры контрагентов:', err?.message || err)
+      setContractCounts(prev => (prev instanceof Map ? prev : 'error'))
+    }
+  }
 
   // Блокируем скролл body при открытой модалке
   const anyModalOpen = showCounterpartyModal || showContactModal || showImportInstructionsModal || showWorkTypeModal || importResult || detailCp
@@ -1059,6 +1089,8 @@ function CounterpartiesPage() {
 
   // Договор прикреплён к контрагенту вручную или откреплён (раздел «Договоры и ДС» карточки пишет сам) — в журнал.
   const handleContractLinkChange = (counterpartyId, eventType, doc) => {
+    // Ручная привязка тоже даёт галочку «Договор» — пересчитываем.
+    fetchContractCounts()
     const t = docTitle(doc)
     const label = `${t.num}${t.date ? ` от ${t.date}` : ''}`
     logCpEvent(counterpartyId, eventType, {
@@ -1192,7 +1224,8 @@ function CounterpartiesPage() {
     // Вид работ попадает в имя файла — чистим символы, недопустимые в имени.
     const workTypePart = workTypeFilter ? workTypeFilter.replace(/[\\/:*?"<>|]/g, '-').slice(0, 40) : ''
     const searchPart = deferredSearchQuery.trim() ? 'поиск' : ''
-    const parts = ['Контрагенты', tabPart, workTypePart, searchPart, today].filter(Boolean)
+    const contractPart = contractFilterOn ? 'с договором' : ''
+    const parts = ['Контрагенты', tabPart, workTypePart, contractPart, searchPart, today].filter(Boolean)
     XLSX.writeFile(wb, `${parts.join('_')}.xlsx`)
   }
 
@@ -1382,6 +1415,9 @@ function CounterpartiesPage() {
     return map
   }, [counterparties])
 
+  // «С договором» действует, когда договоры загрузились: до того фильтр не прячет весь список.
+  const contractFilterOn = onlyWithContract && contractCounts instanceof Map
+
   // Фильтрация контрагентов (мемоизация)
   const filteredCounterparties = useMemo(() => {
     // task 339: фильтрация по deferred-значению — отвязана от ввода в input
@@ -1395,13 +1431,14 @@ function CounterpartiesPage() {
       }
       // Фильтр по виду работ (проверяем каждый вид отдельно)
       if (workTypeFilter && !splitWorkTypes(counterparty.work_type).includes(workTypeFilter)) return false
+      if (contractFilterOn && !contractCounts.get(counterparty.id)) return false
       return !query || searchTextById.get(counterparty.id).includes(query)
     }).sort((a, b) => {
       // Сортировка: активные сверху, черный список снизу, внутри — по имени
       if ((a.status === 'blacklist') !== (b.status === 'blacklist')) return a.status === 'blacklist' ? 1 : -1
       return ruCollator.compare(a.name || '', b.name || '')
     })
-  }, [counterparties, searchTextById, workTypeFilter, deferredSearchQuery, activeTab])
+  }, [counterparties, searchTextById, workTypeFilter, contractFilterOn, contractCounts, deferredSearchQuery, activeTab])
 
   const selectedSet = useMemo(() => new Set(selectedCounterpartyIds), [selectedCounterpartyIds])
   const allVisibleSelected = filteredCounterparties.length > 0 && filteredCounterparties.every(cp => selectedSet.has(cp.id))
@@ -1409,7 +1446,18 @@ function CounterpartiesPage() {
   // При смене вкладки/фильтра/поиска показываем список с начала (лёгкий первый экран).
   useEffect(() => {
     setVisibleCount(RENDER_STEP)
-  }, [activeTab, workTypeFilter, deferredSearchQuery])
+  }, [activeTab, workTypeFilter, contractFilterOn, deferredSearchQuery])
+
+  // Сколько контрагентов текущей вкладки с договором — число на кнопке «С договором».
+  const tabWithContractCount = useMemo(() => {
+    if (!(contractCounts instanceof Map)) return null
+    let n = 0
+    for (const c of counterparties) {
+      const tab = c.deleted_at ? 'deleted' : c.status === 'blacklist' ? 'blacklist' : 'active'
+      if (tab === activeTab && contractCounts.get(c.id)) n += 1
+    }
+    return n
+  }, [counterparties, contractCounts, activeTab])
 
   const tabCounts = useMemo(() => {
     const counts = { active: 0, blacklist: 0, deleted: 0 }
@@ -1566,6 +1614,27 @@ function CounterpartiesPage() {
                   </div>
                 )
               })()}
+
+              {/* Только контрагенты с заключённым договором — те же, у кого галочка «Договор». */}
+              <button
+                type="button"
+                className={`cp-contract-filter${contractFilterOn ? ' is-active' : ''}`}
+                onClick={() => setOnlyWithContract(v => !v)}
+                aria-pressed={contractFilterOn}
+                disabled={!(contractCounts instanceof Map)}
+                title={contractCounts === 'error'
+                  ? 'Договоры не загрузились — фильтр недоступен. Обновите страницу'
+                  : contractCounts === null
+                    ? 'Договоры загружаются…'
+                    : contractFilterOn
+                      ? 'Показаны только контрагенты с заключённым договором — нажмите, чтобы показать всех'
+                      : 'Показать только контрагентов с заключённым договором (статус «Завершено» или есть дата подписания)'}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+                  strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                С договором
+                {tabWithContractCount != null && <span className="cp-contract-filter-count">{tabWithContractCount}</span>}
+              </button>
 
             </div>
 
@@ -1774,9 +1843,9 @@ function CounterpartiesPage() {
           {filteredCounterparties.length === 0 ? (
             <div className="empty-state">
               <p className="empty-title">
-                {searchQuery.trim() || workTypeFilter ? 'Ничего не найдено' : 'Нет контрагентов'}
+                {searchQuery.trim() || workTypeFilter || contractFilterOn ? 'Ничего не найдено' : 'Нет контрагентов'}
               </p>
-              {!searchQuery.trim() && !workTypeFilter && canEditCp && (
+              {!searchQuery.trim() && !workTypeFilter && !contractFilterOn && canEditCp && (
                 <button className="btn-add" onClick={handleAddNewCounterparty}>+ Добавить</button>
               )}
             </div>
@@ -1798,6 +1867,7 @@ function CounterpartiesPage() {
                         {cp.name}
                       </button>
                       {isBl && <span className="cp-mrow-bl" title="Чёрный список">ЧС</span>}
+                      {contractCounts instanceof Map && <ContractMark count={contractCounts.get(cp.id)} />}
                       <CounterpartyDocBadges summary={docSummaryByCp.get(cp.id)} />
                     </div>
                     {cp.work_type && <div className="cp-mrow-wt">{cp.work_type}</div>}
@@ -1843,6 +1913,7 @@ function CounterpartiesPage() {
                       />
                     </th>
                     <th className="col-name">Наименование</th>
+                    <th className="col-contract" title="Есть заключённые договоры с компанией">Договор</th>
                     <th className="col-worktype">Вид работ</th>
                     <th className="col-inn">ИНН</th>
                     {vatSupported && <th className="col-vat">НДС</th>}
@@ -1897,6 +1968,9 @@ function CounterpartiesPage() {
                             showDate
                             onOpen={() => openDetail(counterparty, 'documents')}
                           />
+                        </td>
+                        <td className="col-contract">
+                          {contractCounts instanceof Map && <ContractMark count={contractCounts.get(counterparty.id)} />}
                         </td>
                         <td className="col-worktype">
                           {counterparty.work_type ? (
@@ -2049,7 +2123,7 @@ function CounterpartiesPage() {
                   })}
                   {visibleCount < filteredCounterparties.length && (
                     <tr className="show-more-row">
-                      <td colSpan={vatSupported ? 12 : 11}>
+                      <td colSpan={vatSupported ? 13 : 12}>
                         <button
                           type="button"
                           className="btn-show-more"
@@ -2133,6 +2207,7 @@ function CounterpartiesPage() {
                   canEdit={canEditCp}
                   isAdmin={isAdmin}
                   canViewContracts={canView('contracts')}
+                  canViewDcRequests={canView('dc_requests')}
                   isPhone={isPhone}
                   vatSupported={vatSupported}
                   affiliates={getRelatedCounterparties(detailCp.id)}

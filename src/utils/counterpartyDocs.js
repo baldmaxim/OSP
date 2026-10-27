@@ -1,7 +1,7 @@
 // Договоры и ДС контрагента для вкладки «Общая информация» его карточки: плоский список документов
 // (договоры и все их ДС) → группы «договор и его ДС». Правила дерева и сумм — utils/contractAmendments.
 import {
-  DOC_TYPE, DOC_TYPE_LABEL, buildDocIndex, contractActualAmount, effectiveDocumentAmount, flattenTree,
+  COMPLETED_STATUS, DOC_TYPE, DOC_TYPE_LABEL, buildDocIndex, contractActualAmount, effectiveDocumentAmount, flattenTree,
 } from './contractAmendments.js'
 
 const fmtDate = (iso) => (iso ? new Date(`${String(iso).slice(0, 10)}T00:00:00`).toLocaleDateString('ru-RU') : '')
@@ -47,4 +47,28 @@ export function groupCounterpartyDocs(docs) {
       actual: actual != null && original != null && Math.abs(actual - original) >= 0.005 ? actual : null,
     }
   })
+}
+
+// Заключённый договор — галочка «Договор» и фильтр «С договором» реестра контрагентов: договор (не ДС), не
+// удалён, со статусом «Завершено» или с датой подписания.
+export const isConcludedContract = (c) => !!c && !c.deleted_at && c.record_type === DOC_TYPE.CONTRACT
+  && (c.status === COMPLETED_STATUS || !!c.signed_date)
+
+// → Map(id контрагента → число заключённых договоров). Контрагент — основная сторона (contracts.counterparty_id),
+// другая сторона (contract_counterparties) или договор прикреплён к нему вручную (counterparty_contract_links) —
+// как в разделе «Договоры и ДС» его карточки. Договор считается у контрагента один раз.
+export function concludedContractsByCounterparty(contracts, parties = [], links = []) {
+  const concluded = new Map()
+  for (const c of contracts) if (isConcludedContract(c)) concluded.set(c.id, c)
+  const byCp = new Map()
+  const add = (counterpartyId, contractId) => {
+    if (!counterpartyId || !concluded.has(contractId)) return
+    let ids = byCp.get(counterpartyId)
+    if (!ids) byCp.set(counterpartyId, ids = new Set())
+    ids.add(contractId)
+  }
+  for (const c of concluded.values()) add(c.counterparty_id, c.id)
+  for (const p of parties) add(p.counterparty_id, p.contract_id)
+  for (const l of links) add(l.counterparty_id, l.contract_id)
+  return new Map([...byCp].map(([id, ids]) => [id, ids.size]))
 }

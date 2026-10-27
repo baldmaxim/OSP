@@ -13,10 +13,16 @@ import './VorDivisionFilter.css'
 // Выбранный фильтр видно сразу: заливка акцентом, в подписи — что выбрано,
 // рядом кнопка сброса; у заголовка — акцентная черта (класс на <th>).
 // counts — Map(код → число тендеров) по реестру без этого фильтра.
+// subject='dc' — фильтр реестра «Заявка на ДС» по подразделению заявки (те же коды и подписи).
 const ITEMS = [...VOR_DIVISIONS, { value: NO_VOR_DIVISION, label: 'Не указано' }]
 const ITEM_LABEL = { ...VOR_DIVISION_LABEL, [NO_VOR_DIVISION]: 'Не указано' }
+const SUBJECT = {
+  vor: { what: 'подразделению ВОР', all: 'тендеры', sr: 'Подразделение ВОР: ' },
+  dc: { what: 'подразделению', all: 'заявки', sr: 'Подразделение: ' },
+}
 
-export default function VorDivisionFilter({ value, onChange, counts = null, inHeader = false }) {
+export default function VorDivisionFilter({ value, onChange, counts = null, inHeader = false, subject = 'vor' }) {
+  const t = SUBJECT[subject] || SUBJECT.vor
   const active = value.length > 0
   const names = value.map(v => ITEM_LABEL[v]).filter(Boolean)
   const shown = names.length === 1 ? names[0] : `Подразделений: ${names.length}`
@@ -25,8 +31,8 @@ export default function VorDivisionFilter({ value, onChange, counts = null, inHe
     label: counts ? `${d.label} (${counts.get(d.value) || 0})` : d.label,
   }))
   const title = active
-    ? `Фильтр по подразделению ВОР: ${names.join(', ')}`
-    : 'Фильтр по подразделению ВОР: показаны все тендеры, в том числе без подразделения'
+    ? `Фильтр по ${t.what}: ${names.join(', ')}`
+    : `Фильтр по ${t.what}: показаны все ${t.all}, в том числе без подразделения`
 
   const dropdown = (
     <FilterDropdown
@@ -40,7 +46,7 @@ export default function VorDivisionFilter({ value, onChange, counts = null, inHe
       options={options}
       triggerTitle={title}
       formatTrigger={(label) => (active
-        ? <><span className="ui-sr-only">Подразделение ВОР: </span>{shown}</>
+        ? <><span className="ui-sr-only">{t.sr}</span>{shown}</>
         : label)}
     />
   )

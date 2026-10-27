@@ -10,6 +10,7 @@ import { db } from '../api'
 import { chunkList } from '../utils/inChunks'
 import { fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { DOC_TYPE } from '../utils/contractAmendments'
+import { concludedContractsByCounterparty } from '../utils/counterpartyDocs'
 
 export const CONTRACT_LINKS_TABLE = 'counterparty_contract_links'
 
@@ -110,4 +111,61 @@ export async function detachContract(counterpartyId, contractId) {
     .eq('counterparty_id', counterpartyId)
     .eq('contract_id', contractId)
   if (error) throw error
+}
+
+// Заключённые договоры всех контрагентов → Map(id контрагента → число): галочка «Договор» и фильтр «С договором»
+// реестра контрагентов. Договоров тысячи, поэтому только нужные колонки; без таблицы привязок — без них.
+export async function loadConcludedContractCounts() {
+  const all = (table, cols, filter = (q) => q) => fetchAllRowsParallel((from, to, withCount) => filter(db
+    .from(table)
+    .select(cols, withCount ? { count: 'exact' } : undefined))
+    .order('id', { ascending: true })
+    .range(from, to))
+  const [contracts, parties, links] = await Promise.all([
+    all('contracts', 'id, counterparty_id, record_type, status, signed_date, deleted_at',
+      (q) => q.eq('record_type', DOC_TYPE.CONTRACT).is('deleted_at', null)),
+    all('contract_counterparties', 'id, contract_id, counterparty_id'),
+    all(CONTRACT_LINKS_TABLE, 'id, contract_id, counterparty_id').catch((err) => {
+      if (isMissingLinksTable(err)) return []
+      throw err
+    }),
+  ])
+  return concludedContractsByCounterparty(contracts, parties, links)
+}
+
+// Заявки на ДС контрагента для «Общей информации» карточки (миграция 20261109): по его договорам — какие
+// отработаны, какие занесены в ДС. → { requests, docs: Map(id → договор / ДС), linked }; linked=false — колонок
+// договора в базе ещё нет (заявки без группировки по договору). Без постоянного «№» (20261106) — без номера.
+const DC_REQUEST_FIELDS = [
+  'id, request_number, ds_number, works_description, status, amount_before, amount_after, created_at, objects(name), contract_id, amendment_id',
+  'id, request_number, ds_number, works_description, status, amount_before, amount_after, created_at, objects(name)',
+  'id, ds_number, works_description, status, amount_before, amount_after, created_at, objects(name)',
+]
+const isMissingColumn = (err) => err?.code === '42703' || err?.code === 'PGRST204'
+  || /column .* does not exist|could not find .* column/i.test(String(err?.message || ''))
+
+export async function loadCounterpartyDcRequests(counterpartyId) {
+  let rows = null
+  let linked = false
+  for (const [i, fields] of DC_REQUEST_FIELDS.entries()) {
+    const { data, error } = await db
+      .from('dc_requests')
+      .select(fields)
+      .eq('counterparty_id', counterpartyId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+    if (!error) { rows = data || []; linked = i === 0; break }
+    if (!isMissingColumn(error) || i === DC_REQUEST_FIELDS.length - 1) throw error
+  }
+  const ids = [...new Set(rows.flatMap(r => [r.contract_id, r.amendment_id]).filter(Boolean))]
+  const docs = new Map()
+  for (const part of chunkList(ids, 100)) {
+    const { data, error } = await db
+      .from('contracts')
+      .select('id, record_type, contract_number, contract_date, status, deleted_at')
+      .in('id', part)
+    if (error) throw error
+    for (const d of data || []) docs.set(d.id, d)
+  }
+  return { requests: rows, docs, linked }
 }
