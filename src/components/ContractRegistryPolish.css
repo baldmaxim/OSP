@@ -769,3 +769,16 @@
   color: var(--primary-color);
   font-weight: 600;
 }
+
+/* «Договоры и ДС»: договор в другом статусе, показанный на вкладке ради своих ДС
+   (registryRows в utils/contractRegistryTabs). Подпись под статусом, как «не в Larix». */
+.contracts-table-compact td.cell-status .ctx-ds-note {
+  display: block;
+  width: fit-content;
+  margin: 0.3rem 0 0;
+  font-size: 0.625rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}

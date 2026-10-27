@@ -21,6 +21,7 @@ import { fetchCounterpartyDocSummary, deleteDocument } from '../services/s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { chunkList } from '../utils/inChunks'
 import { LARIX_LINK_FIELD, LARIX_LINK_LABEL, LARIX_NAME, isInLarix } from '../utils/contractLarix'
+import { registryCounts, registryRows } from '../utils/contractRegistryTabs'
 import {
   DOC_TYPE,
   DOC_TYPES,
@@ -96,17 +97,17 @@ const SCOPES = [
 // (вместо прежнего отдельного представления «Дополнительные соглашения»).
 // «Договоры и ДС» — строки договоров, ДС раскрываются под своим договором;
 // «ДС» — соглашения отдельными строками. ДС не подмешиваются в список договоров
-// строками: иначе реестр раздваивается и суммы считаются дважды.
+// строками: иначе реестр раздваивается и суммы считаются дважды. Счётчики
+// «Договоров и ДС» — договоры и ДС вместе (utils/contractRegistryTabs).
 // Выбор запоминается в браузере: после перезагрузки реестр открывается тем же.
 const DOC_KINDS = [
-  { key: 'all', label: 'Договоры и ДС', hint: 'Договоры; ДС раскрываются под своим договором по кнопке «ДС: N»' },
+  { key: 'all', label: 'Договоры и ДС', hint: 'Договоры; ДС раскрываются под своим договором по кнопке «ДС: N». Счётчики — договоры и ДС вместе' },
   { key: 'contracts', label: 'Договоры', hint: 'Только договоры' },
   { key: 'amendments', label: 'ДС', hint: 'Только ДС отдельными строками: на изменение ВОР и на дополнительные работы' },
 ]
 const DOC_KIND_STORAGE_KEY = 'contracts-doc-kind'
 // Понятийные соглашения — файлы договора в s3_documents (ConceptAgreementCell).
 const CONCEPT_DOC_COLUMNS = 'id, owner_id, file_name, s3_key, mime_type, size_bytes, created_at'
-const docKindOf =(c) => ((c.record_type || DOC_TYPE.CONTRACT) === DOC_TYPE.CONTRACT ? 'contracts' : 'amendments')
 
 function readStoredDocKind() {
   try {
@@ -1228,43 +1229,22 @@ function ContractRegistry() {
   const isAmendmentsView = docKind === 'amendments'
   // «Договоры и ДС»: строки — договоры, их ДС раскрываются под строкой.
   const nestDs = docKind === 'all'
-  const rowKind = isAmendmentsView ? 'amendments' : 'contracts'
-
-  const scopeCounts = useMemo(() => {
-    const live = contracts.filter(c => !c.deleted_at && docKindOf(c) === rowKind)
-    return { all: live.length, ours: live.filter(c => c.handled_by_us).length }
-  }, [contracts, rowKind])
 
   // Охват и тип документа применяются до вкладок и счётчиков — «Наши договоры»
   // это тот же реестр, просто суженный, поэтому и статусные счётчики считаются в нём.
-  const scopedContracts = useMemo(
-    () => contracts.filter(c => docKindOf(c) === rowKind && (scope !== 'ours' || c.handled_by_us)),
-    [contracts, scope, rowKind])
+  // В «Договорах и ДС» договор и ДС считаются каждый по своему статусу.
+  const { tabs: tabCounts, scopes: scopeCounts } = useMemo(
+    () => registryCounts(contracts, { docKind, scope }),
+    [contracts, docKind, scope])
 
-  // Все ДС каждого договора (всё дерево, а не только прямые), по порядку появления.
-  // Корень — root_contract_id (заполняет триггер); без него поднимаемся по родителям.
-  const dsByRoot = useMemo(() => {
-    const byId = new Map(contracts.map(c => [c.id, c]))
-    const map = new Map()
-    for (const c of contracts) {
-      if (docKindOf(c) !== 'amendments') continue
-      let rootId = c.root_contract_id
-      if (!rootId || rootId === c.id) {
-        let cur = c
-        for (let i = 0; i < 50 && cur?.parent_contract_id; i++) cur = byId.get(cur.parent_contract_id)
-        rootId = cur && cur !== c ? cur.id : null
-      }
-      if (!rootId) continue
-      if (!map.has(rootId)) map.set(rootId, [])
-      map.get(rootId).push(c)
-    }
-    for (const list of map.values()) list.sort((a, b) => Number(a.display_id) - Number(b.display_id))
-    return map
-  }, [contracts])
-
-  // ДС под договором — в том же состоянии, что и вкладка: живые, а в «Удалённых» — удалённые.
-  const nestedDsOf = (contractId) => (dsByRoot.get(contractId) || [])
-    .filter(ds => !!ds.deleted_at === (activeTab === 'deleted'))
+  // Реестр загружается целиком; по вкладкам фильтруем в памяти (мгновенно).
+  // В «Договорах и ДС» под договором — его ДС этой вкладки (nested); договор в
+  // другом статусе, у которого есть ДС на вкладке, — строкой ради них (context).
+  const tabView = useMemo(
+    () => registryRows(contracts, { docKind, scope, tab: activeTab }),
+    [contracts, docKind, scope, activeTab])
+  const tabContracts = tabView.rows
+  const nestedDsOf = (contractId) => tabView.nested.get(contractId) || []
 
   // Поиск в «Договоры и ДС» находит договор и по номеру, ID или предмету его ДС —
   // у таких договоров ДС раскрыты сразу.
@@ -1272,9 +1252,8 @@ function ContractRegistry() {
     const q = searchText.trim().toLowerCase()
     const hits = new Set()
     if (!nestDs || !q) return hits
-    const deletedTab = activeTab === 'deleted'
-    for (const [rootId, list] of dsByRoot) {
-      const found = list.some(ds => !!ds.deleted_at === deletedTab && [
+    for (const [rootId, list] of tabView.nested) {
+      const found = list.some(ds => [
         ds.contract_number,
         ds.display_id != null ? String(ds.display_id) : '',
         ds.work_name,
@@ -1282,13 +1261,14 @@ function ContractRegistry() {
       if (found) hits.add(rootId)
     }
     return hits
-  }, [nestDs, searchText, activeTab, dsByRoot])
+  }, [nestDs, searchText, tabView])
 
-  // Раскрытые ДС: найденные поиском раскрыты сразу, кнопка «ДС: N» переключает
-  // от этого состояния. Новый поиск — заново от найденного.
+  // Раскрытые ДС: найденные поиском и договоры, показанные ради своих ДС, раскрыты
+  // сразу, кнопка «ДС: N» переключает от этого состояния. Новый поиск — заново.
   const [dsToggled, setDsToggled] = useState(() => new Set())
   useEffect(() => { setDsToggled(new Set()) }, [searchText])
-  const isDsOpen = (contractId) => dsSearchHits.has(contractId) !== dsToggled.has(contractId)
+  const isDsOpen = (contractId) =>
+    (dsSearchHits.has(contractId) || tabView.context.has(contractId)) !== dsToggled.has(contractId)
   const toggleDsOpen = (contractId) => setDsToggled(prev => {
     const next = new Set(prev)
     if (next.has(contractId)) next.delete(contractId)
@@ -1302,33 +1282,6 @@ function ContractRegistry() {
     setDocKind(kind)
     if (kind !== 'amendments') setFilterDsType('')
   }
-
-  // Реестр загружается целиком; по вкладкам фильтруем в памяти (мгновенно).
-  const tabContracts = useMemo(() => scopedContracts.filter(c => {
-    const deleted = !!c.deleted_at
-    if (activeTab === 'deleted') return deleted
-    if (deleted) return false
-    if (activeTab === 'all') return true
-    // «Заявки на заключение» = только статус «Новая заявка» (new_request).
-    // Договоры «В работе»/«Приостановка» показываются в своих вкладках, а не здесь —
-    // так вкладки взаимоисключающие и статус договора совпадает с его вкладкой.
-    if (activeTab === 'requests') return (c.status || 'new_request') === 'new_request'
-    return (c.status || 'new_request') === activeTab
-  }), [scopedContracts, activeTab])
-
-  // Счётчики вкладок — из уже загруженного реестра (без отдельных запросов).
-  const tabCounts = useMemo(() => {
-    const active = scopedContracts.filter(c => !c.deleted_at)
-    return {
-      all: active.length,
-      requests: active.filter(c => (c.status || 'new_request') === 'new_request').length,
-      in_work: active.filter(c => (c.status || 'new_request') === 'in_work').length,
-      awaiting_paper_sign: active.filter(c => c.status === 'awaiting_paper_sign').length,
-      paused: active.filter(c => c.status === 'paused').length,
-      completed: active.filter(c => c.status === 'completed').length,
-      deleted: scopedContracts.filter(c => c.deleted_at).length,
-    }
-  }, [scopedContracts])
 
   const filteredSortedContracts = useMemo(() => {
     const q = searchText.trim().toLowerCase()
@@ -1428,6 +1381,10 @@ function ContractRegistry() {
   const rangeTo = Math.min(pageStart + pageSize, totalCount)
   // Род. падеж для пустых состояний: «Нет договоров / соглашений».
   const docNounGen = pluralContracts(0, isAmendmentsView)
+  // «Договоры и ДС»: страницы — по договорам, ДС к ним считаем отдельно.
+  const nestedDsTotal = nestDs
+    ? filteredSortedContracts.reduce((n, c) => n + nestedDsOf(c.id).length, 0)
+    : 0
 
   // Строки таблицы: в «Договоры и ДС» под договором с раскрытыми ДС идут его ДС.
   const tableRows = []
@@ -1443,6 +1400,7 @@ function ContractRegistry() {
     <div className={`registry-pagination is-${position}`}>
       <span className="rp-info">
         Показано {rangeFrom}–{rangeTo} из {totalCount} {pluralContracts(totalCount, isAmendmentsView)}
+        {nestDs && nestedDsTotal > 0 && <> · ДС к ним: {nestedDsTotal}</>}
       </span>
       <div className="rp-controls">
         <label className="rp-size">
@@ -2175,7 +2133,10 @@ function ContractRegistry() {
         ) : (
           <div className="mcard-list">
             {pagedContracts.map((contract) => {
-              const overdue = !isDeletedTab && isOverdue(contract)
+              // Удалён ли сам документ, а не вкладка: в «Договорах и ДС» на вкладке бывает
+              // договор в другом состоянии, показанный ради своих ДС.
+              const docDeleted = !!contract.deleted_at
+              const overdue = !docDeleted && isOverdue(contract)
               const dsNum = contract.contract_number
               const dsDate = formatDateRu(contract.contract_date)
               const opt = STATUS_OPTIONS.find(o => o.value === (contract.status || 'new_request'))
@@ -2195,7 +2156,7 @@ function ContractRegistry() {
                       {dsNum ? `№ ${dsNum}` : '№ не присвоен'}
                       {contract.display_id != null && <small className="mcard-id"> · ID {contract.display_id}</small>}
                     </span>
-                    {isDeletedTab
+                    {docDeleted
                       ? <span className="status-badge status-deleted">Удалён</span>
                       : <span className={`status-badge ${opt?.className || ''}`}>{opt?.label || '—'}</span>}
                   </div>
@@ -2246,7 +2207,9 @@ function ContractRegistry() {
                     <span className="mcard-chip">{dsDate ? `от ${dsDate}` : 'дата не указана'}</span>
                     {/* ДС на телефоне — в карточке договора, здесь только их число. */}
                     {nestDs && nestedDsOf(contract.id).length > 0 && (
-                      <span className="mcard-chip">ДС: {nestedDsOf(contract.id).length}</span>
+                      <span className="mcard-chip">
+                        ДС: {nestedDsOf(contract.id).length}{tabView.context.has(contract.id) ? ' · показан ради ДС' : ''}
+                      </span>
                     )}
                     <span className="mcard-open">Открыть ›</span>
                   </div>
@@ -2315,7 +2278,10 @@ function ContractRegistry() {
                   setSelectedAppendices(new Set())
                   setExpandedContractId(isExpanded ? null : contract.id)
                 }
-                const overdue = !isDeletedTab && isOverdue(contract)
+                // Удалён ли сам документ, а не вкладка: в «Договорах и ДС» на вкладке бывает
+                // договор в другом состоянии, показанный ради своих ДС.
+                const docDeleted = !!contract.deleted_at
+                const overdue = !docDeleted && isOverdue(contract)
                 const dsNum = contract.contract_number
                 const dsDate = formatDateRu(contract.contract_date)
                 // Договор можно завести без номера/даты — подсвечиваем такие в реестре.
@@ -2334,7 +2300,7 @@ function ContractRegistry() {
                 return (
                 <Fragment key={contract.id}>
                 <tr
-                  className={`contract-row ${isDeletedTab ? 'row-deleted' : ''} ${isExpanded ? 'is-expanded' : ''}${nested ? ' is-nested-ds' : ''}${dsOpen ? ' has-ds-open' : ''}`}
+                  className={`contract-row ${docDeleted ? 'row-deleted' : ''} ${isExpanded ? 'is-expanded' : ''}${nested ? ' is-nested-ds' : ''}${dsOpen ? ' has-ds-open' : ''}`}
                   onClick={toggleExpand}
                   title={nested ? 'Нажмите, чтобы раскрыть соглашение' : 'Нажмите, чтобы раскрыть договор'}
                 >
@@ -2357,7 +2323,7 @@ function ContractRegistry() {
                     {isWarrantyObject(contract.objects?.status) && <ObjectDeptBadge status={contract.objects?.status} />}
                   </td>
                   <td
-                    className={`cell-contract-num ${(!dsNum || !dsDate) && !isDeletedTab ? 'is-incomplete' : ''}`}
+                    className={`cell-contract-num ${(!dsNum || !dsDate) && !docDeleted ? 'is-incomplete' : ''}`}
                     onClick={(e) => e.stopPropagation()}
                     title={missingLabel ? `Не заполнено: ${missingLabel}` : undefined}
                   >
@@ -2412,7 +2378,7 @@ function ContractRegistry() {
                         Larix.CPM» с общим «путь к»: три полные подписи в строку не
                         помещались, и каждая строка реестра вырастала на строку
                         (порядок и переносы — .cpaths в ContractRegistryPolish.css). */}
-                    {!isDeletedTab && (
+                    {!docDeleted && (
                       <div className="cpaths">
                         {canEditContracts && (!contract.folder_path || !contract.signal_link || !isInLarix(contract)) && (
                           <span className="cpaths-label" aria-hidden="true">путь к</span>
@@ -2444,7 +2410,7 @@ function ContractRegistry() {
                         />
                       </div>
                     )}
-                    {!isDeletedTab && (
+                    {!docDeleted && (
                       <ConceptAgreementCell
                         files={conceptDocsByContract[contract.id] || []}
                         contractId={contract.id}
@@ -2481,7 +2447,7 @@ function ContractRegistry() {
                     <AmountCell contract={shown} actual={actualAmount} />
                   </td>
                   <td className="cell-status" onClick={(e) => e.stopPropagation()}>
-                    {isDeletedTab ? (
+                    {docDeleted ? (
                       <span className="status-badge status-deleted">Удалён</span>
                     ) : (
                       <FilterDropdown
@@ -2503,14 +2469,17 @@ function ContractRegistry() {
                       />
                     )}
                     {/* Состояние выводится из пути к Larix.CPM под номером договора. */}
-                    {!isDeletedTab && isInLarix(contract) && (
+                    {!docDeleted && isInLarix(contract) && (
                       <span className="larix-badge is-in" title={`Внесён в ${LARIX_NAME}`}>Larix</span>
                     )}
-                    {!isDeletedTab && !isInLarix(contract) && (contract.status || 'new_request') !== 'new_request' && (
+                    {!docDeleted && !isInLarix(contract) && (contract.status || 'new_request') !== 'new_request' && (
                       <span
                         className="larix-badge is-out"
                         title={`Не внесён в ${LARIX_NAME}: укажите путь к ${LARIX_NAME} под номером договора`}
                       >не в Larix</span>
+                    )}
+                    {!nested && tabView.context.has(contract.id) && (
+                      <span className="ctx-ds-note" title="Договор в другом статусе: он на вкладке, потому что здесь его ДС">показан ради ДС</span>
                     )}
                   </td>
                   {showLawyer && (
@@ -2524,7 +2493,7 @@ function ContractRegistry() {
                       searchPlaceholder="Поиск сотрудника…"
                       allLabel="—"
                       formatTrigger={formatPersonShortName}
-                      disabled={!canEditContracts || isDeletedTab}
+                      disabled={!canEditContracts || docDeleted}
                     />
                   </td>
                   )}
@@ -2533,7 +2502,7 @@ function ContractRegistry() {
                       <InlineDateCell
                         value={contract.accepted_date}
                         onChange={(v) => handleInlineField(contract.id, 'accepted_date', v)}
-                        disabled={!canEditContracts || isDeletedTab}
+                        disabled={!canEditContracts || docDeleted}
                       />
                     </td>
                   )}
@@ -2542,7 +2511,7 @@ function ContractRegistry() {
                     <InlineDateCell
                       value={contract.signed_date}
                       onChange={(v) => handleInlineField(contract.id, 'signed_date', v)}
-                      disabled={!canEditContracts || isDeletedTab}
+                      disabled={!canEditContracts || docDeleted}
                       overdue={overdue}
                     />
                     {overdue && <span className="overdue-note">Просрочено</span>}
@@ -2550,7 +2519,7 @@ function ContractRegistry() {
                   )}
                   <td className="actions-cell" onClick={(e) => e.stopPropagation()}>
                     <div className="actions-inner">
-                      {isDeletedTab ? (
+                      {docDeleted ? (
                         <>
                           {canEditContracts && (
                             <button
@@ -2648,7 +2617,7 @@ function ContractRegistry() {
                             Примечание юриста
                             {noteSavingId === contract.id && <span className="ce-saving">Сохранение…</span>}
                           </div>
-                          {canEditContracts && !isDeletedTab ? (
+                          {canEditContracts && !docDeleted ? (
                             <AutoGrowTextarea
                               className="ce-note"
                               minHeight={68}
@@ -2669,7 +2638,7 @@ function ContractRegistry() {
                           <div className="ce-block-title">
                             Приложения к Договору
                             {appendices.length > 0 && <span className="ce-count">{appendices.length} шт.</span>}
-                            {canEditContracts && !isDeletedTab && selectedAppendices.size > 0 && (
+                            {canEditContracts && !docDeleted && selectedAppendices.size > 0 && (
                               <button
                                 type="button"
                                 className="ce-del-selected"
@@ -2678,7 +2647,7 @@ function ContractRegistry() {
                                 Удалить выбранные ({selectedAppendices.size})
                               </button>
                             )}
-                            {canEditContracts && !isDeletedTab && (
+                            {canEditContracts && !docDeleted && (
                               <button type="button" className="ce-add-appendix" onClick={() => handleAddAppendix(contract.id)}>
                                 + Добавить приложение
                               </button>
@@ -2686,10 +2655,10 @@ function ContractRegistry() {
                           </div>
                           {appendices.length === 0 ? (
                             <div className="ce-empty">
-                              Приложения не добавлены.{canEditContracts && !isDeletedTab ? ' Нажмите «+ Добавить приложение».' : ''}
+                              Приложения не добавлены.{canEditContracts && !docDeleted ? ' Нажмите «+ Добавить приложение».' : ''}
                             </div>
                           ) : (() => {
-                            const ro = !canEditContracts || isDeletedTab
+                            const ro = !canEditContracts || docDeleted
                             const apTree = buildAppendixTree(appendices, { numberField: 'appendix_number' })
                             return (
                             <div className="ce-appendix-wrap">
@@ -2892,7 +2861,7 @@ function ContractRegistry() {
                           <button type="button" className="ce-open-card" onClick={() => navigate(`/contracts/${contract.id}`)}>
                             Открыть карточку договора
                           </button>
-                          {canEditContracts && !isDeletedTab && (
+                          {canEditContracts && !docDeleted && (
                             <button type="button" className="ce-edit-link" onClick={() => handleEditContract(contract)}>
                               Редактировать договор
                             </button>

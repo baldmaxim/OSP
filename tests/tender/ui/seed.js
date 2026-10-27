@@ -832,8 +832,10 @@ if (params.get('dcStats') === '1') {
 }
 
 // ?contracts=N — реестр «Договоры и ДС» (route=/contracts): N договоров, у каждого третьего — ДС, у каждого седьмого —
-// понятийное соглашение (s3_documents, doc_category='concept_agreement').
+// понятийное соглашение (s3_documents, doc_category='concept_agreement'). &contractsMixed=1 — каждый второй договор
+// с ДС «Завершено», его ДС — «В работе» (вкладки и счётчики «Договоров и ДС»).
 const CONTRACTS = Number(params.get('contracts') || 0)
+const CONTRACTS_MIXED = params.get('contractsMixed') === '1'
 if (CONTRACTS > 0) {
   const contracts = []
   for (let i = 0; i < CONTRACTS; i++) {
@@ -842,7 +844,8 @@ if (CONTRACTS > 0) {
     const parent = i % 3 === 2 ? contracts[i - 1] : null
     contracts.push({
       id: `ctr-${i + 1}`, display_id: i + 1, contract_number: `${i + 1}/26`, contract_date: '2026-09-01',
-      status: 'in_work', record_type: parent ? 'change' : 'dp', parent_contract_id: parent?.id || null,
+      status: CONTRACTS_MIXED && i % 6 === 1 ? 'completed' : 'in_work',
+      record_type: parent ? 'change' : 'dp', parent_contract_id: parent?.id || null,
       root_contract_id: parent?.id || null, object_id: obj.id, objects: { name: obj.name, status: obj.status },
       counterparty_id: cp.id, counterparties: cp, contract_counterparties: [{ counterparty_id: cp.id, sort_order: 0, counterparties: cp }],
       tenders: null, responsible: null, work_name: `Работы ${i + 1}`, contract_amount: 1000000 + i, currency: 'RUB',
