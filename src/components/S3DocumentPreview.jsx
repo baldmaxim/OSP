@@ -20,16 +20,20 @@ function isImage(mime, name) {
 export default function S3DocumentPreview({ doc, onClose }) {
   const [url, setUrl] = useState(null)
   const [error, setError] = useState(null)
+  const pdf = isPdf(doc.mime_type, doc.file_name)
+  const img = isImage(doc.mime_type, doc.file_name)
 
   useEffect(() => {
     let cancelled = false
     setUrl(null)
     setError(null)
-    requestDownloadUrl(doc.s3_key)
+    // Без предпросмотра ссылка — на скачивание под именем файла (иначе браузер сохранит ключ хранилища «uuid-имя»).
+    const options = pdf || img ? {} : { fileName: doc.file_name, download: true }
+    requestDownloadUrl(doc.s3_key, options)
       .then(({ presigned_url }) => { if (!cancelled) setUrl(presigned_url) })
       .catch(e => { if (!cancelled) setError(e.message || 'Не удалось получить ссылку') })
     return () => { cancelled = true }
-  }, [doc.s3_key])
+  }, [doc.s3_key, doc.file_name, pdf, img])
 
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose() }
@@ -52,9 +56,6 @@ export default function S3DocumentPreview({ doc, onClose }) {
       body.style.paddingRight = prevPaddingRight
     }
   }, [])
-
-  const pdf = isPdf(doc.mime_type, doc.file_name)
-  const img = isImage(doc.mime_type, doc.file_name)
 
   return (
     <div className="s3-doc-modal-overlay" onClick={onClose}>

@@ -757,6 +757,24 @@ if (params.get('dcStats') === '1') {
   window.__fakeDb.dc_request_audit_log = [
     { id: 'al-1', dc_request_id: 'd4', event_type: 'status_changed', new_value: 'completed', changed_at: iso(-2) },
   ]
+  // Файлы заявок: у d2 — рабочие (PDF и docx) и отчёт по документам, у d4 — итоговый, у удалённой d6 — рабочий.
+  const dcDoc = (id, ownerId, fileName, over) => ({
+    id, owner_type: 'dc_request', owner_id: ownerId, doc_category: 'general', file_name: fileName,
+    s3_key: `dc_requests/${ownerId}/${id}-${fileName}`, mime_type: 'application/pdf', size_bytes: 2048,
+    uploaded_by_name: 'Юристов Ю. Ю.', notes: null, created_at: iso(-3), ...over,
+  })
+  window.__fakeDb.s3_documents.push(
+    dcDoc('dcf-1', 'd2', 'Было-стало.pdf', { notes: 'Расчёт было-стало' }),
+    dcDoc('dcf-2', 'd2', 'Письмо.docx', { created_at: iso(-2),
+      mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }),
+    dcDoc('dcf-3', 'd2', 'Отчёт.pdf', { doc_category: 'check_report' }),
+    dcDoc('dcf-4', 'd4', 'ДС подписанное.pdf', { doc_category: 'final' }),
+    dcDoc('dcf-5', 'd6', 'Черновик.pdf'),
+  )
+  window.__fakeFiles = { ...(window.__fakeFiles || {}),
+    'dc_requests/d2/dcf-1-Было-стало.pdf': 'data:application/pdf;base64,JVBERi0xLjQKJSVFT0YK',
+    'dc_requests/d2/dcf-2-Письмо.docx': 'data:application/octet-stream;base64,UEsDBA==',
+  }
 }
 
 // ?contracts=N — реестр «Договоры и ДС» (route=/contracts): N договоров, у каждого третьего — ДС, у каждого седьмого —

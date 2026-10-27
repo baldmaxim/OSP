@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
+import { useSearchParams } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
@@ -27,6 +28,7 @@ import {
   DS_TYPE_OPTIONS, MATERIAL_CLASS, MATERIAL_LABEL, MATERIAL_OPTIONS, STATUS_LABEL, STATUS_OPTIONS, hasVerdict,
   matchesRequestNo, withRequestNumbers,
 } from '../utils/dcRequestOptions'
+import { DC_FILE_PARAM, DOC_SECTIONS, SPECIAL_DOC_CATEGORIES, dcRequestDocRows, dcRequestFileLink } from '../utils/dcRequestDocs'
 import '../components/ContractRegistry.css'
 import '../components/MobileCards.css'
 import './DcRequestsPage.css'
@@ -60,10 +62,7 @@ const EMPTY_FORM = {
 
 // Этапы, исход проверки, тип ДС и тип материала — utils/dcRequestOptions.js (общие с отчётом).
 
-// Категории файлов заявки, у которых свой блок в колонке «Документы»:
-// final — итоговые документы, check_report — отчёт по документам с этапа
-// «Итог проверки». Всё остальное — рабочие файлы.
-const SPECIAL_DOC_CATEGORIES = new Set(['final', 'check_report'])
+// Категории файлов заявки (рабочие, отчёт по документам, итоговые) — utils/dcRequestDocs.js.
 
 // Сколько контрагентов показывать в выпадающем поиске за раз (список большой — 1000+).
 const CP_SEARCH_LIMIT = 50
@@ -378,12 +377,17 @@ function DcRequestsPage() {
   // task 310 — документы заявки.
   // docsByReq: Map<requestId, s3_documents[]>
   const [docsByReq, setDocsByReq] = useState(() => new Map())
+  // Файлы загружены (или загрузка не удалась) — до этого ссылку ?file= из выгрузки не разбираем.
+  const [docsLoaded, setDocsLoaded] = useState(false)
   const [expandedDocs, setExpandedDocs] = useState(() => new Set())
   // Модалка загрузки документа: { requestId, file, description } | null
   const [docUpload, setDocUpload] = useState(null)
   const [docUploadBusy, setDocUploadBusy] = useState(false)
   // Документ открытый в превью (S3DocumentPreview).
   const [previewDoc, setPreviewDoc] = useState(null)
+  // Ссылка на файл из выгрузки в Excel: /dc-requests?file=<id s3_documents>.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const fileParam = searchParams.get(DC_FILE_PARAM)
   // «Документы раздела» — окно с материалами (шаблон «Было-Стало»), как у тендеров.
   const [showSectionDocs, setShowSectionDocs] = useState(false)
 
@@ -413,6 +417,25 @@ function DcRequestsPage() {
     const t = setTimeout(() => document.addEventListener('mousedown', onMousedown), 0)
     return () => { clearTimeout(t); document.removeEventListener('mousedown', onMousedown) }
   }, [statusPopoverFor])
+
+  // Ссылка из выгрузки в Excel открывает файл в окне просмотра (не PDF и не картинка — там же «Скачать»).
+  // Файл — только заявки из реестра этого пользователя (с учётом его объектов). Параметр убираем сразу,
+  // чтобы обновление страницы не открывало окно снова.
+  useEffect(() => {
+    if (!fileParam || loading || !docsLoaded) return
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete(DC_FILE_PARAM)
+      return next
+    }, { replace: true })
+    const doc = [...docsByReq.values()].flat().find(d => d.id === fileParam)
+    if (!doc || !requests.some(r => r.id === doc.owner_id)) {
+      alert('Файл не найден: его удалили или заявка вам недоступна.')
+      return
+    }
+    setExpandedDocs(prev => new Set(prev).add(doc.owner_id))
+    setPreviewDoc(doc)
+  }, [fileParam, loading, docsLoaded, docsByReq, requests, setSearchParams])
 
   const fetchRequests = async () => {
     try {
@@ -546,6 +569,8 @@ function DcRequestsPage() {
       setDocsByReq(map)
     } catch (err) {
       console.error('Ошибка загрузки документов заявок:', err.message)
+    } finally {
+      setDocsLoaded(true)
     }
   }
 
@@ -1266,9 +1291,7 @@ function DcRequestsPage() {
     }
     const rows = filtered.map((req) => {
       const allDocs = docsByReq.get(req.id) || []
-      const generalCount = allDocs.filter(d => !SPECIAL_DOC_CATEGORIES.has(d.doc_category)).length
-      const finalCount = allDocs.filter(d => d.doc_category === 'final').length
-      const reportCount = allDocs.filter(d => d.doc_category === 'check_report').length
+      const [generalCount, reportCount, finalCount] = DOC_SECTIONS.map(sec => allDocs.filter(sec.has).length)
       const tasks = req.dc_request_tasks || []
       const done = tasks.filter(t => t.is_completed).length
       const before = req.amount_before
@@ -1330,6 +1353,49 @@ function DcRequestsPage() {
         })
       })
     })
+    // Третий лист — файлы заявок, строка на файл, со ссылкой на портал: подписанная ссылка хранилища живёт час.
+    // В ячейке Excel ссылка одна, поэтому в основном листе счётчик раздела ведёт на первый его файл здесь.
+    const origin = window.location.origin
+    const docRows = dcRequestDocRows(filtered, docsByReq)
+    const docSheetRows = docRows.map(({ req, section, doc }) => ({
+      '№ заявки': req.requestNo,
+      'Объект': req.objects?.name || '',
+      'Контрагент': req.counterparties?.name || '',
+      '№ ДС': req.ds_number || '',
+      'Раздел': section.label,
+      'Описание': doc.notes || '',
+      'Файл': doc.file_name || '',
+      'Размер': formatBytes(doc.size_bytes),
+      'Загрузил': doc.uploaded_by_name || '',
+      'Загружено': formatShortDate(doc.created_at),
+      'Ссылка': dcRequestFileLink(doc.id, origin),
+    }))
+    const wsDocs = XLSX.utils.json_to_sheet(docSheetRows)
+    wsDocs['!cols'] = [
+      { wch: 9 }, { wch: 24 }, { wch: 24 }, { wch: 14 }, { wch: 20 }, { wch: 36 },
+      { wch: 36 }, { wch: 10 }, { wch: 22 }, { wch: 12 }, { wch: 60 },
+    ]
+    // Строка 0 обоих листов — заголовки: строка данных i — это r = i + 1.
+    const docHeader = Object.keys(docSheetRows[0] || {})
+    const linkCols = ['Файл', 'Ссылка'].map(h => docHeader.indexOf(h))
+    const firstDocRow = new Map()
+    docRows.forEach(({ req, section }, i) => {
+      const Target = docSheetRows[i]['Ссылка']
+      for (const c of linkCols) wsDocs[XLSX.utils.encode_cell({ r: i + 1, c })].l = { Target, Tooltip: 'Открыть файл на портале' }
+      const key = `${req.id}:${section.key}`
+      if (!firstDocRow.has(key)) firstDocRow.set(key, i + 1)
+    })
+    const header = Object.keys(rows[0])
+    filtered.forEach((req, i) => {
+      for (const section of DOC_SECTIONS) {
+        const r = firstDocRow.get(`${req.id}:${section.key}`)
+        if (r == null) continue
+        ws[XLSX.utils.encode_cell({ r: i + 1, c: header.indexOf(section.label) })].l = {
+          Target: `#'Документы'!A${r + 1}`, Tooltip: 'Файлы — на листе «Документы»',
+        }
+      }
+    })
+
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Заявки на ДС')
     if (taskRows.length > 0) {
@@ -1337,6 +1403,7 @@ function DcRequestsPage() {
       wsTasks['!cols'] = [{ wch: 9 }, { wch: 24 }, { wch: 14 }, { wch: 20 }, { wch: 50 }, { wch: 50 }, { wch: 10 }, { wch: 22 }]
       XLSX.utils.book_append_sheet(wb, wsTasks, 'Задачи')
     }
+    if (docRows.length > 0) XLSX.utils.book_append_sheet(wb, wsDocs, 'Документы')
     const today = formatShortDate(new Date().toISOString()).replace(/\./g, '-')
     XLSX.writeFile(wb, `Заявки_на_ДС_${today}.xlsx`)
   }

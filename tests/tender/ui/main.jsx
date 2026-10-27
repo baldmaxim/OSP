@@ -6,7 +6,8 @@
 //             /general/departments (отделы; departments=missing — таблицы ещё нет), /tasks?task=task-1 (карточка
 //             задачи с чек-листом; taskChecklist=N — ещё N пунктов, taskList=N — ещё N задач), /stand/dgp (блок ДГП вкладки «Смета» объекта), /reports&dcStats=1 (заявки на ДС),
 //             /contracts&contracts=N (реестр «Договоры и ДС», понятийные соглашения),
-//             /dc-requests&dcStats=1 (реестр заявок на ДС; dcNumbers=1 — номера заявок из базы, миграция 20261106),
+//             /dc-requests&dcStats=1 (реестр заявок на ДС с файлами; dcNumbers=1 — номера заявок из базы, миграция 20261106;
+//             /dc-requests?file=<id> — ссылка на файл из выгрузки в Excel),
 //             /kp-review&kpReview=1 («Проверка КП»; kpReviewMany=N — длинный список, kpRole — роль, см. seed.js);
 //   items   — позиций ВОР (по умолчанию 5000, три документа, разделы),
 //   cps     — подрядчиков с КП (по умолчанию 10),
