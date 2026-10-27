@@ -1,4 +1,4 @@
-/* ДГП во вкладке «Смета» карточки объекта: две карточки — комплектный и полный. */
+/* ДГП во вкладке «Смета» карточки объекта: карточки файлов единого ПСДЦ с паспортом и составом. */
 .dgp-block {
   margin-bottom: 1.25rem;
   padding: 0.875rem 1rem 1rem;
@@ -57,15 +57,39 @@
   border-radius: 8px;
   background: var(--bg-secondary);
 }
-.dgp-card.is-empty { border-style: dashed; }
+.dgp-card.is-old { border-style: dashed; background: var(--bg-primary); }
 
-.dgp-card-head { display: flex; flex-direction: column; gap: 0.1rem; }
-.dgp-card-kind { font-size: 0.875rem; font-weight: 600; color: var(--text-primary); }
-.dgp-card-hint { font-size: 0.75rem; color: var(--text-tertiary); }
-.dgp-card-empty { margin: 0.25rem 0 0; font-size: 0.8125rem; color: var(--text-tertiary); }
+.dgp-empty {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 0.875rem;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
 
-.dgp-card-title { font-size: 0.8125rem; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
-.dgp-card-subtitle { font-size: 0.75rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+.dgp-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
+.dgp-card-title { font-size: 0.875rem; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.dgp-badge {
+  flex: none;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.dgp-card-subtitle {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.75rem;
+  line-height: 1.05rem;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
 
 .dgp-card-total { display: flex; flex-direction: column; }
 .dgp-card-total-label { font-size: 0.75rem; color: var(--text-tertiary); }
@@ -90,35 +114,20 @@
 .dgp-card-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.15rem; }
 .dgp-btn { display: inline-flex; align-items: center; gap: 0.35rem; }
 .dgp-btn:disabled { opacity: 0.6; cursor: default; }
-.dgp-card-extra { margin: 0; font-size: 0.75rem; color: var(--text-secondary); }
-
-/* Окно выбора вида */
-.dgp-dialog-body { padding: 1rem 1.25rem 1.25rem; }
-.dgp-dialog-body .modal-footer { margin-top: 1rem; }
-.dgp-dialog-note { margin: 0 0 0.75rem; font-size: 0.85rem; color: var(--text-secondary); }
-.dgp-dialog-row {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.6rem 0;
-  border-top: 1px solid var(--border-color);
-}
-.dgp-dialog-file { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
-.dgp-dialog-title { font-size: 0.75rem; color: var(--text-tertiary); overflow-wrap: anywhere; }
-.dgp-dialog-kinds { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.dgp-kind-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.3rem 0.65rem;
-  border: 1px solid var(--border-color);
+.dgp-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0; padding: 0; list-style: none; }
+.dgp-chip {
+  padding: 0.1rem 0.5rem;
   border-radius: 6px;
-  font-size: 0.8125rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  font-size: 0.75rem;
+  line-height: 1.1rem;
   color: var(--text-primary);
-  cursor: pointer;
 }
-.dgp-kind-option.is-active { border-color: var(--primary-color); background: color-mix(in srgb, var(--primary-color) 10%, transparent); }
-.dgp-dialog-replace { font-size: 0.75rem; color: var(--text-secondary); }
+.dgp-chip.is-feature {
+  border-color: color-mix(in srgb, var(--primary-color) 35%, var(--border-color));
+  background: color-mix(in srgb, var(--primary-color) 8%, var(--bg-primary));
+}
 
 @media (max-width: 640px) {
   .dgp-cards { grid-template-columns: 1fr; }

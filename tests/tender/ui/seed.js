@@ -913,3 +913,15 @@ if (params.get('kpReview') === '1') {
     }
   }
 }
+
+// ?dgpLegacy=1 — ДГП объекта стенда (/stand/dgp), загруженный, пока было два вида: категория dgp_compact,
+// паспорт прежнего вида (notes v1: только заголовок и сумма), учтённые ДС — только в имени файла.
+if (params.get('dgpLegacy') === '1') {
+  window.__fakeDb.s3_documents.push({
+    id: 'dgp-legacy', owner_type: 'object', owner_id: '11111111-1111-4111-8111-111111111111', doc_category: 'dgp_compact',
+    file_name: 'Stories (ДС 1-10).xlsx', s3_key: 'objects/11111111-1111-4111-8111-111111111111/old-stories.xlsx',
+    size_bytes: 2048, created_at: '2026-10-26T09:00:00Z', uploaded_by_name: 'Иванов И. И.',
+    notes: JSON.stringify({ v: 1, title: 'ЕДИНЫЙ ПСДЦ · ЖК STORIES', subtitle: '', total: 5932993892.39,
+      totalLabel: 'Актуальная цена договора', detected: true }),
+  })
+}

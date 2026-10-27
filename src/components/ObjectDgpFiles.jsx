@@ -1,20 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { deleteDocument, fetchDocuments, requestDownloadUrl, uploadFile } from '../services/s3'
 import { formatAmount } from '../utils/money'
+import { plural } from '../utils/taskHelpers'
 import {
-  DGP_BY_KIND, DGP_KINDS, dgpNotes, parseDgpNotes, planDgpUpload, readDgpWorkbook,
+  DGP_CATEGORIES, DGP_CATEGORY, DGP_FEATURES, DGP_MAX_FILES, dgpContractKey, dgpNotes, dgpReplaced,
+  dgpRevisionFromText, dgpRevisionLabel, orderDgpDocs, readDgpWorkbook,
 } from '../utils/dgpWorkbook'
 import { IconDownload, IconTrash } from './icons/ActionIcons'
 import './ObjectDgpFiles.css'
 
-// Вкладка «Смета» карточки объекта: ДГП (единый ПСДЦ договора генподряда) — комплектный и полный.
-// Одна кнопка «Загрузить ДГП»: можно выбрать один или оба файла сразу, вид каждого определяется по шапке
-// таблицы (utils/dgpWorkbook.js). Не определился, оба одного вида — человек выбирает вид в окне.
-// Файлы — s3_documents объекта (owner_type 'object') с категориями dgp_compact / dgp_full; заголовок и
-// сумма из файла — в notes, чтобы показывать их без скачивания. Новый файл того же вида заменяет прежний:
-// сначала загружается новый, потом удаляется старый — сбой не оставляет вид без файла.
+// Вкладка «Смета» карточки объекта: ДГП — файлы единого ПСДЦ договора генподряда, любого вида и сколько угодно.
+// Вид не выбирается: из файла читается паспорт — заголовок, договор, учтённые ДС, цена договора — и состав
+// (история изменений, материалы и работы, ресурсы КП, основные материалы, части НДС), utils/dgpWorkbook.js.
+// Файлы — s3_documents объекта (owner_type 'object', категория dgp; прежние dgp_compact / dgp_full — в том же
+// списке), паспорт — JSON в notes, чтобы показывать его без скачивания. Файл с тем же именем заменяет прежний:
+// сначала загружается новый, потом удаляется старый — сбой не оставляет без файла. Прежняя редакция того же
+// договора (учтено меньше ДС) не удаляется сама — уходит вниз списка с пометкой.
 
 const ACCEPT = '.xlsx,.xlsm,.xls'
+const FEATURE_BY_KEY = Object.fromEntries(DGP_FEATURES.map(f => [f.key, f]))
 
 function formatBytes(bytes) {
   if (bytes == null) return ''
@@ -27,119 +31,83 @@ function formatBytes(bytes) {
 
 const formatDate = (iso) => (iso ? new Date(iso).toLocaleDateString('ru-RU') : '')
 
-function DgpCard({ kind, docs, canEdit, busy, onDownload, onRemove }) {
-  const meta = DGP_BY_KIND[kind]
-  const doc = docs[0] || null
-  const info = parseDgpNotes(doc?.notes)
-  return (
-    <section className={`dgp-card${doc ? '' : ' is-empty'}`} aria-label={`ДГП — ${meta.label.toLowerCase()}`}>
-      <header className="dgp-card-head">
-        <span className="dgp-card-kind">{meta.label}</span>
-        <span className="dgp-card-hint">{meta.hint}</span>
-      </header>
-      {!doc ? (
-        <p className="dgp-card-empty">Не загружен</p>
-      ) : (
-        <>
-          {info?.title && <div className="dgp-card-title">{info.title}</div>}
-          {info?.subtitle && <div className="dgp-card-subtitle">{info.subtitle}</div>}
-          {info?.total != null && (
-            <div className="dgp-card-total">
-              <span className="dgp-card-total-label">{info.totalLabel || 'Сумма'}</span>
-              <span className="dgp-card-total-value">{formatAmount(info.total)} ₽</span>
-            </div>
-          )}
-          <div className="dgp-card-file">
-            <span className="dgp-card-file-name" title={doc.file_name}>{doc.file_name}</span>
-            <span className="dgp-card-file-meta">
-              {[formatBytes(doc.size_bytes), formatDate(doc.created_at), doc.uploaded_by_name].filter(Boolean).join(' · ')}
-            </span>
-          </div>
-          <div className="dgp-card-actions">
-            <button type="button" className="btn-secondary-sm dgp-btn" onClick={() => onDownload(doc)} disabled={busy}>
-              <IconDownload size={14} /> Скачать
-            </button>
-            {canEdit && (
-              <button type="button" className="btn-danger-sm dgp-btn" onClick={() => onRemove(doc)} disabled={busy}
-                aria-label={`Удалить ${meta.label.toLowerCase()} ДГП`}>
-                <IconTrash size={14} /> Удалить
-              </button>
-            )}
-          </div>
-          {docs.length > 1 && (
-            <p className="dgp-card-extra">Есть ещё {docs.length - 1} прежн. файл(а) этого вида — прежний не удалился при замене.</p>
-          )}
-        </>
-      )}
-    </section>
-  )
+// Договор и ДС — плашками, только если их нет в заголовке и подзаголовке файла.
+function passportChips(info) {
+  const head = `${info.title} ${info.subtitle}`
+  const chips = []
+  if (info.contract && !dgpContractKey(head).includes(dgpContractKey(info.contract.number))) {
+    chips.push(`Договор № ${info.contract.number}${info.contract.date ? ` от ${info.contract.date}` : ''}`)
+  }
+  const inHead = dgpRevisionFromText(head)
+  if (info.revision && !(inHead && inHead.to === info.revision.to && inHead.from === info.revision.from)) {
+    chips.push(dgpRevisionLabel(info.revision))
+  }
+  return chips
 }
 
-// Окно выбора вида: вид не определился или два файла одного вида.
-function DgpKindDialog({ items, current, onCancel, onConfirm }) {
-  const [assign, setAssign] = useState(() => items.map(i => i.kind || ''))
-  const valid = assign.every(Boolean) && new Set(assign).size === assign.length
-  const sameKind = items.length > 1 && items.every(i => i.info.kind)
-    && new Set(items.map(i => i.info.kind)).size < items.length
+function DgpCard({ item, canEdit, busy, onDownload, onRemove }) {
+  const { doc, info, newer } = item
+  const chips = passportChips(info)
   return (
-    <div className="modal-overlay">
-      <div className="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="dgp-dialog-title">
-        <div className="modal-header">
-          <h3 id="dgp-dialog-title">Вид ДГП</h3>
-          <button type="button" onClick={onCancel} aria-label="Закрыть">×</button>
-        </div>
-        <div className="dgp-dialog-body">
-          <p className="dgp-dialog-note">
-            {sameKind
-              ? 'Оба файла похожи на один вид ДГП. Укажите, какой из них комплектный, а какой полный.'
-              : 'Вид ДГП не удалось определить по шапке таблицы. Укажите его.'}
-          </p>
-          {items.map((item, idx) => {
-            const replaced = assign[idx] ? current[assign[idx]]?.[0] : null
-            return (
-              <div key={idx} className="dgp-dialog-row">
-                <div className="dgp-dialog-file" title={item.file.name}>{item.file.name}</div>
-                {item.info.title && <div className="dgp-dialog-title">{item.info.title}</div>}
-                <div className="dgp-dialog-kinds" role="radiogroup" aria-label={`Вид файла ${item.file.name}`}>
-                  {DGP_KINDS.map(k => (
-                    <label key={k.kind} className={`dgp-kind-option${assign[idx] === k.kind ? ' is-active' : ''}`}>
-                      <input
-                        type="radio"
-                        name={`dgp-kind-${idx}`}
-                        value={k.kind}
-                        checked={assign[idx] === k.kind}
-                        onChange={() => setAssign(prev => prev.map((v, j) => (j === idx ? k.kind : v)))}
-                      />
-                      {k.label}
-                    </label>
-                  ))}
-                </div>
-                {replaced && <div className="dgp-dialog-replace">заменит «{replaced.file_name}»</div>}
-              </div>
-            )
-          })}
-          <div className="modal-footer">
-            <button type="button" className="btn-cancel" onClick={onCancel}>Отмена</button>
-            <button type="button" className="btn-save" disabled={!valid} onClick={() => onConfirm(assign)}>Загрузить</button>
-          </div>
-        </div>
+    <section className={`dgp-card${newer ? ' is-old' : ''}`} aria-label={`ДГП ${doc.file_name}`}>
+      <div className="dgp-card-top">
+        <div className="dgp-card-title">{info.title || doc.file_name}</div>
+        {newer && (
+          <span className="dgp-badge" title={`Загружена более новая редакция: ${dgpRevisionLabel(newer.revision)}`}>
+            прежняя редакция
+          </span>
+        )}
       </div>
-    </div>
+      {info.subtitle && <div className="dgp-card-subtitle" title={info.subtitle}>{info.subtitle}</div>}
+      {info.total != null && (
+        <div className="dgp-card-total">
+          <span className="dgp-card-total-label">
+            {info.totalLabel || 'Цена договора'}
+            {info.priceBasis ? ` · действует по ДС №${info.priceBasis}` : ''}
+          </span>
+          <span className="dgp-card-total-value">{formatAmount(info.total)} ₽</span>
+        </div>
+      )}
+      {(chips.length > 0 || info.features.length > 0) && (
+        <ul className="dgp-chips" aria-label="Паспорт и состав">
+          {chips.map(c => <li key={c} className="dgp-chip">{c}</li>)}
+          {info.features.map(k => (
+            <li key={k} className="dgp-chip is-feature" title={FEATURE_BY_KEY[k].hint}>{FEATURE_BY_KEY[k].label}</li>
+          ))}
+        </ul>
+      )}
+      <div className="dgp-card-file">
+        <span className="dgp-card-file-name" title={doc.file_name}>{doc.file_name}</span>
+        <span className="dgp-card-file-meta">
+          {[formatBytes(doc.size_bytes), formatDate(doc.created_at), doc.uploaded_by_name].filter(Boolean).join(' · ')}
+        </span>
+      </div>
+      <div className="dgp-card-actions">
+        <button type="button" className="btn-secondary-sm dgp-btn" onClick={() => onDownload(doc)} disabled={busy}>
+          <IconDownload size={14} /> Скачать
+        </button>
+        {canEdit && (
+          <button type="button" className="btn-danger-sm dgp-btn" onClick={() => onRemove(doc)} disabled={busy}
+            aria-label={`Удалить ${doc.file_name}`}>
+            <IconTrash size={14} /> Удалить
+          </button>
+        )}
+      </div>
+    </section>
   )
 }
 
 export default function ObjectDgpFiles({ objectId, canEdit }) {
   const inputRef = useRef(null)
-  const [docs, setDocs] = useState({ compact: [], full: [] })
+  const [docs, setDocs] = useState([])
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState('') // «Читаем файл…» / «Загружаем…»
   const [error, setError] = useState(null)
-  const [pending, setPending] = useState(null) // [{ file, info, kind }] — ждут выбора вида
 
   const load = useCallback(async () => {
     try {
-      const lists = await Promise.all(DGP_KINDS.map(k => fetchDocuments('object', objectId, k.category)))
-      setDocs(Object.fromEntries(DGP_KINDS.map((k, i) => [k.kind, lists[i]])))
+      const lists = await Promise.all(DGP_CATEGORIES.map(c => fetchDocuments('object', objectId, c)))
+      setDocs(lists.flat())
     } catch (err) {
       console.error('Ошибка загрузки ДГП объекта:', err.message)
       setError('Не удалось загрузить список ДГП: ' + err.message)
@@ -150,41 +118,12 @@ export default function ObjectDgpFiles({ objectId, canEdit }) {
 
   useEffect(() => { load() }, [load])
 
-  const upload = async (items, assign) => {
-    setStatus('Загружаем…')
-    setError(null)
-    const failed = []
-    for (let i = 0; i < items.length; i++) {
-      const { file, info } = items[i]
-      const meta = DGP_BY_KIND[assign[i]]
-      const previous = docs[meta.kind] || []
-      try {
-        await uploadFile({
-          file,
-          ownerType: 'object',
-          ownerId: objectId,
-          category: meta.category,
-          notes: dgpNotes({ ...info, detected: info.kind === meta.kind }),
-        })
-      } catch (err) {
-        failed.push(`${file.name}: ${err.message || err}`)
-        continue
-      }
-      for (const old of previous) {
-        try { await deleteDocument(old) } catch (err) { console.error('Прежний ДГП не удалён:', err.message) }
-      }
-    }
-    setStatus('')
-    if (failed.length) setError('Не загрузилось: ' + failed.join('; '))
-    await load()
-  }
-
   const handleFiles = async (e) => {
     const files = Array.from(e.target.files || [])
     if (inputRef.current) inputRef.current.value = ''
     if (!files.length) return
-    if (files.length > DGP_KINDS.length) {
-      alert('Можно выбрать не больше двух файлов: комплектный и полный ДГП.')
+    if (files.length > DGP_MAX_FILES) {
+      alert(`Можно выбрать не больше ${DGP_MAX_FILES} файлов за раз.`)
       return
     }
     setStatus('Читаем файл…')
@@ -192,8 +131,7 @@ export default function ObjectDgpFiles({ objectId, canEdit }) {
     const items = []
     for (const file of files) {
       try {
-        const info = await readDgpWorkbook(await file.arrayBuffer())
-        items.push({ file, info, kind: info.kind })
+        items.push({ file, info: await readDgpWorkbook(await file.arrayBuffer(), file.name) })
       } catch (err) {
         setStatus('')
         setError(`«${file.name}»: ${err.message}. Нужен файл Excel с единым ПСДЦ.`)
@@ -201,19 +139,35 @@ export default function ObjectDgpFiles({ objectId, canEdit }) {
       }
     }
     setStatus('')
-    const plan = planDgpUpload(items.map(i => ({ name: i.file.name, kind: i.kind })))
-    if (!plan.ok) {
-      setPending(items.map((item, idx) => ({ ...item, kind: plan.assign[idx] })))
-      return
-    }
-    const replacing = plan.assign
-      .map((kind, idx) => ({ kind, item: items[idx], old: docs[kind]?.[0] }))
-      .filter(r => r.old)
-    if (replacing.length && !window.confirm(
-      'Заменить загруженный ДГП?\n' + replacing
-        .map(r => `${DGP_BY_KIND[r.kind].label}: «${r.old.file_name}» → «${r.item.file.name}»`).join('\n'),
+
+    const strange = items.filter(i => !i.info.recognized)
+    if (strange.length && !window.confirm(
+      strange.map(i => `«${i.file.name}»`).join(', ')
+        + (strange.length > 1 ? ' не похожи' : ' не похож')
+        + ' на единый ПСДЦ: в файле не нашлось ни цены договора, ни знакомых колонок. Всё равно загрузить?',
     )) return
-    await upload(items, plan.assign)
+    const replacing = items.flatMap(i => dgpReplaced(i.file.name, docs).map(old => ({ item: i, old })))
+    if (replacing.length && !window.confirm(
+      'Заменить загруженный ДГП с тем же именем?\n'
+        + replacing.map(r => `«${r.old.file_name}» от ${formatDate(r.old.created_at)}`).join('\n'),
+    )) return
+
+    setStatus('Загружаем…')
+    const failed = []
+    for (const { file, info } of items) {
+      try {
+        await uploadFile({ file, ownerType: 'object', ownerId: objectId, category: DGP_CATEGORY, notes: dgpNotes(info) })
+      } catch (err) {
+        failed.push(`${file.name}: ${err.message || err}`)
+        continue
+      }
+      for (const old of dgpReplaced(file.name, docs)) {
+        try { await deleteDocument(old) } catch (err) { console.error('Прежний ДГП не удалён:', err.message) }
+      }
+    }
+    setStatus('')
+    if (failed.length) setError('Не загрузилось: ' + failed.join('; '))
+    await load()
   }
 
   const handleDownload = async (doc) => {
@@ -246,21 +200,23 @@ export default function ObjectDgpFiles({ objectId, canEdit }) {
   }
 
   const busy = !!status
-  const count = DGP_KINDS.filter(k => docs[k.kind]?.length).length
+  const items = orderDgpDocs(docs)
 
   return (
     <div className="dgp-block">
       <div className="dgp-head">
         <div className="dgp-head-text">
           <span className="dgp-head-title">ДГП — единый ПСДЦ</span>
-          <span className="dgp-head-meta">{loading ? 'загрузка…' : `${count} из ${DGP_KINDS.length}`}</span>
+          <span className="dgp-head-meta">
+            {loading ? 'загрузка…' : items.length ? `${items.length} ${plural(items.length, 'файл', 'файла', 'файлов')}` : ''}
+          </span>
         </div>
         <div className="dgp-head-actions">
           {status && <span className="dgp-status" role="status">{status}</span>}
           {canEdit && (
             <>
               <button type="button" className="btn-add-label dgp-upload" onClick={() => inputRef.current?.click()} disabled={busy}
-                title="Можно выбрать оба файла сразу — вид каждого определяется сам">
+                title="Можно выбрать несколько файлов сразу">
                 Загрузить ДГП
               </button>
               <input ref={inputRef} type="file" accept={ACCEPT} multiple hidden onChange={handleFiles}
@@ -270,27 +226,21 @@ export default function ObjectDgpFiles({ objectId, canEdit }) {
         </div>
       </div>
       {canEdit && (
-        <p className="dgp-hint">До двух файлов: комплектный и полный. Вид определяется по шапке таблицы; новый файл того же вида заменяет прежний.</p>
+        <p className="dgp-hint">
+          Любой вид единого ПСДЦ, можно несколько файлов. Договор, учтённые ДС, цена и состав читаются из файла;
+          файл с тем же именем заменяет прежний.
+        </p>
       )}
       {error && <div className="dgp-error" role="alert">{error}</div>}
-      <div className="dgp-cards">
-        {DGP_KINDS.map(k => (
-          <DgpCard key={k.kind} kind={k.kind} docs={docs[k.kind] || []} canEdit={canEdit} busy={busy}
-            onDownload={handleDownload} onRemove={handleRemove} />
-        ))}
-      </div>
-
-      {pending && (
-        <DgpKindDialog
-          items={pending}
-          current={docs}
-          onCancel={() => setPending(null)}
-          onConfirm={(assign) => {
-            const items = pending
-            setPending(null)
-            upload(items, assign)
-          }}
-        />
+      {!loading && items.length === 0 ? (
+        <p className="dgp-empty">ДГП не загружен</p>
+      ) : (
+        <div className="dgp-cards">
+          {items.map(item => (
+            <DgpCard key={item.doc.id} item={item} canEdit={canEdit} busy={busy}
+              onDownload={handleDownload} onRemove={handleRemove} />
+          ))}
+        </div>
       )}
     </div>
   )

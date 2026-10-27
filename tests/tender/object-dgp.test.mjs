@@ -1,8 +1,8 @@
 // Вкладка «Смета» карточки объекта: блок ДГП (единый ПСДЦ) в Chromium — стенд tests/tender/ui, /stand/dgp.
-//   • одна кнопка, можно выбрать оба файла сразу: вид каждого — по шапке, заголовок и сумма — в карточке;
-//   • новый файл того же вида заменяет прежний (после подтверждения), прежний удаляется из хранилища;
-//   • вид не определился или оба файла одного вида — выбор в окне;
-//   • не Excel — понятная ошибка, ничего не загружается; без права правки — только просмотр.
+//   • вида нет: любые файлы, несколько сразу; паспорт (договор, ДС, цена) и состав — в карточке, в notes;
+//   • файл с тем же именем заменяет прежний (после подтверждения); прежняя редакция того же договора — вниз с пометкой;
+//   • не похожий на ПСДЦ — загрузка после вопроса; не Excel — понятная ошибка, ничего не загружается;
+//   • файлы прежних видов (dgp_compact / dgp_full) — в том же списке; без права правки — только просмотр.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import * as XLSX from 'xlsx'
@@ -17,17 +17,19 @@ function book(rows) {
   return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }))
 }
 
-const COMPACT = book([
+const STORIES = book([
   ['ЕДИНЫЙ ПСДЦ · ЖК STORIES · ДОГОВОР №165/9/2024'],
-  ['Редакция с учётом ДС №1–10 · один лист · 2 438 конечных позиций · суммы в рублях с НДС'],
+  ['Редакция с учётом ДС №1–10 · один лист · суммы в рублях с НДС'],
   ['АКТУАЛЬНАЯ ЦЕНА ДОГОВОРА', '', '', 5932993892.39],
   ['Раздел', '№ позиции', 'Наименование работы / затрат', 'Период / НДС', 'Ед. изм', 'Объём', 'Цена за ед., ₽',
     'Прежн., ₽', 'Актуально, ₽', 'Изменение, ₽', 'Статус', 'Основание', 'Дата основания'],
 ])
-const fullBook = (total) => book([
+const k14Book = (total) => book([
   ['ЕДИНЫЙ ПСДЦ  |  КОРПУС 14', '', '', 'ПСДЦ, ₽', total, 'КП · справочно, ₽', 15800053834.52],
-  ['Раздел', 'Подраздел', 'Код позиции', 'Наименование работ и затрат', 'Ед. изм', 'Количество', 'Материалы КП, ₽',
-    'Работы КП, ₽', 'Связь с ПСДЦ', 'UID КП', 'Вид ресурса', 'Норма расхода'],
+  ['Раздел', 'Подраздел', 'Код позиции', 'Наименование работ и затрат', 'Ед. изм', 'Количество', 'Прежняя цена, ₽',
+    'Изменение', 'Материалы КП, ₽', 'Работы КП, ₽', 'Связь с ПСДЦ', 'UID КП', 'Вид ресурса', 'Норма расхода'],
+  [],
+  ['ПСДЦ: договор №К14 от 25.04.2025, действующая редакция ДС №8 от 24.02.2026.'],
 ])
 const OTHER = book([['Смета'], ['Код', 'Наименование', 'Ед. изм.', 'Кол-во']])
 
@@ -37,7 +39,7 @@ const plain = (s) => s.replace(/[\u00a0\u202f]/g, ' ')
 
 const launch = browserLaunchOptions()
 
-describe('Смета объекта: ДГП — комплектный и полный', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
+describe('Смета объекта: ДГП — файлы единого ПСДЦ с паспортом', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
   let stand
   let browser
 
@@ -60,94 +62,103 @@ describe('Смета объекта: ДГП — комплектный и пол
     page.on('dialog', (d) => { dialogs.push(d.message()); d.accept() })
     await page.goto(`${stand.url}?route=/stand/dgp&latency=0${query}`)
     await page.locator('.dgp-block').waitFor({ timeout: 120000 })
-    await page.locator('.dgp-head-meta', { hasText: 'из 2' }).waitFor()
+    // Список загружен: карточки или «ДГП не загружен».
+    await page.locator('.dgp-empty, .dgp-card').first().waitFor()
     return { page, errors, dialogs, close: () => context.close().catch(() => {}) }
   }
 
   const docs = (page) => page.evaluate(() => (window.__fakeDb.s3_documents || [])
     .filter(d => d.owner_type === 'object').map(d => ({ category: d.doc_category, name: d.file_name, notes: JSON.parse(d.notes) })))
-  const card = (page, label) => page.locator('.dgp-card', { has: page.locator(`.dgp-card-kind:text-is("${label}")`) })
+  const card = (page, fileName) => page.locator('.dgp-card', { has: page.locator(`.dgp-card-file-name:text-is("${fileName}")`) })
+  const cardNames = (page) => page.locator('.dgp-card-file-name').allInnerTexts()
 
-  it('оба файла одной кнопкой: вид, заголовок и сумма; замена полного', async () => {
+  it('несколько файлов одной кнопкой: паспорт и состав; тот же файл заменяет прежний; прежняя редакция — вниз', async () => {
     const { page, errors, dialogs, close } = await open()
     try {
-      // Порядок выбора не важен: полный первым.
-      await page.getByTestId('dgp-input').setInputFiles([file('Корпус 14 полный.xlsx', fullBook(15783711735.72)), file('Stories.xlsx', COMPACT)])
-      await page.locator('.dgp-head-meta', { hasText: '2 из 2' }).waitFor()
-      const compact = card(page, 'Комплектный')
-      assert.match(await compact.innerText(), /ЕДИНЫЙ ПСДЦ · ЖК STORIES · ДОГОВОР №165\/9\/2024/)
-      assert.match(plain(await compact.locator('.dgp-card-total').innerText()), /Актуальная цена договора\s+5 932 993 892,39 ₽/)
-      assert.match(await compact.innerText(), /Stories\.xlsx/)
-      const full = card(page, 'Полный')
-      assert.match(plain(await full.locator('.dgp-card-total').innerText()), /ПСДЦ\s+15 783 711 735,72 ₽/)
-      assert.deepEqual((await docs(page)).map(d => [d.category, d.name, d.notes.detected]).sort(),
-        [['dgp_compact', 'Stories.xlsx', true], ['dgp_full', 'Корпус 14 полный.xlsx', true]])
-      assert.equal(dialogs.length, 0, 'без вопросов — оба вида определились, заменять нечего')
+      await page.getByTestId('dgp-input').setInputFiles([file('Корпус 14 (ДС 1-8).xlsx', k14Book(15783711735.72)), file('Stories.xlsx', STORIES)])
+      await page.locator('.dgp-head-meta', { hasText: '2 файла' }).waitFor()
+      const stories = card(page, 'Stories.xlsx')
+      assert.match(await stories.locator('.dgp-card-title').innerText(), /ЖК STORIES · ДОГОВОР №165\/9\/2024/)
+      assert.match(plain(await stories.locator('.dgp-card-total').innerText()), /Актуальная цена договора\s+5 932 993 892,39 ₽/)
+      // Договор и ДС уже в заголовке и подзаголовке — плашками не повторяются.
+      assert.deepEqual(await stories.locator('.dgp-chip').allInnerTexts(), ['история изменений по ДС'])
 
-      // Новый полный: спрашивает про замену, прежний удаляется.
-      await page.getByTestId('dgp-input').setInputFiles([file('Корпус 14 ред.2.xlsx', fullBook(16000000000))])
-      await full.locator('.dgp-card-total', { hasText: /16\s000\s000\s000,00/ }).waitFor()
-      assert.match(dialogs[0], /Заменить загруженный ДГП\?\nПолный: «Корпус 14 полный\.xlsx» → «Корпус 14 ред\.2\.xlsx»/)
-      const after = await docs(page)
-      assert.deepEqual(after.filter(d => d.category === 'dgp_full').map(d => d.name), ['Корпус 14 ред.2.xlsx'])
-      assert.equal(after.length, 2)
-      assert.equal(await page.locator('.dgp-card-extra').count(), 0)
+      const k14 = card(page, 'Корпус 14 (ДС 1-8).xlsx')
+      // Учтены ДС 1–8, цена — по ДС №8: пометки «действует по» нет.
+      assert.match(plain(await k14.locator('.dgp-card-total').innerText()), /^ПСДЦ\s+15 783 711 735,72 ₽$/)
+      assert.deepEqual(await k14.locator('.dgp-chip').allInnerTexts(),
+        ['Договор № К14 от 25.04.2025', 'ДС №1–8', 'история изменений по ДС', 'материалы и работы отдельно', 'ресурсы КП'])
+      const saved = await docs(page)
+      assert.deepEqual(saved.map(d => d.category), ['dgp', 'dgp'])
+      assert.equal(saved.find(d => d.name === 'Stories.xlsx').notes.v, 2)
+      assert.equal(dialogs.length, 0, 'без вопросов — оба похожи на ПСДЦ, заменять нечего')
+
+      // Тот же файл ещё раз — спрашивает про замену, прежний удаляется.
+      await page.getByTestId('dgp-input').setInputFiles([file('Корпус 14 (ДС 1-8).xlsx', k14Book(15790000000))])
+      await k14.locator('.dgp-card-total', { hasText: /15\s790\s000\s000,00/ }).waitFor()
+      assert.match(dialogs[0], /^Заменить загруженный ДГП с тем же именем\?\n«Корпус 14 \(ДС 1-8\)\.xlsx» от \d\d\.\d\d\.\d{4}$/)
+      assert.equal((await docs(page)).length, 2)
+
+      // Новая редакция того же договора под другим именем — обе остаются, прежняя уходит вниз с пометкой.
+      await page.getByTestId('dgp-input').setInputFiles([file('Корпус 14 (ДС 1-14).xlsx', k14Book(15800000000))])
+      await page.locator('.dgp-head-meta', { hasText: '3 файла' }).waitFor()
+      assert.equal(dialogs.length, 1)
+      assert.deepEqual(await cardNames(page), ['Корпус 14 (ДС 1-14).xlsx', 'Stories.xlsx', 'Корпус 14 (ДС 1-8).xlsx'])
+      const old = card(page, 'Корпус 14 (ДС 1-8).xlsx')
+      assert.equal(await old.locator('.dgp-badge').innerText(), 'прежняя редакция')
+      assert.match(await old.locator('.dgp-badge').getAttribute('title'), /ДС №1–14/)
+      assert.equal(await page.locator('.dgp-badge').count(), 1)
+      const fresh = card(page, 'Корпус 14 (ДС 1-14).xlsx')
+      assert.ok((await fresh.locator('.dgp-chip').allInnerTexts()).includes('ДС №1–14'))
+      assert.match(plain(await fresh.locator('.dgp-card-total').innerText()), /^ПСДЦ · действует по ДС №8\s+15 800 000 000,00 ₽$/)
       assert.deepEqual(errors, [])
     } finally {
       await close()
     }
   })
 
-  it('вид не определился — выбор в окне; оба одного вида — тоже', async () => {
-    const { page, errors, close } = await open()
+  it('не похож на ПСДЦ — загрузка после вопроса; не Excel — ошибка; удаление', async () => {
+    const { page, errors, dialogs, close } = await open()
     try {
       await page.getByTestId('dgp-input').setInputFiles([file('Смета.xlsx', OTHER)])
-      const dialog = page.getByRole('dialog', { name: 'Вид ДГП' })
-      await dialog.waitFor()
-      assert.match(await dialog.innerText(), /не удалось определить/)
-      assert.equal(await dialog.getByRole('button', { name: 'Загрузить' }).isDisabled(), true)
-      await dialog.getByLabel('Полный').check()
-      await dialog.getByRole('button', { name: 'Загрузить' }).click()
-      await card(page, 'Полный').locator('.dgp-card-file-name', { hasText: 'Смета.xlsx' }).waitFor()
-      assert.equal((await docs(page))[0].notes.detected, false, 'вид выбран вручную')
+      await card(page, 'Смета.xlsx').waitFor()
+      assert.match(dialogs[0], /«Смета\.xlsx» не похож на единый ПСДЦ/)
+      assert.equal(await card(page, 'Смета.xlsx').locator('.dgp-card-title').innerText(), 'Смета')
+      assert.equal(await card(page, 'Смета.xlsx').locator('.dgp-card-total').count(), 0)
 
-      await page.getByTestId('dgp-input').setInputFiles([file('А.xlsx', fullBook(1)), file('Б.xlsx', fullBook(2))])
-      await dialog.waitFor()
-      assert.match(await dialog.innerText(), /Оба файла похожи на один вид/)
-      assert.match(await dialog.innerText(), /заменит «Смета\.xlsx»/)
-      // Оба «полный» — загрузить нельзя, пока один не станет комплектным.
-      assert.equal(await dialog.getByRole('button', { name: 'Загрузить' }).isDisabled(), true)
-      await dialog.getByRole('radiogroup', { name: /А\.xlsx/ }).getByLabel('Комплектный').check()
-      await dialog.getByRole('button', { name: 'Загрузить' }).click()
-      await page.locator('.dgp-head-meta', { hasText: '2 из 2' }).waitFor()
-      await card(page, 'Полный').locator('.dgp-card-file-name', { hasText: 'Б.xlsx' }).waitFor()
-      assert.deepEqual((await docs(page)).map(d => [d.category, d.name]).sort(), [['dgp_compact', 'А.xlsx'], ['dgp_full', 'Б.xlsx']])
+      await page.getByTestId('dgp-input').setInputFiles([{ name: 'Письмо.xlsx', mimeType: XLSX_MIME, buffer: Buffer.from('это не книга Excel') }])
+      await page.locator('.dgp-error', { hasText: '«Письмо.xlsx»: файл не читается как книга Excel' }).waitFor()
+      assert.equal((await docs(page)).length, 1)
+
+      await card(page, 'Смета.xlsx').getByRole('button', { name: /Удалить/ }).click()
+      await page.locator('.dgp-empty', { hasText: 'ДГП не загружен' }).waitFor()
+      assert.equal((await docs(page)).length, 0)
       assert.deepEqual(errors, [])
     } finally {
       await close()
     }
   })
 
-  it('не Excel — ошибка, ничего не загружено; удаление; без права правки — только просмотр', async () => {
-    const { page, errors, close } = await open()
+  it('файл прежнего вида (dgp_compact) — в списке, ДС — из имени; без права правки — только просмотр', async () => {
+    const { page, errors, dialogs, close } = await open('&dgpLegacy=1')
     try {
-      await page.getByTestId('dgp-input').setInputFiles([{ name: 'Письмо.xlsx', mimeType: XLSX_MIME, buffer: Buffer.from('это не книга Excel') }])
-      await page.locator('.dgp-error', { hasText: '«Письмо.xlsx»: файл не читается как книга Excel' }).waitFor()
-      assert.equal((await docs(page)).length, 0)
-
-      await page.getByTestId('dgp-input').setInputFiles([file('Stories.xlsx', COMPACT)])
-      await card(page, 'Комплектный').locator('.dgp-card-file-name').waitFor()
-      await card(page, 'Комплектный').getByRole('button', { name: /Удалить/ }).click()
-      await card(page, 'Комплектный').locator('.dgp-card-empty').waitFor()
-      assert.equal((await docs(page)).length, 0)
+      const legacy = card(page, 'Stories (ДС 1-10).xlsx')
+      assert.match(plain(await legacy.locator('.dgp-card-total').innerText()), /Актуальная цена договора\s+5 932 993 892,39 ₽/)
+      assert.deepEqual(await legacy.locator('.dgp-chip').allInnerTexts(), ['ДС №1–10'])
+      // Тот же файл в новом виде заменяет прежний, хоть он и в старой категории.
+      await page.getByTestId('dgp-input').setInputFiles([file('Stories (ДС 1-10).xlsx', STORIES)])
+      await legacy.locator('.dgp-chip', { hasText: 'история изменений по ДС' }).waitFor()
+      assert.equal(dialogs.length, 1)
+      assert.deepEqual((await docs(page)).map(d => d.category), ['dgp'])
       assert.deepEqual(errors, [])
     } finally {
       await close()
     }
-    const view = await open('&canEdit=0')
+    const view = await open('&canEdit=0&dgpLegacy=1')
     try {
       assert.equal(await view.page.getByRole('button', { name: 'Загрузить ДГП' }).count(), 0)
-      assert.equal(await view.page.locator('.dgp-card-empty').count(), 2)
+      assert.equal(await view.page.getByRole('button', { name: /Удалить/ }).count(), 0)
+      await card(view.page, 'Stories (ДС 1-10).xlsx').getByRole('button', { name: /Скачать/ }).waitFor()
       assert.deepEqual(view.errors, [])
     } finally {
       await view.close()
