@@ -7,14 +7,15 @@ import { useRole } from '../contexts/RoleContext'
 import { deleteDocument, requestDownloadUrl, uploadFile } from '../services/s3'
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import DcRequestDocsModal from '../components/DcRequestDocsModal'
-import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import FilterDropdown from '../components/FilterDropdown'
+import VorDivisionChip from '../components/VorDivisionChip'
+import VorDivisionFilter from '../components/VorDivisionFilter'
 import IconTile from '../components/IconTile'
 import { IconDcRequest } from '../components/icons/NavIcons'
 import { IconHardHat } from '../components/icons/TenderHubIcons'
 import { IconObject, IconUser, IconSearch, IconDocsStack } from '../components/icons/ToolbarIcons'
 import { IconFileSpreadsheet } from '../components/icons/BsmIcons'
-import { IconPencil as IconEdit, IconTrash, IconRestore, IconChecklist, IconClock, IconCalendar, IconLink, IconCheck as IconCheckMark } from '../components/icons/ActionIcons'
+import { IconPencil as IconEdit, IconTrash, IconRestore, IconClock, IconCalendar, IconLink, IconCheck as IconCheckMark } from '../components/icons/ActionIcons'
 import ClampText from '../components/ClampText'
 import PersonName from '../components/PersonName'
 import BreakableId from '../components/BreakableId'
@@ -30,6 +31,11 @@ import {
   matchesRequestNo, submissionNeedsComment, submissionOf, withRequestNumbers,
 } from '../utils/dcRequestOptions'
 import { DC_FILE_PARAM, DOC_SECTIONS, SPECIAL_DOC_CATEGORIES, dcRequestDocRows, dcRequestFileLink } from '../utils/dcRequestDocs'
+import { amendmentLabel, amendmentsOf, autoContractFor, contractChoicesFor, contractLabel, matchAmendment } from '../utils/dcRequestContracts'
+import { VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION } from '../utils/vorDivisions'
+import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
+import { DC_SCROLL_KEY, groupDocsByRequest, readDcView, sessionStore, writeDcView } from '../utils/dcRequestView'
+import useScrollMemory from '../hooks/useScrollMemory'
 import '../components/ContractRegistry.css'
 import '../components/MobileCards.css'
 import './DcRequestsPage.css'
@@ -39,9 +45,12 @@ import '../styles/workUi.css'
 
 // Task 306 + 307 + 309 + 310. Реестр «Заявок на ДС» — независимая сущность.
 // Объект можно выбрать из ОБОИХ отделов: основное строительство и гарантийный отдел.
-// У каждой заявки несколько задач (dc_request_tasks) с парой «текст / ответ» и
-// признаком выполнения (is_completed). Сама заявка имеет status: in_work | completed.
 // Документы хранятся в s3_documents с owner_type='dc_request', notes = описание.
+// Договор и номер ДС — раздельно (миграция 20261109, utils/dcRequestContracts.js): договор — из реестра
+// «Договоры и ДС» (договоры контрагента заявки; единственный по объекту подставляется сам), «№ ДС» — текстом,
+// «занесена в ДС» — ДС того договора (с тем же номером — подставляется само). Подразделение — коды
+// подразделений ВОР, фильтр как у тендеров. Колонки «Задачи» с 27.10.2026 нет: задачи (dc_request_tasks)
+// остаются в базе и в выгрузке в Excel.
 
 const EMPTY_FORM = {
   object_id: '',
@@ -59,6 +68,10 @@ const EMPTY_FORM = {
   amount_after: '', // task 370
   material_type: '', // task 370
   ds_type: '',
+  // Миграция 20261109: договор реестра «Договоры и ДС», ДС, в которое занесена заявка, подразделение.
+  contract_id: '',
+  amendment_id: '',
+  division: '',
 }
 
 // Этапы, исход проверки, тип ДС и тип материала — utils/dcRequestOptions.js (общие с отчётом).
@@ -129,6 +142,9 @@ const AUDIT_FIELD_LABEL = {
   check_status: 'Итог проверки',
   check_result_notes: 'Заключение по проверке',
   ds_type: 'Тип ДС',
+  contract_id: 'Договор',
+  amendment_id: 'Занесена в ДС',
+  division: 'Подразделение',
   submission_check: 'Статус ОКС',
   submission_comment: 'Комментарий к статусу ОКС',
 }
@@ -265,6 +281,84 @@ function WrapSelect({ faceClassName, label, children, ...selectProps }) {
   )
 }
 
+// Отказ записи договора / ДС / подразделения: нет колонок — подсказка про миграцию, а не сырой текст.
+function dcLinkSaveError(err, what) {
+  const msg = String(err?.message || err)
+  if (err?.code === 'PGRST204' || err?.code === '42703' || /contract_id|amendment_id|division/.test(msg)) {
+    return `Не удалось сохранить ${what}: в базе не применена миграция 20261109_contracts_dc_requests.`
+  }
+  return `Ошибка сохранения (${what}): ${msg}`
+}
+
+// Договор заявки в таблице (миграция 20261109): с правом правки — выбор из договоров контрагента заявки (по объекту
+// заявки — первыми), без права — номер договора ссылкой на его карточку. contracts = null — договоры ещё грузятся.
+function DcContractCell({ req, contracts, contractsById, parties, canEdit, onChange }) {
+  const current = req.contract_id ? contractsById.get(req.contract_id) : null
+  const currentText = req.contract_id ? (current ? contractLabel(current) : 'договор не найден') : null
+  if (!canEdit || !contracts) {
+    if (!req.contract_id) return <span className="muted-dash">—</span>
+    return current
+      ? <a className="dcr-contract-link ui-num-wrap" href={`/contracts/${current.id}`} target="_blank" rel="noopener noreferrer"
+           title="Открыть карточку договора в новой вкладке">{currentText}</a>
+      : <span className="muted-dash" title="Договор удалён из реестра или недоступен">{currentText}</span>
+  }
+  const choices = contractChoicesFor(contracts, req.counterparty_id, req.object_id, parties)
+  if (!choices.length && !req.contract_id) {
+    return <span className="dcr-contract-none" title="У контрагента заявки нет договоров в реестре «Договоры и ДС»">нет договоров</span>
+  }
+  return (
+    <>
+      <WrapSelect
+        faceClassName={`dcr-material-select dcr-contract-select${req.contract_id ? '' : ' is-empty'}`}
+        label={currentText || 'Выбрать'}
+        value={req.contract_id || ''}
+        onChange={(e) => onChange(e.target.value || null)}
+        title={currentText ? `Договор ${currentText} — нажмите, чтобы сменить` : 'Выбрать договор из реестра «Договоры и ДС»'}
+        aria-label="Договор заявки"
+      >
+        <option value="">Не выбран</option>
+        {req.contract_id && !choices.some(c => c.id === req.contract_id) && (
+          <option value={req.contract_id} disabled>{currentText}</option>
+        )}
+        {choices.map(c => (
+          <option key={c.id} value={c.id}>
+            {contractLabel(c)}{req.object_id && c.object_id !== req.object_id ? ' · другой объект' : ''}
+          </option>
+        ))}
+      </WrapSelect>
+      {current && (
+        <a className="dcr-contract-open" href={`/contracts/${current.id}`} target="_blank" rel="noopener noreferrer"
+           title="Открыть карточку договора в новой вкладке" aria-label={`Открыть договор ${currentText}`}>
+          <IconLink size={12} />
+        </a>
+      )}
+    </>
+  )
+}
+
+// «Занесена в ДС» под номером ДС: ДС реестра, в которое занесена заявка (ссылкой), а если не занесена, но у
+// договора есть ДС с тем же номером, — с правом правки «связать». Остальное — в форме заявки.
+function DcAmendmentMark({ req, contracts, contractsById, canEdit, onLink }) {
+  if (req.amendment_id) {
+    const doc = contractsById.get(req.amendment_id)
+    return (
+      <a className="dcr-in-ds" href={`/contracts/${req.amendment_id}`} target="_blank" rel="noopener noreferrer"
+         title={`Заявка занесена в ${doc ? amendmentLabel(doc) : 'ДС'} — открыть в новой вкладке`}>
+        <IconCheckMark size={11} /> в ДС
+      </a>
+    )
+  }
+  if (!canEdit || !contracts || !req.contract_id) return null
+  const match = matchAmendment(req.ds_number, amendmentsOf(contracts, req.contract_id))
+  if (!match) return null
+  return (
+    <button type="button" className="dcr-in-ds-link" onClick={() => onLink(match.id)}
+      title={`В реестре договоров есть ${amendmentLabel(match)} этого договора — отметить, что заявка занесена в него`}>
+      связать с ДС
+    </button>
+  )
+}
+
 function formatBytes(bytes) {
   if (bytes == null) return ''
   if (bytes === 0) return '0 Б'
@@ -358,8 +452,13 @@ function DcRequestsPage() {
   const [counterparties, setCounterparties] = useState([])
   const [contacts, setContacts] = useState([])
   const [loading, setLoading] = useState(false)
+  // Заявки хоть раз загружены: «Загрузка…» вместо таблицы — только до этого. Перечитывание после правки таблицу
+  // не убирает — иначе страница прыгала наверх.
+  const [requestsLoaded, setRequestsLoaded] = useState(false)
 
-  const [activeTab, setActiveTab] = useState('all')
+  // Вкладка, поиск, фильтры и раскрытые списки файлов — как были до обновления страницы (utils/dcRequestView.js).
+  const [savedView] = useState(() => readDcView(sessionStore(), TABS.map(t => t.key)))
+  const [activeTab, setActiveTab] = useState(savedView.tab)
 
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -385,21 +484,27 @@ function DcRequestsPage() {
   //   portal, поэтому anchor нужен для расчёта fixed-координат.
   const [deadlinePopover, setDeadlinePopover] = useState(null) // { id, rect } | null
 
-  const [searchQuery, setSearchQuery] = useState('')
+  const [searchQuery, setSearchQuery] = useState(savedView.search)
   // Фильтры в тулбаре: множественный выбор (пустой массив = фильтр не применён).
-  const [filterStatuses, setFilterStatuses] = useState([])
-  const [filterObjectIds, setFilterObjectIds] = useState([])
-  const [filterCounterpartyIds, setFilterCounterpartyIds] = useState([])
-  const [filterResponsibleIds, setFilterResponsibleIds] = useState([])
+  const [filterStatuses, setFilterStatuses] = useState(savedView.statuses)
+  const [filterObjectIds, setFilterObjectIds] = useState(savedView.objects)
+  const [filterCounterpartyIds, setFilterCounterpartyIds] = useState(savedView.counterparties)
+  const [filterResponsibleIds, setFilterResponsibleIds] = useState(savedView.responsibles)
   // История изменений: заявка, чья история открыта (или null) + её записи.
   const [historyFor, setHistoryFor] = useState(null)
   const [historyRows, setHistoryRows] = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
-  // Inline-добавление задачи: { [requestId]: 'строка задачи' }
-  const [newTaskTexts, setNewTaskTexts] = useState({})
-  // task 334: задачи открываются в отдельной модалке. Храним id заявки,
-  // чьи задачи сейчас открыты (или null).
-  const [tasksModalFor, setTasksModalFor] = useState(null)
+  // Фильтр по подразделению (коды подразделений ВОР, NO_VOR_DIVISION — «Не указано»).
+  const [filterDivisions, setFilterDivisions] = useState(savedView.divisions)
+  // Договоры и ДС реестра «Договоры и ДС» для выбора договора заявки (миграция 20261109): живые документы
+  // и стороны договоров с несколькими контрагентами. null — ещё не загружены (автоподстановка ждёт).
+  const [contracts, setContracts] = useState(null)
+  const [contractParties, setContractParties] = useState(() => new Map())
+  // Договор и ДС в форме выбраны руками — больше не подставляются сами.
+  const [linkTouched, setLinkTouched] = useState({ contract: false, amendment: false })
+  const contractsById = useMemo(() => new Map((contracts || []).map(c => [c.id, c])), [contracts])
+  // Колонки договора, ДС и подразделения — когда они есть в базе (миграция 20261109): select * их отдаёт.
+  const linkEnabled = requests.some(r => r.contract_id !== undefined)
 
   // task 310 — статус в виде клик-попапа.
   const [statusPopoverFor, setStatusPopoverFor] = useState(null)
@@ -416,7 +521,11 @@ function DcRequestsPage() {
   const [docsByReq, setDocsByReq] = useState(() => new Map())
   // Файлы загружены (или загрузка не удалась) — до этого ссылку ?file= из выгрузки не разбираем.
   const [docsLoaded, setDocsLoaded] = useState(false)
-  const [expandedDocs, setExpandedDocs] = useState(() => new Set())
+  // Растёт при каждой своей загрузке и удалении файла: список с сервера, прочитанный до этого, устарел и
+  // затёр бы только что приложенный файл.
+  const docsEpochRef = useRef(0)
+  const docsReadAtRef = useRef(0)
+  const [expandedDocs, setExpandedDocs] = useState(() => new Set(savedView.expanded))
   // Модалка загрузки документа: { requestId, file, description } | null
   const [docUpload, setDocUpload] = useState(null)
   const [docUploadBusy, setDocUploadBusy] = useState(false)
@@ -441,8 +550,50 @@ function DcRequestsPage() {
     fetchContacts()
     fetchAllDocs()
     fetchExternalLink()
+    fetchContracts()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    writeDcView({
+      tab: activeTab, search: searchQuery, statuses: filterStatuses, objects: filterObjectIds,
+      counterparties: filterCounterpartyIds, responsibles: filterResponsibleIds, divisions: filterDivisions,
+      expanded: [...expandedDocs],
+    })
+  }, [activeTab, searchQuery, filterStatuses, filterObjectIds, filterCounterpartyIds, filterResponsibleIds, filterDivisions, expandedDocs])
+
+  // Прокрутку возвращаем, когда высота строк окончательная: заявки, их файлы и договоры (подписи договоров).
+  const pageRef = useScrollMemory(DC_SCROLL_KEY, requestsLoaded && docsLoaded && contracts !== null)
+
+  // Файлы, приложенные коллегами, — без обновления страницы: при возврате на вкладку браузера, не чаще раза в минуту.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - docsReadAtRef.current < 60000) return
+      fetchAllDocs()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    // fetchAllDocs из первой отрисовки годится: читает только ref и сеттеры.
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
+  // Ссылка из карточки контрагента: /dc-requests?counterparty=<id> — реестр сразу с фильтром по контрагенту
+  // (прочие фильтры и поиск, оставшиеся с прошлого раза, сняты — иначе заявки контрагента могли не показаться).
+  const counterpartyParam = searchParams.get('counterparty')
+  useEffect(() => {
+    if (!counterpartyParam) return
+    setFilterCounterpartyIds([counterpartyParam])
+    setFilterStatuses([])
+    setFilterObjectIds([])
+    setFilterResponsibleIds([])
+    setFilterDivisions([])
+    setSearchQuery('')
+    setActiveTab('all')
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('counterparty')
+      return next
+    }, { replace: true })
+  }, [counterpartyParam, setSearchParams])
 
   // Закрытие попапа статуса по клику вне его.
   useEffect(() => {
@@ -459,7 +610,7 @@ function DcRequestsPage() {
   // Файл — только заявки из реестра этого пользователя (с учётом его объектов). Параметр убираем сразу,
   // чтобы обновление страницы не открывало окно снова.
   useEffect(() => {
-    if (!fileParam || loading || !docsLoaded) return
+    if (!fileParam || !requestsLoaded || loading || !docsLoaded) return
     setSearchParams(prev => {
       const next = new URLSearchParams(prev)
       next.delete(DC_FILE_PARAM)
@@ -472,28 +623,29 @@ function DcRequestsPage() {
     }
     setExpandedDocs(prev => new Set(prev).add(doc.owner_id))
     setPreviewDoc(doc)
-  }, [fileParam, loading, docsLoaded, docsByReq, requests, setSearchParams])
+  }, [fileParam, requestsLoaded, loading, docsLoaded, docsByReq, requests, setSearchParams])
 
   const fetchRequests = async () => {
     try {
       setLoading(true)
-      let query = db
-        .from('dc_requests')
-        .select(`
-          *,
-          objects(id, name),
-          counterparties(id, name),
-          responsible:contacts!responsible_contact_id(id, full_name),
-          dc_request_tasks(id, task_text, response_text, is_completed, order_number, created_at, created_by_name, responded_by_name, responded_at)
-        `)
+      // Постранично: без .range() PostgREST отдаёт первые 1000 строк, и пропадали бы самые новые заявки.
+      const data = await fetchAllRows((from, to) => {
+        let query = db
+          .from('dc_requests')
+          .select(`
+            *,
+            objects(id, name),
+            counterparties(id, name),
+            responsible:contacts!responsible_contact_id(id, full_name),
+            dc_request_tasks(id, task_text, response_text, is_completed, order_number, created_at, created_by_name, responded_by_name, responded_at)
+          `)
+        // Скоуп по объектам: сотрудник видит только заявки своих объектов.
+        if (scopedObjectIds.length > 0) query = query.in('object_id', scopedObjectIds)
         // task 325: хронология добавления — старые сверху, новые внизу. «№» — постоянный номер
         // заявки (withRequestNumbers), а не номер строки: при смене вкладки и фильтров не меняется.
-        .order('created_at', { ascending: true })
-      // Скоуп по объектам: сотрудник видит только заявки своих объектов.
-      if (scopedObjectIds.length > 0) query = query.in('object_id', scopedObjectIds)
-      const { data, error } = await query
-      if (error) throw error
-      const sorted = (data || []).map(r => ({
+        return query.order('created_at', { ascending: true }).order('id', { ascending: true }).range(from, to)
+      })
+      const sorted = data.map(r => ({
         ...r,
         dc_request_tasks: (r.dc_request_tasks || []).sort(
           (a, b) => (a.order_number || 0) - (b.order_number || 0)
@@ -504,6 +656,7 @@ function DcRequestsPage() {
       console.error('Ошибка загрузки заявок на ДС:', err.message)
     } finally {
       setLoading(false)
+      setRequestsLoaded(true)
     }
   }
 
@@ -551,6 +704,33 @@ function DcRequestsPage() {
     if (!error) setContacts(data || [])
   }
 
+  // Договоры и ДС для выбора договора заявки: только нужные колонки, удалённые не предлагаются. Сбой — заявки
+  // работают, договор выбрать нельзя (в форме — подсказка).
+  const fetchContracts = async () => {
+    try {
+      const page = (table, cols, filter = (q) => q) => fetchAllRowsParallel((from, to, withCount) => filter(db
+        .from(table)
+        .select(cols, withCount ? { count: 'exact' } : undefined))
+        .order('id', { ascending: true })
+        .range(from, to))
+      const [docs, parties] = await Promise.all([
+        page('contracts', 'id, display_id, record_type, deleted_at, status, counterparty_id, object_id, contract_number, contract_date, parent_contract_id, root_contract_id',
+          (q) => q.is('deleted_at', null)),
+        page('contract_counterparties', 'id, contract_id, counterparty_id').catch(() => []),
+      ])
+      const byContract = new Map()
+      for (const p of parties) {
+        if (!byContract.has(p.contract_id)) byContract.set(p.contract_id, new Set())
+        byContract.get(p.contract_id).add(p.counterparty_id)
+      }
+      setContractParties(byContract)
+      setContracts(docs)
+    } catch (err) {
+      console.error('Ошибка загрузки договоров для заявок на ДС:', err?.message || err)
+      setContracts([])
+    }
+  }
+
   // task 324: ссылка на общую таблицу с отделами.
   const fetchExternalLink = async () => {
     try {
@@ -587,23 +767,28 @@ function DcRequestsPage() {
     }
   }
 
-  // Один запрос за всеми документами всех заявок — складываем в Map по owner_id.
+  // Все документы всех заявок — в Map по owner_id. Постранично: без .range() PostgREST отдаёт первые 1000 строк, и
+  // когда файлов заявок стало больше (15.10.2026 — 892, 27.10 — за тысячу), самые новые после обновления страницы
+  // пропадали из реестра, хотя в базе и хранилище были.
+  // Пока читали, свой файл загрузили или удалили — список устарел, читаем заново (иначе он затёр бы этот файл).
   const fetchAllDocs = async () => {
     try {
-      // Хронологический порядок: первый загруженный — наверху, новые — снизу.
-      const { data, error } = await db
-        .from('s3_documents')
-        .select('*')
-        .eq('owner_type', 'dc_request')
-        .order('created_at', { ascending: true })
-      if (error) throw error
-      const map = new Map()
-      for (const d of data || []) {
-        const arr = map.get(d.owner_id) || []
-        arr.push(d)
-        map.set(d.owner_id, arr)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const epoch = docsEpochRef.current
+        const startedAt = Date.now()
+        // Хронологический порядок: первый загруженный — наверху, новые — снизу.
+        const rows = await fetchAllRowsParallel((from, to, withCount) => db
+          .from('s3_documents')
+          .select('*', withCount ? { count: 'exact' } : undefined)
+          .eq('owner_type', 'dc_request')
+          .order('created_at', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, to))
+        if (docsEpochRef.current !== epoch) continue
+        docsReadAtRef.current = startedAt
+        setDocsByReq(groupDocsByRequest(rows))
+        return
       }
-      setDocsByReq(map)
     } catch (err) {
       console.error('Ошибка загрузки документов заявок:', err.message)
     } finally {
@@ -611,13 +796,38 @@ function DcRequestsPage() {
     }
   }
 
+  // Договор и ДС формы подставляются сами, пока их не выбрали руками: договор — единственный договор контрагента
+  // по объекту, ДС — ДС этого договора с тем же номером, что «№ ДС». Договор не того контрагента и ДС не того
+  // договора снимаются. Пока договоры не загрузились, форма ничего не подставляет и не снимает.
+  const withAutoLinks = (next, touched = linkTouched) => {
+    if (!contracts) return next
+    const out = { ...next }
+    const choices = contractChoicesFor(contracts, out.counterparty_id, out.object_id, contractParties)
+    let contractTouched = touched.contract
+    if (out.contract_id && !choices.some(c => c.id === out.contract_id)) { out.contract_id = ''; contractTouched = false }
+    if (!contractTouched) out.contract_id = autoContractFor(contracts, out.counterparty_id, out.object_id, contractParties)?.id || ''
+    const amendments = amendmentsOf(contracts, out.contract_id)
+    if (out.amendment_id && !amendments.some(a => a.id === out.amendment_id)) out.amendment_id = ''
+    if (!touched.amendment) out.amendment_id = matchAmendment(out.ds_number, amendments)?.id || ''
+    return out
+  }
+  const updateForm = (patch, touched = linkTouched) => setFormData(prev => withAutoLinks({ ...prev, ...patch }, touched))
+
   const handleInputChange = (e) => {
     const { name, value } = e.target
+    if (name === 'contract_id' || name === 'amendment_id') {
+      const touched = { ...linkTouched, [name === 'contract_id' ? 'contract' : 'amendment']: true }
+      setLinkTouched(touched)
+      updateForm({ [name]: value }, touched)
+      return
+    }
+    if (name === 'ds_number') { updateForm({ ds_number: value }); return }
     setFormData(prev => ({ ...prev, [name]: value }))
   }
 
   const handleAddNew = () => {
     setEditing(null)
+    setLinkTouched({ contract: false, amendment: false })
     setFormData(EMPTY_FORM)
     setCpSearch('')
     setCpDropdownOpen(false)
@@ -639,7 +849,12 @@ function DcRequestsPage() {
       amount_after: req.amount_after != null ? String(req.amount_after) : '', // task 370
       material_type: req.material_type || '', // task 370
       ds_type: req.ds_type || '',
+      contract_id: req.contract_id || '',
+      amendment_id: req.amendment_id || '',
+      division: req.division || '',
     })
+    // Уже выбранные договор и ДС сами не меняются; пустые — подставятся при правке контрагента, объекта, № ДС.
+    setLinkTouched({ contract: !!req.contract_id, amendment: !!req.amendment_id })
     setCpSearch(req.counterparties?.name || '')
     setCpDropdownOpen(false)
     setShowModal(true)
@@ -656,7 +871,7 @@ function DcRequestsPage() {
   }
 
   const handleSelectCp = (cp) => {
-    setFormData(prev => ({ ...prev, counterparty_id: cp.id }))
+    updateForm({ counterparty_id: cp.id })
     setCpSearch(cp.name || '')
     setCpDropdownOpen(false)
   }
@@ -721,6 +936,14 @@ function DcRequestsPage() {
         return CHECK_STATUS_LABEL[value] || String(value)
       case 'ds_type':
         return DS_TYPE_LABEL[value] || String(value)
+      case 'contract_id':
+      case 'amendment_id': {
+        const doc = contractsById.get(value)
+        if (!doc) return 'документ реестра договоров'
+        return field === 'amendment_id' ? amendmentLabel(doc) : contractLabel(doc)
+      }
+      case 'division':
+        return VOR_DIVISION_LABEL[value] || String(value)
       case 'submission_check':
         return SUBMISSION_LABEL[value] || String(value)
       case 'expected_approval_date':
@@ -731,7 +954,7 @@ function DcRequestsPage() {
       default:
         return String(value)
     }
-  }, [objects, counterparties, contacts])
+  }, [objects, counterparties, contacts, contractsById])
 
   // Открыть историю заявки (модалка, только чтение).
   const openHistory = async (req) => {
@@ -784,6 +1007,12 @@ function DcRequestsPage() {
         amount_after: parseAmount(formData.amount_after), // task 370
         material_type: formData.material_type || null, // task 370
         ds_type: formData.ds_type || null,
+        // Колонки договора и подразделения — только если они уже есть в базе (миграция 20261109).
+        ...(linkEnabled ? {
+          contract_id: formData.contract_id || null,
+          amendment_id: (formData.contract_id && formData.amendment_id) || null,
+          division: formData.division || null,
+        } : {}),
         updated_at: new Date().toISOString(),
       }
       if (editing) {
@@ -1029,6 +1258,56 @@ function DcRequestsPage() {
     }
   }
 
+  // Договор заявки из таблицы. ДС другого договора снимается; ДС нового договора с тем же номером, что «№ ДС»,
+  // подставляется само. В историю — обе правки.
+  const handleSaveContract = async (req, contractId) => {
+    const next = contractId || null
+    if ((req.contract_id ?? null) === next) return
+    const amendments = amendmentsOf(contracts, next)
+    const keep = req.amendment_id && amendments.some(a => a.id === req.amendment_id) ? req.amendment_id : null
+    const nextAmendment = keep || matchAmendment(req.ds_number, amendments)?.id || null
+    const patch = { contract_id: next, amendment_id: nextAmendment, updated_at: new Date().toISOString() }
+    try {
+      const { error } = await db.from('dc_requests').update(patch).eq('id', req.id)
+      if (error) throw error
+      setRequests(prev => prev.map(r => r.id === req.id ? { ...r, ...patch } : r))
+      await logFieldChange(req.id, 'contract_id', req.contract_id ?? null, next)
+      if ((req.amendment_id ?? null) !== nextAmendment) await logFieldChange(req.id, 'amendment_id', req.amendment_id ?? null, nextAmendment)
+    } catch (err) {
+      alert(dcLinkSaveError(err, 'договор'))
+    }
+  }
+
+  const handleSaveAmendment = async (req, amendmentId) => {
+    const next = amendmentId || null
+    if ((req.amendment_id ?? null) === next) return
+    try {
+      const { error } = await db.from('dc_requests')
+        .update({ amendment_id: next, updated_at: new Date().toISOString() })
+        .eq('id', req.id)
+      if (error) throw error
+      setRequests(prev => prev.map(r => r.id === req.id ? { ...r, amendment_id: next } : r))
+      await logFieldChange(req.id, 'amendment_id', req.amendment_id ?? null, next)
+    } catch (err) {
+      alert(dcLinkSaveError(err, 'ДС'))
+    }
+  }
+
+  const handleSaveDivision = async (req, value) => {
+    const next = value || null
+    if ((req.division ?? null) === next) return
+    try {
+      const { error } = await db.from('dc_requests')
+        .update({ division: next, updated_at: new Date().toISOString() })
+        .eq('id', req.id)
+      if (error) throw error
+      setRequests(prev => prev.map(r => r.id === req.id ? { ...r, division: next } : r))
+      await logFieldChange(req.id, 'division', req.division ?? null, next)
+    } catch (err) {
+      alert(dcLinkSaveError(err, 'подразделение'))
+    }
+  }
+
   // «Статус ОКС» и «Комментарий» — прямо из таблицы (миграция 20261108). Кто и когда сменил статус, ставит база
   // (триггер), поэтому строку берём из ответа, а не подставляем имя со страницы.
   const handleSaveSubmission = async (id, field, rawValue) => {
@@ -1133,72 +1412,6 @@ function DcRequestsPage() {
     })
   }
 
-  // Tasks CRUD
-  const handleAddTask = async (requestId) => {
-    const text = (newTaskTexts[requestId] || '').trim()
-    if (!text) return
-    try {
-      const req = requests.find(r => r.id === requestId)
-      const maxOrder = (req?.dc_request_tasks || []).reduce(
-        (m, t) => Math.max(m, t.order_number || 0), 0
-      )
-      const { error } = await db.from('dc_request_tasks').insert([{
-        request_id: requestId,
-        task_text: text,
-        order_number: maxOrder + 1,
-        // task 337: snapshot ФИО автора задачи
-        created_by_name: userProfile?.full_name || null,
-      }])
-      if (error) throw error
-      setNewTaskTexts(prev => ({ ...prev, [requestId]: '' }))
-      fetchRequests()
-    } catch (err) {
-      alert('Ошибка добавления задачи: ' + (err.message || err))
-    }
-  }
-
-  const handleSaveTaskField = async (taskId, field, value) => {
-    try {
-      // task 337: при сохранении ответа фиксируем автора и время.
-      const patch = { [field]: value, updated_at: new Date().toISOString() }
-      if (field === 'response_text') {
-        const trimmed = (value || '').trim()
-        if (trimmed) {
-          patch.responded_by_name = userProfile?.full_name || null
-          patch.responded_at = new Date().toISOString()
-        } else {
-          // Очистка ответа — снимаем подпись.
-          patch.responded_by_name = null
-          patch.responded_at = null
-        }
-      }
-      const { error } = await db
-        .from('dc_request_tasks')
-        .update(patch)
-        .eq('id', taskId)
-      if (error) throw error
-      setRequests(prev => prev.map(r => ({
-        ...r,
-        dc_request_tasks: (r.dc_request_tasks || []).map(t =>
-          t.id === taskId ? { ...t, ...patch } : t
-        ),
-      })))
-    } catch (err) {
-      alert('Ошибка сохранения: ' + (err.message || err))
-    }
-  }
-
-  const handleDeleteTask = async (taskId) => {
-    if (!window.confirm('Удалить задачу?')) return
-    try {
-      const { error } = await db.from('dc_request_tasks').delete().eq('id', taskId)
-      if (error) throw error
-      fetchRequests()
-    } catch (err) {
-      alert('Ошибка удаления задачи: ' + (err.message || err))
-    }
-  }
-
   // Docs upload. task 370: category ∈ 'general' | 'final' — рабочий или итоговый документ.
   const handleDocPick = (requestId, category = 'general') => {
     const input = document.createElement('input')
@@ -1226,10 +1439,12 @@ function DcRequestsPage() {
         notes: docUpload.description.trim() || null,
         category: docUpload.category || 'general', // task 370
       })
-      // Локально добавляем в docsByReq (в конец — сохраняем хронологический порядок).
+      // Файл виден сразу: локально добавляем в docsByReq (в конец — сохраняем хронологический порядок). Список с
+      // сервера, который читался в это время, устарел — fetchAllDocs его не применит.
+      docsEpochRef.current += 1
       setDocsByReq(prev => {
         const next = new Map(prev)
-        const arr = next.get(docUpload.requestId) || []
+        const arr = (next.get(docUpload.requestId) || []).filter(d => d.id !== newDoc.id)
         next.set(docUpload.requestId, [...arr, newDoc])
         return next
       })
@@ -1262,6 +1477,7 @@ function DcRequestsPage() {
     if (!window.confirm(`Удалить файл «${doc.file_name}»?`)) return
     try {
       await deleteDocument(doc)
+      docsEpochRef.current += 1
       setDocsByReq(prev => {
         const next = new Map(prev)
         const arr = (next.get(doc.owner_id) || []).filter(d => d.id !== doc.id)
@@ -1278,7 +1494,19 @@ function DcRequestsPage() {
   // Столбцы «Статус ОКС» и «Комментарий» — когда в базе есть их колонки (миграция 20261108).
   const submissionEnabled = hasSubmissionColumns(requests)
 
-  // Фильтрация: таб (soft-delete) → статусы → объект → контрагент → ответственный → поиск.
+  // Фильтр по подразделению — когда колонка есть в базе; счётчики — по заявкам вкладки (без этого фильтра).
+  const divisionFilterOn = linkEnabled && filterDivisions.length > 0
+  const divisionCounts = (() => {
+    const map = new Map()
+    for (const r of requests) {
+      if (isDeletedTab ? r.deleted_at == null : r.deleted_at != null) continue
+      const key = r.division || NO_VOR_DIVISION
+      map.set(key, (map.get(key) || 0) + 1)
+    }
+    return map
+  })()
+
+  // Фильтрация: таб (soft-delete) → статусы → объект → контрагент → ответственный → подразделение → поиск.
   // Выгрузка в Excel берёт этот же список, поэтому при нескольких выбранных
   // статусах в файл попадают заявки всех этих статусов.
   const filtered = requests
@@ -1289,6 +1517,7 @@ function DcRequestsPage() {
     .filter(r => filterObjectIds.length === 0 || filterObjectIds.includes(r.object_id))
     .filter(r => filterCounterpartyIds.length === 0 || filterCounterpartyIds.includes(r.counterparty_id))
     .filter(r => filterResponsibleIds.length === 0 || filterResponsibleIds.includes(r.responsible_contact_id))
+    .filter(r => !divisionFilterOn || filterDivisions.includes(r.division || NO_VOR_DIVISION))
     .filter(r => {
       const q = searchQuery.trim().toLowerCase()
       if (!q) return true
@@ -1297,6 +1526,7 @@ function DcRequestsPage() {
         (r.objects?.name || '').toLowerCase().includes(q) ||
         (r.counterparties?.name || '').toLowerCase().includes(q) ||
         (r.ds_number || '').toLowerCase().includes(q) ||
+        (contractsById.get(r.contract_id)?.contract_number || '').toLowerCase().includes(q) ||
         (r.works_description || '').toLowerCase().includes(q)
       )
     })
@@ -1371,7 +1601,12 @@ function DcRequestsPage() {
         'Контрагент': req.counterparties?.name || '',
         'Материал': MATERIAL_LABEL[req.material_type] || '',
         'Тип ДС': DS_TYPE_LABEL[req.ds_type] || '',
+        ...(linkEnabled ? { 'Договор': req.contract_id ? contractLabel(contractsById.get(req.contract_id)) || 'не найден' : '' } : {}),
         '№ ДС': req.ds_number || '',
+        ...(linkEnabled ? {
+          'Занесена в ДС': req.amendment_id ? (contractsById.get(req.amendment_id) ? amendmentLabel(contractsById.get(req.amendment_id)) : 'да') : '',
+          'Подразделение': VOR_DIVISION_LABEL[req.division] || '',
+        } : {}),
         'Описание ДС': req.works_description || '',
         'Было подано, ₽ (с НДС 22%)': before != null ? before : '',
         'Утверждено, ₽ (с НДС 22%)': after != null ? after : '',
@@ -1403,7 +1638,10 @@ function DcRequestsPage() {
     const ws = XLSX.utils.json_to_sheet(rows)
     // Ширины — по порядку колонок выше (№ … Создано).
     ws['!cols'] = [
-      { wch: 5 }, { wch: 24 }, { wch: 24 }, { wch: 20 }, { wch: 22 }, { wch: 16 },
+      { wch: 5 }, { wch: 24 }, { wch: 24 }, { wch: 20 }, { wch: 22 },
+      ...(linkEnabled ? [{ wch: 26 }] : []),
+      { wch: 16 },
+      ...(linkEnabled ? [{ wch: 26 }, { wch: 22 }] : []),
       { wch: 40 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 14 },
       { wch: 22 }, { wch: 26 }, { wch: 50 }, { wch: 22 }, { wch: 14 },
       { wch: 16 }, { wch: 9 }, { wch: 11 }, { wch: 16 },
@@ -1563,7 +1801,7 @@ function DcRequestsPage() {
   return (
     // dcr-dense — плотный вариант реестра (DcRequestsPage.css, конец файла);
     // на телефоне заявки идут карточками, их вид не меняем.
-    <div className={`dc-requests-page contract-registry ui-work${isPhone ? '' : ' dcr-dense'}`}>
+    <div ref={pageRef} className={`dc-requests-page contract-registry ui-work${isPhone ? '' : ' dcr-dense'}`}>
       <div className="registry-header">
         <h2>
           <IconTile tone="coral" className="dcr-title-icon"><IconDcRequest /></IconTile>
@@ -1721,17 +1959,23 @@ function DcRequestsPage() {
             disabled={responsibleFilterOptions.length === 0}
           />
         </div>
-        {(filterStatuses.length > 0 || filterObjectIds.length > 0 || filterCounterpartyIds.length > 0 || filterResponsibleIds.length > 0) && (
+        {/* Подразделение — те же подразделения, что у тендеров (подразделения ВОР). */}
+        {linkEnabled && (
+          <div className={`dcr-filter-drop${filterDivisions.length ? ' is-active' : ''}`}>
+            <VorDivisionFilter subject="dc" value={filterDivisions} onChange={setFilterDivisions} counts={divisionCounts} />
+          </div>
+        )}
+        {(filterStatuses.length > 0 || filterObjectIds.length > 0 || filterCounterpartyIds.length > 0 || filterResponsibleIds.length > 0 || divisionFilterOn) && (
           <button
             type="button"
             className="dcr-filter-clear"
-            onClick={() => { setFilterStatuses([]); setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterResponsibleIds([]) }}
+            onClick={() => { setFilterStatuses([]); setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterResponsibleIds([]); setFilterDivisions([]) }}
             title="Сбросить фильтры"
           >Сбросить</button>
         )}
       </div>
 
-      {loading ? (
+      {!requestsLoaded ? (
         <div className="loading">Загрузка...</div>
       ) : isPhone ? (
         filtered.length === 0 ? (
@@ -1743,10 +1987,9 @@ function DcRequestsPage() {
             {filtered.map((req) => {
               const currentStatus = req.status || 'in_work'
               const statusOpt = STATUS_OPTIONS.find(o => o.value === currentStatus)
-              const tasks = req.dc_request_tasks || []
-              const totalTasks = tasks.length
-              const completedTasks = tasks.filter(t => t.is_completed).length
               const docsCount = (docsByReq.get(req.id) || []).length
+              const contract = contractsById.get(req.contract_id)
+              const amendment = contractsById.get(req.amendment_id)
               return (
                 <div key={req.id} className={`mcard${req.deleted_at ? ' row-deleted' : ''}`}>
                   <div className="mcard-head">
@@ -1763,6 +2006,23 @@ function DcRequestsPage() {
                       <span className="mcard-label">Контрагент</span>
                       <span className="mcard-value">{req.counterparties?.name || '—'}</span>
                     </div>
+                    {linkEnabled && (
+                      <div className="mcard-row">
+                        <span className="mcard-label">Договор</span>
+                        <span className="mcard-value">
+                          {req.contract_id ? (contract ? contractLabel(contract) : 'выбран') : '—'}
+                          {req.amendment_id && (
+                            <small className="dcr-sub-mcard-meta">Занесена в {amendment ? amendmentLabel(amendment) : 'ДС'}</small>
+                          )}
+                        </span>
+                      </div>
+                    )}
+                    {linkEnabled && req.division && (
+                      <div className="mcard-row">
+                        <span className="mcard-label">Подразделение</span>
+                        <span className="mcard-value">{VOR_DIVISION_LABEL[req.division] || req.division}</span>
+                      </div>
+                    )}
                     {req.ds_type && (
                       <div className="mcard-row">
                         <span className="mcard-label">Тип ДС</span>
@@ -1849,14 +2109,6 @@ function DcRequestsPage() {
                           <path d="M12 7v5l3 2" />
                         </svg>
                       </button>
-                      <button
-                        className="btn-icon"
-                        onClick={() => setTasksModalFor(req.id)}
-                        title="Задачи и ответы"
-                        aria-label="Задачи и ответы"
-                      >
-                        <IconChecklist size={15} /> {totalTasks > 0 ? `${completedTasks}/${totalTasks}` : '0'}
-                      </button>
                       {isDeletedTab ? (
                         <>
                           {canEditDc && (
@@ -1886,12 +2138,12 @@ function DcRequestsPage() {
               <col className="dcr-col-num" />
               <col className="dcr-col-object" />
               <col className="dcr-col-cp" />
+              {linkEnabled && <col className="dcr-col-contract" />}
               <col className="dcr-col-dsnum" />
               <col className="dcr-col-desc" />
               <col className="dcr-col-amount" />
               <col className="dcr-col-status" />
               <col className="dcr-col-resp" />
-              <col className="dcr-col-tasks" />
               <col className="dcr-col-docs" />
               {submissionEnabled && <col className="dcr-col-sub" />}
               {submissionEnabled && <col className="dcr-col-sub-comment" />}
@@ -1902,13 +2154,13 @@ function DcRequestsPage() {
                 <th style={{ textAlign: 'center' }}>№</th>
                 <th>Объект</th>
                 <th>Контрагент</th>
+                {linkEnabled && <th>Договор</th>}
                 <th>№ ДС</th>
                 <th>Описание ДС</th>
                 {/* task 370: сумма ДС («Было подано» / «Утверждено») с НДС 22% перед статусом */}
                 <th style={{ textAlign: 'right' }}>Сумма, руб. с НДС 22%</th>
                 <th>Статус</th>
                 <th>Ответственный</th>
-                <th style={{ textAlign: 'center' }}>Задачи</th>
                 <th>Документы</th>
                 {/* Статус ОКС — подаётся ли ДС заказчику; пояснение (номер письма, срок…) — в комментарии.
                     Оба столбца — перед последним («Действия»). */}
@@ -1920,7 +2172,7 @@ function DcRequestsPage() {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={submissionEnabled ? 13 : 11} className="no-data" style={{ textAlign: 'center' }}>
+                  <td colSpan={(submissionEnabled ? 12 : 10) + (linkEnabled ? 1 : 0)} className="no-data" style={{ textAlign: 'center' }}>
                     {searchQuery
                       ? 'Ничего не найдено.'
                       : (activeTab === 'all'
@@ -1930,9 +2182,6 @@ function DcRequestsPage() {
                 </tr>
               ) : (
                 filtered.map((req) => {
-                  const tasks = req.dc_request_tasks || []
-                  const totalTasks = tasks.length
-                  const completedTasks = tasks.filter(t => t.is_completed).length
                   const currentStatus = req.status || 'in_work'
                   const statusOpt = STATUS_OPTIONS.find(o => o.value === currentStatus)
                   const isStatusOpen = statusPopoverFor === req.id
@@ -2066,14 +2315,46 @@ function DcRequestsPage() {
                           </div>
                         )}
                       </td>
+                      {linkEnabled && (
+                        <td className="dcr-cell-contract">
+                          <DcContractCell
+                            req={req}
+                            contracts={contracts}
+                            contractsById={contractsById}
+                            parties={contractParties}
+                            canEdit={canEditDc && !isDeletedTab}
+                            onChange={(contractId) => handleSaveContract(req, contractId)}
+                          />
+                        </td>
+                      )}
                       <td className="dcr-cell-dsnum">
                         {req.ds_number
                           ? <BreakableId value={req.ds_number} className="ui-num-wrap" />
                           : <span className="muted-dash">—</span>}
+                        {linkEnabled && (
+                          <DcAmendmentMark
+                            req={req}
+                            contracts={contracts}
+                            contractsById={contractsById}
+                            canEdit={canEditDc && !isDeletedTab}
+                            onLink={(amendmentId) => handleSaveAmendment(req, amendmentId)}
+                          />
+                        )}
                       </td>
                       <td className="dcr-cell-works">
                         {/* До трёх строк, длиннее — «Показать полностью». */}
                         <ClampText text={req.works_description} />
+                        {/* Подразделение — плашкой под описанием, как подразделение ВОР у тендеров. */}
+                        {linkEnabled && (
+                          <div className="dcr-division">
+                            <VorDivisionChip
+                              subject="dc"
+                              value={req.division}
+                              canEdit={canEditDc && !isDeletedTab}
+                              onChange={(v) => handleSaveDivision(req, v)}
+                            />
+                          </div>
+                        )}
                       </td>
                       {/* task 370: сумма ДС («Было подано» / «Утверждено») с инлайн-редактированием + разница */}
                       <td className="dcr-cell-amount">
@@ -2190,34 +2471,6 @@ function DcRequestsPage() {
                         ) : null}
                       </td>
                       <td>{req.responsible?.full_name ? <PersonName full={req.responsible.full_name} /> : <span className="muted-dash">Не назначен</span>}</td>
-                      <td className="dcr-cell-tasks">
-                        {/* task 334: кнопка-счётчик. Клик открывает модалку
-                            со списком задач (общий контейнер на странице). */}
-                        <button
-                          type="button"
-                          className={[
-                            'dcr-tasks-pill',
-                            totalTasks === 0 ? 'dcr-tasks-pill-empty' : '',
-                            totalTasks > 0 && completedTasks === totalTasks ? 'dcr-tasks-pill-done' : '',
-                          ].filter(Boolean).join(' ')}
-                          onClick={() => setTasksModalFor(req.id)}
-                          title={totalTasks === 0 ? (canEditDc ? 'Добавить задачу' : 'Задач нет') : `Задачи: выполнено ${completedTasks} из ${totalTasks}`}
-                          aria-label={totalTasks === 0 ? (canEditDc ? 'Добавить задачу' : 'Задач нет') : `Задачи: ${completedTasks} из ${totalTasks}`}
-                        >
-                          <span className="dcr-tasks-pill-icon" aria-hidden><IconChecklist size={14} /></span>
-                          {totalTasks > 0 ? (
-                            <span className="dcr-tasks-pill-counter">
-                              {completedTasks}<span className="dcr-tasks-pill-sep">/</span>{totalTasks}
-                            </span>
-                          ) : (
-                            // Колонка узкая (6%): «+ Добавить» в неё не помещалось и
-                            // наезжало на «Документы». Текст — в подсказке.
-                            <span className="dcr-tasks-pill-empty-label">
-                              {canEditDc ? '+' : '—'}
-                            </span>
-                          )}
-                        </button>
-                      </td>
                       <td className="dcr-cell-docs">
                         {/* Путь к папке в хранилище — первым: с него начинают поиск
                             документов, файлы на сайте лишь дополняют его.
@@ -2481,7 +2734,7 @@ function DcRequestsPage() {
                     className="dcr-object-picker"
                     label=""
                     value={formData.object_id}
-                    onChange={(v) => setFormData(prev => ({ ...prev, object_id: v }))}
+                    onChange={(v) => updateForm({ object_id: v })}
                     options={objects.map(o => ({ value: o.id, label: o.name, status: o.status }))}
                     searchable
                     searchPlaceholder="Поиск объекта…"
@@ -2548,7 +2801,7 @@ function DcRequestsPage() {
                         onMouseDown={(e) => {
                           e.preventDefault()
                           setCpSearch('')
-                          setFormData(prev => ({ ...prev, counterparty_id: '' }))
+                          updateForm({ counterparty_id: '' })
                           setCpDropdownOpen(true)
                         }}
                       >×</button>
@@ -2605,16 +2858,85 @@ function DcRequestsPage() {
                   </select>
                 </div>
 
+                {/* Договор и номер ДС — раздельно (миграция 20261109): договор — из реестра «Договоры и ДС»,
+                    единственный договор контрагента по объекту подставляется сам. */}
+                {linkEnabled && (() => {
+                  const choices = contracts ? contractChoicesFor(contracts, formData.counterparty_id, formData.object_id, contractParties) : []
+                  const current = formData.contract_id ? contractsById.get(formData.contract_id) : null
+                  return (
+                    <div className="form-group">
+                      <label htmlFor="dcr-form-contract">Договор</label>
+                      <select
+                        id="dcr-form-contract"
+                        name="contract_id"
+                        value={formData.contract_id}
+                        onChange={handleInputChange}
+                        disabled={!contracts || !formData.counterparty_id}
+                      >
+                        <option value="">
+                          {!contracts ? 'Загрузка договоров…'
+                            : !formData.counterparty_id ? '— Сначала выберите контрагента —'
+                              : choices.length ? '— Не выбран —' : '— У контрагента нет договоров —'}
+                        </option>
+                        {formData.contract_id && !choices.some(c => c.id === formData.contract_id) && (
+                          <option value={formData.contract_id}>{current ? contractLabel(current) : 'договор не найден'}</option>
+                        )}
+                        {choices.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {contractLabel(c)}{formData.object_id && c.object_id !== formData.object_id ? ' · другой объект' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )
+                })()}
+
                 <div className="form-group">
-                  <label>№ ДС</label>
+                  <label htmlFor="dcr-form-dsnum">№ ДС</label>
                   <input
+                    id="dcr-form-dsnum"
                     type="text"
                     name="ds_number"
                     value={formData.ds_number}
                     onChange={handleInputChange}
-                    placeholder="например: ДС №12 / 2026-001"
+                    placeholder={linkEnabled ? 'например: 12' : 'например: ДС №12 / 2026-001'}
                   />
                 </div>
+
+                {/* ДС реестра договоров, в которое занесена заявка: ДС выбранного договора с тем же номером
+                    подставляется само. */}
+                {linkEnabled && formData.contract_id && contracts && (() => {
+                  const amendments = amendmentsOf(contracts, formData.contract_id)
+                  return (
+                    <div className="form-group full-width">
+                      <label htmlFor="dcr-form-amendment">Занесена в ДС</label>
+                      <select
+                        id="dcr-form-amendment"
+                        name="amendment_id"
+                        value={formData.amendment_id}
+                        onChange={handleInputChange}
+                        disabled={!amendments.length}
+                      >
+                        <option value="">{amendments.length ? '— Не занесена —' : '— У договора ещё нет ДС в реестре —'}</option>
+                        {amendments.map(a => (
+                          <option key={a.id} value={a.id}>{amendmentLabel(a)}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )
+                })()}
+
+                {linkEnabled && (
+                  <div className="form-group full-width">
+                    <label htmlFor="dcr-form-division">Подразделение</label>
+                    <select id="dcr-form-division" name="division" value={formData.division} onChange={handleInputChange}>
+                      <option value="">— Не указано —</option>
+                      {VOR_DIVISIONS.map(d => (
+                        <option key={d.value} value={d.value}>{d.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {/* Поля «Статус» здесь нет намеренно: новая заявка всегда идёт на
                     проверку по договору, а дальше статус двигают чипом в таблице
@@ -2901,259 +3223,6 @@ function DcRequestsPage() {
           </div>
         </div>
       )}
-
-      {/* task 334: модалка задач и ответов для выбранной заявки */}
-      {tasksModalFor && (() => {
-        const req = requests.find(r => r.id === tasksModalFor)
-        if (!req) return null
-        const tasks = req.dc_request_tasks || []
-        const totalTasks = tasks.length
-        const completedTasks = tasks.filter(t => t.is_completed).length
-        const cpName = req.counterparties?.name || ''
-        const objName = req.objects?.name || ''
-        const progressPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
-        return (
-          <div className="modal-overlay" onClick={() => setTasksModalFor(null)}>
-            <div
-              className="modal dcr-tasks-modal"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* task 338: профессиональная шапка — без эмодзи, без gradient,
-                  как в Jira/Linear: заголовок + breadcrumb-метаданные + KPI справа. */}
-              <div className="dcr-tasks-modal-header">
-                <div className="dcr-tasks-modal-head-row">
-                  <div className="dcr-tasks-modal-title">
-                    <div className="dcr-tasks-modal-eyebrow">Чек-лист</div>
-                    <h3>Задачи и ответы</h3>
-                    <div className="dcr-tasks-modal-meta">
-                      <span className="dcr-tasks-modal-meta-item">
-                        <span className="dcr-tasks-modal-meta-key">Заявка</span>
-                        <span className="dcr-tasks-modal-meta-val">№{req.requestNo}</span>
-                      </span>
-                      {req.ds_number && (
-                        <span className="dcr-tasks-modal-meta-item">
-                          <span className="dcr-tasks-modal-meta-key">ДС</span>
-                          <span className="dcr-tasks-modal-meta-val">№{req.ds_number}</span>
-                        </span>
-                      )}
-                      {objName && (
-                        <span className="dcr-tasks-modal-meta-item">
-                          <span className="dcr-tasks-modal-meta-key">Объект</span>
-                          <span className="dcr-tasks-modal-meta-val">{objName}</span>
-                        </span>
-                      )}
-                      {cpName && (
-                        <span className="dcr-tasks-modal-meta-item">
-                          <span className="dcr-tasks-modal-meta-key">Контрагент</span>
-                          <span className="dcr-tasks-modal-meta-val">{cpName}</span>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="dcr-tasks-modal-kpi">
-                    <div className="dcr-tasks-modal-kpi-label">Выполнено</div>
-                    <div
-                      className={`dcr-tasks-modal-counter${
-                        totalTasks > 0 && completedTasks === totalTasks ? ' is-complete' : ''
-                      }`}
-                    >
-                      <span className="dcr-tasks-modal-counter-done">{completedTasks}</span>
-                      <span className="dcr-tasks-modal-counter-sep">/</span>
-                      <span className="dcr-tasks-modal-counter-total">{totalTasks}</span>
-                    </div>
-                  </div>
-                  <button className="modal-close" onClick={() => setTasksModalFor(null)} aria-label="Закрыть">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                </div>
-                {/* Тонкая прогресс-полоса — без подписей и без gradient */}
-                <div className="dcr-tasks-modal-progress" aria-hidden>
-                  <div className="dcr-tasks-modal-progress-bar">
-                    <div
-                      className={`dcr-tasks-modal-progress-fill${
-                        totalTasks > 0 && completedTasks === totalTasks ? ' is-complete' : ''
-                      }`}
-                      style={{ width: `${progressPct}%` }}
-                    />
-                  </div>
-                  <span className="dcr-tasks-modal-progress-label">
-                    {totalTasks === 0 ? 'Нет задач' : `${progressPct}%`}
-                  </span>
-                </div>
-              </div>
-
-              <div className="dcr-tasks-modal-body">
-                {totalTasks === 0 && (
-                  <div className="dcr-tasks-modal-empty">
-                    <div className="dcr-tasks-modal-empty-icon" aria-hidden>
-                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="3" y="4" width="18" height="18" rx="2" />
-                        <path d="M9 11l3 3 7-7" />
-                      </svg>
-                    </div>
-                    <div className="dcr-tasks-modal-empty-title">
-                      {canEditDc ? 'Задачи не поставлены' : 'Задач пока нет'}
-                    </div>
-                    <div className="dcr-tasks-modal-empty-hint">
-                      {canEditDc
-                        ? 'Создайте первую задачу в поле ниже, чтобы зафиксировать её и отслеживать статус выполнения.'
-                        : 'Сотрудник пока не добавил задачи к этой заявке.'}
-                    </div>
-                  </div>
-                )}
-
-                {tasks.length > 0 && (
-                  <ul className="dcr-tasks-list">
-                    {tasks.map((task, taskIdx) => (
-                      <li
-                        key={task.id}
-                        className={`dcr-task-card${task.is_completed ? ' is-done' : ''}`}
-                      >
-                        <div className="dcr-task-card-head">
-                          <label
-                            className={`dcr-task-checkbox${task.is_completed ? ' is-checked' : ''}${!canEditDc ? ' is-disabled' : ''}`}
-                            title={task.is_completed ? 'Снять отметку' : 'Отметить выполненной'}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={!!task.is_completed}
-                              onChange={(e) => handleSaveTaskField(task.id, 'is_completed', e.target.checked)}
-                              disabled={!canEditDc}
-                            />
-                            <span className="dcr-task-checkbox-box" aria-hidden>
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="5 13 10 18 19 7" />
-                              </svg>
-                            </span>
-                          </label>
-                          <span className="dcr-task-card-num">№{taskIdx + 1}</span>
-                          <span className="dcr-task-card-spacer" />
-                          {canEditDc && (
-                            <button
-                              type="button"
-                              className="dcr-task-card-delete"
-                              onClick={() => handleDeleteTask(task.id)}
-                              title="Удалить задачу"
-                              aria-label="Удалить задачу"
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M3 6h18" />
-                                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="dcr-task-card-body">
-                          <div className="dcr-task-card-section dcr-task-card-section-task">
-                            <div className="dcr-task-card-label">Описание задачи</div>
-                            <AutoGrowTextarea
-                              className="dcr-task-text"
-                              defaultValue={task.task_text}
-                              placeholder="Опишите что нужно сделать…"
-                              disabled={!canEditDc}
-                              minHeight={68}
-                              onBlur={(e) => {
-                                if (e.target.value !== task.task_text) {
-                                  handleSaveTaskField(task.id, 'task_text', e.target.value)
-                                }
-                              }}
-                            />
-                            {/* task 337 + 338: автор и дата постановки */}
-                            {(task.created_by_name || task.created_at) && (
-                              <div className="dcr-task-card-meta">
-                                <span className="dcr-task-card-meta-label">Поставил:</span>
-                                <span className="dcr-task-card-meta-val">
-                                  {task.created_by_name || <em className="dcr-task-card-meta-muted">не указан</em>}
-                                </span>
-                                {task.created_at && (
-                                  <>
-                                    <span className="dcr-task-card-meta-sep">·</span>
-                                    <span className="dcr-task-card-meta-date">
-                                      {formatShortDate(task.created_at)}
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          <div className="dcr-task-card-section dcr-task-card-section-response">
-                            <div className="dcr-task-card-label">
-                              <span>Ответ исполнителя</span>
-                              {task.response_text && task.response_text.trim() && (
-                                <span className="dcr-task-card-label-tag">заполнено</span>
-                              )}
-                            </div>
-                            <AutoGrowTextarea
-                              className="dcr-task-response"
-                              defaultValue={task.response_text || ''}
-                              placeholder="Введите ответ или комментарий…"
-                              disabled={!canEditDc}
-                              minHeight={68}
-                              onBlur={(e) => {
-                                if (e.target.value !== (task.response_text || '')) {
-                                  handleSaveTaskField(task.id, 'response_text', e.target.value)
-                                }
-                              }}
-                            />
-                            {/* task 337 + 338: автор и дата ответа */}
-                            {task.responded_by_name && (
-                              <div className="dcr-task-card-meta">
-                                <span className="dcr-task-card-meta-label">Ответил:</span>
-                                <span className="dcr-task-card-meta-val">{task.responded_by_name}</span>
-                                {task.responded_at && (
-                                  <>
-                                    <span className="dcr-task-card-meta-sep">·</span>
-                                    <span className="dcr-task-card-meta-date">
-                                      {formatShortDate(task.responded_at)}
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                {canEditDc && (
-                  <div className="dcr-task-add-card">
-                    <span className="dcr-task-add-card-icon" aria-hidden>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="12" y1="5" x2="12" y2="19" />
-                        <line x1="5" y1="12" x2="19" y2="12" />
-                      </svg>
-                    </span>
-                    <input
-                      type="text"
-                      className="dcr-task-add-card-input"
-                      placeholder={totalTasks === 0 ? 'Поставить первую задачу…' : 'Поставить новую задачу…'}
-                      value={newTaskTexts[req.id] || ''}
-                      onChange={(e) => setNewTaskTexts(prev => ({ ...prev, [req.id]: e.target.value }))}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') { e.preventDefault(); handleAddTask(req.id) }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="dcr-task-add-card-btn"
-                      onClick={() => handleAddTask(req.id)}
-                      disabled={!(newTaskTexts[req.id] || '').trim()}
-                      title="Добавить задачу (Enter)"
-                    >Добавить</button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )
-      })()}
 
       {/* task 324: модалка редактирования ссылки на общую таблицу с отделами */}
       {showLinkModal && (

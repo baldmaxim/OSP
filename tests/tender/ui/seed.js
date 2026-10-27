@@ -749,6 +749,15 @@ if (params.get('dcStats') === '1') {
     base('d5', { status: 'completed', check_status: 'not_matches', checked_at: iso(-200), created_at: iso(-210), amount_after: 300000 }),
     base('d6', { deleted_at: iso(-5), amount_before: 999999999 }),
   ]
+  // ?dcMany=N — ещё N заявок постарше (каждая третья — по «ЖК Бета», каждая четвёртая — «Подрядчика 02»): реестр
+  // длиннее экрана, есть что прокручивать и фильтровать.
+  for (let i = 1; i <= Number(params.get('dcMany') || 0); i++) {
+    window.__fakeDb.dc_requests.push(base(`m${i}`, {
+      created_at: new Date(Date.now() - (300 - i / 100) * 24 * 3600 * 1000).toISOString(),
+      ...(i % 3 === 0 ? { object_id: objB.id, objects: objB } : {}),
+      ...(i % 4 === 0 ? { counterparty_id: 'cp-2', counterparties: { id: 'cp-2', name: 'Подрядчик 02' } } : {}),
+    }))
+  }
   // ?dcNumbers=1 — постоянные номера заявок из базы (миграция 20261106), не по порядку создания.
   if (params.get('dcNumbers') === '1') {
     const numbers = { d1: 17, d2: 12, d3: 14, d4: 15, d5: 11, d6: 16 }
@@ -771,6 +780,27 @@ if (params.get('dcStats') === '1') {
       }
     } }
   }
+  // ?dcContracts=1 — договор, ДС и подразделение заявок (миграция 20261109): у «Подрядчика 01» по «ЖК Альфа» один
+  // договор П-15/26 (с ДС №3), по «ЖК Бета» — два; договор другого подрядчика не предлагается. d2 — договор выбран,
+  // в ДС не отмечена (её «ДС-3» совпадает с ДС №3 договора); d4 — занесена в ДС №3; у d1 и d3 — подразделения.
+  if (params.get('dcContracts') === '1') {
+    const fdb = window.__fakeDb
+    const k = (id, over) => ({ id, display_id: 900 + fdb.contracts.length, record_type: 'dp', deleted_at: null, status: 'completed',
+      counterparty_id: 'cp-1', object_id: objA.id, contract_number: null, contract_date: null, parent_contract_id: null,
+      root_contract_id: null, signed_date: null, ...over })
+    fdb.contracts.push(
+      k('kd-1', { contract_number: 'П-15/26', contract_date: '2026-03-02' }),
+      k('kd-1-ds3', { record_type: 'ds_extra', contract_number: 'ДС №3', contract_date: '2026-05-10', parent_contract_id: 'kd-1', root_contract_id: 'kd-1' }),
+      k('kd-2', { object_id: objB.id, contract_number: 'Г-7', contract_date: '2025-11-20', status: 'in_work' }),
+      k('kd-3', { object_id: objB.id, contract_number: 'Г-8', contract_date: '2026-01-15' }),
+      k('kd-x', { counterparty_id: 'cp-2', contract_number: 'ЧУЖОЙ-9', contract_date: '2026-02-01' }),
+    )
+    for (const r of fdb.dc_requests) Object.assign(r, { contract_id: null, amendment_id: null, division: null })
+    Object.assign(fdb.dc_requests.find((r) => r.id === 'd1'), { division: 'monolith' })
+    Object.assign(fdb.dc_requests.find((r) => r.id === 'd2'), { contract_id: 'kd-1', ds_number: 'ДС-3' })
+    Object.assign(fdb.dc_requests.find((r) => r.id === 'd3'), { division: 'electrical' })
+    Object.assign(fdb.dc_requests.find((r) => r.id === 'd4'), { contract_id: 'kd-1', amendment_id: 'kd-1-ds3', ds_number: 'ДС №3' })
+  }
   window.__fakeDb.dc_request_audit_log = [
     { id: 'al-1', dc_request_id: 'd4', event_type: 'status_changed', new_value: 'completed', changed_at: iso(-2) },
   ]
@@ -788,6 +818,13 @@ if (params.get('dcStats') === '1') {
     dcDoc('dcf-4', 'd4', 'ДС подписанное.pdf', { doc_category: 'final' }),
     dcDoc('dcf-5', 'd6', 'Черновик.pdf'),
   )
+  // ?dcOldFiles=N — ещё N старых файлов заявки, которой нет в реестре (архив): с ?maxRows=1000 файлы выше —
+  // самые новые — оказываются за тысячной строкой, как на проде 27.10.2026.
+  for (let i = 1; i <= Number(params.get('dcOldFiles') || 0); i++) {
+    window.__fakeDb.s3_documents.push(dcDoc(`dco-${i}`, 'd-archive', `Архив ${i}.pdf`, {
+      created_at: new Date(Date.now() - (90 - i / 1000) * 24 * 3600 * 1000).toISOString(),
+    }))
+  }
   window.__fakeFiles = { ...(window.__fakeFiles || {}),
     'dc_requests/d2/dcf-1-Было-стало.pdf': 'data:application/pdf;base64,JVBERi0xLjQKJSVFT0YK',
     'dc_requests/d2/dcf-2-Письмо.docx': 'data:application/octet-stream;base64,UEsDBA==',

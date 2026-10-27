@@ -6,8 +6,10 @@
 // искусственную «сетевую» задержку и учитывается в window.__supabaseStats.
 // window.__fakeTriggers[таблица](строка, прежняя) — подмена триггера «до записи» (расчёт в базе);
 // window.__fakeErrors[таблица] — ответ ошибкой на любой запрос к таблице (например, «таблицы нет»).
-// window.__fakeHold({ table, op, filters }) → { delay?, error? } — задержать или уронить отдельный запрос
-// (например, одну из двух частей очереди «Проверки КП»).
+// window.__fakeHold({ table, op, filters }) → { delay?, error?, stale? } — задержать или уронить отдельный запрос
+// (например, одну из двух частей очереди «Проверки КП»); stale — выборка со строками на момент запроса.
+// ?maxRows=N — потолок строк на ответ, как PGRST_DB_MAX_ROWS у PostgREST (у Supabase и шлюза — 1000): выборка без
+// страниц получает первые N строк, count — по-прежнему все.
 // window.__fakeMissingColumns[таблица] — колонок ещё нет (миграция не применена): выборка, где они названы,
 // отвечает 42703, как PostgREST.
 // window.__fakeUnique[таблица] — колонки уникального ключа: вставка дубля отвечает 23505, как база.
@@ -21,6 +23,7 @@
 // файл ложится в window.__fakeFiles[s3_key] (data: URL) и отдаётся потом по ссылке на скачивание;
 // window.__fakeUploads — что загружали ({ s3_key, size, type }).
 const LATENCY_MS = Number(new URLSearchParams(window.location.search).get('latency') || 120)
+const MAX_ROWS = Number(new URLSearchParams(window.location.search).get('maxRows') || 0)
 const FAKE_S3 = 'https://fake-s3.invalid/'
 const realFetch = window.fetch.bind(window)
 window.fetch = async (url, init = {}) => {
@@ -175,6 +178,9 @@ async function run(q) {
   const inFilter = q.filters.find((f) => f.op === 'in')
   stats.requests.push({ table: q.table, op: q.op, range: q.range || null, count: q.count, ids: inFilter ? inFilter.val.map(String) : null })
   const hold = window.__fakeHold?.({ table: q.table, op: q.op, filters: q.filters }) || {}
+  // hold.stale — выборка отвечает строками на момент запроса (база отдала снимок, задержалась сеть): записанное
+  // за время задержки в ответ не попадёт.
+  const snapshot = hold.stale && q.op === 'select' ? tableRows(q.table).map((r) => ({ ...r })) : null
   await new Promise((r) => setTimeout(r, LATENCY_MS + (hold.delay || 0)))
   stats.active--
   const fakeError = hold.error || window.__fakeErrors?.[q.table]
@@ -185,7 +191,7 @@ async function run(q) {
     const absent = missing.find((c) => asked.includes(c))
     if (absent) return { data: null, count: null, error: { code: '42703', message: `column ${q.table}.${absent} does not exist` } }
   }
-  const rows = tableRows(q.table)
+  const rows = snapshot || tableRows(q.table)
   const now = new Date().toISOString()
   const trigger = window.__fakeTriggers?.[q.table]
   const after = window.__fakeAfter?.[q.table]
@@ -195,15 +201,16 @@ async function run(q) {
     // таблицу — в настоящей базе страницы отдаёт индекс, и стенд не должен
     // мерить собственную сортировку вместо приложения.
     const cacheKey = JSON.stringify([q.table, q.filters, q.orders, versions[q.table] || 0])
-    let sorted = sortedCache.get(cacheKey)
+    let sorted = snapshot ? null : sortedCache.get(cacheKey)
     if (!sorted) {
       sorted = applyOrder(applyFilters(rows, q.filters), q.orders)
-      sortedCache.set(cacheKey, sorted)
+      if (!snapshot) sortedCache.set(cacheKey, sorted)
     }
     let result = sorted
     const count = q.count ? result.length : null
     if (q.range) result = result.slice(q.range[0], q.range[1] + 1)
     if (q.limit != null) result = result.slice(0, q.limit)
+    if (MAX_ROWS > 0) result = result.slice(0, MAX_ROWS)
     if (q.head) return { data: null, count, error: null }
     const data = result.map((r) => ({ ...r }))
     if (q.single) {
