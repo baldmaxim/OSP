@@ -749,6 +749,11 @@ if (params.get('dcStats') === '1') {
     base('d5', { status: 'completed', check_status: 'not_matches', checked_at: iso(-200), created_at: iso(-210), amount_after: 300000 }),
     base('d6', { deleted_at: iso(-5), amount_before: 999999999 }),
   ]
+  // ?dcNumbers=1 — постоянные номера заявок из базы (миграция 20261106), не по порядку создания.
+  if (params.get('dcNumbers') === '1') {
+    const numbers = { d1: 17, d2: 12, d3: 14, d4: 15, d5: 11, d6: 16 }
+    for (const r of window.__fakeDb.dc_requests) r.request_number = numbers[r.id]
+  }
   window.__fakeDb.dc_request_audit_log = [
     { id: 'al-1', dc_request_id: 'd4', event_type: 'status_changed', new_value: 'completed', changed_at: iso(-2) },
   ]

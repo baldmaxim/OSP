@@ -24,6 +24,7 @@ import { parseAmount, formatAmount, formatAmountLive, amountChange } from '../ut
 import {
   CHECK_STATUS_CLASS, CHECK_STATUS_LABEL, CHECK_STATUS_OPTIONS, CHECK_STATUS_SHORT, DS_TYPE_CLASS, DS_TYPE_LABEL,
   DS_TYPE_OPTIONS, MATERIAL_CLASS, MATERIAL_LABEL, MATERIAL_OPTIONS, STATUS_LABEL, STATUS_OPTIONS, hasVerdict,
+  matchesRequestNo, withRequestNumbers,
 } from '../utils/dcRequestOptions'
 import '../components/ContractRegistry.css'
 import '../components/MobileCards.css'
@@ -422,7 +423,8 @@ function DcRequestsPage() {
           responsible:contacts!responsible_contact_id(id, full_name),
           dc_request_tasks(id, task_text, response_text, is_completed, order_number, created_at, created_by_name, responded_by_name, responded_at)
         `)
-        // task 325: хронология добавления — старые сверху (№1), новые внизу.
+        // task 325: хронология добавления — старые сверху, новые внизу. «№» — постоянный номер
+        // заявки (withRequestNumbers), а не номер строки: при смене вкладки и фильтров не меняется.
         .order('created_at', { ascending: true })
       // Скоуп по объектам: сотрудник видит только заявки своих объектов.
       if (scopedObjectIds.length > 0) query = query.in('object_id', scopedObjectIds)
@@ -434,7 +436,7 @@ function DcRequestsPage() {
           (a, b) => (a.order_number || 0) - (b.order_number || 0)
         ),
       }))
-      setRequests(sorted)
+      setRequests(withRequestNumbers(sorted))
     } catch (err) {
       console.error('Ошибка загрузки заявок на ДС:', err.message)
     } finally {
@@ -1195,6 +1197,7 @@ function DcRequestsPage() {
       const q = searchQuery.trim().toLowerCase()
       if (!q) return true
       return (
+        matchesRequestNo(r, q) ||
         (r.objects?.name || '').toLowerCase().includes(q) ||
         (r.counterparties?.name || '').toLowerCase().includes(q) ||
         (r.ds_number || '').toLowerCase().includes(q) ||
@@ -1258,7 +1261,7 @@ function DcRequestsPage() {
       alert('Нечего выгружать — список пуст.')
       return
     }
-    const rows = filtered.map((req, idx) => {
+    const rows = filtered.map((req) => {
       const allDocs = docsByReq.get(req.id) || []
       const generalCount = allDocs.filter(d => !SPECIAL_DOC_CATEGORIES.has(d.doc_category)).length
       const finalCount = allDocs.filter(d => d.doc_category === 'final').length
@@ -1269,7 +1272,7 @@ function DcRequestsPage() {
       const after = req.amount_after
       const { diff, pct } = amountChange(before, after)
       return {
-        '№': idx + 1,
+        '№': req.requestNo,
         'Объект': req.objects?.name || '',
         'Контрагент': req.counterparties?.name || '',
         'Материал': MATERIAL_LABEL[req.material_type] || '',
@@ -1308,12 +1311,12 @@ function DcRequestsPage() {
     // Второй лист — задачи и ответы по тем же заявкам: в основной строке для
     // них только счётчик, а полный текст нужен, чтобы выгрузка была полной.
     const taskRows = []
-    filtered.forEach((req, idx) => {
+    filtered.forEach((req) => {
       const tasks = [...(req.dc_request_tasks || [])]
         .sort((a, b) => (a.order_number ?? 0) - (b.order_number ?? 0))
       tasks.forEach((t) => {
         taskRows.push({
-          '№ заявки': idx + 1,
+          '№ заявки': req.requestNo,
           'Объект': req.objects?.name || '',
           '№ ДС': req.ds_number || '',
           'Статус заявки': STATUS_LABEL[req.status || 'in_work'] || '',
@@ -1498,7 +1501,7 @@ function DcRequestsPage() {
             type="search"
             className="dcr-search"
             placeholder="Объект, контрагент, № ДС, работы"
-            aria-label="Поиск по объекту, контрагенту, номеру ДС и описанию работ"
+            aria-label="Поиск по номеру заявки, объекту, контрагенту, номеру ДС и описанию работ"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -1590,7 +1593,10 @@ function DcRequestsPage() {
               return (
                 <div key={req.id} className={`mcard${req.deleted_at ? ' row-deleted' : ''}`}>
                   <div className="mcard-head">
-                    <span className="mcard-num">{req.ds_number ? `№ ДС ${req.ds_number}` : '№ ДС не присвоен'}</span>
+                    <span className="mcard-num">
+                      № {req.requestNo}
+                      <small className="mcard-id"> · {req.ds_number ? `№ ДС ${req.ds_number}` : '№ ДС не присвоен'}</small>
+                    </span>
                     <span className={`status-badge ${statusOpt?.className || ''}`}>{STATUS_LABEL[currentStatus]}</span>
                   </div>
                   <div className="mcard-title">{req.objects?.name || '—'}</div>
@@ -1740,7 +1746,7 @@ function DcRequestsPage() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((req, idx) => {
+                filtered.map((req) => {
                   const tasks = req.dc_request_tasks || []
                   const totalTasks = tasks.length
                   const completedTasks = tasks.filter(t => t.is_completed).length
@@ -1768,7 +1774,7 @@ function DcRequestsPage() {
 
                   return (
                     <tr key={req.id} className={req.deleted_at ? 'row-deleted' : ''}>
-                      <td className="ui-rownum" style={{ textAlign: 'center' }}>{idx + 1}</td>
+                      <td className="ui-rownum" style={{ textAlign: 'center' }}>{req.requestNo}</td>
                       <td>
                         <div className="dcr-object-name">
                           {req.objects?.name || <span className="muted-dash">—</span>}
@@ -2497,7 +2503,8 @@ function DcRequestsPage() {
                 <div>
                   <h3>Результат проверки по договору</h3>
                   <p className="dcr-history-sub">
-                    {req.ds_number ? `№ ДС ${req.ds_number}` : 'Заявка без № ДС'}
+                    {`Заявка № ${req.requestNo} · `}
+                    {req.ds_number ? `№ ДС ${req.ds_number}` : 'без № ДС'}
                     {req.objects?.name ? ` · ${req.objects.name}` : ''}
                     {req.counterparties?.name ? ` · ${req.counterparties.name}` : ''}
                   </p>
@@ -2616,7 +2623,8 @@ function DcRequestsPage() {
               <div>
                 <h3>История изменений</h3>
                 <p className="dcr-history-sub">
-                  {historyFor.ds_number ? `№ ДС ${historyFor.ds_number}` : 'Заявка без № ДС'}
+                  {`Заявка № ${historyFor.requestNo} · `}
+                  {historyFor.ds_number ? `№ ДС ${historyFor.ds_number}` : 'без № ДС'}
                   {historyFor.objects?.name ? ` · ${historyFor.objects.name}` : ''}
                 </p>
               </div>
@@ -2682,6 +2690,10 @@ function DcRequestsPage() {
                     <div className="dcr-tasks-modal-eyebrow">Чек-лист</div>
                     <h3>Задачи и ответы</h3>
                     <div className="dcr-tasks-modal-meta">
+                      <span className="dcr-tasks-modal-meta-item">
+                        <span className="dcr-tasks-modal-meta-key">Заявка</span>
+                        <span className="dcr-tasks-modal-meta-val">№{req.requestNo}</span>
+                      </span>
                       {req.ds_number && (
                         <span className="dcr-tasks-modal-meta-item">
                           <span className="dcr-tasks-modal-meta-key">ДС</span>

@@ -3,6 +3,8 @@
 
 CREATE TABLE IF NOT EXISTS dc_requests (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Постоянный «№» заявки: при создании, не меняется (миграция 20261106).
+  request_number INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY UNIQUE,
   object_id UUID NOT NULL REFERENCES objects(id) ON DELETE CASCADE,
   counterparty_id UUID REFERENCES counterparties(id) ON DELETE SET NULL,
   ds_number VARCHAR(100),

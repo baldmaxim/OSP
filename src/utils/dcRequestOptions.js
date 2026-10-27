@@ -49,3 +49,28 @@ export const MATERIAL_OPTIONS = [
 ]
 export const MATERIAL_LABEL = Object.fromEntries(MATERIAL_OPTIONS.map(o => [o.value, o.label]))
 export const MATERIAL_CLASS = Object.fromEntries(MATERIAL_OPTIONS.map(o => [o.value, o.className]))
+
+// Постоянный «№» заявки — request_number (миграция 20261106): присваивается при создании и не зависит от вкладки
+// и фильтров. Пока колонки нет, номер считается здесь тем же порядком, что в миграции: сначала не удалённые, затем
+// удалённые, внутри — по дате создания. Список возвращается по номеру: в любой вкладке номера идут по возрастанию.
+const byCreation = (a, b) =>
+  (a.deleted_at != null) - (b.deleted_at != null)
+  || (a.created_at == null) - (b.created_at == null)
+  || (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0)
+  || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+
+export function withRequestNumbers(requests) {
+  const list = requests || []
+  const fallback = list.some(r => r.request_number == null)
+    ? new Map([...list].sort(byCreation).map((r, i) => [r.id, i + 1]))
+    : new Map()
+  return list
+    .map(r => ({ ...r, requestNo: r.request_number ?? fallback.get(r.id) }))
+    .sort((a, b) => a.requestNo - b.requestNo)
+}
+
+// Поиск по номеру заявки: «12» или «№ 12» — ровно эта заявка (подстрокой — № ДС и тексты).
+export const matchesRequestNo = (req, query) => {
+  const m = /^№?\s*(\d+)$/.exec(String(query || '').trim())
+  return !!m && Number(m[1]) === req?.requestNo
+}
