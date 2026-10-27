@@ -74,9 +74,20 @@ describe('Проверка КП: группы по тендеру, компак�
       assert.deepEqual(await counts(page), {
         pending: 6, ok_summary: 2, ok_done: 2, remarks_work: 2, remarks_sent: 1, nosend_summary: 1, nosend_done: 1, all: 15,
       })
-      // Подписи веток над этапами — маршрут читается без схемы.
+      // Подписи веток над этапами — маршрут читается без схемы; у подписи — плашка своего тона.
       assert.deepEqual(await page.locator('.kprv-stage-cap').allInnerTexts(),
         ['', 'Без замечаний', 'С замечаниями · подрядчику', 'С замечаниями · без отправки', ''])
+      const capBackgrounds = await page.locator('.kprv-stage-cap:not(:empty)').evaluateAll((els) => els
+        .map((el) => getComputedStyle(el).backgroundColor))
+      assert.equal(capBackgrounds.length, 3)
+      for (const bg of capBackgrounds) assert.notEqual(bg, 'rgba(0, 0, 0, 0)')
+      // Сверху — название и этапы, ниже — поиск и направления, сразу над таблицей.
+      const top = (sel) => page.locator(sel).first().evaluate((el) => el.getBoundingClientRect().top)
+      assert.ok(await top('.kprv-stages') < await top('.kprv-search'))
+      assert.ok(await top('.kprv-depts') < await top('.kprv-table thead'))
+      // Колонки «Действия» нет: проверка — в ячейке «Проверка».
+      assert.deepEqual(await page.locator('.kprv-table thead th').allInnerTexts(),
+        ['№', 'Контрагент', 'КП', 'Загружен', 'Проверка', 'В сводной', 'Подрядчику'])
 
       await openStage(page, 'all')
       assert.deepEqual(await order(page), [
@@ -166,6 +177,19 @@ describe('Проверка КП: группы по тендеру, компак�
       assert.equal(await status.locator('.kprv-who .kprv-sub').innerText(), '24.10.26')
       assert.match(await status.locator('.kprv-remarks').innerText(), /Не учтены пароизоляция/)
       assert.match(await status.locator('.kpb-remarks-file').innerText(), /Замечания к КП СМИК/)
+      // Проверка — одно место: у КП на проверке вместо плашки «На проверке» — кнопка «Проверить»,
+      // у проверенного плашка с карандашом сама открывает окно проверки.
+      const pending = kpRow(page, 'kp-1').locator('.kprv-status')
+      assert.equal(await pending.locator('.kprv-btn').innerText(), 'Проверить')
+      assert.equal(await pending.locator('.kpb-pill').count(), 0)
+      assert.equal(await status.locator('button.kpb-pill .kpb-edit-ic').count(), 1)
+      await status.locator('button.kpb-pill').click()
+      await page.locator('.kprm-modal').waitFor()
+      assert.ok(await page.locator('.kprm-option.is-active', { hasText: 'Есть замечания' }).count())
+      await page.locator('.kprm-btn-secondary', { hasText: 'Отмена' }).click()
+      await page.locator('.kprm-modal').waitFor({ state: 'detached' })
+      // Контрагент — главное в строке: полужирный; метка версии — обычным начертанием.
+      assert.equal(await row.locator('.kprv-cp').evaluate((el) => getComputedStyle(el).fontWeight), '600')
       // Метка версии — рядом с контрагентом.
       assert.match(await kpRow(page, 'kp-13').locator('.kprv-cp').innerText(), /ООО «Термотехника» · после переторжки/)
       // Без замечаний отправлять нечего, без отправки — так и написано, до проверки шагов нет.
@@ -285,7 +309,7 @@ describe('Проверка КП: группы по тендеру, компак�
     }
   })
 
-  it('без прав — состояние шагов без флажков и без колонки действий; суперпользователь ставит этап вручную', async () => {
+  it('без прав — состояние шагов без флажков и без кнопки проверки; суперпользователь ставит этап вручную', async () => {
     const viewer = await open({ role: 'viewer' })
     try {
       await openStage(viewer.page, 'all')
@@ -294,8 +318,10 @@ describe('Проверка КП: группы по тендеру, компак�
       assert.equal(await viewer.page.locator('.kprv-step input').count(), 0)
       assert.ok(await kpRow(viewer.page, 'kp-7').locator('.kprv-step-sum .kprv-step.is-static.is-done').count())
       assert.ok(await kpRow(viewer.page, 'kp-3').locator('.kprv-step-sum .kprv-step.is-static:not(.is-done)').count())
-      // Вердикт не нажимается, скачать — можно.
+      // Вердикт не нажимается и не зовёт проверить, «На проверке» — просто состояние; скачать — можно.
       assert.equal(await viewer.page.locator('button.kpb-pill').count(), 0)
+      assert.equal(await viewer.page.locator('.kprv-status .kprv-btn').count(), 0)
+      assert.match(await kpRow(viewer.page, 'kp-1').locator('.kpb-pill').innerText(), /На проверке/)
       assert.equal(await viewer.page.locator('.kprv-icon-btn[aria-label="Скачать КП"]').count(), 15)
       assert.deepEqual(viewer.errors, [])
     } finally {

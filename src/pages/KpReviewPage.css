@@ -19,21 +19,36 @@
   --kprv-thead-h: 2.25rem;
 }
 
-/* ── Шапка: название, поиск, направления — одна строка ───────────────────── */
+/* ── Шапка: сверху название и этапы, под ними поиск и направления ─────────────
+   Поиск и направления отбирают строки — поэтому стоят прямо над таблицей.
+   Этапы подчёркиваются по нижней черте шапки; не помещаются рядом с названием
+   (ноутбук 1366) — уходят строкой ниже. */
 .kprv-head {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0 1.25rem;
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.kprv-toolbar {
   flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 0.75rem;
-  padding: 0.625rem 1rem;
+  padding: 0.5rem 1rem;
   border-bottom: 1px solid var(--border-color);
+  background: var(--bg-primary);
 }
 .kprv-title {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  margin: 0 0.5rem 0 0;
+  align-self: center;
+  margin: 0;
+  padding: 0.5rem 0;
   font-size: 1.125rem;
   line-height: 1.5rem;
   font-weight: var(--ui-semibold);
@@ -172,34 +187,43 @@
 .kprv-shown b { font-weight: var(--ui-semibold); color: var(--text-primary); font-variant-numeric: tabular-nums; }
 
 /* ── Этапы: вкладки по веткам маршрута ───────────────────────────────────────
-   Над этапами ветки — её подпись (вердикт аналитика и подветка), внутри ветки
-   этапы идут по порядку, между ними — шеврон. Активный этап подчёркнут своим
-   тоном; непустая очередь работы — счётчик в тон. Ветки разделены тонкой чертой. */
+   Над этапами ветки — её подпись на плашке своего тона (вердикт аналитика и
+   подветка), внутри ветки этапы идут по порядку, между ними — шеврон. Активный
+   этап подчёркнут своим тоном; непустая очередь работы — счётчик в тон. Ветки
+   разделены тонкой чертой. */
 .kprv-stages {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   row-gap: 0.25rem;
-  padding: 0.25rem 0.75rem 0;
-  border-bottom: 1px solid var(--border-color);
+  padding-top: 0.375rem;
 }
 .kprv-stage-grp {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1875rem;
   padding: 0 0.25rem;
 }
 .kprv-stage-grp + .kprv-stage-grp { border-left: 1px solid var(--border-color); }
 .kprv-stage-grp.is-all { margin-left: auto; border-left: 0; }
+/* Подпись ветки — плашка тона: ветки видны сразу, а не угадываются по цвету
+   мелкого текста. Пустая подпись (начало, «Все») держит высоту, но не видна. */
 .kprv-stage-cap {
-  min-height: var(--ui-hint-lh);
-  padding: 0 0.5rem;
-  font-size: var(--ui-hint);
-  line-height: var(--ui-hint-lh);
-  font-weight: var(--ui-medium);
+  min-height: 1.25rem;
+  margin-left: 0.25rem;
+  padding: 0.0625rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--kprv-tone, var(--text-tertiary)) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--kprv-tone, var(--text-tertiary)) 14%, var(--bg-secondary));
   color: var(--kprv-tone-text, var(--text-secondary));
+  font-size: var(--ui-hint);
+  line-height: 1rem;
+  font-weight: var(--ui-semibold);
   white-space: nowrap;
 }
+.kprv-stage-cap:empty { visibility: hidden; }
 .kprv-stage-row { display: flex; align-items: center; }
 .kprv-stage-step { display: inline-flex; color: var(--text-tertiary); }
 .kprv-stage-step svg { transform: rotate(-90deg); }
@@ -293,27 +317,25 @@
 }
 /* Ширины (rem, по замеру): № 3.75 (шеврон + «1234»), КП 6 («КП» + скачать),
    Загружен 6 (подпись со стрелкой сортировки), В сводной 5.5, Подрядчику 6.5
-   («без отправки»), Действия 8.5 («Проверить» + значок этапа в одну строку);
-   «Контрагент» — 20 %, «Проверка» — остаток. Сумма фиксированных — 36.25rem;
-   min-width 65.25rem (≈ 1044px): на ноутбуке 1366 таблица помещается целиком,
-   уже — прокручивается она, а не страница. */
+   («без отправки»); «Контрагент» — 20 %, «Проверка» — остаток (там же кнопка
+   проверки — отдельной колонки действий нет). Сумма фиксированных — 27.75rem;
+   min-width 57.5rem (≈ 920px): «Проверке» остаётся не меньше 18rem. Уже —
+   прокручивается таблица, а не страница. */
 .kprv-table {
   width: 100%;
-  min-width: 65.25rem;
+  min-width: 57.5rem;
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
   font-size: var(--ui-th);
   line-height: var(--ui-th-lh);
 }
-.kprv-table.no-actions { min-width: 56.75rem; }
 .kprv-c-num { width: 3.75rem; }
 .kprv-c-cp { width: 20%; }
 .kprv-c-file { width: 6rem; }
 .kprv-c-date { width: 6rem; }
 .kprv-c-sum { width: 5.5rem; }
 .kprv-c-sent { width: 6.5rem; }
-.kprv-c-actions { width: 8.5rem; }
 
 .kprv-table thead th {
   position: sticky;
@@ -530,8 +552,16 @@ a.kprv-tender-link:hover {
   vertical-align: top;
 }
 .kprv-kp:hover > td { background: var(--hover-bg); }
-.kprv-kp > td:is(.kprv-cp, .kprv-date) { padding-top: 0.5625rem; }
-.kprv-cp { overflow-wrap: anywhere; }
+.kprv-kp > td.kprv-date { padding-top: 0.5625rem; }
+/* Контрагент — главное в строке КП: 14px, полужирный. Строка 20px — ячейка
+   опущена на 2px, чтобы середина текста была на уровне кнопок. */
+.kprv-kp > td.kprv-cp {
+  padding-top: 0.5rem;
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  font-weight: var(--ui-semibold);
+  overflow-wrap: anywhere;
+}
 
 /* Ветка дерева: КП висят на строке своего тендера. */
 .kprv-kp > td.kprv-tree { position: relative; padding: 0; }
@@ -584,7 +614,7 @@ a.kprv-tender-link:hover {
 }
 .kprv-icon-btn:hover:not(:disabled) { border-color: var(--primary-color); color: var(--ui-link); }
 .kprv-icon-btn.is-busy { cursor: progress; color: var(--text-tertiary); }
-.kprv-vlabel { font-size: var(--ui-hint); color: var(--text-secondary); }
+.kprv-vlabel { font-size: var(--ui-hint); font-weight: var(--ui-regular); color: var(--text-secondary); }
 
 .kprv-date {
   color: var(--text-secondary);
@@ -605,8 +635,10 @@ a.kprv-tender-link:hover {
 .kprv-status-in .kpb-wrap { display: contents; }
 .kprv-status-in .kpb-pill { order: 1; }
 .kprv-status-in .kprv-who { order: 2; }
-.kprv-status-in .kprv-remarks { order: 3; flex: 1 1 100%; min-width: 0; }
-.kprv-status-in .kpb-remarks-file { order: 4; }
+/* Ручной этап суперпользователя — в конце первой строки ячейки, справа. */
+.kprv-status-in .kprv-stage-wrap { order: 3; margin-left: auto; }
+.kprv-status-in .kprv-remarks { order: 4; flex: 1 1 100%; min-width: 0; }
+.kprv-status-in .kpb-remarks-file { order: 5; }
 .kprv-who {
   display: inline-flex;
   align-items: baseline;
@@ -657,7 +689,8 @@ a.kprv-tender-link:hover {
   justify-content: center;
   width: 1.125rem;
   height: 1.125rem;
-  border: 1.5px solid var(--border-color-dark);
+  /* Пустой флажок — рамкой --text-tertiary: светлая рамка терялась на белом. */
+  border: 1.5px solid var(--text-tertiary);
   border-radius: 4px;
   background: var(--bg-secondary);
   color: transparent;
@@ -683,8 +716,7 @@ a.kprv-tender-link:hover {
   white-space: nowrap;
 }
 
-/* Действия: «Проверить» — главное действие строки, «Изменить» — тише. */
-.kprv-actions-in { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
+/* «Проверить» — в ячейке «Проверка» вместо плашки «На проверке». */
 .kprv-btn {
   display: inline-flex;
   align-items: center;
@@ -780,24 +812,24 @@ a.kprv-tender-link:hover {
 
 /* ── Телефон: строка КП — карточка ────────────────────────────────────────────
    Шапки таблицы нет, строка тендера — заголовком над своими КП. Карточка КП —
-   flex с переносом: контрагент и «КП / Скачать», ниже проверка, внизу дата,
-   шаги и действия; не поместились действия — уходят строкой ниже, вправо. */
+   flex с переносом: контрагент и «КП / Скачать», ниже проверка (с кнопкой
+   «Проверить»), внизу дата и шаги. Этапы — своей строкой под названием,
+   листаются вбок. */
 @media (max-width: 640px) {
-  .kprv-head { padding: 0.5rem 0.75rem; }
-  .kprv-shown { order: 2; }
-  .kprv-search { flex: 1 1 100%; max-width: none; order: 3; }
+  .kprv-head { padding: 0 0.75rem; }
+  .kprv-toolbar { padding: 0.5rem 0.75rem; }
+  .kprv-search { flex: 1 1 100%; max-width: none; }
   /* Четыре направления — в одну строку: квадратик флажка прячем, отмеченное
      видно по зелёной заливке и рамке. */
-  .kprv-depts { order: 4; gap: 0.25rem; }
+  .kprv-depts { gap: 0.25rem; }
   .kprv-dept-chip { gap: 0.25rem; padding: 0 0.375rem; }
   .kprv-dept-chip-box { display: none; }
-  .kprv-stages { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 0.25rem 0.25rem 0; }
+  .kprv-stages { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-top: 0; }
   .kprv-stages::-webkit-scrollbar { display: none; }
   .kprv-stage-grp { flex: 0 0 auto; }
   .kprv-stage-grp.is-all { margin-left: 0; }
 
-  .kprv-table,
-  .kprv-table.no-actions { min-width: 0; }
+  .kprv-table { min-width: 0; }
   .kprv-table,
   .kprv-table > tbody,
   .kprv-table > tbody > tr,
@@ -830,13 +862,12 @@ a.kprv-tender-link:hover {
   .kprv-kp > td:is(.kprv-cp, .kprv-date) { padding-top: 0; }
   .kprv-kp:hover > td { background: none; }
   .kprv-kp > td:is(.kprv-tree, .is-empty) { display: none; }
-  .kprv-cp { order: 1; flex: 1 1 0; min-width: 0; font-weight: var(--ui-medium); }
+  .kprv-cp { order: 1; flex: 1 1 0; min-width: 0; }
   .kprv-file { order: 2; flex: 0 0 auto; }
   .kprv-status { order: 3; flex: 1 1 100%; min-width: 0; }
   .kprv-date { order: 4; }
   .kprv-step-sum { order: 5; }
   .kprv-step-sent { order: 6; }
-  .kprv-actions { order: 7; margin-left: auto; }
   .kprv-kp > td[data-label]:not(.is-empty) { display: inline-flex; align-items: center; gap: 0.25rem; }
   .kprv-kp > td[data-label]::before {
     content: attr(data-label);

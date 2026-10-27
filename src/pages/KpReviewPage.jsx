@@ -390,9 +390,9 @@ function KpReviewPage() {
   // Инженеру доступ тоже нужен: в ветке «для отправки подрядчику» занесение и
   // отправка идут параллельно и делаются одним человеком.
   const canSummary = canSend || canReview
-  // Колонка «Действия» — только тем, у кого в ней что-то есть.
-  const hasActions = canReview || isSuperAdmin
-  const colCount = hasActions ? 8 : 7
+  // Колонок: №, Контрагент, КП, Загружен, Проверка, В сводной, Подрядчику.
+  // Отдельной колонки действий нет: проверка открывается из ячейки «Проверка».
+  const colCount = 7
   const actor = userProfile?.full_name || user?.email || ''
 
   const [rows, setRows] = useState([])
@@ -739,12 +739,77 @@ function KpReviewPage() {
             плашка и файл встают в общий ряд (display: contents в CSS). */}
         <td className="kprv-status">
           <div className="kprv-status-in">
-            <KpReviewBadge file={r} canReview={canReview} onReview={setReviewFile} />
+            {/* Проверка — одно место: у проверяющего вместо «На проверке» кнопка
+                «Проверить», у проверенного КП сама плашка с карандашом открывает
+                окно проверки; у остальных — только состояние. */}
+            {canReview && (r.review_status || 'pending') === 'pending' ? (
+              <button
+                type="button"
+                className="kprv-btn is-primary"
+                title="КП ждёт проверки — открыть окно проверки"
+                onClick={() => setReviewFile(r)}
+              >Проверить</button>
+            ) : (
+              <KpReviewBadge file={r} canReview={canReview} onReview={setReviewFile} editHint />
+            )}
             {r.reviewed_by && (
               <span className="kprv-who">
                 <PersonName full={r.reviewed_by} titlePrefix="Кто проверил" />
                 {r.reviewed_at && <span className="kprv-sub" title={`Проверено ${fmtDateTime(r.reviewed_at)}`}>{fmtDate(r.reviewed_at)}</span>}
               </span>
+            )}
+            {/* Ручная установка этапа — служебный инструмент правки ошибок,
+                поэтому только суперпользователю и приглушённо, в конце строки. */}
+            {isSuperAdmin && (
+              <div className="kprv-stage-wrap">
+                <button
+                  type="button"
+                  className={`kprv-stage-btn${stagePopoverFor === r.id ? ' is-open' : ''}`}
+                  title="Этап вручную: поставить КП на любой этап проверки"
+                  aria-label="Этап вручную"
+                  aria-haspopup="listbox"
+                  aria-expanded={stagePopoverFor === r.id}
+                  onClick={(e) => {
+                    if (stagePopover?.id === r.id) { setStagePopover(null); return }
+                    // Меню высокое (~260px), а таблица прокручивается
+                    // внутри себя: у нижних строк раскрываем вверх.
+                    const btn = e.currentTarget.getBoundingClientRect()
+                    const wrap = tableWrapRef.current?.getBoundingClientRect()
+                    const up = !!wrap && btn.bottom + 270 > wrap.bottom
+                    setStagePopover({ id: r.id, up })
+                  }}
+                ><IconMore /></button>
+                {stagePopoverFor === r.id && (
+                  <div className={`kprv-stage-menu${stagePopover.up ? ' is-up' : ''}`} role="listbox">
+                    <div className="kprv-stage-hint">
+                      Поставить этап вручную. Замечания и вложенный файл
+                      при этом сохраняются.
+                    </div>
+                    {STAGE_GROUPS.map(g => (
+                      <div key={g.title} className="kprv-stage-group">
+                        <div className="kprv-stage-group-title">{g.title}</div>
+                        {g.keys.map(key => {
+                          const isCurrent = stageOf(r) === key
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              role="option"
+                              aria-selected={isCurrent}
+                              className={`kprv-stage-item${isCurrent ? ' is-current' : ''}`}
+                              title={TAB_META[key].title || TAB_META[key].label}
+                              onClick={() => handleSetStage(r, key)}
+                            >
+                              {TAB_META[key].label}
+                              {isCurrent && <span className="kprv-stage-check" aria-hidden><IconDone /></span>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             {remarks && r.review_note && (
               <div className="kprv-remarks">
@@ -786,72 +851,6 @@ function KpReviewPage() {
             <span className="kprv-na" title="Замечания обрабатываются без отправки подрядчику">без отправки</span>
           )}
         </td>
-        {hasActions && (
-          <td className="kprv-actions">
-            <div className="kprv-actions-in">
-              {canReview && (
-                <button
-                  type="button"
-                  className={`kprv-btn${r.review_status === 'pending' ? ' is-primary' : ''}`}
-                  onClick={() => setReviewFile(r)}
-                >{r.review_status === 'pending' ? 'Проверить' : 'Изменить'}</button>
-              )}
-              {/* Ручная установка этапа — служебный инструмент правки ошибок,
-                  поэтому только суперпользователю и приглушённо. */}
-              {isSuperAdmin && (
-                <div className="kprv-stage-wrap">
-                  <button
-                    type="button"
-                    className={`kprv-stage-btn${stagePopoverFor === r.id ? ' is-open' : ''}`}
-                    title="Этап вручную: поставить КП на любой этап проверки"
-                    aria-label="Этап вручную"
-                    aria-haspopup="listbox"
-                    aria-expanded={stagePopoverFor === r.id}
-                    onClick={(e) => {
-                      if (stagePopover?.id === r.id) { setStagePopover(null); return }
-                      // Меню высокое (~260px), а таблица прокручивается
-                      // внутри себя: у нижних строк раскрываем вверх.
-                      const btn = e.currentTarget.getBoundingClientRect()
-                      const wrap = tableWrapRef.current?.getBoundingClientRect()
-                      const up = !!wrap && btn.bottom + 270 > wrap.bottom
-                      setStagePopover({ id: r.id, up })
-                    }}
-                  ><IconMore /></button>
-                  {stagePopoverFor === r.id && (
-                    <div className={`kprv-stage-menu${stagePopover.up ? ' is-up' : ''}`} role="listbox">
-                      <div className="kprv-stage-hint">
-                        Поставить этап вручную. Замечания и вложенный файл
-                        при этом сохраняются.
-                      </div>
-                      {STAGE_GROUPS.map(g => (
-                        <div key={g.title} className="kprv-stage-group">
-                          <div className="kprv-stage-group-title">{g.title}</div>
-                          {g.keys.map(key => {
-                            const isCurrent = stageOf(r) === key
-                            return (
-                              <button
-                                key={key}
-                                type="button"
-                                role="option"
-                                aria-selected={isCurrent}
-                                className={`kprv-stage-item${isCurrent ? ' is-current' : ''}`}
-                                title={TAB_META[key].title || TAB_META[key].label}
-                                onClick={() => handleSetStage(r, key)}
-                              >
-                                {TAB_META[key].label}
-                                {isCurrent && <span className="kprv-stage-check" aria-hidden><IconDone /></span>}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </td>
-        )}
       </tr>
     )
   }
@@ -876,7 +875,7 @@ function KpReviewPage() {
     }
     body = (
       <div className="kprv-table-wrap" ref={tableWrapRef}>
-        <table className={`kprv-table${hasActions ? '' : ' no-actions'}`}>
+        <table className="kprv-table">
           {/* table-layout: fixed — ширины из <colgroup>, а не из содержимого.
               Фиксированные колонки — в rem по замеру, «Контрагент» — доля
               ширины, остаток — «Проверке» (KpReviewPage.css). */}
@@ -888,7 +887,6 @@ function KpReviewPage() {
             <col />{/* Проверка */}
             <col className="kprv-c-sum" />
             <col className="kprv-c-sent" />
-            {hasActions && <col className="kprv-c-actions" />}
           </colgroup>
           <thead>
             <tr>
@@ -899,7 +897,6 @@ function KpReviewPage() {
               <SortTh label="Проверка" sortKey="reviewed_at" sort={sort} onSort={toggleSort} title="Сортировать по дате проверки" />
               <th title="КП занесено в сводную таблицу">В сводной</th>
               <th title="Замечания отправлены подрядчику">Подрядчику</th>
-              {hasActions && <th>Действия</th>}
             </tr>
           </thead>
           {/* Очередь КП загружается целиком (fetchAllRows), и на тысяче строк
@@ -915,12 +912,41 @@ function KpReviewPage() {
 
   return (
     <div className="kprv-page ui-work">
+      {/* Сверху — название и этапы проверки (они же навигация: каждая вкладка —
+          очередь работы со своим счётчиком; над этапами ветки — её подпись, внутри
+          ветки этапы идут по порядку маршрута). Ниже, прямо над таблицей, — поиск
+          и направления: то, что отбирает строки. Не помещаются этапы рядом с
+          названием — уходят строкой ниже. */}
       <div className="kprv-head">
         <h2 className="kprv-title">
           <IconTile tone="teal"><IconShieldCheck size={16} /></IconTile>
           Проверка КП
           <span className="kprv-info" role="img" aria-label={HINT} title={HINT}><IconInfo /></span>
         </h2>
+        <div className="kprv-stages" role="tablist" aria-label="Этапы проверки КП">
+          {STAGE_GROUPS.map(g => (
+            <div key={g.title} className={`kprv-stage-grp${g.tone ? ` is-${g.tone}` : ''}`}>
+              <span className="kprv-stage-cap" aria-hidden>{g.caption || ''}</span>
+              <div className="kprv-stage-row">
+                {g.keys.map((key, i) => (
+                  <Fragment key={key}>
+                    {i > 0 && <span className="kprv-stage-step" aria-hidden><IconChevron size={11} /></span>}
+                    <StageTab tabKey={key} tab={tab} counts={counts} onSelect={setTab} />
+                  </Fragment>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div className="kprv-stage-grp is-all">
+            <span className="kprv-stage-cap" aria-hidden />
+            <div className="kprv-stage-row">
+              <StageTab tabKey="all" tab={tab} counts={counts} onSelect={setTab} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="kprv-toolbar">
         <label className="kprv-search">
           <IconSearch size={15} />
           <input
@@ -947,31 +973,6 @@ function KpReviewPage() {
             <b>{shownCount}</b> КП · <b>{groups.length}</b> {plural(groups.length, 'тендер', 'тендера', 'тендеров')}
           </span>
         )}
-      </div>
-
-      {/* Этапы проверки — они же навигация: каждая вкладка это очередь работы
-          со своим счётчиком. Над этапами ветки — её подпись (вердикт аналитика и
-          подветка), внутри ветки этапы идут по порядку маршрута. */}
-      <div className="kprv-stages" role="tablist" aria-label="Этапы проверки КП">
-        {STAGE_GROUPS.map(g => (
-          <div key={g.title} className={`kprv-stage-grp${g.tone ? ` is-${g.tone}` : ''}`}>
-            <span className="kprv-stage-cap" aria-hidden>{g.caption || ''}</span>
-            <div className="kprv-stage-row">
-              {g.keys.map((key, i) => (
-                <Fragment key={key}>
-                  {i > 0 && <span className="kprv-stage-step" aria-hidden><IconChevron size={11} /></span>}
-                  <StageTab tabKey={key} tab={tab} counts={counts} onSelect={setTab} />
-                </Fragment>
-              ))}
-            </div>
-          </div>
-        ))}
-        <div className="kprv-stage-grp is-all">
-          <span className="kprv-stage-cap" aria-hidden />
-          <div className="kprv-stage-row">
-            <StageTab tabKey="all" tab={tab} counts={counts} onSelect={setTab} />
-          </div>
-        </div>
       </div>
 
       {body}

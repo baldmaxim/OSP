@@ -6,6 +6,8 @@ import './KpReviewBadge.css'
 // showRemarks=true — под бейджем выводится текст замечаний и ссылка на приложенный
 // файл замечаний (для has_remarks). Виден и в тендерах (раскрытие контрагентов), и
 // на вкладке «Проверка КП».
+// editHint=true — в нажимаемой плашке карандаш: на «Проверке КП» отдельной кнопки
+// «Изменить» нет, проверку меняют нажатием на саму плашку.
 
 const IconCheck = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -24,6 +26,12 @@ const IconClock = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+  </svg>
+)
+const IconPencil = () => (
+  <svg className="kpb-edit-ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
   </svg>
 )
 const IconPaperclip = () => (
@@ -46,7 +54,7 @@ const META = {
   has_remarks: { cls: 'kpb-remarks', icon: IconWarn, label: 'Замечания' },
 }
 
-export default function KpReviewBadge({ file, canReview = false, onReview, showRemarks = false }) {
+export default function KpReviewBadge({ file, canReview = false, onReview, showRemarks = false, editHint = false }) {
   const status = file.review_status || 'pending'
   const m = META[status] || META.pending
   const Icon = m.icon
@@ -72,6 +80,7 @@ export default function KpReviewBadge({ file, canReview = false, onReview, showR
     <span className="kpb-pill-inner">
       <Icon />
       <span>{m.label}</span>
+      {editHint && canReview && <IconPencil />}
     </span>
   )
 

@@ -20,6 +20,9 @@
 .kpb-pill-inner { display: inline-flex; align-items: center; gap: 0.3rem; }
 button.kpb-pill { cursor: pointer; font-family: inherit; }
 .kpb-clickable:hover { filter: brightness(0.96); }
+/* Карандаш в плашке (editHint): «нажми, чтобы изменить проверку». */
+.kpb-edit-ic { margin-left: 0.125rem; opacity: 0.65; }
+.kpb-clickable:hover .kpb-edit-ic { opacity: 1; }
 
 .kpb-pending {
   background: var(--bg-tertiary);
