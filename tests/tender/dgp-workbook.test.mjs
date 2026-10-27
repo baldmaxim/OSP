@@ -170,6 +170,9 @@ describe('ДГП: паспорт и состав единого ПСДЦ люб�
     assert.deepEqual(dgpContractFromText('Договор генерального строительного подряда № ДГСП-13АВ от 07.02.2025 · ДС'), { number: 'ДГСП-13АВ', date: '07.02.2025' })
     assert.deepEqual(dgpContractFromText('ПСДЦ: договор №К14 от 25.04.2025, действующая'), { number: 'К14', date: '25.04.2025' })
     assert.equal(dgpContractFromText('Затраты по условиям договора'), null)
+    // Номер в заголовке без даты, дата — в подзаголовке.
+    const head = analyzeDgp([['ЕДИНЫЙ ПСДЦ · ДОГОВОР № ГП-01/2026'], ['Договор генерального подряда № ГП-01/2026 от 15.01.2026 · ДС №1–5']])
+    assert.deepEqual(head.contract, { number: 'ГП-01/2026', date: '15.01.2026' })
     assert.equal(dgpContractKey('K14'), dgpContractKey('к14'))
     assert.equal(dgpContractKey('ДГСП-13 АВ'), dgpContractKey('дгсп-13AB'))
   })

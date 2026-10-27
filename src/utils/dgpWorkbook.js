@@ -221,7 +221,14 @@ export function analyzeDgp(rows, fileName = '') {
   }
 
   const findIn = (texts, fn) => { for (const t of texts) { const v = fn(t); if (v) return v } return null }
-  const contract = findIn(topNotes, dgpContractFromText) || findIn(otherNotes, dgpContractFromText)
+  let contract = findIn(topNotes, dgpContractFromText) || findIn(otherNotes, dgpContractFromText)
+  // В заголовке номер бывает без даты («ДОГОВОР № ГП-01/2026»), дата — в подзаголовке или примечании внизу.
+  if (contract && !contract.date) {
+    const key = dgpContractKey(contract.number)
+    const dated = [...topNotes, ...otherNotes].map(dgpContractFromText)
+      .find(c => c?.date && dgpContractKey(c.number) === key)
+    if (dated) contract = { ...contract, date: dated.date }
+  }
   const revision = findIn(topNotes, dgpRevisionFromText) || dgpRevisionFromText(fileName)
     || findIn(otherNotes, dgpRevisionFromText)
   const basisText = [...topNotes, ...otherNotes].find(t => DS_CURRENT.test(t))
