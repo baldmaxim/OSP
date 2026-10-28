@@ -54,6 +54,7 @@ import {
   IconJoint, IconOther, IconFolderTree, IconDocsStack, IconSearch,
 } from '../components/icons/ToolbarIcons'
 import { departmentConfig, objectDeptBadge, tenderObjectName, isConstructionTender } from '../utils/tenderDepartments'
+import { mainTenderStatuses, initialMainTenderStatus, shownMainTenderStatus } from '../utils/tenderStatuses'
 import { weekKey } from '../utils/weeks'
 import { TENDER_DUTY_NAMES, DUTY_OVERRIDE_KEY, parseDutyOverride, currentDuty } from '../utils/tenderDuty'
 import TenderCallReminder from '../components/TenderCallReminder'
@@ -217,9 +218,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // task 212: 'all' | <status> | 'template' | 'deleted'.
   // Вкладку «Шаблон письма» не восстанавливаем — это режим редактирования, а не
   // выборка тендеров; в остальных случаях возвращаем сохранённую вкладку.
+  // У ОС сохранённая вкладка или фильтр «Заявка на тендер» — теперь «Подготовка ВОР» (utils/tenderStatuses.js).
   const [activeTab, setActiveTab] = useState(() => (
     typeof savedFilters.activeTab === 'string' && savedFilters.activeTab !== 'template'
-      ? savedFilters.activeTab
+      ? (isMaterialsView ? savedFilters.activeTab : shownMainTenderStatus(savedFilters.activeTab, department))
       : 'all'
   ))
   // task 232/233: статус-вкладки скрыты под кнопкой «Статусы тендеров»
@@ -317,7 +319,9 @@ ${ATTACHMENT_BLOCK}
   // Фильтры множественного выбора: пустой массив = фильтр не применён.
   const [objectFilter, setObjectFilter] = useState(() => Array.isArray(savedFilters.objectFilter) ? savedFilters.objectFilter : [])
   const [responsibleFilter, setResponsibleFilter] = useState(() => Array.isArray(savedFilters.responsibleFilter) ? savedFilters.responsibleFilter : [])
-  const [statusFilter, setStatusFilter] = useState(() => Array.isArray(savedFilters.statusFilter) ? savedFilters.statusFilter : [])
+  const [statusFilter, setStatusFilter] = useState(() => (Array.isArray(savedFilters.statusFilter)
+    ? (isMaterialsView ? savedFilters.statusFilter : [...new Set(savedFilters.statusFilter.map(s => shownMainTenderStatus(s, department)))])
+    : []))
   // Тендеры на материалы: фильтр по приоритету ('high' | 'medium' | 'low' | '__none__').
   const [priorityFilter, setPriorityFilter] = useState(() => Array.isArray(savedFilters.priorityFilter) ? savedFilters.priorityFilter : [])
   // Основное строительство: фильтр по подразделению ВОР (коды, NO_VOR_DIVISION —
@@ -357,7 +361,7 @@ ${ATTACHMENT_BLOCK}
   const [formData, setFormData] = useState({
     object_id: '',
     work_description: '',
-    status: 'Заявка на тендер',
+    status: isMaterialsView ? 'Не начат' : initialMainTenderStatus(department),
     start_date: '',
     end_date: '',
     tender_package_link: '',
@@ -409,7 +413,8 @@ ${ATTACHMENT_BLOCK}
     return objects.find(o => (o.name || '').trim().toLowerCase() === q) || null
   })()
 
-  const statusOptions = ['Заявка на тендер', 'Подготовка ВОР', 'Идет тендерная процедура', 'Подведение итогов', 'Завершен', 'Приостановка тендера']
+  // У основного строительства «Заявки на тендер» нет: новый тендер — сразу «Подготовка ВОР».
+  const statusOptions = mainTenderStatuses(department)
   // Отдельный набор статусов для тендеров на материалы — не пересекается со статусами основного тендера.
   // «Не требуется» — финальный статус (материалы закупать не требуется), считается как завершённый.
   const materialsStatusOptions = ['Не начат', 'В работе', 'Завершён', 'Не требуется']
@@ -425,7 +430,7 @@ ${ATTACHMENT_BLOCK}
   const isCompletedStatus = (status) => isMaterialsView
     ? (status === 'Завершён' || status === 'Не требуется' || status === 'Не нужно')
     : (status === 'Завершен')
-  const initialStatusValue = isMaterialsView ? 'Не начат' : 'Заявка на тендер'
+  const initialStatusValue = isMaterialsView ? 'Не начат' : initialMainTenderStatus(department)
 
   const counterpartyStatusOptions = [
     { value: 'request_sent', label: 'Запрос отправлен' },
@@ -474,6 +479,7 @@ ${ATTACHMENT_BLOCK}
     onUpdate: (newRow, oldRow) => {
       const patch = changedScalarFields(newRow, oldRow)
       if (Object.keys(patch).length === 0) return
+      if ('status' in patch && !isMaterialsView) patch.status = shownMainTenderStatus(patch.status, newRow.department)
       setTenders(prev => {
         const known = prev.some(t => t.id === newRow.id)
         // Тендер мог смениться отделом/типом и «въехать» в этот реестр — тогда
@@ -598,8 +604,10 @@ ${ATTACHMENT_BLOCK}
       })
       // Reverse FK tenders!parent_tender_id возвращается массивом (UNIQUE на parent_tender_id нет).
       // Сводим к одному объекту или null, чтобы дальше обращаться как tender.materials_tender.status.
+      // Прежняя «Заявка на тендер» у ОС — «Подготовка ВОР» (в базе не переписывалась).
       const normalized = (data || []).map(t => ({
         ...t,
+        status: isMaterialsView ? t.status : shownMainTenderStatus(t.status, t.department),
         materials_tender: Array.isArray(t.materials_tender)
           ? (t.materials_tender[0] || null)
           : (t.materials_tender || null)

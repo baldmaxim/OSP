@@ -9,6 +9,7 @@ import { normName, supplyKey, rateUnitPrice } from '../utils/supplyRateHelpers'
 import { isWorkItem, aggregateEstimate } from '../utils/vorMaterials'
 import { reorderSiblings } from '../utils/appendixTree'
 import { tenderObjectName } from '../utils/tenderDepartments'
+import { shownMainTenderStatus } from '../utils/tenderStatuses'
 import { sanitizeUserText, sanitizeDeep } from '../utils/text'
 import { describeSupabaseError, isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
 import { useRole } from '../contexts/RoleContext'
@@ -2105,9 +2106,11 @@ function TenderDetailPage() {
           {tender.created_at && (
             <span className="tender-created-at">Создан {formatDate(tender.created_at)}</span>
           )}
-          <span className={`status-badge ${getStatusBadgeClass(tender.status)}`}>
-            {tender.status}
-          </span>
+          {(() => {
+            // У ОС прежняя «Заявка на тендер» — «Подготовка ВОР», как в реестре (utils/tenderStatuses.js).
+            const shownStatus = tender.tender_type === 'materials' ? tender.status : shownMainTenderStatus(tender.status, tender.department)
+            return <span className={`status-badge ${getStatusBadgeClass(shownStatus)}`}>{shownStatus}</span>
+          })()}
         </div>
       </div>
 
