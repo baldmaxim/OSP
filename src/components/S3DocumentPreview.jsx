@@ -58,8 +58,9 @@ export default function S3DocumentPreview({ doc, onClose }) {
   }, [])
 
   return (
-    <div className="s3-doc-modal-overlay" onClick={onClose}>
-      <div className="s3-doc-modal" onClick={(e) => e.stopPropagation()}>
+    // s3-doc-preview — окно почти во весь экран (S3DocumentList.css): каркас .s3-doc-modal общий с другими окнами.
+    <div className="s3-doc-modal-overlay s3-doc-preview-overlay" onClick={onClose}>
+      <div className="s3-doc-modal s3-doc-preview" onClick={(e) => e.stopPropagation()}>
         <div className="s3-doc-modal-header">
           <span className="s3-doc-modal-title" title={doc.file_name}>{doc.file_name}</span>
           <button type="button" className="s3-doc-modal-close" onClick={onClose} aria-label="Закрыть">✕</button>

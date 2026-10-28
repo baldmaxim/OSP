@@ -1,16 +1,21 @@
 import { useState } from 'react'
 import { copyToClipboard } from '../utils/clipboard'
+import { canOpenFolders, isFolderPath } from '../utils/folderOpen'
+import { openFolder } from './FolderOpen'
 import './FolderPathCell.css'
 
-// Путь к папке с документами в файловом хранилище: показ + копирование +
-// правка на месте. Используется в реестрах, где документы физически лежат в
-// сетевой папке, а на сайте хранится только ссылка на неё.
+// Путь к папке с документами в файловом хранилище: показ + открытие в
+// проводнике + копирование + правка на месте. Используется в реестрах, где
+// документы физически лежат в сетевой папке, а на сайте хранится только ссылка
+// на неё.
 //
-// ПОЧЕМУ КОПИРОВАНИЕ, А НЕ ССЫЛКА. Открыть проводник по клику со страницы
-// нельзя: Chrome и Edge блокируют переход на file:// и на UNC-путь со страницы,
-// загруженной по https, причём молча. Это политика браузера, обойти её со
-// стороны сайта невозможно. Поэтому путь копируется, а человек вставляет его в
-// адресную строку проводника (Win+E → Ctrl+L → Ctrl+V).
+// ОТКРЫТИЕ В ПРОВОДНИКЕ (28.10.2026). Нажатие на путь открывает папку: сам
+// браузер на file:// и UNC-путь со страницы по https не переходит (Chrome и Edge
+// блокируют молча), поэтому — через помощник на компьютере (FolderOpen.jsx,
+// utils/folderOpen.js); в первый раз окно подскажет, как его поставить.
+// Копирование осталось: без помощника, на телефоне и Mac путь вставляют в
+// адресную строку проводника (Win+E → Ctrl+L → Ctrl+V). Путь не к папке Windows
+// или не Windows — нажатие, как раньше, разворачивает путь целиком.
 //
 // onSave(nextValue) должен вернуть промис; пустая строка означает «очистить».
 //
@@ -153,11 +158,14 @@ export default function FolderPathCell({
   // Полный UNC-путь в ячейку реестра не помещается и раньше ломался на 6-8 строк,
   // раздувая всю строку таблицы. Показываем хвост — две последние папки, по ним
   // запись и опознают; целиком путь виден в подсказке, а копируется он всегда
-  // полностью. Развернуть можно кликом по самому тексту.
+  // полностью. Нажатие на текст открывает папку (или разворачивает путь, если
+  // открыть нельзя).
   const segments = value.split('\\').filter(Boolean)
   const short = segments.length > 2
     ? '…\\' + segments.slice(-2).join('\\')
     : value
+  const openable = isFolderPath(value) && canOpenFolders()
+  const activate = () => { if (!openFolder(value)) setExpanded(v => !v) }
 
   return (
     <div className={`fpath${expanded ? ' is-expanded' : ''}${compact ? ' is-compact-open' : ''}`} title={value}>
@@ -172,20 +180,20 @@ export default function FolderPathCell({
         ><IconFolder /></button>
       ) : <IconFolder />}
       <span
-        className="fpath-text"
+        className={`fpath-text${openable ? ' is-openable' : ''}`}
         role="button"
         tabIndex={0}
-        onClick={(e) => { e.stopPropagation(); setExpanded(v => !v) }}
+        onClick={(e) => { e.stopPropagation(); activate() }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(v => !v) }
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate() }
         }}
-        title={expanded ? 'Свернуть путь' : 'Показать путь целиком'}
+        title={openable ? `Открыть папку в проводнике:\n${value}` : (expanded ? 'Свернуть путь' : 'Показать путь целиком')}
       >{expanded ? value : short}</span>
       <button
         type="button"
         className="fpath-icon"
         onClick={(e) => { e.stopPropagation(); handleCopy() }}
-        title="Скопировать путь и вставить в адресную строку проводника"
+        title="Скопировать путь"
         aria-label="Скопировать путь к папке"
       >{copied ? <IconCheck /> : <IconCopy />}</button>
       {canEdit && (

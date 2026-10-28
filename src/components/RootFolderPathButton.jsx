@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { db } from '../api'
 import { copyToClipboard } from '../utils/clipboard'
+import { canOpenFolders, isFolderPath } from '../utils/folderOpen'
+import { openFolder } from './FolderOpen'
 import { IconFolder } from './icons/ToolbarIcons'
 import './RootFolderPathButton.css'
 
@@ -12,9 +14,10 @@ import './RootFolderPathButton.css'
 // Хранится в таблице `app_settings` (key/value), как и ссылка на общую таблицу в
 // заявках на ДС. Миграции не требует — таблица уже есть.
 //
-// Открыть проводник кликом нельзя: Chrome и Edge молча блокируют переход на
-// file:// и на UNC-путь со страницы, загруженной по https. Поэтому путь
-// копируется, а человек вставляет его в адресную строку проводника.
+// Сам браузер проводник не откроет: Chrome и Edge молча блокируют переход на
+// file:// и на UNC-путь со страницы, загруженной по https. «Открыть» в карточке
+// открывает папку через помощник на компьютере (FolderOpen.jsx); без него путь
+// копируют и вставляют в адресную строку проводника.
 
 const IconCopy = ({ size = 14 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -194,14 +197,15 @@ export default function RootFolderPathButton({
 
   // Пока настройка не пришла — кнопки нет: иначе на секунду мигает «путь не указан».
   if (!loaded) return null
+  const openable = isFolderPath(value) && canOpenFolders()
   // Ни пути, ни ссылки, а прав задать их нет — показывать нечего.
   if (!value && !driveLink && !canEdit) return null
 
   return (
     <div className="rfpath" ref={wrapRef}>
       {/* Составной элемент: слева — раскрытие карточки, справа — копирование
-          сразу. Копирование здесь единственное частое действие (проводник из
-          браузера не открыть), ради него незачем открывать карточку. */}
+          сразу, ради него незачем открывать карточку. Открыть папку в
+          проводнике — в карточке («Открыть»). */}
       <div className={`rfpath-group${value ? ' has-copy' : ''}`}>
         <button
           type="button"
@@ -260,7 +264,12 @@ export default function RootFolderPathButton({
             <>
               <div className="rfpath-path">{value}</div>
               <div className="rfpath-actions">
-                <button type="button" className="rfpath-act is-primary" onClick={handleCopy}>
+                {openable && (
+                  <button type="button" className="rfpath-act is-primary" onClick={() => { openFolder(value); setOpen(false) }}>
+                    <IconFolder size={14} /> Открыть
+                  </button>
+                )}
+                <button type="button" className={`rfpath-act${openable ? '' : ' is-primary'}`} onClick={handleCopy}>
                   {copied ? <IconCheck /> : <IconCopy />}
                   {copied ? 'Скопировано' : 'Копировать'}
                 </button>
@@ -271,8 +280,10 @@ export default function RootFolderPathButton({
                 )}
               </div>
               <div className="rfpath-hint">
-                Вставьте путь в адресную строку проводника: Win+E → Ctrl+L → Ctrl+V.
-                Открыть папку прямо из браузера нельзя.
+                {openable
+                  ? '«Открыть» — папка в проводнике (нужен помощник: при первом нажатии подскажем, как его поставить). '
+                  : ''}
+                Скопированный путь вставляют в адресную строку проводника: Win+E → Ctrl+L → Ctrl+V.
               </div>
             </>
           ) : (

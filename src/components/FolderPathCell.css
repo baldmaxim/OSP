@@ -1,6 +1,6 @@
 /* Путь к папке в файловом хранилище (FolderPathCell).
-   Пунктирная рамка отделяет его от ссылок и данных самой строки: это не ссылка,
-   по которой можно перейти, а текст для копирования. */
+   Пунктирная рамка отделяет его от веб-ссылок и данных самой строки: это путь
+   в сети компании — открывается в проводнике (помощник) или копируется. */
 .fpath {
   display: flex;
   align-items: flex-start;
@@ -29,6 +29,12 @@
   text-overflow: ellipsis;
   cursor: pointer;
   text-align: left;
+}
+/* Путь, который открывается в проводнике, — при наведении как ссылка. */
+.fpath-text.is-openable:hover,
+.fpath-text.is-openable:focus-visible {
+  color: var(--ui-link, var(--primary-color, #2563eb));
+  text-decoration: underline;
 }
 .fpath.is-expanded .fpath-text {
   white-space: normal;

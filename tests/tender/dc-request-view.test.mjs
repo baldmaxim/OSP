@@ -1,9 +1,10 @@
 // «Заявки на ДС»: файлы не пропадают после обновления страницы, вид реестра переживает обновление.
 // 27.10.2026 приложенный итоговый документ пропадал после обновления: файлы всех заявок читались одним запросом без
 // страниц, а PostgREST отдаёт не больше 1000 строк — файлов стало больше, и отрезались самые новые (в базе они были).
-// Вкладка, поиск, фильтры, раскрытые списки файлов — в sessionStorage вкладки браузера, прокрутка .main-content
-// возвращается, когда данные на месте. Стенд tests/tender/ui (route=/dc-requests&dcStats=1; maxRows=1000 — потолок
-// строк PostgREST, dcOldFiles=N — старые файлы перед файлами реестра, dcMany=N — длинный реестр).
+// Вкладка, поиск, фильтры, раскрытые списки файлов — в sessionStorage вкладки браузера, прокрутка возвращается, когда
+// данные на месте. С 28.10 шапка закреплена: прокручивается не .main-content, а блок таблицы под шапкой.
+// Стенд tests/tender/ui (route=/dc-requests&dcStats=1; maxRows=1000 — потолок строк PostgREST, dcOldFiles=N — старые
+// файлы перед файлами реестра, dcMany=N — длинный реестр).
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
@@ -82,7 +83,8 @@ describe('Реестр заявок на ДС: файлы и вид после �
   }
   const rowOf = (page, ds) => page.locator('.dcr-table tbody tr', { hasText: `ДС-${ds}` })
   const chip = (row, name) => row.locator('.dcr-doc-chip-desc', { hasText: name })
-  const scrollTop = (page) => page.evaluate(() => document.querySelector('.main-content').scrollTop)
+  // Прокручивается блок таблицы под закреплённой шапкой.
+  const scrollTop = (page) => page.evaluate(() => document.querySelector('.dc-requests-page .table-container').scrollTop)
 
   it('файлы за тысячной строкой видны: список файлов читается постранично', async () => {
     const { page, errors, close } = await open('&maxRows=1000&dcOldFiles=1200')
@@ -147,13 +149,14 @@ describe('Реестр заявок на ДС: файлы и вид после �
 
       await page.mouse.move(800, 600)
       await page.mouse.wheel(0, 1800)
-      await page.waitForFunction(() => document.querySelector('.main-content').scrollTop > 1000)
+      await page.waitForFunction(() => document.querySelector('.dc-requests-page .table-container').scrollTop > 1000)
       await page.waitForTimeout(400)
       const top = await scrollTop(page)
+      assert.equal(await page.evaluate(() => document.querySelector('.main-content').scrollTop), 0, 'страница на месте')
 
       await page.reload()
       await page.locator('.dcr-table td.ui-rownum').first().waitFor({ timeout: 120000 })
-      await page.waitForFunction((t) => Math.abs(document.querySelector('.main-content').scrollTop - t) <= 2, top, { timeout: 15000 })
+      await page.waitForFunction((t) => Math.abs(document.querySelector('.dc-requests-page .table-container').scrollTop - t) <= 2, top, { timeout: 15000 })
       assert.equal(await page.locator('input.dcr-search').inputValue(), 'ДС-m')
       assert.equal((await page.locator('.status-tab.active').textContent()).replace(/\d+$/, '').trim(), 'В работе')
       assert.equal(await page.locator('.dcr-filter-drop.is-active .fdrop', { hasText: 'Подрядчик 01' }).count(), 1)
@@ -191,10 +194,67 @@ describe('Реестр заявок на ДС: файлы и вид после �
         await other.locator('.dcr-table td.ui-rownum').first().waitFor({ timeout: 120000 })
         assert.equal(await other.locator('input.dcr-search').inputValue(), '')
         assert.match(await other.locator('.status-tab.active').textContent(), /^Все заявки/)
-        assert.equal(await other.evaluate(() => document.querySelector('.main-content').scrollTop), 0)
+        assert.equal(await other.evaluate(() => document.querySelector('.dc-requests-page .table-container').scrollTop), 0)
       } finally { await fresh.close() }
       assert.deepEqual(errors, [])
     } finally { await close() }
+  })
+
+  // 28.10.2026: при прокрутке уезжало всё — корень страницы (.contract-registry, overflow: hidden) гасил sticky у
+  // заголовков столбцов. Теперь шапка раздела, вкладки, фильтры и заголовки стоят, таблица прокручивается под ними;
+  // меню статуса внизу блока открывается вверх.
+  it('шапка закреплена: при прокрутке таблицы название, вкладки, фильтры и заголовки столбцов на месте', async () => {
+    for (const width of [1500, 1920]) {
+      const context = await browser.newContext({ locale: 'ru-RU', viewport: { width, height: 900 } })
+      const page = await context.newPage()
+      const errors = []
+      page.on('pageerror', (e) => errors.push(e.message))
+      try {
+        await page.goto(`${stand.url}?route=/dc-requests&dcStats=1&latency=0&shell=1&dcMany=40`)
+        await page.locator('.dcr-table td.ui-rownum').first().waitFor({ timeout: 120000 })
+        const tops = () => page.evaluate(() => {
+          const top = (sel) => Math.round(document.querySelector(sel).getBoundingClientRect().top)
+          return { title: top('.registry-header'), tabs: top('.status-tabs'), toolbar: top('.dcr-toolbar'), th: top('.dcr-table thead th') }
+        })
+        const before = await tops()
+        await page.mouse.move(width / 2, 700)
+        await page.mouse.wheel(0, 2500)
+        await page.waitForFunction(() => document.querySelector('.dc-requests-page .table-container').scrollTop > 1500)
+        assert.deepEqual(await tops(), before, `${width}: шапка на месте`)
+        const m = await page.evaluate(() => {
+          const c = document.querySelector('.dc-requests-page .table-container')
+          const th = document.querySelector('.dcr-table thead th').getBoundingClientRect()
+          const box = c.getBoundingClientRect()
+          // Под заголовками — строка таблицы, а не пустота: заголовок непрозрачен и поверх строк.
+          const under = document.elementFromPoint(th.left + 20, th.top + th.height / 2)
+          return { main: document.querySelector('.main-content').scrollTop, bottom: Math.round(box.bottom), vh: innerHeight,
+            thTop: Math.round(th.top), boxTop: Math.round(box.top), underIsTh: !!under?.closest('thead') }
+        })
+        assert.equal(m.main, 0, 'страница не прокручивается — только таблица')
+        assert.ok(Math.abs(m.thTop - m.boxTop) <= 1, `заголовки — вверху блока таблицы: ${m.thTop} / ${m.boxTop}`)
+        assert.ok(m.underIsTh, 'заголовки поверх строк')
+        assert.ok(m.bottom <= m.vh, `блок таблицы — в пределах окна: ${m.bottom} из ${m.vh}`)
+
+        // Меню статуса у нижнего края — вверх, в пределах блока.
+        const chips = page.locator('.dcr-table tbody .dcr-status-chip:not(:disabled)')
+        const last = await page.evaluate((b) => {
+          const list = [...document.querySelectorAll('.dcr-table tbody .dcr-status-chip:not(:disabled)')]
+          return list.findLastIndex((el) => el.getBoundingClientRect().bottom < b - 4)
+        }, m.bottom)
+        await chips.nth(last).click()
+        const pop = page.locator('.dcr-status-popover')
+        await pop.waitFor({ timeout: 5000 })
+        const box = await pop.boundingBox()
+        const chip = await chips.nth(last).boundingBox()
+        // Тот же порог, что на странице (STATUS_POPOVER_SPACE): под чипом меньше 180px — вверх.
+        const up = m.bottom - (chip.y + chip.height) < 180
+        assert.equal(/\bis-up\b/.test(await pop.getAttribute('class')), up)
+        assert.ok(box.y + box.height <= m.bottom, `меню целиком видно: ${box.y + box.height} из ${m.bottom}`)
+        await page.keyboard.press('Escape')
+        await page.mouse.click(5, 5)
+        assert.deepEqual(errors, [])
+      } finally { await context.close() }
+    }
   })
 
   it('ссылка из карточки контрагента снимает прочие фильтры, оставшиеся с прошлого раза', async () => {

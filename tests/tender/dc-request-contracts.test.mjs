@@ -33,14 +33,17 @@ describe('Заявка на ДС ↔ договор: правила', () => {
     assert.equal(normalizeDocNumber('ДС№4 к догСУ2-ЗИЛ-С/П-Э006-13 от 30.01.25г'), 'дс№4кдогсу2зилспэ00613от300125г')
   })
 
-  it('договоры контрагента: по объекту заявки — первыми; единственный по объекту — сам; чужие, ДС и удалённые — нет', () => {
+  it('договоры контрагента: объект выбран — только его и без объекта; единственный по объекту — сам; чужие, ДС и удалённые — нет', () => {
     const contracts = [
       K('a', { contract_date: '2026-01-01' }), K('b', { object_id: 'o-2', contract_date: '2026-05-01' }),
       K('c', { object_id: 'o-2', contract_date: '2025-01-01' }), K('x', { counterparty_id: 'cp-2' }),
       K('del', { deleted_at: '2026-10-01' }), K('ds', { record_type: 'ds_extra', root_contract_id: 'a' }),
-      K('three', { counterparty_id: 'cp-9', object_id: 'o-3' }),
+      K('three', { counterparty_id: 'cp-9', object_id: 'o-3' }), K('none', { object_id: null, contract_date: '2026-09-01' }),
     ]
-    assert.deepEqual(contractChoicesFor(contracts, 'cp-1', 'o-2').map(c => c.id), ['b', 'c', 'a'])
+    // 28.10: договоры другого объекта (a — «o-1») не предлагаются; без объекта — после договоров объекта.
+    assert.deepEqual(contractChoicesFor(contracts, 'cp-1', 'o-2').map(c => c.id), ['b', 'c', 'none'])
+    // Объекта у заявки нет — все договоры контрагента, свежие выше.
+    assert.deepEqual(contractChoicesFor(contracts, 'cp-1', null).map(c => c.id), ['none', 'b', 'a', 'c'])
     assert.equal(autoContractFor(contracts, 'cp-1', 'o-1')?.id, 'a')
     assert.equal(autoContractFor(contracts, 'cp-1', 'o-2'), null, 'два договора по объекту — не угадываем')
     assert.equal(autoContractFor(contracts, 'cp-1', null), null)
@@ -146,13 +149,14 @@ describe('Договоры в заявках на ДС и у контраген�
     return { contract_id: r.contract_id, amendment_id: r.amendment_id, division: r.division, ds_number: r.ds_number }
   }, id)
 
-  it('реестр заявок: «Договор» и «№ ДС» раздельно, без «Задач»; договор и ДС — из таблицы, подразделение — плашкой', async () => {
+  it('реестр заявок: договор и № ДС — в одном столбце, без «Задач»; договор и ДС — из таблицы, подразделение — плашкой', async () => {
     const { page, errors, close } = await openPage(`${DC}&dcContracts=1`, '.dcr-table tbody tr')
     try {
       const headers = (await page.locator('.dcr-table thead th').allInnerTexts()).map(h => h.trim())
-      assert.ok(!headers.includes('Задачи'), headers.join(' | '))
-      assert.equal(headers[headers.indexOf('Контрагент') + 1], 'Договор')
-      assert.equal(headers[headers.indexOf('Договор') + 1], '№ ДС')
+      assert.ok(!headers.includes('Задачи') && !headers.includes('№ ДС'), headers.join(' | '))
+      assert.equal(headers[headers.indexOf('Контрагент') + 1], 'Договор и № ДС')
+      // Номер ДС — под выбором договора, с подписью.
+      assert.match(await row(page, 12).locator('td.dcr-cell-contract .dcr-dsnum-line').innerText(), /^№ ДС:\s*ДС-3$/)
 
       // d4 (№ 15) — занесена в ДС №3; d2 (№ 12) — ДС не отмечено, номер совпал — «связать с ДС».
       await row(page, 15).locator('.dcr-in-ds', { hasText: 'в ДС' }).waitFor({ timeout: 10000 })
@@ -161,10 +165,11 @@ describe('Договоры в заявках на ДС и у контраген�
       await page.waitForFunction(() => window.__fakeDb.dc_requests.find(r => r.id === 'd2').amendment_id === 'kd-1-ds3')
       await row(page, 12).locator('.dcr-in-ds').waitFor({ timeout: 5000 })
 
-      // d3 (№ 14, «ЖК Бета») — два договора по объекту, выбора сам не делает; договор другого подрядчика не предлагается.
+      // d3 (№ 14, «ЖК Бета») — два договора по объекту, выбора сам не делает; договоры другого объекта (П-15/26 —
+      // «ЖК Альфа») и другого подрядчика не предлагаются, договор без объекта — последним, с пометкой.
       const select = row(page, 14).getByRole('combobox', { name: 'Договор заявки' })
       const options = await select.locator('option').allTextContents()
-      assert.deepEqual(options, ['Не выбран', '№ Г-8 от 15.01.2026', '№ Г-7 от 20.11.2025', '№ П-15/26 от 02.03.2026 · другой объект'])
+      assert.deepEqual(options, ['Не выбран', '№ Г-8 от 15.01.2026', '№ Г-7 от 20.11.2025', '№ Б/Н-1 от 01.06.2025 · объект не указан'])
       await select.selectOption({ label: '№ Г-8 от 15.01.2026' })
       await page.waitForFunction(() => window.__fakeDb.dc_requests.find(r => r.id === 'd3').contract_id === 'kd-3')
       const audit = await page.evaluate(() => window.__fakeDb.dc_request_audit_log.filter(a => a.dc_request_id === 'd3').map(a => a.description))
@@ -227,13 +232,51 @@ describe('Договоры в заявках на ДС и у контраген�
     const { page, errors, close } = await openPage(DC, '.dcr-table tbody tr')
     try {
       const headers = (await page.locator('.dcr-table thead th').allInnerTexts()).map(h => h.trim())
-      assert.ok(!headers.includes('Договор') && !headers.includes('Задачи'), headers.join(' | '))
+      assert.ok(!headers.includes('Договор и № ДС') && !headers.includes('Задачи'), headers.join(' | '))
+      assert.equal(headers[headers.indexOf('Контрагент') + 1], '№ ДС')
       assert.equal(await page.locator('.dcr-division').count(), 0)
       await row(page, 17).getByRole('button', { name: 'Редактировать' }).click()
       await page.locator('#dcr-form-dsnum').waitFor({ timeout: 10000 })
       assert.equal(await page.locator('#dcr-form-contract').count(), 0)
       assert.deepEqual(errors, [])
     } finally { await close() }
+  })
+
+  // 28.10.2026: с «Договором», «Статусом ОКС» и «Комментарием» таблица выросла до 124.75rem, а порог overflow-x: clip
+  // остался под 98.75rem — на широком мониторе «Комментарий» и «Действия» уходили за край без прокрутки. Теперь
+  // связанное — в одном столбце (99.5rem, как до этих столбцов), а clip — только там, где таблица помещается.
+  it('реестр помещается в окно: № ДС — под договором, ответственный — под статусом, комментарий — под статусом ОКС', async () => {
+    // Обвязка приложения и полоса 217px слева: сайдбар 200px + полоса прокрутки 17px (у безголового Chromium её нет).
+    for (const width of [1880, 1920, 2000, 2400]) {
+      const { page, errors, close } = await openPage(`${DC}&dcContracts=1&dcSubmission=1&shell=1`, '.dcr-table tbody tr', { width, height: 1000 })
+      try {
+        await page.addStyleTag({ content: '.layout { display: flex; } .layout::before { content: ""; flex: 0 0 217px; }' })
+        const m = await page.evaluate(() => {
+          const t = document.querySelector('.dcr-table')
+          const c = t.closest('.table-container')
+          const ths = [...t.querySelectorAll('thead th')]
+          return {
+            overflow: getComputedStyle(c).overflowX,
+            lastRight: ths.at(-1).getBoundingClientRect().right,
+            boxRight: c.getBoundingClientRect().right,
+            headers: ths.map(th => th.innerText.trim()),
+          }
+        })
+        assert.deepEqual(m.headers, ['№', 'Объект', 'Контрагент', 'Договор и № ДС', 'Описание ДС', 'Сумма, руб. с НДС 22%',
+          'Статус и ответственный', 'Документы', 'Статус ОКС', 'Действия'])
+        // Срезать без прокрутки нельзя: когда горизонтальной прокрутки нет (hidden — с 28.10, когда таблица
+        // прокручивается в своём блоке под закреплённой шапкой; раньше clip), «Действия» целиком внутри; от 1920 окна
+        // таблица помещается вся.
+        if (['clip', 'hidden'].includes(m.overflow) || width >= 1920) assert.ok(m.lastRight <= m.boxRight + 0.5, `${width}: ${JSON.stringify(m)}`)
+        if (width === 1880) assert.equal(m.overflow, 'auto', 'не помещается — прокрутка, а не обрезка')
+        if (width === 1920) {
+          assert.match(await row(page, 12).locator('.dcr-resp-line').innerText(), /Юристов Ю\.\s*Ю\./)
+          assert.match(await row(page, 14).locator('.dcr-resp-line').innerText(), /Не назначен/)
+          assert.equal(await row(page, 12).locator('td.dcr-cell-sub textarea.dcr-sub-comment').inputValue(), 'Письмо № 123')
+        }
+        assert.deepEqual(errors, [])
+      } finally { await close() }
+    }
   })
 
   const CP = 'route=/general/counterparties&cps=6&cpCard=1&items=20&latency=0'

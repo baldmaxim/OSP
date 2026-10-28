@@ -1,4 +1,4 @@
-// «Заявки на ДС»: столбцы «Статус ОКС» (подаётся ли ДС заказчику) и «Комментарий» перед «Действиями» — миграция 20261108, обе базы.
+// «Заявки на ДС»: столбец «Статус ОКС» (подаётся ли ДС заказчику) с комментарием под ним — перед «Действиями»; миграция 20261108, обе базы.
 // У всех заявок по умолчанию «Не проверено»; кто и когда сменил проверку, ставит триггер базы (ФИО — из user_roles,
 // со страницы не подменить), правка одного комментария подпись не меняет. Тела миграций обеих баз совпадают.
 // Триггер и проверки миграции — на временном PostgreSQL (локальный или Docker); реестр — в Chromium, стенд
@@ -216,8 +216,9 @@ describe('Реестр заявок на ДС: «Статус ОКС» и «Ко
     const { page, errors, close } = await open('&dcSubmission=1')
     try {
       const th = await headers(page)
-      // Оба столбца — перед последним («Действия»), сразу после «Документов».
-      assert.deepEqual(th.slice(-4), ['Документы', 'Статус ОКС', 'Комментарий', 'Действия'], th.join(' | '))
+      // Столбец — перед последним («Действия»), сразу после «Документов»; комментарий — в нём же, под статусом.
+      assert.deepEqual(th.slice(-3), ['Документы', 'Статус ОКС', 'Действия'], th.join(' | '))
+      assert.ok(!th.includes('Комментарий'), th.join(' | '))
 
       const d1 = rowOf(page, 'd1')
       assert.equal(await d1.locator('select[aria-label="Статус ОКС"]').inputValue(), 'not_checked')
@@ -228,7 +229,7 @@ describe('Реестр заявок на ДС: «Статус ОКС» и «Ко
       const d2 = rowOf(page, 'd2')
       assert.equal((await d2.locator('.dcr-sub-select').textContent()).trim(), 'Подано заказчику')
       assert.match(await d2.locator('.dcr-sub-meta').textContent(), /Юристов Ю\.\s*Ю\./)
-      assert.equal(await d2.locator('textarea.dcr-sub-comment').inputValue(), 'Письмо № 123')
+      assert.equal(await d2.locator('td.dcr-cell-sub textarea.dcr-sub-comment').inputValue(), 'Письмо № 123')
 
       await d1.locator('select[aria-label="Статус ОКС"]').selectOption('accepted')
       await d1.locator('.dcr-sub-meta').waitFor()

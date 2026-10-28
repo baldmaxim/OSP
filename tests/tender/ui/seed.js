@@ -781,8 +781,9 @@ if (params.get('dcStats') === '1') {
     } }
   }
   // ?dcContracts=1 — договор, ДС и подразделение заявок (миграция 20261109): у «Подрядчика 01» по «ЖК Альфа» один
-  // договор П-15/26 (с ДС №3), по «ЖК Бета» — два; договор другого подрядчика не предлагается. d2 — договор выбран,
-  // в ДС не отмечена (её «ДС-3» совпадает с ДС №3 договора); d4 — занесена в ДС №3; у d1 и d3 — подразделения.
+  // договор П-15/26 (с ДС №3), по «ЖК Бета» — два, и Б/Н-1 без объекта; договоры другого объекта и другого подрядчика
+  // не предлагаются. d2 — договор выбран, в ДС не отмечена (её «ДС-3» совпадает с ДС №3 договора); d4 — занесена в
+  // ДС №3; у d1 и d3 — подразделения.
   if (params.get('dcContracts') === '1') {
     const fdb = window.__fakeDb
     const k = (id, over) => ({ id, display_id: 900 + fdb.contracts.length, record_type: 'dp', deleted_at: null, status: 'completed',
@@ -794,6 +795,7 @@ if (params.get('dcStats') === '1') {
       k('kd-2', { object_id: objB.id, contract_number: 'Г-7', contract_date: '2025-11-20', status: 'in_work' }),
       k('kd-3', { object_id: objB.id, contract_number: 'Г-8', contract_date: '2026-01-15' }),
       k('kd-x', { counterparty_id: 'cp-2', contract_number: 'ЧУЖОЙ-9', contract_date: '2026-02-01' }),
+      k('kd-0', { object_id: null, contract_number: 'Б/Н-1', contract_date: '2025-06-01' }),
     )
     for (const r of fdb.dc_requests) Object.assign(r, { contract_id: null, amendment_id: null, division: null })
     Object.assign(fdb.dc_requests.find((r) => r.id === 'd1'), { division: 'monolith' })

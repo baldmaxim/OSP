@@ -148,6 +148,15 @@
   box-shadow: 0 12px 40px rgba(0,0,0,0.3);
 }
 
+/* Окно просмотра файла (S3DocumentPreview) — почти во весь экран: в 1100×800
+   страница PDF читалась мелко, приходилось увеличивать масштаб и водить по
+   листу (28.10.2026). Остальные окна на каркасе .s3-doc-modal — прежнего размера. */
+.s3-doc-modal-overlay.s3-doc-preview-overlay { padding: 0.75rem; }
+.s3-doc-modal.s3-doc-preview {
+  width: min(1800px, 100%);
+  height: 100%;
+}
+
 .s3-doc-modal-header {
   display: flex;
   align-items: center;

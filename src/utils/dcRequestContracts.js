@@ -28,13 +28,16 @@ export function dsNumberKey(value) {
 
 const isLiveContract = (c) => !!c && !c.deleted_at && c.record_type === 'dp'
 
-// Договоры контрагента для выбора в заявке: сначала по объекту заявки, затем остальные; внутри — свежие выше.
+// Договоры контрагента для выбора в заявке; внутри — свежие выше. Объект заявки выбран — только договоры этого
+// объекта (решение 28.10: договоры других объектов не предлагаются), за ними — договоры без объекта: они не
+// «другого объекта», а не заполнены в реестре. Объекта нет — все договоры контрагента.
 // contracts — [{ id, record_type, deleted_at, counterparty_id, object_id, contract_number, contract_date, … }];
 // parties — Map(id договора → Set(id контрагентов)) из contract_counterparties (договор с несколькими сторонами).
 export function contractChoicesFor(contracts, counterpartyId, objectId = null, parties = null) {
   if (!counterpartyId) return []
   const own = (contracts || []).filter(c => isLiveContract(c)
-    && (c.counterparty_id === counterpartyId || parties?.get(c.id)?.has(counterpartyId)))
+    && (c.counterparty_id === counterpartyId || parties?.get(c.id)?.has(counterpartyId))
+    && (!objectId || !c.object_id || c.object_id === objectId))
   const rank = (c) => (objectId && c.object_id === objectId ? 0 : 1)
   return own.sort((a, b) => rank(a) - rank(b)
     || String(b.contract_date || '').localeCompare(String(a.contract_date || ''))

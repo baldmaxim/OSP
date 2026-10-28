@@ -47,30 +47,8 @@
   border: 1px solid #c4b5fd;
 }
 
-/* Отчёт по документам — тот же каркас, что у итоговых документов, но в
-   фиолетовой гамме этапа «Итог проверки», чтобы блоки не путали. */
-.dcr-report-docs.has-final {
-  border-color: rgba(124, 58, 237, 0.40);
-  background: rgba(124, 58, 237, 0.07);
-}
-.dcr-report-docs.has-final .dcr-final-docs-title,
-.dcr-report-docs.has-final .dcr-doc-add-final {
-  color: #6d28d9;
-}
-.dcr-report-docs.has-final .dcr-doc-add-final {
-  border-color: rgba(124, 58, 237, 0.45);
-}
-.dcr-report-docs .dcr-final-docs-count {
-  background: rgba(124, 58, 237, 0.85);
-}
-[data-theme='dark'] .dcr-report-docs.has-final {
-  border-color: rgba(167, 139, 250, 0.40);
-  background: rgba(167, 139, 250, 0.10);
-}
-[data-theme='dark'] .dcr-report-docs.has-final .dcr-final-docs-title,
-[data-theme='dark'] .dcr-report-docs.has-final .dcr-doc-add-final {
-  color: #c4b5fd;
-}
+/* Цвета «Отчёта по документам» и «Итоговых документов» — в конце файла
+   («Блоки документов»). */
 
 /* Компактная шапка вместо «коробки» из ContractRegistry.css (task 315). */
 .dc-requests-page .registry-header {
@@ -2585,17 +2563,17 @@
 .dc-requests-page.ui-work .dcr-filter-drop .fdrop-trigger { width: auto; font-weight: var(--ui-regular); }
 .dc-requests-page.ui-work .dcr-filter-drop.is-active .fdrop-trigger { font-weight: var(--ui-regular); color: var(--text-primary); border-color: var(--primary-color); background: var(--primary-light); }
 
-/* Сетка: всё, кроме описания ДС, — фиксированной ширины в rem. Сумма
-   фиксированных — 86.75rem, min-width = + 12rem под описание. На 1920 таблица
-   помещается (описание ≈ 17rem); уже — прокручивается внутри себя.
+/* Сетка: всё, кроме описания ДС, — фиксированной ширины в rem; min-width
+   таблицы — сумма фиксированных + место под описание (по набору столбцов —
+   в конце файла, «Сетка реестра»). Уже — таблица прокручивается внутри себя.
    Прокрутку включаем только там, где таблица не помещается: пока она не
    нужна, остаётся прежний overflow-x: clip — выбор статуса открывается прямо
-   в ячейке и у нижних строк не должен упираться в край контейнера. */
-.dc-requests-page.ui-work .dcr-table { table-layout: fixed; width: 100%; min-width: 98.75rem; }
+   в ячейке и у нижних строк не должен упираться в край контейнера. Порог —
+   там же: он обязан расти вместе с таблицей, иначе clip молча срезает правые
+   столбцы (так было после «Договора» и «Статуса ОКС»: 124.75rem при пороге
+   под 98.75rem — «Комментарий» и «Действия» уходили за край без прокрутки). */
+.dc-requests-page.ui-work .dcr-table { table-layout: fixed; width: 100%; }
 .dc-requests-page.ui-work .table-container { overflow-x: auto; }
-@media (min-width: 115.75rem) {  /* 98.75rem таблицы + сайдбар 200px + поля ≈ 1852px */
-  .dc-requests-page.ui-work .table-container { overflow-x: clip; }
-}
 .dc-requests-page.ui-work .dcr-col-num { width: 2.75rem; }
 .dc-requests-page.ui-work .dcr-col-object { width: 11rem; }      /* значок + «Ориентировочный срок:» в строку */
 .dc-requests-page.ui-work .dcr-col-cp { width: 12.25rem; }       /* «Доп. работы вне договора» в селекторе */
@@ -2603,8 +2581,6 @@
 /* .dcr-col-desc — без ширины: остаток */
 .dc-requests-page.ui-work .dcr-col-amount { width: 11.5rem; }      /* сумма до «999 999 999 999,99» целиком */
 .dc-requests-page.ui-work .dcr-col-status { width: 10.25rem; }
-.dc-requests-page.ui-work .dcr-col-resp { width: 8.5rem; }
-.dc-requests-page.ui-work .dcr-col-tasks { width: 5rem; }
 .dc-requests-page.ui-work .dcr-col-docs { width: 12.5rem; }
 .dc-requests-page.ui-work .dcr-col-actions { width: 6.5rem; }     /* три кнопки 28px */
 
@@ -2839,19 +2815,15 @@
 
 /* Сетка. Место отдано «Документам» (было 12.5rem — имена файлов шли столбиком
    по 5–15 строк), «Сумме» (подпись и значение в строку) и «Статусу»
-   («Проверка по договору» в одну строку); «Действия» — три кнопки 24px.
-   Сумма фиксированных — 89.75rem; на 1920 описанию остаётся ≈ 13rem.
-   min-width 99.5rem — таблица помещается без прокрутки от ≈ 1870px окна
-   (1920 с открытой боковой панелью Edge); уже — прокручивается внутри себя. */
-.dc-requests-page.ui-work.dcr-dense .dcr-table { min-width: 99.5rem; }
+   («Проверка по договору» в одну строку; под ним — ответственный,
+   «Садовников Д. Ю.» в строку); «Действия» — три кнопки 24px. min-width
+   таблицы и порог прокрутки — в конце файла («Сетка реестра»). */
 .dc-requests-page.ui-work.dcr-dense .dcr-col-num { width: 2.25rem; }
 .dc-requests-page.ui-work.dcr-dense .dcr-col-object { width: 11rem; }      /* значок + «Ориентировочный срок:» в строку */
 .dc-requests-page.ui-work.dcr-dense .dcr-col-cp { width: 13rem; }          /* подпись 3.875rem + «Изменение ПСДЦ» в строку */
 .dc-requests-page.ui-work.dcr-dense .dcr-col-dsnum { width: 5.75rem; }
 .dc-requests-page.ui-work.dcr-dense .dcr-col-amount { width: 13.25rem; }   /* «Было подано» и сумма до «999 999 999,99» в строку */
 .dc-requests-page.ui-work.dcr-dense .dcr-col-status { width: 10.75rem; }   /* «Проверка по договору ▾» в строку */
-.dc-requests-page.ui-work.dcr-dense .dcr-col-resp { width: 8rem; }        /* «Садовников Д. Ю.» в строку */
-.dc-requests-page.ui-work.dcr-dense .dcr-col-tasks { width: 4.75rem; }
 .dc-requests-page.ui-work.dcr-dense .dcr-col-docs { width: 16rem; }
 .dc-requests-page.ui-work.dcr-dense .dcr-col-actions { width: 5rem; }
 /* Меню статуса открывается вниз прямо из ячейки. Строки стали ниже, и у
@@ -2859,7 +2831,7 @@
    раздела обрезает содержимое) — «Завершено» было не нажать. Пока меню
    последней строки открыто, строка не ниже меню (height у tr — минимальная
    высота): высокую строку это не меняет, короткая подрастает под меню. */
-.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr:last-child:has(.dcr-status-popover) { height: 13rem; }
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr:last-child:has(.dcr-status-popover:not(.is-up)) { height: 13rem; }
 
 /* Дальше — содержимое ячеек; префикс с .table-container, чтобы не задеть
    те же элементы в окнах (карточки файлов в «Результате проверки»). */
@@ -3098,24 +3070,61 @@
 [data-theme='dark'] .dc-requests-page .dcr-sub-comment.is-missing::placeholder { color: #fcd34d; }
 .dc-requests-page .dcr-sub-mcard-meta { display: block; color: var(--text-secondary); font-size: 0.75rem; }
 
-/* Сетка: оба столбца — перед «Действиями». Статус ОКС — «Садовников Д. Ю.»
-   под выбором в строку (8rem), «Принято в работу (будет подаваться)» — в две
-   строки; комментарий — 12rem. Таблица с ними шире на 21.5rem; уже окна —
-   прокручивается внутри себя, как раньше. */
-.dc-requests-page.ui-work .dcr-col-sub { width: 9.5rem; }
-.dc-requests-page.ui-work .dcr-col-sub-comment { width: 12rem; }
-.dc-requests-page.ui-work .dcr-table.has-sub { min-width: 120.25rem; }
-.dc-requests-page.ui-work.dcr-dense .dcr-table.has-sub { min-width: 121rem; }
+/* Комментарий — под статусом ОКС и подписью, отдельного столбца нет. */
+.dc-requests-page .dcr-cell-sub :is(.dcr-sub-comment, .dcr-sub-comment-text) { margin-top: 0.25rem; }
 
-/* Договор и номер ДС — раздельно (миграция 20261109). Колонки «Задачи» больше нет (4.75–5rem), колонка
-   «Договор» — 8.5rem: «№ СУ2-ЗИЛ33-СП-Э005-9 от 12.11.2025» в две строки. Таблица шире на 3.5–3.75rem. */
+/* ══ Сетка реестра ════════════════════════════════════════════════════════════
+   Связанное — в одном столбце, чтобы таблица помещалась в окно: № ДС — под
+   договором (миграция 20261109, .has-link: «Договор и № ДС» 8.5rem вместо
+   «№ ДС» 5.75rem — «№ СУ2-ЗИЛ33-СП-Э005-9 от 12.11.2025» в две строки),
+   ответственный — под статусом, комментарий — под статусом ОКС (миграция
+   20261108, .has-sub: 10rem — «Не будет подаваться ▾» в строку, «Принято в
+   работу (будет подаваться)» в две). Колонки «Задачи» нет.
+   Плотный вариант (на компьютере таблица только в нём): фиксированные —
+   77rem, + «Договор» 2.75rem, + «Статус ОКС» 10rem; описанию — от 9.75rem.
+   Со всеми столбцами — 99.5rem, как до 20261108: помещается без прокрутки от
+   ≈ 1900px окна (сайдбар 200px, поля страницы и контейнера 88px, полоса
+   прокрутки 17px); на 1920 описанию ≈ 11rem, на мониторе шире — больше.
+   Обычный вариант — те же столбцы по своим ширинам, описанию — от 12rem. */
 .dc-requests-page.ui-work .dcr-col-contract { width: 8.5rem; }
-.dc-requests-page.ui-work .dcr-table { min-width: 102.25rem; }
-.dc-requests-page.ui-work.dcr-dense .dcr-table { min-width: 103.25rem; }
-.dc-requests-page.ui-work .dcr-table.has-sub { min-width: 123.75rem; }
-.dc-requests-page.ui-work.dcr-dense .dcr-table.has-sub { min-width: 124.75rem; }
+.dc-requests-page.ui-work .dcr-col-sub { width: 10rem; }
+.dc-requests-page.ui-work .dcr-table { min-width: 85.25rem; }
+.dc-requests-page.ui-work .dcr-table.has-link { min-width: 87.25rem; }
+.dc-requests-page.ui-work .dcr-table.has-sub { min-width: 95.25rem; }
+.dc-requests-page.ui-work .dcr-table.has-link.has-sub { min-width: 97.25rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-table { min-width: 86.75rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-table.has-link { min-width: 89.5rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-table.has-sub { min-width: 96.75rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-table.has-link.has-sub { min-width: 99.5rem; }
+@media (min-width: 118.75rem) {  /* 99.5rem самой широкой таблицы + 305px ≈ 1897px окна */
+  .dc-requests-page.ui-work .table-container { overflow-x: clip; }
+}
 
+/* Договор и № ДС (миграция 20261109): номер — строкой под выбором договора, с подписью, как «Материал:». */
 .dc-requests-page .dcr-cell-contract { position: relative; }
+.dc-requests-page .dcr-dsnum-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.25rem;
+  margin-top: 0.25rem;
+}
+.dc-requests-page .dcr-dsnum-label {
+  flex: none;
+  color: var(--text-secondary);
+  font-size: var(--ui-hint, 0.75rem);
+  line-height: var(--ui-hint-lh, 1rem);
+}
+
+/* Ответственный — под статусом и итогом проверки: значок, как у автора в «Объекте», имя — обычным текстом. */
+.dc-requests-page .dcr-resp-line {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.375rem;
+  min-width: 0;
+}
+.dc-requests-page .dcr-resp-line .dcr-meta-icon { flex: none; }
 .dc-requests-page .dcr-contract-select { padding-right: 1.25rem; }
 .dc-requests-page .dcr-contract-link {
   color: var(--ui-link, var(--primary-color));
@@ -3167,3 +3176,95 @@
 
 /* Подразделение — плашкой под описанием, как подразделение ВОР в реестре тендеров (VorDivisionChip). */
 .dc-requests-page .dcr-division { margin-top: 0.25rem; }
+
+/* ══ Блоки документов: «Отчёт по документам» и «Итоговые документы» ═════════
+   Отчёт — результат этапа «Итог проверки», поэтому в его цвете: рамка, заливка
+   и текст — как у плашки «Итог проверки» в столбце «Статус»
+   (.dcr-status-chip.status-check-result). Итоговые — ярко-зелёные. Пустой
+   блок — пунктирная рамка и подпись того же цвета: связь видна и без файлов.
+   Раньше фиолетовое правило отчёта перебивалось зелёным правилом итоговых
+   (та же специфичность, ниже по файлу) — оба блока с файлами были зелёными. */
+.dc-requests-page .dcr-final-docs.dcr-report-docs { border-color: rgba(124, 58, 237, 0.45); }
+.dc-requests-page .dcr-final-docs.dcr-report-docs.has-final {
+  border-style: solid;
+  border-color: rgba(124, 58, 237, 0.30);
+  background: rgba(124, 58, 237, 0.12);
+}
+.dc-requests-page .dcr-final-docs.dcr-report-docs :is(.dcr-final-docs-title, .dcr-doc-add-final) { color: #6d28d9; }
+.dc-requests-page .dcr-final-docs.dcr-report-docs .dcr-doc-add-final { border-color: rgba(124, 58, 237, 0.45); }
+.dc-requests-page .dcr-final-docs.dcr-report-docs .dcr-final-docs-count { background: #6d28d9; }
+[data-theme='dark'] .dc-requests-page .dcr-final-docs.dcr-report-docs { border-color: rgba(167, 139, 250, 0.50); }
+[data-theme='dark'] .dc-requests-page .dcr-final-docs.dcr-report-docs.has-final {
+  border-color: rgba(167, 139, 250, 0.42);
+  background: rgba(124, 58, 237, 0.24);
+}
+[data-theme='dark'] .dc-requests-page .dcr-final-docs.dcr-report-docs :is(.dcr-final-docs-title, .dcr-doc-add-final) { color: #c4b5fd; }
+[data-theme='dark'] .dc-requests-page .dcr-final-docs.dcr-report-docs .dcr-doc-add-final { border-color: rgba(167, 139, 250, 0.50); }
+[data-theme='dark'] .dc-requests-page .dcr-final-docs.dcr-report-docs .dcr-final-docs-count { background: #7c3aed; }
+
+/* Итоговые: насыщенная зелёная рамка (green-500) и светло-зелёная заливка;
+   текст и счётчик — на ступень темнее ради контраста (≥ 4,5:1). */
+.dc-requests-page .dcr-final-docs:not(.dcr-report-docs) { border-color: rgba(34, 197, 94, 0.60); }
+.dc-requests-page .dcr-final-docs:not(.dcr-report-docs).has-final {
+  border-style: solid;
+  border-color: #22c55e;
+  background: #dcfce7;
+}
+.dc-requests-page .dcr-final-docs:not(.dcr-report-docs) :is(.dcr-final-docs-title, .dcr-doc-add-final) { color: #15803d; }
+.dc-requests-page .dcr-final-docs:not(.dcr-report-docs).has-final .dcr-final-docs-title { color: #166534; }
+.dc-requests-page .dcr-final-docs:not(.dcr-report-docs) .dcr-doc-add-final { border-color: rgba(34, 197, 94, 0.60); }
+.dc-requests-page .dcr-final-docs:not(.dcr-report-docs) .dcr-final-docs-count { background: #15803d; }
+[data-theme='dark'] .dc-requests-page .dcr-final-docs:not(.dcr-report-docs) { border-color: rgba(74, 222, 128, 0.55); }
+[data-theme='dark'] .dc-requests-page .dcr-final-docs:not(.dcr-report-docs).has-final {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.20);
+}
+[data-theme='dark'] .dc-requests-page .dcr-final-docs:not(.dcr-report-docs) :is(.dcr-final-docs-title, .dcr-doc-add-final),
+[data-theme='dark'] .dc-requests-page .dcr-final-docs:not(.dcr-report-docs).has-final .dcr-final-docs-title { color: #86efac; }
+[data-theme='dark'] .dc-requests-page .dcr-final-docs:not(.dcr-report-docs) .dcr-doc-add-final { border-color: rgba(74, 222, 128, 0.55); }
+[data-theme='dark'] .dc-requests-page .dcr-final-docs:not(.dcr-report-docs) .dcr-final-docs-count { background: #16a34a; }
+
+/* ══ Закреплённая шапка (28.10.2026) ═════════════════════════════════════════
+   На компьютере страница не выше окна: шапка раздела, вкладки и панель
+   фильтров стоят на месте, таблица прокручивается под ними в своём блоке (по
+   обеим осям — полоса горизонтальной прокрутки всегда внизу окна), строка
+   заголовков столбцов залипает вверху блока. Раньше не залипало ничего: корень
+   страницы (.contract-registry, overflow: hidden) гасил position: sticky у
+   заголовков, а при узком окне их гасил и overflow-x: auto контейнера.
+   Высота — от .main-content (App.css: прокручивается он, а не окно); без
+   обвязки приложения (стенды) страница, как раньше, высотой с содержимое.
+   Положение прокрутки таблицы переживает обновление (useScrollMemory). */
+.main-content > .dc-requests-page.ui-work.dcr-dense {
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+}
+.main-content > .dc-requests-page.ui-work.dcr-dense > * { flex: none; }
+.main-content > .dc-requests-page.ui-work.dcr-dense > .table-container {
+  flex: 0 1 auto;
+  min-height: 12rem;
+  overflow: auto;
+}
+/* Таблица помещается в окно — горизонтальной прокрутки нет, а микропереполнение
+   ячеек обрезается, как прежде делал clip («Сетка реестра»). */
+@media (min-width: 118.75rem) {
+  .main-content > .dc-requests-page.ui-work.dcr-dense > .table-container { overflow-x: hidden; }
+}
+/* Линия под заголовками — тенью: при border-collapse рамка остаётся у таблицы
+   и при прокрутке уезжает вместе со строками. */
+.main-content > .dc-requests-page.ui-work.dcr-dense table.dcr-table > thead > tr > th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  box-shadow: inset 0 -1px 0 var(--border-color);
+}
+/* Меню статуса у нижнего края блока открывается вверх (.is-up): вниз оно ушло
+   бы под край прокрутки. */
+.dc-requests-page .dcr-status-popover.is-up { top: auto; bottom: calc(100% + 4px); }
+
+/* Путь к папке заявки открывается в проводнике нажатием — при наведении как ссылка. */
+.dc-requests-page .dcr-folder-path-text.is-openable { cursor: pointer; }
+.dc-requests-page .dcr-folder-path-text.is-openable:is(:hover, :focus-visible) {
+  color: var(--ui-link, var(--primary-color));
+  text-decoration: underline;
+}

@@ -113,6 +113,9 @@ describe('Реестр заявок на ДС: файлы в Excel и ссылк
         await modal.waitFor({ timeout: 10000 })
         assert.equal(await modal.locator('.s3-doc-modal-title').textContent(), name)
         await modal.locator(inside).waitFor()
+        // Окно просмотра — почти во весь экран (28.10.2026; было 1100×800): поля по 12px.
+        const size = await modal.boundingBox()
+        assert.ok(size.width >= 1600 - 26 && size.height >= 1000 - 26, `окно ${size.width}×${size.height}`)
         if (id === 'dcf-2') {
           const presign = await page.evaluate(() => window.__fakeLastPresign)
           assert.equal(presign?.download, true, 'ссылка на скачивание')

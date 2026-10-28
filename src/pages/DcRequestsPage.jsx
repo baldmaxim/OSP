@@ -36,6 +36,8 @@ import { VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION } from '../utils/vor
 import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { DC_SCROLL_KEY, groupDocsByRequest, readDcView, sessionStore, writeDcView } from '../utils/dcRequestView'
 import useScrollMemory from '../hooks/useScrollMemory'
+import { openFolder } from '../components/FolderOpen'
+import { canOpenFolders, isFolderPath } from '../utils/folderOpen'
 import '../components/ContractRegistry.css'
 import '../components/MobileCards.css'
 import './DcRequestsPage.css'
@@ -80,6 +82,12 @@ const EMPTY_FORM = {
 
 // Сколько контрагентов показывать в выпадающем поиске за раз (список большой — 1000+).
 const CP_SEARCH_LIMIT = 50
+
+// Высота меню статуса (четыре этапа) с отступом, px: меньше места под чипом — меню открывается вверх.
+const STATUS_POPOVER_SPACE = 180
+
+// Путь заявки открывается в проводнике нажатием: путь к папке Windows и компьютер на Windows.
+const folderOpenable = (path) => isFolderPath(path) && canOpenFolders()
 
 const TABS = [
   { key: 'all', label: 'Все заявки' },
@@ -290,8 +298,9 @@ function dcLinkSaveError(err, what) {
   return `Ошибка сохранения (${what}): ${msg}`
 }
 
-// Договор заявки в таблице (миграция 20261109): с правом правки — выбор из договоров контрагента заявки (по объекту
-// заявки — первыми), без права — номер договора ссылкой на его карточку. contracts = null — договоры ещё грузятся.
+// Договор заявки в таблице (миграция 20261109): с правом правки — выбор из договоров контрагента заявки (объект
+// заявки выбран — только по нему и без объекта), без права — номер договора ссылкой на его карточку. contracts = null
+// — договоры ещё грузятся.
 function DcContractCell({ req, contracts, contractsById, parties, canEdit, onChange }) {
   const current = req.contract_id ? contractsById.get(req.contract_id) : null
   const currentText = req.contract_id ? (current ? contractLabel(current) : 'договор не найден') : null
@@ -304,7 +313,11 @@ function DcContractCell({ req, contracts, contractsById, parties, canEdit, onCha
   }
   const choices = contractChoicesFor(contracts, req.counterparty_id, req.object_id, parties)
   if (!choices.length && !req.contract_id) {
-    return <span className="dcr-contract-none" title="У контрагента заявки нет договоров в реестре «Договоры и ДС»">нет договоров</span>
+    return (
+      <span className="dcr-contract-none" title={req.object_id
+        ? 'У контрагента заявки нет договоров по этому объекту в реестре «Договоры и ДС»'
+        : 'У контрагента заявки нет договоров в реестре «Договоры и ДС»'}>нет договоров</span>
+    )
   }
   return (
     <>
@@ -317,12 +330,15 @@ function DcContractCell({ req, contracts, contractsById, parties, canEdit, onCha
         aria-label="Договор заявки"
       >
         <option value="">Не выбран</option>
+        {/* Выбранный раньше договор другого объекта виден, но выбрать его снова нельзя. */}
         {req.contract_id && !choices.some(c => c.id === req.contract_id) && (
-          <option value={req.contract_id} disabled>{currentText}</option>
+          <option value={req.contract_id} disabled>
+            {currentText}{current && req.object_id && current.object_id && current.object_id !== req.object_id ? ' · другой объект' : ''}
+          </option>
         )}
         {choices.map(c => (
           <option key={c.id} value={c.id}>
-            {contractLabel(c)}{req.object_id && c.object_id !== req.object_id ? ' · другой объект' : ''}
+            {contractLabel(c)}{req.object_id && !c.object_id ? ' · объект не указан' : ''}
           </option>
         ))}
       </WrapSelect>
@@ -506,8 +522,18 @@ function DcRequestsPage() {
   // Колонки договора, ДС и подразделения — когда они есть в базе (миграция 20261109): select * их отдаёт.
   const linkEnabled = requests.some(r => r.contract_id !== undefined)
 
-  // task 310 — статус в виде клик-попапа.
+  // task 310 — статус в виде клик-попапа. statusPopoverUp — открыть вверх: внизу блока таблицы меню не помещается
+  // (таблица прокручивается в своём блоке под закреплённой шапкой).
   const [statusPopoverFor, setStatusPopoverFor] = useState(null)
+  const [statusPopoverUp, setStatusPopoverUp] = useState(false)
+  const toggleStatusPopover = (e, reqId) => {
+    if (statusPopoverFor === reqId) { setStatusPopoverFor(null); return }
+    const chip = e.currentTarget.getBoundingClientRect()
+    const box = e.currentTarget.closest('.table-container')?.getBoundingClientRect()
+    const below = box ? box.bottom - chip.bottom : Infinity
+    setStatusPopoverUp(below < STATUS_POPOVER_SPACE && chip.top - box.top > below)
+    setStatusPopoverFor(reqId)
+  }
 
   // Окно «Результат проверки по договору»:
   //   { requestId, nextStatus, verdict, notes } | null
@@ -563,7 +589,8 @@ function DcRequestsPage() {
   }, [activeTab, searchQuery, filterStatuses, filterObjectIds, filterCounterpartyIds, filterResponsibleIds, filterDivisions, expandedDocs])
 
   // Прокрутку возвращаем, когда высота строк окончательная: заявки, их файлы и договоры (подписи договоров).
-  const pageRef = useScrollMemory(DC_SCROLL_KEY, requestsLoaded && docsLoaded && contracts !== null)
+  // На компьютере прокручивается таблица под закреплённой шапкой, на телефоне — страница.
+  const pageRef = useScrollMemory(DC_SCROLL_KEY, requestsLoaded && docsLoaded && contracts !== null, '.table-container')
 
   // Файлы, приложенные коллегами, — без обновления страницы: при возврате на вкладку браузера, не чаще раза в минуту.
   useEffect(() => {
@@ -860,9 +887,8 @@ function DcRequestsPage() {
     setShowModal(true)
   }
 
-  // Путь копируем в буфер: открыть проводник по клику браузер не позволяет
-  // (переход на file:// и UNC со страницы по https заблокирован), поэтому
-  // остаётся вставить путь в его адресную строку вручную.
+  // Путь в буфер — для тех, у кого нет помощника «Открыть папку» (FolderOpen.jsx): сам браузер на file:// и UNC
+  // со страницы по https не переходит, путь вставляют в адресную строку проводника.
   const handleCopyFolderPath = async (reqId, path) => {
     const ok = await copyToClipboard(path)
     if (!ok) { alert('Не удалось скопировать путь. Выделите его и скопируйте вручную.'); return }
@@ -2130,23 +2156,21 @@ function DcRequestsPage() {
         )
       ) : (
         <div className="table-container">
-          <table className={`dcr-table${submissionEnabled ? ' has-sub' : ''}`}>
+          <table className={`dcr-table${linkEnabled ? ' has-link' : ''}${submissionEnabled ? ' has-sub' : ''}`}>
             {/* Ширины — в DcRequestsPage.css (.dcr-col-*): суммы и номера целиком,
-                описание ДС забирает остаток. task 334: «Задачи» — только
-                счётчик-кнопка, подробности в модалке. */}
+                описание ДС забирает остаток. Связанное — в одном столбце, иначе
+                таблица не помещается в окно: № ДС — под договором, ответственный —
+                под статусом, комментарий — под статусом ОКС. */}
             <colgroup>
               <col className="dcr-col-num" />
               <col className="dcr-col-object" />
               <col className="dcr-col-cp" />
-              {linkEnabled && <col className="dcr-col-contract" />}
-              <col className="dcr-col-dsnum" />
+              <col className={linkEnabled ? 'dcr-col-contract' : 'dcr-col-dsnum'} />
               <col className="dcr-col-desc" />
               <col className="dcr-col-amount" />
               <col className="dcr-col-status" />
-              <col className="dcr-col-resp" />
               <col className="dcr-col-docs" />
               {submissionEnabled && <col className="dcr-col-sub" />}
-              {submissionEnabled && <col className="dcr-col-sub-comment" />}
               <col className="dcr-col-actions" />
             </colgroup>
             <thead>
@@ -2154,25 +2178,22 @@ function DcRequestsPage() {
                 <th style={{ textAlign: 'center' }}>№</th>
                 <th>Объект</th>
                 <th>Контрагент</th>
-                {linkEnabled && <th>Договор</th>}
-                <th>№ ДС</th>
+                <th>{linkEnabled ? 'Договор и № ДС' : '№ ДС'}</th>
                 <th>Описание ДС</th>
                 {/* task 370: сумма ДС («Было подано» / «Утверждено») с НДС 22% перед статусом */}
                 <th style={{ textAlign: 'right' }}>Сумма, руб. с НДС 22%</th>
-                <th>Статус</th>
-                <th>Ответственный</th>
+                <th>Статус и ответственный</th>
                 <th>Документы</th>
-                {/* Статус ОКС — подаётся ли ДС заказчику; пояснение (номер письма, срок…) — в комментарии.
-                    Оба столбца — перед последним («Действия»). */}
+                {/* Статус ОКС — подаётся ли ДС заказчику; под ним пояснение (номер письма, срок…).
+                    Перед последним столбцом («Действия»). */}
                 {submissionEnabled && <th>Статус ОКС</th>}
-                {submissionEnabled && <th>Комментарий</th>}
                 <th><span className="ui-sr-only">Действия</span></th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={(submissionEnabled ? 12 : 10) + (linkEnabled ? 1 : 0)} className="no-data" style={{ textAlign: 'center' }}>
+                  <td colSpan={submissionEnabled ? 10 : 9} className="no-data" style={{ textAlign: 'center' }}>
                     {searchQuery
                       ? 'Ничего не найдено.'
                       : (activeTab === 'all'
@@ -2315,7 +2336,8 @@ function DcRequestsPage() {
                           </div>
                         )}
                       </td>
-                      {linkEnabled && (
+                      {linkEnabled ? (
+                        // Договор, под ним № ДС и «в ДС» — один столбец: ДС — часть договора.
                         <td className="dcr-cell-contract">
                           <DcContractCell
                             req={req}
@@ -2325,13 +2347,12 @@ function DcRequestsPage() {
                             canEdit={canEditDc && !isDeletedTab}
                             onChange={(contractId) => handleSaveContract(req, contractId)}
                           />
-                        </td>
-                      )}
-                      <td className="dcr-cell-dsnum">
-                        {req.ds_number
-                          ? <BreakableId value={req.ds_number} className="ui-num-wrap" />
-                          : <span className="muted-dash">—</span>}
-                        {linkEnabled && (
+                          <div className="dcr-cell-dsnum dcr-dsnum-line">
+                            <span className="dcr-dsnum-label">№ ДС:</span>
+                            {req.ds_number
+                              ? <BreakableId value={req.ds_number} className="ui-num-wrap" />
+                              : <span className="muted-dash">—</span>}
+                          </div>
                           <DcAmendmentMark
                             req={req}
                             contracts={contracts}
@@ -2339,8 +2360,14 @@ function DcRequestsPage() {
                             canEdit={canEditDc && !isDeletedTab}
                             onLink={(amendmentId) => handleSaveAmendment(req, amendmentId)}
                           />
-                        )}
-                      </td>
+                        </td>
+                      ) : (
+                        <td className="dcr-cell-dsnum">
+                          {req.ds_number
+                            ? <BreakableId value={req.ds_number} className="ui-num-wrap" />
+                            : <span className="muted-dash">—</span>}
+                        </td>
+                      )}
                       <td className="dcr-cell-works">
                         {/* До трёх строк, длиннее — «Показать полностью». */}
                         <ClampText text={req.works_description} />
@@ -2407,7 +2434,7 @@ function DcRequestsPage() {
                           <button
                             type="button"
                             className={`dcr-status-chip ${statusOpt?.className || ''}${isStatusOpen ? ' is-open' : ''}`}
-                            onClick={() => canChangeStatus(currentStatus) && !isDeletedTab && setStatusPopoverFor(isStatusOpen ? null : req.id)}
+                            onClick={(e) => canChangeStatus(currentStatus) && !isDeletedTab && toggleStatusPopover(e, req.id)}
                             disabled={!canChangeStatus(currentStatus) || isDeletedTab}
                             title={currentStatus === 'contract_check' && !canLeaveContractCheck
                               ? 'Снять статус «Проверка по договору» может только юрист ОСП или администратор'
@@ -2419,7 +2446,7 @@ function DcRequestsPage() {
                             <span className="dcr-status-chev" aria-hidden>▾</span>
                           </button>
                           {isStatusOpen && (
-                            <div className="dcr-status-popover" role="listbox">
+                            <div className={`dcr-status-popover${statusPopoverUp ? ' is-up' : ''}`} role="listbox">
                               {STATUS_OPTIONS.map(opt => {
                                 const isCurrent = opt.value === currentStatus
                                 return (
@@ -2469,8 +2496,14 @@ function DcRequestsPage() {
                             title="Зафиксировать итог проверки по договору"
                           >+ Итог проверки</button>
                         ) : null}
+                        {/* Ответственный — под статусом: кто ведёт заявку по этапам. */}
+                        <div className="dcr-resp-line" title="Ответственный">
+                          <span className="dcr-meta-icon" aria-hidden><IconUser size={12} /></span>
+                          {req.responsible?.full_name
+                            ? <PersonName full={req.responsible.full_name} titlePrefix="Ответственный" />
+                            : <span className="muted-dash">Не назначен</span>}
+                        </div>
                       </td>
-                      <td>{req.responsible?.full_name ? <PersonName full={req.responsible.full_name} /> : <span className="muted-dash">Не назначен</span>}</td>
                       <td className="dcr-cell-docs">
                         {/* Путь к папке в хранилище — первым: с него начинают поиск
                             документов, файлы на сайте лишь дополняют его.
@@ -2507,12 +2540,27 @@ function DcRequestsPage() {
                         ) : req.folder_path ? (
                           <div className="dcr-folder-path" title={req.folder_path}>
                             <IconFolder />
-                            <span className="dcr-folder-path-text">{req.folder_path}</span>
+                            {/* Нажатие на путь — папка в проводнике (помощник, FolderOpen.jsx); не путь к папке
+                                Windows или не Windows — только текст, путь копируют кнопкой. */}
+                            {folderOpenable(req.folder_path) ? (
+                              <span
+                                className="dcr-folder-path-text is-openable"
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => openFolder(req.folder_path)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFolder(req.folder_path) }
+                                }}
+                                title={`Открыть папку в проводнике:\n${req.folder_path}`}
+                              >{req.folder_path}</span>
+                            ) : (
+                              <span className="dcr-folder-path-text">{req.folder_path}</span>
+                            )}
                             <button
                               type="button"
                               className="dcr-folder-path-copy"
                               onClick={() => handleCopyFolderPath(req.id, req.folder_path)}
-                              title="Скопировать путь и вставить в адресную строку проводника"
+                              title="Скопировать путь"
                               aria-label="Скопировать путь к папке"
                             >
                               {copiedPathId === req.id ? <IconCheck /> : <IconCopy />}
@@ -2629,8 +2677,8 @@ function DcRequestsPage() {
                           </div>
                         )}
                       </td>
-                      {/* Статус ОКС: выбор прямо в ячейке; под ним — кто и когда сменил (ставит база).
-                          Оба столбца — перед последним («Действия»). */}
+                      {/* Статус ОКС: выбор прямо в ячейке; под ним — кто и когда сменил (ставит база)
+                          и комментарий. Перед последним столбцом («Действия»). */}
                       {submissionEnabled && (
                         <td className="dcr-cell-sub">
                           {canEditSubmission ? (
@@ -2659,10 +2707,6 @@ function DcRequestsPage() {
                               <span className="ui-num">{formatShortDate(req.submission_at)}</span>
                             </div>
                           )}
-                        </td>
-                      )}
-                      {submissionEnabled && (
-                        <td className="dcr-cell-sub-comment">
                           {canEditSubmission ? (
                             <SubmissionCommentInput
                               value={req.submission_comment}
@@ -2670,9 +2714,9 @@ function DcRequestsPage() {
                               missing={submissionNeedsComment(req)}
                               onSave={(v) => handleSaveSubmission(req.id, 'submission_comment', v)}
                             />
-                          ) : req.submission_comment ? (
-                            <ClampText text={req.submission_comment} />
-                          ) : <span className="muted-dash">—</span>}
+                          ) : req.submission_comment && (
+                            <div className="dcr-sub-comment-text"><ClampText text={req.submission_comment} /></div>
+                          )}
                         </td>
                       )}
                       <td className="actions-cell">
@@ -2876,14 +2920,18 @@ function DcRequestsPage() {
                         <option value="">
                           {!contracts ? 'Загрузка договоров…'
                             : !formData.counterparty_id ? '— Сначала выберите контрагента —'
-                              : choices.length ? '— Не выбран —' : '— У контрагента нет договоров —'}
+                              : choices.length ? '— Не выбран —'
+                                : formData.object_id ? '— У контрагента нет договоров по объекту —' : '— У контрагента нет договоров —'}
                         </option>
                         {formData.contract_id && !choices.some(c => c.id === formData.contract_id) && (
-                          <option value={formData.contract_id}>{current ? contractLabel(current) : 'договор не найден'}</option>
+                          <option value={formData.contract_id}>
+                            {current ? contractLabel(current) : 'договор не найден'}
+                            {current?.object_id && formData.object_id && current.object_id !== formData.object_id ? ' · другой объект' : ''}
+                          </option>
                         )}
                         {choices.map(c => (
                           <option key={c.id} value={c.id}>
-                            {contractLabel(c)}{formData.object_id && c.object_id !== formData.object_id ? ' · другой объект' : ''}
+                            {contractLabel(c)}{formData.object_id && !c.object_id ? ' · объект не указан' : ''}
                           </option>
                         ))}
                       </select>
