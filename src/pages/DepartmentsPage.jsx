@@ -5,12 +5,12 @@ import {
   createDepartment, deleteDepartment, fetchDepartments, saveDepartmentContacts, saveDepartmentOrder, updateDepartment,
 } from '../services/companyDepartments'
 import {
-  DEPARTMENTS_MIGRATION_HINT, MAX_CONTACTS, formatPhone, groupDepartments, matchesDepartment, moveDepartment,
-  numberDepartments, parseContactsList, phoneHref,
+  DEPARTMENTS_MIGRATION_HINT, MAX_CONTACTS, formatPhone, groupDepartments, isOspDepartment, matchesDepartment,
+  moveDepartment, numberDepartments, parseContactsList, phoneHref,
 } from '../utils/companyDepartments'
+import { fetchCostPlanEconomists, fetchEconomistObjects } from '../services/costPlanEconomists'
+import { groupByEconomist } from '../utils/costPlanEconomists'
 import { IconPencil, IconTrash } from '../components/icons/ActionIcons'
-import { IconDocsStack } from '../components/icons/ToolbarIcons'
-import CostPlanDocsModal from '../components/CostPlanDocsModal'
 import '../components/GeneralInfo.css'
 import './DepartmentsPage.css'
 
@@ -18,7 +18,9 @@ import './DepartmentsPage.css'
 // с ним связаться. Видят все сотрудники; правит администратор — карточка отдела (блок, название, функции,
 // примечание, руководители и контакты), порядок стрелками и «Руководители списком» — много контактов разом.
 // Данные — company_departments (миграция 20261104); ФИО и телефоны в коде не хранятся.
-// «Документы» в шапке — экономисты ОСП по объектам (то же окно, что в «Планах затрат», CostPlanDocsModal).
+// Под «Отделом по сопровождению подрядчиков» — экономисты ОСП по объектам (cost_plan_economists): только просмотр,
+// назначают в «Планах затрат» → «Документы». Перечитываются при возврате на вкладку браузера — так правка там видна
+// здесь без перезагрузки.
 
 const arrowProps = {
   width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
@@ -54,6 +56,31 @@ function DepartmentContacts({ dept }) {
         )
       })}
     </>
+  )
+}
+
+function OspEconomists({ groups }) {
+  return (
+    <div role="cell" className="dp-econ" aria-label="Экономисты ОСП">
+      <div className="dp-econ-title">Экономисты ОСП — ответственные за планы затрат</div>
+      <ul className="dp-econ-list">
+        {groups.map(g => {
+          const href = phoneHref(g.contact.phone)
+          return (
+            <li key={g.contact.id || g.contact.full_name} className="dp-econ-item">
+              <span className="dp-contact-name">{g.contact.full_name}</span>
+              {g.contact.phone && (href
+                ? <a className="dp-contact-phone" href={href}><IconPhone />{formatPhone(g.contact.phone)}</a>
+                : <span className="dp-contact-phone">{g.contact.phone}</span>)}
+              <span className="dp-econ-objects">{g.objects.map(o => o.name).join(', ')}</span>
+            </li>
+          )
+        })}
+      </ul>
+      <div className="dp-econ-note">
+        Назначает администратор в <Link to="/cost-plans">«Планах затрат»</Link> → «Документы».
+      </div>
+    </div>
   )
 }
 
@@ -225,7 +252,8 @@ function DepartmentsPage() {
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState(null) // null | {} (новый) | строка
   const [showList, setShowList] = useState(false)
-  const [showDocs, setShowDocs] = useState(false)
+  // Экономисты ОСП: [{ contact, objects }]; пусто — не назначены, нет таблицы или не загрузились.
+  const [economists, setEconomists] = useState([])
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
@@ -244,10 +272,49 @@ function DepartmentsPage() {
 
   useEffect(() => { load() }, [load])
 
+  // Экономисты — отдельно от отделов: их нет (миграция 20261110 не применена) — страница как раньше.
+  useEffect(() => {
+    let alive = true
+    // «Фокус» и «вкладка видна» приходят вместе: пока идёт чтение, второе не начинаем, а повторяем одно — после
+    // него (иначе событие во время чтения терялось бы вместе с правкой, сделанной до него).
+    let inFlight = false
+    let again = false
+    const loadEconomists = async () => {
+      if (inFlight) { again = true; return }
+      inFlight = true
+      try {
+        do {
+          again = false
+          const [assigned, objects] = await Promise.all([fetchCostPlanEconomists(), fetchEconomistObjects()])
+          if (alive) setEconomists(groupByEconomist(assigned.rows, objects).groups)
+        } while (again && alive)
+      } catch (err) {
+        console.error('Экономисты ОСП не загрузились:', err.message)
+      } finally {
+        inFlight = false
+      }
+    }
+    const onVisible = () => { if (document.visibilityState === 'visible') loadEconomists() }
+    loadEconomists()
+    window.addEventListener('focus', loadEconomists)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      alive = false
+      window.removeEventListener('focus', loadEconomists)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [])
+
   const numbered = useMemo(() => numberDepartments(rows), [rows])
-  const groups = useMemo(
-    () => groupDepartments(numbered.filter(r => matchesDepartment(r, search))),
-    [numbered, search])
+  // Экономисты ОСП ищутся вместе с отделом: «Базаркин» или «ЗИЛ» находит отдел по сопровождению подрядчиков.
+  const groups = useMemo(() => {
+    const econContacts = economists.map(g => ({
+      name: g.contact.full_name, position: g.objects.map(o => o.name).join(' '), phone: g.contact.phone,
+    }))
+    const searchable = (r) => (isOspDepartment(r) && econContacts.length
+      ? { ...r, contacts: [...(r.contacts || []), ...econContacts] } : r)
+    return groupDepartments(numbered.filter(r => matchesDepartment(searchable(r), search)))
+  }, [numbered, search, economists])
   const blocks = useMemo(() => [...new Set(rows.map(r => r.block).filter(Boolean))], [rows])
   const found = groups.reduce((n, g) => n + g.items.length, 0)
   const canManage = isAdmin && supported
@@ -298,20 +365,14 @@ function DepartmentsPage() {
           <h2>Отделы</h2>
           <div className="dp-subtitle">За что отвечает каждый отдел компании и к кому обращаться</div>
         </div>
-        <div className="dp-header-actions">
-          <button type="button" className="btn-secondary dp-docs-btn" onClick={() => setShowDocs(true)}
-            title="Экономисты ОСП по объектам — ответственные за планы затрат">
-            <IconDocsStack size={15} /> Документы
-          </button>
-          {canManage && (
-            <>
-              <button type="button" className="btn-secondary" onClick={() => setShowList(true)} disabled={busy || !rows.length}>
-                Руководители списком
-              </button>
-              <button type="button" className="btn-primary" onClick={() => setEditing({})} disabled={busy}>+ Добавить отдел</button>
-            </>
-          )}
-        </div>
+        {canManage && (
+          <div className="dp-header-actions">
+            <button type="button" className="btn-secondary" onClick={() => setShowList(true)} disabled={busy || !rows.length}>
+              Руководители списком
+            </button>
+            <button type="button" className="btn-primary" onClick={() => setEditing({})} disabled={busy}>+ Добавить отдел</button>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -372,6 +433,7 @@ function DepartmentsPage() {
                             disabled={busy} aria-label={`Удалить: ${dept.name}`} title="Удалить"><IconTrash size={15} /></button>
                         </div>
                       )}
+                      {economists.length > 0 && isOspDepartment(dept) && <OspEconomists groups={economists} />}
                     </div>
                   )
                 })}
@@ -387,10 +449,7 @@ function DepartmentsPage() {
       {showList && (
         <ContactsListModal departments={rows} onClose={() => setShowList(false)} onSave={handleSaveList} />
       )}
-      {showDocs && (
-        <CostPlanDocsModal canEdit={isAdmin} onClose={() => setShowDocs(false)}
-          sub="Экономисты ОСП — ответственные за планы затрат по объектам" />
-      )}
+
     </div>
   )
 }

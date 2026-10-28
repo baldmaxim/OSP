@@ -1,8 +1,9 @@
 // Экономисты ОСП по объектам (cost_plan_economists, миграция 20261110): помощники (без браузера) и страницы в
 // Chromium (стенд tests/tender/ui).
-//   • «Документы» → «Экономисты ОСП» на «Отделах» и в «Планах затрат»: карточка на экономиста с его объектами,
-//     объекты основного строительства без экономиста; назначает и меняет только администратор;
-//   • таблицы ещё нет — подсказка про миграцию;
+//   • «Планы затрат» → «Документы» → «Экономисты ОСП»: карточка на экономиста с его объектами, объекты основного
+//     строительства без экономиста; назначает и меняет только администратор; таблицы ещё нет — подсказка;
+//   • «Отделы»: те же экономисты под «Отделом по сопровождению подрядчиков», только просмотр, без «Документов»;
+//     правка из «Планов затрат» подхватывается при возврате на страницу; поиск находит отдел по экономисту;
 //   • форма нового тендера «Основного строительства»: ответственным за план затрат сразу ставится экономист ОСП
 //     объекта, его можно сменить (выбор человека смена объекта уже не перетирает); в базу уходит выбранный.
 // Люди и объекты стенда вымышленные: настоящие ФИО в репозиторий не кладём.
@@ -102,6 +103,8 @@ describe('Экономисты ОСП в «Документах» и в форм
       if (missing) {
         window.__fakeErrors = { cost_plan_economists: { code: 'PGRST205', message: "Could not find the table 'public.cost_plan_economists' in the schema cache" } }
       }
+      // Страница могла уже прочитать эти таблицы — следующие чтения видят подменённые строки.
+      for (const t of ['contacts', 'objects', 'cost_plan_economists']) window.__fakeTouch(t)
     }, [ECON_A, ECON_B, OBJECTS, assigned, missingTable])
     return { page, errors, close: () => context.close().catch(() => {}) }
   }
@@ -118,21 +121,50 @@ describe('Экономисты ОСП в «Документах» и в форм
     objects: [...el.querySelectorAll('.cpe-objects li')].map((li) => li.textContent),
   })))
 
-  it('«Отделы» → «Документы»: экономисты с объектами; без права правки — без списка назначения', async () => {
+  it('«Отделы»: экономисты под отделом по сопровождению подрядчиков — только просмотр, правка подхватывается', async () => {
     const { page, errors, close } = await openPage('route=/general/departments&canEdit=0&shell=1', '.departments-page h2')
     try {
-      const modal = await openDocs(page)
-      assert.equal(await modal.locator('h3').textContent(), 'Документы раздела')
-      assert.deepEqual(await cards(modal), [
-        { name: ECON_A.full_name, phone: '+7 900 111-22-33', objects: ['ЖК Восточный', 'ЖК Северный 33'] },
-        { name: 'Крюкова Юлия Денисовна', phone: null, objects: ['Бизнес-центр «Нурлы»'] },
+      // Экономистов страница прочитала до того, как стенд их завёл, — подхватывает при возврате на страницу
+      // (в том числе если событие пришло, пока первое чтение ещё шло).
+      const econ = page.locator('.dp-row[data-dept-id="dep-3"] .dp-econ')
+      await page.locator('.dp-row[data-dept-id="dep-3"]').waitFor()
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+      await econ.waitFor()
+      const items = () => econ.locator('.dp-econ-item').evaluateAll((els) => els.map((el) => ({
+        name: el.querySelector('.dp-contact-name').textContent,
+        phone: el.querySelector('.dp-contact-phone')?.textContent || null,
+        objects: el.querySelector('.dp-econ-objects').textContent,
+      })))
+      assert.deepEqual(await items(), [
+        { name: ECON_A.full_name, phone: '+7 900 111-22-33', objects: 'ЖК Восточный, ЖК Северный 33' },
+        { name: 'Крюкова Юлия Денисовна', phone: null, objects: 'Бизнес-центр «Нурлы»' },
       ])
-      assert.equal(await modal.locator('.cpe-phone a').getAttribute('href'), 'tel:+79001112233')
-      assert.match(await modal.locator('.cpe-unassigned').textContent(),
-        /^Без экономиста ОСП \(2\): ЖК «Северный квартал», ЖК Южный\. Назначает администратор\.$/)
-      assert.equal(await modal.locator('.cpe-assign').count(), 0, 'назначает только администратор')
-      await page.keyboard.press('Escape')
-      await modal.waitFor({ state: 'detached' })
+      assert.equal(await econ.locator('a.dp-contact-phone').getAttribute('href'), 'tel:+79001112233')
+      assert.equal(await econ.locator('.dp-econ-note a').getAttribute('href'), '/cost-plans')
+      // Только под этим отделом; окна «Документы» и выбора экономиста здесь нет.
+      assert.equal(await page.locator('.dp-econ').count(), 1)
+      assert.equal(await page.getByRole('button', { name: 'Документы' }).count(), 0)
+      assert.equal(await page.locator('.dp-econ select').count(), 0)
+
+      // В «Планах затрат» назначили «ЖК Южный» другому экономисту — после возврата на страницу видно здесь.
+      await page.evaluate((econB) => {
+        window.__fakeDb.cost_plan_economists.push({ id: 'cpe-9', object_id: 'o-2', contact_id: econB.id, contacts: econB })
+        window.__fakeTouch('cost_plan_economists')
+        document.dispatchEvent(new Event('visibilitychange'))
+      }, ECON_B)
+      await econ.locator('.dp-econ-item', { hasText: ECON_B.full_name }).waitFor()
+      assert.deepEqual((await items()).map(i => [i.name, i.objects]), [
+        [ECON_A.full_name, 'ЖК Восточный, ЖК Северный 33'],
+        [ECON_B.full_name, 'ЖК Южный'],
+        ['Крюкова Юлия Денисовна', 'Бизнес-центр «Нурлы»'],
+      ])
+
+      // Поиск по экономисту или его объекту находит отдел по сопровождению подрядчиков.
+      for (const q of ['Экономов', 'южный']) {
+        await page.locator('.dp-search').fill(q)
+        await page.waitForFunction(() => document.querySelectorAll('.dp-row[data-dept-id]').length === 1)
+        assert.equal(await page.locator('.dp-row[data-dept-id]').getAttribute('data-dept-id'), 'dep-3', q)
+      }
       assert.deepEqual(errors, [])
     } finally {
       await close()
@@ -175,14 +207,24 @@ describe('Экономисты ОСП в «Документах» и в форм
     }
   })
 
-  it('таблицы ещё нет — подсказка про миграцию', async () => {
-    const { page, close } = await openPage('route=/general/departments&shell=1', '.departments-page h2', { missingTable: true })
+  it('таблицы ещё нет — в «Планах затрат» подсказка про миграцию, в «Отделах» блока нет', async () => {
+    const plans = await openPage('route=/cost-plans', '.cost-plans-page .cp-table', { missingTable: true })
     try {
-      const modal = await openDocs(page)
+      const modal = await openDocs(plans.page)
       assert.match(await modal.locator('.tdm-note').textContent(), /после обновления базы \(миграция 20261110_cost_plan_economists\)/)
       assert.equal(await modal.locator('.cpe-assign').count(), 0)
     } finally {
-      await close()
+      await plans.close()
+    }
+    const deps = await openPage('route=/general/departments&shell=1', '.departments-page h2', { missingTable: true })
+    try {
+      await deps.page.evaluate(() => window.dispatchEvent(new Event('focus')))
+      await deps.page.locator('.dp-row[data-dept-id="dep-3"]').waitFor()
+      await deps.page.waitForTimeout(300)
+      assert.equal(await deps.page.locator('.dp-econ').count(), 0)
+      assert.deepEqual(deps.errors, [])
+    } finally {
+      await deps.close()
     }
   })
 

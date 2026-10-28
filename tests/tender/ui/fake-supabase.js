@@ -14,6 +14,8 @@
 // отвечает 42703, как PostgREST.
 // window.__fakeUnique[таблица] — колонки уникального ключа: вставка дубля отвечает 23505, как база.
 // window.__fakeAfter[таблица](op, строка, прежняя) — триггер «после записи» (журнал расценок).
+// window.__fakeTouch(таблица) — строки таблицы тест поменял прямо в __fakeDb после того, как страница её уже читала
+// (правка «в другом разделе»): выборки перестают отдавать прежний ответ, как после записи через API.
 // window.__fakeGenerated[таблица](строка) — вычисляемые колонки (GENERATED): считаются до проверки ключа.
 // window.__fakeFiles[s3_key] — содержимое файла (data: URL): хранилище отдаёт его по ссылке на скачивание;
 // window.__fakeFileRequests — какие файлы запрашивали.
@@ -60,6 +62,7 @@ const uuid = () => crypto.randomUUID()
 const sortedCache = new Map()
 const versions = {}
 const touch = (table) => { versions[table] = (versions[table] || 0) + 1 }
+window.__fakeTouch = (table) => { touch(table); sortedCache.clear() }
 const tableRows = (name) => (db[name] ||= [])
 
 function applyFilters(rows, filters) {

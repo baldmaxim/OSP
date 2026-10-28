@@ -29,6 +29,13 @@ export function groupDepartments(rows) {
 const norm = (v) => String(v ?? '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim()
 const digits = (v) => String(v ?? '').replace(/\D/g, '')
 
+/** Отдел по сопровождению подрядчиков (ОСП): под ним — экономисты ОСП по объектам. По названию, а не по номеру —
+ *  номер меняется при перестановке. */
+export function isOspDepartment(row) {
+  const name = norm(row?.name)
+  return name.includes('сопровождени') && name.includes('подрядчик')
+}
+
 /** Поиск по отделу, блоку, функциям, ФИО, должности и телефону (в телефоне — по цифрам). */
 export function matchesDepartment(row, query) {
   const q = norm(query)

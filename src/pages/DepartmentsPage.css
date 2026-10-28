@@ -13,8 +13,6 @@
 .dp-crumbs a:hover { text-decoration: underline; }
 .dp-subtitle { margin-top: 0.25rem; font-size: 0.875rem; color: var(--text-secondary); }
 .dp-header-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.dp-docs-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; }
-.dp-docs-btn > svg { flex: 0 0 auto; color: var(--text-secondary); }
 
 .dp-toolbar {
   display: flex;
@@ -94,6 +92,28 @@
 a.dp-contact-phone:hover { text-decoration: underline; }
 .dp-note-line { font-size: 0.8125rem; line-height: 1.25rem; color: var(--text-secondary); font-style: italic; }
 .dp-muted { font-size: 0.8125rem; color: var(--text-tertiary); }
+
+/* Экономисты ОСП под «Отделом по сопровождению подрядчиков» — во всю ширину строки, только просмотр. */
+.dp-econ {
+  grid-column: 2 / -1;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.dp-econ-title { font-size: 0.75rem; line-height: 1rem; font-weight: 600; color: var(--text-secondary); }
+.dp-econ-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.dp-econ-item { display: flex; flex-direction: column; min-width: 0; }
+.dp-econ-objects { margin-top: 0.1rem; font-size: 0.8125rem; line-height: 1.25rem; color: var(--text-primary); }
+.dp-econ-note { margin-top: 0.4rem; font-size: 0.75rem; line-height: 1rem; color: var(--text-tertiary); }
+.dp-econ-note a { color: var(--ui-link, var(--primary-color)); }
 
 .dp-actions { display: flex; gap: 0.125rem; justify-content: flex-end; }
 .dp-icon-btn {
