@@ -1345,7 +1345,10 @@ tr:hover .btn-delete-row {
   color: var(--text-primary);
 }
 
-.modal-header button {
+/* Только окна карточки объекта: CSS страницы после её открытия остаётся на всём сайте,
+   а без области правило сжимало до 28px и кнопки в шапках чужих окон
+   («Редактировать контрагента» наезжала на крестик). */
+.object-detail-page .modal-header button {
   width: 28px;
   height: 28px;
   display: flex;
@@ -1361,7 +1364,7 @@ tr:hover .btn-delete-row {
   transition: all 0.15s;
 }
 
-.modal-header button:hover {
+.object-detail-page .modal-header button:hover {
   color: var(--text-primary);
   background: var(--hover-bg);
 }

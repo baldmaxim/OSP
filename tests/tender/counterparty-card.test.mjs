@@ -293,6 +293,27 @@ describe('Карточка контрагента: «Общая информац
     } finally { await noLinks.close() }
   })
 
+  it('«Редактировать контрагента» не наезжает на крестик и после карточки объекта', async () => {
+    const { page, errors, close } = await openPage(`${BASE}&cpCard=1`)
+    try {
+      await page.locator('table.compact-table tbody tr.table-row').first().waitFor({ timeout: 60000 })
+      // CSS страницы после её открытия остаётся до перезагрузки: подключаем стили карточки объекта,
+      // как если бы человек зашёл в объект, а потом в «Контрагентов».
+      const css = `/@fs/${REPO.replace(/\\/g, '/').replace(/^\//, '')}/src/pages/ObjectDetailPage.css`
+      await page.evaluate((href) => import(href), css)
+      await openCard(page, 'Подрядчик 01')
+      const box = (sel) => page.locator(`.cp-detail-header ${sel}`).evaluate(el => {
+        const r = el.getBoundingClientRect()
+        return { left: r.left, right: r.right, width: r.width, scroll: el.scrollWidth - el.clientWidth }
+      })
+      const edit = await box('.cp-detail-edit')
+      const cross = await box('.modal-close')
+      assert.ok(edit.scroll <= 1, `текст не помещается в кнопку: ${edit.scroll}px`)
+      assert.ok(edit.right <= cross.left, `кнопка ${edit.left}–${edit.right} наезжает на крестик ${cross.left}–${cross.right}`)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
   it('телефон: договоры карточками, вкладка без прокрутки вбок', async () => {
     const { page, errors, close } = await openPage(`${BASE}&cpCard=1&shell=1`,
       { width: 390, height: 844 }, { isMobile: true, hasTouch: true })
