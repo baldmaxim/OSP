@@ -14,7 +14,7 @@ import './SectionTemplateCards.css'
 // items — [{ code, title, desc, icon, migration?, linkKey? }]; все шаблоны окна читаются одним запросом
 // (services/sectionTemplates.js). Таблицы ещё нет — файл не прикрепить, об этом подсказка администратору
 // (migration — какая миграция заводит строку шаблона, по умолчанию 20261107).
-// linkKey — шаблон-ссылка («Понятийное соглашение»): адрес или сетевой путь из app_settings, «Открыть» /
+// linkKey — шаблон-ссылка («Понятийное соглашение», «Шаблон ДП»): адрес или сетевой путь из app_settings, «Открыть» /
 // «Скопировать путь» у всех, «Указать ссылку» / «Изменить» / убрать у администратора. Файл, прикреплённый к
 // такому шаблону раньше, виден ниже, пока администратор его не удалит; нового файла не прикрепить.
 
@@ -141,7 +141,7 @@ function LinkTemplateCard({ item, link, linkState, canEdit, saving, onSave, lega
               value={draft}
               onChange={(e) => { setDraft(e.target.value); setError('') }}
               onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setEditing(false) } }}
-              placeholder="https://… или \\сервер\папка\Понятийное соглашение.docx"
+              placeholder={`https://… или \\\\сервер\\папка\\${item.title}.docx`}
               aria-label={`Ссылка на шаблон «${item.title}»`}
               disabled={saving}
               autoFocus

@@ -1975,7 +1975,7 @@ function ContractRegistry() {
             onClick={() => setShowDocsMenu(true)}
             className="btn-secondary contracts-docs-btn"
             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
-            title="Шаблоны (понятийное соглашение, ДГП), структура хранения, приложения, импорт Excel и загрузка ПСДЦ"
+            title="Шаблоны (понятийное соглашение, ДП), структура хранения, приложения, импорт Excel и загрузка ПСДЦ"
           >
             <IconDocsStack size={15} /> Документы
           </button>

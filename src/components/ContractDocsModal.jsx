@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { IconDocsStack, IconFileText, IconFolderTree } from './icons/ToolbarIcons'
 import { IconFileSpreadsheet, IconUpload } from './icons/BsmIcons'
 import SectionTemplateCards from './SectionTemplateCards'
-import { CONCEPT_AGREEMENT_TEMPLATE, CONTRACTS_DGP_TEMPLATE } from '../utils/sectionTemplateItems'
+import { CONCEPT_AGREEMENT_TEMPLATE, CONTRACTS_DP_TEMPLATE } from '../utils/sectionTemplateItems'
 import './TenderDocsModal.css'
 
 // «Документы раздела» реестра «Договоры и ДС» — то же окно, что у «Тендеров — Основное строительство»
@@ -11,13 +11,13 @@ import './TenderDocsModal.css'
 // к конкретному договору. Сюда из шапки реестра переехали «Структура хранения», «Приложения», «Импорт Excel» и
 // «Загрузка ПСДЦ» — шапка ужалась до общей папки, столбцов, «Документов» и «+ Добавить договор».
 //
-// Шаблоны: «Понятийное соглашение» — ссылка, общая с тендерами (одна правка видна в обоих разделах), и
-// «Шаблон ДГП» — файл (section_templates, миграция 20261109). Указывает и меняет администратор, открывает и
-// скачивает каждый. Импорт и загрузка ПСДЦ — только с правом правки договоров и не во вкладке «Удаленные».
+// Шаблоны — ссылки: «Понятийное соглашение», общее с тендерами (одна правка видна в обоих разделах), и
+// «Шаблон ДП» (договор подряда) — только здесь. Указывает и меняет администратор, открывает каждый. Импорт и
+// загрузка ПСДЦ — только с правом правки договоров и не во вкладке «Удаленные».
 
 const TEMPLATES = [
   { ...CONCEPT_AGREEMENT_TEMPLATE, icon: <IconFileText size={18} /> },
-  { ...CONTRACTS_DGP_TEMPLATE, icon: <IconDocsStack size={18} /> },
+  { ...CONTRACTS_DP_TEMPLATE, icon: <IconDocsStack size={18} /> },
 ]
 
 export default function ContractDocsModal({

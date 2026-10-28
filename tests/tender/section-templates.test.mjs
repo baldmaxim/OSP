@@ -4,7 +4,8 @@
 // заменяет прежний. Таблицы ещё нет — файл не прикрепить, администратору подсказка про миграцию.
 // «Понятийное соглашение» (тендеры ОС и «Договоры и ДС») с 27.10.2026 — ссылка, а не файл: одна на оба раздела
 // (app_settings 'concept_agreement_template_link'); адрес — «Открыть», сетевой путь — «Скопировать путь»; файл,
-// прикреплённый раньше, виден, пока администратор его не удалит. «Шаблон ДГП» — файл в «Документах» договоров.
+// прикреплённый раньше, виден, пока администратор его не удалит. «Шаблон ДП» (договор подряда) в «Документах»
+// договоров с 28.10.2026 — тоже ссылка, своя (app_settings 'contracts_dp_template_link'), вместо файла «Шаблон ДГП».
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -149,9 +150,9 @@ describe('Шаблоны разделов в «Документах» тенде
     } finally { await close() }
   })
 
-  it('договоры: «Документы» в шапке — та же ссылка «Понятийного соглашения», «Шаблон ДГП» — файл', async () => {
+  it('договоры: «Документы» в шапке — та же ссылка «Понятийного соглашения» и своя ссылка «Шаблон ДП»', async () => {
     const templates = [...TEMPLATES, { id: 'tpl-dgp', code: 'contracts_dgp', title: 'Шаблон ДГП' }]
-    const { page, errors, close } = await openPage('route=/contracts&contracts=6&latency=0', '.contracts-table tbody tr.contract-row', { templates })
+    const { page, errors, dialogs, close } = await openPage('route=/contracts&contracts=6&latency=0', '.contracts-table tbody tr.contract-row', { templates })
     try {
       await page.evaluate(() => window.__fakeDb.app_settings.push({ key: 'concept_agreement_template_link', value: 'https://docs.example.invalid/pc.docx' }))
       const header = page.locator('.registry-header')
@@ -162,15 +163,35 @@ describe('Шаблоны разделов в «Документах» тенде
       const modal = page.getByRole('dialog', { name: 'Документы раздела' })
       await modal.waitFor({ timeout: 10000 })
       assert.deepEqual(await modal.locator('.tdm-cards > .tdm-card .tdm-card-title').allTextContents(),
-        ['Понятийное соглашение', 'Шаблон ДГП', 'Структура хранения документов', 'Стандартные приложения', 'Импорт из Excel', 'Загрузка ПСДЦ'])
+        ['Понятийное соглашение', 'Шаблон ДП', 'Структура хранения документов', 'Стандартные приложения', 'Импорт из Excel', 'Загрузка ПСДЦ'])
       const pc = card(page, 'tenders_concept_agreement')
       assert.equal(await pc.getByRole('link', { name: 'Открыть' }).getAttribute('href'), 'https://docs.example.invalid/pc.docx')
 
-      const dgp = card(page, 'contracts_dgp')
-      await dgp.locator('.tdm-tpl-empty', { hasText: 'Файл ещё не прикреплён' }).waitFor({ timeout: 10000 })
-      await page.getByTestId('template-input-contracts_dgp').setInputFiles([word('ДГП.docx')])
-      await dgp.locator('.tdm-tpl-name', { hasText: 'ДГП.docx' }).waitFor({ timeout: 10000 })
-      assert.deepEqual(await templateDocs(page), [{ owner_type: 'general', owner_id: 'tpl-dgp', file_name: 'ДГП.docx' }])
+      // «Шаблон ДП» — ссылка, файла не прикрепить.
+      const dp = card(page, 'contracts_dgp')
+      assert.equal(await dp.locator('.tdm-card-desc').textContent(), 'Шаблон договора подряда — ссылка на документ')
+      await dp.locator('.tdm-tpl-empty', { hasText: 'Ссылка ещё не указана' }).waitFor({ timeout: 10000 })
+      assert.equal(await page.getByTestId('template-input-contracts_dgp').count(), 0)
+      await dp.getByRole('button', { name: 'Указать ссылку' }).click()
+      const input = dp.getByRole('textbox', { name: 'Ссылка на шаблон «Шаблон ДП»' })
+      assert.match(await input.getAttribute('placeholder'), /Шаблон ДП\.docx$/)
+      await input.fill('https://docs.example.invalid/dp.docx')
+      await dp.getByRole('button', { name: 'Сохранить' }).click()
+      const open = dp.getByRole('link', { name: 'Открыть' })
+      await open.waitFor({ timeout: 10000 })
+      assert.equal(await open.getAttribute('href'), 'https://docs.example.invalid/dp.docx')
+      // Своя ссылка: «Понятийное соглашение» не меняется.
+      assert.deepEqual(await page.evaluate(() => Object.fromEntries(window.__fakeDb.app_settings
+        .filter((r) => /_template_link$/.test(r.key)).map((r) => [r.key, r.value]))), {
+        concept_agreement_template_link: 'https://docs.example.invalid/pc.docx',
+        contracts_dp_template_link: 'https://docs.example.invalid/dp.docx',
+      })
+      assert.equal(await pc.getByRole('link', { name: 'Открыть' }).getAttribute('href'), 'https://docs.example.invalid/pc.docx')
+
+      await dp.getByRole('button', { name: 'Убрать ссылку на шаблон «Шаблон ДП»' }).click()
+      assert.match(dialogs.at(-1), /Убрать ссылку на шаблон «Шаблон ДП»/)
+      await dp.locator('.tdm-tpl-empty', { hasText: 'Ссылка ещё не указана' }).waitFor({ timeout: 10000 })
+      assert.deepEqual(await templateDocs(page), [], 'файлов шаблон-ссылка не создаёт')
 
       // Плитка открывает своё окно, «Документы» закрываются.
       await modal.locator('.tdm-card', { hasText: 'Структура хранения документов' }).click()
@@ -180,13 +201,31 @@ describe('Шаблоны разделов в «Документах» тенде
     } finally { await close() }
   })
 
-  it('договоры: строки «Шаблона ДГП» ещё нет — подсказка про миграцию 20261109', async () => {
-    const { page, errors, close } = await openPage('route=/contracts&contracts=3&latency=0', '.contracts-table tbody tr.contract-row')
+  it('договоры: файл «Шаблона ДГП», прикреплённый раньше, виден под ссылкой «Шаблон ДП» — администратор удаляет', async () => {
+    const templates = [...TEMPLATES, { id: 'tpl-dgp', code: 'contracts_dgp', title: 'Шаблон ДГП' }]
+    const files = [{ id: 'f-dgp', owner_type: 'general', owner_id: 'tpl-dgp', doc_category: 'section_template',
+      s3_key: 'general/tpl-dgp/1-ДГП.docx', file_name: 'ДГП.docx', size_bytes: 10240, created_at: '2026-10-27T08:00:00Z' }]
+    const { page, errors, close } = await openPage('route=/contracts&contracts=3&latency=0', '.contracts-table tbody tr.contract-row', { templates, files })
+    try {
+      await page.evaluate(() => window.__fakeDb.app_settings.push({ key: 'contracts_dp_template_link', value: '\\\\192.168.2.55\\SharA_Tender\\Шаблоны\\ДП.docx' }))
+      await page.locator('.registry-header').getByRole('button', { name: 'Документы' }).click()
+      const dp = card(page, 'contracts_dgp')
+      await dp.locator('.tdm-tpl-legacy .tdm-tpl-name', { hasText: 'ДГП.docx' }).waitFor({ timeout: 10000 })
+      await dp.getByRole('button', { name: 'Скопировать путь' }).waitFor()
+      await dp.getByRole('button', { name: 'Удалить прежний файл шаблона «Шаблон ДП»' }).click()
+      await dp.locator('.tdm-tpl-legacy').waitFor({ state: 'detached', timeout: 10000 })
+      assert.deepEqual(await templateDocs(page), [])
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('договоры: базы шаблонов ещё нет — ссылка «Шаблон ДП» работает, подсказки про миграцию нет', async () => {
+    const { page, errors, close } = await openPage('route=/contracts&contracts=3&latency=0', '.contracts-table tbody tr.contract-row', { missingTable: true })
     try {
       await page.locator('.registry-header').getByRole('button', { name: 'Документы' }).click()
-      const dgp = card(page, 'contracts_dgp')
-      await dgp.locator('.tdm-tpl-hint').waitFor({ timeout: 10000 })
-      assert.match(await dgp.locator('.tdm-tpl-hint').textContent(), /миграция 20261109_contracts_dc_requests/)
+      const dp = card(page, 'contracts_dgp')
+      await dp.getByRole('button', { name: 'Указать ссылку' }).waitFor({ timeout: 10000 })
+      assert.equal(await dp.locator('.tdm-tpl-hint').count(), 0)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })

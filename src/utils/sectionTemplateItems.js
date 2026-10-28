@@ -10,9 +10,11 @@ export const CONCEPT_AGREEMENT_TEMPLATE = {
   desc: 'Шаблон понятийного соглашения — ссылка на документ; та же в тендерах и в договорах',
 }
 
-export const CONTRACTS_DGP_TEMPLATE = {
+// «Шаблон ДП» — в «Договорах и ДС»: ссылка, как у «Понятийного соглашения». Код — строка прежнего файла
+// «Шаблон ДГП»: если файл успели прикрепить, он виден под ссылкой, пока администратор его не удалит.
+export const CONTRACTS_DP_TEMPLATE = {
   code: SECTION_TEMPLATE.contractsDgp,
-  title: 'Шаблон ДГП',
-  desc: 'Шаблон договора генподряда — скачать и заполнить',
-  migration: '20261109_contracts_dc_requests',
+  linkKey: SECTION_TEMPLATE_LINK_KEY.contractsDp,
+  title: 'Шаблон ДП',
+  desc: 'Шаблон договора подряда — ссылка на документ',
 }
