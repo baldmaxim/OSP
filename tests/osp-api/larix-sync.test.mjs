@@ -344,6 +344,73 @@ describe('Загрузка договорных расценок из Larix.CPM'
     stop()
   })
 
+  it('API смежным отделам — /api/rates/larix: по ключу с ресурсом larix, отбор в SQL, числа и даты как в реестре', async () => {
+    clean()
+    larixState = { mode: 'ok', rows: SAMPLE }
+    assert.equal((await sync([lib.sync.dbTarget(db)]).runOnce({ startedBy: 'cli' })).results.db.status, 'ok')
+    const { buildApp, defaultDeps } = await import(path.join(SERVER, 'src', 'app.js'))
+    const { LARIX_COLS } = await import(path.join(SERVER, 'src', 'routes', 'rates.js'))
+    const app = buildApp({
+      config: {
+        host: '127.0.0.1', port: 0, supabaseUrl: '', supabaseAnonKey: '', supabaseServiceKey: '', s3: {}, anthropicApiKey: '',
+        ratesApiKeys: ['rk-larix:kp+larix', 'rk-old'], db: { url: `postgres://postgres@127.0.0.1:${pgdb.port}/psdc_test`, poolMax: 2 },
+      },
+      deps: defaultDeps, logger: false,
+    })
+    await app.ready()
+    const get = async (query, key = 'rk-larix') => app.inject({ method: 'GET', url: `/api/rates/larix?${query}`, headers: { 'x-api-key': key } })
+    const names = async (query) => {
+      const res = await get(query)
+      assert.equal(res.statusCode, 200, `${query}: ${res.body}`)
+      return res.json().rows.map((r) => r.item_name)
+    }
+    try {
+      const res = await get('')
+      assert.equal(res.statusCode, 200, res.body)
+      const out = res.json()
+      assert.deepEqual([out.count, out.limit, out.offset, out.has_more], [4, 500, 0, false])
+      assert.ok(!Number.isNaN(Date.parse(out.loaded_at)), 'дата последней удачной загрузки')
+      assert.deepEqual(Object.keys(out.rows[0]), LARIX_COLS, 'колонки — только из списка')
+      const { id, ...first } = out.rows[0]
+      assert.equal(typeof id, 'number')
+      assert.deepEqual(first, {
+        item_name: 'Без договора у нас', unit: 'м2', price_material: null, price_work: 50, vat_rate: null, materials_used: null,
+        comment: null, project_id: 2, project_name: 'Дом 56 + Реновация (Суб.)', contractor_id: 33, contractor_name: 'ООО "Стройсервис"',
+        contract_id: 8, contract_number: 'N-8', contract_date: '2025-01-20', contract_state: 'Заключен', object_type: 'Договор',
+        osp_contract_id: null, repeats: 1,
+      })
+      assert.deepEqual(out.rows.map((r) => r.item_name), ['Без договора у нас', 'Газобетон Стеновой блок Bonolit D600, t=100 мм (ПЧ)',
+        'Кабель ВВГнг 3х2,5', 'Монтаж перегородок'], 'порядок — по наименованию')
+      assert.equal(out.rows[1].price_material, 807.45)
+
+      // Подвкладки и цена — как у вкладки: type — есть цена этого вида и фильтр по ней; без type — по любой из двух.
+      assert.deepEqual(await names('type=material'), ['Газобетон Стеновой блок Bonolit D600, t=100 мм (ПЧ)', 'Кабель ВВГнг 3х2,5'])
+      assert.deepEqual(await names('type=work&price_min=100&price_max=2000'), ['Монтаж перегородок'])
+      assert.deepEqual(await names('price_min=800&price_max=900'), ['Газобетон Стеновой блок Bonolit D600, t=100 мм (ПЧ)'])
+      assert.deepEqual(await names('price_min=1000&price_max=1300'), ['Монтаж перегородок'])
+      // Поиск — подстрока; «%» и «_» — обычные символы, а не шаблон.
+      assert.deepEqual(await names(`search=${encodeURIComponent('бетон')}`), ['Газобетон Стеновой блок Bonolit D600, t=100 мм (ПЧ)'])
+      assert.deepEqual(await names(`search=${encodeURIComponent('%')}`), [])
+      assert.deepEqual(await names('contractor=34'), ['Монтаж перегородок'])
+      assert.deepEqual(await names('contract=7,93'), ['Газобетон Стеновой блок Bonolit D600, t=100 мм (ПЧ)', 'Кабель ВВГнг 3х2,5'])
+      assert.deepEqual(await names(`state=${encodeURIComponent('Закрыт')}`), ['Монтаж перегородок'])
+      assert.deepEqual(await names('date_from=2025-01-02&date_to=2025-01-31'), ['Без договора у нас', 'Газобетон Стеновой блок Bonolit D600, t=100 мм (ПЧ)'])
+
+      const page = (await get('limit=1&offset=1')).json()
+      assert.deepEqual([page.rows.length, page.rows[0].contract_id, page.count, page.has_more], [1, 93, 4, true])
+      const csv = await get('format=csv&limit=2')
+      assert.equal(csv.headers['content-disposition'], 'attachment; filename="larix_rates_registry.csv"')
+      assert.ok(csv.body.startsWith('﻿id;item_name;unit;price_material;price_work;'))
+
+      // Неверные параметры — 400 с понятным текстом, а не ошибка базы.
+      assert.equal((await get('project=abc')).statusCode, 400)
+      assert.deepEqual((await get('date_from=2025-02-30')).json(), { error: 'Параметр date_from — дата ГГГГ-ММ-ДД' })
+      assert.equal((await get('', 'rk-old')).statusCode, 403, 'прежний ключ договорные расценки не получает')
+    } finally {
+      await app.close()
+    }
+  })
+
   describe('база прежнего портала: PostgREST и служебный ключ', () => {
     let rest
     let calls = []

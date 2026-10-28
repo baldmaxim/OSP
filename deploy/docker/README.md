@@ -232,6 +232,46 @@ bash /opt/portals/osp/deploy.sh larix sync --force   # принять ответ
 токен не печатаются. Выход: 0 — готово, 3 — загрузка отложена защитой, 4 — сбой (причина на экране и в
 журнале загрузок `larix_sync_runs`).
 
+## Ключи API реестра расценок
+
+Смежным отделам — чтение реестра расценок по ключу: `https://tender.su10.ru/api/rates/{kp,supply,larix}`,
+инструкция для них — `docs/RATES_API.md`, устройство — `server/osp-api/README.md`. Ключи — строка `RATES_API_KEYS`
+в `secrets/osp-api.env`, через запятую; запись `ключ:kp+larix` открывает только перечисленные ресурсы, запись без
+«:» — `kp` и `supply`. Ключ — свой на каждого потребителя, чтобы отключить одного, не трогая остальных.
+
+Выдать ключ (пример — «Расценки от подрядчиков» и Larix; ключ не появляется ни на экране, ни в списке процессов):
+
+```bash
+# corpsu@corp$
+cd /opt/portals/osp
+umask 077
+openssl rand -hex 32 > ~/rates-key-tender.txt
+K="$(cat ~/rates-key-tender.txt):kp+larix" awk '
+  /^RATES_API_KEYS=/ { sub(/[[:space:]]+$/, ""); print ($0 ~ /=$/ ? $0 : $0 ",") ENVIRON["K"]; done = 1; next }
+  { print }
+  END { if (!done) print "RATES_API_KEYS=" ENVIRON["K"] }' secrets/osp-api.env > secrets/osp-api.env.new \
+  && mv secrets/osp-api.env.new secrets/osp-api.env
+grep -c '^RATES_API_KEYS=' secrets/osp-api.env   # 1
+stat -c '%a' secrets/osp-api.env                 # 600
+bash deploy.sh api-restart                       # osp-api перечитывает secrets/osp-api.env
+```
+
+Если вместе с ключом выкладывается новый код API — вместо `api-restart` выполнить `bash scripts/deploy-server.sh
+backend` из `/opt/portals/osp/src`: новый контейнер прочитает файл сам. Проверка:
+
+```bash
+printf 'X-API-Key: %s\n' "$(cat ~/rates-key-tender.txt)" > ~/rates-key-tender.hdr
+curl -s -H @"$HOME/rates-key-tender.hdr" https://tender.su10.ru/api/rates/health      # {"ok":true,"resources":["kp","larix"]}
+curl -s -H @"$HOME/rates-key-tender.hdr" "https://tender.su10.ru/api/rates/larix?limit=1"
+curl -s -H @"$HOME/rates-key-tender.hdr" "https://tender.su10.ru/api/rates/supply?limit=1"   # 403: не открыт
+rm -f ~/rates-key-tender.hdr
+```
+
+Ключ передать потребителю лично или защищённым каналом (не в общем чате и не почтой открытым текстом), затем
+`shred -u ~/rates-key-tender.txt` — копия ключа остаётся только в `secrets/osp-api.env`. Отключить ключ — убрать его
+запись из строки `RATES_API_KEYS` и `bash deploy.sh api-restart`. Запись с опечаткой в ресурсе (`kp+lorix`) служба
+не принимает: ключ отвечает 401, в журнале `osp-api` — «RATES_API_KEYS: запись пропущена» с номером записи.
+
 ## Флаги и барьер записи
 
 - Флаги портала — `/opt/portals/osp/shared/config.json`; правятся без пересборки, открытые вкладки

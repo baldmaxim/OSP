@@ -664,6 +664,38 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       await makeApp({ supabaseServiceKey: '' })
       assert.deepEqual((await get('/api/rates/kp?key=rk-one')).json(), { error: 'Функция не настроена: нет SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY' })
     })
+
+    it('шлюз (база Яндекса): kp — через свой PostgREST ролью service_role, служебный ключ Supabase не нужен', async () => {
+      await makeApp({ supabaseServiceKey: '', dbGateway: { upstream: `${supa.url}/rest/v1`, secret: 'g'.repeat(40), dbRole: 'portal_owner' } })
+      const res = await get('/api/rates/kp?key=rk-one&limit=1')
+      assert.equal(res.statusCode, 200, res.body)
+      const [data] = supa.requests
+      assert.equal(data.path, '/rest/v1/kp_rates_registry')
+      const claims = JSON.parse(Buffer.from(data.auth.replace('Bearer ', '').split('.')[1], 'base64url').toString('utf8'))
+      assert.equal(claims.osp_role, 'service_role')
+      assert.ok(!data.auth.includes('service-test-key'))
+    })
+
+    it('ключ с перечнем ресурсов: открыто только перечисленное; прежний ключ договорные расценки не получает', async () => {
+      await makeApp({ ratesApiKeys: ['rk-one', 'rk-three:kp+larix', 'rk-bad:kp+lorix'] })
+      assert.deepEqual((await get('/api/rates/health', { 'x-api-key': 'rk-three' })).json(), { ok: true, resources: ['kp', 'larix'] })
+      assert.equal((await get('/api/rates/kp', { 'x-api-key': 'rk-three' })).statusCode, 200)
+      const supply = await get('/api/rates/supply', { 'x-api-key': 'rk-three' })
+      assert.equal(supply.statusCode, 403)
+      assert.deepEqual(supply.json(), { error: 'Этому ключу ресурс «supply» не открыт. Открыты: kp, larix' })
+      assert.equal(supply.headers['access-control-allow-origin'], '*')
+      assert.equal((await get('/api/rates/larix?key=rk-one')).statusCode, 403, 'ключ без перечня — только kp и supply')
+      // Без своей базы договорных расценок нет — понятный отказ, а не пустой список.
+      const larix = await get('/api/rates/larix', { 'x-api-key': 'rk-three' })
+      assert.equal(larix.statusCode, 503)
+      assert.match(larix.json().error, /OSP_DB_URL/)
+      // Запись с опечаткой в ресурсе не принимается целиком: ни ключ, ни ключ с хвостом не подходят.
+      assert.equal((await get('/api/rates/kp', { 'x-api-key': 'rk-bad' })).statusCode, 401)
+      assert.equal((await get('/api/rates/kp', { 'x-api-key': 'rk-bad:kp+lorix' })).statusCode, 401)
+      const all = logs.join('\n')
+      assert.match(all, /RATES_API_KEYS: запись пропущена/)
+      assert.ok(!all.includes('rk-bad') && !all.includes('rk-three'), 'ключей в журнале нет')
+    })
   })
 
   describe('лимиты (рецензия, п. 4)', () => {
