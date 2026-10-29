@@ -75,7 +75,7 @@ describe('Помощник «Открыть папку» (public/tools/osp-folde
   })
 
   it('ссылка сайта → тот же путь; папка — в проводнике, файл — выделен в папке, корень диска — без кавычек', () => {
-    const unc = '\\\\192.168.2.55\\SharA_Tender\\СУБПОДРЯДЫ ДОГОВОРА И ДС\\ЖК Альфа'
+    const unc = '\\\\192.168.5.55\\SharA_Tender\\СУБПОДРЯДЫ ДОГОВОРА И ДС\\ЖК Альфа'
     let c = runHelper([folderOpenUrl(unc)], { folders: [unc] })
     assert.deepEqual(c.run, [`"C:\\Windows\\explorer.exe" "${unc}"`])
     assert.deepEqual(c.popup, [])
@@ -152,7 +152,7 @@ describe('Помощник «Открыть папку» (public/tools/osp-folde
 
 describe('Ссылка «открыть папку» на сайте', () => {
   it('путь к папке Windows — сетевой или диск; ссылка без пробелов, кавычек и «\\»; только Windows', () => {
-    for (const p of ['\\\\su10-fs\\Тендеры\\412 Кровля', ' \\\\192.168.2.55\\SharA_Tender ', 'Z:\\ДС\\2026']) assert.ok(isFolderPath(p), p)
+    for (const p of ['\\\\su10-fs\\Тендеры\\412 Кровля', ' \\\\192.168.5.55\\SharA_Tender ', 'Z:\\ДС\\2026']) assert.ok(isFolderPath(p), p)
     for (const p of ['', null, 'https://drive.google.com/x', '\\\\server', 'Папка тендера', '\\\\ \\x']) assert.ok(!isFolderPath(p), String(p))
     const url = folderOpenUrl(' \\\\su10-fs\\Тендеры\\ЖК "Альфа" & Ко ')
     assert.match(url, /^osp-folder:[A-Za-z0-9%._~!*'()-]+$/)
@@ -203,7 +203,7 @@ describe('Нажатие на путь к папке', { skip: !launch && 'Не�
   it('«Заявки на ДС»: в первый раз — окно с помощником, затем папка открывается сразу; «Не открылась?» — то же окно', async () => {
     const { page, errors, close } = await openPage('route=/dc-requests&dcStats=1&latency=0', '.dcr-table tbody tr')
     try {
-      const path = '\\\\192.168.2.55\\SharA_Tender\\ДС\\ЖК Альфа\\ДС-14'
+      const path = '\\\\192.168.5.55\\SharA_Tender\\ДС\\ЖК Альфа\\ДС-14'
       const row = page.locator('.dcr-table tbody tr', { hasText: 'ДС-d2' })
       await row.getByRole('button', { name: 'Указать путь к папке' }).click()
       await row.locator('.dcr-folder-path-input').fill(path)

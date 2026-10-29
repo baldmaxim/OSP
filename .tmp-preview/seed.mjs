@@ -522,17 +522,17 @@ export function buildTables() {
   const appSettings = [
     {
       key: 'tenders_root_folder_path:construction',
-      value: '\\\\192.168.2.55\\SharA_Tender\\Отдел Субподряда\\4. Тендеры',
+      value: '\\\\192.168.5.55\\SharA_Tender\\Отдел Субподряда\\4. Тендеры',
       updated_at: NOW_ISO,
     },
     {
       key: 'tenders_root_folder_path',
-      value: '\\\\192.168.2.55\\SharA_Tender\\Отдел Субподряда\\4. Тендеры',
+      value: '\\\\192.168.5.55\\SharA_Tender\\Отдел Субподряда\\4. Тендеры',
       updated_at: NOW_ISO,
     },
     {
       key: 'tenders_root_folder_path:materials',
-      value: '\\\\192.168.2.55\\SharA_Tender\\Отдел Субподряда\\5. Материалы',
+      value: '\\\\192.168.5.55\\SharA_Tender\\Отдел Субподряда\\5. Материалы',
       updated_at: NOW_ISO,
     },
     {

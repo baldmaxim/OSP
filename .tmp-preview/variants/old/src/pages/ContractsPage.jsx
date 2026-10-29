@@ -1854,7 +1854,7 @@ function ContractRegistry() {
             settingKey="contracts_root_folder_path"
             title="Общая папка договоров"
             canEdit={canEditContracts}
-            placeholder="\\192.168.2.55\SharA_Tender\СУБПОДРЯДЫ ДОГОВОРА И ДС"
+            placeholder="\\192.168.5.55\SharA_Tender\СУБПОДРЯДЫ ДОГОВОРА И ДС"
             onValueChange={setRootFolderPath}
           />
           {/* Скрыть «Юрист», «Принят в работу», «План. подписания». */}

@@ -3171,7 +3171,7 @@ ${ATTACHMENT_BLOCK}
             fallbackKey="tenders_root_folder_path"
             title={`Общая папка — ${pageTitle.replace(/^Тендеры\s*—\s*/, '')}`}
             canEdit={canEditTenders}
-            placeholder="\\192.168.2.55\SharA_Tender\Отдел Субподряда\4. Тендеры"
+            placeholder="\\192.168.5.55\SharA_Tender\Отдел Субподряда\4. Тендеры"
             onValueChange={setRootFolderPath}
             // Ссылка на общую папку в Google Drive — пока только у основного строительства.
             driveLinkKey={!isMaterialsView && department === 'construction' ? 'tenders_drive_folder_link:construction' : undefined}

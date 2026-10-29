@@ -56,7 +56,7 @@ const contractNode = (name, dsList, extra = {}) => ({
 export const CONTRACTS_STRUCTURE = {
   title: 'Структура хранения документов',
   subtitle: 'Единый порядок папок в сетевом хранилище — одинаковый для всех объектов и подрядчиков',
-  defaultRoot: '\\\\192.168.2.55\\SharA_Tender\\СУБПОДРЯДЫ ДОГОВОРА И ДС',
+  defaultRoot: '\\\\192.168.5.55\\SharA_Tender\\СУБПОДРЯДЫ ДОГОВОРА И ДС',
   tree: [
     {
       name: '01_ЖК Алия',
@@ -161,7 +161,7 @@ const tenderNode = (name, participants, extra = {}) => ({
 export const TENDERS_STRUCTURE = {
   title: 'Структура хранения документов',
   subtitle: 'Единый порядок папок в сетевом хранилище — одинаковый для всех объектов и тендеров',
-  defaultRoot: '\\\\192.168.2.55\\SharA_Tender\\Отдел Субподряда\\4. Тендеры',
+  defaultRoot: '\\\\192.168.5.55\\SharA_Tender\\Отдел Субподряда\\4. Тендеры',
   tree: [
     {
       name: '01_ЖК Алия',

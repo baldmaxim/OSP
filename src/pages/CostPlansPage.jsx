@@ -447,7 +447,7 @@ function CostPlansPage() {
             settingKey="cost_plans_root_folder_path"
             title="Общая папка планов затрат"
             canEdit={canEditTenders}
-            placeholder="\\192.168.2.55\SharA_Tender\Отдел Субподряда\Планы затрат"
+            placeholder="\\192.168.5.55\SharA_Tender\Отдел Субподряда\Планы затрат"
           />
           <button
             type="button"

@@ -142,7 +142,7 @@ export default function CostPlanInstructionModal({ onClose }) {
               не получится.
             </p>
             <p className="cpi-label">Разбивка тендерного отдела лежит здесь:</p>
-            <FolderPath path="\\192.168.2.55\SharA_Tender\Отдел Субподряда\4.1. Планы затрат" />
+            <FolderPath path="\\192.168.5.55\SharA_Tender\Отдел Субподряда\4.1. Планы затрат" />
 
             <p className="cpi-label">У кого запрашивать — по видам работ:</p>
             <div className="cpi-table-wrap">

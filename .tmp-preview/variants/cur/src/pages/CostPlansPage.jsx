@@ -444,7 +444,7 @@ function CostPlansPage() {
             settingKey="cost_plans_root_folder_path"
             title="Общая папка планов затрат"
             canEdit={canEditTenders}
-            placeholder="\\192.168.2.55\SharA_Tender\Отдел Субподряда\Планы затрат"
+            placeholder="\\192.168.5.55\SharA_Tender\Отдел Субподряда\Планы затрат"
           />
           <div className="page-header-hint">
             Список тендеров основного строительства. Ответственного за план затрат можно назначить в карточке тендера.

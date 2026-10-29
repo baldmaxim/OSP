@@ -113,7 +113,7 @@ describe('Шаблоны разделов в «Документах» тенде
 
       // Сетевой путь браузер не откроет — «Скопировать путь».
       await c.getByRole('button', { name: 'Изменить' }).click()
-      await input.fill('\\\\192.168.2.55\\SharA_Tender\\Шаблоны\\ПС.docx')
+      await input.fill('\\\\192.168.5.55\\SharA_Tender\\Шаблоны\\ПС.docx')
       await c.getByRole('button', { name: 'Сохранить' }).click()
       await c.getByRole('button', { name: 'Скопировать путь' }).waitFor({ timeout: 10000 })
       assert.equal(await c.getByRole('link', { name: 'Открыть' }).count(), 0)
@@ -225,7 +225,7 @@ describe('Шаблоны разделов в «Документах» тенде
       s3_key: 'general/tpl-dgp/1-ДГП.docx', file_name: 'ДГП.docx', size_bytes: 10240, created_at: '2026-10-27T08:00:00Z' }]
     const { page, errors, close } = await openPage('route=/contracts&contracts=3&latency=0', '.contracts-table tbody tr.contract-row', { templates, files })
     try {
-      await page.evaluate(() => window.__fakeDb.app_settings.push({ key: 'contracts_dp_template_link', value: '\\\\192.168.2.55\\SharA_Tender\\Шаблоны\\ДП.docx' }))
+      await page.evaluate(() => window.__fakeDb.app_settings.push({ key: 'contracts_dp_template_link', value: '\\\\192.168.5.55\\SharA_Tender\\Шаблоны\\ДП.docx' }))
       await page.locator('.registry-header').getByRole('button', { name: 'Документы' }).click()
       const dp = card(page, 'contracts_dgp')
       await dp.locator('.tdm-tpl-legacy .tdm-tpl-name', { hasText: 'ДГП.docx' }).waitFor({ timeout: 10000 })
