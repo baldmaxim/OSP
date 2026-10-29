@@ -3312,19 +3312,24 @@ ${ATTACHMENT_BLOCK}
         </button>
         {(() => {
           const statusActive = currentStatusOptions.includes(activeTab)
+          // У тендеров на материалы статусов четыре — вкладки всегда видны,
+          // без кнопки «Статусы тендеров» (решение 29.10).
+          const statusesShown = isMaterialsView || statusMenuOpen
           return (
             <>
-              <button
-                type="button"
-                className={`tender-tab tender-tab-status-toggle ${statusActive ? 'active' : ''} ${statusMenuOpen ? 'open' : ''}`}
-                onClick={() => setStatusMenuOpen(o => !o)}
-                aria-expanded={statusMenuOpen}
-                title="Развернуть/свернуть статусы тендеров"
-              >
-                Статусы тендеров
-                <span className="tender-tab-chevron" aria-hidden>▸</span>
-              </button>
-              {statusMenuOpen && currentStatusOptions.map(s => (
+              {!isMaterialsView && (
+                <button
+                  type="button"
+                  className={`tender-tab tender-tab-status-toggle ${statusActive ? 'active' : ''} ${statusMenuOpen ? 'open' : ''}`}
+                  onClick={() => setStatusMenuOpen(o => !o)}
+                  aria-expanded={statusMenuOpen}
+                  title="Развернуть/свернуть статусы тендеров"
+                >
+                  Статусы тендеров
+                  <span className="tender-tab-chevron" aria-hidden>▸</span>
+                </button>
+              )}
+              {statusesShown && currentStatusOptions.map(s => (
                 <button
                   key={s}
                   className={`tender-tab tender-tab-status ${activeTab === s ? 'active' : ''}`}

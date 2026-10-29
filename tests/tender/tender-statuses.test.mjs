@@ -87,4 +87,27 @@ describe('Реестр тендеров ОС без «Заявки на тенд
       await context.close().catch(() => {})
     }
   })
+
+  // 29.10: у тендеров на материалы статусы — сразу вкладками после «Все тендеры», без кнопки «Статусы тендеров».
+  it('«Тендеры на материалы»: вкладки статусов всегда видны, кнопки «Статусы тендеров» нет', async () => {
+    const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 1600, height: 1000 } })
+    const page = await context.newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    try {
+      await page.goto(`${stand.url}?route=/tenders/materials&tenders=10&matTenders=1&latency=0`)
+      await page.locator('table.tenders-registry > tbody > tr').first().waitFor({ timeout: 120000 })
+
+      assert.equal(await page.getByRole('button', { name: /Статусы тендеров/ }).count(), 0)
+      const tabs = (await page.locator('.tender-tabs .tender-tab').allInnerTexts())
+        .map(t => t.replace(/\s*\d+$/, '').trim())
+      assert.deepEqual(tabs, ['Все тендеры', 'Не начат', 'В работе', 'Завершён', 'Не требуется', 'Удалённые'])
+
+      await page.locator('.tender-tab-status', { hasText: 'В работе' }).click()
+      assert.match(await page.locator('.tender-tab.active').innerText(), /^В работе/)
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close().catch(() => {})
+    }
+  })
 })
