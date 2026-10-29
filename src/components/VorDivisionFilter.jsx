@@ -15,12 +15,15 @@ import './VorDivisionFilter.css'
 // counts — Map(код → число тендеров) по реестру без этого фильтра.
 // subject='dc' — фильтр реестра «Заявка на ДС» по подразделению заявки (те же коды и подписи).
 // subject='contract' — фильтр реестра «Договоры и ДС» по подразделению договора (ДС — по договору).
+// subject='cp' — фильтр реестра контрагентов по подразделениям их видов работ; subject='wt' — справочник видов работ.
 const ITEMS = [...VOR_DIVISIONS, { value: NO_VOR_DIVISION, label: 'Не указано' }]
 const ITEM_LABEL = { ...VOR_DIVISION_LABEL, [NO_VOR_DIVISION]: 'Не указано' }
 const SUBJECT = {
   vor: { what: 'подразделению ВОР', all: 'тендеры', sr: 'Подразделение ВОР: ' },
   dc: { what: 'подразделению', all: 'заявки', sr: 'Подразделение: ' },
   contract: { what: 'подразделению договора', all: 'договоры', sr: 'Подразделение: ' },
+  cp: { what: 'подразделению (по видам работ)', all: 'контрагенты', sr: 'Подразделение: ' },
+  wt: { what: 'подразделению', all: 'виды работ', sr: 'Подразделение: ' },
 }
 
 export default function VorDivisionFilter({ value, onChange, counts = null, inHeader = false, subject = 'vor' }) {

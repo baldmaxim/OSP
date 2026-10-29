@@ -24,4 +24,6 @@
 20261108_dc_request_submission_check.sql
 20261109_contracts_dc_requests.sql
 20261110_cost_plan_economists.sql
+20261114_counterparty_status_limited.sql
+20261115_work_types_division.sql
 20261116_cost_plan_calc.sql

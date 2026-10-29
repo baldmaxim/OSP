@@ -5,9 +5,9 @@ import CounterpartyDcRequests from './CounterpartyDcRequests'
 import CounterpartyVatSelect from './CounterpartyVatSelect'
 import { VAT_NONE, vatSelectValue, vatText } from '../../utils/counterpartyVat'
 import { phoneHref } from '../../utils/phoneFormat'
+import { CP_LIMITED_HINT, CP_LIMITED_LABEL, cpStatusLabel } from '../../utils/counterpartyStatus'
 import './CounterpartyGeneral.css'
 
-const STATUS_TEXT = { active: 'Активный', blacklist: 'Чёрный список' }
 const AFFILIATE_SEARCH_LIMIT = 8
 
 function Field({ label, children }) {
@@ -82,8 +82,11 @@ export default function CounterpartyGeneralTab({
               )}
             </Field>
             <Field label="Статус">
-              <span className={cp.status === 'blacklist' ? 'cpg-blacklist' : undefined}>
-                {STATUS_TEXT[cp.status] || STATUS_TEXT.active}
+              <span
+                className={cp.status === 'blacklist' ? 'cpg-blacklist' : cp.status === 'limited' ? 'cpg-limited' : undefined}
+                title={cp.status === 'limited' ? CP_LIMITED_HINT : undefined}
+              >
+                {cpStatusLabel(cp.status)}
               </span>
             </Field>
             <Field label="Юридический адрес">{cp.legal_address}</Field>
@@ -170,6 +173,7 @@ export default function CounterpartyGeneralTab({
                       {a.name}
                     </button>
                     {a.status === 'blacklist' && <span className="cpg-bl-badge" title="Чёрный список">ЧС</span>}
+                    {a.status === 'limited' && <span className="cpg-limited-badge" title={CP_LIMITED_HINT}>{CP_LIMITED_LABEL}</span>}
                     {a.inn && <span className="cpg-affiliate-inn">ИНН {a.inn}</span>}
                     {canEdit && (
                       <button

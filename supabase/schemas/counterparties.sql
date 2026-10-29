@@ -1,5 +1,5 @@
--- ENUM для статуса контрагента
-CREATE TYPE counterparty_status AS ENUM ('active', 'blacklist');
+-- ENUM для статуса контрагента; limited — «Малые суммы» (миграция 20261114): привлекать только на небольшие суммы
+CREATE TYPE counterparty_status AS ENUM ('active', 'limited', 'blacklist');
 
 -- Таблица counterparties (Контрагенты/Подрядчики)
 CREATE TABLE IF NOT EXISTS counterparties (
@@ -68,7 +68,7 @@ COMMENT ON COLUMN counterparties.kpp IS 'КПП (Код причины пост�
 COMMENT ON COLUMN counterparties.legal_address IS 'Юридический адрес';
 COMMENT ON COLUMN counterparties.actual_address IS 'Фактический адрес';
 COMMENT ON COLUMN counterparties.website IS 'Ссылка на сайт контрагента';
-COMMENT ON COLUMN counterparties.status IS 'Статус контрагента (действующий/черный список)';
+COMMENT ON COLUMN counterparties.status IS 'Статус контрагента: active — действующий, limited — «Малые суммы» (привлекать только на небольшие суммы), blacklist — чёрный список';
 COMMENT ON COLUMN counterparties.notes IS 'Примечания к контрагенту';
 COMMENT ON COLUMN counterparties.vat_rate IS 'Ставка НДС контрагента, % (0/5/7/10/20/22); NULL — не указана или «без НДС»';
 COMMENT ON COLUMN counterparties.vat_exempt IS 'Контрагент работает без НДС (УСН, освобождение)';

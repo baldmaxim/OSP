@@ -14,11 +14,19 @@ import { diffWords } from '../utils/textDiff'
 import { shortPersonName } from '../utils/personName'
 import { buildRelationGroups, groupMatesOf, planRemoveFromGroup } from '../utils/counterpartyGroups'
 import { VAT_NONE, vatFromSelect, vatSelectValue, vatText } from '../utils/counterpartyVat'
+import { CP_LIMITED_HINT, CP_LIMITED_LABEL, LIMITED_MISSING_TEXT, cpStatusFromText, isLimitedStatusMissing } from '../utils/counterpartyStatus'
 import { docTitle } from '../utils/counterpartyDocs'
 import { counterpartySearchIndex, searchCounterparties } from '../utils/counterpartySearch'
 import CounterpartyGeneralTab from '../components/counterparty/CounterpartyGeneralTab'
 import { loadConcludedContractCounts } from '../services/counterpartyContracts'
 import CounterpartyVatSelect from '../components/counterparty/CounterpartyVatSelect'
+import VorDivisionChip from '../components/VorDivisionChip'
+import VorDivisionFilter from '../components/VorDivisionFilter'
+import { VOR_DIVISIONS, VOR_DIVISION_LABEL } from '../utils/vorDivisions'
+import {
+  WORK_TYPE_DIVISION_HINT, divisionByWorkType, divisionCounts, hasDivisionColumn, isMissingWorkTypeDivision,
+  matchesDivisions, splitWorkTypes, workTypesDivisions,
+} from '../utils/workTypeDivisions'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
 
@@ -49,8 +57,7 @@ const TENDER_STATUS_LABEL = {
 
 const ruCollator = new Intl.Collator('ru')
 
-// «Вид работ» хранится строкой через запятую.
-const splitWorkTypes = (value) => (value || '').split(',').map(wt => wt.trim()).filter(Boolean)
+// «Вид работ» хранится строкой через запятую (splitWorkTypes — utils/workTypeDivisions.js).
 
 const fmtRuDate = (iso) => (iso
   ? new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -66,7 +73,7 @@ const IMPORT_COLUMNS = [
   { name: 'Юридический адрес', example: 'г. Москва, ул. Ленина, д. 1' },
   { name: 'Фактический адрес', example: 'г. Москва, ул. Ленина, д. 1' },
   { name: 'Ссылка на сайт', example: 'https://stroykom.ru' },
-  { name: 'Статус', example: 'Действующий или Черный список' },
+  { name: 'Статус', example: 'Действующий, Малые суммы или Черный список' },
   { name: 'Примечание', example: 'Хороший подрядчик, рекомендуем' },
   { name: 'ФИО контакта', example: 'Иванов Иван Иванович' },
   { name: 'Должность контакта', example: 'Директор' },
@@ -88,7 +95,7 @@ const CP_FIELD_LABEL = {
   status: 'Статус',
   notes: 'Примечание',
 }
-const CP_STATUS_TEXT = { active: 'Действующий', blacklist: 'Чёрный список' }
+const CP_STATUS_TEXT = { active: 'Действующий', limited: CP_LIMITED_LABEL, blacklist: 'Чёрный список' }
 
 function cpValueText(field, value) {
   if (value === null || value === undefined || value === '') return '—'
@@ -240,6 +247,8 @@ function CounterpartiesPage() {
   // нового значения в input.
   const deferredSearchQuery = useDeferredValue(searchQuery)
   const [workTypeFilter, setWorkTypeFilter] = useState('')
+  // Подразделения (коды подразделений ВОР, NO_VOR_DIVISION — «Не указано») — по видам работ контрагента; пусто — все.
+  const [filterDivisions, setFilterDivisions] = useState([])
   // task 302: карточки компаний (s3_documents owner_type='counterparty') — map по owner_id, latest first.
   const [cardsByCp, setCardsByCp] = useState(() => new Map())
   // task 422: сводка документов СБ/должной осмотрительности — map по owner_id.
@@ -304,9 +313,22 @@ function CounterpartiesPage() {
   const [workTypesDirectory, setWorkTypesDirectory] = useState([])
   const [showWorkTypeModal, setShowWorkTypeModal] = useState(false)
   const [editingWorkType, setEditingWorkType] = useState(null)
-  const [workTypeForm, setWorkTypeForm] = useState({ name: '', description: '' })
+  const [workTypeForm, setWorkTypeForm] = useState({ name: '', description: '', division: '' })
   // task 326: поиск по справочнику видов работ
   const [wtDirSearch, setWtDirSearch] = useState('')
+  const [wtDirDivisions, setWtDirDivisions] = useState([])
+
+  // Подразделения (миграция 20261115): у вида работ, контрагенту — по его видам работ (utils/workTypeDivisions.js).
+  // Колонки ещё нет — ни плашек, ни фильтров, ни выбора в справочнике.
+  const divisionSupported = useMemo(() => hasDivisionColumn(workTypesDirectory), [workTypesDirectory])
+  const wtDivisionByName = useMemo(() => divisionByWorkType(workTypesDirectory), [workTypesDirectory])
+  const divisionsById = useMemo(() => {
+    if (!divisionSupported) return null
+    const map = new Map()
+    for (const c of counterparties) map.set(c.id, workTypesDivisions(c.work_type, wtDivisionByName))
+    return map
+  }, [divisionSupported, wtDivisionByName, counterparties])
+  const divisionFilterOn = !!divisionsById && filterDivisions.length > 0
 
   useEffect(() => {
     fetchCounterparties()
@@ -414,13 +436,13 @@ function CounterpartiesPage() {
 
   const handleOpenAddWorkType = () => {
     setEditingWorkType(null)
-    setWorkTypeForm({ name: '', description: '' })
+    setWorkTypeForm({ name: '', description: '', division: '' })
     setShowWorkTypeModal(true)
   }
 
   const handleOpenEditWorkType = (wt) => {
     setEditingWorkType(wt)
-    setWorkTypeForm({ name: wt.name, description: wt.description || '' })
+    setWorkTypeForm({ name: wt.name, description: wt.description || '', division: wt.division || '' })
     setShowWorkTypeModal(true)
   }
 
@@ -431,9 +453,14 @@ function CounterpartiesPage() {
       alert('Укажите название вида работ')
       return
     }
+    if (name.includes(',')) {
+      alert('В названии вида работ не должно быть запятой: у контрагента виды работ хранятся через запятую')
+      return
+    }
     const payload = {
       name,
       description: workTypeForm.description.trim() || null,
+      ...(divisionSupported ? { division: workTypeForm.division || null } : {}),
       updated_at: new Date().toISOString(),
     }
     try {
@@ -462,16 +489,31 @@ function CounterpartiesPage() {
       }
       setShowWorkTypeModal(false)
       setEditingWorkType(null)
-      setWorkTypeForm({ name: '', description: '' })
+      setWorkTypeForm({ name: '', description: '', division: '' })
       fetchWorkTypesDirectory()
       fetchCounterparties()
     } catch (err) {
       if (err.code === '23505') {
         alert('Вид работ с таким названием уже существует')
+      } else if (isMissingWorkTypeDivision(err)) {
+        alert(WORK_TYPE_DIVISION_HINT)
       } else {
         alert('Ошибка сохранения вида работ: ' + err.message)
       }
     }
+  }
+
+  // Подразделение вида работ — прямо в строке справочника; у всех контрагентов с этим видом оно меняется сразу.
+  const handleWorkTypeDivisionChange = async (wt, division) => {
+    const { error } = await db
+      .from('work_types')
+      .update({ division, updated_at: new Date().toISOString() })
+      .eq('id', wt.id)
+    if (error) {
+      alert(isMissingWorkTypeDivision(error) ? WORK_TYPE_DIVISION_HINT : 'Ошибка: ' + error.message)
+      return
+    }
+    setWorkTypesDirectory(prev => prev.map(x => (x.id === wt.id ? { ...x, division } : x)))
   }
 
   const handleDeleteWorkType = async (wt) => {
@@ -757,7 +799,7 @@ function CounterpartiesPage() {
       // первым из двух кликов), и вторая попытка не нужна.
       alert(error.code === '23505'
         ? 'Такой контрагент уже есть в реестре.'
-        : 'Ошибка: ' + error.message)
+        : isLimitedStatusMissing(error) ? LIMITED_MISSING_TEXT : 'Ошибка: ' + error.message)
     } finally {
       cpSavingRef.current = false
       setCpSaving(false)
@@ -1026,7 +1068,7 @@ function CounterpartiesPage() {
       }
     } catch (error) {
       console.error('Ошибка обновления статуса:', error.message)
-      alert('Ошибка обновления статуса: ' + error.message)
+      alert(isLimitedStatusMissing(error) ? LIMITED_MISSING_TEXT : 'Ошибка обновления статуса: ' + error.message)
     }
   }
 
@@ -1134,6 +1176,7 @@ function CounterpartiesPage() {
       'Наименование организации',
       'Категория работ',
       'Вид работ',
+      ...(divisionsById ? ['Подразделения'] : []),
       'ИНН',
       'КПП',
       'Юридический адрес',
@@ -1153,6 +1196,7 @@ function CounterpartiesPage() {
 
     const statusLabel = (status) => {
       if (status === 'blacklist') return 'Черный список'
+      if (status === 'limited') return CP_LIMITED_LABEL
       if (status === 'active') return 'Активный'
       return status || ''
     }
@@ -1166,6 +1210,7 @@ function CounterpartiesPage() {
         cp.name || '',
         cp.department || '',
         cp.work_type || '',
+        ...(divisionsById ? [(divisionsById.get(cp.id) || []).map(d => VOR_DIVISION_LABEL[d]).join(', ')] : []),
         cp.inn || '',
         cp.kpp || '',
         cp.legal_address || '',
@@ -1199,6 +1244,7 @@ function CounterpartiesPage() {
       { wch: 35 },  // Наименование
       { wch: 22 },  // Категория
       { wch: 30 },  // Виды работ
+      ...(divisionsById ? [{ wch: 26 }] : []),  // Подразделения
       { wch: 14 },  // ИНН
       { wch: 12 },  // КПП
       { wch: 38 },  // Юр. адрес
@@ -1318,7 +1364,7 @@ function CounterpartiesPage() {
             legal_address: text(row['Юридический адрес']),
             actual_address: text(row['Фактический адрес']),
             website: getHyperlinkFromCell(row, websiteColumnName) || text(row[websiteColumnName]),
-            status: row['Статус'] === 'Черный список' ? 'blacklist' : 'active',
+            status: cpStatusFromText(row['Статус']),
             notes: text(row['Примечание']),
             contacts: [],
           })
@@ -1416,7 +1462,7 @@ function CounterpartiesPage() {
   const contractFilterOn = onlyWithContract && contractCounts instanceof Map
 
   // Вкладка и фильтры без поиска (мемоизация): сортировка не повторяется на каждую букву поиска.
-  const tabCounterparties = useMemo(() => {
+  const tabBeforeDivision = useMemo(() => {
     return counterparties.filter(counterparty => {
       // task 197 + 201: фильтр по активной вкладке (активные / чёрный список / удалённые)
       if (activeTab === 'deleted') {
@@ -1434,6 +1480,19 @@ function CounterpartiesPage() {
     })
   }, [counterparties, workTypeFilter, contractFilterOn, contractCounts, activeTab])
 
+  // Подразделения: число контрагентов вкладки на каждое (без этого фильтра) и сам фильтр. Контрагент с видами работ
+  // разных подразделений попадает в каждое из них.
+  const cpDivisionCounts = useMemo(
+    () => (divisionsById ? divisionCounts(tabBeforeDivision, c => divisionsById.get(c.id) || []) : null),
+    [divisionsById, tabBeforeDivision],
+  )
+  const tabCounterparties = useMemo(
+    () => (divisionFilterOn
+      ? tabBeforeDivision.filter(c => matchesDivisions(divisionsById.get(c.id), filterDivisions))
+      : tabBeforeDivision),
+    [divisionFilterOn, tabBeforeDivision, divisionsById, filterDivisions],
+  )
+
   // Поиск — task 339: по deferred-значению, отвязан от ввода в input. Ничего не нашлось как набрано — поиск
   // в другой раскладке, затем с опечатками; searchFix — чем заменён запрос (строка над списком).
   const { items: filteredCounterparties, fix: searchFix } = useMemo(
@@ -1447,7 +1506,7 @@ function CounterpartiesPage() {
   // При смене вкладки/фильтра/поиска показываем список с начала (лёгкий первый экран).
   useEffect(() => {
     setVisibleCount(RENDER_STEP)
-  }, [activeTab, workTypeFilter, contractFilterOn, deferredSearchQuery])
+  }, [activeTab, workTypeFilter, contractFilterOn, deferredSearchQuery, filterDivisions])
 
   // Сколько контрагентов текущей вкладки с договором — число на кнопке «С договором».
   const tabWithContractCount = useMemo(() => {
@@ -1563,30 +1622,36 @@ function CounterpartiesPage() {
                   предлагал заведомо «пустые» варианты. */}
               {(() => {
                 const q = wtfSearch.trim().toLowerCase()
+                const pool = divisionFilterOn
+                  ? uniqueWorkTypes.filter(wt => matchesDivisions(wtDivisionByName.has(wt) ? [wtDivisionByName.get(wt)] : [], filterDivisions))
+                  : uniqueWorkTypes
                 const opts = !q
-                  ? uniqueWorkTypes
-                  : uniqueWorkTypes.filter(wt => wt.toLowerCase().includes(q))
+                  ? pool
+                  : pool.filter(wt => wt.toLowerCase().includes(q))
                 const displayValue = wtfOpen ? wtfSearch : workTypeFilter
                 return (
                   <div className={`wt-filter-wrap ${workTypeFilter ? 'has-value' : ''}`}>
-                    <input
-                      type="text"
-                      className={`wt-filter-input ${workTypeFilter ? 'active' : ''}`}
-                      value={displayValue}
-                      placeholder="Все виды работ"
-                      onChange={(e) => { setWtfSearch(e.target.value); setWtfOpen(true) }}
-                      onFocus={() => { setWtfSearch(''); setWtfOpen(true) }}
-                      onBlur={() => setTimeout(() => setWtfOpen(false), 150)}
-                    />
-                    {workTypeFilter && !wtfOpen && (
-                      <button
-                        type="button"
-                        className="wt-filter-clear"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => { setWorkTypeFilter(''); setWtfSearch('') }}
-                        title="Сбросить фильтр"
-                      >×</button>
-                    )}
+                    {/* Поле с крестиком — своим блоком: на телефоне список раскрывается от всей строки панели. */}
+                    <div className="wt-filter-field">
+                      <input
+                        type="text"
+                        className={`wt-filter-input ${workTypeFilter ? 'active' : ''}`}
+                        value={displayValue}
+                        placeholder="Все виды работ"
+                        onChange={(e) => { setWtfSearch(e.target.value); setWtfOpen(true) }}
+                        onFocus={() => { setWtfSearch(''); setWtfOpen(true) }}
+                        onBlur={() => setTimeout(() => setWtfOpen(false), 150)}
+                      />
+                      {workTypeFilter && !wtfOpen && (
+                        <button
+                          type="button"
+                          className="wt-filter-clear"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => { setWorkTypeFilter(''); setWtfSearch('') }}
+                          title="Сбросить фильтр"
+                        >×</button>
+                      )}
+                    </div>
                     {wtfOpen && (
                       <div className="wt-filter-dropdown">
                         <button
@@ -1660,6 +1725,14 @@ function CounterpartiesPage() {
                 </button>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Подразделения по видам работ: на компьютере фильтр — в заголовке «Вид работ» (как у тендеров и договоров),
+            на телефоне шапки таблицы нет — он здесь. */}
+        {activeTab !== 'work_types' && isPhone && divisionsById && (
+          <div className="cp-phone-divisions">
+            <VorDivisionFilter subject="cp" value={filterDivisions} onChange={setFilterDivisions} counts={cpDivisionCounts} />
           </div>
         )}
 
@@ -1763,6 +1836,14 @@ function CounterpartiesPage() {
                   >×</button>
                 )}
               </div>
+              {divisionSupported && (
+                <VorDivisionFilter
+                  subject="wt"
+                  value={wtDirDivisions}
+                  onChange={setWtDirDivisions}
+                  counts={divisionCounts(workTypesDirectory, wt => (VOR_DIVISION_LABEL[wt.division] ? [wt.division] : []))}
+                />
+              )}
               {/* task 333: добавление/правка справочника — только при can_edit */}
               {canEditCp && (
                 <button className="btn-add" onClick={handleOpenAddWorkType}>+ Добавить вид работ</button>
@@ -1782,12 +1863,9 @@ function CounterpartiesPage() {
               </div>
             ) : (() => {
               const q = wtDirSearch.trim().toLowerCase()
-              const filteredWt = !q
-                ? workTypesDirectory
-                : workTypesDirectory.filter(wt =>
-                    (wt.name || '').toLowerCase().includes(q) ||
-                    (wt.description || '').toLowerCase().includes(q)
-                  )
+              const filteredWt = workTypesDirectory.filter(wt =>
+                (!q || (wt.name || '').toLowerCase().includes(q) || (wt.description || '').toLowerCase().includes(q))
+                && (!divisionSupported || matchesDivisions(VOR_DIVISION_LABEL[wt.division] ? [wt.division] : [], wtDirDivisions)))
               return (
               <div className="table-wrapper">
                 <table className="compact-table work-types-table">
@@ -1796,6 +1874,7 @@ function CounterpartiesPage() {
                       <th style={{ width: '52px', textAlign: 'center' }}>№</th>
                       <th>Название</th>
                       <th>Описание</th>
+                      {divisionSupported && <th className="wt-col-division">Подразделение</th>}
                       <th style={{ width: '140px', textAlign: 'right' }}>Контрагентов</th>
                       <th style={{ width: '90px' }}></th>
                     </tr>
@@ -1803,8 +1882,8 @@ function CounterpartiesPage() {
                   <tbody>
                     {filteredWt.length === 0 ? (
                       <tr>
-                        <td colSpan="5" style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
-                          Ничего не найдено по запросу «{wtDirSearch}»
+                        <td colSpan={divisionSupported ? 6 : 5} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                          {wtDirSearch ? `Ничего не найдено по запросу «${wtDirSearch}»` : 'Нет видов работ в выбранных подразделениях'}
                         </td>
                       </tr>
                     ) : filteredWt.map((wt, idx) => {
@@ -1814,6 +1893,18 @@ function CounterpartiesPage() {
                           <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>{idx + 1}</td>
                           <td><strong>{wt.name}</strong></td>
                           <td style={{ color: 'var(--text-secondary)' }}>{wt.description || '—'}</td>
+                          {divisionSupported && (
+                            <td className="wt-col-division">
+                              {canEditCp || wt.division ? (
+                                <VorDivisionChip
+                                  subject="wt"
+                                  value={wt.division}
+                                  canEdit={canEditCp}
+                                  onChange={(d) => handleWorkTypeDivisionChange(wt, d)}
+                                />
+                              ) : <span className="empty-cell">—</span>}
+                            </td>
+                          )}
                           <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{used}</td>
                           <td className="col-actions">
                             {canEditCp ? (
@@ -1870,13 +1961,15 @@ function CounterpartiesPage() {
                 const c0 = (cp.counterparty_contacts || [])[0]
                 const phone = (c0?.phone || '').split(';').map(p => p.trim()).find(Boolean)
                 const isBl = cp.status === 'blacklist'
+                const isLimited = cp.status === 'limited'
                 return (
-                  <li key={cp.id} className={`cp-mrow${isBl ? ' is-blacklist' : ''}`}>
+                  <li key={cp.id} className={`cp-mrow${isBl ? ' is-blacklist' : isLimited ? ' is-limited' : ''}`}>
                     <div className="cp-mrow-top">
                       <button type="button" className="cp-mrow-open" onClick={() => openDetail(cp)}>
                         {cp.name}
                       </button>
                       {isBl && <span className="cp-mrow-bl" title="Чёрный список">ЧС</span>}
+                      {isLimited && <span className="cp-mrow-limited" title={CP_LIMITED_HINT}>{CP_LIMITED_LABEL}</span>}
                       {contractCounts instanceof Map && <ContractMark count={contractCounts.get(cp.id)} />}
                       <CounterpartyDocBadges summary={docSummaryByCp.get(cp.id)} />
                     </div>
@@ -1924,7 +2017,14 @@ function CounterpartiesPage() {
                     </th>
                     <th className="col-name">Наименование</th>
                     <th className="col-contract" title="Есть заключённые договоры с компанией">Договор</th>
-                    <th className="col-worktype">Вид работ</th>
+                    <th className={`col-worktype${divisionFilterOn ? ' th-filtered' : ''}`}>
+                      {divisionsById ? (
+                        <span className="cp-th-worktype">
+                          <span>Вид работ</span>
+                          <VorDivisionFilter subject="cp" inHeader value={filterDivisions} onChange={setFilterDivisions} counts={cpDivisionCounts} />
+                        </span>
+                      ) : 'Вид работ'}
+                    </th>
                     <th className="col-inn">ИНН</th>
                     {vatSupported && <th className="col-vat">НДС</th>}
                     <th className="col-contact-name">Контакты</th>
@@ -1990,6 +2090,11 @@ function CounterpartiesPage() {
                               ))}
                             </div>
                           ) : <span className="empty-cell">--</span>}
+                          {divisionsById?.get(counterparty.id)?.length > 0 && (
+                            <div className="cp-divs">
+                              {divisionsById.get(counterparty.id).map(d => <VorDivisionChip key={d} subject="cp" value={d} />)}
+                            </div>
+                          )}
                         </td>
                         {/* task 196: только ИНН, без КПП */}
                         <td className="col-inn">
@@ -2090,12 +2195,14 @@ function CounterpartiesPage() {
                         <td className="col-status" onClick={(e) => e.stopPropagation()}>
                           {/* task 333: select становится disabled при read-only */}
                           <select
-                            className={`status-select-mini ${counterparty.status === 'blacklist' ? 'blacklist' : 'active'}`}
+                            className={`status-select-mini ${counterparty.status === 'blacklist' || counterparty.status === 'limited' ? counterparty.status : 'active'}`}
                             value={counterparty.status || 'active'}
                             onChange={(e) => handleStatusChange(counterparty.id, e.target.value)}
                             disabled={!canEditCp}
+                            title={counterparty.status === 'limited' ? CP_LIMITED_HINT : undefined}
                           >
                             <option value="active">Активный</option>
+                            <option value="limited" title={CP_LIMITED_HINT}>{CP_LIMITED_LABEL}</option>
                             <option value="blacklist">ЧС</option>
                           </select>
                         </td>
@@ -2513,6 +2620,9 @@ function CounterpartiesPage() {
                                     }}
                                   >
                                     {wt.name}
+                                    {VOR_DIVISION_LABEL[wt.division] && (
+                                      <span className="wt-search-div">{VOR_DIVISION_LABEL[wt.division]}</span>
+                                    )}
                                   </button>
                                 ))
                               )}
@@ -2614,8 +2724,12 @@ function CounterpartiesPage() {
                     }
                   >
                     <option value="active">Действующий</option>
+                    <option value="limited">{CP_LIMITED_LABEL}</option>
                     <option value="blacklist">Черный список</option>
                   </select>
+                  {counterpartyFormData.status === 'limited' && (
+                    <div className="cp-status-hint">{CP_LIMITED_HINT}</div>
+                  )}
                 </div>
 
                 <div className="form-group full-width">
@@ -2947,6 +3061,18 @@ function CounterpartiesPage() {
                     placeholder="Например, Строительно-монтажные работы"
                   />
                 </div>
+                {divisionSupported && (
+                  <div className="form-group full-width">
+                    <label>Подразделение</label>
+                    <select
+                      value={workTypeForm.division}
+                      onChange={(e) => setWorkTypeForm({ ...workTypeForm, division: e.target.value })}
+                    >
+                      <option value="">Не указано</option>
+                      {VOR_DIVISIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div className="form-group full-width">
                   <label>Описание</label>
                   <textarea

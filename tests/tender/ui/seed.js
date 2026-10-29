@@ -10,6 +10,19 @@ const PHONE_EXT = params.get('phoneExt') === '1'
 // примечание, ставка 22 %, связь с «Подрядчиком 02», договор с двумя ДС, договор, где он вторая сторона, и чужой договор;
 // у «Подрядчика 04» записан «Без НДС», у «Подрядчика 05» — 20 % (из выбора убраны 23.10.2026, но видны как есть).
 const CP_CARD = params.get('cpCard') === '1'
+// ?cpLimited=1 — «Подрядчик 02» со статусом «Малые суммы» (limited, миграция 20261114).
+const CP_LIMITED = params.get('cpLimited') === '1'
+// ?cpDivisions=1 — справочник видов работ с подразделениями (миграция 20261115): у «Подрядчика 04» — «Монолитные работы»,
+// у «Подрядчика 05» — «Клининг» (без подразделения); =legacy — справочник без колонки division.
+const CP_DIVISIONS = params.get('cpDivisions')
+const WORK_TYPES = [
+  ['Фасадные работы', 'nvf_spk'], ['Кровельные работы', 'general'], ['Устройство вентилируемых фасадов', 'nvf_spk'],
+  ['Остекление', 'nvf_spk'], ['Благоустройство территории', 'general'], ['Монолитные работы', 'monolith'],
+  ['Клининг', null], ['Электрические работы', 'electrical'],
+].map(([name, division], i) => ({
+  id: `wt-${i + 1}`, name, description: null, created_at: '2026-06-01', updated_at: '2026-06-01',
+  ...(CP_DIVISIONS === 'legacy' ? {} : { division }),
+}))
 // ?cpSearch=1 — первые контрагенты названы как в базе (пробелы, кавычки, дефис, латиница): поиск реестра контрагентов.
 const CP_SEARCH = params.get('cpSearch') === '1'
 const SEARCH_NAMES = ['ООО Пром Атом Строй (ПАС)', 'ПромАтомСтрой', 'ООО "Вестаир Групп" (ФАКТСТРОЙ)', 'ООО "SOFFITTI"', 'ООО "Альпинист-эксперт"', 'ООО «Формула Высоты»']
@@ -130,9 +143,10 @@ window.__fakeDb = {
   // &phoneExt=1 — у первого номера добавочный («… доб. 123»).
   counterparties: counterparties.map((cp, i) => ({
     ...cp,
-    status: CP_CONTACTS && i === 2 ? 'blacklist' : 'active',
+    status: CP_CONTACTS && i === 2 ? 'blacklist' : CP_LIMITED && i === 1 ? 'limited' : 'active',
     inn: '123456789012',
-    work_type: CP_CONTACTS && i % 4 === 1 ? 'Фасадные работы, Кровельные работы, Устройство вентилируемых фасадов, Остекление, Благоустройство территории' : 'Фасадные работы',
+    work_type: CP_CONTACTS && i % 4 === 1 ? 'Фасадные работы, Кровельные работы, Устройство вентилируемых фасадов, Остекление, Благоустройство территории'
+      : CP_DIVISIONS && i === 3 ? 'Монолитные работы' : CP_DIVISIONS && i === 4 ? 'Клининг' : 'Фасадные работы',
     counterparty_contacts: CP_CONTACTS && i % 2 === 0
       ? [{ id: `cpc-${i}`, counterparty_id: cp.id, full_name: 'Сапаров Ержан Болатович', phone: `+7 701 555-12-34${PHONE_EXT ? ' доб. 123' : ''}; +7 727 300-00-00`, email: 'sales@example.invalid' }]
       : [],
@@ -142,6 +156,7 @@ window.__fakeDb = {
       notes: i === 0 ? 'Работает только по предоплате' : null,
     } : {}),
   })),
+  ...(CP_DIVISIONS ? { work_types: WORK_TYPES } : {}),
   counterparty_relations: CP_CARD ? [{ id: 'rel-1', counterparty_id: 'cp-1', related_counterparty_id: 'cp-2' }] : [],
   counterparty_audit_log: [],
   contracts: CP_CARD ? [

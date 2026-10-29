@@ -355,7 +355,7 @@
 .col-contact-phone { width: 132px; font-size: 0.75rem; }
 .col-contact-email { width: 14%; font-size: 0.75rem; }
 .col-website { width: 4rem; text-align: center; }
-.col-status { width: 6rem; }                           /* «Активный ▾» — 76px */
+.col-status { width: 7.5rem; }                         /* «Малые суммы ▾» — 92px */
 .col-contract { width: 4.75rem; text-align: center; } /* «ДОГОВОР» в шапке — 62px */
 .col-actions { width: 4.25rem; text-align: center; }   /* две кнопки по 24px */
 
@@ -439,6 +439,25 @@
   flex-direction: column;
   gap: 0.25rem;
 }
+
+/* Подразделения контрагента по его видам работ (миграция 20261115) — плашки под видами, как под описанием у тендеров. */
+.cp-divs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.375rem;
+}
+/* Заголовок «Вид работ» с фильтром по подразделению (VorDivisionFilter inHeader): подпись и фильтр в строку,
+   фильтр — без прописных; выбран — акцентная черта у заголовка. */
+.cp-th-worktype {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.375rem;
+  max-width: 100%;
+}
+.cp-th-worktype .vdivf { text-transform: none; letter-spacing: normal; }
+.compact-table thead th.col-worktype.th-filtered { box-shadow: inset 0 -2px 0 var(--primary-color); }
 
 /* task 199: длинные виды работ — переносим текст на следующую строчку */
 .worktype-tag {
@@ -542,6 +561,26 @@
   background-color: #450a0a;
   color: #fca5a5;
 }
+
+/* «Малые суммы» — жёлтый: привлекать можно, но только на небольшие суммы (миграция 20261114) */
+.status-select-mini.limited {
+  background-color: #fef3c7;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%2392400e' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  color: #92400e;
+}
+
+[data-theme='dark'] .status-select-mini.limited {
+  background-color: #451a03;
+  color: #fcd34d;
+}
+
+/* Подсказка под статусом в форме контрагента */
+.cp-status-hint {
+  margin-top: 0.375rem;
+  font-size: 0.75rem;
+  color: #92400e;
+}
+[data-theme='dark'] .cp-status-hint { color: #fcd34d; }
 
 /* НДС в реестре — тот же список, что во «Общей информации» карточки; нейтральный, чтобы не спорить со статусом */
 .vat-select-mini {
@@ -1011,9 +1050,11 @@
    + всплывающий список — позволяет печатать и фильтровать длинный справочник. */
 .wt-filter-wrap {
   position: relative;
+  width: 16rem;
   min-width: 180px;
   flex-shrink: 1;
 }
+.wt-filter-field { position: relative; }
 .wt-filter-input {
   width: 100%;
   height: 36px;
@@ -1063,8 +1104,12 @@
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  right: 0;
-  max-height: 280px;
+  /* Список шире поля: названия видов работ длинные («Изготовление и монтаж индивидуальных изделий»),
+     в ширину поля они ломались в две-три строки, а 97 видов листались в окне на 280px. */
+  width: max-content;
+  min-width: max(100%, 26rem);
+  max-width: min(36rem, calc(100vw - 2rem));
+  max-height: min(70vh, 34rem);
   overflow-y: auto;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -1133,7 +1178,9 @@
   z-index: 100;
 }
 .wt-search-item {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
   width: 100%;
   text-align: left;
   padding: 0.5rem 0.75rem;
@@ -1145,6 +1192,14 @@
   color: var(--text-primary);
 }
 .wt-search-item:last-child { border-bottom: none; }
+/* Подразделение вида работ справа от названия — видно, к чему относится вид, ещё до выбора. */
+.wt-search-div {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
 .wt-search-item:hover,
 .wt-search-item.active {
   background: rgba(8, 145, 178, 0.08);
@@ -1180,6 +1235,8 @@
   margin-bottom: 1rem;
   flex-shrink: 0;
 }
+/* Колонка «Подразделение» справочника: плашка-выбор (VorDivisionChip) по ширине «Общестроительные работы». */
+.work-types-table .wt-col-division { width: 14.5rem; white-space: nowrap; }
 
 /* task 326: поиск в шапке справочника видов работ. Растягивается между
    заголовком слева и кнопкой «+ Добавить» справа. */
@@ -1620,6 +1677,12 @@
   .counterparties-toolbar .toolbar-center > * { flex: 1 1 0 !important; min-width: 0 !important; max-width: none !important; }
   .counterparties-toolbar .search-container input,
   .counterparties-toolbar .wt-filter-input { height: 40px; font-size: 16px; } /* iOS не увеличивает поле с 16px */
+  /* Фильтр по подразделениям — отдельной строкой под панелью: в строке поиска уже три поля. */
+  .cp-phone-divisions { padding: 0.5rem 0.75rem 0; }
+  /* Поле фильтра — одно из трёх в строке: список раскрывается от всей строки панели, а не от узкого поля. */
+  .counterparties-toolbar .toolbar-center { position: relative; }
+  .counterparties-toolbar .wt-filter-wrap { position: static; }
+  .counterparties-toolbar .wt-filter-dropdown { left: 0; right: 0; width: auto; min-width: 0; max-width: none; max-height: 60vh; }
   .counterparties-page .counterparties-toolbar .btn-add { height: 34px; padding: 0 0.75rem; font-size: 0.8125rem; }
   .counterparties-toolbar .btn-import { height: 34px; padding: 0 0.625rem; }
 
@@ -1646,6 +1709,7 @@
   }
   .cp-mrow:has(.cp-mrow-open:active) { background: var(--bg-tertiary); }
   .cp-mrow.is-blacklist { box-shadow: inset 3px 0 0 #dc2626; }
+  .cp-mrow.is-limited { box-shadow: inset 3px 0 0 #f59e0b; }
   .cp-mrow-top { display: flex; align-items: flex-start; gap: 0.375rem; min-width: 0; }
   /* Кнопка-название открывает карточку; ::after растягивает её на всю строку. */
   .cp-mrow-open {
@@ -1678,6 +1742,18 @@
     font-weight: 700;
   }
   [data-theme='dark'] .cp-mrow-bl { color: #fca5a5; }
+  .cp-mrow-limited {
+    flex-shrink: 0;
+    padding: 0 0.375rem;
+    border-radius: 5px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 0.6875rem;
+    line-height: 1.25rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  [data-theme='dark'] .cp-mrow-limited { background: rgba(245, 158, 11, 0.18); color: #fcd34d; }
   .cp-mrow-top .cp-doc-badges { flex-shrink: 0; margin-top: 0.0625rem; }
   .cp-mrow-wt {
     display: -webkit-box;
