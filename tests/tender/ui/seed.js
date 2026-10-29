@@ -10,8 +10,11 @@ const PHONE_EXT = params.get('phoneExt') === '1'
 // примечание, ставка 22 %, связь с «Подрядчиком 02», договор с двумя ДС, договор, где он вторая сторона, и чужой договор;
 // у «Подрядчика 04» записан «Без НДС», у «Подрядчика 05» — 20 % (из выбора убраны 23.10.2026, но видны как есть).
 const CP_CARD = params.get('cpCard') === '1'
+// ?cpSearch=1 — первые контрагенты названы как в базе (пробелы, кавычки, дефис, латиница): поиск реестра контрагентов.
+const CP_SEARCH = params.get('cpSearch') === '1'
+const SEARCH_NAMES = ['ООО Пром Атом Строй (ПАС)', 'ПромАтомСтрой', 'ООО "Вестаир Групп" (ФАКТСТРОЙ)', 'ООО "SOFFITTI"', 'ООО "Альпинист-эксперт"', 'ООО «Формула Высоты»']
 
-const counterparties = Array.from({ length: CPS }, (_, i) => ({ id: `cp-${i + 1}`, name: `Подрядчик ${String(i + 1).padStart(2, '0')}` }))
+const counterparties = Array.from({ length: CPS }, (_, i) => ({ id: `cp-${i + 1}`, name: (CP_SEARCH && SEARCH_NAMES[i]) || `Подрядчик ${String(i + 1).padStart(2, '0')}` }))
 const items = []
 const perDoc = Math.ceil(ITEMS / DOCS.length)
 for (const [d, doc] of DOCS.entries()) {

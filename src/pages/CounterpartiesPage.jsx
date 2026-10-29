@@ -15,6 +15,7 @@ import { shortPersonName } from '../utils/personName'
 import { buildRelationGroups, groupMatesOf, planRemoveFromGroup } from '../utils/counterpartyGroups'
 import { VAT_NONE, vatFromSelect, vatSelectValue, vatText } from '../utils/counterpartyVat'
 import { docTitle } from '../utils/counterpartyDocs'
+import { counterpartySearchIndex, searchCounterparties } from '../utils/counterpartySearch'
 import CounterpartyGeneralTab from '../components/counterparty/CounterpartyGeneralTab'
 import { loadConcludedContractCounts } from '../services/counterpartyContracts'
 import CounterpartyVatSelect from '../components/counterparty/CounterpartyVatSelect'
@@ -1403,25 +1404,19 @@ function CounterpartiesPage() {
     return { uniqueWorkTypes: [...all].sort(ruCollator.compare), workTypeUsage: usage }
   }, [counterparties])
 
-  // Текст поиска по каждому контрагенту (поля карточки и контакты) — один раз на загрузку списка, а не
-  // на каждую букву поиска. Поля разделены переводом строки: совпадение не склеивается из двух полей.
-  const searchTextById = useMemo(() => {
+  // Что ищется у каждого контрагента (поля карточки и контакты, без пробелов и знаков) — один раз на загрузку
+  // списка, а не на каждую букву поиска. Правила поиска — utils/counterpartySearch.js.
+  const searchIndexById = useMemo(() => {
     const map = new Map()
-    for (const c of counterparties) {
-      const parts = [c.name, c.work_type, c.inn, c.kpp, c.legal_address, c.actual_address, c.website, c.notes]
-      for (const ct of c.counterparty_contacts || []) parts.push(ct.full_name, ct.position, ct.phone, ct.email)
-      map.set(c.id, parts.filter(Boolean).join('\n').toLowerCase())
-    }
+    for (const c of counterparties) map.set(c.id, counterpartySearchIndex(c))
     return map
   }, [counterparties])
 
   // «С договором» действует, когда договоры загрузились: до того фильтр не прячет весь список.
   const contractFilterOn = onlyWithContract && contractCounts instanceof Map
 
-  // Фильтрация контрагентов (мемоизация)
-  const filteredCounterparties = useMemo(() => {
-    // task 339: фильтрация по deferred-значению — отвязана от ввода в input
-    const query = deferredSearchQuery.trim() ? deferredSearchQuery.toLowerCase() : ''
+  // Вкладка и фильтры без поиска (мемоизация): сортировка не повторяется на каждую букву поиска.
+  const tabCounterparties = useMemo(() => {
     return counterparties.filter(counterparty => {
       // task 197 + 201: фильтр по активной вкладке (активные / чёрный список / удалённые)
       if (activeTab === 'deleted') {
@@ -1431,14 +1426,20 @@ function CounterpartiesPage() {
       }
       // Фильтр по виду работ (проверяем каждый вид отдельно)
       if (workTypeFilter && !splitWorkTypes(counterparty.work_type).includes(workTypeFilter)) return false
-      if (contractFilterOn && !contractCounts.get(counterparty.id)) return false
-      return !query || searchTextById.get(counterparty.id).includes(query)
+      return !contractFilterOn || contractCounts.get(counterparty.id)
     }).sort((a, b) => {
       // Сортировка: активные сверху, черный список снизу, внутри — по имени
       if ((a.status === 'blacklist') !== (b.status === 'blacklist')) return a.status === 'blacklist' ? 1 : -1
       return ruCollator.compare(a.name || '', b.name || '')
     })
-  }, [counterparties, searchTextById, workTypeFilter, contractFilterOn, contractCounts, deferredSearchQuery, activeTab])
+  }, [counterparties, workTypeFilter, contractFilterOn, contractCounts, activeTab])
+
+  // Поиск — task 339: по deferred-значению, отвязан от ввода в input. Ничего не нашлось как набрано — поиск
+  // в другой раскладке, затем с опечатками; searchFix — чем заменён запрос (строка над списком).
+  const { items: filteredCounterparties, fix: searchFix } = useMemo(
+    () => searchCounterparties(tabCounterparties, deferredSearchQuery, (cp) => searchIndexById.get(cp.id)),
+    [tabCounterparties, deferredSearchQuery, searchIndexById],
+  )
 
   const selectedSet = useMemo(() => new Set(selectedCounterpartyIds), [selectedCounterpartyIds])
   const allVisibleSelected = filteredCounterparties.length > 0 && filteredCounterparties.every(cp => selectedSet.has(cp.id))
@@ -1660,6 +1661,15 @@ function CounterpartiesPage() {
               )}
             </div>
           </div>
+        )}
+
+        {/* Поиск не нашёл набранное как есть — чем заменён запрос (utils/counterpartySearch.js). */}
+        {activeTab !== 'work_types' && searchFix && (
+          <p className="cp-search-fix" role="status">
+            {searchFix.kind === 'layout'
+              ? `Показаны результаты по запросу «${searchFix.query}» — набран в другой раскладке`
+              : 'Точных совпадений нет — показаны похожие названия и ФИО контактов'}
+          </p>
         )}
 
         {activeTab !== 'work_types' && canEditCp && selectedCounterpartyIds.length > 0 && (
