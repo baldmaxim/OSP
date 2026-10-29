@@ -5,7 +5,9 @@
 //             publicNoContact=1 — колонок ответственного ещё нет, как до миграции 20261101);
 //             /general/departments (отделы; departments=missing — таблицы ещё нет), /tasks?task=task-1 (карточка
 //             задачи с чек-листом; taskChecklist=N — ещё N пунктов, taskList=N — ещё N задач), /stand/dgp (блок ДГП вкладки «Смета» объекта), /reports&dcStats=1 (заявки на ДС),
-//             /contracts&contracts=N (реестр «Договоры и ДС», понятийные соглашения),
+//             /contracts&contracts=N (реестр «Договоры и ДС», понятийные соглашения; contractsDivision=1 — колонка
+//             подразделения, миграция 20261112, и три ДС у договора ctr-2), /tenders/other&tendersDept=other
+//             («Тендеры — Прочее»: плотный реестр, тендеры без объекта),
 //             /dc-requests&dcStats=1 (реестр заявок на ДС с файлами; dcNumbers=1 — номера заявок из базы, миграция 20261106;
 //             dcSubmission=1 — столбцы «Статус ОКС» и «Комментарий», миграция 20261108;
 //             dcContracts=1 — договор, ДС и подразделение заявок, миграция 20261109;
@@ -77,6 +79,7 @@ const routes = (
     <Route path="/vors" element={<VorsPage />} />
     <Route path="/reports" element={<ReportsPage />} />
     <Route path="/tenders/construction" element={<TendersPage department="construction" tenderType="main" />} />
+    <Route path="/tenders/other" element={<TendersPage key="tenders-other" department="other" tenderType="main" />} />
     <Route path="/tenders/materials" element={<TendersPage key="tenders-materials" tenderType="materials" />} />
     <Route path="/general" element={<GeneralInfoPage />} />
     <Route path="/general/departments" element={<DepartmentsPage />} />

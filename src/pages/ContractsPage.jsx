@@ -11,6 +11,8 @@ import FolderPathCell from '../components/FolderPathCell'
 import SignalLinkCell from '../components/SignalLinkCell'
 import LarixLinkCell from '../components/LarixLinkCell'
 import RootFolderPathButton from '../components/RootFolderPathButton'
+import VorDivisionChip from '../components/VorDivisionChip'
+import VorDivisionFilter from '../components/VorDivisionFilter'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
 import ContractDocsModal from '../components/ContractDocsModal'
 import { CONTRACTS_STRUCTURE } from '../utils/docStorageStructures'
@@ -22,6 +24,8 @@ import { fetchAllRows } from '../utils/fetchAllRows'
 import { chunkList } from '../utils/inChunks'
 import { LARIX_LINK_FIELD, LARIX_LINK_LABEL, LARIX_NAME, isInLarix } from '../utils/contractLarix'
 import { registryCounts, registryRows } from '../utils/contractRegistryTabs'
+import { VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION } from '../utils/vorDivisions'
+import { contractDivisionEnabled, contractDivisionOf, contractDivisionSaveError } from '../utils/contractDivision'
 import {
   DOC_TYPE,
   DOC_TYPES,
@@ -35,6 +39,7 @@ import {
   currentTerms,
   effectiveDocumentAmount,
   effectiveValues,
+  flattenTree,
   hasAppliedPsdc,
   isAmendment,
   isCompleted,
@@ -53,6 +58,8 @@ import '../components/ContractRegistry.css'
 // Оформление реестра — отдельным файлом и ПОСЛЕ базовых стилей: при равной
 // специфичности перекрывает их (шапка, выравнивание, ширины колонок).
 import '../components/ContractRegistryPolish.css'
+// Раскрытый документ (две области: работа юриста и ДС) и подразделение договора.
+import '../components/ContractRegistryExpanded.css'
 import '../components/MobileCards.css'
 
 // Реестр общий для двух отделов, поэтому у объекта показываем, к какому он относится:
@@ -243,6 +250,8 @@ const EMPTY_FORM = {
   email: '',
   bsm: '',
   comments: '',
+  // Подразделение договора (миграция 20261112): только у договора, ДС берут подразделение договора.
+  division: '',
 }
 
 // ДД.ММ.ГГГГ из ISO-даты (или null, если пусто/некорректно)
@@ -438,13 +447,19 @@ function ContractRegistry() {
   // DnD-переупорядочивание приложений договора (внутри одного уровня)
   const [draggedAppendix, setDraggedAppendix] = useState(null) // { contractId, id }
   const [appendixDragOver, setAppendixDragOver] = useState(null) // { id, position }
-  // Множественный выбор приложений для массового удаления (раскрыт всегда один договор).
+  // Множественный выбор приложений для массового удаления. Раскрытых документов бывает несколько —
+  // «выбрать все» и «Удалить выбранные» каждого считают только его приложения (id приложений уникальны).
   const [selectedAppendices, setSelectedAppendices] = useState(() => new Set())
 
   // Task 188: dropdown состояние для приложений в форме
   const [attachmentsDropdownOpenForm, setAttachmentsDropdownOpenForm] = useState(false)
-  // Task 193/417: раскрытая строка договора (примечание юриста + сопутствующие приложения)
-  const [expandedContractId, setExpandedContractId] = useState(null)
+  // Раскрытый договор (29.10.2026): под строкой две области — «Работа юриста» (юрист, сроки, примечание,
+  // приложения-задачи) и «Дополнительные соглашения» (выпадающий список ДС с подробностями). Раскрывает
+  // щелчок по строке или по «ДС: N»; раскрытых может быть несколько. Какие раскрыты — ниже (isRowOpen):
+  // здесь только переключённые человеком.
+  const [rowToggled, setRowToggled] = useState(() => new Set())
+  // Раскрытые ДС в списке правой области (id ДС).
+  const [openDsItems, setOpenDsItems] = useState(() => new Set())
   const [noteSavingId, setNoteSavingId] = useState(null)
 
   const [formData, setFormData] = useState(EMPTY_FORM)
@@ -465,6 +480,8 @@ function ContractRegistry() {
   const [onlyOverdue, setOnlyOverdue] = useState(false)
   // Быстрый фильтр: заключённые договоры, ещё не внесённые в Larix.
   const [onlyNoLarix, setOnlyNoLarix] = useState(false)
+  // Подразделение договора (коды подразделений ВОР, NO_VOR_DIVISION — «Не указано»); пусто — все.
+  const [filterDivisions, setFilterDivisions] = useState([])
 
   // Сортировка по клику на заголовок (default — по имени объекта, как раньше)
   const [sortKey, setSortKey] = useState('object')
@@ -1010,10 +1027,18 @@ function ContractRegistry() {
       return next
     })
   }
-  // «Выбрать все» — по всем строкам раскрытого договора (родители и подпункты).
+  // «Выбрать все» — по всем строкам этого документа (родители и подпункты); выбор в других раскрытых
+  // документах не трогаем.
   const toggleAllAppendices = (contractId, checked) => {
     const list = contractAppendicesMap[contractId] || []
-    setSelectedAppendices(checked ? new Set(list.map(a => a.id)) : new Set())
+    setSelectedAppendices(prev => {
+      const next = new Set(prev)
+      for (const a of list) {
+        if (checked) next.add(a.id)
+        else next.delete(a.id)
+      }
+      return next
+    })
   }
 
   // Массовое удаление выбранных. Подпункты выбранного родителя уходят каскадом в БД,
@@ -1050,7 +1075,7 @@ function ContractRegistry() {
         ...prev,
         [contractId]: (prev[contractId] || []).filter(a => !doomed.has(a.id)),
       }))
-      setSelectedAppendices(new Set())
+      setSelectedAppendices(prev => new Set([...prev].filter(id => !doomed.has(id))))
     } catch (err) {
       console.error('Ошибка удаления приложений:', err.message)
       alert('Не удалось удалить приложения: ' + err.message)
@@ -1266,18 +1291,28 @@ function ContractRegistry() {
     return hits
   }, [nestDs, searchText, tabView])
 
-  // Раскрытые ДС: найденные поиском и договоры, показанные ради своих ДС, раскрыты
-  // сразу, кнопка «ДС: N» переключает от этого состояния. Новый поиск — заново.
-  const [dsToggled, setDsToggled] = useState(() => new Set())
-  useEffect(() => { setDsToggled(new Set()) }, [searchText])
-  const isDsOpen = (contractId) =>
-    (dsSearchHits.has(contractId) || tabView.context.has(contractId)) !== dsToggled.has(contractId)
-  const toggleDsOpen = (contractId) => setDsToggled(prev => {
+  // Раскрытые договоры: найденные поиском по их ДС и договоры, показанные ради своих ДС, раскрыты
+  // сразу (ДС — в правой области), щелчок по строке или «ДС: N» переключает от этого состояния.
+  // Новый поиск, вкладка, фильтр или страница — заново (сброс rowToggled ниже, у пагинации).
+  const isRowOpen = (docId) =>
+    (nestDs && (dsSearchHits.has(docId) || tabView.context.has(docId))) !== rowToggled.has(docId)
+  const toggleRow = (docId) => setRowToggled(prev => {
     const next = new Set(prev)
-    if (next.has(contractId)) next.delete(contractId)
-    else next.add(contractId)
+    if (next.has(docId)) next.delete(docId)
+    else next.add(docId)
     return next
   })
+  const toggleDsItem = (dsId) => setOpenDsItems(prev => {
+    const next = new Set(prev)
+    if (next.has(dsId)) next.delete(dsId)
+    else next.add(dsId)
+    return next
+  })
+  // ДС правой области раскрытого документа. «Договоры и ДС» — ДС этой вкладки (как на счётчиках);
+  // «Договоры» и «ДС» — все живые ДС дерева документа сверху вниз.
+  const dsListOf = (doc) => (nestDs
+    ? nestedDsOf(doc.id)
+    : flattenTree(doc, docIndex).map(x => x.doc))
 
   // «Тип ДС» есть только в представлении ДС — при уходе из него отбор снимаем,
   // иначе невидимый фильтр оставил бы пустой список.
@@ -1286,9 +1321,15 @@ function ContractRegistry() {
     if (kind !== 'amendments') setFilterDsType('')
   }
 
-  const filteredSortedContracts = useMemo(() => {
+  // Подразделение договора (миграция 20261112): колонки ещё нет — ни плашки, ни фильтра.
+  const divisionEnabled = useMemo(() => contractDivisionEnabled(contracts), [contracts])
+  const divisionOf = useCallback((doc) => contractDivisionOf(doc, docIndex.byId), [docIndex])
+  const divisionFilterOn = divisionEnabled && filterDivisions.length > 0
+
+  // Все фильтры, кроме подразделения: числа в его списке считаются по реестру без него самого.
+  const filteredBeforeDivision = useMemo(() => {
     const q = searchText.trim().toLowerCase()
-    const list = tabContracts.filter(c => {
+    return tabContracts.filter(c => {
       if (filterObjectIds.length > 0 && !filterObjectIds.includes(c.object_id)) return false
       if (filterDsType && c.record_type !== filterDsType) return false
       if (filterLawyerId) {
@@ -1319,6 +1360,22 @@ function ContractRegistry() {
       }
       return true
     })
+  }, [tabContracts, filterObjectIds, filterDsType, filterLawyerId, onlyOverdue, onlyNoLarix, searchText, isOverdue, normNameById, docIndex, dsSearchHits])
+
+  const divisionCounts = useMemo(() => {
+    if (!divisionEnabled) return null
+    const counts = new Map()
+    for (const c of filteredBeforeDivision) {
+      const key = divisionOf(c) || NO_VOR_DIVISION
+      counts.set(key, (counts.get(key) || 0) + 1)
+    }
+    return counts
+  }, [divisionEnabled, filteredBeforeDivision, divisionOf])
+
+  const filteredSortedContracts = useMemo(() => {
+    const list = divisionFilterOn
+      ? filteredBeforeDivision.filter(c => filterDivisions.includes(divisionOf(c) || NO_VOR_DIVISION))
+      : filteredBeforeDivision
 
     const dir = sortDir === 'asc' ? 1 : -1
     if (sortKey === 'number') {
@@ -1347,9 +1404,9 @@ function ContractRegistry() {
       if (so !== 0) return so
       return (a.contract_date || '').localeCompare(b.contract_date || '')
     })
-  }, [tabContracts, filterObjectIds, filterDsType, filterLawyerId, onlyOverdue, onlyNoLarix, searchText, sortKey, sortDir, isOverdue, normNameById, docIndex, dsSearchHits])
+  }, [filteredBeforeDivision, divisionFilterOn, filterDivisions, divisionOf, sortKey, sortDir])
 
-  const hasActiveFilters = !!(filterObjectIds.length || filterDsType || filterLawyerId || searchText || onlyOverdue || onlyNoLarix)
+  const hasActiveFilters = !!(filterObjectIds.length || filterDsType || filterLawyerId || searchText || onlyOverdue || onlyNoLarix || divisionFilterOn)
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -1358,7 +1415,7 @@ function ContractRegistry() {
 
   const resetFilters = () => {
     setFilterObjectIds([]); setFilterDsType(''); setFilterLawyerId(''); setSearchText('')
-    setOnlyOverdue(false); setOnlyNoLarix(false)
+    setOnlyOverdue(false); setOnlyNoLarix(false); setFilterDivisions([])
   }
 
   // Сохранение примечания юриста из раскрытого блока (по blur), с индикатором «Сохранение…».
@@ -1389,15 +1446,6 @@ function ContractRegistry() {
     ? filteredSortedContracts.reduce((n, c) => n + nestedDsOf(c.id).length, 0)
     : 0
 
-  // Строки таблицы: в «Договоры и ДС» под договором с раскрытыми ДС идут его ДС.
-  const tableRows = []
-  pagedContracts.forEach((doc, index) => {
-    tableRows.push({ doc, index, nested: false })
-    if (nestDs && isDsOpen(doc.id)) {
-      for (const ds of nestedDsOf(doc.id)) tableRows.push({ doc: ds, index, nested: true })
-    }
-  })
-
   // Пагинация — над таблицей и под ней, одна и та же (обычная функция-рендер).
   const renderPagination = (position) => (
     <div className={`registry-pagination is-${position}`}>
@@ -1426,12 +1474,12 @@ function ContractRegistry() {
   // При смене вкладки/фильтров/сортировки — на первую страницу и закрыть раскрытие.
   useEffect(() => {
     setPage(1)
-    setExpandedContractId(null)
-  }, [activeTab, scope, docKind, filterObjectIds, filterDsType, filterLawyerId, searchText, onlyOverdue, onlyNoLarix, sortKey, sortDir, pageSize])
+    setRowToggled(new Set())
+  }, [activeTab, scope, docKind, filterObjectIds, filterDsType, filterLawyerId, filterDivisions, searchText, onlyOverdue, onlyNoLarix, sortKey, sortDir, pageSize])
 
   // Закрываем раскрытие при перелистывании страниц.
   useEffect(() => {
-    setExpandedContractId(null)
+    setRowToggled(new Set())
   }, [page])
 
   // Заголовок с сортировкой по клику (не вложенный компонент — обычная функция-рендер)
@@ -1549,8 +1597,12 @@ function ContractRegistry() {
       return
     }
     try {
+      // Подразделение — только у договора и только если колонка уже есть (миграция 20261112): без неё
+      // PostgREST отказал бы во всей записи. У ДС колонку не трогаем — они берут подразделение договора.
+      const { division, ...formFields } = formData
       const payload = {
-        ...formData,
+        ...formFields,
+        ...(divisionEnabled && !isDsForm ? { division: division || null } : {}),
         // Основной контрагент = первая сторона; остальные — в contract_counterparties.
         counterparty_id: formCounterpartyIds[0] || null,
         object_id: formData.object_id || null,
@@ -1699,6 +1751,7 @@ function ContractRegistry() {
       email: contract.email || '',
       bsm: contract.bsm || '',
       comments: contract.comments || '',
+      division: contract.division || '',
     })
     setFormCounterpartyIds(contractParties(contract).map(p => p.id))
     setCounterpartySearch('')
@@ -1827,6 +1880,7 @@ function ContractRegistry() {
     folder_path: 'Путь к папке',
     signal_link: 'Путь к Signal',
     [LARIX_LINK_FIELD]: LARIX_LINK_LABEL,
+    division: 'Подразделение',
   }
   // Путь к папке (миграция 20260904) — обычное инлайн-поле договора.
   const handleSaveFolderPath = (contractId, value) => handleInlineField(contractId, 'folder_path', value.trim())
@@ -1843,16 +1897,19 @@ function ContractRegistry() {
       const { error } = await db.from('contracts').update({ [field]: value }).eq('id', contractId)
       if (error) throw error
       setContracts(prev => prev.map(c => c.id === contractId ? { ...c, [field]: value } : c))
+      // Подразделение — подписями, а не кодами: история читается людьми.
+      const shown = (v) => (field === 'division' ? (VOR_DIVISION_LABEL[v] || null) : v)
       await logContractEvent(contractId, 'field_updated', {
         fieldName: field,
-        oldValue: contract[field] ?? null,
-        newValue: value,
+        oldValue: shown(contract[field] ?? null),
+        newValue: shown(value),
         description: `Изменено: ${INLINE_FIELD_LABEL[field] || field}`,
       })
     } catch (error) {
       console.error('Ошибка сохранения:', error.message)
       // Колонки ещё нет в базе — называем миграцию, а не сырой текст PostgREST.
-      alert(field === 'signal_link' && (error.code === 'PGRST204' || /signal_link/.test(error.message || ''))
+      if (field === 'division') alert(contractDivisionSaveError(error))
+      else alert(field === 'signal_link' && (error.code === 'PGRST204' || /signal_link/.test(error.message || ''))
         ? 'Не удалось сохранить путь к Signal: в базе не применена миграция 20260919_contract_signal_link.'
         : 'Ошибка: ' + error.message)
     }
@@ -1936,6 +1993,604 @@ function ContractRegistry() {
     const target = amendmentTarget || formParentDoc
     if (!target) { setFormData(prev => ({ ...prev, record_type: type })); return }
     handleAddAmendment(target, type)
+  }
+
+  // ── Раскрытый документ: «Работа юриста» и «Дополнительные соглашения» (29.10.2026) ───────────────
+  // Решение пользователя: ДС не вываливаются под договором полными строками таблицы, а под строкой
+  // договора две области — слева работа юриста (юрист, сроки, примечание, приложения-задачи), справа
+  // выпадающий список ДС: строка ДС — номер, дата, тип, статус, сумма и предмет, по стрелке — работа
+  // юриста по этому ДС, его пути и действия. Функции-рендеры общие для договора и ДС: работа юриста
+  // у ДС та же, что у договора.
+
+  // Статус документа — выпадающий список с короткой подписью (полное название — в списке и подсказке).
+  const renderStatusPicker = (doc) => (
+    <FilterDropdown
+      className="status-fdrop"
+      label=""
+      value={doc.status || 'new_request'}
+      onChange={(v) => handleStatusChange(doc.id, v)}
+      options={STATUS_OPTIONS}
+      disabled={!canEditContracts}
+      formatTrigger={(lbl) => {
+        const opt = STATUS_OPTIONS.find(o => o.label === lbl)
+        return (
+          <span className={`status-badge ${opt?.className || ''}`} title={lbl}>
+            {opt?.short || lbl}
+          </span>
+        )
+      }}
+      renderOption={(o) => <span className={`status-badge ${o.className || ''}`}>{o.label}</span>}
+    />
+  )
+
+  // Три пути документа и понятийное соглашение. Заполненный путь — своя строка; пустые собраны в одну
+  // «путь к папке · Signal · Larix.CPM» с общим «путь к»: три полные подписи в строку не помещались
+  // (порядок и переносы — .cpaths в ContractRegistryPolish.css). Открыть проводник кликом браузер не
+  // даёт без помощника, поэтому путь к папке ещё и копируется.
+  const renderDocPaths = (doc) => (
+    <>
+      <div className="cpaths">
+        {canEditContracts && (!doc.folder_path || !doc.signal_link || !isInLarix(doc)) && (
+          <span className="cpaths-label" aria-hidden="true">путь к</span>
+        )}
+        <FolderPathCell
+          value={doc.folder_path}
+          canEdit={canEditContracts}
+          onSave={(v) => handleSaveFolderPath(doc.id, v)}
+          addLabel="папке"
+          addTitle="Указать путь к папке"
+          placeholder="\\su10-fs\Договоры\ЖК Алия\СУ-2-АЛ"
+        />
+        {/* Ссылка на те же документы в общем хранилище, открывается кликом. */}
+        <SignalLinkCell
+          value={doc.signal_link}
+          canEdit={canEditContracts}
+          onSave={(v) => handleSaveSignalLink(doc.id, v)}
+          addLabel="Signal"
+          addTitle="Указать путь к Signal"
+        />
+        {/* Ссылка на карточку документа в Larix; вносится так же, как путь к Signal. */}
+        <LarixLinkCell
+          value={doc[LARIX_LINK_FIELD]}
+          canEdit={canEditContracts}
+          onSave={(v) => handleSaveLarixLink(doc.id, v)}
+          addLabel={LARIX_NAME}
+          addTitle={`Указать путь к ${LARIX_NAME}`}
+        />
+      </div>
+      <ConceptAgreementCell
+        files={conceptDocsByContract[doc.id] || []}
+        contractId={doc.id}
+        canEdit={canEditContracts}
+        onChanged={() => refreshConceptDocs(doc.id)}
+      />
+    </>
+  )
+
+  // Приложения документа (task 419): строки ведут юристы — ответственный, согласования, примечание.
+  const renderAppendices = (doc) => {
+    const appendices = contractAppendicesMap[doc.id] || []
+    const ro = !canEditContracts || !!doc.deleted_at
+    const pickedCount = appendices.reduce((n, a) => n + (selectedAppendices.has(a.id) ? 1 : 0), 0)
+    return (
+      <section className="ce-block">
+        <div className="ce-block-title">
+          {isAmendment(doc) ? 'Приложения к ДС' : 'Приложения к Договору'}
+          {appendices.length > 0 && <span className="ce-count">{appendices.length} шт.</span>}
+          {!ro && pickedCount > 0 && (
+            <button
+              type="button"
+              className="ce-del-selected"
+              onClick={() => handleDeleteSelectedAppendices(doc.id)}
+            >
+              Удалить выбранные ({pickedCount})
+            </button>
+          )}
+          {!ro && (
+            <button type="button" className="ce-add-appendix" onClick={() => handleAddAppendix(doc.id)}>
+              + Добавить приложение
+            </button>
+          )}
+        </div>
+        {appendices.length === 0 ? (
+          <div className="ce-empty">
+            Приложения не добавлены.{!ro ? ' Нажмите «+ Добавить приложение».' : ''}
+          </div>
+        ) : (() => {
+          const apTree = buildAppendixTree(appendices, { numberField: 'appendix_number' })
+          return (
+          <div className="ce-appendix-wrap">
+            <table className="ce-appendix-table">
+              <thead>
+                <tr>
+                  {!ro && (
+                    <th className="ce-ap-pick">
+                      <input
+                        type="checkbox"
+                        className="ce-ap-check"
+                        title="Выбрать все приложения"
+                        checked={appendices.length > 0 && pickedCount === appendices.length}
+                        ref={(el) => {
+                          if (el) el.indeterminate = pickedCount > 0 && pickedCount < appendices.length
+                        }}
+                        onChange={(e) => toggleAllAppendices(doc.id, e.target.checked)}
+                      />
+                    </th>
+                  )}
+                  {!ro && <th className="ce-ap-drag" aria-label="Порядок"></th>}
+                  <th className="ce-ap-num">№</th>
+                  <th>Наименование приложения</th>
+                  <th>Ответственный</th>
+                  <th className="ce-ap-appr">Согл. с объектом</th>
+                  <th className="ce-ap-appr">Согл. с контрагентом</th>
+                  {!hideNotes && <th className="ce-ap-notes">Примечание</th>}
+                  {!ro && <th className="ce-ap-actions" aria-label="Действия"></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {apTree.map(node => {
+                  const ap = node.row
+                  const isChild = node.level === 1
+                  const dragOverCls = appendixDragOver?.id === ap.id ? `ce-ap-drop-${appendixDragOver.position}` : ''
+                  const fullyApproved = !!ap.approved_object && !!ap.approved_counterparty
+                  const picked = selectedAppendices.has(ap.id)
+                  return (
+                    <tr
+                      key={ap.id}
+                      className={`${isChild ? 'ce-ap-child' : ''} ${draggedAppendix?.id === ap.id ? 'ce-ap-dragging' : ''} ${dragOverCls} ${fullyApproved ? 'ce-ap-approved' : ''} ${picked ? 'ce-ap-picked' : ''}`}
+                      onDragOver={ro ? undefined : (e) => {
+                        e.preventDefault()
+                        e.dataTransfer.dropEffect = 'move'
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const isAbove = (e.clientY - rect.top) < rect.height / 2
+                        const position = isAbove ? 'before' : 'after'
+                        if (ap.id === draggedAppendix?.id) { setAppendixDragOver(null); return }
+                        setAppendixDragOver(prev => (prev?.id === ap.id && prev?.position === position) ? prev : { id: ap.id, position })
+                      }}
+                      onDragLeave={ro ? undefined : () => setAppendixDragOver(prev => prev?.id === ap.id ? null : prev)}
+                      onDrop={ro ? undefined : (e) => {
+                        e.preventDefault()
+                        const draggedId = e.dataTransfer.getData('text/plain')
+                        handleAppendixDrop(doc.id, draggedId, ap.id)
+                      }}
+                    >
+                      {!ro && (
+                        <td className="ce-ap-pick">
+                          <input
+                            type="checkbox"
+                            className="ce-ap-check"
+                            title="Выбрать приложение"
+                            checked={selectedAppendices.has(ap.id)}
+                            onChange={() => toggleAppendixSelected(ap.id)}
+                          />
+                        </td>
+                      )}
+                      {!ro && (
+                        <td className="ce-ap-drag">
+                          <span
+                            className="ce-ap-handle"
+                            role="button"
+                            tabIndex={-1}
+                            draggable
+                            title="Перетащите для изменения порядка"
+                            onDragStart={(e) => {
+                              e.dataTransfer.effectAllowed = 'move'
+                              e.dataTransfer.setData('text/plain', ap.id)
+                              setDraggedAppendix({ contractId: doc.id, id: ap.id })
+                            }}
+                            onDragEnd={() => { setDraggedAppendix(null); setAppendixDragOver(null) }}
+                          >⋮⋮</span>
+                        </td>
+                      )}
+                      <td className="ce-ap-num">
+                        <input
+                          className="ce-ap-input ce-ap-input-num"
+                          defaultValue={node.displayNumber}
+                          key={`num-${ap.id}-${node.displayNumber}`}
+                          readOnly={ro}
+                          title="№ приложения (авто; можно вписать вручную)"
+                          onBlur={(e) => handleUpdateAppendix(doc.id, ap.id, 'appendix_number', e.target.value)}
+                        />
+                      </td>
+                      <td className="ce-ap-name-cell">
+                        <div className="ce-ap-name-inner">
+                          {isChild && <span className="ce-ap-child-marker" aria-hidden>└</span>}
+                          <input
+                            className="ce-ap-input"
+                            defaultValue={ap.name || ''}
+                            placeholder="Наименование приложения"
+                            readOnly={ro}
+                            onBlur={(e) => handleUpdateAppendix(doc.id, ap.id, 'name', e.target.value)}
+                          />
+                        </div>
+                      </td>
+                      <td className="ce-ap-resp">
+                        {(() => {
+                          // Существующее «вне реестра» значение показываем как опцию, чтобы не потерять.
+                          const val = ap.responsible || ''
+                          const known = val === '' || appendixResponsibleOptions.some(o => o.value === val)
+                          const opts = known ? appendixResponsibleOptions : [...appendixResponsibleOptions, { value: val, label: `${val} (вне реестра)` }]
+                          return (
+                            <FilterDropdown
+                              label=""
+                              value={val}
+                              onChange={(v) => handleUpdateAppendix(doc.id, ap.id, 'responsible', v)}
+                              options={opts}
+                              searchable
+                              searchPlaceholder="Поиск сотрудника…"
+                              allLabel="Не назначен"
+                              disabled={ro}
+                            />
+                          )
+                        })()}
+                      </td>
+                      <td className="ce-ap-appr">
+                        <input
+                          type="checkbox"
+                          className="ce-ap-check"
+                          checked={!!ap.approved_object}
+                          disabled={ro}
+                          title="Согласовано с объектом"
+                          onChange={(e) => handleToggleAppendixApproval(doc.id, ap.id, 'approved_object', e.target.checked)}
+                        />
+                      </td>
+                      <td className="ce-ap-appr">
+                        <input
+                          type="checkbox"
+                          className="ce-ap-check"
+                          checked={!!ap.approved_counterparty}
+                          disabled={ro}
+                          title="Согласовано с контрагентом"
+                          onChange={(e) => handleToggleAppendixApproval(doc.id, ap.id, 'approved_counterparty', e.target.checked)}
+                        />
+                      </td>
+                      {!hideNotes && (
+                      <td className="ce-ap-notes">
+                        {ro ? (
+                          <div className="ce-ap-notes-ro">{ap.notes || '—'}</div>
+                        ) : (
+                          <AutoGrowTextarea
+                            className="ce-ap-input ce-ap-textarea"
+                            minHeight={32}
+                            defaultValue={ap.notes || ''}
+                            placeholder="Примечание по статусу приложения"
+                            onBlur={(e) => handleUpdateAppendix(doc.id, ap.id, 'notes', e.target.value)}
+                          />
+                        )}
+                      </td>
+                      )}
+                      {!ro && (
+                        <td className="ce-ap-actions">
+                          <div className="ce-ap-actions-inner">
+                            {isChild ? (
+                              <button type="button" className="ce-ap-hier" title="Поднять на верхний уровень"
+                                onClick={() => handleOutdentAppendix(doc.id, ap.id)}>←</button>
+                            ) : (
+                              <button type="button" className="ce-ap-hier" title="Сделать подпунктом предыдущего приложения"
+                                disabled={node.isFirstTopLevel || node.hasChildren}
+                                onClick={() => handleIndentAppendix(doc.id, ap.id)}>→</button>
+                            )}
+                            {!isChild && (
+                              <button type="button" className="ce-ap-hier" title="Добавить подпункт"
+                                onClick={() => handleAddChildAppendix(doc.id, ap.id)}>+</button>
+                            )}
+                            <button
+                              type="button"
+                              className="ce-ap-del"
+                              title="Удалить приложение"
+                              aria-label="Удалить приложение"
+                              onClick={() => handleDeleteAppendix(doc.id, ap.id)}
+                            >×</button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          )
+        })()}
+      </section>
+    )
+  }
+
+  // Работа юриста по документу: юрист, сроки, примечание юриста (руководителю строительства не видно)
+  // и приложения. withStatus — у ДС: своей строки в таблице у них нет, статус меняется здесь.
+  const renderLawyerWork = (doc, { withStatus = false } = {}) => {
+    const docDeleted = !!doc.deleted_at
+    const ro = !canEditContracts || docDeleted
+    const overdue = !docDeleted && isOverdue(doc)
+    return (
+      <>
+        <div className="ce2-fields">
+          {withStatus && (
+            <div className="ce2-field">
+              <span className="ce2-label">Статус</span>
+              {docDeleted ? <span className="status-badge status-deleted">Удалён</span> : renderStatusPicker(doc)}
+            </div>
+          )}
+          <div className="ce2-field ce2-field-lawyer">
+            <span className="ce2-label">Юрист</span>
+            <FilterDropdown
+              label=""
+              value={lawyerRepByContactId[doc.responsible_contact_id] || doc.responsible_contact_id || ''}
+              onChange={(v) => handleInlineField(doc.id, 'responsible_contact_id', v)}
+              options={contactDropdownOptions}
+              searchable
+              searchPlaceholder="Поиск сотрудника…"
+              allLabel="—"
+              formatTrigger={formatPersonShortName}
+              disabled={ro}
+            />
+          </div>
+          <div className="ce2-field">
+            <span className="ce2-label">Принят в работу</span>
+            <InlineDateCell
+              value={doc.accepted_date}
+              onChange={(v) => handleInlineField(doc.id, 'accepted_date', v)}
+              disabled={ro}
+            />
+          </div>
+          <div className={`ce2-field${overdue ? ' is-overdue' : ''}`}>
+            <span className="ce2-label">План. подписания</span>
+            <InlineDateCell
+              value={doc.signed_date}
+              onChange={(v) => handleInlineField(doc.id, 'signed_date', v)}
+              disabled={ro}
+              overdue={overdue}
+            />
+            {overdue && <span className="overdue-note">Просрочено</span>}
+          </div>
+        </div>
+
+        {!hideNotes && (
+          <section className="ce-block">
+            <div className="ce-block-title">
+              Примечание юриста
+              {noteSavingId === doc.id && <span className="ce-saving">Сохранение…</span>}
+            </div>
+            {!ro ? (
+              <AutoGrowTextarea
+                className="ce-note"
+                minHeight={56}
+                defaultValue={doc.notes || ''}
+                placeholder={isAmendment(doc) ? 'Добавьте примечание по ДС' : 'Добавьте примечание по договору'}
+                onBlur={(e) => handleSaveNote(doc.id, e.target.value)}
+              />
+            ) : doc.notes ? (
+              <div className="ce-note-ro">{doc.notes}</div>
+            ) : (
+              <div className="ce-empty">Примечание пока не заполнено</div>
+            )}
+          </section>
+        )}
+
+        {renderAppendices(doc)}
+      </>
+    )
+  }
+
+  // ДС в выпадающем списке правой области. Шапка — кнопка-переключатель (номер, дата, тип, статус, сумма,
+  // предмет) и ссылка на карточку; раскрытое — пути документа, работа юриста по ДС и действия.
+  // q — строка поиска: ДС, которое нашёл поиск, подсвечено.
+  const renderDsItem = (ds, q) => {
+    const open = openDsItems.has(ds.id)
+    const dsDeleted = !!ds.deleted_at
+    const overdue = !dsDeleted && isOverdue(ds)
+    const date = formatDateRu(ds.contract_date)
+    const parentDoc = ds.parent_contract_id ? docIndex.byId.get(ds.parent_contract_id) : null
+    const opt = STATUS_OPTIONS.find(o => o.value === (ds.status || 'new_request'))
+    const amount = formatMoney(effectiveDocumentAmount(ds), ds.currency)
+    const hit = !!q && [ds.contract_number, ds.display_id != null ? String(ds.display_id) : '', ds.work_name]
+      .filter(Boolean).join(' ').toLowerCase().includes(q)
+    const bodyId = `ce2-ds-body-${ds.id}`
+    return (
+      <li key={ds.id} className={`ce2-ds${open ? ' is-open' : ''}${hit ? ' is-hit' : ''}${dsDeleted ? ' is-deleted' : ''}`}>
+        <div className="ce2-ds-head">
+          <button
+            type="button"
+            className="ce2-ds-toggle"
+            aria-expanded={open}
+            aria-controls={open ? bodyId : undefined}
+            onClick={() => toggleDsItem(ds.id)}
+            title={open ? 'Свернуть' : 'Подробнее: работа юриста по ДС, пути, действия'}
+          >
+            <span className="ce2-ds-chev" aria-hidden>▸</span>
+            <span className="ce2-ds-num">
+              {ds.contract_number ? `№ ${ds.contract_number}` : <span className="cds-missing">№ не присвоен</span>}
+            </span>
+            <span className="ce2-ds-date">{date ? `от ${date}` : 'дата не указана'}</span>
+            <span className={`ds-type-badge is-${ds.record_type}`} title={DOC_TYPE_LABEL[ds.record_type]}>
+              {DOC_TYPE_SHORT[ds.record_type]}
+            </span>
+            {/* ДС, которое меняет другое ДС, а не сам договор. */}
+            {parentDoc && isAmendment(parentDoc) && (
+              <span className="ds-parent-note" title="Изменяемый документ">
+                к ДС {parentDoc.contract_number ? `№ ${parentDoc.contract_number}` : `ID ${parentDoc.display_id}`}
+              </span>
+            )}
+            {dsDeleted
+              ? <span className="status-badge status-deleted">Удалён</span>
+              : <span className={`status-badge ${opt?.className || ''}`} title={opt?.label}>{opt?.short || opt?.label}</span>}
+            {overdue && <span className="ce2-ds-overdue" title="Просрочена плановая дата подписания">просрочено</span>}
+            <span className="ce2-ds-amount">{amount || '—'}{hasAppliedPsdc(ds) ? ' (ПСДЦ)' : ''}</span>
+            <span className="ce2-ds-work" title={ds.work_name || ''}>{ds.work_name || 'предмет не указан'}</span>
+          </button>
+          <Link
+            to={`/contracts/${ds.id}`}
+            className="ce2-ds-open"
+            title="Открыть карточку ДС (колёсиком мыши — в новой вкладке)"
+          >Открыть</Link>
+        </div>
+        {open && (
+          <div className="ce2-ds-body" id={bodyId}>
+            <div className="ce2-ds-meta">
+              {ds.display_id != null && (
+                <span className="cds-id" title="Постоянный ID документа в портале">ID {ds.display_id}</span>
+              )}
+              {!dsDeleted && isInLarix(ds) && (
+                <span className="larix-badge is-in" title={`Внесён в ${LARIX_NAME}`}>Larix</span>
+              )}
+              {!dsDeleted && !isInLarix(ds) && (ds.status || 'new_request') !== 'new_request' && (
+                <span className="larix-badge is-out" title={`Не внесён в ${LARIX_NAME}: укажите путь к ${LARIX_NAME}`}>не в Larix</span>
+              )}
+            </div>
+            {!dsDeleted && <div className="ce2-ds-paths">{renderDocPaths(ds)}</div>}
+            {renderLawyerWork(ds, { withStatus: true })}
+            <div className="ce-actions ce2-ds-actions">
+              {dsDeleted ? (
+                <>
+                  {canEditContracts && (
+                    <button type="button" className="ce-edit-link" onClick={() => handleRestoreContract(ds.id, ds.contract_number)}>
+                      Восстановить
+                    </button>
+                  )}
+                  {isAdmin && (
+                    <button type="button" className="ce-edit-link is-danger" onClick={() => handleHardDeleteContract(ds.id, ds.contract_number)}>
+                      Удалить безвозвратно
+                    </button>
+                  )}
+                </>
+              ) : canEditContracts ? (
+                <>
+                  <button type="button" className="ce-edit-link" onClick={() => handleEditContract(ds)}>
+                    Редактировать ДС
+                  </button>
+                  <button type="button" className="ce-edit-link" onClick={() => handleAddAmendment(ds)}>
+                    + ДС к этому соглашению
+                  </button>
+                  <button type="button" className="ce-edit-link is-danger" onClick={() => handleSoftDeleteContract(ds.id, ds.contract_number)}>
+                    Удалить
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </li>
+    )
+  }
+
+  // Строка под раскрытым документом: слева работа юриста, справа ДС и сведения для просмотра.
+  const renderExpandedRow = (contract) => {
+    const docDeleted = !!contract.deleted_at
+    const isDs = isAmendment(contract)
+    const parties = contractParties(contract)
+    const shown = liveChildren(contract, docIndex).length > 0 ? currentTerms(contract, docIndex).view : contract
+    const dsList = dsListOf(contract)
+    // Вкладка статуса показывает ДС только этого статуса — говорим, сколько их у договора всего.
+    const totalDs = nestDs ? flattenTree(contract, docIndex).length : dsList.length
+    const q = searchText.trim().toLowerCase()
+    return (
+      <tr className="contract-expanded-row" onClick={(e) => e.stopPropagation()}>
+        <td colSpan={tableColCount}>
+          {/* ce2-wrap — контейнер для @container: две области рядом или одна под другой по ширине
+              таблицы, а не окна (слева меню, у браузера свой масштаб). */}
+          <div className="ce2-wrap">
+          <div className="ce2">
+            <section className="ce2-area ce2-area-lawyer" aria-label="Работа юриста">
+              <div className="ce2-area-head">
+                <span className="ce2-area-title">Работа юриста</span>
+                <span className="ce2-area-sub">
+                  {isDs ? 'по этому ДС' : 'по договору'}: юрист, сроки, примечание и приложения
+                </span>
+              </div>
+              {renderLawyerWork(contract)}
+            </section>
+
+            <section className="ce2-area ce2-area-ds" aria-label="Дополнительные соглашения">
+              <div className="ce2-area-head">
+                <span className="ce2-area-title">{isDs ? 'ДС к этому соглашению' : 'Дополнительные соглашения'}</span>
+                <span className="ce2-area-count">{dsList.length}</span>
+                {totalDs > dsList.length && (
+                  <span className="ce2-area-sub" title="Остальные ДС договора — в других статусах (во вкладке «Общий реестр» видны все)">
+                    на вкладке; всего у договора — {totalDs}
+                  </span>
+                )}
+                {canEditContracts && !docDeleted && (
+                  <button type="button" className="ce-add-appendix ce2-add-ds" onClick={() => handleAddAmendment(contract)}>
+                    + Создать ДС
+                  </button>
+                )}
+              </div>
+              {dsList.length === 0 ? (
+                <div className="ce-empty">
+                  {isDs ? 'Соглашений к этому ДС нет.' : 'Дополнительных соглашений к договору нет.'}
+                </div>
+              ) : (
+                <ul className="ce2-ds-list">
+                  {dsList.map(ds => renderDsItem(ds, q))}
+                </ul>
+              )}
+
+              {/* Стороны договора (может быть несколько — трёхсторонний договор) */}
+              {parties.length > 1 && (
+                <section className="ce-block">
+                  <div className="ce-block-title">Стороны договора</div>
+                  <ul className="ce-parties">
+                    {parties.map((p, i) => (
+                      <li key={p.id}>
+                        <span className="ce-party-name">{p.name}</span>
+                        {p.inn && <span className="ce-party-inn">ИНН: {p.inn}</span>}
+                        {i === 0 && <span className="ce-party-main">основной</span>}
+                        <CounterpartyDocBadges summary={cpDocSummary.get(p.id)} showDate />
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {/* Реквизиты: постоянный ID, тип и дополнительные поля */}
+              <section className="ce-block">
+                <div className="ce-block-title">Реквизиты</div>
+                <div className="ce-details-grid">
+                  {contract.display_id != null && (
+                    <div className="ce-detail"><span className="ce-detail-l">ID портала</span><span className="ce-detail-v">{contract.display_id}</span></div>
+                  )}
+                  <div className="ce-detail"><span className="ce-detail-l">Тип</span><span className="ce-detail-v">{DOC_TYPE_SHORT[contract.record_type] || 'Договор'}</span></div>
+                  {divisionEnabled && (
+                    <div className="ce-detail">
+                      <span className="ce-detail-l">Подразделение</span>
+                      <span className="ce-detail-v">{VOR_DIVISION_LABEL[divisionOf(contract)] || 'не указано'}</span>
+                    </div>
+                  )}
+                  {shown.gen_director_name && (
+                    <div className="ce-detail"><span className="ce-detail-l">Ген.директор</span><span className="ce-detail-v">{shown.gen_director_name}</span></div>
+                  )}
+                  {shown.phone && (
+                    <div className="ce-detail"><span className="ce-detail-l">Телефон</span><span className="ce-detail-v">{shown.phone}</span></div>
+                  )}
+                  {shown.email && (
+                    <div className="ce-detail"><span className="ce-detail-l">Email</span><span className="ce-detail-v">{shown.email}</span></div>
+                  )}
+                  {shown.bsm && (
+                    <div className="ce-detail"><span className="ce-detail-l">БСМ</span><span className="ce-detail-v">{shown.bsm}</span></div>
+                  )}
+                  {shown.comments && (
+                    <div className="ce-detail ce-detail-wide"><span className="ce-detail-l">Комментарии</span><span className="ce-detail-v">{shown.comments}</span></div>
+                  )}
+                </div>
+              </section>
+            </section>
+          </div>
+
+          {/* Действия раскрытого блока */}
+          <div className="ce-actions">
+            <button type="button" className="ce-open-card" onClick={() => navigate(`/contracts/${contract.id}`)}>
+              {isDs ? 'Открыть карточку ДС' : 'Открыть карточку договора'}
+            </button>
+            {canEditContracts && !docDeleted && (
+              <button type="button" className="ce-edit-link" onClick={() => handleEditContract(contract)}>
+                {isDs ? 'Редактировать ДС' : 'Редактировать договор'}
+              </button>
+            )}
+          </div>
+          </div>
+        </td>
+      </tr>
+    )
   }
 
   return (
@@ -2075,6 +2730,14 @@ function ContractRegistry() {
             )}
           />
         </div>
+        {/* На компьютере фильтр — в заголовке «Работы», где под работами плашка подразделения
+            (как у тендеров); на телефоне шапки таблицы нет, поэтому он здесь. */}
+        {divisionEnabled && isPhone && (
+          <div className="rf-field">
+            <span className="rf-label">Подразделение</span>
+            <VorDivisionFilter subject="contract" value={filterDivisions} onChange={setFilterDivisions} counts={divisionCounts} />
+          </div>
+        )}
         {isAmendmentsView && (
           <div className="rf-field">
             <label className="rf-label">Тип ДС</label>
@@ -2169,6 +2832,12 @@ function ContractRegistry() {
                   </div>
                   {workName && <div className="mcard-desc">{workName}</div>}
                   <div className="mcard-rows">
+                    {divisionEnabled && VOR_DIVISION_LABEL[divisionOf(contract)] && (
+                      <div className="mcard-row">
+                        <span className="mcard-label">Подразделение</span>
+                        <span className="mcard-value">{VOR_DIVISION_LABEL[divisionOf(contract)]}</span>
+                      </div>
+                    )}
                     <div className="mcard-row">
                       <span className="mcard-label">Контрагент</span>
                       <span className="mcard-value">
@@ -2245,7 +2914,14 @@ function ContractRegistry() {
               {sortableTh('number', isAmendmentsView ? 'ДС / тип' : 'Договор / № ДС')}
               {isAmendmentsView && <th>Изменяемый документ</th>}
               {sortableTh('counterparty', 'Контрагент')}
-              <th>{isAmendmentsView ? 'Предмет ДС' : 'Работы'}</th>
+              <th className={divisionFilterOn ? 'th-filtered' : undefined}>
+                {divisionEnabled ? (
+                  <span className="cth-work">
+                    <span>{isAmendmentsView ? 'Предмет ДС' : 'Работы'}</span>
+                    <VorDivisionFilter subject="contract" inHeader value={filterDivisions} onChange={setFilterDivisions} counts={divisionCounts} />
+                  </span>
+                ) : (isAmendmentsView ? 'Предмет ДС' : 'Работы')}
+              </th>
               {sortableTh('amount', 'Сумма')}
               {sortableTh('status', 'Статус')}
               {showLawyer && <th title="Ответственный юрист">Юрист</th>}
@@ -2272,15 +2948,10 @@ function ContractRegistry() {
                 </td>
               </tr>
             ) : (
-              tableRows.map(({ doc: contract, index, nested }) => {
+              pagedContracts.map((contract, index) => {
                 const appendices = contractAppendicesMap[contract.id] || []
-                const isExpanded = expandedContractId === contract.id
-                // При переключении договора выбор приложений сбрасываем — он относится
-                // только к раскрытому договору.
-                const toggleExpand = () => {
-                  setSelectedAppendices(new Set())
-                  setExpandedContractId(isExpanded ? null : contract.id)
-                }
+                const isExpanded = isRowOpen(contract.id)
+                const toggleExpand = () => toggleRow(contract.id)
                 // Удалён ли сам документ, а не вкладка: в «Договорах и ДС» на вкладке бывает
                 // договор в другом состоянии, показанный ради своих ДС.
                 const docDeleted = !!contract.deleted_at
@@ -2297,22 +2968,22 @@ function ContractRegistry() {
                 const actualAmount = amendmentCount > 0 ? contractActualAmount(contract, docIndex) : null
                 // Условия с учётом завершённых ДС на изменение ВОР (сумма — отдельно, выше).
                 const shown = amendmentCount > 0 ? currentTerms(contract, docIndex).view : contract
-                // «Договоры и ДС»: кнопка «ДС: N» у договора раскрывает все его ДС.
-                const nestedDsCount = nestDs && !nested ? nestedDsOf(contract.id).length : 0
-                const dsOpen = nestedDsCount > 0 && isDsOpen(contract.id)
+                // «ДС: N» — сколько ДС в правой области раскрытого документа; кнопка раскрывает строку.
+                const dsCount = dsListOf(contract).length
+                const rowDivision = divisionEnabled ? divisionOf(contract) : null
                 return (
                 <Fragment key={contract.id}>
                 <tr
-                  className={`contract-row ${docDeleted ? 'row-deleted' : ''} ${isExpanded ? 'is-expanded' : ''}${nested ? ' is-nested-ds' : ''}${dsOpen ? ' has-ds-open' : ''}`}
+                  className={`contract-row ${docDeleted ? 'row-deleted' : ''} ${isExpanded ? 'is-expanded' : ''}`}
                   onClick={toggleExpand}
-                  title={nested ? 'Нажмите, чтобы раскрыть соглашение' : 'Нажмите, чтобы раскрыть договор'}
+                  title={isAmendment(contract)
+                    ? 'Нажмите, чтобы раскрыть соглашение: работа юриста и ДС к нему'
+                    : 'Нажмите, чтобы раскрыть договор: работа юриста и дополнительные соглашения'}
                 >
                   {showRowNumber && (
                     <td className="cell-num">
                       <span className={`expand-chev ${isExpanded ? 'open' : ''}`} aria-hidden>▸</span>
-                      {nested
-                        ? <span className="cell-num-value cell-num-nested" aria-hidden>↳</span>
-                        : <span className="cell-num-value">{pageStart + index + 1}</span>}
+                      <span className="cell-num-value">{pageStart + index + 1}</span>
                       {appendices.length > 0 && <span className="expand-badge" title={`Приложений: ${appendices.length}`}>{appendices.length}</span>}
                     </td>
                   )}
@@ -2351,76 +3022,24 @@ function ContractRegistry() {
                         {DOC_TYPE_SHORT[contract.record_type]}
                       </span>
                     )}
-                    {/* Вложенное ДС, которое меняет другое ДС, а не сам договор. */}
-                    {nested && parentDoc && isAmendment(parentDoc) && (
-                      <span className="ds-parent-note" title="Изменяемый документ">
-                        к ДС {parentDoc.contract_number ? `№ ${parentDoc.contract_number}` : `ID ${parentDoc.display_id}`}
-                      </span>
-                    )}
-                    {nestedDsCount > 0 && (
+                    {/* «ДС: N» раскрывает строку: ДС — в правой области под договором. */}
+                    {dsCount > 0 && (
                       <button
                         type="button"
-                        className={`ds-count-badge ds-toggle${dsOpen ? ' is-open' : ''}`}
-                        onClick={() => toggleDsOpen(contract.id)}
-                        aria-expanded={dsOpen}
-                        title={dsOpen ? 'Свернуть дополнительные соглашения' : 'Показать дополнительные соглашения к договору'}
+                        className={`ds-count-badge ds-toggle${isExpanded ? ' is-open' : ''}`}
+                        onClick={toggleExpand}
+                        aria-expanded={isExpanded}
+                        title={isExpanded
+                          ? 'Свернуть: работа юриста и дополнительные соглашения'
+                          : 'Показать дополнительные соглашения и работу юриста под строкой'}
                       >
                         <span className="ds-toggle-chev" aria-hidden>▸</span>
-                        ДС: {nestedDsCount}
+                        ДС: {dsCount}
                       </button>
                     )}
-                    {!nestDs && amendmentCount > 0 && (
-                      <span
-                        className="ds-count-badge"
-                        title={`Дополнительных соглашений к этому документу: ${amendmentCount}`}
-                      >ДС: {amendmentCount}</span>
-                    )}
                     {/* Три пути документа — перед понятийным соглашением: с них
-                        начинают поиск документов по договору. Заполненный путь —
-                        своя строка; пустые собраны в одну «путь к папке · Signal ·
-                        Larix.CPM» с общим «путь к»: три полные подписи в строку не
-                        помещались, и каждая строка реестра вырастала на строку
-                        (порядок и переносы — .cpaths в ContractRegistryPolish.css). */}
-                    {!docDeleted && (
-                      <div className="cpaths">
-                        {canEditContracts && (!contract.folder_path || !contract.signal_link || !isInLarix(contract)) && (
-                          <span className="cpaths-label" aria-hidden="true">путь к</span>
-                        )}
-                        {/* Открыть проводник кликом браузер не даёт, поэтому путь копируется. */}
-                        <FolderPathCell
-                          value={contract.folder_path}
-                          canEdit={canEditContracts}
-                          onSave={(v) => handleSaveFolderPath(contract.id, v)}
-                          addLabel="папке"
-                          addTitle="Указать путь к папке"
-                          placeholder="\\su10-fs\Договоры\ЖК Алия\СУ-2-АЛ"
-                        />
-                        {/* Ссылка на те же документы в общем хранилище, открывается кликом. */}
-                        <SignalLinkCell
-                          value={contract.signal_link}
-                          canEdit={canEditContracts}
-                          onSave={(v) => handleSaveSignalLink(contract.id, v)}
-                          addLabel="Signal"
-                          addTitle="Указать путь к Signal"
-                        />
-                        {/* Ссылка на карточку документа в Larix; вносится так же, как путь к Signal. */}
-                        <LarixLinkCell
-                          value={contract[LARIX_LINK_FIELD]}
-                          canEdit={canEditContracts}
-                          onSave={(v) => handleSaveLarixLink(contract.id, v)}
-                          addLabel={LARIX_NAME}
-                          addTitle={`Указать путь к ${LARIX_NAME}`}
-                        />
-                      </div>
-                    )}
-                    {!docDeleted && (
-                      <ConceptAgreementCell
-                        files={conceptDocsByContract[contract.id] || []}
-                        contractId={contract.id}
-                        canEdit={canEditContracts}
-                        onChanged={() => refreshConceptDocs(contract.id)}
-                      />
-                    )}
+                        начинают поиск документов по договору. */}
+                    {!docDeleted && renderDocPaths(contract)}
                   </td>
                   {isAmendmentsView && (
                     <td className="cell-parent" onClick={(e) => e.stopPropagation()}>
@@ -2445,32 +3064,28 @@ function ContractRegistry() {
                       </ul>
                     )}
                   </td>
-                  <td className="cell-work" title={shown.work_name || contract.tenders?.work_description || ''}><span className="work-text">{shown.work_name || contract.tenders?.work_description || '—'}</span></td>
+                  <td className="cell-work" title={shown.work_name || contract.tenders?.work_description || ''}>
+                    <span className="work-text">{shown.work_name || contract.tenders?.work_description || '—'}</span>
+                    {/* Подразделение — как у тендеров: плашка под работами. Правится у договора; у ДС —
+                        подразделение договора, только показ. Щелчок по плашке строку не раскрывает. */}
+                    {divisionEnabled && (
+                      <span className="cdiv" onClick={(e) => e.stopPropagation()}>
+                        <VorDivisionChip
+                          subject="contract"
+                          value={rowDivision}
+                          canEdit={canEditContracts && !docDeleted && !isAmendment(contract)}
+                          onChange={(v) => handleInlineField(contract.id, 'division', v || '')}
+                        />
+                      </span>
+                    )}
+                  </td>
                   <td className="cell-amount">
                     <AmountCell contract={shown} actual={actualAmount} />
                   </td>
                   <td className="cell-status" onClick={(e) => e.stopPropagation()}>
                     {docDeleted ? (
                       <span className="status-badge status-deleted">Удалён</span>
-                    ) : (
-                      <FilterDropdown
-                        className="status-fdrop"
-                        label=""
-                        value={contract.status || 'new_request'}
-                        onChange={(v) => handleStatusChange(contract.id, v)}
-                        options={STATUS_OPTIONS}
-                        disabled={!canEditContracts}
-                        formatTrigger={(lbl) => {
-                          const opt = STATUS_OPTIONS.find(o => o.label === lbl)
-                          return (
-                            <span className={`status-badge ${opt?.className || ''}`} title={lbl}>
-                              {opt?.short || lbl}
-                            </span>
-                          )
-                        }}
-                        renderOption={(o) => <span className={`status-badge ${o.className || ''}`}>{o.label}</span>}
-                      />
-                    )}
+                    ) : renderStatusPicker(contract)}
                     {/* Состояние выводится из пути к Larix.CPM под номером договора. */}
                     {!docDeleted && isInLarix(contract) && (
                       <span className="larix-badge is-in" title={`Внесён в ${LARIX_NAME}`}>Larix</span>
@@ -2481,7 +3096,7 @@ function ContractRegistry() {
                         title={`Не внесён в ${LARIX_NAME}: укажите путь к ${LARIX_NAME} под номером договора`}
                       >не в Larix</span>
                     )}
-                    {!nested && tabView.context.has(contract.id) && (
+                    {tabView.context.has(contract.id) && (
                       <span className="ctx-ds-note" title="Договор в другом статусе: он на вкладке, потому что здесь его ДС">показан ради ДС</span>
                     )}
                   </td>
@@ -2566,314 +3181,7 @@ function ContractRegistry() {
                     </div>
                   </td>
                 </tr>
-                {isExpanded && (
-                  <tr className="contract-expanded-row" onClick={(e) => e.stopPropagation()}>
-                    <td colSpan={tableColCount}>
-                      <div className="contract-expanded-content">
-                        {/* Стороны договора (может быть несколько — трёхсторонний договор) */}
-                        {parties.length > 1 && (
-                          <section className="ce-block">
-                            <div className="ce-block-title">Стороны договора</div>
-                            <ul className="ce-parties">
-                              {parties.map((p, i) => (
-                                <li key={p.id}>
-                                  <span className="ce-party-name">{p.name}</span>
-                                  {p.inn && <span className="ce-party-inn">ИНН: {p.inn}</span>}
-                                  {i === 0 && <span className="ce-party-main">основной</span>}
-                                  <CounterpartyDocBadges summary={cpDocSummary.get(p.id)} showDate />
-                                </li>
-                              ))}
-                            </ul>
-                          </section>
-                        )}
-
-                        {/* Реквизиты договора: постоянный ID, тип и дополнительные поля */}
-                        <section className="ce-block">
-                          <div className="ce-block-title">Реквизиты</div>
-                          <div className="ce-details-grid">
-                            {contract.display_id != null && (
-                              <div className="ce-detail"><span className="ce-detail-l">ID портала</span><span className="ce-detail-v">{contract.display_id}</span></div>
-                            )}
-                            <div className="ce-detail"><span className="ce-detail-l">Тип</span><span className="ce-detail-v">{DOC_TYPE_SHORT[contract.record_type] || 'Договор'}</span></div>
-                            {shown.gen_director_name && (
-                              <div className="ce-detail"><span className="ce-detail-l">Ген.директор</span><span className="ce-detail-v">{shown.gen_director_name}</span></div>
-                            )}
-                            {shown.phone && (
-                              <div className="ce-detail"><span className="ce-detail-l">Телефон</span><span className="ce-detail-v">{shown.phone}</span></div>
-                            )}
-                            {shown.email && (
-                              <div className="ce-detail"><span className="ce-detail-l">Email</span><span className="ce-detail-v">{shown.email}</span></div>
-                            )}
-                            {shown.bsm && (
-                              <div className="ce-detail"><span className="ce-detail-l">БСМ</span><span className="ce-detail-v">{shown.bsm}</span></div>
-                            )}
-                            {shown.comments && (
-                              <div className="ce-detail ce-detail-wide"><span className="ce-detail-l">Комментарии</span><span className="ce-detail-v">{shown.comments}</span></div>
-                            )}
-                          </div>
-                        </section>
-
-                        {/* Блок 1: Примечание юриста — скрыто для руководителя строительства */}
-                        {!hideNotes && (
-                        <section className="ce-block">
-                          <div className="ce-block-title">
-                            Примечание юриста
-                            {noteSavingId === contract.id && <span className="ce-saving">Сохранение…</span>}
-                          </div>
-                          {canEditContracts && !docDeleted ? (
-                            <AutoGrowTextarea
-                              className="ce-note"
-                              minHeight={68}
-                              defaultValue={contract.notes || ''}
-                              placeholder="Добавьте примечание по договору"
-                              onBlur={(e) => handleSaveNote(contract.id, e.target.value)}
-                            />
-                          ) : contract.notes ? (
-                            <div className="ce-note-ro">{contract.notes}</div>
-                          ) : (
-                            <div className="ce-empty">Примечание пока не заполнено</div>
-                          )}
-                        </section>
-                        )}
-
-                        {/* Блок 2: Приложения к Договору (ручной ввод, task 419) */}
-                        <section className="ce-block">
-                          <div className="ce-block-title">
-                            Приложения к Договору
-                            {appendices.length > 0 && <span className="ce-count">{appendices.length} шт.</span>}
-                            {canEditContracts && !docDeleted && selectedAppendices.size > 0 && (
-                              <button
-                                type="button"
-                                className="ce-del-selected"
-                                onClick={() => handleDeleteSelectedAppendices(contract.id)}
-                              >
-                                Удалить выбранные ({selectedAppendices.size})
-                              </button>
-                            )}
-                            {canEditContracts && !docDeleted && (
-                              <button type="button" className="ce-add-appendix" onClick={() => handleAddAppendix(contract.id)}>
-                                + Добавить приложение
-                              </button>
-                            )}
-                          </div>
-                          {appendices.length === 0 ? (
-                            <div className="ce-empty">
-                              Приложения не добавлены.{canEditContracts && !docDeleted ? ' Нажмите «+ Добавить приложение».' : ''}
-                            </div>
-                          ) : (() => {
-                            const ro = !canEditContracts || docDeleted
-                            const apTree = buildAppendixTree(appendices, { numberField: 'appendix_number' })
-                            return (
-                            <div className="ce-appendix-wrap">
-                              <table className="ce-appendix-table">
-                                <thead>
-                                  <tr>
-                                    {!ro && (
-                                      <th className="ce-ap-pick">
-                                        <input
-                                          type="checkbox"
-                                          className="ce-ap-check"
-                                          title="Выбрать все приложения"
-                                          checked={appendices.length > 0 && selectedAppendices.size === appendices.length}
-                                          ref={(el) => {
-                                            if (el) el.indeterminate = selectedAppendices.size > 0 && selectedAppendices.size < appendices.length
-                                          }}
-                                          onChange={(e) => toggleAllAppendices(contract.id, e.target.checked)}
-                                        />
-                                      </th>
-                                    )}
-                                    {!ro && <th className="ce-ap-drag" aria-label="Порядок"></th>}
-                                    <th className="ce-ap-num">№</th>
-                                    <th>Наименование приложения</th>
-                                    <th>Ответственный</th>
-                                    <th className="ce-ap-appr">Согл. с объектом</th>
-                                    <th className="ce-ap-appr">Согл. с контрагентом</th>
-                                    {!hideNotes && <th className="ce-ap-notes">Примечание</th>}
-                                    {!ro && <th className="ce-ap-actions" aria-label="Действия"></th>}
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {apTree.map(node => {
-                                    const ap = node.row
-                                    const isChild = node.level === 1
-                                    const dragOverCls = appendixDragOver?.id === ap.id ? `ce-ap-drop-${appendixDragOver.position}` : ''
-                                    const fullyApproved = !!ap.approved_object && !!ap.approved_counterparty
-                                    const picked = selectedAppendices.has(ap.id)
-                                    return (
-                                      <tr
-                                        key={ap.id}
-                                        className={`${isChild ? 'ce-ap-child' : ''} ${draggedAppendix?.id === ap.id ? 'ce-ap-dragging' : ''} ${dragOverCls} ${fullyApproved ? 'ce-ap-approved' : ''} ${picked ? 'ce-ap-picked' : ''}`}
-                                        onDragOver={ro ? undefined : (e) => {
-                                          e.preventDefault()
-                                          e.dataTransfer.dropEffect = 'move'
-                                          const rect = e.currentTarget.getBoundingClientRect()
-                                          const isAbove = (e.clientY - rect.top) < rect.height / 2
-                                          const position = isAbove ? 'before' : 'after'
-                                          if (ap.id === draggedAppendix?.id) { setAppendixDragOver(null); return }
-                                          setAppendixDragOver(prev => (prev?.id === ap.id && prev?.position === position) ? prev : { id: ap.id, position })
-                                        }}
-                                        onDragLeave={ro ? undefined : () => setAppendixDragOver(prev => prev?.id === ap.id ? null : prev)}
-                                        onDrop={ro ? undefined : (e) => {
-                                          e.preventDefault()
-                                          const draggedId = e.dataTransfer.getData('text/plain')
-                                          handleAppendixDrop(contract.id, draggedId, ap.id)
-                                        }}
-                                      >
-                                        {!ro && (
-                                          <td className="ce-ap-pick">
-                                            <input
-                                              type="checkbox"
-                                              className="ce-ap-check"
-                                              title="Выбрать приложение"
-                                              checked={selectedAppendices.has(ap.id)}
-                                              onChange={() => toggleAppendixSelected(ap.id)}
-                                            />
-                                          </td>
-                                        )}
-                                        {!ro && (
-                                          <td className="ce-ap-drag">
-                                            <span
-                                              className="ce-ap-handle"
-                                              role="button"
-                                              tabIndex={-1}
-                                              draggable
-                                              title="Перетащите для изменения порядка"
-                                              onDragStart={(e) => {
-                                                e.dataTransfer.effectAllowed = 'move'
-                                                e.dataTransfer.setData('text/plain', ap.id)
-                                                setDraggedAppendix({ contractId: contract.id, id: ap.id })
-                                              }}
-                                              onDragEnd={() => { setDraggedAppendix(null); setAppendixDragOver(null) }}
-                                            >⋮⋮</span>
-                                          </td>
-                                        )}
-                                        <td className="ce-ap-num">
-                                          <input
-                                            className="ce-ap-input ce-ap-input-num"
-                                            defaultValue={node.displayNumber}
-                                            key={`num-${ap.id}-${node.displayNumber}`}
-                                            readOnly={ro}
-                                            title="№ приложения (авто; можно вписать вручную)"
-                                            onBlur={(e) => handleUpdateAppendix(contract.id, ap.id, 'appendix_number', e.target.value)}
-                                          />
-                                        </td>
-                                        <td className="ce-ap-name-cell">
-                                          <div className="ce-ap-name-inner">
-                                            {isChild && <span className="ce-ap-child-marker" aria-hidden>└</span>}
-                                            <input
-                                              className="ce-ap-input"
-                                              defaultValue={ap.name || ''}
-                                              placeholder="Наименование приложения"
-                                              readOnly={ro}
-                                              onBlur={(e) => handleUpdateAppendix(contract.id, ap.id, 'name', e.target.value)}
-                                            />
-                                          </div>
-                                        </td>
-                                        <td className="ce-ap-resp">
-                                          {(() => {
-                                            // Существующее «вне реестра» значение показываем как опцию, чтобы не потерять.
-                                            const val = ap.responsible || ''
-                                            const known = val === '' || appendixResponsibleOptions.some(o => o.value === val)
-                                            const opts = known ? appendixResponsibleOptions : [...appendixResponsibleOptions, { value: val, label: `${val} (вне реестра)` }]
-                                            return (
-                                              <FilterDropdown
-                                                label=""
-                                                value={val}
-                                                onChange={(v) => handleUpdateAppendix(contract.id, ap.id, 'responsible', v)}
-                                                options={opts}
-                                                searchable
-                                                searchPlaceholder="Поиск сотрудника…"
-                                                allLabel="Не назначен"
-                                                disabled={ro}
-                                              />
-                                            )
-                                          })()}
-                                        </td>
-                                        <td className="ce-ap-appr">
-                                          <input
-                                            type="checkbox"
-                                            className="ce-ap-check"
-                                            checked={!!ap.approved_object}
-                                            disabled={ro}
-                                            title="Согласовано с объектом"
-                                            onChange={(e) => handleToggleAppendixApproval(contract.id, ap.id, 'approved_object', e.target.checked)}
-                                          />
-                                        </td>
-                                        <td className="ce-ap-appr">
-                                          <input
-                                            type="checkbox"
-                                            className="ce-ap-check"
-                                            checked={!!ap.approved_counterparty}
-                                            disabled={ro}
-                                            title="Согласовано с контрагентом"
-                                            onChange={(e) => handleToggleAppendixApproval(contract.id, ap.id, 'approved_counterparty', e.target.checked)}
-                                          />
-                                        </td>
-                                        {!hideNotes && (
-                                        <td className="ce-ap-notes">
-                                          {ro ? (
-                                            <div className="ce-ap-notes-ro">{ap.notes || '—'}</div>
-                                          ) : (
-                                            <AutoGrowTextarea
-                                              className="ce-ap-input ce-ap-textarea"
-                                              minHeight={32}
-                                              defaultValue={ap.notes || ''}
-                                              placeholder="Примечание по статусу приложения"
-                                              onBlur={(e) => handleUpdateAppendix(contract.id, ap.id, 'notes', e.target.value)}
-                                            />
-                                          )}
-                                        </td>
-                                        )}
-                                        {!ro && (
-                                          <td className="ce-ap-actions">
-                                            <div className="ce-ap-actions-inner">
-                                              {isChild ? (
-                                                <button type="button" className="ce-ap-hier" title="Поднять на верхний уровень"
-                                                  onClick={() => handleOutdentAppendix(contract.id, ap.id)}>←</button>
-                                              ) : (
-                                                <button type="button" className="ce-ap-hier" title="Сделать подпунктом предыдущего приложения"
-                                                  disabled={node.isFirstTopLevel || node.hasChildren}
-                                                  onClick={() => handleIndentAppendix(contract.id, ap.id)}>→</button>
-                                              )}
-                                              {!isChild && (
-                                                <button type="button" className="ce-ap-hier" title="Добавить подпункт"
-                                                  onClick={() => handleAddChildAppendix(contract.id, ap.id)}>+</button>
-                                              )}
-                                              <button
-                                                type="button"
-                                                className="ce-ap-del"
-                                                title="Удалить приложение"
-                                                aria-label="Удалить приложение"
-                                                onClick={() => handleDeleteAppendix(contract.id, ap.id)}
-                                              >×</button>
-                                            </div>
-                                          </td>
-                                        )}
-                                      </tr>
-                                    )
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                            )
-                          })()}
-                        </section>
-
-                        {/* Действия раскрытого блока */}
-                        <div className="ce-actions">
-                          <button type="button" className="ce-open-card" onClick={() => navigate(`/contracts/${contract.id}`)}>
-                            Открыть карточку договора
-                          </button>
-                          {canEditContracts && !docDeleted && (
-                            <button type="button" className="ce-edit-link" onClick={() => handleEditContract(contract)}>
-                              Редактировать договор
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                )}
+                {isExpanded && renderExpandedRow(contract)}
                 </Fragment>
                 )
               })
@@ -3114,6 +3422,24 @@ function ContractRegistry() {
                     placeholder={formData.tender_id ? 'Подтянуто из тендера, можно отредактировать' : 'Введите наименование работ'}
                   />
                 </div>
+
+                {/* Подразделение — у договора; ДС показывают подразделение своего договора. */}
+                {divisionEnabled && (
+                  <div className="form-group full-width">
+                    <label htmlFor="contract-form-division">Подразделение</label>
+                    {isDsForm ? (
+                      <small id="contract-form-division" style={{ color: 'var(--text-tertiary)' }}>
+                        Как у договора: {VOR_DIVISION_LABEL[divisionOf(formParentDoc)] || 'не указано'}.
+                        Меняется в договоре — у всех его ДС сразу.
+                      </small>
+                    ) : (
+                      <select id="contract-form-division" name="division" value={formData.division} onChange={handleInputChange}>
+                        <option value="">— Не указано —</option>
+                        {VOR_DIVISIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                      </select>
+                    )}
+                  </div>
+                )}
 
                 <div className="form-group full-width">
                   <label>Ответственный юрист</label>

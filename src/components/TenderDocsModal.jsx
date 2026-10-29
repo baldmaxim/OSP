@@ -4,10 +4,10 @@ import {
   JOINT_GUIDE_SOURCE, JOINT_STEPS, JOINT_LONG_LIST, JOINT_PACKAGE,
   JOINT_INCOMING, JOINT_RULES, JOINT_CHECKLIST, JOINT_OPEN_QUESTIONS,
 } from '../utils/jointTenderGuide'
-import { IconMail, IconFolderTree, IconPhone, IconFileText } from './icons/ToolbarIcons'
+import { IconMail, IconFolderTree, IconPhone, IconFileText, IconDocsStack } from './icons/ToolbarIcons'
 import SiteContactsTab from './SiteContactsTab'
 import SectionTemplateCards from './SectionTemplateCards'
-import { CONCEPT_AGREEMENT_TEMPLATE } from '../utils/sectionTemplateItems'
+import { CONCEPT_AGREEMENT_TEMPLATE, CONTRACTS_DP_TEMPLATE } from '../utils/sectionTemplateItems'
 import './TenderDocsModal.css'
 
 // task 435: «Документы» раздела тендеров — три вкладки в одном окне:
@@ -18,8 +18,9 @@ import './TenderDocsModal.css'
 // В «Основном строительстве» — ещё «Контакт площадки» (SiteContactsTab): кто встречает
 // подрядчика на объекте по каждому подразделению ВОР; назначает администратор, контакт
 // уходит в письмо подрядчикам. В других направлениях вкладки нет: подразделения ВОР — только
-// у основного строительства. Там же в «Материалах» — шаблон «Понятийное соглашение»: ссылка на документ,
-// одна с «Документами» договоров; указывает администратор (SectionTemplateCards, app_settings).
+// у основного строительства. Там же в «Материалах» — шаблоны «Понятийное соглашение» и «Шаблон ДП» (договор
+// подряда): ссылки на документы, те же, что в «Документах» договоров (одна правка видна в обоих разделах);
+// указывает администратор (SectionTemplateCards, app_settings).
 //
 // В направлении «Совместные тендеры» добавляется четвёртая вкладка со своей
 // инструкцией (utils/jointTenderGuide.js). Она открывается там первой: правила
@@ -81,7 +82,10 @@ const TENDER_ANALYSIS = [
   'Зеркально отражает в тендерной документации вендор-лист Заказчика или Застройщика',
 ]
 
-const CONCEPT_AGREEMENT = [{ ...CONCEPT_AGREEMENT_TEMPLATE, icon: <IconFileText size={18} /> }]
+const CONTRACT_TEMPLATES = [
+  { ...CONCEPT_AGREEMENT_TEMPLATE, icon: <IconFileText size={18} /> },
+  { ...CONTRACTS_DP_TEMPLATE, icon: <IconDocsStack size={18} /> },
+]
 
 export default function TenderDocsModal({
   onClose,
@@ -98,7 +102,7 @@ export default function TenderDocsModal({
 }) {
   const isJoint = department === 'joint'
   const hasSiteContacts = department === 'construction'
-  const hasConceptAgreement = department === 'construction'
+  const hasContractTemplates = department === 'construction'
   // По кнопке «Документы» окно открывается как везде — на «Материалах»; на
   // инструкцию по совместным тендерам ведёт отдельная кнопка в шапке раздела
   // (initialTab='joint'), а её вкладка в любом случае стоит первой.
@@ -320,8 +324,8 @@ export default function TenderDocsModal({
                 </button>
               )}
 
-              {hasConceptAgreement && (
-                <SectionTemplateCards items={CONCEPT_AGREEMENT} canEdit={canEditTemplates} />
+              {hasContractTemplates && (
+                <SectionTemplateCards items={CONTRACT_TEMPLATES} canEdit={canEditTemplates} />
               )}
             </div>
           </div>

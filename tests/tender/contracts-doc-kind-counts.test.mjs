@@ -1,7 +1,8 @@
 // «Договоры и ДС» (/contracts): счётчики вкладок и охвата при выборе «Документ».
 //   • «Договоры и ДС» — договоры и ДС вместе (раньше — одни договоры, то же число, что «Договоры»);
 //   • на вкладке статуса видны и ДС этого статуса: договор в другом статусе — строкой «показан ради ДС»,
-//     его ДС раскрыты сразу. Правила — utils/contractRegistryTabs (tests/contracts/registry-tabs.test.mjs).
+//     раскрыт сразу (ДС — в правой области под строкой). Правила — utils/contractRegistryTabs
+//     (tests/contracts/registry-tabs.test.mjs); раскрытый договор — tests/tender/contracts-expanded.test.mjs.
 // Стенд: 30 документов — 20 договоров и 10 ДС, пять договоров «Завершено» с ДС «В работе».
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -58,11 +59,13 @@ describe('Договоры и ДС: счётчики вида «Документ
 
       await pick('Договоры и ДС')
       await page.locator('.status-tab', { hasText: 'В работе' }).click()
-      // 15 договоров «В работе» + 5 завершённых ради их ДС; ДС последних раскрыты.
+      // 15 договоров «В работе» + 5 завершённых ради их ДС; последние раскрыты сразу — их ДС в правой
+      // области «Дополнительные соглашения» (строками таблицы ДС больше не показываются).
       await page.locator('.ctx-ds-note').first().waitFor()
-      assert.equal(await page.locator('.contracts-table tbody tr.contract-row:not(.is-nested-ds)').count(), 20)
+      assert.equal(await page.locator('.contracts-table tbody tr.contract-row').count(), 20)
       assert.equal(await page.locator('.ctx-ds-note').count(), 5)
-      assert.equal(await page.locator('.contracts-table tbody tr.is-nested-ds').count(), 5)
+      assert.equal(await page.locator('.contracts-table tbody tr.contract-expanded-row').count(), 5)
+      assert.equal(await page.locator('.contracts-table .ce2-area-ds .ce2-ds').count(), 5)
       assert.match(await page.locator('.registry-pagination.is-top .rp-info').innerText(), /из 20 договоров · ДС к ним: 10/)
       assert.deepEqual(errors, [])
     } finally {

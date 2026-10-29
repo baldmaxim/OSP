@@ -8,6 +8,7 @@ import './VorDivisionChip.css'
 // (utils/vorDivisions.js). Выбор — тем же портальным списком FilterDropdown;
 // onChange(код | null). Без права правки и без значения — ничего не рисует.
 // subject='dc' — подразделение заявки на ДС (dc_requests.division, те же коды): свои подсказки, без «ВОРов и РД».
+// subject='contract' — подразделение договора (contracts.division, utils/contractDivision.js); у ДС — договора.
 const OPTIONS = [{ value: '', label: 'Не указано' }, ...VOR_DIVISIONS]
 
 const TEXTS = {
@@ -22,6 +23,12 @@ const TEXTS = {
     read: (l) => `Подразделение: ${l}`,
     edit: (l) => `Подразделение заявки: ${l} — нажмите, чтобы сменить`,
     empty: 'Указать подразделение заявки (как у тендеров)',
+  },
+  contract: {
+    sr: 'Подразделение: ',
+    read: (l) => `Подразделение договора: ${l}`,
+    edit: (l) => `Подразделение договора: ${l} — нажмите, чтобы сменить (у его ДС — то же)`,
+    empty: 'Указать подразделение договора (как у тендеров)',
   },
 }
 

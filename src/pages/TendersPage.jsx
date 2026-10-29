@@ -134,14 +134,17 @@ const TENDER_LIST_SELECT = '*, objects(name, status, address, map_link), winner:
 
 function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const isMaterialsView = tenderType === 'materials'
-  // Общий рабочий стиль (workUi.css) — только «Основное строительство» и
-  // «Тендеры на материалы». Гарантийный отдел, совместные и прочие тендеры
-  // рендерит этот же компонент, их вид не меняется.
-  const uiWork = isMaterialsView || department === 'construction'
+  // Общий рабочий стиль (workUi.css) — «Основное строительство», «Прочее» (с 29.10.2026, по образцу
+  // ОС) и «Тендеры на материалы». Гарантийный отдел и совместные тендеры рендерит этот же
+  // компонент, их вид не меняется.
+  const uiWork = isMaterialsView || department === 'construction' || department === 'other'
   useBodyClass('ui-work-portal', uiWork)
-  // Плотный вариант рабочего стиля — только реестр «Основное строительство»
+  // Плотный вариант рабочего стиля — реестры «Основное строительство» и «Прочее»
   // (TendersRegistryPolish.css, .tp-dense): 13/18 в таблице, шапка в одну строку.
   const denseRegistry = uiWork && !isMaterialsView
+  // Подразделение ВОР (плашка под описанием и фильтр в заголовке) — только у ОС: в «ВОРах и РД»
+  // есть только тендеры основного строительства.
+  const divisionUi = denseRegistry && department === 'construction'
   const { scopedObjectIds, userProfile, isAdmin, canEdit, canView, role } = useRole()
   // task 333: гейт add/edit/delete для раздела «tenders»
   // Тендеры на материалы — отдельный раздел прав (снабжение, миграция 20260924):
@@ -2618,20 +2621,20 @@ ${ATTACHMENT_BLOCK}
 
   // Подразделение ВОР — отдельным шагом: числа в списке фильтра считаются по
   // реестру с остальными фильтрами, но без него самого. Фильтр есть только у
-  // основного строительства (denseRegistry) — в других реестрах не применяется.
-  const divisionFilterOn = denseRegistry && divisionFilter.length > 0
+  // основного строительства (divisionUi) — в других реестрах не применяется.
+  const divisionFilterOn = divisionUi && divisionFilter.length > 0
   const filteredByTab = useMemo(() => (divisionFilterOn
     ? filteredBeforeDivision.filter(t => divisionFilter.includes(t.vor_division || NO_VOR_DIVISION))
     : filteredBeforeDivision), [filteredBeforeDivision, divisionFilterOn, divisionFilter])
   const divisionCounts = useMemo(() => {
-    if (!denseRegistry) return null
+    if (!divisionUi) return null
     const counts = new Map()
     for (const t of filteredBeforeDivision) {
       const key = t.vor_division || NO_VOR_DIVISION
       counts.set(key, (counts.get(key) || 0) + 1)
     }
     return counts
-  }, [denseRegistry, filteredBeforeDivision])
+  }, [divisionUi, filteredBeforeDivision])
 
   // Приоритет сортируется по весу, а не по алфавиту: «high» > «medium» > «low».
   // Не указанный уходит в конец при любом направлении (пустое значение).
@@ -3128,7 +3131,7 @@ ${ATTACHMENT_BLOCK}
   )
 
   return (
-    <div className={`tenders-page${uiWork ? ' ui-work' : ''}${denseRegistry ? ' tp-dense' : ''}${isMaterialsView ? ' tp-dense-mat' : ''}`}>
+    <div className={`tenders-page${uiWork ? ' ui-work' : ''}${denseRegistry ? ' tp-dense' : ''}${denseRegistry && department === 'other' ? ' tp-dept-other' : ''}${isMaterialsView ? ' tp-dense-mat' : ''}`}>
       {/* Акцент шапки — тон направления: разделы отличаются с одного взгляда. */}
       <div className={`page-header page-header-tenders hdr-tone--${headerTone}`}>
         <h2>
@@ -3435,7 +3438,7 @@ ${ATTACHMENT_BLOCK}
 
         {/* На компьютере фильтр — в заголовке «Описание работ»; на телефоне
             шапки таблицы нет, поэтому он здесь. */}
-        {denseRegistry && isPhone && (
+        {divisionUi && isPhone && (
         <div className="tender-filter-item">
           <span className="tender-filter-label">Подразделение:</span>
           <VorDivisionFilter value={divisionFilter} onChange={setDivisionFilter} counts={divisionCounts} />
@@ -3533,7 +3536,7 @@ ${ATTACHMENT_BLOCK}
                         : <span className="tp-mrow-muted">Не назначен</span>}
                       {/* Подразделение ВОР на телефоне — только показ (правка — в
                           строке реестра на компьютере или в «ВОРах и РД»). */}
-                      {denseRegistry && isConstructionTender(tender) && VOR_DIVISION_LABEL[tender.vor_division] && (
+                      {divisionUi && isConstructionTender(tender) && VOR_DIVISION_LABEL[tender.vor_division] && (
                         <span className="tp-mrow-div" title="Подразделение ВОР">{VOR_DIVISION_LABEL[tender.vor_division]}</span>
                       )}
                       {isMaterialsView && tender.materials_priority && (
@@ -3711,7 +3714,7 @@ ${ATTACHMENT_BLOCK}
                 style={{ minWidth: '140px', maxWidth: '220px' }}
                 className={divisionFilterOn ? 'tp-th-filtered' : undefined}
               >
-                {denseRegistry ? (
+                {divisionUi ? (
                   <span className="tp-th-desc">
                     <span>Описание работ</span>
                     <VorDivisionFilter inHeader value={divisionFilter} onChange={setDivisionFilter} counts={divisionCounts} />
@@ -3869,7 +3872,7 @@ ${ATTACHMENT_BLOCK}
                         {/* Подразделение ВОР — только у тендеров, которые есть в
                             «ВОРах и РД» (isConstructionTender); колонки ещё нет
                             (миграция 20260927) — плашки нет. */}
-                        {denseRegistry && isConstructionTender(tender) && 'vor_division' in tender && (
+                        {divisionUi && isConstructionTender(tender) && 'vor_division' in tender && (
                           <VorDivisionChip
                             value={tender.vor_division}
                             canEdit={canEditVorDivision}

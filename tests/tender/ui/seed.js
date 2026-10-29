@@ -51,6 +51,8 @@ for (const it of items) {
 }
 
 const TENDERS = Number(params.get('tenders') || 40)
+// tendersDept=other — тендеры реестра в направлении «Прочее» (route=/tenders/other).
+const TENDERS_DEPT = params.get('tendersDept') || 'construction'
 const STATUSES = ['Заявка на тендер', 'Подготовка ВОР', 'Идет тендерная процедура', 'Подведение итогов', 'Завершен']
 const objects = [
   { id: 'obj-1', name: 'ЖК «Северный квартал»', status: 'main_construction', address: 'г. Алматы, ул. Сейфуллина, 512' },
@@ -66,12 +68,14 @@ const registry = Array.from({ length: TENDERS }, (_, i) => {
   return {
     id: i === 0 ? 'tender-1' : `tender-${i + 1}`,
     tender_type: 'main',
-    department: 'construction',
+    department: TENDERS_DEPT,
     public_tender_number: 200 - i,
     status: STATUSES[i % STATUSES.length],
     work_description: i % 3 === 0 ? 'Устройство вентилируемого фасада с облицовкой керамогранитом, секции 1–4' : 'Отделочные работы МОП',
-    object_id: obj.id,
-    objects: obj,
+    // У «Прочего» объекта в реестре может не быть — имя вписано вручную (каждый третий).
+    ...(TENDERS_DEPT === 'other' && i % 3 === 2
+      ? { object_id: null, objects: null, custom_object_name: 'Офис компании, ремонт кабинетов' }
+      : { object_id: obj.id, objects: obj }),
     responsible_contact_id: contact.id,
     responsible_contact: contact,
     start_date: `2026-0${(i % 8) + 1}-10`,
@@ -108,7 +112,7 @@ window.__fakeDb = {
     { id: `rd-${i}-1`, tender_id: t.id, code: `2026-${t.public_tender_number}-АР`, title: 'Архитектурные решения', sort_order: 10 },
     { id: `rd-${i}-2`, tender_id: t.id, code: `2026-${t.public_tender_number}-КЖ`, title: 'Конструкции железобетонные', sort_order: 20 },
   ]),
-  tender_counterparties: [...registry.slice(1, 9).map((t, i) => ({ id: `tch-${i}`, tender_id: t.id, counterparty_id: 'cp-1', status: i % 3 === 0 ? 'declined' : 'proposal_provided', sort_order: 0, tenders: { id: t.id, work_description: t.work_description, tender_start_date: t.tender_start_date, tender_end_date: t.tender_end_date, objects: { name: t.objects.name } } })), ...counterparties.map((cp, i) => ({ id: `tc-${i + 1}`, tender_id: 'tender-1', counterparty_id: cp.id, status: 'proposal_provided', sort_order: i, invited_at: '2026-08-01', counterparties: { ...cp, counterparty_contacts: [] } }))],
+  tender_counterparties: [...registry.slice(1, 9).map((t, i) => ({ id: `tch-${i}`, tender_id: t.id, counterparty_id: 'cp-1', status: i % 3 === 0 ? 'declined' : 'proposal_provided', sort_order: 0, tenders: { id: t.id, work_description: t.work_description, tender_start_date: t.tender_start_date, tender_end_date: t.tender_end_date, objects: t.objects ? { name: t.objects.name } : null } })), ...counterparties.map((cp, i) => ({ id: `tc-${i + 1}`, tender_id: 'tender-1', counterparty_id: cp.id, status: 'proposal_provided', sort_order: i, invited_at: '2026-08-01', counterparties: { ...cp, counterparty_contacts: [] } }))],
   // ?cpContacts=1 — у контрагентов есть контакты с телефонами, третий — в чёрном списке (реестр контрагентов на телефоне);
   // &phoneExt=1 — у первого номера добавочный («… доб. 123»).
   counterparties: counterparties.map((cp, i) => ({
@@ -873,12 +877,28 @@ if (CONTRACTS > 0) {
     contracts.push({
       id: `ctr-${i + 1}`, display_id: i + 1, contract_number: `${i + 1}/26`, contract_date: '2026-09-01',
       status: CONTRACTS_MIXED && i % 6 === 1 ? 'completed' : 'in_work',
-      record_type: parent ? 'change' : 'dp', parent_contract_id: parent?.id || null,
+      record_type: parent ? 'ds_vor' : 'dp', parent_contract_id: parent?.id || null,
       root_contract_id: parent?.id || null, object_id: obj.id, objects: { name: obj.name, status: obj.status },
       counterparty_id: cp.id, counterparties: cp, contract_counterparties: [{ counterparty_id: cp.id, sort_order: 0, counterparties: cp }],
       tenders: null, responsible: null, work_name: `Работы ${i + 1}`, contract_amount: 1000000 + i, currency: 'RUB',
       created_at: new Date(Date.UTC(2026, 8, 1) + i * 60000).toISOString(), deleted_at: null, handled_by_us: true,
     })
+  }
+  // &contractsDivision=1 — колонка подразделения есть (миграция 20261112): у договоров через одного указано, у ДС
+  // колонка пустая (берут подразделение договора). У договора ctr-2 ещё ДС на доп. работы и ДС к его ДС ctr-3 —
+  // три ДС в выпадающем списке раскрытого договора.
+  if (params.get('contractsDivision') === '1') {
+    const codes = ['monolith', null, 'general', 'hvac_water', null, 'electrical']
+    contracts.forEach((c, i) => { c.division = c.record_type === 'dp' ? codes[i % codes.length] : null })
+    const root = contracts.find((c) => c.id === 'ctr-2')
+    if (root) {
+      const extra = (id, over) => ({ ...root, id, contract_counterparties: root.contract_counterparties, record_type: 'ds_extra',
+        parent_contract_id: root.id, root_contract_id: root.id, division: null, contract_date: '2026-10-05', ...over })
+      contracts.push(
+        extra('ctr-x1', { display_id: 901, contract_number: 'ДР-1', work_name: 'Дополнительные работы: усиление перекрытия секции 2', contract_amount: 80000, status: 'in_work', signed_date: '2026-10-10' }),
+        extra('ctr-x2', { display_id: 902, contract_number: '2', record_type: 'ds_vor', parent_contract_id: 'ctr-3', work_name: 'Изменение ВОР: замена утеплителя', contract_amount: 1050000, status: 'new_request' }),
+      )
+    }
   }
   window.__fakeDb.contracts = contracts
   window.__fakeDb.contract_appendices = []

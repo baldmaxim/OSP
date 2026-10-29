@@ -48,6 +48,9 @@ CREATE TABLE IF NOT EXISTS contracts (
   email TEXT,
   bsm TEXT,
   comments TEXT,
+  -- Подразделение договора (миграция 20261112): коды подразделений ВОР, как tenders.vor_division.
+  -- У ДС не заполняется — реестр показывает подразделение их договора.
+  division TEXT CHECK (division IS NULL OR division IN ('monolith', 'nvf_spk', 'general', 'hvac_water', 'electrical', 'finishing')),
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

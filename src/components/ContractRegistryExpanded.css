@@ -1,0 +1,247 @@
+/* Реестр «Договоры и ДС»: раскрытый документ и подразделение договора (29.10.2026).
+   Под строкой договора — две области: «Работа юриста» (юрист, сроки, примечание, приложения-задачи)
+   и «Дополнительные соглашения» (выпадающий список ДС, под ним стороны и реквизиты). Раньше ДС
+   раскрывались полными строками таблицы и выглядели как договоры. Подключается после
+   ContractRegistryPolish.css. */
+
+/* ── Две области ─────────────────────────────────────────────────────────── */
+.ce2-wrap {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.ce2 {
+  display: grid;
+  /* Слева шире: в работе юриста таблица приложений. */
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 0.875rem;
+  align-items: start;
+}
+/* Узкая таблица (небольшое окно, крупный масштаб) — области одна под другой. */
+@container (max-width: 1050px) {
+  .ce2 { grid-template-columns: minmax(0, 1fr); }
+}
+
+.ce2-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  min-width: 0;
+  padding: 0.75rem 0.875rem 0.875rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+/* Цвет у верхнего края — какая это область, видно и при прокрутке. */
+.ce2-area-lawyer { border-top: 3px solid color-mix(in srgb, var(--primary-color) 60%, transparent); }
+.ce2-area-ds { border-top: 3px solid color-mix(in srgb, #7c3aed 50%, transparent); }
+
+.ce2-area-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+}
+.ce2-area-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.ce2-area-sub {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+.ce2-area-count {
+  min-width: 1.25rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.ce2-area-head .ce2-add-ds { margin-left: auto; }
+
+/* Блоки внутри области — на фоне страницы, чтобы не сливались с ней. */
+.ce2-area .ce-block {
+  background: var(--bg-primary);
+  border-radius: 10px;
+  padding: 0.625rem 0.75rem;
+}
+.ce2-area .ce-block-title { margin-bottom: 0.375rem; }
+
+/* ── Работа юриста: юрист и сроки в одну строку ──────────────────────────── */
+.ce2-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem 1.5rem;
+}
+.ce2-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.ce2-field-lawyer { min-width: 12rem; }
+/* Выбор юриста — поле во всю ширину подписи, а не квадрат «— ▾». */
+.ce2-field-lawyer .fdrop .fdrop-trigger {
+  width: 100%;
+  min-width: 12rem;
+  justify-content: space-between;
+}
+.ce2-label {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.ce2-field .overdue-note { margin-top: 0; }
+
+/* ── Выпадающий список ДС ────────────────────────────────────────────────── */
+.ce2-ds-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.ce2-ds {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+.ce2-ds.is-open { border-color: color-mix(in srgb, var(--primary-color) 45%, var(--border-color)); }
+/* ДС, которое нашёл поиск. */
+.ce2-ds.is-hit { box-shadow: 0 0 0 2px color-mix(in srgb, #f59e0b 50%, transparent); }
+.ce2-ds.is-deleted .ce2-ds-toggle { opacity: 0.7; }
+
+.ce2-ds-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+  padding: 0.25rem 0.375rem 0.25rem 0.25rem;
+}
+.ce2-ds-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.5rem;
+  padding: 0.3rem 0.375rem;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ce2-ds-toggle:hover { background: var(--bg-tertiary); }
+.ce2-ds-toggle:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+.ce2-ds-chev {
+  display: inline-block;
+  width: 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  transition: transform 0.15s ease;
+}
+.ce2-ds.is-open .ce2-ds-chev { transform: rotate(90deg); color: var(--primary-color); }
+.ce2-ds-num {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.ce2-ds-date {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ce2-ds-toggle .ds-type-badge,
+.ce2-ds-toggle .ds-parent-note,
+.ce2-ds-toggle .status-badge { margin: 0; }
+.ce2-ds-overdue {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #b91c1c;
+}
+[data-theme='dark'] .ce2-ds-overdue { color: #fca5a5; }
+.ce2-ds-amount {
+  margin-left: auto;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* Предмет ДС — второй строкой, в одну строку с многоточием (полный — в подсказке). */
+.ce2-ds-work {
+  flex-basis: 100%;
+  min-width: 0;
+  padding-left: 1.25rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ce2-ds-open {
+  flex-shrink: 0;
+  margin-top: 0.2rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--primary-color);
+  text-decoration: none;
+}
+.ce2-ds-open:hover { border-color: var(--primary-color); }
+
+.ce2-ds-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem 0.75rem 1.5rem;
+  border-top: 1px dashed var(--border-color);
+}
+.ce2-ds-body .ce-block { background: var(--bg-secondary); }
+.ce2-ds-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+.ce2-ds-meta .larix-badge { margin: 0; }
+.ce2-ds-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.ce2-ds-actions { flex-wrap: wrap; }
+.ce-edit-link.is-danger { color: var(--danger-color); }
+
+/* ── Подразделение договора: плашка под «Работами», фильтр в заголовке ──── */
+.cth-work {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.375rem;
+}
+.contracts-table > thead > tr > th.th-filtered { box-shadow: inset 0 -2px 0 var(--primary-color); }
+/* Узкая колонка (крупный масштаб, «Скрыть столбцы» выключено) — подпись фильтра с многоточием. */
+.cth-work .vdivf,
+.cth-work .fdrop-trigger { max-width: 100%; min-width: 0; }
+.cth-work .fdrop-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contracts-table td.cell-work .cdiv {
+  display: block;
+  margin-top: 0.3rem;
+}

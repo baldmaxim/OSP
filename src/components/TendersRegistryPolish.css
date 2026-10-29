@@ -527,6 +527,9 @@ tr:hover .mat-notes-tools { opacity: 1; }
 .ui-work.ui-work.tp-dense .tp-c-mat { width: 6.5rem; }   /* «Не требуется» */
 .ui-work.ui-work.tp-dense .tp-c-summary { width: 5rem; }   /* «+ ссылка» */
 .ui-work.ui-work.tp-dense .tp-c-actions { width: 5.5rem; }   /* три кнопки 26px */
+/* «Прочее» (29.10.2026) — тот же плотный вариант, но без «ВОРов и РД», плана затрат и тендера
+   на материалы (−20,5rem): иначе в окне уже 92rem таблица прокручивалась бы ради широкого описания. */
+.ui-work.ui-work.tp-dense.tp-dept-other .tp-grid:not(.data-table--compact) { min-width: 71.5rem; }
 
 /* Описание работ — ссылка на тендер: акцентный цвет и тонкое подчёркивание,
    500. Раскрытие «Показать полностью» — отдельной кнопкой, только если текст

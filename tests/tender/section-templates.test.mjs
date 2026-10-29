@@ -92,7 +92,7 @@ describe('Шаблоны разделов в «Документах» тенде
       await c.locator('.tdm-tpl-empty', { hasText: 'Ссылка ещё не указана' }).waitFor({ timeout: 10000 })
       assert.equal(await c.locator('.tdm-card-title').textContent(), 'Понятийное соглашение')
       assert.deepEqual(await page.locator('.tdm-cards > .tdm-card .tdm-card-title').allTextContents(),
-        ['Шаблон письма', 'Структура хранения документов', 'Напоминание об обзвоне', 'Понятийное соглашение'])
+        ['Шаблон письма', 'Структура хранения документов', 'Напоминание об обзвоне', 'Понятийное соглашение', 'Шаблон ДП'])
       // Файла у шаблона-ссылки не прикрепить.
       assert.equal(await page.getByTestId('template-input-tenders_concept_agreement').count(), 0)
 
@@ -122,6 +122,24 @@ describe('Шаблоны разделов в «Документах» тенде
       assert.match(dialogs.at(-1), /Убрать ссылку на шаблон «Понятийное соглашение»/)
       await c.locator('.tdm-tpl-empty', { hasText: 'Ссылка ещё не указана' }).waitFor({ timeout: 10000 })
       assert.deepEqual(await templateDocs(page), [], 'файлов шаблон-ссылка не создаёт')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('тендеры ОС: «Шаблон ДП» — та же ссылка, что в договорах (app_settings contracts_dp_template_link)', async () => {
+    const { page, errors, close } = await openTenders()
+    try {
+      await page.evaluate(() => {
+        window.__fakeDb.app_settings.push({ key: 'contracts_dp_template_link', value: 'https://docs.example.invalid/dp.docx' })
+      })
+      await page.locator('button.btn-view-toggle', { hasText: 'Документы' }).click()
+      const dp = card(page, 'contracts_dgp')
+      const open = dp.getByRole('link', { name: 'Открыть' })
+      await open.waitFor({ timeout: 10000 })
+      assert.equal(await dp.locator('.tdm-card-title').textContent(), 'Шаблон ДП')
+      assert.equal(await open.getAttribute('href'), 'https://docs.example.invalid/dp.docx')
+      // Файла у шаблона-ссылки не прикрепить и здесь.
+      assert.equal(await page.getByTestId('template-input-contracts_dgp').count(), 0)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
@@ -169,7 +187,7 @@ describe('Шаблоны разделов в «Документах» тенде
 
       // «Шаблон ДП» — ссылка, файла не прикрепить.
       const dp = card(page, 'contracts_dgp')
-      assert.equal(await dp.locator('.tdm-card-desc').textContent(), 'Шаблон договора подряда — ссылка на документ')
+      assert.equal(await dp.locator('.tdm-card-desc').textContent(), 'Шаблон договора подряда — ссылка на документ; та же в тендерах и в договорах')
       await dp.locator('.tdm-tpl-empty', { hasText: 'Ссылка ещё не указана' }).waitFor({ timeout: 10000 })
       assert.equal(await page.getByTestId('template-input-contracts_dgp').count(), 0)
       await dp.getByRole('button', { name: 'Указать ссылку' }).click()
