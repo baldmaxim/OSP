@@ -55,3 +55,19 @@
 }
 .tcc-mail { min-width: 0; }
 .tcc-none { color: var(--text-tertiary); }
+
+/* «Свернуть всё»: первый контакт одной строкой (переносится, если не помещается), «ещё N» — серым. */
+.tcc-compact {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.125rem 0.625rem;
+}
+.tcc-compact .tcc-line { margin-top: 0; }
+.tcc-compact .tcc-line > svg { margin-top: 0; align-self: center; }
+.tcc-more {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}

@@ -15,7 +15,7 @@ import { useRole } from '../contexts/RoleContext'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import ParticipantStatusSelect from '../components/ParticipantStatusSelect'
 import ParticipantContacts from '../components/ParticipantContacts'
-import KpCollapseToggle, { useKpCollapsed } from '../components/KpCollapseToggle'
+import ParticipantsCollapseToggle, { useParticipantsCollapsed } from '../components/ParticipantsCollapseToggle'
 import '../components/ParticipantsTable.css'
 import TenderFilesZipButton from '../components/TenderFilesZipButton'
 import TenderProposalsCompare from '../components/TenderProposalsCompare'
@@ -532,8 +532,8 @@ function TenderDetailPage() {
   // Когда КП контрагента фактически попало на сайт: counterparty_id → ISO-дата.
   // Источник — загруженный файл КП, а если файла нет (кабинет подрядчика) — строки расценок.
   const [kpUploadedAt, setKpUploadedAt] = useState({})
-  // Галочка «Свернуть КП» над участниками — общая с реестром тендеров, помнится в браузере.
-  const [kpCollapsed, setKpCollapsed] = useKpCollapsed()
+  // Галочка «Свернуть всё» над участниками — общая с реестром тендеров, помнится в браузере.
+  const [cpCollapsed, setCpCollapsed] = useParticipantsCollapsed()
   // task 427: DnD-перестановка участников
   const [draggedTc, setDraggedTc] = useState(null) // { id }
   const [tcDragOver, setTcDragOver] = useState(null) // { id, position }
@@ -2603,7 +2603,7 @@ function TenderDetailPage() {
               <h3>Участники тендера</h3>
               <div className="section-actions">
                 {tenderCounterparties.length > 0 && (
-                  <KpCollapseToggle collapsed={kpCollapsed} onChange={setKpCollapsed} />
+                  <ParticipantsCollapseToggle collapsed={cpCollapsed} onChange={setCpCollapsed} />
                 )}
                 {canEditTenders && (
                   <button
@@ -2623,7 +2623,7 @@ function TenderDetailPage() {
               </div>
             ) : (
               <div className="table-container">
-                <table className="data-table tc-table" style={{ fontSize: '0.8125rem' }}>
+                <table className={`data-table tc-table${cpCollapsed ? ' is-compact' : ''}`} style={{ fontSize: '0.8125rem' }}>
                   <thead>
                     <tr>
                       {canEditTenders && <th style={{ width: '26px' }}></th>}
@@ -2707,7 +2707,7 @@ function TenderDetailPage() {
                             </div>
                           </td>
                           <td>
-                            <ParticipantContacts contacts={tc.counterparties?.counterparty_contacts} />
+                            <ParticipantContacts contacts={tc.counterparties?.counterparty_contacts} compact={cpCollapsed} />
                           </td>
                           <td>
                             <TenderCounterpartyFiles
@@ -2716,7 +2716,7 @@ function TenderDetailPage() {
                               canEdit={canEditTenders}
                               tender={tender}
                               counterpartyName={tc.counterparties?.name}
-                              collapsed={kpCollapsed}
+                              collapsed={cpCollapsed}
                             />
                           </td>
                           {!hideNotes && (
@@ -2739,6 +2739,7 @@ function TenderDetailPage() {
                                 }
                               }}
                               placeholder="Даты обзвонов, комментарии..."
+                              title={cpCollapsed && tc.notes ? tc.notes : undefined}
                               readOnly={!canEditTenders}
                               disabled={!canEditTenders}
                             />

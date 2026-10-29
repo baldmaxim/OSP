@@ -39,8 +39,10 @@ import '../styles/workUi.css'
 //     замечания, серая — ждёт проверки или без неё), фон и рамка не красятся;
 //   • строка сведений одна: дата и время, кто загрузил, метка, проверка и шаги;
 //   • сверху — строка-сводка «КП · N» со стрелкой и кнопками «+ КП», «+ Документ», «Скачать
-//     всё»: стрелка сворачивает файлы участника, галочка «Свернуть КП» над таблицей
-//     (KpCollapseToggle, проп collapsed) — всех сразу.
+//     всё»: стрелка сворачивает файлы участника, галочка «Свернуть всё» над таблицей
+//     (ParticipantsCollapseToggle, проп collapsed) — всех сразу;
+//   • у текущей версии КП (это и есть ВОР подрядчика) «Скачать» — кнопкой с подписью и акцентом, у
+//     прежних версий и документов — значком.
 // «Скачать всё» — все файлы только этого участника одним ZIP; кнопка есть, только когда файлы
 // есть. tender — для имени архива (№ и работы), counterpartyName — название компании.
 
@@ -230,6 +232,8 @@ function FileItem({ item, isProposal, versioned, onDownload, onPreview, onDelete
   const size = formatBytes(s3.size_bytes)
   const reviewed = isProposal && file.review_required === true
   const remarks = reviewed && !replaced && file.review_status === 'has_remarks' && file.review_note
+  // Текущая версия КП — то, что скачивают чаще всего: кнопка с подписью.
+  const mainDownload = isProposal && !replaced
   return (
     <li className={`tcpf-item${replaced ? ' is-replaced' : ''}`} data-file={file.id}>
       <div className="tcpf-line">
@@ -253,11 +257,14 @@ function FileItem({ item, isProposal, versioned, onDownload, onPreview, onDelete
         </button>
         <button
           type="button"
-          className="tcpf-icon-btn"
+          className={`tcpf-icon-btn${mainDownload ? ' tcpf-dl-main' : ''}`}
           title={`Скачать «${s3.file_name}»`}
           aria-label={`Скачать ${s3.file_name}`}
           onClick={() => onDownload(s3)}
-        ><IconDownload size={14} /></button>
+        >
+          <IconDownload size={14} />
+          {mainDownload && <span aria-hidden>Скачать</span>}
+        </button>
         {onDelete && (
           <button
             type="button"
@@ -504,10 +511,6 @@ export default function TenderCounterpartyFiles({
             ) : (
               <span className="tcpf-sum-kp is-none">КП не загружено</span>
             )}
-            {!open && attachments.length > 0 && (
-              <span className="tcpf-sum-docs">Документы · {attachments.length}</span>
-            )}
-            {!open && <ReviewSummary groups={groups} />}
           </button>
         )}
         {(canEdit || canDownloadAll) && (
@@ -533,12 +536,22 @@ export default function TenderCounterpartyFiles({
                 tender={tender || { id: tenderId }}
                 counterparty={{ id: counterpartyId, name: counterpartyName }}
                 className="tcpf-btn-secondary tcpf-zip-btn"
-                iconOnly
               />
             )}
           </div>
         )}
       </div>
+
+      {/* Свёрнуто — второй строкой во всю ширину: документы и проверка текущих версий КП (рядом с
+          кнопками сводка ужималась в три-четыре строки). */}
+      {ready && !open && !isEmpty && (attachments.length > 0 || groups.some(g => g.current.file.review_required === true)) && (
+        <div className="tcpf-sum-more">
+          {attachments.length > 0 && (
+            <span className="tcpf-sum-docs">Документы · {attachments.length}</span>
+          )}
+          <ReviewSummary groups={groups} />
+        </div>
+      )}
 
       {ready && open && (
         <>

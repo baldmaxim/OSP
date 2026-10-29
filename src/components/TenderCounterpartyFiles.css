@@ -54,6 +54,18 @@
 .tcpf-sum-kp.is-none { color: var(--text-secondary); font-weight: 400; }
 .tcpf-sum-sub { color: var(--text-secondary); font-weight: 400; }
 .tcpf-sum-docs { white-space: nowrap; }
+/* Свёрнутый участник: документы и проверка — строкой под сводкой, вровень с «КП». */
+.tcpf-sum-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.125rem 0.625rem;
+  margin-top: -0.25rem;
+  padding-left: 1rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--text-secondary);
+}
 .tcpf-sum-review {
   display: inline-flex;
   flex-wrap: wrap;
@@ -130,16 +142,16 @@
   cursor: not-allowed;
 }
 
-/* «Скачать всё» участника — значок 24×24 (подпись — в подсказке и для чтения с экрана);
-   пока собирается архив — «Скачано N из M» текстом. */
-.tcpf-zip-btn { border-style: solid; color: var(--text-secondary); }
-.tcpf-zip-btn:not([aria-busy='true']) { width: 1.5rem; padding: 0; justify-content: center; }
-.tcpf-zip-btn svg { flex: 0 0 auto; }
+/* «Скачать всё» участника — текстом со значком, сплошной рамкой (не «добавить»): все файлы
+   участника одним архивом; пока собирается — «Скачано N из M». */
+.tcpf-zip-btn { border-style: solid; color: var(--text-primary); background: var(--bg-secondary); }
+.tcpf-zip-btn svg { flex: 0 0 auto; color: var(--text-secondary); }
 .tcpf-zip-btn:hover:not(:disabled) {
   border-color: var(--primary-color);
   color: var(--ui-link, var(--primary-color));
-  background: transparent;
+  background: color-mix(in srgb, var(--primary-color) 6%, var(--bg-secondary));
 }
+.tcpf-zip-btn:hover:not(:disabled) svg { color: currentColor; }
 .tcpf-zip-btn:disabled { opacity: 0.75; cursor: progress; }
 
 .tcpf :is(button, input):focus-visible {
@@ -333,6 +345,25 @@
   background: rgba(220, 38, 38, 0.08);
   color: #b91c1c;
 }
+/* «Скачать» у текущей версии КП (ВОР подрядчика) — кнопкой с подписью и акцентной рамкой: её ищут
+   глазами первой. У прежних версий и документов — значок. */
+.tcpf-icon-btn.tcpf-dl-main {
+  width: auto;
+  gap: 0.25rem;
+  padding: 0 0.5rem;
+  border-color: color-mix(in srgb, var(--primary-color) 60%, transparent);
+  background: var(--bg-secondary);
+  color: var(--ui-link, var(--primary-color));
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  white-space: nowrap;
+}
+.tcpf-icon-btn.tcpf-dl-main:hover {
+  border-color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 10%, var(--bg-secondary));
+}
+
 /* «Удалить» — по наведению на строку файла (место за ней держится — ничего не прыгает);
    на сенсорном экране наведения нет — видна всегда. */
 @media (hover: hover) {
@@ -479,7 +510,7 @@
   border-radius: 2px;
 }
 
-/* === Галочка «Свернуть КП» над таблицей участников (KpCollapseToggle) === */
+/* === Галочка «Свернуть всё» над таблицей участников (ParticipantsCollapseToggle) === */
 .tcpf-collapse-toggle {
   position: relative;
   display: inline-flex;

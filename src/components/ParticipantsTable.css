@@ -98,3 +98,21 @@
 .tc-note-area::placeholder { color: var(--text-tertiary); }
 .tc-note-area:disabled { opacity: 1; cursor: default; }
 .tc-note-area:disabled:placeholder-shown { border-color: transparent; }
+
+/* «Свернуть всё» (.is-compact, ParticipantsCollapseToggle): подрядчик — в одну-две строки. КП — строкой-
+   сводкой (TenderCounterpartyFiles), контакты — первый одной строкой (ParticipantContacts compact), вида
+   работ нет, примечание — одной строкой (полностью — в подсказке; поле карточки раскрывается при вводе). */
+.tc-table.tc-table.tc-table.is-compact > tbody > tr > td {
+  padding-top: 0.4375rem;
+  padding-bottom: 0.4375rem;
+}
+.tc-table.tc-table.tc-table.is-compact > tbody > tr > td.tc-drag-cell { padding-top: 0.3125rem !important; }
+.tc-table.is-compact .tc-company-sub { display: none; }
+.tc-table.is-compact .tc-company-status { margin-top: 0.25rem; }
+.tc-table.is-compact .tc-notes-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+}
+.tc-table.is-compact .tc-note-area:not(:focus) { min-height: 0; max-height: 2rem; }

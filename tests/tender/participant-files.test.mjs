@@ -1,8 +1,8 @@
 // Ячейка «КП / Документы» участника тендера (TenderCounterpartyFiles) и статус участника
 // (ParticipantStatusSelect) — лента по образцу «Проверки КП» (29.10.2026; позже в тот же день — по
 // замечаниям пользователя: КП блоками по версиям, имя файла в одну строку, состояние — только полосой
-// слева, «ждёт проверки» — серым, галочка «Свернуть КП», колонки «компания (со статусом) · контакты · КП ·
-// примечание»):
+// слева, «ждёт проверки» — серым, «Скачать» с подписью у текущей версии КП, галочка «Свернуть всё» (весь тендер
+// компактно), колонки «компания (со статусом) · контакты · КП · примечание»):
 //   • разбор ленты (src/utils/proposalTimeline.js): КП и документы — старые сверху, версии одного КП
 //     по порядку загрузки, у прежних — когда заменены; группы версий и сводка проверки;
 //   • в Chromium на стенде (tcFiles=1&tcReview=1): карточка тендера → «Участники» и раскрытая строка
@@ -199,6 +199,12 @@ describe('Лента файлов участника: карточка тенд�
       const first = kpItems(cell).first()
       assert.deepEqual(await first.locator('.tcpf-line .tcpf-icon-btn').evaluateAll((els) => els.map((b) => b.getAttribute('aria-label'))),
         ['Скачать КП Подрядчик 01.xlsx', 'Удалить КП Подрядчик 01.xlsx'])
+      // «Скачать» у текущей версии КП (ВОР подрядчика) — кнопкой с подписью; у прежней версии и документа — значком.
+      assert.equal(await kpItems(cell).nth(1).locator('.tcpf-dl-main').textContent(), 'Скачать')
+      assert.equal(await first.locator('.tcpf-dl-main').count(), 0)
+      assert.equal(await docItems(cell).locator('.tcpf-dl-main').count(), 0)
+      // «Скачать всё» участника — текстом.
+      assert.equal(await cell.locator('.tcpf-zip-btn').textContent(), 'Скачать всё')
       await first.locator('.tcpf-file').click()
       await page.locator('.s3-doc-modal-title', { hasText: 'КП Подрядчик 01.xlsx' }).waitFor({ timeout: 10000 })
       await page.locator('.s3-doc-modal-close').click()
@@ -385,30 +391,44 @@ describe('Лента файлов участника: карточка тенд�
     }
   })
 
-  it('«Свернуть КП»: у всех участников — строка-сводка, стрелка раскрывает одного; выбор помнится', async () => {
-    const { page, errors, close } = await openCard()
+  it('«Свернуть всё»: весь тендер компактно — сводка КП, первый контакт, примечание строкой; стрелка раскрывает КП одного; выбор помнится', async () => {
+    const { page, errors, close } = await openCard('&cpContacts=1')
     try {
       const toggle = page.locator('.participants-section .tcpf-collapse-toggle')
-      assert.match(await toggle.textContent(), /Свернуть КП/)
+      assert.match(await toggle.textContent(), /Свернуть всё/)
       assert.equal(await toggle.locator('input').isChecked(), false)
+      const heightOf = () => row(page, 'Подрядчик 01').evaluate((tr) => tr.getBoundingClientRect().height)
+      const tall = await heightOf()
       await toggle.click()
       await page.waitForFunction(() => document.querySelectorAll('.participants-section .tcpf-kp').length === 0)
       assert.equal(await page.locator('.participants-section .tcpf-item').count(), 0, 'и документы свёрнуты')
-      // Сводка свёрнутого: КП, документы и проверка текущих версий.
+      assert.match(await page.locator('.participants-section table').getAttribute('class'), /is-compact/)
+      // Сводка свёрнутого: КП — в строке со стрелкой, документы и проверка текущих версий — строкой под ней.
       const one = row(page, 'Подрядчик 01')
       assert.equal(await one.locator('.tcpf-summary').getAttribute('aria-expanded'), 'false')
-      assert.match(await one.locator('.tcpf-summary').textContent(), /КП · 1 · 2 версии.*Документы · 1.*на проверке 1/)
-      assert.match(await row(page, 'Подрядчик 02').locator('.tcpf-summary').textContent(), /проверено 1.*замечания 1/)
+      assert.equal((await one.locator('.tcpf-summary').textContent()).trim(), 'КП · 1 · 2 версии')
+      assert.match(await one.locator('.tcpf-sum-more').textContent(), /Документы · 1.*на проверке 1/)
+      assert.match(await row(page, 'Подрядчик 02').locator('.tcpf-sum-more').textContent(), /проверено 1.*замечания 1/)
+      // Контакты — первый одной строкой (ФИО и телефон), остальные — «ещё N», все — в подсказке; вида работ нет.
+      const contacts = one.locator('.tcc-compact')
+      assert.equal(await contacts.locator('.tcc-name').textContent(), 'Шахмиров Джабраил Алиевич')
+      assert.deepEqual(await contacts.locator('.tcc-line').evaluateAll((as) => as.map((a) => a.getAttribute('href'))), ['tel:+79637950185'])
+      assert.equal(await contacts.locator('.tcc-more').textContent(), 'ещё 1')
+      assert.match(await contacts.getAttribute('title'), /Петров Пётр, Сметчик, smeta@example\.invalid/)
+      assert.equal(await one.locator('.tc-company-sub').isVisible(), false)
+      const short = await heightOf()
+      assert.ok(short < tall / 2, `строка подрядчика ниже вдвое: ${Math.round(tall)} → ${Math.round(short)}`)
       // Загрузка — и в свёрнутом виде.
       assert.equal(await one.locator('.tcpf-quick-actions button', { hasText: '+ КП' }).count(), 1)
       // Стрелка раскрывает только этого участника.
       await one.locator('.tcpf-summary').click()
       assert.equal(await kpItems(one).count(), 2)
       assert.equal(await kpItems(row(page, 'Подрядчик 02')).count(), 0)
-      assert.equal(await page.evaluate(() => localStorage.getItem('tenders:kpCollapsed')), '1')
+      assert.equal(await page.evaluate(() => localStorage.getItem('tenders:participantsCollapsed')), '1')
       // Снятая галочка раскрывает всех.
       await toggle.click()
       assert.equal(await kpItems(row(page, 'Подрядчик 02')).count(), 2)
+      assert.equal(await one.locator('.tcc-item').count(), 2, 'контакты — снова полностью')
       assert.deepEqual(errors, [])
     } finally {
       await close()
@@ -418,7 +438,7 @@ describe('Лента файлов участника: карточка тенд�
     const reg = await openPage('/tenders/construction')
     try {
       const { page, errors } = reg
-      await page.evaluate(() => localStorage.setItem('tenders:kpCollapsed', '1'))
+      await page.evaluate(() => localStorage.setItem('tenders:participantsCollapsed', '1'))
       await page.reload()
       const search = page.locator('input[placeholder^="№, объект"]')
       await search.waitFor({ timeout: 120000 })
@@ -429,9 +449,10 @@ describe('Лента файлов участника: карточка тенд�
       assert.equal(await toolbar.locator('.tcpf-collapse-toggle input').isChecked(), true)
       // Галочка — справа от «Копировать email».
       const order = await toolbar.evaluate((el) => [...el.children].map((c) => c.textContent.trim()))
-      assert.ok(order.indexOf('Свернуть КП') > order.findIndex((t) => /Копировать email/.test(t)), order.join(' | '))
+      assert.ok(order.indexOf('Свернуть всё') > order.findIndex((t) => /Копировать email/.test(t)), order.join(' | '))
       await page.locator('.expanded-cp-table-wrap .tcpf[aria-busy="false"] .tcpf-summary').first().waitFor({ timeout: 30000 })
       assert.equal(await page.locator('.expanded-cp-table-wrap .tcpf-kp').count(), 0)
+      assert.match(await page.locator('.expanded-cp-table-wrap table').getAttribute('class'), /is-compact/)
       assert.deepEqual(errors, [])
     } finally {
       await reg.close()

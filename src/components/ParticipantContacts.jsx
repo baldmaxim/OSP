@@ -10,9 +10,37 @@ import './ParticipantContacts.css'
 // телефонов или адресов в одном поле — через «;».
 const splitList = (value) => String(value || '').split(';').map(s => s.trim()).filter(Boolean)
 
-export default function ParticipantContacts({ contacts }) {
+// compact — галочка «Свернуть всё» над таблицей: первый контакт одной строкой (ФИО и первый телефон, а без
+// телефона — почта), остальные — «ещё N»; все контакты целиком — в подсказке.
+function CompactContacts({ list }) {
+  const first = list[0]
+  const phone = splitList(first.phone)[0]
+  const email = phone ? null : splitList(first.email)[0]
+  const full = list.map(c => [c.full_name, c.position, c.phone, c.email].filter(Boolean).join(', ')).join('\n')
+  return (
+    <div className="tcc tcc-compact" title={full}>
+      {first.full_name && <span className="tcc-name">{first.full_name}</span>}
+      {phone && (
+        <a className="tcc-line" href={phoneHref(phone)} title={`Позвонить: ${phone}`}>
+          <IconPhone size={13} />
+          <span className="tcc-phone">{phone}</span>
+        </a>
+      )}
+      {email && (
+        <a className="tcc-line" href={`mailto:${email}`} title={`Написать: ${email}`}>
+          <IconMail size={13} />
+          <span className="tcc-mail"><SoftBreaks text={email} /></span>
+        </a>
+      )}
+      {list.length > 1 && <span className="tcc-more">ещё {list.length - 1}</span>}
+    </div>
+  )
+}
+
+export default function ParticipantContacts({ contacts, compact = false }) {
   const list = (contacts || []).filter(c => c && (c.full_name || c.position || c.phone || c.email))
   if (list.length === 0) return <span className="tcc-none">—</span>
+  if (compact) return <CompactContacts list={list} />
   return (
     <ul className="tcc">
       {list.map((c, i) => (

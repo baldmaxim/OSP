@@ -25,7 +25,7 @@ import { TENDERS_STRUCTURE } from '../utils/docStorageStructures'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import ParticipantStatusSelect from '../components/ParticipantStatusSelect'
 import ParticipantContacts from '../components/ParticipantContacts'
-import KpCollapseToggle, { useKpCollapsed } from '../components/KpCollapseToggle'
+import ParticipantsCollapseToggle, { useParticipantsCollapsed } from '../components/ParticipantsCollapseToggle'
 import '../components/ParticipantsTable.css'
 import { participantStatusKey, participantStatusLabel } from '../utils/participantStatus'
 import VorDocsModal from '../components/VorDocsModal'
@@ -269,8 +269,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [notesHistoryRows, setNotesHistoryRows] = useState([])
   const [notesHistoryLoading, setNotesHistoryLoading] = useState(false)
   const [copiedEmailsTenderId, setCopiedEmailsTenderId] = useState(null)
-  // Галочка «Свернуть КП» над участниками раскрытого тендера — одна на все тендеры, помнится в браузере.
-  const [kpCollapsed, setKpCollapsed] = useKpCollapsed()
+  // Галочка «Свернуть всё» над участниками раскрытого тендера — одна на все тендеры, помнится в браузере.
+  const [cpCollapsed, setCpCollapsed] = useParticipantsCollapsed()
   const [editingResponsibleTenderId, setEditingResponsibleTenderId] = useState(null)
   const [showAddCounterpartyModal, setShowAddCounterpartyModal] = useState(false)
   const [selectedTenderForCounterparty, setSelectedTenderForCounterparty] = useState(null)
@@ -4407,7 +4407,7 @@ ${ATTACHMENT_BLOCK}
                             </button>
                           )}
                           {tenderCounterparties[tender.id]?.length > 0 && (
-                            <KpCollapseToggle collapsed={kpCollapsed} onChange={setKpCollapsed} />
+                            <ParticipantsCollapseToggle collapsed={cpCollapsed} onChange={setCpCollapsed} />
                           )}
                         </div>
                         {!isMaterialsView && (
@@ -4429,7 +4429,7 @@ ${ATTACHMENT_BLOCK}
                         )}
                         {tenderCounterparties[tender.id] && tenderCounterparties[tender.id].length > 0 ? (
                           <div className="expanded-cp-table-wrap">
-                            <table className="data-table tc-table" style={{ margin: 0 }}>
+                            <table className={`data-table tc-table${cpCollapsed ? ' is-compact' : ''}`} style={{ margin: 0 }}>
                               <thead>
                                 <tr>
                                   {canEditTenders && <th style={{ width: '26px' }}></th>}
@@ -4500,7 +4500,7 @@ ${ATTACHMENT_BLOCK}
                                       </div>
                                     </td>
                                     <td>
-                                      <ParticipantContacts contacts={tc.counterparties?.counterparty_contacts} />
+                                      <ParticipantContacts contacts={tc.counterparties?.counterparty_contacts} compact={cpCollapsed} />
                                     </td>
                                     <td>
                                       <TenderCounterpartyFiles
@@ -4509,7 +4509,7 @@ ${ATTACHMENT_BLOCK}
                                         canEdit={canEditTenders}
                                         tender={tender}
                                         counterpartyName={tc.counterparties?.name}
-                                        collapsed={kpCollapsed}
+                                        collapsed={cpCollapsed}
                                       />
                                     </td>
                                     {!hideNotes && (
@@ -4556,7 +4556,10 @@ ${ATTACHMENT_BLOCK}
                                         </div>
                                       ) : (
                                         <div className="tc-notes-view">
-                                          <div className={`tc-notes-text${tc.notes ? '' : ' is-empty'}`}>
+                                          <div
+                                            className={`tc-notes-text${tc.notes ? '' : ' is-empty'}`}
+                                            title={cpCollapsed && tc.notes ? tc.notes : undefined}
+                                          >
                                             {tc.notes || 'Примечание не заполнено'}
                                           </div>
                                           <div className="tc-notes-tools">
