@@ -196,3 +196,9 @@ export function reorderChecklist(items, draggedId, targetId, position) {
 export function nextChecklistOrder(items) {
   return items.reduce((max, i) => Math.max(max, (i.sort_order ?? 0) + 10), 0)
 }
+
+// Текст поля «Добавить пункт» → пункты: каждая строка (Shift+Enter или вставленный
+// список) — отдельный пункт, пустые строки и пробелы по краям отбрасываются.
+export function splitChecklistLines(text) {
+  return String(text ?? '').split(/\r\n|\r|\n/).map(s => s.trim()).filter(Boolean)
+}

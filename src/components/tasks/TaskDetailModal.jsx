@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { db } from '../../api'
 import FilterDropdown from '../FilterDropdown'
@@ -23,7 +23,9 @@ import {
   formatDateRu,
   formatDateTimeRu,
   nextChecklistOrder,
+  plural,
   reorderChecklist,
+  splitChecklistLines,
 } from '../../utils/taskHelpers'
 
 // task 433: карточка задачи. Открывается модальным окном по центру поверх
@@ -98,6 +100,11 @@ function TaskDetailModal({
   // Пункт в правке: { id, title }. Ref не даёт сохранить дважды (Enter, затем уход из поля).
   const [editingItem, setEditingItem] = useState(null)
   const editingRef = useRef(null)
+  // Поле «Добавить пункт» растёт по строкам; ref не даёт добавить пункты дважды
+  // (Enter, нажатый снова до ответа базы).
+  const addItemRef = useRef(null)
+  const addingRef = useRef(false)
+  const newChecklistLines = splitChecklistLines(newChecklistItem)
 
   const isAssignee = task.assignee_user_id === currentUserId
   const isCreator = task.created_by_user_id === currentUserId
@@ -176,17 +183,32 @@ function TaskDetailModal({
   }
 
   // ── Чек-лист ───────────────────────────────────────────────────────────────
+  // Каждая строка поля — свой пункт, в том же порядке, одной записью.
   const addChecklistItem = async () => {
-    const title = newChecklistItem.trim()
-    if (!title) return
-    const { error } = await db.from('task_checklist_items').insert([{
-      task_id: task.id, title, sort_order: nextChecklistOrder(checklist),
-    }])
-    if (error) { alert('Не удалось добавить пункт: ' + error.message); return }
-    setNewChecklistItem('')
-    await loadDetails()
-    await onChanged()
+    if (!newChecklistLines.length || addingRef.current) return
+    addingRef.current = true
+    try {
+      const start = nextChecklistOrder(checklist)
+      const { error } = await db.from('task_checklist_items').insert(newChecklistLines.map((title, idx) => ({
+        task_id: task.id, title, sort_order: start + idx * 10,
+      })))
+      if (error) { alert('Не удалось добавить пункт: ' + error.message); return }
+      setNewChecklistItem('')
+      await loadDetails()
+      await onChanged()
+    } finally {
+      addingRef.current = false
+    }
   }
+
+  // Высота поля — по числу строк (и обратно в одну строку после добавления).
+  useLayoutEffect(() => {
+    const el = addItemRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const cs = getComputedStyle(el)
+    el.style.height = el.scrollHeight + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0) + 'px'
+  }, [newChecklistItem])
   const toggleChecklistItem = async (item) => {
     const { error } = await db.from('task_checklist_items')
       .update({ is_done: !item.is_done }).eq('id', item.id)
@@ -501,15 +523,24 @@ function TaskDetailModal({
                 })}
               </ul>
               {canEditFields && !isDeleted && (
-                <div className="task-inline-add">
-                  <input
-                    type="text"
+                <div className="task-inline-add task-checklist-add">
+                  <textarea
+                    ref={addItemRef}
+                    rows={1}
                     value={newChecklistItem}
                     onChange={(e) => setNewChecklistItem(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addChecklistItem() } }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addChecklistItem() }
+                    }}
                     placeholder="Добавить пункт"
+                    aria-label="Новый пункт"
+                    title="Enter — добавить. Shift+Enter — новая строка: каждая строка станет отдельным пунктом"
                   />
-                  <button className="btn-secondary" onClick={addChecklistItem}>Добавить</button>
+                  <button className="btn-secondary" onClick={addChecklistItem}>
+                    {newChecklistLines.length > 1
+                      ? `Добавить ${newChecklistLines.length} ${plural(newChecklistLines.length, 'пункт', 'пункта', 'пунктов')}`
+                      : 'Добавить'}
+                  </button>
                 </div>
               )}
             </div>

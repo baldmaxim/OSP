@@ -1043,6 +1043,27 @@
   font-size: 0.8125rem;
 }
 .task-inline-add input:focus { outline: none; border-color: var(--primary-color); }
+/* Новый пункт чек-листа: строки через Shift+Enter, поле растёт по ним (высоту
+   ставит карточка), кнопка — у первой строки. */
+.task-checklist-add { align-items: flex-start; }
+.task-checklist-add textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  max-height: 12rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.2;
+  resize: none;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+.task-checklist-add textarea:focus { outline: none; border-color: var(--primary-color); }
 .task-inline-add .btn-primary,
 .task-inline-add .btn-secondary { flex: 0 0 auto; white-space: nowrap; }
 
@@ -1240,6 +1261,7 @@
   .tasks-search,
   .tfm-input,
   .task-inline-add input,
+  .task-checklist-add textarea,
   .task-checklist-edit,
   .task-field input[type='date'],
   .task-modal-desc,
@@ -1249,6 +1271,7 @@
   .task-inline-add input,
   .task-field input[type='date'],
   .task-field-picker .fdrop-trigger { height: 40px; }
+  .task-checklist-add textarea { min-height: 40px; padding: 0.55rem 0.6rem; }
   .tasks-toolbar .fdrop-trigger { height: 40px; }
   .task-field-value,
   .task-field > .task-chip { min-height: 40px; }

@@ -1,11 +1,11 @@
 // Карточка задачи (/tasks?task=…): закрывается только кнопкой «×»; чек-лист — ручка слева для перестановки
-// (мышью и стрелками с клавиатуры) и правка текста пункта. Расчёт порядка — без браузера, страница — в Chromium
+// (мышью и стрелками с клавиатуры), правка текста пункта и добавление нескольких пунктов строками (Shift+Enter). Расчёт порядка — без браузера, страница — в Chromium
 // (стенд tests/tender/ui: задача task-1 с тремя пунктами, у двух одинаковый sort_order).
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
-import { nextChecklistOrder, reorderChecklist } from '../../src/utils/taskHelpers.js'
+import { nextChecklistOrder, reorderChecklist, splitChecklistLines } from '../../src/utils/taskHelpers.js'
 
 describe('Чек-лист задачи: порядок пунктов', () => {
   const items = [
@@ -26,6 +26,12 @@ describe('Чек-лист задачи: порядок пунктов', () => {
   it('новый пункт — в конец, после самого большого номера', () => {
     assert.equal(nextChecklistOrder(items), 20)
     assert.equal(nextChecklistOrder([]), 0)
+  })
+  it('строки поля — отдельные пункты: пустые и пробелы по краям отброшены', () => {
+    assert.deepEqual(splitChecklistLines('Собрать КП'), ['Собрать КП'])
+    assert.deepEqual(splitChecklistLines('  Первый \n\n Второй\r\nТретий\r  \n'), ['Первый', 'Второй', 'Третий'])
+    assert.deepEqual(splitChecklistLines(' \n '), [])
+    assert.deepEqual(splitChecklistLines(null), [])
   })
 })
 
@@ -126,6 +132,43 @@ describe('Карточка задачи: закрытие и чек-лист', {
       // Отметка пункта по-прежнему работает: правка не перехватила клик по тексту.
       await page.locator('.task-checklist li').nth(0).locator('label').click()
       await page.waitForFunction(() => window.__fakeDb.task_checklist_items.find(i => i.id === 'chk-1').is_done === true)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('Shift+Enter — новая строка, Enter добавляет каждую строку отдельным пунктом в конец', async () => {
+    const { page, errors, close } = await open()
+    try {
+      const field = page.getByRole('textbox', { name: 'Новый пункт' })
+      const oneLine = (await field.boundingBox()).height
+      await field.click()
+      await page.keyboard.type('Запросить КП')
+      await page.keyboard.press('Shift+Enter')
+      await page.keyboard.press('Shift+Enter')
+      await page.keyboard.type('  Сравнить цены ')
+      await page.keyboard.press('Shift+Enter')
+      await page.keyboard.type('Выбрать победителя')
+      assert.equal(await field.inputValue(), 'Запросить КП\n\n  Сравнить цены \nВыбрать победителя', 'Shift+Enter не добавил, а перенёс строку')
+      assert.ok((await field.boundingBox()).height > oneLine, 'поле выросло по строкам')
+      assert.equal(await page.locator('.task-checklist-add .btn-secondary').textContent(), 'Добавить 3 пункта')
+      await page.keyboard.press('Enter')
+      await page.waitForFunction(() => window.__fakeDb.task_checklist_items.length === 6)
+      await page.locator('.task-checklist li').nth(5).waitFor()
+      const added = ['Запросить КП', 'Сравнить цены', 'Выбрать победителя']
+      assert.deepEqual((await titles(page)).slice(3), added)
+      assert.deepEqual((await dbOrder(page)).slice(3), added)
+      assert.equal(await field.inputValue(), '')
+      assert.equal((await field.boundingBox()).height, oneLine, 'после добавления — снова в одну строку')
+
+      // Одна строка — как раньше: один пункт.
+      await field.fill('Подписать протокол')
+      assert.equal(await page.locator('.task-checklist-add .btn-secondary').textContent(), 'Добавить')
+      await field.press('Enter')
+      await page.waitForFunction(() => window.__fakeDb.task_checklist_items.length === 7)
+      await page.locator('.task-checklist li').nth(6).waitFor()
+      assert.equal((await titles(page)).at(-1), 'Подписать протокол')
       assert.deepEqual(errors, [])
     } finally {
       await close()
