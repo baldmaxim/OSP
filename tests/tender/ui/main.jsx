@@ -15,6 +15,8 @@
 //             /dc-requests?file=<id> — ссылка на файл из выгрузки в Excel),
 //             /kp-review&kpReview=1 («Проверка КП»; kpReviewMany=N — длинный список, kpRole — роль, см. seed.js),
 //             /cost-plans («Планы затрат», «Документы» → «Экономисты ОСП»),
+//             /doc-check-requests&docCheck=1 («Заявки на проверку ДП/ДС»: доска; docCheckLegacy=1 — колонок
+//             миграции 20261113 ещё нет),
 //             /stand/api-keys («Администрирование» → «Доступ к API»; apiKeys=missing — раздела у сервера нет,
 //             apiKeysMany=N — ещё N ключей);
 //   items   — позиций ВОР (по умолчанию 5000, три документа, разделы),
@@ -54,6 +56,8 @@ const ContractsPage = lazy(() => import('../../../src/pages/ContractsPage'))
 const KpReviewPage = lazy(() => import('../../../src/pages/KpReviewPage'))
 // Реестр заявок на ДС — так же (DcRequestsPage.css, рабочий слой).
 const DcRequestsPage = lazy(() => import('../../../src/pages/DcRequestsPage'))
+// «Заявки на проверку ДП/ДС» — так же (DocCheckRequestsPage.css, рабочий слой).
+const DocCheckRequestsPage = lazy(() => import('../../../src/pages/DocCheckRequestsPage'))
 // «Планы затрат» — так же (CostPlansPage.css, рабочий слой).
 const CostPlansPage = lazy(() => import('../../../src/pages/CostPlansPage'))
 // «Доступ к API» — так же (AdminPage.css) и со своим «сервером» в памяти (api-keys-stand.jsx).
@@ -91,6 +95,7 @@ const routes = (
     <Route path="/contracts" element={<Suspense fallback={null}><ContractsPage /></Suspense>} />
     <Route path="/kp-review" element={<Suspense fallback={null}><KpReviewPage /></Suspense>} />
     <Route path="/dc-requests" element={<Suspense fallback={null}><DcRequestsPage /></Suspense>} />
+    <Route path="/doc-check-requests" element={<Suspense fallback={null}><DocCheckRequestsPage /></Suspense>} />
     <Route path="/cost-plans" element={<Suspense fallback={null}><CostPlansPage /></Suspense>} />
     <Route path="/tenders/materials/:tenderId/pricing" element={<SupplyPricingPage />} />
     <Route path="/tenders/:tenderId" element={<TenderDetailPage />} />

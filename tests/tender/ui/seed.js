@@ -1058,3 +1058,54 @@ if (params.get('dgpLegacy') === '1') {
       totalLabel: 'Актуальная цена договора', detected: true }),
   })
 }
+
+// ?docCheck=1 — «Заявки на проверку ДП/ДС» (/doc-check-requests): заявки во всех колонках доски, исполнители,
+// сроки, метки, цвет, файл, одна в архиве и одна удалённая. ?docCheckLegacy=1 — колонок миграции 20261113 ещё нет
+// (выборка с ними отвечает 42703, как PostgREST). Люди вымышленные.
+if (params.get('docCheck') === '1') {
+  const fdb = window.__fakeDb
+  const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10)
+  fdb.employee_directory.push(
+    { user_id: 'user-1', display_name: 'Стендов Стенд Стендович', full_name: 'Стендов Стенд Стендович', email: 't@example.invalid', role: 'lawyer' },
+    { user_id: 'user-3', display_name: 'Юристова Мария Андреевна', full_name: 'Юристова Мария Андреевна', email: 'm@example.invalid', role: 'lawyer' },
+  )
+  for (const cp of fdb.counterparties.slice(0, 3)) cp.status = 'active'
+  const obj = (id) => fdb.objects.find((o) => o.id === id)
+  const cpOf = (id) => fdb.counterparties.find((c) => c.id === id)
+  const embed = (row) => {
+    row.objects = row.object_id ? { id: row.object_id, name: obj(row.object_id)?.name, status: obj(row.object_id)?.status } : null
+    row.counterparties = row.counterparty_id ? { id: row.counterparty_id, name: cpOf(row.counterparty_id)?.name } : null
+  }
+  const req = (id, o) => ({
+    id, object_id: 'obj-1', counterparty_id: 'cp-1', doc_type: 'ds', doc_number: null, doc_date: null, status: 'new',
+    notes: null, sort_order: 1, deleted_at: null, created_at: '2026-10-20T09:00:00Z', updated_at: '2026-10-20T09:00:00Z',
+    created_by_name: 'Стендов С. С.', assignee_ids: [], due_date: null, priority: null, color: null, labels: [],
+    archived_at: null, ...o,
+  })
+  fdb.doc_check_requests = [
+    req('dcr-1', { doc_number: '1', assignee_ids: ['user-1'] }),
+    req('dcr-2', { status: 'in_progress', doc_type: 'dp', counterparty_id: 'cp-2', object_id: 'obj-2', doc_number: 'СУ2-001',
+      notes: 'нет ред. формата договора, запросили у юриста', due_date: day(-2), priority: 'high', color: 'red',
+      labels: ['Переподписание'], assignee_ids: ['user-2', 'user-3'] }),
+    req('dcr-3', { status: 'in_progress', counterparty_id: 'cp-3', doc_number: '3', sort_order: 2, due_date: day(5),
+      labels: ['В бумажном виде'] }),
+    req('dcr-4', { status: 'done', doc_type: 'dp', doc_number: 'СУ2-004' }),
+    req('dcr-5', { status: 'done', counterparty_id: 'cp-2', object_id: 'obj-2', doc_number: '5', sort_order: 2 }),
+    req('dcr-6', { status: 'awaiting_scan', doc_type: 'dp', counterparty_id: 'cp-3', object_id: 'obj-2', doc_number: 'СУ2-006' }),
+    req('dcr-7', { status: 'tax_clause', doc_type: 'dp', doc_number: 'СУ2-007', color: 'yellow', labels: ['Переподписание'] }),
+    req('dcr-8', { status: 'done', doc_type: 'dp', doc_number: 'СУ2-008', archived_at: '2026-10-25T10:00:00Z' }),
+    req('dcr-9', { doc_number: '9', deleted_at: '2026-10-26T10:00:00Z' }),
+  ]
+  fdb.doc_check_requests.forEach(embed)
+  fdb.doc_check_request_audit_log = []
+  fdb.s3_documents.push({ id: 'dcr-file-1', owner_type: 'doc_check_request', owner_id: 'dcr-2', file_name: 'ДП СУ2-001.pdf',
+    s3_key: 'doc-check-requests/dcr-2/dp.pdf', size_bytes: 1024, created_at: '2026-10-21T09:00:00Z' })
+  // Встраивание objects(...) / counterparties(...) после записи — как PostgREST (стенд встраивания не разбирает).
+  window.__fakeTriggers = { ...(window.__fakeTriggers || {}), doc_check_requests: (row) => embed(row) }
+  if (params.get('docCheckLegacy') === '1') {
+    const board = ['assignee_ids', 'due_date', 'priority', 'color', 'labels', 'archived_at']
+    for (const r of fdb.doc_check_requests) for (const k of board) delete r[k]
+    fdb.doc_check_requests = fdb.doc_check_requests.filter((r) => r.status !== 'tax_clause')
+    window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}), doc_check_requests: board }
+  }
+}
