@@ -625,6 +625,32 @@ if (params.get('tcFiles') === '1') {
     file('tpf-3', 'cp-1', 'Выписка ЕГРЮЛ.pdf', { file_kind: 'attachment' }),
     file('tpf-4', 'cp-2', 'КП Подрядчик 02.xlsx', { proposal_group_id: 'g-2' }),
   )
+  // tcReview=1 — ячейка «КП / Документы» со всем, что в ней бывает: проверка КП (вердикт, кто проверил,
+  // замечания, сводная, отправка подрядчику), метка версии, второе КП и четыре документа у «Подрядчик 02»
+  // (больше трёх — список документов свёрнут), разные статусы участников. Файлы tcFiles=1 не меняются.
+  if (params.get('tcReview') === '1') {
+    const fdb = window.__fakeDb
+    const patch = (id, extra) => Object.assign(fdb.tender_proposal_files.find((r) => r.id === id), extra)
+    patch('tpf-1', { review_required: true, review_status: 'approved', reviewed_by: 'Петрова Анна Сергеевна',
+      reviewed_at: '2026-10-19T09:30:00Z', summary_added: true, summary_added_at: '2026-10-19T12:00:00Z', summary_added_by: 'Петрова А. С.' })
+    patch('tpf-2', { review_required: true, review_status: 'pending', version_label: 'после переторжки' })
+    patch('tpf-4', { review_required: true, review_status: 'approved', reviewed_by: 'Смирнов Дмитрий Викторович',
+      reviewed_at: '2026-10-21T08:00:00Z', summary_added: false })
+    fdb.tender_proposal_files.push(
+      file('tpf-5', 'cp-2', 'КП Подрядчик 02 — кровля и водосток, корпус 2, секции 1–4.pdf', {
+        proposal_group_id: 'g-3', created_at: '2026-10-22T08:15:00Z', review_required: true, review_status: 'has_remarks',
+        review_note: 'Нет цены на водосточную систему, объём кровли меньше ВОР на 120 м², гарантия 2 года вместо 5 по условиям тендера.',
+        reviewed_by: 'Смирнов Дмитрий Викторович', reviewed_at: '2026-10-23T10:00:00Z', remarks_send_required: true,
+        remarks_sent: false, summary_added: true, summary_added_at: '2026-10-23T11:00:00Z' }),
+      ...['Карточка предприятия.pdf', 'Свидетельство СРО.pdf', 'Лицензия МЧС.pdf', 'Бухгалтерский баланс 2025.pdf']
+        .map((name, i) => file(`tpf-${6 + i}`, 'cp-2', name, { file_kind: 'attachment', created_at: `2026-10-1${5 + i}T07:0${i}:00Z` })),
+    )
+    for (const row of fdb.tender_proposal_files.filter((r) => r.id === 'tpf-5' || r.id === 'tpf-7')) {
+      row.s3.uploaded_by_name = 'Крюкова Юлия Денисовна'
+    }
+    const status = { 'tc-3': 'accepted_for_work', 'tc-4': 'declined' }
+    for (const tc of fdb.tender_counterparties) if (status[tc.id]) tc.status = status[tc.id]
+  }
 }
 
 // Публичная страница тендеров (/public/tenders) читает только представление public_open_tenders (20261016,

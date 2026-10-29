@@ -5,6 +5,7 @@ import { db } from '../api'
 import { deleteDocument, uploadFile } from './s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { STAGE_FIELDS, ACTIVE_PART_OR, DONE_PART_OR } from '../utils/kpReviewStages'
+import { buildFilesTimeline } from '../utils/proposalTimeline'
 
 // task 431: статусы проверки КП аналитиком-экономистом.
 export const KP_REVIEW_STATUS = {
@@ -18,10 +19,10 @@ export const KP_REVIEW_LABEL = {
   has_remarks: 'Есть замечания',
 }
 
-// Возвращает структуру для UI:
+// Лента файлов одного участника для ячейки «КП / Документы» (utils/proposalTimeline.js):
 //   {
-//     proposals: [{ groupId, latest, older: [...] }, ...]  // группы КП, в каждой последняя версия впереди
-//     attachments: [...]                                   // прочие документы (новые сверху)
+//     proposals: [{ file, version, versions, replacedAt, groupId }, ...]  // КП, старые сверху
+//     attachments: [...]                                                  // документы, старые сверху
 //   }
 export async function fetchProposalFiles(tenderId, counterpartyId) {
   if (!tenderId || !counterpartyId) return { proposals: [], attachments: [] }
@@ -31,33 +32,11 @@ export async function fetchProposalFiles(tenderId, counterpartyId) {
     .select('*, s3:s3_documents!s3_document_id(*), review_note_s3:s3_documents!review_note_s3_document_id(*)')
     .eq('tender_id', tenderId)
     .eq('counterparty_id', counterpartyId)
-    .order('created_at', { ascending: false })
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
 
   if (error) throw error
-
-  const proposalsMap = new Map()
-  const attachments = []
-  for (const row of data || []) {
-    if (row.file_kind === 'attachment') {
-      attachments.push(row)
-    } else {
-      // Должен быть proposal_group_id; на всякий случай fallback на row.id —
-      // тогда КП без группы будет одиночным элементом.
-      const key = row.proposal_group_id || row.id
-      if (!proposalsMap.has(key)) proposalsMap.set(key, [])
-      proposalsMap.get(key).push(row)
-    }
-  }
-
-  const proposals = Array.from(proposalsMap.entries()).map(([groupId, files]) => ({
-    groupId,
-    latest: files[0],          // newest version
-    older: files.slice(1),     // older versions (already DESC by created_at)
-  }))
-  // Группы — самые свежие сверху (по дате последней версии).
-  proposals.sort((a, b) => new Date(b.latest.created_at) - new Date(a.latest.created_at))
-
-  return { proposals, attachments }
+  return buildFilesTimeline(data)
 }
 
 // Все файлы участников тендера одним запросом — для «Скачать всё» (utils/tenderFilesArchive.js);

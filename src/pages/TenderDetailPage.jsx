@@ -14,6 +14,7 @@ import { sanitizeUserText, sanitizeDeep } from '../utils/text'
 import { describeSupabaseError, isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
 import { useRole } from '../contexts/RoleContext'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
+import ParticipantStatusSelect from '../components/ParticipantStatusSelect'
 import TenderFilesZipButton from '../components/TenderFilesZipButton'
 import TenderProposalsCompare from '../components/TenderProposalsCompare'
 import VorDocsModal from '../components/VorDocsModal'
@@ -1696,16 +1697,6 @@ function TenderDetailPage() {
     }
   }
 
-  const getCounterpartyStatusColor = (status) => {
-    const colors = {
-      'request_sent': '#6366f1',
-      'declined': '#b91c1c',
-      'proposal_provided': '#15803d',
-      'accepted_for_work': '#4338ca'
-    }
-    return colors[status] || '#64748b'
-  }
-
   const uniqueAvailableWorkTypes = useMemo(() => [...new Set(
     availableCounterparties
       .flatMap(c => (c.work_type || '').split(',').map(wt => wt.trim()))
@@ -2634,7 +2625,7 @@ function TenderDetailPage() {
                       <th>Контакт</th>
                       <th style={{ width: '140px' }}>Телефон</th>
                       <th style={{ width: '190px' }}>Статус</th>
-                      <th style={{ width: '280px' }}>
+                      <th style={{ width: '23rem', minWidth: '21rem' }}>
                         <div className="tc-files-head">
                           <TenderFilesZipButton tender={tender} participants={tenderCounterparties} />
                           <span>КП / Документы</span>
@@ -2716,27 +2707,11 @@ function TenderDetailPage() {
                             ) : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
                           </td>
                           <td>
-                            <select
-                              value={tc.status || 'request_sent'}
-                              onChange={(e) => handleUpdateParticipantStatus(tc.id, e.target.value)}
+                            <ParticipantStatusSelect
+                              value={tc.status}
+                              onChange={(v) => handleUpdateParticipantStatus(tc.id, v)}
                               disabled={!canEditTenders}
-                              style={{
-                                padding: '0.25rem 0.5rem',
-                                borderRadius: '4px',
-                                border: '1px solid var(--border-color)',
-                                background: 'var(--bg-secondary)',
-                                color: getCounterpartyStatusColor(tc.status || 'request_sent'),
-                                fontWeight: 600,
-                                fontSize: '0.8125rem',
-                                cursor: canEditTenders ? 'pointer' : 'default',
-                                width: '100%'
-                              }}
-                            >
-                              <option value="request_sent">Запрос отправлен</option>
-                              <option value="accepted_for_work">Принято в работу</option>
-                              <option value="proposal_provided">КП предоставлено</option>
-                              <option value="declined">Отказ</option>
-                            </select>
+                            />
                             {kpUploadedAt[tc.counterparty_id] && (
                               <div
                                 title="Когда КП загрузили на сайт"

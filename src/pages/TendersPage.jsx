@@ -23,6 +23,8 @@ import DocStorageStructureModal from '../components/DocStorageStructureModal'
 import TenderDocsModal from '../components/TenderDocsModal'
 import { TENDERS_STRUCTURE } from '../utils/docStorageStructures'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
+import ParticipantStatusSelect from '../components/ParticipantStatusSelect'
+import { participantStatusKey, participantStatusLabel } from '../utils/participantStatus'
 import VorDocsModal from '../components/VorDocsModal'
 import VorRdModal from '../components/VorRdModal'
 import { VOR_RD_CATEGORIES, countVorRdDocs } from '../services/tenderVorRd'
@@ -432,27 +434,7 @@ ${ATTACHMENT_BLOCK}
     : (status === 'Завершен')
   const initialStatusValue = isMaterialsView ? 'Не начат' : initialMainTenderStatus(department)
 
-  const counterpartyStatusOptions = [
-    { value: 'request_sent', label: 'Запрос отправлен' },
-    { value: 'accepted_for_work', label: 'Принято в работу' },
-    { value: 'proposal_provided', label: 'КП предоставлено' },
-    { value: 'declined', label: 'Отказ' }
-  ]
-
-  const getCounterpartyStatusLabel = (status) => {
-    const option = counterpartyStatusOptions.find(opt => opt.value === status)
-    return option ? option.label : status
-  }
-
-  const getCounterpartyStatusColor = (status) => {
-    const colors = {
-      'request_sent': '#6b7a99',
-      'declined': '#9c6b6b',
-      'proposal_provided': '#5a8a72',
-      'accepted_for_work': '#4338ca'
-    }
-    return colors[status] || '#64748b'
-  }
+  const getCounterpartyStatusLabel = participantStatusLabel
 
   useEffect(() => {
     // Сразу — только то, что нужно для таблицы. Счётчики КП и документов идут после
@@ -4446,7 +4428,9 @@ ${ATTACHMENT_BLOCK}
                                   <th style={{ width: '13%' }}>Контактные данные</th>
                                   <th style={{ width: '140px' }}>Email</th>
                                   <th style={{ width: '190px' }}>Статус</th>
-                                  <th style={{ width: '280px' }}>КП / Документы</th>
+                                  {/* Лента КП и документов с датами (TenderCounterpartyFiles) — шире
+                                      прежних 280px: дата слева, имя файла не режется до «КП Подр…». */}
+                                  <th style={{ width: '23rem', minWidth: '21rem' }}>КП / Документы</th>
                                   {!hideNotes && <th>Примечание</th>}
                                   <th style={{ width: '56px' }}></th>
                                 </tr>
@@ -4575,20 +4559,10 @@ ${ATTACHMENT_BLOCK}
                                       )}
                                     </td>
                                     <td>
-                                      <FilterDropdown
-                                        className="tc-status-fdrop"
-                                        style={{ '--tc-color': getCounterpartyStatusColor(tc.status || 'request_sent') }}
-                                        label=""
-                                        value={tc.status || 'request_sent'}
+                                      <ParticipantStatusSelect
+                                        value={tc.status}
                                         onChange={(v) => handleUpdateCounterpartyStatus(tender.id, tc.id, v)}
-                                        options={counterpartyStatusOptions}
                                         disabled={!canEditTenders}
-                                        renderOption={(o) => (
-                                          <span className="tc-status-opt">
-                                            <span className="tc-status-dot" style={{ background: getCounterpartyStatusColor(o.value) }} />
-                                            {o.label}
-                                          </span>
-                                        )}
                                       />
                                     </td>
                                     <td style={{ verticalAlign: 'top' }}>
@@ -5670,16 +5644,19 @@ ${ATTACHMENT_BLOCK}
                                   {tc.counterparties.work_type}
                                 </div>
                               )}
-                              <div style={{
-                                fontSize: '0.75rem',
-                                marginTop: '0.25rem',
-                                padding: '0.25rem 0.5rem',
-                                borderRadius: '4px',
-                                display: 'inline-block',
-                                backgroundColor: 'var(--bg-tertiary)',
-                                color: getCounterpartyStatusColor(tc.status)
-                              }}>
-                                {getCounterpartyStatusLabel(tc.status || 'request_sent')}
+                              <div
+                                className={`tc-st-${participantStatusKey(tc.status)}`}
+                                style={{
+                                  fontSize: '0.75rem',
+                                  marginTop: '0.25rem',
+                                  padding: '0.25rem 0.5rem',
+                                  borderRadius: '4px',
+                                  display: 'inline-block',
+                                  backgroundColor: 'var(--bg-tertiary)',
+                                  color: 'var(--tc-color)'
+                                }}
+                              >
+                                {getCounterpartyStatusLabel(participantStatusKey(tc.status))}
                               </div>
                               {selected && (
                                 <div

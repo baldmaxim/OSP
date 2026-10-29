@@ -250,7 +250,7 @@ describe('Скачать всё у участника: карточка тенд
     page.on('dialog', (d) => { errors.push(`окно: ${d.message()}`); d.accept() })
     await page.goto(`${stand.url}?route=/tenders/tender-1&items=20&cps=3&latency=0&tcFiles=1${query}`)
     await page.locator('.tender-tab', { hasText: 'Участники' }).click({ timeout: 120000 })
-    await page.locator('.participants-section tbody tr').nth(2).locator('.tcpf-toggle-header').waitFor({ timeout: 30000 })
+    await page.locator('.participants-section tbody tr').nth(2).locator('.tcpf[aria-busy="false"]').waitFor({ timeout: 30000 })
     return { page, errors, close: () => context.close().catch(() => {}) }
   }
   const row = (page, name) => page.locator('.participants-section tbody tr').filter({ hasText: name })
