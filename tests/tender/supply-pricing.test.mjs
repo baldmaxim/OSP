@@ -485,6 +485,29 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
+  // Тендер № 38 на проде: цены снабжения поставлены в июне по вкладке «ВОР», тендер на материалы завершён раньше,
+  // чем появились списки позиций, — таблица была пустой, все цены лежали в «Ценах без позиции».
+  it('расценка закрыта, а списка позиций нет — позиции по вкладке «ВОР», цены на месте, в базу ничего не пишется', async () => {
+    for (const query of ['&qPriced=1&qMatStatus=%D0%97%D0%B0%D0%B2%D0%B5%D1%80%D1%88%D1%91%D0%BD', '&qPriced=1&canEdit=0']) {
+      const { page, context, errors } = await open(query, '/tenders/materials/mat-q/pricing')
+      try {
+        await page.getByText('ВОР «Корпус 7»', { exact: true }).waitFor({ timeout: 120000 })
+        await page.getByText('в расценку не загружался — позиции показаны по вкладке', { exact: false }).waitFor()
+        const cable = page.getByLabel(price('Кабель ВВГнг 3×2,5', 'Корпус 7'))
+        assert.match(plain(await cable.inputValue()), /120,00/, query)
+        assert.equal(await cable.isDisabled(), true, query)
+        assert.match(plain(await page.locator('.sp-summary-inline').innerText()), /Расценено1из2·Итого480000,00₽/, query)
+        assert.equal(await page.locator('.sp-orphans').count(), 0, `цены без позиции не остаются (${query})`)
+        await page.waitForTimeout(300)
+        assert.equal(await page.evaluate(() => window.__fakeDb.tender_supply_sources.filter((s) => s.tender_id === 'tender-q').length), 0,
+          `список позиций в базу не записан (${query})`)
+        assert.deepEqual(errors, [])
+      } finally {
+        await context.close()
+      }
+    }
+  })
+
   it('без права правки — только просмотр, цены видны; незагруженный файл — подсказка, а не ошибка', async () => {
     const { page, context, errors } = await openPage('&canEdit=0&brokenFile=1')
     try {

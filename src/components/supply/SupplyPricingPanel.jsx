@@ -21,7 +21,7 @@ import {
   loadRatesByIds, loadRevisions, loadRevisionsMarker, loadSources, loadSuggestionCounts, loadVorFiles, markSeparate, removeLinks,
   loadSupplyOffers, renameEstimate, reviewRevisions, saveLinks, saveRate, saveSource, sourcesSignature, SUGGEST_BATCH, uploadSupplyDoc,
 } from '../../services/supplyPricing'
-import { fmtPriceDate, isFreshPriceDate, rateUnitPrice } from '../../utils/supplyRateHelpers'
+import { fmtPriceDate, isFreshPriceDate, normName, rateUnitPrice } from '../../utils/supplyRateHelpers'
 import { formatAmount, parseAmount, roundMoney } from '../../utils/money'
 import { positionsFromEstimate } from '../../utils/vorMaterials'
 import { VOR_PARSER_VERSION } from '../../utils/vorFiles'
@@ -668,8 +668,27 @@ export default function SupplyPricingPanel({
   reloadOffersRef.current = reloadOffers
   useEffect(() => { if (!loading && !missing && active) reloadOffers() }, [loading, missing, active, reloadOffers])
 
+  // Расценку нельзя дополнить (тендер на материалы «Завершён» или нет права правки), а у ВОР с ценами нет списка
+  // позиций в базе: цены ставили до расценки на сайте — по вкладке «ВОР» карточки (тендер № 38: 1 091 цена, тендер
+  // на материалы завершён раньше, чем появились списки). Записать список такой расценке нельзя, поэтому позиции этих
+  // ВОР показываются по вкладке «ВОР» — только на экране, в базу ничего не пишется. Правило то же, что у
+  // автозагрузки: есть списки из файлов ВОР — вкладка не нужна. Зависит от набора ВОР с ценами, а не от самих цен.
+  // Ключ позиции k в базе ставит триггер (supply_norm_name), здесь — его порт normName.
+  const pricedDocs = useMemo(() => [...new Set(rates.map((r) => r.estimate_name))].sort().join('\n'), [rates])
+  const tabFallback = useMemo(() => {
+    if (editable || !estimate || !pricedDocs) return []
+    const priced = new Set(pricedDocs.split('\n'))
+    return planTabImports(sources, estimate.docs, estimate.signatures)
+      .filter((j) => !j.existing && j.positions.length && priced.has(j.name))
+      .map((j) => ({
+        id: null, estimate_name: j.name, source: 'vor_tab', source_version: j.version, displayOnly: true,
+        positions: j.positions.map((p) => ({ ...p, k: normName(p.name) })),
+      }))
+  }, [editable, estimate, pricedDocs, sources])
+
   // Позиции — только от списков (не пересобираются при каждой цене: строки таблицы не перерисовываются зря).
-  const sourceViews = useMemo(() => sources.map((s) => ({ source: s, name: s.estimate_name, positions: mergePositions(s.positions) })), [sources])
+  const sourceViews = useMemo(() => [...sources, ...tabFallback]
+    .map((s) => ({ source: s, name: s.estimate_name, positions: mergePositions(s.positions) })), [sources, tabFallback])
 
   // Цены поставщиков по позициям («ВОР∣ключ» → [{ line, score, exact, picked, unitOk }]): строки документов «в
   // похожие цены» → похожие позиции (utils/supplyDocMatch.offerMatches). Сначала выбранные при загрузке и с тем же
@@ -1746,7 +1765,9 @@ export default function SupplyPricingPanel({
             {s.source === 'vor_file'
               ? <>файл «{s.file_name || 'удалён'}», лист «{s.sheet_name || 'Материалы'}»{s.column_map?.mode === 'code' ? ', строки с кодом «мат.»' : ''}</>
               : <>вкладка «ВОР» карточки тендера</>}
-            <span> · загружено {fmtTime(s.parsed_at)}{s.parsed_by ? (nameOf(s.parsed_by) ? `, ${nameOf(s.parsed_by)}` : '') : ' автоматически'}</span>
+            {s.displayOnly
+              ? <span> · в расценку не загружался — позиции показаны по вкладке</span>
+              : <span> · загружено {fmtTime(s.parsed_at)}{s.parsed_by ? (nameOf(s.parsed_by) ? `, ${nameOf(s.parsed_by)}` : '') : ' автоматически'}</span>}
             {s.source === 'vor_file' && s.s3_document_id && files.some((f) => f.id === s.s3_document_id) && (
               <>
                 <button type="button" className="sp-link-btn" onClick={() => downloadFile(s.s3_document_id)}>скачать файл</button>

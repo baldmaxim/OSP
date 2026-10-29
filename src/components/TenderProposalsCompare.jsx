@@ -17,7 +17,15 @@ const EMPTY_MAP = new Map()
 // Только колонки, которые реально нужны сравнению. `*` тянул ещё примечания
 // участника и служебные поля, а встроенный join counterparties(id, name)
 // повторял название контрагента в каждой из десятков тысяч строк.
-const PROPOSAL_COLUMNS = 'id, counterparty_id, estimate_item_id, unit_price_materials, unit_price_works, total_materials, total_works, total_cost, proposal_date, covered_elsewhere, coverage_note, created_at'
+const BASE_COLUMNS = 'id, counterparty_id, estimate_item_id, unit_price_materials, unit_price_works, total_materials, total_works, total_cost, proposal_date, created_at'
+// Пометка «учтено в другой позиции» (task 401) — колонки миграции 20260606, а её нет ни в одной базе портала
+// (ни в Supabase, ни в базе Яндекса): выборка с ними отвечала 42703, и с 11.09 «Сравнение КП» было пустым у всех
+// тендеров. Колонок нет — КП читаются без них, пометки «учтено» нет. Ответ базы запоминается на всю вкладку.
+const COVERAGE_COLUMNS = 'covered_elsewhere, coverage_note'
+let coverageColumns = null // null — ещё не спрашивали, true — есть, false — нет
+const proposalColumns = () => (coverageColumns === false ? BASE_COLUMNS : `${BASE_COLUMNS}, ${COVERAGE_COLUMNS}`)
+const isCoverageMissing = (err) => ['42703', 'PGRST204'].includes(String(err?.code || ''))
+  && /covered_elsewhere|coverage_note/.test(String(err?.message || ''))
 
 // Загруженные КП по тендеру живут между переключениями вкладок: вкладка
 // размонтируется при уходе, и раньше каждый возврат заново качал все КП.
@@ -86,6 +94,7 @@ function TenderProposalsCompare({
   const [selectedDoc, setSelectedDoc] = useState('all')
   const [subTab, setSubTab] = useState('source') // 'source' | 'materials' | 'works'
   const [showUploadModal, setShowUploadModal] = useState(false)
+  const [coverageOn, setCoverageOn] = useState(coverageColumns !== false)
 
   // Если активный ВОР пропал — переключаемся на 'all'.
   useEffect(() => {
@@ -129,12 +138,22 @@ function TenderProposalsCompare({
     try {
       // task 399: пагинация — Supabase отдаёт максимум 1000 строк за запрос.
       // Страницы идут параллельно, тай-брейк по id — однозначный порядок страниц.
-      const all = await fetchAllRowsParallel((from, to, withCount) => db
+      const fetchAll = () => fetchAllRowsParallel((from, to, withCount) => db
         .from('tender_counterparty_proposals')
-        .select(PROPOSAL_COLUMNS, withCount ? { count: 'exact' } : undefined)
+        .select(proposalColumns(), withCount ? { count: 'exact' } : undefined)
         .eq('tender_id', tenderId)
         .order('id', { ascending: true })
         .range(from, to))
+      let all
+      try {
+        all = await fetchAll()
+        if (coverageColumns === null) coverageColumns = true
+      } catch (err) {
+        if (coverageColumns === false || !isCoverageMissing(err)) throw err
+        coverageColumns = false
+        setCoverageOn(false)
+        all = await fetchAll()
+      }
       const names = await resolveNames(all)
       proposalsCache.set(tenderId, { rows: all, names })
       setCpNames(names)
@@ -483,7 +502,7 @@ function TenderProposalsCompare({
             covered_elsewhere: true,
             coverage_note: note || null,
           }, { onConflict: 'estimate_item_id,counterparty_id' })
-          .select(PROPOSAL_COLUMNS)
+          .select(proposalColumns())
         if (error) throw error
         mergeProposalRows(data || [])
       } else {
@@ -502,7 +521,7 @@ function TenderProposalsCompare({
             .from('tender_counterparty_proposals')
             .update({ covered_elsewhere: false, coverage_note: null })
             .eq('id', p.id)
-            .select(PROPOSAL_COLUMNS)
+            .select(proposalColumns())
           if (error) throw error
           mergeProposalRows(data || [])
         }
@@ -535,7 +554,7 @@ function TenderProposalsCompare({
               })),
               { onConflict: 'estimate_item_id,counterparty_id' }
             )
-            .select(PROPOSAL_COLUMNS)
+            .select(proposalColumns())
           if (error) throw error
           mergeProposalRows(data || [])
         }
@@ -561,7 +580,7 @@ function TenderProposalsCompare({
             .from('tender_counterparty_proposals')
             .update({ covered_elsewhere: false, coverage_note: null })
             .in('id', pricedIds.slice(i, i + 100))
-            .select(PROPOSAL_COLUMNS)
+            .select(proposalColumns())
           if (error) throw error
           mergeProposalRows(data || [])
         }
@@ -701,7 +720,7 @@ function TenderProposalsCompare({
               totalsByCp={totalsByCp}
               minTotalCost={minTotalCost}
               showDocColumn={selectedDoc === 'all'}
-              canEdit={canEdit}
+              canEdit={canEdit && coverageOn}
               onToggleCovered={handleToggleCovered}
               supplyRatesMap={supplyRatesMap}
             />
@@ -713,7 +732,7 @@ function TenderProposalsCompare({
               counterpartiesInScope={counterpartiesInScope}
               totalsByCp={totalsByCp}
               showGroupHeaders={selectedDoc === 'all'}
-              canEdit={canEdit}
+              canEdit={canEdit && coverageOn}
               onToggleCovered={handleToggleCoveredBatch}
               supplyRatesMap={supplyRatesMap}
             />

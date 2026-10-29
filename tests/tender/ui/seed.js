@@ -243,10 +243,12 @@ if (BIG_PRICING > 0) {
 }
 
 // Тендер без файлов ВОР: позиции берутся из вкладки «ВОР» карточки (tender_estimate_items).
+//   qMatStatus — статус его тендера на материалы; qPriced=1 — цены снабжения поставлены до расценки на сайте (по
+//   вкладке «ВОР», только supply_price), списка позиций в базе нет — как у тендера № 38 на проде.
 window.__fakeDb.tenders.push(
   { id: 'tender-q', tender_type: 'main', department: 'warranty', public_tender_number: 301, status: 'Идет тендерная процедура',
     work_description: 'Электромонтажные работы', object_id: 'obj-2', objects: objects[1], deleted_at: null, parent_tender_id: null },
-  { id: 'mat-q', tender_type: 'materials', department: 'warranty', public_tender_number: 302, status: 'В работе',
+  { id: 'mat-q', tender_type: 'materials', department: 'warranty', public_tender_number: 302, status: params.get('qMatStatus') || 'В работе',
     work_description: 'Электромонтажные работы', object_id: 'obj-2', objects: objects[1], deleted_at: null, parent_tender_id: 'tender-q' },
 )
 window.__fakeDb.tender_estimate_items.push(
@@ -254,6 +256,14 @@ window.__fakeDb.tender_estimate_items.push(
   { id: 'q-2', tender_id: 'tender-q', estimate_name: 'Корпус 7', row_number: 2, code: 'мат.', cost_name: 'Кабель ВВГнг 3×2,5', unit: 'м', work_volume: null, material_consumption: 4000, is_section: false, outline_level: 1, created_at: '2026-10-01T10:00:00Z' },
   { id: 'q-3', tender_id: 'tender-q', estimate_name: 'Корпус 7', row_number: 3, code: 'мат.', cost_name: 'Щит ЩРН-12', unit: 'шт', work_volume: null, material_consumption: 3, is_section: false, outline_level: 1, created_at: '2026-10-01T10:00:00Z' },
 )
+if (params.get('qPriced') === '1') {
+  window.__fakeDb.tender_vor_supply_rates.push({
+    id: 'rate-q-1', tender_id: 'tender-q', estimate_name: 'Корпус 7', material_name: 'Кабель ВВГнг 3×2,5', unit: 'м',
+    supply_price: 120, supply_price_exact: null, supply_total: null, price_input: null, input_value: null, volume_at_input: null,
+    row_version: 1, updated_by: null, updated_at: '2026-06-10T10:00:00Z', created_at: '2026-06-10T10:00:00Z',
+    material_key: normName('Кабель ВВГнг 3×2,5'), price_date: '2026-06-10',
+  })
+}
 window.__fakeDb.tender_vor_supply_rates.push({
   id: 'rate-p-3', tender_id: 'tender-p', estimate_name: 'ОВ', material_name: 'Изоляция K-Flex 13×15', unit: 'м',
   supply_price: 96, supply_price_exact: null, supply_total: 105600, price_input: 'unit', input_value: 96, volume_at_input: 1100,

@@ -32,6 +32,38 @@ describe('Карточка тендера: производительность 
     assert.ok(m.compareReturnMs < m.compareLoadMs / 2, `возврат на вкладку показывает кэш (${m.compareReturnMs} мс против ${m.compareLoadMs} мс)`)
   })
 
+  // Колонок пометки «учтено» (миграция 20260606) нет ни в одной базе портала: выборка с ними отвечала 42703, и с
+  // 11.09 «Сравнение КП» было пустым у всех тендеров («ещё не загружено ни одного КП»).
+  it('«Сравнение КП» без колонок «учтено» в базе: КП видны, пометки «учтено» нет', async () => {
+    for (const missing of [false, true]) {
+      const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 1600, height: 1000 } })
+      if (missing) {
+        await context.addInitScript(() => {
+          window.__fakeMissingColumns = { tender_counterparty_proposals: ['covered_elsewhere', 'coverage_note'] }
+        })
+      }
+      const page = await context.newPage()
+      const errors = []
+      page.on('pageerror', (e) => errors.push(e.message))
+      page.on('console', (msg) => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) errors.push(msg.text()) })
+      try {
+        await page.goto(`${stand.url}?items=300&cps=3&tenders=2&latency=5`)
+        await page.getByRole('button', { name: /Сравнение КП/ }).click({ timeout: 120000 })
+        await page.locator('.proposals-subtab').first().waitFor({ timeout: 60000 })
+        assert.equal(await page.getByText('ещё не загружено ни одного КП', { exact: false }).count(), 0)
+        await page.getByText('Подрядчик 03', { exact: false }).first().waitFor()
+        // У «Подрядчика 01» часть материалов без цены — с колонками у них отметка «учтено», без колонок её нет.
+        assert.equal(await page.locator('.covered-check').count() > 0, !missing, missing ? 'без колонок' : 'с колонками')
+        const selects = await page.evaluate(() => window.__supabaseStats.requests
+          .filter((r) => r.table === 'tender_counterparty_proposals' && r.op === 'select').length)
+        assert.ok(selects >= 1)
+        assert.deepEqual(errors, [])
+      } finally {
+        await context.close()
+      }
+    }
+  })
+
   // Реестр тендеров: онлайн-события по участникам. Раньше каждое событие перечитывало участников всех
   // тендеров реестра (по запросу на каждые 60 тендеров) — сразу и в каждой открытой вкладке.
   it('реестр: правка участника перечитывает счётчики только его тендера, серия правок — одним запросом', async () => {
