@@ -4,7 +4,7 @@
      • пока страница открыта, на <body> висит ui-work-portal (useBodyClass) —
        для всплывающих окон, которые рисуются порталом вне страницы.
    Сейчас подключено: «Планы затрат», «Тендеры — Основное строительство»,
-   «Тендеры на материалы», «Заявка на ДС», «Проверка КП». Остальные страницы не затронуты:
+   «Тендеры на материалы», «Заявка на ДС», «Проверка КП», «Договоры и ДС». Остальные страницы не затронуты:
    у них нет ни класса, ни body-класса.
 
    Префикс .ui-work.ui-work — не опечатка. Повтор класса поднимает специфичность
@@ -248,7 +248,7 @@ body.ui-work-portal :is(.fdrop-panel, .drc-pop, .status-dropdown-menu-portal, .d
 
 /* ── Панель: поиск, фильтры, действия над данными ───────────────────────────
    При нехватке места переносится на следующую строку, элементы не сжимаются. */
-.ui-work.ui-work :is(.cost-plans-toolbar, .tp-filters, .dcr-toolbar) {
+.ui-work.ui-work :is(.cost-plans-toolbar, .tp-filters, .dcr-toolbar, .cr-toolbar) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -273,7 +273,7 @@ body.ui-work-portal :is(.fdrop-panel, .drc-pop, .status-dropdown-menu-portal, .d
   color: var(--text-tertiary);
   pointer-events: none;
 }
-.ui-work.ui-work :is(.cost-plans-search, .tp-search, .dcr-search) {
+.ui-work.ui-work :is(.cost-plans-search, .tp-search, .dcr-search, .cr-search) {
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;
@@ -288,14 +288,14 @@ body.ui-work-portal :is(.fdrop-panel, .drc-pop, .status-dropdown-menu-portal, .d
   line-height: var(--ui-text-lh);
   box-shadow: none;
 }
-.ui-work.ui-work :is(.cost-plans-search, .tp-search, .dcr-search)::placeholder { color: var(--text-tertiary); opacity: 1; }
-.ui-work.ui-work :is(.cost-plans-search, .tp-search, .dcr-search):focus {
+.ui-work.ui-work :is(.cost-plans-search, .tp-search, .dcr-search, .cr-search)::placeholder { color: var(--text-tertiary); opacity: 1; }
+.ui-work.ui-work :is(.cost-plans-search, .tp-search, .dcr-search, .cr-search):focus {
   outline: none;
   border-color: var(--primary-color);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
 }
 /* Фильтры (FilterDropdown) в панели */
-.ui-work.ui-work :is(.cost-plans-toolbar, .tp-filters, .dcr-toolbar) .fdrop-trigger {
+.ui-work.ui-work :is(.cost-plans-toolbar, .tp-filters, .dcr-toolbar, .cr-toolbar) .fdrop-trigger {
   height: var(--ui-control-h);
   min-height: var(--ui-control-h);
   max-width: 17rem;
@@ -304,10 +304,10 @@ body.ui-work-portal :is(.fdrop-panel, .drc-pop, .status-dropdown-menu-portal, .d
   font-size: var(--ui-text);
   line-height: var(--ui-text-lh);
 }
-.ui-work.ui-work :is(.cost-plans-toolbar, .tp-filters, .dcr-toolbar) .fdrop-value { font-weight: var(--ui-medium); }
+.ui-work.ui-work :is(.cost-plans-toolbar, .tp-filters, .dcr-toolbar, .cr-toolbar) .fdrop-value { font-weight: var(--ui-medium); }
 /* Выбранный фильтр отмечен рамкой и подложкой; текст — основным цветом:
    бирюзовый на светло-бирюзовом читался с контрастом ~3,5:1. */
-.ui-work.ui-work :is(.cost-plans-toolbar, .tp-filters, .dcr-toolbar) .fdrop.is-active .fdrop-value { color: var(--text-primary); }
+.ui-work.ui-work :is(.cost-plans-toolbar, .tp-filters, .dcr-toolbar, .cr-toolbar) .fdrop.is-active .fdrop-value { color: var(--text-primary); }
 .ui-work.ui-work .tender-filter-item { display: inline-flex; align-items: center; gap: 0.375rem; }
 .ui-work.ui-work .tender-filter-label {
   font-size: var(--ui-text);
@@ -315,7 +315,7 @@ body.ui-work-portal :is(.fdrop-panel, .drc-pop, .status-dropdown-menu-portal, .d
   color: var(--text-secondary);
 }
 /* Сброс фильтров — второстепенная кнопка той же высоты. */
-.ui-work.ui-work :is(.reset-btn, .tp-filters-reset, .dcr-filter-clear) {
+.ui-work.ui-work :is(.reset-btn, .tp-filters-reset, .dcr-filter-clear, .cr-filter-clear) {
   display: inline-flex;
   align-items: center;
   width: auto;
@@ -329,7 +329,7 @@ body.ui-work-portal :is(.fdrop-panel, .drc-pop, .status-dropdown-menu-portal, .d
   font-weight: var(--ui-medium);
   cursor: pointer;
 }
-.ui-work.ui-work :is(.reset-btn, .tp-filters-reset, .dcr-filter-clear):hover { background: var(--hover-bg); color: var(--text-primary); }
+.ui-work.ui-work :is(.reset-btn, .tp-filters-reset, .dcr-filter-clear, .cr-filter-clear):hover { background: var(--hover-bg); color: var(--text-primary); }
 .ui-work.ui-work .cp-shown { font-size: var(--ui-hint); line-height: var(--ui-hint-lh); color: var(--text-secondary); }
 .ui-work.ui-work .cp-shown b { font-weight: var(--ui-semibold); font-variant-numeric: tabular-nums; }
 

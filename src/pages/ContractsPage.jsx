@@ -16,7 +16,10 @@ import VorDivisionFilter from '../components/VorDivisionFilter'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
 import ContractDocsModal from '../components/ContractDocsModal'
 import { CONTRACTS_STRUCTURE } from '../utils/docStorageStructures'
-import { IconDocsStack, IconColumns, IconColumnsWide } from '../components/icons/ToolbarIcons'
+import { IconDocsStack, IconColumns, IconColumnsWide, IconSearch, IconObject, IconUser, IconTag } from '../components/icons/ToolbarIcons'
+import { IconContracts } from '../components/icons/NavIcons'
+import IconTile from '../components/IconTile'
+import useBodyClass from '../hooks/useBodyClass'
 // Модалка импорта тянет тяжёлый xlsx-js-style — грузим лениво, только при открытии.
 const ContractsImportModal = lazy(() => import('../components/ContractsImportModal'))
 import { fetchCounterpartyDocSummary, deleteDocument } from '../services/s3'
@@ -61,6 +64,10 @@ import '../components/ContractRegistryPolish.css'
 // Раскрытый документ (две области: работа юриста и ДС) и подразделение договора.
 import '../components/ContractRegistryExpanded.css'
 import '../components/MobileCards.css'
+// Рабочий стиль разделов (шапка, вкладки, панель — как у «Тендеров» и «Заявки на ДС»):
+// docs/UI_GUIDELINES.md. Импортируется после CSS страницы.
+import '../styles/fonts.css'
+import '../styles/workUi.css'
 
 // Реестр общий для двух отделов, поэтому у объекта показываем, к какому он относится:
 // ОС — основное строительство, ГО — гарантийное обслуживание.
@@ -389,6 +396,8 @@ function ContractRegistry() {
   const canEditContracts = canEdit('contracts')
   // Телефон: реестр рендерим карточками вместо широкой таблицы
   const isPhone = useIsPhone()
+  // Всплывающие списки (фильтры, статус) рисуются порталом в <body> — им рабочий стиль через body-класс.
+  useBodyClass('ui-work-portal')
   // Руководитель строительства (привязан к объекту) не видит внутренние примечания
   // (примечание юриста и примечания в приложениях к договору).
   const hideNotes = scopedObjectIds.length > 0
@@ -1486,7 +1495,7 @@ function ContractRegistry() {
   const sortableTh = (col, label, style) => (
     <th
       style={style}
-      className={`th-sortable ${sortKey === col ? 'th-sorted' : ''}`}
+      className={`th-sortable th-col-${col} ${sortKey === col ? 'th-sorted' : ''}`}
       onClick={() => toggleSort(col)}
       title="Сортировать"
     >
@@ -2049,12 +2058,13 @@ function ContractRegistry() {
           addLabel="Signal"
           addTitle="Указать путь к Signal"
         />
-        {/* Ссылка на карточку документа в Larix; вносится так же, как путь к Signal. */}
+        {/* Ссылка на карточку документа в Larix; вносится так же, как путь к Signal. Подпись
+            короткая («Larix», как «не в Larix»): с «Larix.CPM» строка путей не помещалась в колонку. */}
         <LarixLinkCell
           value={doc[LARIX_LINK_FIELD]}
           canEdit={canEditContracts}
           onSave={(v) => handleSaveLarixLink(doc.id, v)}
-          addLabel={LARIX_NAME}
+          addLabel="Larix"
           addTitle={`Указать путь к ${LARIX_NAME}`}
         />
       </div>
@@ -2594,12 +2604,36 @@ function ContractRegistry() {
   }
 
   return (
-    <div className="contract-registry contracts-page-v2">
+    // ui-work — общий рабочий стиль разделов (src/styles/workUi.css): шапка, вкладки и панель как у
+    // «Тендеров» и «Заявки на ДС». cr-dense — плотный вариант реестра (конец ContractRegistryPolish.css);
+    // на телефоне договоры идут карточками, их вид не меняем.
+    <div className={`contract-registry contracts-page-v2 ui-work${isPhone ? '' : ' cr-dense'}`}>
+      {/* Шапка — одна строка, как в других разделах: название с плиткой и охват реестра слева
+          (то, что показано ниже), действия раздела справа. */}
       <div className="registry-header">
-        <div className="header-left">
-          <h2>Договоры и ДС</h2>
+        <h2>
+          <IconTile tone="sand" className="page-icon-tile"><IconContracts /></IconTile>
+          Договоры и ДС
+        </h2>
+        {/* Охват реестра: сначала выбираем, какой реестр смотрим, и только потом —
+            стадию внутри него (вкладки ниже). */}
+        <div className="registry-scope" role="tablist" aria-label="Охват реестра">
+          {SCOPES.map(s => (
+            <button
+              key={s.key}
+              type="button"
+              role="tab"
+              aria-selected={scope === s.key}
+              title={s.hint}
+              className={`registry-scope-btn${scope === s.key ? ' is-active' : ''}`}
+              onClick={() => setScope(s.key)}
+            >
+              {s.label}
+              <span className="registry-scope-count">{scopeCounts[s.key]}</span>
+            </button>
+          ))}
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        <div className="cr-header-actions">
           {/* Путь к общей папке всего раздела (app_settings). Путь к папке
               конкретного договора — в его строке реестра. */}
           <RootFolderPathButton
@@ -2609,180 +2643,160 @@ function ContractRegistry() {
             placeholder="\\192.168.2.55\SharA_Tender\СУБПОДРЯДЫ ДОГОВОРА И ДС"
             onValueChange={setRootFolderPath}
           />
-          {/* Скрыть «Юрист», «Принят в работу», «План. подписания». */}
-          <button
-            type="button"
-            onClick={() => setHideTailColumns(v => !v)}
-            className={`btn-secondary${hideTailColumns ? ' is-toggled' : ''}`}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
-            aria-pressed={hideTailColumns}
-            title={hideTailColumns
-              ? 'Показать столбцы «Юрист», «Принят в работу», «План. подписания»'
-              : 'Скрыть столбцы «Юрист», «Принят в работу», «План. подписания»'}
-          >
-            {hideTailColumns ? <IconColumnsWide size={15} /> : <IconColumns size={15} />}
-            {hideTailColumns ? 'Все столбцы' : 'Скрыть столбцы'}
-          </button>
           {/* Структура хранения, приложения, импорт Excel, загрузка ПСДЦ и шаблоны — в окне «Документы»,
-              как у «Тендеров — Основное строительство»: шапка не разъезжается на две строки. */}
+              как у «Тендеров — Основное строительство». */}
           <button
             type="button"
             onClick={() => setShowDocsMenu(true)}
-            className="btn-secondary contracts-docs-btn"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
+            className="btn-view-toggle contracts-docs-btn"
             title="Шаблоны (понятийное соглашение, ДП), структура хранения, приложения, импорт Excel и загрузка ПСДЦ"
           >
-            <IconDocsStack size={15} /> Документы
+            <IconDocsStack size={15} />
+            <span>Документы</span>
           </button>
+          {/* Компактный вид — без «Юриста», «Принят в работу», «План. подписания» (они есть в раскрытой
+              строке). Как «Компактный вид» у тендеров; на телефоне таблицы нет — переключать нечего. */}
+          {!isPhone && (
+            <button
+              type="button"
+              onClick={() => setHideTailColumns(v => !v)}
+              className={`btn-view-toggle${hideTailColumns ? ' active' : ''}`}
+              aria-pressed={hideTailColumns}
+              title={hideTailColumns
+                ? 'Показать столбцы «Юрист», «Принят в работу», «План. подписания»'
+                : 'Скрыть столбцы «Юрист», «Принят в работу», «План. подписания»'}
+            >
+              {hideTailColumns ? <IconColumnsWide size={15} /> : <IconColumns size={15} />}
+              <span>{hideTailColumns ? 'Все столбцы' : 'Компактный вид'}</span>
+            </button>
+          )}
           {!isDeletedTab && canEditContracts && (
-            <button className="btn-primary" onClick={handleAddNew}>
+            <button type="button" className="btn-primary" onClick={handleAddNew}>
               + Добавить договор
             </button>
           )}
         </div>
       </div>
 
-      {/* Охват реестра. Стоит НАД статусными вкладками: сначала выбираем, какой
-          реестр смотрим, и только потом — стадию внутри него. */}
-      <div className="registry-scope" role="tablist" aria-label="Охват реестра">
-        {SCOPES.map(s => (
-          <button
-            key={s.key}
-            type="button"
-            role="tab"
-            aria-selected={scope === s.key}
-            title={s.hint}
-            className={`registry-scope-btn${scope === s.key ? ' is-active' : ''}`}
-            onClick={() => setScope(s.key)}
-          >
-            {s.label}
-            <span className="registry-scope-count">{scopeCounts[s.key]}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Вкладки (task 183 + 190) */}
+      {/* Вкладки по статусу (task 183 + 190); «Удаленные» — справа, красным. */}
       <div className="status-tabs">
         {TABS.map(tab => (
           <button
             key={tab.key}
+            type="button"
             className={`status-tab ${activeTab === tab.key ? 'active' : ''} ${tab.key === 'deleted' ? 'tab-deleted' : ''}`}
             onClick={() => setActiveTab(tab.key)}
           >
             {tab.label}
             {tabCounts[tab.key] != null && (
-              <span className="status-tab-count">{tabCounts[tab.key]}</span>
+              <span className="tab-count">{tabCounts[tab.key]}</span>
             )}
           </button>
         ))}
       </div>
 
-      {/* Панель фильтров реестра */}
-      <div className="registry-filters">
-        <div className="rf-field">
-          <span className="rf-label" id="rf-doc-kind-label">Документ</span>
-          <div className="rf-doc-kind" role="radiogroup" aria-labelledby="rf-doc-kind-label">
-            {DOC_KINDS.map(k => (
-              <button
-                key={k.key}
-                type="button"
-                role="radio"
-                aria-checked={docKind === k.key}
-                title={k.hint}
-                className={`rf-doc-kind-btn${docKind === k.key ? ' is-active' : ''}`}
-                onClick={() => changeDocKind(k.key)}
-              >
-                {k.label}
-              </button>
-            ))}
-          </div>
+      {/* Панель: что показывать и поиск с фильтрами — одной строкой, как у «Заявки на ДС»;
+          при нехватке места переносится, элементы не сжимаются. */}
+      <div className="cr-toolbar">
+        <div className="rf-doc-kind" role="radiogroup" aria-label="Документ">
+          {DOC_KINDS.map(k => (
+            <button
+              key={k.key}
+              type="button"
+              role="radio"
+              aria-checked={docKind === k.key}
+              title={k.hint}
+              className={`rf-doc-kind-btn${docKind === k.key ? ' is-active' : ''}`}
+              onClick={() => changeDocKind(k.key)}
+            >
+              {k.label}
+            </button>
+          ))}
         </div>
-        <div className="rf-field rf-field-search">
-          <label className="rf-label">Поиск</label>
+        <div className="ui-search">
+          <IconSearch />
+          {/* Короткая подсказка помещается целиком; где ищет поле — в aria-label. */}
           <input
-            type="text"
-            className="rf-search"
+            type="search"
+            className="cr-search"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            placeholder={isAmendmentsView
-              ? 'Поиск по ID, № ДС, основному договору, контрагенту'
+            placeholder={isAmendmentsView ? '№ ДС, договор, контрагент, ID' : '№, контрагент, работы, ID'}
+            aria-label={isAmendmentsView
+              ? 'Поиск по ID, номеру ДС, основному договору и контрагенту'
               : docKind === 'all'
-                ? 'Поиск по ID, № договора или ДС, контрагенту, работам'
-                : 'Поиск по ID, контрагенту, работам, № договора'}
+                ? 'Поиск по ID, номеру договора или ДС, контрагенту и работам'
+                : 'Поиск по ID, контрагенту, работам и номеру договора'}
           />
         </div>
-        <div className="rf-field rf-field-object">
-          <label className="rf-label">Объект</label>
-          <FilterDropdown
-            label=""
-            multiple
-            value={filterObjectIds}
-            onChange={setFilterObjectIds}
-            options={objectFilterOptions.map(o => ({ value: o.id, label: o.name, status: o.status }))}
-            searchable
-            searchPlaceholder="Поиск объекта…"
-            allLabel="Все объекты"
-            renderOption={(o) => (
-              <span className="obj-option">
-                <span className="obj-option-name">{o.label}</span>
-                <ObjectDeptBadge status={o.status} />
-              </span>
-            )}
-          />
-        </div>
+        <FilterDropdown
+          label=""
+          multiple
+          value={filterObjectIds}
+          onChange={setFilterObjectIds}
+          options={objectFilterOptions.map(o => ({ value: o.id, label: o.name, status: o.status }))}
+          searchable
+          searchPlaceholder="Поиск объекта…"
+          allLabel="Все объекты"
+          icon={<IconObject size={15} />}
+          renderOption={(o) => (
+            <span className="obj-option">
+              <span className="obj-option-name">{o.label}</span>
+              <ObjectDeptBadge status={o.status} />
+            </span>
+          )}
+        />
         {/* На компьютере фильтр — в заголовке «Работы», где под работами плашка подразделения
             (как у тендеров); на телефоне шапки таблицы нет, поэтому он здесь. */}
         {divisionEnabled && isPhone && (
-          <div className="rf-field">
-            <span className="rf-label">Подразделение</span>
-            <VorDivisionFilter subject="contract" value={filterDivisions} onChange={setFilterDivisions} counts={divisionCounts} />
-          </div>
+          <VorDivisionFilter subject="contract" value={filterDivisions} onChange={setFilterDivisions} counts={divisionCounts} />
         )}
         {isAmendmentsView && (
-          <div className="rf-field">
-            <label className="rf-label">Тип ДС</label>
-            <FilterDropdown
-              label=""
-              value={filterDsType}
-              onChange={setFilterDsType}
-              options={[
-                { value: '', label: 'Все типы' },
-                ...DOC_TYPES.filter(t => t.value !== DOC_TYPE.CONTRACT).map(t => ({ value: t.value, label: t.label })),
-              ]}
-              allLabel="Все типы"
-            />
-          </div>
-        )}
-        <div className="rf-field rf-field-lawyer">
-          <label className="rf-label">Ответственный юрист</label>
           <FilterDropdown
             label=""
-            value={filterLawyerId}
-            onChange={setFilterLawyerId}
-            options={lawyerDropdownOptions}
-            searchable
-            searchPlaceholder="Поиск юриста…"
-            allLabel="Все юристы"
+            value={filterDsType}
+            onChange={setFilterDsType}
+            options={[
+              { value: '', label: 'Все типы ДС' },
+              ...DOC_TYPES.filter(t => t.value !== DOC_TYPE.CONTRACT).map(t => ({ value: t.value, label: t.label })),
+            ]}
+            allLabel="Все типы ДС"
+            icon={<IconTag size={15} />}
           />
-        </div>
-        <div className="rf-quick">
+        )}
+        <FilterDropdown
+          label=""
+          value={filterLawyerId}
+          onChange={setFilterLawyerId}
+          options={lawyerDropdownOptions}
+          searchable
+          searchPlaceholder="Поиск юриста…"
+          allLabel="Все юристы"
+          icon={<IconUser size={15} />}
+        />
+        {/* Быстрые фильтры — переключатели: включённый отмечен рамкой и подложкой, как выбранный фильтр. */}
+        <button
+          type="button"
+          className={`qfilter${onlyOverdue ? ' active' : ''}`}
+          aria-pressed={onlyOverdue}
+          onClick={() => setOnlyOverdue(v => !v)}
+          title="Просроченная плановая дата подписания"
+        >Просрочено</button>
+        <button
+          type="button"
+          className={`qfilter${onlyNoLarix ? ' active' : ''}`}
+          aria-pressed={onlyNoLarix}
+          onClick={() => setOnlyNoLarix(v => !v)}
+          title="Заключённые договоры, ещё не внесённые в Larix"
+        >Не в Larix</button>
+        {hasActiveFilters && (
           <button
-            className={`qfilter ${onlyOverdue ? 'active' : ''}`}
-            onClick={() => setOnlyOverdue(v => !v)}
-            title="Просроченная плановая дата подписания"
-          >Просрочено</button>
-          <button
-            className={`qfilter ${onlyNoLarix ? 'active' : ''}`}
-            onClick={() => setOnlyNoLarix(v => !v)}
-            title="Заключённые договоры, ещё не внесённые в Larix"
-          >Не в Larix</button>
-          <button
-            className="qfilter qfilter-reset"
+            type="button"
+            className="cr-filter-clear"
             onClick={resetFilters}
-            disabled={!hasActiveFilters}
-            title="Сбросить фильтры"
+            title="Сбросить поиск и фильтры"
           >Сбросить</button>
-        </div>
+        )}
       </div>
 
       {!loading && totalCount > 0 && renderPagination('top')}
@@ -2909,7 +2923,7 @@ function ContractRegistry() {
           </colgroup>
           <thead>
             <tr>
-              {showRowNumber && <th>№</th>}
+              {showRowNumber && <th className="th-num">№</th>}
               {sortableTh('object', 'Объект')}
               {sortableTh('number', isAmendmentsView ? 'ДС / тип' : 'Договор / № ДС')}
               {isAmendmentsView && <th>Изменяемый документ</th>}
@@ -2974,7 +2988,9 @@ function ContractRegistry() {
                 return (
                 <Fragment key={contract.id}>
                 <tr
-                  className={`contract-row ${docDeleted ? 'row-deleted' : ''} ${isExpanded ? 'is-expanded' : ''}`}
+                  // is-alt — каждый второй договор подложкой: так договоры отделяются друг от друга
+                  // (раскрытая область под строкой не сбивает чередование — считается по договорам).
+                  className={`contract-row ${docDeleted ? 'row-deleted' : ''} ${isExpanded ? 'is-expanded' : ''}${index % 2 ? ' is-alt' : ''}`}
                   onClick={toggleExpand}
                   title={isAmendment(contract)
                     ? 'Нажмите, чтобы раскрыть соглашение: работа юриста и ДС к нему'

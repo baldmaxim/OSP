@@ -472,37 +472,10 @@
   font-size: 0.75rem;
   font-weight: 600;
 }
-.contract-registry .registry-scope-btn,
-.contract-registry .status-tab { border-radius: 9px; font-size: 0.8125rem; }
 
-
-/* ── Шапка страницы ─────────────────────────────────────────────────────────
-   Шесть кнопок и заголовок при 100% масштабе вставали в три этажа, и полстраницы
-   уходило на панель инструментов. Кнопки компактнее, заголовок не переносится,
-   вся строка выравнивается по базовой линии. */
-.contract-registry .registry-header {
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1rem 1.25rem;
-}
-.contract-registry .registry-header h2 {
-  font-size: 1.25rem;
-  white-space: nowrap;
-}
-.contract-registry .registry-header .btn-secondary,
-.contract-registry .registry-header .btn-primary {
-  padding: 0.45rem 0.7rem !important;
-  font-size: 0.75rem !important;
-  border-radius: 8px;
-  white-space: nowrap;
-}
-
-/* Вкладки охвата и статусов — плотнее: три ряда управления над таблицей это
-   много, и каждый лишний пиксель здесь отнимается у данных. */
-.contract-registry .registry-scope,
-.contract-registry .status-tabs { padding-top: 0.4rem; padding-bottom: 0.4rem; }
-.contract-registry .status-tab { padding: 0.4rem 0.7rem; }
-.contract-registry .registry-filters { padding: 0.7rem 0.75rem; }
+/* Шапка страницы, охват реестра и вкладки — с 29.10.2026 в рабочем стиле
+   (workUi.css + блок «Рабочий стиль» в конце файла). Прежние правила шапки
+   с !important протекали в «Заявку на ДС» (тот же .contract-registry). */
 
 
 /* ── Узкие экраны ───────────────────────────────────────────────────────────
@@ -707,13 +680,6 @@
 .contracts-table-compact.is-narrow.is-slim col.cg-status { width: 11%; }
 .contracts-table-compact.is-narrow.is-slim col.cg-actions { width: 7%; }
 
-/* Кнопка-переключатель в шапке: включённое состояние заметно. */
-.contract-registry .registry-header .btn-secondary.is-toggled {
-  border-color: var(--primary-color);
-  color: var(--primary-color);
-  background: color-mix(in srgb, var(--primary-color) 8%, transparent);
-}
-
 /* ════════════════════════════════════════════════════════════════════════════
    ОФОРМЛЕНИЕ «КАК В ТЕНДЕРАХ»
    По просьбе пользователя таблица приведена к виду реестра тендеров
@@ -781,4 +747,419 @@
   line-height: 1.2;
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   РАБОЧИЙ СТИЛЬ (29.10.2026)
+   По просьбе пользователя шапка, вкладки и панель приведены к виду других
+   разделов («Тендеры», «Заявка на ДС», «Планы затрат»): общий слой
+   src/styles/workUi.css (класс ui-work на корне) и плотный вариант cr-dense
+   (только компьютер — на телефоне карточки). Здесь — то, что свойственно
+   реестру договоров. Префикс .contracts-page-v2.ui-work сильнее правил выше и
+   ContractRegistryExpanded.css; «Заявку на ДС» (тоже .contract-registry) не
+   задевает. Правила — docs/UI_GUIDELINES.md, «Плотный вариант: реестр
+   «Договоры и ДС»».
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* Раздел — одна карточка без внутренних отступов: шапка, вкладки, панель и
+   таблица во всю ширину. Отступ таблицы задавал чужой .table-container из
+   TenderDetail.css — только если перед этим открывали карточку тендера. */
+.contracts-page-v2.ui-work { padding: 0; }
+.contracts-page-v2.ui-work .table-container {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+/* ── Шапка: название, охват реестра, действия ─────────────────────────────── */
+.contracts-page-v2.ui-work .registry-header h2 { white-space: nowrap; }
+.contracts-page-v2.ui-work .cr-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Охват («Все договоры» / «Наши договоры») и вид документа («Договоры и ДС» /
+   «Договоры» / «ДС») — переключатели одной высоты с кнопками (34px, в плотном
+   варианте 32px): сегменты 26px + отступ 3px + рамка. Охват — как переключатель
+   направления в «ВОРах и РД»: выбранный сегмент приподнят. Вид документа залит
+   (решение прежней версии): по реестру сразу видно, что в нём показано. */
+.contracts-page-v2.ui-work :is(.registry-scope, .rf-doc-kind) {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: auto;
+  margin: 0;
+  padding: 0.1875rem;
+  border: 1px solid var(--border-color);
+  border-radius: calc(var(--ui-radius) + 3px);
+  background: var(--bg-tertiary);
+}
+.contracts-page-v2.ui-work :is(.registry-scope-btn, .rf-doc-kind-btn) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: calc(var(--ui-control-h) - 0.5rem);
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: var(--ui-radius);
+  background: none;
+  box-shadow: none;
+  color: var(--text-secondary);
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  font-weight: var(--ui-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.contracts-page-v2.ui-work :is(.registry-scope-btn, .rf-doc-kind-btn):hover:not(.is-active) {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+.contracts-page-v2.ui-work .registry-scope-btn.is-active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: 0 0 0 1px var(--border-color), 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+/* Залитый сегмент — тот же тёмно-бирюзовый, что у главной кнопки (5,4:1). */
+.contracts-page-v2.ui-work .rf-doc-kind-btn.is-active { background: #0e7490; color: #fff; }
+[data-theme='dark'] .contracts-page-v2.ui-work .rf-doc-kind-btn.is-active { background: var(--primary-color); color: #0f172a; }
+.contracts-page-v2.ui-work .registry-scope-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-tertiary) 16%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  font-weight: var(--ui-medium);
+  font-variant-numeric: tabular-nums;
+}
+.contracts-page-v2.ui-work .registry-scope-btn.is-active .registry-scope-count {
+  background: color-mix(in srgb, var(--primary-color) 16%, transparent);
+  color: var(--text-primary);
+}
+
+/* ── Вкладки: «Удаленные» — справа ─────────────────────────────────────────── */
+.contracts-page-v2.ui-work .status-tabs .status-tab.tab-deleted { margin-left: auto; }
+
+/* ── Панель: вид документа, поиск, фильтры, быстрые фильтры ────────────────── */
+.contracts-page-v2.ui-work .cr-toolbar .ui-search { flex: 1 1 16rem; max-width: 24rem; }
+.contracts-page-v2.ui-work .cr-toolbar .fdrop { flex: 0 0 auto; width: auto; }
+.contracts-page-v2.ui-work .cr-toolbar .fdrop-trigger { width: auto; }
+/* Выбранный фильтр — рамкой и подложкой, текст обычного цвета (как в «Заявке на ДС»). */
+.contracts-page-v2.ui-work .cr-toolbar .fdrop.is-active .fdrop-trigger {
+  border-color: var(--primary-color);
+  background: var(--primary-light);
+}
+/* «Просрочено», «Не в Larix» — переключатели той же высоты; включённый — как выбранный фильтр. */
+.contracts-page-v2.ui-work .cr-toolbar .qfilter {
+  display: inline-flex;
+  align-items: center;
+  height: var(--ui-control-h);
+  min-height: var(--ui-control-h);
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  font-weight: var(--ui-medium);
+  white-space: nowrap;
+}
+.contracts-page-v2.ui-work .cr-toolbar .qfilter:hover:not(.active) {
+  border-color: var(--border-color-dark);
+  background: var(--hover-bg);
+}
+.contracts-page-v2.ui-work .cr-toolbar .qfilter.active {
+  border-color: var(--primary-color);
+  background: var(--primary-light);
+  color: var(--text-primary);
+}
+
+/* ── Строка «Показано …» и страницы — тонкой полосой над таблицей и под ней ── */
+.contracts-page-v2.ui-work .registry-pagination {
+  gap: 0.375rem 1rem;
+  margin: 0;
+  padding: 0.375rem 1.25rem;
+  background: var(--bg-secondary);
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  color: var(--text-secondary);
+}
+.contracts-page-v2.ui-work .registry-pagination.is-top { border-bottom: 1px solid var(--border-color); }
+.contracts-page-v2.ui-work .registry-pagination.is-bottom { border-top: 1px solid var(--border-color); }
+.contracts-page-v2.ui-work :is(.rp-info, .rp-size, .rp-page) { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.contracts-page-v2.ui-work .rp-size select,
+.contracts-page-v2.ui-work .rp-btn {
+  height: 1.75rem;
+  border-radius: var(--ui-radius);
+  font-size: var(--ui-hint);
+}
+.contracts-page-v2.ui-work .rp-btn { width: 1.75rem; }
+.contracts-page-v2.ui-work .rp-btn:hover:not(:disabled) { border-color: var(--border-color-dark); background: var(--hover-bg); }
+
+/* ══ Плотный вариант (.cr-dense, только компьютер) ══════════════════════════
+   Шапка, вкладки и панель — 13/18, кнопки и поля 32px (как у плотных реестров
+   тендеров и «Заявки на ДС»). Таблица — 12/16, заголовки колонок и подписи
+   11/15, ячейка 6px: одиннадцать колонок должны помещаться в окно ноутбука.
+   Мельче 11px в реестре ничего нет (раньше подписи были 9–10px). */
+.contracts-page-v2.ui-work.cr-dense :is(.registry-header, .status-tabs, .cr-toolbar, .registry-pagination) {
+  --ui-title: 1.125rem;       /* 18 */
+  --ui-title-lh: 1.5rem;      /* 24 */
+  --ui-text: 0.8125rem;       /* 13 */
+  --ui-text-lh: 1.125rem;     /* 18 */
+  --ui-th: 0.75rem;           /* 12 */
+  --ui-th-lh: 1rem;
+  --ui-hint: 0.75rem;         /* 12 */
+  --ui-hint-lh: 1rem;
+  --ui-control-h: 2rem;       /* 32 */
+}
+.contracts-page-v2.ui-work.cr-dense .table-container {
+  --ui-text: 0.75rem;         /* 12 — данные */
+  --ui-text-lh: 1rem;         /* 16 */
+  --ui-th: 0.6875rem;         /* 11 — заголовки колонок, статусы */
+  --ui-th-lh: 0.9375rem;      /* 15 */
+  --ui-hint: 0.6875rem;       /* 11 — вторичные сведения */
+  --ui-hint-lh: 0.9375rem;
+  --ui-cell-py: 0.375rem;     /* 6 */
+  --ui-cell-px: 0.375rem;
+}
+.contracts-page-v2.ui-work.cr-dense .registry-header { padding: 0.5rem 1rem; gap: 0.375rem 0.75rem; }
+.contracts-page-v2.ui-work.cr-dense .registry-header h2 { gap: 0.5rem; }
+.contracts-page-v2.ui-work.cr-dense .registry-header :is(.btn-primary, .btn-view-toggle) { padding: 0 0.625rem; gap: 0.3125rem; }
+.contracts-page-v2.ui-work.cr-dense .status-tabs { padding: 0 0.5rem; }
+.contracts-page-v2.ui-work.cr-dense .status-tabs .status-tab { min-height: 2.25rem; padding: 0 0.625rem; }
+.contracts-page-v2.ui-work.cr-dense .status-tabs .tab-count { min-width: 1.125rem; height: 1.125rem; padding: 0 0.3125rem; }
+.contracts-page-v2.ui-work.cr-dense .cr-toolbar { padding: 0.5rem 1rem; gap: 0.375rem 0.625rem; }
+.contracts-page-v2.ui-work.cr-dense .cr-toolbar .fdrop-trigger { padding: 0 0.5rem; }
+.contracts-page-v2.ui-work.cr-dense .registry-pagination { padding: 0.3125rem 1rem; }
+
+/* ── Таблица: шрифт раздела, заголовки обычным регистром ──────────────────── */
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact {
+  font-family: inherit;
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  border-collapse: collapse;
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > thead > tr > th {
+  padding: 0.375rem var(--ui-cell-px);
+  border: 0;
+  border-bottom: 1px solid var(--border-color-dark);
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+  font-weight: var(--ui-medium);
+  letter-spacing: normal;
+  text-transform: none;
+  vertical-align: bottom;
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > thead > tr > th:last-child { border-right: 0; }
+/* Выравнивание заголовка — по самой колонке, а не по её номеру: в виде «ДС» есть
+   лишняя колонка «Изменяемый документ», без «№» (узкое окно) — на одну меньше, и
+   правила nth-child выше ставили вправо не «Сумму», а соседние заголовки. */
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > thead > tr > th { text-align: left; }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > thead > tr > th.th-num { text-align: center; }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > thead > tr > th:is(.th-col-amount, .actions-column) { text-align: right; }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > thead > tr > th.th-sortable:hover { background: var(--hover-bg); color: var(--text-primary); }
+
+/* ── Разделение договоров ─────────────────────────────────────────────────────
+   Раньше сетка была одинаковой во все стороны, и строка договора не отделялась
+   от соседней: глаз уезжал по вертикальным линиям. Теперь:
+     • граница между договорами — сплошная, вертикальные — светлее (55%);
+     • каждый второй договор — едва заметной подложкой (класс is-alt);
+     • раскрытый договор и его область (работа юриста, ДС) — один блок: полоса
+       акцентом слева у обеих строк, под блоком — граница толще. */
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > tbody > tr > td {
+  padding: var(--ui-cell-py) var(--ui-cell-px);
+  border: 0;
+  border-bottom: 1px solid var(--border-color-dark);
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  hyphens: manual;
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > tbody > tr > td:last-child,
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > tbody > tr > td[colspan] { border-right: 0; }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > tbody > tr.contract-row.is-alt > td {
+  background: color-mix(in srgb, var(--bg-tertiary) 55%, var(--bg-secondary));
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > tbody > tr.contract-row:hover > td {
+  background: color-mix(in srgb, var(--primary-color) 6%, var(--bg-secondary));
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > tbody > tr.contract-row.is-expanded > td {
+  background: color-mix(in srgb, var(--primary-color) 9%, var(--bg-secondary));
+  border-bottom-color: color-mix(in srgb, var(--primary-color) 25%, var(--border-color));
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > tbody > tr.contract-row.is-expanded > td:first-child {
+  box-shadow: inset 3px 0 0 var(--primary-color);
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > tbody > tr.contract-expanded-row > td {
+  padding: 0.75rem 1rem 0.875rem 1.25rem;
+  border-top: 0;
+  border-bottom: 2px solid color-mix(in srgb, var(--primary-color) 45%, var(--border-color-dark));
+  background: color-mix(in srgb, var(--primary-color) 3%, var(--bg-tertiary));
+  box-shadow: inset 3px 0 0 var(--primary-color);
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > tbody > tr.row-deleted > td { color: var(--text-secondary); }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact > tbody > tr:last-child > td { border-bottom: 0; }
+
+/* ── Содержимое ячеек ───────────────────────────────────────────────────────── */
+/* «№»: номер вторичным цветом, стрелка раскрытия рядом. */
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .cell-num { font-size: var(--ui-hint); color: var(--text-secondary); }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .cell-num-value { font-weight: var(--ui-medium); color: var(--text-secondary); }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .expand-chev { opacity: 0.6; }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .expand-badge { font-size: var(--ui-hint); height: 0.9375rem; }
+
+/* Объект — обычный текст 500: это не ссылка (бирюзовый читался как переход). */
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .cell-object {
+  color: var(--text-primary);
+  font-size: var(--ui-text);
+  font-weight: var(--ui-medium);
+}
+
+/* Номер договора — заголовок строки и переход в карточку: цвет ссылки, 600,
+   тонкое подчёркивание (как описание работ в плотных реестрах тендеров). */
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .contract-ds-link .cds-main {
+  color: var(--ui-link);
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  font-weight: var(--ui-semibold);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, var(--ui-link) 40%, transparent);
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .contract-ds-link:hover .cds-main { text-decoration-color: currentColor; }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .contract-ds-link .cds-main.cds-missing { color: #b91c1c; text-decoration: none; }
+[data-theme='dark'] .contracts-page-v2.ui-work.cr-dense .contracts-table-compact .contract-ds-link .cds-main.cds-missing { color: #f87171; }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact :is(.contract-ds-link, .parent-doc-link) :is(.cds-sub, .cds-id) {
+  color: var(--text-secondary);
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+/* Вид «ДС»: изменяемый документ — номер тем же размером, что данные. */
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .parent-doc-link .cds-main { font-size: var(--ui-text); line-height: var(--ui-text-lh); }
+
+/* «ДС: N» — кнопка раскрытия; фиолетовый — тот же, что у области
+   «Дополнительные соглашения» под строкой. */
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .ds-count-badge.ds-toggle {
+  height: 1.25rem;
+  margin: 0.25rem 0 0;
+  padding: 0 0.4375rem;
+  border: 1px solid color-mix(in srgb, #7c3aed 35%, transparent);
+  border-radius: var(--ui-radius);
+  background: color-mix(in srgb, #7c3aed 7%, transparent);
+  color: #5b21b6;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  font-weight: var(--ui-medium);
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .ds-count-badge.ds-toggle:hover { border-color: #7c3aed; }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .ds-count-badge.ds-toggle.is-open {
+  border-color: #7c3aed;
+  background: color-mix(in srgb, #7c3aed 15%, transparent);
+  color: #4c1d95;
+}
+[data-theme='dark'] .contracts-page-v2.ui-work.cr-dense .contracts-table-compact .ds-count-badge.ds-toggle { color: #c4b5fd; border-color: color-mix(in srgb, #a78bfa 45%, transparent); }
+[data-theme='dark'] .contracts-page-v2.ui-work.cr-dense .contracts-table-compact .ds-count-badge.ds-toggle.is-open { color: #ddd6fe; }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .ds-type-badge { font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+
+/* Пути документа и понятийное соглашение — вторичной строкой 11/15, читаемым
+   цветом (бледные 10px были ниже 4,5:1). */
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact :is(.cpaths-label, .fpath-add, .ca-add, .fpath-text, .fpath-link) {
+  color: var(--text-secondary);
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  opacity: 1;
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact :is(.fpath-add, .ca-add):hover { color: var(--ui-link); }
+/* «путь к · папке · Signal · Larix.CPM» — в одну строку: при 11px с прежними
+   промежутками Larix.CPM уходил на вторую, и каждая строка реестра росла. */
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .cpaths { column-gap: 0.375rem; }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .cpaths > .fpath-add { gap: 0.1875rem; }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .cpaths > .fpath-add > svg { width: 11px; height: 11px; }
+/* Колонке договора — на 1% больше (за счёт «Работ»): в ней номер, дата, ДС и пути. */
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact:not(.is-narrow):not(.is-slim) col.cg-ds { width: 16%; }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact:not(.is-narrow):not(.is-slim) col.cg-work { width: 11.5%; }
+
+/* Контрагент, работы, сумма. */
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .cell-counterparty {
+  color: var(--text-primary);
+  font-size: var(--ui-text);
+  font-weight: var(--ui-medium);
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .cell-work {
+  color: var(--text-primary);
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .cell-amount,
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .cell-amount :is(.amt-value, .amt-solo) {
+  font-size: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .cell-amount :is(.amt-tag, .amt-markup) {
+  color: var(--text-secondary);
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+
+/* Статус — плашка 11/15, 500, как статусы в других реестрах; подписи под ней —
+   «не в Larix», «показан ради ДС» — 11/15. */
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact td.cell-status .status-badge {
+  padding: 0.0625rem 0.5rem;
+  border-radius: 0.75rem;
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+  font-weight: var(--ui-medium);
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact :is(.larix-badge, .ctx-ds-note, .overdue-note) {
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+
+/* Юрист и даты — значения строки. */
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .cell-lawyer .fdrop-trigger,
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .cell-date .inline-date-text { font-size: var(--ui-text); }
+
+/* Действия — видны всегда (а не проявлялись при наведении), 26px. */
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .actions-cell .btn-icon {
+  width: 1.625rem;
+  height: 1.625rem;
+  opacity: 1;
+  color: var(--text-secondary);
+}
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .actions-cell .btn-icon:hover { color: var(--text-primary); background: var(--hover-bg); }
+.contracts-page-v2.ui-work.cr-dense .contracts-table-compact .actions-cell .btn-delete:hover { color: var(--danger-color); }
+
+/* ── Телефон: панель в столбик, переключатели во всю ширину ────────────────── */
+@media (max-width: 640px) {
+  .contracts-page-v2.ui-work .registry-scope { display: flex; }
+  .contracts-page-v2.ui-work .registry-scope-btn { flex: 1 1 0; justify-content: center; }
+  .contracts-page-v2.ui-work .cr-header-actions { margin-left: 0; justify-content: flex-start; }
+  .contracts-page-v2.ui-work .cr-toolbar { padding: 0.625rem 1rem; gap: 0.5rem; }
+  .contracts-page-v2.ui-work .cr-toolbar :is(.ui-search, .rf-doc-kind, .fdrop) { flex: 1 1 100%; max-width: none; width: 100%; }
+  .contracts-page-v2.ui-work .cr-toolbar .fdrop-trigger { width: 100%; max-width: none; }
+  .contracts-page-v2.ui-work .rf-doc-kind { display: flex; }
+  .contracts-page-v2.ui-work .rf-doc-kind-btn { flex: 1 1 0; justify-content: center; }
+  .contracts-page-v2.ui-work .registry-pagination { padding: 0.5rem 1rem; }
+  /* Вкладки — одной строкой с прокруткой вбок (mobile.css), а не столбиком:
+     общий слой переносит их (flex-wrap: wrap) и сильнее mobile.css. */
+  .contracts-page-v2.ui-work .status-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .contracts-page-v2.ui-work .status-tabs::-webkit-scrollbar { display: none; }
+  .contracts-page-v2.ui-work .status-tabs .status-tab { flex: 0 0 auto; }
+  /* Карточка договора — ссылка целиком: без подчёркивания всего текста. */
+  .contracts-page-v2.ui-work .mcard.is-tappable { color: inherit; text-decoration: none; }
 }
