@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { deleteDocument, fetchDocuments, requestDownloadUrl, uploadFile } from '../services/s3'
+import { deleteDocument, fetchDocuments, uploadFile } from '../services/s3'
+import { downloadS3File } from './FileDownload'
 import { formatAmount } from '../utils/money'
 import { plural } from '../utils/taskHelpers'
 import {
@@ -172,15 +173,7 @@ export default function ObjectDgpFiles({ objectId, canEdit }) {
 
   const handleDownload = async (doc) => {
     try {
-      const { presigned_url } = await requestDownloadUrl(doc.s3_key, { fileName: doc.file_name, download: true })
-      const a = document.createElement('a')
-      a.href = presigned_url
-      a.download = doc.file_name || ''
-      a.target = '_blank'
-      a.rel = 'noopener noreferrer'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
+      await downloadS3File(doc.s3_key, doc.file_name)
     } catch (err) {
       setError('Не удалось скачать: ' + (err.message || err))
     }

@@ -13,7 +13,7 @@ import { IconSearch } from '../icons/ToolbarIcons'
 import { IconChevronDown } from '../icons/TenderHubIcons'
 import PaperclipIcon from '../icons/PaperclipIcon'
 import { fetchEmployees, employeesById } from '../../services/employees'
-import { requestDownloadUrl } from '../../services/s3'
+import { downloadS3File } from '../FileDownload'
 import {
   adoptVersion, autofillFromOtherTenders, carryRate, classifyError, clearRate, confirmRateUnit, deleteSource, deleteSupplyDoc,
   downloadVorFile, estimateSignatures, loadChangeMarker, loadChangedRateIds, isWebLink, linkFilesEnabled, loadDocsByIds,
@@ -1465,8 +1465,7 @@ export default function SupplyPricingPanel({
     const f = files.find((x) => x.id === fileId)
     if (!f) return
     try {
-      const { presigned_url } = await requestDownloadUrl(f.s3_key, { fileName: f.file_name, download: true })
-      window.location.assign(presigned_url)
+      await downloadS3File(f.s3_key, f.file_name)
     } catch (e) {
       setNotice(`Файл не скачался: ${e.message}`)
     }

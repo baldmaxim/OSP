@@ -7,7 +7,7 @@ import { kpDownloadName } from '../utils/kpDownloadName'
 import { plural } from '../utils/taskHelpers'
 import { shortPersonName } from '../utils/personName'
 import { copyToClipboard } from '../utils/clipboard'
-import { requestDownloadUrl } from '../services/s3'
+import { downloadS3File } from '../components/FileDownload'
 import { IconDownload } from '../components/icons/ActionIcons'
 import { IconCoins, IconFolder, IconSearch } from '../components/icons/ToolbarIcons'
 import { IconShieldCheck } from '../components/icons/TenderHubIcons'
@@ -696,24 +696,16 @@ function KpReviewPage() {
     }
   }
 
-  // Скачивание КП одним кликом под именем «№ тендера_контрагент_тендер_объект»:
-  // имя ставит сервер (Content-Disposition), a.download на чужом домене не работает.
-  // Пока ссылка запрашивается, кнопка занята — повторный клик второй файл не качает.
+  // Скачивание КП одним кликом под именем «№ тендера_контрагент_тендер_объект»
+  // (downloadS3File: без новой вкладки, имя ставит сама страница).
+  // Пока файл качается, кнопка занята — повторный клик второй файл не качает.
   const [downloadingIds, setDownloadingIds] = useState(() => new Set())
   const handleDownload = async (r) => {
     if (!r.s3?.s3_key || downloadingIds.has(r.id)) return
     const fileName = kpDownloadName(r)
     setDownloadingIds(prev => new Set(prev).add(r.id))
     try {
-      const { presigned_url } = await requestDownloadUrl(r.s3.s3_key, { fileName, download: true })
-      const a = document.createElement('a')
-      a.href = presigned_url
-      a.download = fileName
-      a.target = '_blank'
-      a.rel = 'noopener'
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
+      await downloadS3File(r.s3.s3_key, fileName)
     } catch (e) {
       alert('Не удалось скачать КП: ' + (e.message || e))
     } finally {

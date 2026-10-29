@@ -202,6 +202,14 @@
         "update"
       ]
     },
+    "cost_plan_compensation": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
     "cost_plan_economists": {
       "authenticated": [
         "delete",

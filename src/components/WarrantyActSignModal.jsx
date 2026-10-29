@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { db } from '../api'
-import { uploadFile, deleteDocument, requestDownloadUrl } from '../services/s3'
+import { uploadFile, deleteDocument } from '../services/s3'
+import { downloadS3File } from './FileDownload'
 
 // task 357: модалка «Подписание акта» для строки гарантии.
 //   Позволяет указать фактическую дату начала гарантии и прикрепить файл акта.
@@ -22,10 +23,9 @@ function WarrantyActSignModal({ warranty, objectId, onClose, onSaved }) {
   const handleDownload = async () => {
     if (!existing) return
     try {
-      const { presigned_url } = await requestDownloadUrl(existing.s3_key)
-      window.open(presigned_url, '_blank', 'noopener')
+      await downloadS3File(existing.s3_key, existing.file_name)
     } catch (err) {
-      alert('Не удалось получить ссылку на скачивание: ' + err.message)
+      alert('Не удалось скачать акт: ' + err.message)
     }
   }
 

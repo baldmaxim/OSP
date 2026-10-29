@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRole } from '../contexts/RoleContext'
-import { deleteDocument, requestDownloadUrl } from '../services/s3'
+import { deleteDocument } from '../services/s3'
+import { downloadS3File } from './FileDownload'
 import {
   addRdCode, isMissingTableError, isPdfFile, loadVorRd, setDocumentCodes, uploadRdDocuments,
   LEGACY_VOR_CATEGORY, VOR_STATEMENT_CATEGORY,
@@ -108,17 +109,9 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
 
   const handleDownload = async (doc) => {
     try {
-      const { presigned_url } = await requestDownloadUrl(doc.s3_key, { fileName: doc.file_name, download: true })
-      const a = document.createElement('a')
-      a.href = presigned_url
-      a.download = doc.file_name
-      a.target = '_blank'
-      a.rel = 'noopener'
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
+      await downloadS3File(doc.s3_key, doc.file_name)
     } catch (err) {
-      alert('Ошибка получения ссылки: ' + (err.message || err))
+      alert('Ошибка скачивания: ' + (err.message || err))
     }
   }
 

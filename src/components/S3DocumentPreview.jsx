@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { requestDownloadUrl } from '../services/s3'
+import { downloadS3File } from './FileDownload'
+import { IconDownload } from './icons/ActionIcons'
 import './S3DocumentList.css'
 
 // Модалка просмотра S3-документа. PDF и изображения рендерятся прямо в окне
@@ -34,6 +36,12 @@ export default function S3DocumentPreview({ doc, onClose }) {
       .catch(e => { if (!cancelled) setError(e.message || 'Не удалось получить ссылку') })
     return () => { cancelled = true }
   }, [doc.s3_key, doc.file_name, pdf, img])
+
+  // Скачать — не уходя со страницы (FileDownload): прежняя ссылка открывала вкладку, и окно мигало.
+  // Ссылка — свежая: полученная при открытии могла истечь, пока окно было открыто.
+  const download = () => {
+    downloadS3File(doc.s3_key, doc.file_name).catch(e => setError(e.message || 'Не удалось скачать файл'))
+  }
 
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose() }
@@ -77,9 +85,9 @@ export default function S3DocumentPreview({ doc, onClose }) {
           {url && !pdf && !img && (
             <div className="s3-doc-preview-fallback">
               <p>Предпросмотр для этого типа файла не поддерживается.</p>
-              <a className="s3-doc-btn-primary" href={url} target="_blank" rel="noopener noreferrer">
-                ⬇️ Скачать «{doc.file_name}»
-              </a>
+              <button type="button" className="s3-doc-btn-primary" onClick={download}>
+                <IconDownload /> Скачать «{doc.file_name}»
+              </button>
             </div>
           )}
         </div>

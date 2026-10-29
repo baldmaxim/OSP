@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { deleteDocument, requestDownloadUrl, uploadFile } from '../services/s3'
+import { deleteDocument, uploadFile } from '../services/s3'
+import { downloadS3File } from './FileDownload'
 import './ObjectDocumentFileSlot.css'
 
 // Один слот файла для документа объекта (подписанный либо редактируемый).
@@ -74,16 +75,7 @@ export default function ObjectDocumentFileSlot({
   const handleDownload = async () => {
     if (!currentDoc) return
     try {
-      const { presigned_url } = await requestDownloadUrl(currentDoc.s3_key, { fileName: currentDoc.file_name, download: true })
-      // Принудительное скачивание в новой вкладке/без навигации.
-      const a = document.createElement('a')
-      a.href = presigned_url
-      a.download = currentDoc.file_name || ''
-      a.target = '_blank'
-      a.rel = 'noopener noreferrer'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
+      await downloadS3File(currentDoc.s3_key, currentDoc.file_name)
     } catch (err) {
       setError(err.message || 'Ошибка скачивания')
     }

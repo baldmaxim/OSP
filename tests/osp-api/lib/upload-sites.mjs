@@ -32,6 +32,7 @@ export const LIST_SITES = [
   { file: 'src/pages/CounterpartiesPage.jsx', count: 2, owner: 'counterparty', table: 'counterparties' },
   { file: 'src/components/doccheck/DocCheckDetailModal.jsx', count: 1, owner: 'doc_check_request', table: 'doc_check_requests' },
   { file: 'src/components/VorRequestModal.jsx', count: 2, owner: 'general', table: 'vor_requests' }, // REQUEST_OWNER_TYPE
+  { file: 'src/components/CostPlanCalcTab.jsx', count: 1, owner: 'general', table: 'section_templates' }, // «Расчёт ПЗ» (миграция 20261116)
   { file: 'src/components/tasks/TaskDetailModal.jsx', count: 1, owner: 'task', table: 'tasks' },
 ]
 

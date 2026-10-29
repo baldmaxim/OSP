@@ -7,7 +7,7 @@
 // Новый файл заменяет прежний: сначала загружается новый, потом удаляется старый — сбой не оставляет
 // шаблон без файла. Прикрепить и удалить файл может только администратор (osp-api: WRITE_RULES).
 import { db } from '../api'
-import { deleteDocument, requestDownloadUrl, uploadFile } from './s3'
+import { deleteDocument, uploadFile } from './s3'
 
 export const SECTION_TEMPLATES_TABLE = 'section_templates'
 export const SECTION_TEMPLATE_CATEGORY = 'section_template'
@@ -116,16 +116,3 @@ export async function attachSectionTemplateFile(template, file) {
 }
 
 export const removeSectionTemplateFile = (doc) => deleteDocument(doc)
-
-// Скачать под исходным именем (Word в окне просмотра не открывается).
-export async function downloadSectionTemplateFile(doc) {
-  const { presigned_url } = await requestDownloadUrl(doc.s3_key, { fileName: doc.file_name, download: true })
-  const a = document.createElement('a')
-  a.href = presigned_url
-  a.download = doc.file_name || ''
-  a.target = '_blank'
-  a.rel = 'noopener noreferrer'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-}

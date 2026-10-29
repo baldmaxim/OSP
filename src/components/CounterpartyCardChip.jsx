@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react'
 import {
   deleteDocument,
-  requestDownloadUrl,
   uploadFile,
 } from '../services/s3'
+import { downloadS3File } from './FileDownload'
 import S3DocumentPreview from './S3DocumentPreview'
 import './CounterpartyCardChip.css'
 
@@ -86,15 +86,7 @@ export default function CounterpartyCardChip({ counterparty, card, canEdit, onCh
     e.stopPropagation()
     if (!card) return
     try {
-      const { presigned_url } = await requestDownloadUrl(card.s3_key, { fileName: card.file_name, download: true })
-      const a = document.createElement('a')
-      a.href = presigned_url
-      a.download = card.file_name
-      a.target = '_blank'
-      a.rel = 'noopener'
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
+      await downloadS3File(card.s3_key, card.file_name)
     } catch (err) {
       alert('Ошибка скачивания: ' + (err.message || err))
     }

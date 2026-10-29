@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { db } from '../api'
 import * as XLSX from 'xlsx'
 import { useRole } from '../contexts/RoleContext'
-import { uploadFile, deleteDocument, requestDownloadUrl } from '../services/s3'
+import { uploadFile, deleteDocument } from '../services/s3'
+import { downloadS3File } from '../components/FileDownload'
 import ObjectDocumentFileSlot from '../components/ObjectDocumentFileSlot'
 import ObjectDgpFiles from '../components/ObjectDgpFiles'
 import S3DocumentPreview from '../components/S3DocumentPreview'
@@ -1030,15 +1031,7 @@ function ObjectDetailPage() {
   const handlePreviewFile = (s3doc) => setPreviewDoc(s3doc)
   const handleDownloadFile = async (s3doc) => {
     try {
-      const { presigned_url } = await requestDownloadUrl(s3doc.s3_key, { fileName: s3doc.file_name, download: true })
-      const a = document.createElement('a')
-      a.href = presigned_url
-      a.download = s3doc.file_name || ''
-      a.target = '_blank'
-      a.rel = 'noopener noreferrer'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
+      await downloadS3File(s3doc.s3_key, s3doc.file_name)
     } catch (error) {
       alert('Ошибка скачивания: ' + error.message)
     }

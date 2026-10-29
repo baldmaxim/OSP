@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  SECTION_TEMPLATE_ACCEPT, attachSectionTemplateFile, downloadSectionTemplateFile, fetchSectionTemplates,
+  SECTION_TEMPLATE_ACCEPT, attachSectionTemplateFile, fetchSectionTemplates,
   fetchTemplateLinks, isWebLink, parseTemplateLink, removeSectionTemplateFile, saveTemplateLink,
   sectionTemplatesMigrationHint,
 } from '../services/sectionTemplates'
 import { copyToClipboard } from '../utils/clipboard'
+import { downloadS3File } from './FileDownload'
 import { IconCheck, IconDownload, IconLink, IconPencil, IconTrash } from './icons/ActionIcons'
 import PaperclipIcon from './icons/PaperclipIcon'
 import './SectionTemplateCards.css'
@@ -312,7 +313,7 @@ export default function SectionTemplateCards({ items, canEdit = false }) {
 
   const handleDownload = async (doc) => {
     try {
-      await downloadSectionTemplateFile(doc)
+      await downloadS3File(doc.s3_key, doc.file_name)
     } catch (err) {
       alert('Не удалось скачать файл: ' + (err?.message || err))
     }

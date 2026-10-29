@@ -362,6 +362,13 @@ Task 277. Универсальное хранение файлов в S3-сов�
   (`osp_can`). Фронт — [src/api/ospFiles.js](src/api/ospFiles.js); `services/s3.js` выбирает путь в начале
   операции, вызовы страниц не меняются.
 - Frontend сервис [src/services/s3.js](src/services/s3.js): `uploadFile`, `fetchDocuments`, `requestDownloadUrl`, `deleteDocument`, `deleteS3Object`.
+- **Скачивание файла — только `downloadS3File(s3Key, fileName)`** ([FileDownload.jsx](src/components/FileDownload.jsx), 29.10.2026:
+  «чтобы визуально не обновлялась страница при нажатии скачки в любом месте сайта»): байты — fetch по подписанной ссылке,
+  сохранение — blob (file-saver) под нужным именем; ни новой вкладки, ни перехода. Ссылку на файл в `target=_blank`,
+  `window.open` или `location.assign` для скачивания не открывать: вкладка открывалась и сразу закрывалась — окно мигало,
+  страница на возврате перечитывала данные (visibilitychange). Файл дольше 0,4 с — плашка внизу справа с ходом и отменой;
+  повторное нажатие на тот же файл второй не качает; ошибка — исключением (сообщение — у вызывающего), отмена — `false`.
+  Тест — `tests/tender/file-download.test.mjs` (стенд: `__fakeRemoteFiles` — хранилище на другом домене, `__fakeFileDelay`).
 - Универсальный UI-компонент [src/components/S3DocumentList.jsx](src/components/S3DocumentList.jsx): список + загрузка + удаление + превью. Принимает props `{ownerType, ownerId, title, canEdit?}`. По умолчанию `canEdit = isEmployee`, подрядчики только смотрят.
 - Модалка просмотра [src/components/S3DocumentPreview.jsx](src/components/S3DocumentPreview.jsx) — PDF через iframe, изображения через `<img>`, прочие типы — fallback с кнопкой скачать. Окно почти во весь экран (`.s3-doc-preview`: до 1800px, поля 12px; 28.10, было 1100×800) — одно на весь сайт; каркас `.s3-doc-modal` общий с другими окнами (ВОРы и РД, заявки ВОР), его размер не трогать.
 

@@ -4,7 +4,8 @@ import { useSearchParams } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
-import { deleteDocument, requestDownloadUrl, uploadFile } from '../services/s3'
+import { deleteDocument, uploadFile } from '../services/s3'
+import { downloadS3File } from '../components/FileDownload'
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import DcRequestDocsModal from '../components/DcRequestDocsModal'
 import FilterDropdown from '../components/FilterDropdown'
@@ -1485,15 +1486,7 @@ function DcRequestsPage() {
 
   const handleDocDownload = async (doc) => {
     try {
-      const { presigned_url } = await requestDownloadUrl(doc.s3_key, { fileName: doc.file_name, download: true })
-      const a = document.createElement('a')
-      a.href = presigned_url
-      a.download = doc.file_name
-      a.target = '_blank'
-      a.rel = 'noopener'
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
+      await downloadS3File(doc.s3_key, doc.file_name)
     } catch (err) {
       alert('Ошибка скачивания: ' + (err.message || err))
     }

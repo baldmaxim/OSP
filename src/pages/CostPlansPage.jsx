@@ -453,7 +453,7 @@ function CostPlansPage() {
             type="button"
             className="btn-view-toggle"
             onClick={() => setShowDocs(true)}
-            title="Экономисты ОСП по объектам — ответственные за планы затрат"
+            title="Экономисты ОСП по объектам и расчёт ПЗ: файлы, компенсация НДС и инфляции"
           >
             <IconDocsStack size={15} />
             <span>Документы</span>

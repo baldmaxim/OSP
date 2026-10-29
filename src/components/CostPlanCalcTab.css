@@ -1,0 +1,162 @@
+/* «Документы» → «Расчёт ПЗ» (CostPlanCalcTab): подвкладки с файлами и «Компенсация НДС и инфляции по объектам».
+   Окно и общие классы tdm-* — TenderDocsModal.css; кнопки btn-primary / btn-secondary / ui-btn — рабочий стиль
+   страницы (workUi.css): окно открывается внутри .ui-work «Планов затрат». */
+
+/* Подвкладки — сегменты, чтобы не путались с вкладками окна над ними. */
+.cpc-subtabs {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+.cpc-subtab {
+  padding: 0.35rem 0.9rem;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.cpc-subtab:hover { color: var(--text-primary); }
+.cpc-subtab.is-active {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+.cpc-subtab:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+
+.cpc-panel { min-height: 6rem; }
+.cpc-panel .tdm-note { margin: 0; }
+
+/* ── Компенсация НДС и инфляции ───────────────────────────────────────── */
+.cpc-comp {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-color);
+}
+.cpc-comp-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.cpc-comp-lead {
+  margin: 0.25rem 0 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+.cpc-comp .tdm-note { margin: 0; }
+
+.cpc-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+.cpc-table {
+  width: 100%;
+  min-width: 36rem;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+.cpc-col-obj { width: 30%; }
+.cpc-col-act { width: 3rem; }
+.cpc-table th,
+.cpc-table td {
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  vertical-align: top;
+}
+.cpc-table thead th {
+  background: var(--bg-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.cpc-table tbody tr:last-child > * { border-bottom: none; }
+.cpc-obj { font-weight: 600; }
+.cpc-note { white-space: pre-line; overflow-wrap: anywhere; }
+.cpc-none { color: var(--text-tertiary); }
+.cpc-act { text-align: right; padding-top: 0.3rem; padding-bottom: 0.3rem; }
+.cpc-act .ui-btn.is-icon-only { width: 1.875rem; height: 1.875rem; min-height: 1.875rem; }
+
+.cpc-row.is-editing > * { background: var(--bg-secondary); border-bottom: none; }
+.cpc-input {
+  display: block;
+  width: 100%;
+  min-height: 4.5rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+  resize: vertical;
+}
+.cpc-input:focus { outline: 2px solid var(--primary-color); outline-offset: -1px; }
+.cpc-row-actions > td { background: var(--bg-secondary); padding-top: 0; }
+.cpc-edit-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.cpc-edit-bar .tdm-site-error { flex: 1 0 100%; margin: 0; }
+.cpc-hint { margin-right: auto; font-size: 0.75rem; color: var(--text-tertiary); }
+
+/* Текст для чтения с экрана. */
+.cpc-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .cpc-subtabs { display: flex; }
+  .cpc-subtab { flex: 1 1 0; }
+  .cpc-input { font-size: 1rem; }
+  /* Таблица компенсации — карточка на объект: название, под ним НДС и инфляция с подписями, карандаш в углу. */
+  .cpc-table-wrap { overflow-x: visible; }
+  .cpc-table { min-width: 0; }
+  .cpc-table colgroup,
+  .cpc-table thead { display: none; }
+  .cpc-table :is(tbody, tr, th, td) { display: block; }
+  .cpc-table tbody > tr { position: relative; border-bottom: 1px solid var(--border-color); }
+  .cpc-table tbody > tr:last-child,
+  .cpc-row.is-editing { border-bottom: none; }
+  .cpc-table :is(th, td) { border-bottom: none; padding: 0.15rem 0.75rem; }
+  .cpc-table .cpc-obj { padding: 0.6rem 3rem 0.2rem 0.75rem; }
+  .cpc-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+  }
+  .cpc-table td[data-label]:last-of-type,
+  .cpc-row.is-editing td[data-label] { padding-bottom: 0.5rem; }
+  .cpc-act { position: absolute; top: 0.4rem; right: 0.4rem; padding: 0; }
+  .cpc-row-actions > td { padding: 0 0.75rem 0.6rem; }
+}
+
+/* Окно «Документы» планов затрат шире окна по содержимому (48rem): таблица компенсации и список файлов в пять
+   колонок. Три класса — сильнее .tdm-modal.tdm-modal--fit. */
+.tdm-modal.tdm-modal--fit.cpd-modal { width: min(64rem, calc(100vw - 3rem)); }
+@media (max-width: 640px) {
+  .tdm-modal.tdm-modal--fit.cpd-modal { width: 100vw; }
+}

@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx'
 import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { fetchAllRows } from '../utils/fetchAllRows'
-import { requestDownloadUrl } from '../services/s3'
+import { downloadS3File } from '../components/FileDownload'
 import { buildProposalWorkbook, matchProposalRows } from '../utils/contractorProposal'
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import { loadCabinetTenders, requestParticipation } from '../services/contractorBids'
@@ -292,14 +292,7 @@ function ContractorCabinetPage() {
 
   const handleDownloadDoc = async (doc) => {
     try {
-      const { presigned_url } = await requestDownloadUrl(doc.s3_key, { fileName: doc.file_name, download: true })
-      const a = document.createElement('a')
-      a.href = presigned_url
-      a.download = doc.file_name
-      a.rel = 'noopener'
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
+      await downloadS3File(doc.s3_key, doc.file_name)
     } catch (err) {
       alert('Не удалось скачать файл: ' + (err.message || err))
     }

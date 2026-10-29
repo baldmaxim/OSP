@@ -106,7 +106,7 @@ describe('Реестр заявок на ДС: файлы в Excel и ссылк
   })
 
   it('ссылка из выгрузки открывает файл: PDF — просмотр, docx — скачивание под своим именем', async () => {
-    for (const [id, name, inside] of [['dcf-1', 'Было-стало.pdf', 'iframe'], ['dcf-2', 'Письмо.docx', 'a.s3-doc-btn-primary']]) {
+    for (const [id, name, inside] of [['dcf-1', 'Было-стало.pdf', 'iframe'], ['dcf-2', 'Письмо.docx', 'button.s3-doc-btn-primary']]) {
       const { page, errors, dialogs, close } = await open(`/dc-requests?file=${id}`)
       try {
         const modal = page.locator('.s3-doc-modal')

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRole } from '../contexts/RoleContext'
-import { deleteDocument, fetchDocuments, requestDownloadUrl, uploadFile } from '../services/s3'
+import { deleteDocument, fetchDocuments, uploadFile } from '../services/s3'
+import { downloadS3File } from './FileDownload'
 import S3DocumentPreview from './S3DocumentPreview'
 import './S3DocumentList.css'
 
@@ -91,17 +92,9 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
 
   const handleDownload = async (doc) => {
     try {
-      const { presigned_url } = await requestDownloadUrl(doc.s3_key, { fileName: doc.file_name, download: true })
-      const a = document.createElement('a')
-      a.href = presigned_url
-      a.download = doc.file_name
-      a.target = '_blank'
-      a.rel = 'noopener'
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
+      await downloadS3File(doc.s3_key, doc.file_name)
     } catch (err) {
-      alert('Ошибка получения ссылки: ' + (err.message || err))
+      alert('Ошибка скачивания: ' + (err.message || err))
     }
   }
 

@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
-import { uploadFile, deleteDocument, requestDownloadUrl } from '../services/s3'
+import { uploadFile, deleteDocument } from '../services/s3'
+import { downloadS3File } from './FileDownload'
 import { fetchTenderDocs, deleteTenderDoc } from '../services/tenderDocs'
 import AutoGrowTextarea from './AutoGrowTextarea'
 import '../pages/GeneralDocumentsPage.css'
@@ -160,10 +161,7 @@ export default function TenderDocumentsTab({ tenderId, canEdit = false, version 
 
   const handleDownload = async (s3doc) => {
     try {
-      const { presigned_url } = await requestDownloadUrl(s3doc.s3_key, { fileName: s3doc.file_name, download: true })
-      const a = document.createElement('a')
-      a.href = presigned_url; a.download = s3doc.file_name || ''; a.target = '_blank'; a.rel = 'noopener noreferrer'
-      document.body.appendChild(a); a.click(); a.remove()
+      await downloadS3File(s3doc.s3_key, s3doc.file_name)
     } catch (e) {
       alert('Не удалось получить файл: ' + e.message)
     }

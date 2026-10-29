@@ -25,6 +25,9 @@
 // Загрузка файла (s3-presign upload → PUT по ссылке): ссылка ведёт в «хранилище» стенда — PUT перехватывается здесь,
 // файл ложится в window.__fakeFiles[s3_key] (data: URL) и отдаётся потом по ссылке на скачивание;
 // window.__fakeUploads — что загружали ({ s3_key, size, type }).
+// window.__fakeRemoteFiles = true — ссылка на скачивание ведёт в «хранилище» на другом домене, как настоящая (переход
+// по ней увёл бы страницу или открыл вкладку), байты отдаёт fetch стенда; 'missing' — хранилище отвечает 404.
+// window.__fakeFileDelay — задержка ответа хранилища, мс (fetch с signal её прерывает, как настоящий).
 const LATENCY_MS = Number(new URLSearchParams(window.location.search).get('latency') || 120)
 const MAX_ROWS = Number(new URLSearchParams(window.location.search).get('maxRows') || 0)
 const FAKE_S3 = 'https://fake-s3.invalid/'
@@ -44,6 +47,13 @@ window.fetch = async (url, init = {}) => {
     ;(window.__fakeUploads ||= []).push({ s3_key: key, size: blob.size, type: blob.type })
     return new Response(null, { status: 200 })
   }
+  if (window.__fakeFileDelay) {
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(resolve, window.__fakeFileDelay)
+      init.signal?.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Скачивание отменено', 'AbortError')) })
+    })
+  }
+  if (window.__fakeRemoteFiles !== 'missing' && window.__fakeFiles?.[key]) return realFetch(window.__fakeFiles[key])
   return new Response(null, { status: 404 })
 }
 
@@ -327,7 +337,7 @@ export const supabase = {
       if (name === 's3-presign' && key && window.__fakeFiles?.[key]) {
         window.__fakeFileRequests ||= []
         window.__fakeFileRequests.push(key)
-        return { data: { presigned_url: window.__fakeFiles[key] }, error: null }
+        return { data: { presigned_url: window.__fakeRemoteFiles ? FAKE_S3 + encodeURIComponent(key) : window.__fakeFiles[key] }, error: null }
       }
       return { data: null, error: { message: 'Хранилище недоступно в стенде' } }
     },
