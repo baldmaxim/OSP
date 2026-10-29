@@ -1112,7 +1112,7 @@
   .reports-page > .reports-filters { margin-left: 1rem; margin-right: 1rem; }
 }
 
-/* ===== Подвкладки «Тендеров»: обзор, КП, победители, материалы, планы затрат, ВОРы ===== */
+/* ===== Подвкладки «Тендеров»: обзор, КП, подрядчики, материалы, планы затрат, ВОРы ===== */
 .reports-subtabs {
   display: flex;
   flex-wrap: wrap;
@@ -1236,3 +1236,247 @@
 .dcs-overdue { min-width: 48rem; }
 .dcs-nowrap { white-space: nowrap; }
 .dcs-more { margin-top: 0.5rem; align-self: flex-start; }
+
+/* ===== Подвкладка «Подрядчики» (до 29.10.2026 — «Победители»): components/reports/ContractorStats.jsx ===== */
+.cs-toolbar { margin-bottom: 0; }
+.cs-search { cursor: text; padding-right: 0.625rem; color: var(--text-tertiary); }
+.cs-search input {
+  width: 15rem;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+.cs-search.is-active { color: #2563eb; }
+.rf-chip.is-disabled { opacity: 0.55; cursor: not-allowed; }
+.rf-chip.is-disabled .rf-chip-select { cursor: not-allowed; }
+.cs-range { cursor: default; padding-right: 0.625rem; }
+.cs-range input {
+  width: 4.5rem;
+  height: 22px;
+  padding: 0 0.375rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Оттенки карточек, воронки и значков */
+.cs-tone-blue    { --tone: #2563eb; --tone-soft: rgba(37, 99, 235, 0.12); }
+.cs-tone-cyan    { --tone: #0891b2; --tone-soft: rgba(8, 145, 178, 0.12); }
+.cs-tone-green   { --tone: #16a34a; --tone-soft: rgba(22, 163, 74, 0.12); }
+.cs-tone-amber   { --tone: #d97706; --tone-soft: rgba(217, 119, 6, 0.14); }
+.cs-tone-violet  { --tone: #7c3aed; --tone-soft: rgba(124, 58, 237, 0.12); }
+.cs-tone-emerald { --tone: #059669; --tone-soft: rgba(5, 150, 105, 0.12); }
+.cs-tone-red     { --tone: #dc2626; --tone-soft: rgba(220, 38, 38, 0.12); }
+[data-theme='dark'] .cs-tone-blue    { --tone: #60a5fa; --tone-soft: rgba(96, 165, 250, 0.16); }
+[data-theme='dark'] .cs-tone-cyan    { --tone: #22d3ee; --tone-soft: rgba(34, 211, 238, 0.14); }
+[data-theme='dark'] .cs-tone-green   { --tone: #4ade80; --tone-soft: rgba(74, 222, 128, 0.14); }
+[data-theme='dark'] .cs-tone-amber   { --tone: #fbbf24; --tone-soft: rgba(251, 191, 36, 0.14); }
+[data-theme='dark'] .cs-tone-violet  { --tone: #a78bfa; --tone-soft: rgba(167, 139, 250, 0.16); }
+[data-theme='dark'] .cs-tone-emerald { --tone: #34d399; --tone-soft: rgba(52, 211, 153, 0.14); }
+[data-theme='dark'] .cs-tone-red     { --tone: #f87171; --tone-soft: rgba(248, 113, 113, 0.14); }
+
+/* Карточки итогов */
+.cs-kpi {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+}
+.cs-kpi-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.875rem 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.cs-kpi-ico {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 10px;
+  background: var(--tone-soft);
+  color: var(--tone);
+}
+.cs-kpi-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+/* Подпись — до двух строк, место под вторую оставлено всегда: значения карточек стоят на одной высоте. */
+.cs-kpi-card .kpi-label { line-height: 1rem; min-height: 2rem; }
+.cs-kpi-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* Воронка и подразделения */
+.cs-dash {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 1rem;
+}
+.cs-dash .dash-card { display: flex; flex-direction: column; }
+.cs-dash .dash-card-head { flex-wrap: wrap; }
+/* Воронка растягивается по высоте соседней карточки (подразделения), а не оставляет пустоту внизу. */
+.cs-funnel {
+  list-style: none; margin: 0; padding: 0;
+  flex: 1; display: flex; flex-direction: column; justify-content: space-around; gap: 0.875rem;
+}
+.cs-funnel-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.3rem; }
+.cs-funnel-label { flex: 1; min-width: 0; font-size: 0.8125rem; color: var(--text-secondary); }
+.cs-funnel-val { font-size: 0.9375rem; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.cs-funnel-pct { width: 3rem; text-align: right; font-size: 0.75rem; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.cs-funnel-track { height: 8px; border-radius: 4px; background: var(--bg-tertiary); overflow: hidden; }
+.cs-funnel-fill { height: 100%; border-radius: 4px; background: var(--tone); transition: width 0.4s ease; }
+
+.cs-divisions .section-empty { padding: 1rem; }
+.cs-div-table thead th.num { width: auto; }
+.cs-div-row { cursor: pointer; }
+.dense-table tbody tr.cs-div-row:hover td { background: rgba(37, 99, 235, 0.06); }
+.dense-table tbody tr.cs-div-row.is-active td { background: rgba(37, 99, 235, 0.1); }
+.dense-table tbody tr.cs-div-row.is-active td:first-child { box-shadow: inset 3px 0 0 #2563eb; font-weight: 600; }
+.cs-div-row:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
+
+/* Рейтинг */
+.cs-list-head { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.cs-show {
+  display: inline-flex;
+  gap: 0.125rem;
+  padding: 0.1875rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.cs-show-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.cs-show-btn:hover { color: var(--text-primary); }
+.cs-show-btn.is-active { background: var(--bg-secondary); color: var(--text-primary); font-weight: 600; box-shadow: var(--card-shadow); }
+.cs-show-count { font-size: 0.6875rem; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.cs-search-fix {
+  margin-bottom: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.cs-table-wrap { overflow-x: auto; }
+.cs-table { min-width: 64rem; }
+.cs-table tbody td { vertical-align: top; }
+.cs-table .cs-col-rank { width: 3rem; }
+.cs-table .cs-col-name { min-width: 18rem; }
+.cs-table thead th.num { width: 6.5rem; }
+.cs-table thead th.bar-col { width: 12rem; min-width: 10rem; }
+.cs-table td.bar-col { padding-top: 0.75rem; }
+.cs-table .strong { font-weight: 600; }
+.cs-table .muted { color: var(--text-tertiary); }
+.cs-nowrap { white-space: nowrap; }
+
+.cs-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+.cs-sort:hover, .cs-sort.is-active { color: var(--text-primary); }
+.cs-sort-arrow { font-size: 0.75rem; opacity: 0.45; }
+.cs-sort.is-active .cs-sort-arrow { opacity: 1; color: #2563eb; }
+.cs-sort:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; border-radius: 3px; }
+
+.cs-rank {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.625rem;
+  height: 1.625rem;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.cs-rank--1 { background: #fef3c7; color: #b45309; box-shadow: inset 0 0 0 1px #fcd34d; }
+.cs-rank--2 { background: #f1f5f9; color: #475569; box-shadow: inset 0 0 0 1px #cbd5e1; }
+.cs-rank--3 { background: #ffedd5; color: #c2410c; box-shadow: inset 0 0 0 1px #fdba74; }
+[data-theme='dark'] .cs-rank--1 { background: rgba(251, 191, 36, 0.16); color: #fcd34d; box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.4); }
+[data-theme='dark'] .cs-rank--2 { background: rgba(148, 163, 184, 0.16); color: #cbd5e1; box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.4); }
+[data-theme='dark'] .cs-rank--3 { background: rgba(251, 146, 60, 0.16); color: #fdba74; box-shadow: inset 0 0 0 1px rgba(251, 146, 60, 0.4); }
+
+.cs-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; }
+.cs-name-text { font-weight: 600; color: var(--text-primary); }
+.cs-badge {
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  line-height: 1.125rem;
+  white-space: nowrap;
+}
+.cs-badge--muted { background: var(--bg-tertiary); color: var(--text-tertiary); }
+.cs-badge--danger { background: rgba(220, 38, 38, 0.1); color: #b91c1c; }
+.cs-badge--warn { background: rgba(217, 119, 6, 0.12); color: #b45309; }
+[data-theme='dark'] .cs-badge--danger { color: #fca5a5; }
+[data-theme='dark'] .cs-badge--warn { color: #fcd34d; }
+.cs-worktype {
+  margin-top: 0.125rem;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cs-worktype.is-empty { color: var(--text-tertiary); font-style: italic; }
+.cs-divs { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.3rem; }
+.cs-sub { margin-top: 0.125rem; font-size: 0.6875rem; color: var(--text-tertiary); white-space: nowrap; }
+.cs-sub--danger { color: #b91c1c; }
+[data-theme='dark'] .cs-sub--danger { color: #fca5a5; }
+.cs-wins { font-weight: 700; color: #15803d; }
+[data-theme='dark'] .cs-wins { color: #4ade80; }
+
+.cs-more { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+.cs-more-text { font-size: 0.75rem; color: var(--text-tertiary); margin-right: 0.25rem; }
+
+@media (max-width: 1100px) {
+  .cs-dash { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .cs-search { flex: 1 1 100%; }
+  .cs-search input { width: auto; flex: 1; min-width: 0; }
+  .cs-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+  .cs-kpi-card { padding: 0.625rem 0.75rem; }
+  /* Две карточки в ряд: значку места нет, сумма «≈ 38,5 млн ₽» должна уместиться в строку. */
+  .cs-kpi-ico { display: none; }
+  .cs-kpi-value { font-size: 1.125rem; }
+  .cs-table .cs-col-name { min-width: 14rem; }
+}

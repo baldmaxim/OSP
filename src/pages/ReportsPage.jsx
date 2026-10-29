@@ -3,12 +3,13 @@ import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
 import { vorResponsibleName, withStoColumns } from '../services/stoEmployees'
-import { currencySymbol } from '../utils/estimateImport'
 import { isConstructionTender } from '../utils/tenderDepartments'
 import { isMissingVorRequestsTable } from '../services/vorRequests'
+import { RATE_NOTE, currencyEntries, fmtCur, fmtInt, toRub, totalRub } from '../utils/reportCurrency'
 import EngineersActivity from '../components/reports/EngineersActivity'
 import KpStats from '../components/reports/KpStats'
 import DcRequestStats from '../components/reports/DcRequestStats'
+import ContractorStats from '../components/reports/ContractorStats'
 import { BarChart, ProgressBar, StatusDonut } from '../components/reports/ReportCharts'
 import './ReportsPage.css'
 
@@ -16,29 +17,8 @@ import './ReportsPage.css'
 const isInWork = (x) => x.status === 'Идет тендерная процедура'
 const isClosed = (x) => x.status === 'Завершен'
 
-// Договоры бывают в разных валютах (RUB/CNY/USD/EUR). Складывать их в одно число нельзя,
-// поэтому суммы агрегируем и показываем по каждой валюте отдельно.
-const CURRENCY_ORDER = ['RUB', 'CNY', 'USD', 'EUR']
-const fmtInt = (n) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n)
-// Записи { cur, amt } в стабильном порядке (RUB, CNY, USD, EUR, затем прочие).
-function currencyEntries(map) {
-  if (!map) return []
-  const known = CURRENCY_ORDER.filter((c) => map[c])
-  const extra = Object.keys(map).filter((c) => !CURRENCY_ORDER.includes(c) && map[c])
-  return [...known, ...extra].map((c) => ({ cur: c, amt: map[c] }))
-}
-const fmtCur = (amt, cur) => `${fmtInt(amt)} ${currencySymbol(cur)}`
-
-// Ориентировочные курсы к рублю для приблизительного пересчёта валютных договоров.
-// Значения приблизительные — обновляйте вручную под актуальный курс; в интерфейсе
-// пересчитанные суммы всегда помечены «≈».
-const APPROX_RATES_TO_RUB = { RUB: 1, CNY: 12, USD: 85, EUR: 95 }
-const toRub = (amt, cur) => amt * (APPROX_RATES_TO_RUB[cur] ?? 0)
-// Итог по всем валютам, приведённый к рублю (приблизительно).
-const totalRub = (map) => currencyEntries(map).reduce((s, e) => s + toRub(e.amt, e.cur), 0)
-// Подсказка с используемыми курсами (для title).
-const RATE_NOTE = 'Курс (ориентировочно): '
-  + ['CNY', 'USD', 'EUR'].map((c) => `${currencySymbol(c)} ${APPROX_RATES_TO_RUB[c]} ₽`).join(' · ')
+// Договоры бывают в разных валютах (RUB/CNY/USD/EUR) — суммы копятся по валютам,
+// итог пересчитывается в рубли приблизительно (utils/reportCurrency.js).
 
 // Ячейка суммы: каждая валюта на своей строке; для валют, отличных от рубля,
 // строкой ниже добавляем приблизительный пересчёт «≈ N ₽».
@@ -153,7 +133,7 @@ function ReportsPage() {
   const { scopedObjectIds, isSuperAdmin, canView } = useRole()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState(null)
-  // Вкладки: «Тендеры» (внутри — обзор, КП, победители, материалы, планы затрат,
+  // Вкладки: «Тендеры» (внутри — обзор, КП, подрядчики, материалы, планы затрат,
   // ВОРы и РД, работа инженеров) и «Договоры» (внутри — обзор и заявки на ДС).
   // Какие отчёты видны роли. С правом «Отчёты: все вкладки» (reports_full, миграция
   // 20260930 выдала его всем ролям, у которых отчёты уже были) — все, как раньше.
@@ -161,7 +141,7 @@ function ReportsPage() {
   // в отчётах остаются одни «ВОРы и РД».
   const fullReports = canView('reports_full')
   const tenderSubs = fullReports
-    ? ['overview', 'kp', 'winners', 'materials', 'cost_plans', 'vors', ...(isSuperAdmin ? ['activity'] : [])]
+    ? ['overview', 'kp', 'contractors', 'materials', 'cost_plans', 'vors', ...(isSuperAdmin ? ['activity'] : [])]
     : [
         ...(canView('vors') || canView('tenders') ? ['vors'] : []),
         ...(canView('tenders_materials') ? ['materials'] : []),
@@ -188,10 +168,14 @@ function ReportsPage() {
   const [kpVisited, setKpVisited] = useState(false)
   // То же у «Заявок на ДС»: заявки и журнал статусов грузятся при первом открытии подвкладки.
   const [dcVisited, setDcVisited] = useState(false)
+  // И у «Подрядчиков»: участники тендеров, файлы КП и справочники — при первом открытии.
+  const [contractorsVisited, setContractorsVisited] = useState(false)
   // null = обзор, 'construction' | 'warranty' = детализация по выбранному отделу
   const [tDeptView, setTDeptView] = useState(null)
   // task: сырые основные тендеры + момент загрузки (для фильтрации без повторных запросов)
   const [rawTenders, setRawTenders] = useState([])
+  // Договоры основного строительства — для «Подрядчиков» (суммы заключённых договоров).
+  const [rawContracts, setRawContracts] = useState([])
   const [loadedAt, setLoadedAt] = useState(null)
   // Фильтры тендерного дашборда
   const [fDept, setFDept] = useState('all')
@@ -457,67 +441,6 @@ function ReportsPage() {
         ),
       }
 
-      // === Победители тендеров ===
-      // Считаем только завершённые основные тендеры с указанным победителем.
-      const winnerTenders = t.filter(x => isClosed(x) && x.winner_counterparty_id)
-      const contractsByCounterparty = (c || []).reduce((acc, contract) => {
-        const cpId = contract.counterparty_id
-        if (!cpId) return acc
-        if (!acc[cpId]) acc[cpId] = { signed: 0, signedByCur: {}, total: 0, totalByCur: {} }
-        const amount = Number(contract.contract_amount) || 0
-        const cur = contract.currency || 'RUB'
-        acc[cpId].total += 1
-        // По валютам, а не одним числом: раньше доллары и юани складывались с
-        // рублями один к одному, и таблица победителей показывала завышенные
-        // (или заниженные) суммы со знаком ₽.
-        acc[cpId].totalByCur[cur] = (acc[cpId].totalByCur[cur] || 0) + amount
-        // «Заключённый» договор = статус 'completed' (Завершено); старое 'signed' не существует.
-        if (contract.status === 'completed') {
-          acc[cpId].signed += 1
-          acc[cpId].signedByCur[cur] = (acc[cpId].signedByCur[cur] || 0) + amount
-        }
-        return acc
-      }, {})
-
-      const winnerMap = new Map()
-      for (const x of winnerTenders) {
-        const id = x.winner_counterparty_id
-        const name = x.winner?.name || 'Контрагент удалён'
-        if (!winnerMap.has(id)) {
-          winnerMap.set(id, {
-            id,
-            name,
-            wins: 0,
-            winsConst: 0,
-            winsWar: 0,
-            signedContracts: 0,
-            signedByCur: {},
-            // Приблизительный итог в рублях — только для сортировки и показа
-            // общей суммы; помечается «≈», если есть валютные договоры.
-            signedAmountRub: 0,
-            hasForeign: false,
-          })
-        }
-        const row = winnerMap.get(id)
-        row.wins += 1
-        if (x.objects?.status === 'main_construction') row.winsConst += 1
-        else if (x.objects?.status === 'warranty_service') row.winsWar += 1
-        const cStats = contractsByCounterparty[id]
-        if (cStats) {
-          row.signedContracts = cStats.signed
-          row.signedByCur = cStats.signedByCur
-          row.signedAmountRub = totalRub(cStats.signedByCur)
-          row.hasForeign = Object.keys(cStats.signedByCur).some((c) => c !== 'RUB')
-        }
-      }
-      const winners = {
-        total: winnerTenders.length,
-        unique: winnerMap.size,
-        totalAmount: Array.from(winnerMap.values()).reduce((s, r) => s + r.signedAmountRub, 0),
-        anyForeign: Array.from(winnerMap.values()).some((r) => r.hasForeign),
-        rows: Array.from(winnerMap.values()).sort((a, b) => b.wins - a.wins || b.signedAmountRub - a.signedAmountRub),
-      }
-
       // === ВОРы и РД ===
       // По направлениям, как на странице «ВОРы и РД»: основное строительство и
       // совместные тендеры; к тендерам добавляются заявки на ВОР без тендера.
@@ -572,6 +495,7 @@ function ReportsPage() {
 
       // task: сохраняем сырые тендеры для клиентской фильтрации дашборда + момент загрузки.
       setRawTenders(t)
+      setRawContracts(c)
       setLoadedAt(new Date())
 
       setStats({
@@ -614,8 +538,6 @@ function ReportsPage() {
         cp,
         // ВОРы и РД
         vor,
-        // Победители тендеров
-        winners,
       })
     } catch (err) {
       console.error('Ошибка загрузки отчётов:', err.message)
@@ -645,11 +567,6 @@ function ReportsPage() {
   }
 
   const pct = (a, b) => b > 0 ? Math.round((a / b) * 100) : 0
-  const fmtMoney = (n) => {
-    if (!n) return '0 ₽'
-    return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n) + ' ₽'
-  }
-
   // Общая сумма договоров по валютам: рубли — главной строкой, валюты — отдельными
   // строками с приблизительным пересчётом; плюс общий итог в рублях (приблизительно).
   const cTotalEntries = currencyEntries(s.cAmountByCur)
@@ -674,7 +591,8 @@ function ReportsPage() {
     { key: 'overview', label: 'Обзор', count: s.tTotal },
     // Счётчика нет: КП грузятся отдельно, при открытии подвкладки.
     { key: 'kp', label: 'Коммерческие предложения' },
-    { key: 'winners', label: 'Победители', count: s.winners.unique },
+    // Счётчика нет: участники и КП грузятся при открытии подвкладки (до 29.10.2026 — «Победители»).
+    { key: 'contractors', label: 'Подрядчики' },
     { key: 'materials', label: 'Материалы', count: s.mat.total },
     { key: 'cost_plans', label: 'Планы затрат', count: s.cp.total },
     { key: 'vors', label: 'ВОРы и РД', count: s.vor.construction.total + s.vor.joint.total },
@@ -735,6 +653,7 @@ function ReportsPage() {
           onSelect={(key) => {
             setSubTab(key)
             if (key === 'kp') setKpVisited(true)
+            if (key === 'contractors') setContractorsVisited(true)
             if (key !== 'overview') setTDeptView(null)
           }}
         />
@@ -990,43 +909,6 @@ function ReportsPage() {
                 <div className="section-empty">В этом отделе тендеров нет</div>
               ) : (
                 <ResponsibleTable rows={deptData.byResp} />
-              )}
-            </section>
-          </>
-        )}
-
-        {showSub('winners') && (
-          <>
-            <div className="kpi-grid">
-              <div className="kpi-card">
-                <div className="kpi-label">Завершённых тендеров с победителем</div>
-                <div className="kpi-value">{s.winners.total}</div>
-              </div>
-              <div className="kpi-card kpi-card--success">
-                <div className="kpi-label">Уникальных победителей</div>
-                <div className="kpi-value accent-success">{s.winners.unique}</div>
-                <div className="kpi-foot">подрядчиков-победителей</div>
-              </div>
-              <div className="kpi-card kpi-card-wide">
-                <div className="kpi-label">Сумма заключённых договоров</div>
-                <div className="kpi-value" title={s.winners.anyForeign ? RATE_NOTE : undefined}>
-                  {s.winners.anyForeign ? `≈ ${fmtMoney(s.winners.totalAmount)}` : fmtMoney(s.winners.totalAmount)}
-                </div>
-                <div className="kpi-foot">
-                  по победителям тендеров{s.winners.anyForeign ? ' · валюта пересчитана ориентировочно' : ''}
-                </div>
-              </div>
-            </div>
-
-            <section className="report-section">
-              <header className="section-head">
-                <h3>Рейтинг победителей</h3>
-                <span className="section-meta">{s.winners.rows.length}</span>
-              </header>
-              {s.winners.rows.length === 0 ? (
-                <div className="section-empty">Победителей пока нет. Назначьте победителя у завершённого тендера.</div>
-              ) : (
-                <WinnersTable rows={s.winners.rows} fmtMoney={fmtMoney} />
               )}
             </section>
           </>
@@ -1354,6 +1236,14 @@ function ReportsPage() {
           </div>
         )}
 
+        {/* Подрядчики: тендеры и договоры — из общей выборки, остальное грузит сам; после первого
+            открытия остаётся смонтированной (фильтры и сортировка не сбрасываются). */}
+        {(contractorsVisited || showSub('contractors')) && tenderSubs.includes('contractors') && (
+          <div className="reports-subview" hidden={!showSub('contractors')}>
+            <ContractorStats tenders={rawTenders} contracts={rawContracts} scopedObjectIds={scopedObjectIds} />
+          </div>
+        )}
+
         {/* Заявки на ДС: свои данные, после первого открытия остаётся смонтированной. */}
         {(dcVisited || showContractSub('dc_requests')) && contractSubs.includes('dc_requests') && (
           <div className="reports-subview" hidden={!showContractSub('dc_requests')}>
@@ -1426,54 +1316,6 @@ function ResponsibleTable({ rows }) {
             <td className="num strong">{r.total}</td>
             <td className="bar-col">
               <ProgressBar value={r.completed} total={r.total} />
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
-function WinnersTable({ rows, fmtMoney }) {
-  const maxWins = Math.max(...rows.map(r => r.wins), 1)
-  return (
-    <table className="dense-table">
-      <thead>
-        <tr>
-          <th style={{ width: '44px' }} className="num">#</th>
-          <th>Контрагент</th>
-          <th className="num">Побед</th>
-          <th className="num">Стр-во</th>
-          <th className="num">Гарантия</th>
-          <th className="num">Договоров</th>
-          <th className="num">Сумма</th>
-          <th className="bar-col">Доля побед</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r, idx) => (
-          <tr key={r.id}>
-            <td className="num" style={{ fontWeight: 600, color: idx < 3 ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
-              {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
-            </td>
-            <td style={{ fontWeight: 500 }}>{r.name}</td>
-            <td className="num strong">{r.wins}</td>
-            <td className="num">{r.winsConst || '—'}</td>
-            <td className="num">{r.winsWar || '—'}</td>
-            <td className="num">{r.signedContracts || '—'}</td>
-            <td
-              className="num"
-              title={r.hasForeign
-                ? `${RATE_NOTE}
-` + currencyEntries(r.signedByCur).map((e) => fmtCur(e.amt, e.cur)).join(' · ')
-                : undefined}
-            >
-              {r.signedAmountRub > 0
-                ? (r.hasForeign ? `≈ ${fmtMoney(r.signedAmountRub)}` : fmtMoney(r.signedAmountRub))
-                : '—'}
-            </td>
-            <td className="bar-col">
-              <ProgressBar value={r.wins} total={maxWins} />
             </td>
           </tr>
         ))}

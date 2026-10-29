@@ -37,12 +37,12 @@ describe('Отчёты: вкладки «Тендеры», «Договоры»,
   const kpRequests = (page) => page.evaluate(() => window.__supabaseStats.requests
     .filter((r) => r.table === 'tender_proposal_files').length)
 
-  it('две вкладки; в «Тендерах» — обзор, КП, победители, материалы, планы затрат, ВОРы; в «Договорах» — обзор, заявки на ДС', async () => {
+  it('две вкладки; в «Тендерах» — обзор, КП, подрядчики, материалы, планы затрат, ВОРы; в «Договорах» — обзор, заявки на ДС', async () => {
     const { context, page, errors } = await open()
     try {
       assert.deepEqual(await page.locator('.reports-tab .reports-tab-label').allInnerTexts(), ['Тендеры', 'Договоры'])
       const subs = await page.locator('.reports-subtab').evaluateAll((els) => els.map((e) => e.childNodes[0].textContent))
-      assert.deepEqual(subs, ['Обзор', 'Коммерческие предложения', 'Победители', 'Материалы', 'Планы затрат', 'ВОРы и РД'])
+      assert.deepEqual(subs, ['Обзор', 'Коммерческие предложения', 'Подрядчики', 'Материалы', 'Планы затрат', 'ВОРы и РД'])
       // Обзор открыт сразу, КП не грузятся, пока подвкладку не открыли.
       await page.locator('.dept-table').waitFor()
       assert.equal(await kpRequests(page), 0)

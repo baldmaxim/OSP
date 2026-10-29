@@ -648,6 +648,66 @@ if (params.get('kpStats') === '1') {
   fdb.tender_proposal_files = rows
 }
 
+// ── «Отчёты → Тендеры → Подрядчики» (?route=/reports&cpStats=1) ────────────────────────────────────────────
+// Участники пяти тендеров: tender-5 и tender-10 — завершены (основное строительство), tender-15 — завершён на
+// гарантийном объекте, tender-3 и tender-2 — идут. Победители: tender-5 — основной (winner_counterparty_id),
+// tender-10 — двое через tender_winners, tender-15 — основной без строк tender_winners.
+//   cp-1 (Монолитные работы): КП в tender-5 (два файла — версия), tender-10, tender-3 (файл без статуса), отказ в
+//        tender-2; победы tender-5, tender-10; договоры: «Завершено» 30 млн ₽ и «В работе» 5 млн ₽.
+//   cp-2 (Фасадные работы): КП в tender-10, в tender-15 «Принято в работу» без КП; победы tender-10, tender-15;
+//        договор «Завершено» 100 000 $ (≈ 8,5 млн ₽).
+//   cp-3 (Клининг — без подразделения): КП в tender-5, отказ в tender-3.
+//   cp-4 (Электрические работы): «Запрос отправлен» в tender-3.
+//   cp-5 (Фасадные работы): отказ в tender-10.
+// &cpStatsNoWinners=1 — таблицы tender_winners нет (победитель — только основной). Подразделения видов работ —
+// справочник WORK_TYPES (&cpDivisions=legacy — без колонки division).
+if (params.get('cpStats') === '1') {
+  const fdb = window.__fakeDb
+  const byId = (id) => registry.find((t) => t.id === id)
+  const win = (id, cpId) => Object.assign(byId(id), { winner_counterparty_id: cpId, winner: { id: cpId, name: counterparties.find((c) => c.id === cpId).name } })
+  win('tender-5', 'cp-1')
+  win('tender-10', 'cp-1')
+  win('tender-15', 'cp-2')
+  const warranty = { id: 'obj-w', name: 'ЖК «Гарантийный»', status: 'warranty_service' }
+  fdb.objects.push(warranty)
+  Object.assign(byId('tender-15'), { object_id: warranty.id, objects: warranty })
+
+  const tc = (n, tenderId, cpId, status) => ({ id: `cps-tc-${n}`, tender_id: tenderId, counterparty_id: cpId, status, sort_order: n })
+  fdb.tender_counterparties = [
+    tc(1, 'tender-5', 'cp-1', 'proposal_provided'), tc(2, 'tender-10', 'cp-1', 'proposal_provided'),
+    tc(3, 'tender-3', 'cp-1', 'request_sent'), tc(4, 'tender-2', 'cp-1', 'declined'),
+    tc(5, 'tender-10', 'cp-2', 'proposal_provided'), tc(6, 'tender-15', 'cp-2', 'accepted_for_work'),
+    tc(7, 'tender-5', 'cp-3', 'proposal_provided'), tc(8, 'tender-3', 'cp-3', 'declined'),
+    tc(9, 'tender-3', 'cp-4', 'request_sent'), tc(10, 'tender-10', 'cp-5', 'declined'),
+  ]
+  const kp = (n, tenderId, cpId, group) => ({ id: `cps-kp-${n}`, tender_id: tenderId, counterparty_id: cpId, file_kind: 'commercial_proposal',
+    proposal_group_id: group, created_at: `2026-10-0${n}T10:00:00Z`, review_required: false })
+  fdb.tender_proposal_files = [
+    kp(1, 'tender-5', 'cp-1', 'g-a'), kp(2, 'tender-5', 'cp-1', 'g-a'), kp(3, 'tender-3', 'cp-1', 'g-b'),
+    { ...kp(4, 'tender-5', 'cp-3', 'g-c'), file_kind: 'attachment' },
+  ]
+  fdb.tender_winners = [
+    { id: 'tw-1', tender_id: 'tender-10', counterparty_id: 'cp-1', scope_note: 'Корпус 1' },
+    { id: 'tw-2', tender_id: 'tender-10', counterparty_id: 'cp-2', scope_note: 'Корпус 2' },
+  ]
+  if (params.get('cpStatsNoWinners') === '1') {
+    window.__fakeErrors = { ...(window.__fakeErrors || {}),
+      tender_winners: { code: 'PGRST205', message: "Could not find the table 'public.tender_winners' in the schema cache" } }
+  }
+  const workType = { 'cp-1': 'Монолитные работы', 'cp-2': 'Фасадные работы', 'cp-3': 'Клининг', 'cp-4': 'Электрические работы', 'cp-5': 'Фасадные работы' }
+  for (const cp of fdb.counterparties) if (workType[cp.id]) cp.work_type = workType[cp.id]
+  fdb.work_types = WORK_TYPES
+  const contract = (n, cpId, status, amount, currency = 'RUB') => ({
+    id: `cps-k-${n}`, object_id: 'obj-1', objects: { id: 'obj-1', name: objects[0].name, status: 'main_construction' },
+    counterparty_id: cpId, status, contract_amount: amount, currency, record_type: 'dp', deleted_at: null,
+    responsible_contact_id: null, responsible: null,
+  })
+  fdb.contracts = [
+    contract(1, 'cp-1', 'completed', 30000000), contract(2, 'cp-1', 'in_work', 5000000),
+    contract(3, 'cp-2', 'completed', 100000, 'USD'),
+  ]
+}
+
 // ── Файлы участников карточки tender-1 (tcFiles=1) — «Скачать всё» в ячейке «КП / Документы» ─────────────
 // У «Подрядчик 01» две версии одного КП и документ, у «Подрядчик 02» — одно КП, у остальных файлов нет.
 // Встраивание s3 лежит в строках, содержимое файлов — в хранилище стенда (window.__fakeFiles).
