@@ -1,6 +1,8 @@
 // «Договоры и ДС» (/contracts), решения пользователя 29.10.2026:
 //   • раскрытый договор — две области под строкой: «Работа юриста» (юрист, сроки, примечание, приложения) и
 //     «Дополнительные соглашения» — выпадающий список ДС; ДС больше не раскрываются полными строками таблицы;
+//     позже в тот же день («рабочая область юриста слишком маленькая») — области одна под другой во всю
+//     ширину: работа юриста сверху (примечание — в строке с юристом и сроками), ДС ниже — по строке на ДС;
 //   • подразделение договора, как у тендеров (contracts.division, миграция 20261112): плашка под «Работами»,
 //     фильтр в заголовке колонки; у ДС — подразделение договора, только показ. Колонки ещё нет — ни плашки, ни
 //     фильтра, и форма не шлёт division (иначе PostgREST отказал бы во всей записи).
@@ -56,6 +58,27 @@ describe('Договоры и ДС: раскрытый договор и под�
       assert.equal(await page.locator('.contracts-table tbody tr.contract-row').count(), rows, 'ДС — не строки таблицы')
       assert.match(await expanded.locator('.ce2-area-lawyer .ce2-area-title').innerText(), /Работа юриста/)
       assert.match(await expanded.locator('.ce2-area-ds .ce2-area-title').innerText(), /Дополнительные соглашения/)
+      // Работа юриста — во всю ширину, ДС — под ней; ДС — одной строкой (предмет — в строке, сумма справа).
+      const areas = await expanded.evaluate((tr) => {
+        const box = (sel) => tr.querySelector(sel).getBoundingClientRect()
+        const wrap = box('.ce2-wrap')
+        const lawyer = box('.ce2-area-lawyer')
+        const ds = box('.ce2-area-ds')
+        const head = tr.querySelector('.ce2-ds-toggle')
+        const line = parseFloat(getComputedStyle(head.querySelector('.ce2-ds-num')).lineHeight) || 20
+        return {
+          lawyerFull: Math.abs(lawyer.width - wrap.width) < 2,
+          dsBelow: ds.top >= lawyer.bottom,
+          dsFull: Math.abs(ds.width - wrap.width) < 2,
+          dsOneLine: head.getBoundingClientRect().height < line * 2,
+        }
+      })
+      assert.deepEqual(areas, { lawyerFull: true, dsBelow: true, dsFull: true, dsOneLine: true })
+      // Примечание юриста — в строке с юристом и сроками, «Открыть карточку» — в шапке области.
+      assert.deepEqual(await expanded.locator('.ce2-area-lawyer > .ce2-fields .ce2-label').allInnerTexts(),
+        ['ЮРИСТ', 'ПРИНЯТ В РАБОТУ', 'ПЛАН. ПОДПИСАНИЯ', 'ПРИМЕЧАНИЕ ЮРИСТА'])
+      assert.equal(await expanded.locator('.ce2-area-lawyer .ce2-area-head .ce-open-card').innerText(), 'Открыть карточку договора')
+      assert.match(await expanded.locator('.ce2-info').innerText(), /ID портала\s*2/)
       // Три ДС по ID: изменение ВОР, доп. работы и ДС к ДС (с пометкой, к какому).
       const items = expanded.locator('.ce2-ds')
       assert.equal(await items.count(), 3)
@@ -68,7 +91,7 @@ describe('Договоры и ДС: раскрытый договор и под�
       const body = items.nth(1).locator('.ce2-ds-body')
       await body.waitFor()
       assert.equal(await items.nth(1).locator('.ce2-ds-toggle').getAttribute('aria-expanded'), 'true')
-      assert.deepEqual(await body.locator('.ce2-label').allInnerTexts(), ['СТАТУС', 'ЮРИСТ', 'ПРИНЯТ В РАБОТУ', 'ПЛАН. ПОДПИСАНИЯ'])
+      assert.deepEqual(await body.locator('.ce2-label').allInnerTexts(), ['СТАТУС', 'ЮРИСТ', 'ПРИНЯТ В РАБОТУ', 'ПЛАН. ПОДПИСАНИЯ', 'ПРИМЕЧАНИЕ ЮРИСТА'])
       assert.match(await body.locator('.ce-block-title').last().innerText(), /Приложения к ДС/)
       const note = body.locator('textarea.ce-note')
       await note.fill('Ждём подпись подрядчика')

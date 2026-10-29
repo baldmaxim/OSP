@@ -1224,7 +1224,9 @@
 .tenders-page .expanded-cp-table-wrap {
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  overflow: hidden;
+  /* Таблица участников не уже 64rem (ParticipantsTable.css): в узком окне прокручивается
+     она, а не срезается. Списки (статус участника) открываются в body — их не обрезает. */
+  overflow-x: auto;
 }
 
 .tenders-page .expanded-cp-table-wrap .data-table th,

@@ -54,3 +54,28 @@ export function buildFilesTimeline(rows) {
 export function currentProposals(proposals) {
   return proposals.filter(p => !p.replacedAt)
 }
+
+// КП участника по группам версий (29.10.2026, «чтобы было видно структуру КП»): каждое КП —
+// свой блок, в нём версии по порядку загрузки, последняя — текущая. КП — по первой загрузке,
+// старые сверху. proposals — из buildFilesTimeline. Возвращает [{ groupId, items, current }].
+export function groupProposals(proposals) {
+  const groups = new Map()
+  for (const p of proposals || []) {
+    if (!groups.has(p.groupId)) groups.set(p.groupId, { groupId: p.groupId, items: [] })
+    groups.get(p.groupId).items.push(p)
+  }
+  return [...groups.values()].map(g => ({ ...g, current: g.items[g.items.length - 1] }))
+}
+
+// Проверка текущих версий КП — для свёрнутой ячейки: сколько проверено, с замечаниями, ждёт
+// проверки. КП без проверки (review_required не true) не считаются.
+export function reviewSummary(groups) {
+  const sum = { approved: 0, has_remarks: 0, pending: 0 }
+  for (const { current } of groups || []) {
+    const file = current?.file
+    if (file?.review_required !== true) continue
+    const status = file.review_status || 'pending'
+    sum[status in sum ? status : 'pending'] += 1
+  }
+  return sum
+}

@@ -1,0 +1,100 @@
+/* Таблица участников тендера (.tc-table) — раскрытая строка реестра тендеров (TendersPage) и
+   вкладка «Участники» карточки (TenderDetailPage). 29.10.2026, по просьбе пользователя («всё
+   сливается в единую кашу», «текст слишком жирный»):
+   • колонки: № · компания (под названием — вид работ и статус) · контакты · КП / документы ·
+     примечание;
+   • каждый подрядчик — свой блок: всё по верхнему краю, между подрядчиками — заметная черта,
+     через одного — лёгкая подложка; подсветки по наведению нет (строки высокие, мигало бы);
+   • название компании — 14/20, 500 (выделяется размером, а не жирностью), остальное — обычным.
+   Ширины — в rem; уже 64rem таблица не сжимается — прокручивается её обёртка. Повтор класса
+   .tc-table поднимает специфичность над правилами страниц (Tenders.css, TenderDetail.css,
+   workUi.css). */
+
+.tc-table.tc-table { min-width: 64rem; }
+.tc-table .tc-col-company { width: 15rem; }
+.tc-table .tc-col-contacts { width: 15rem; }
+.tc-table .tc-col-files { width: 28rem; }
+.tc-table .tc-col-notes { min-width: 14rem; }
+
+.tc-table.tc-table.tc-table > tbody > tr > td {
+  vertical-align: top;
+  padding-top: 0.625rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-color-dark);
+}
+.tc-table.tc-table.tc-table > tbody > tr:last-child > td { border-bottom: 0; }
+.tc-table.tc-table.tc-table > tbody > tr,
+.tc-table.tc-table.tc-table > tbody > tr:hover { background: transparent; }
+.tc-table.tc-table.tc-table > tbody > tr:nth-child(even),
+.tc-table.tc-table.tc-table > tbody > tr:nth-child(even):hover {
+  background: color-mix(in srgb, var(--bg-tertiary) 55%, transparent);
+}
+[data-theme='dark'] .tc-table.tc-table.tc-table > tbody > tr:nth-child(even),
+[data-theme='dark'] .tc-table.tc-table.tc-table > tbody > tr:nth-child(even):hover {
+  background: color-mix(in srgb, var(--bg-tertiary) 40%, transparent);
+}
+/* Победитель (карточка тендера) — зелёная подложка, как раньше. */
+.tc-table.tc-table.tc-table > tbody > tr.is-winner,
+.tc-table.tc-table.tc-table > tbody > tr.is-winner:hover { background: rgba(22, 163, 74, 0.08); }
+/* Ручка перетаскивания и № — у верхнего края, вровень с названием компании. */
+.tc-table.tc-table.tc-table > tbody > tr > td.tc-drag-cell { vertical-align: top; padding-top: 0.5rem !important; }
+
+/* Компания: название, вид работ одной строкой (полностью — в подсказке), под ними статус. */
+.tc-company-name {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow-wrap: break-word;
+}
+.tc-company-scope {
+  margin-left: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+/* width: 0 + min-width: 100% — длинный вид работ не распирает колонку, а сокращается. */
+.tc-company-sub {
+  width: 0;
+  min-width: 100%;
+  margin-top: 0.125rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tc-company-status { margin-top: 0.5rem; }
+/* Плашка статуса — по своей ширине, а не во всю колонку. */
+.tc-company-status .fdrop.tc-status-fdrop { display: inline-flex; width: auto; max-width: 100%; }
+
+/* Примечание участника (карточка) — поле без рамки, пока его не трогают: пустое — пунктир с
+   подсказкой, при наведении и вводе — обычная рамка. */
+.tc-note-area {
+  display: block;
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  resize: none;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.tc-note-area:placeholder-shown { border: 1px dashed var(--border-color); }
+.tc-note-area:hover:not(:disabled) { border: 1px solid var(--border-color-dark); background: var(--bg-secondary); }
+.tc-note-area:focus {
+  outline: none;
+  border: 1px solid var(--primary-color);
+  background: var(--bg-secondary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 16%, transparent);
+}
+.tc-note-area::placeholder { color: var(--text-tertiary); }
+.tc-note-area:disabled { opacity: 1; cursor: default; }
+.tc-note-area:disabled:placeholder-shown { border-color: transparent; }

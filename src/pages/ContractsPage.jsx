@@ -2308,6 +2308,8 @@ function ContractRegistry() {
 
   // Работа юриста по документу: юрист, сроки, примечание юриста (руководителю строительства не видно)
   // и приложения. withStatus — у ДС: своей строки в таблице у них нет, статус меняется здесь.
+  // 29.10.2026: область — во всю ширину, примечание — полем в одной строке с юристом и сроками
+  // (занимает остаток строки), приложения — под ними во всю ширину.
   const renderLawyerWork = (doc, { withStatus = false } = {}) => {
     const docDeleted = !!doc.deleted_at
     const ro = !canEditContracts || docDeleted
@@ -2353,37 +2355,36 @@ function ContractRegistry() {
             />
             {overdue && <span className="overdue-note">Просрочено</span>}
           </div>
-        </div>
-
-        {!hideNotes && (
-          <section className="ce-block">
-            <div className="ce-block-title">
-              Примечание юриста
-              {noteSavingId === doc.id && <span className="ce-saving">Сохранение…</span>}
+          {!hideNotes && (
+            <div className="ce2-field ce2-field-note">
+              <span className="ce2-label">
+                Примечание юриста
+                {noteSavingId === doc.id && <span className="ce-saving">Сохранение…</span>}
+              </span>
+              {!ro ? (
+                <AutoGrowTextarea
+                  className="ce-note"
+                  minHeight={34}
+                  defaultValue={doc.notes || ''}
+                  placeholder={isAmendment(doc) ? 'Добавьте примечание по ДС' : 'Добавьте примечание по договору'}
+                  onBlur={(e) => handleSaveNote(doc.id, e.target.value)}
+                />
+              ) : doc.notes ? (
+                <div className="ce-note-ro">{doc.notes}</div>
+              ) : (
+                <div className="ce-empty">Примечание пока не заполнено</div>
+              )}
             </div>
-            {!ro ? (
-              <AutoGrowTextarea
-                className="ce-note"
-                minHeight={56}
-                defaultValue={doc.notes || ''}
-                placeholder={isAmendment(doc) ? 'Добавьте примечание по ДС' : 'Добавьте примечание по договору'}
-                onBlur={(e) => handleSaveNote(doc.id, e.target.value)}
-              />
-            ) : doc.notes ? (
-              <div className="ce-note-ro">{doc.notes}</div>
-            ) : (
-              <div className="ce-empty">Примечание пока не заполнено</div>
-            )}
-          </section>
-        )}
+          )}
+        </div>
 
         {renderAppendices(doc)}
       </>
     )
   }
 
-  // ДС в выпадающем списке правой области. Шапка — кнопка-переключатель (номер, дата, тип, статус, сумма,
-  // предмет) и ссылка на карточку; раскрытое — пути документа, работа юриста по ДС и действия.
+  // ДС в выпадающем списке области ДС. Шапка — кнопка-переключатель одной строкой (номер, дата, тип, статус,
+  // предмет, сумма) и ссылка на карточку; раскрытое — пути документа, работа юриста по ДС и действия.
   // q — строка поиска: ДС, которое нашёл поиск, подсвечено.
   const renderDsItem = (ds, q) => {
     const open = openDsItems.has(ds.id)
@@ -2425,8 +2426,8 @@ function ContractRegistry() {
               ? <span className="status-badge status-deleted">Удалён</span>
               : <span className={`status-badge ${opt?.className || ''}`} title={opt?.label}>{opt?.short || opt?.label}</span>}
             {overdue && <span className="ce2-ds-overdue" title="Просрочена плановая дата подписания">просрочено</span>}
-            <span className="ce2-ds-amount">{amount || '—'}{hasAppliedPsdc(ds) ? ' (ПСДЦ)' : ''}</span>
             <span className="ce2-ds-work" title={ds.work_name || ''}>{ds.work_name || 'предмет не указан'}</span>
+            <span className="ce2-ds-amount">{amount || '—'}{hasAppliedPsdc(ds) ? ' (ПСДЦ)' : ''}</span>
           </button>
           <Link
             to={`/contracts/${ds.id}`}
@@ -2483,7 +2484,10 @@ function ContractRegistry() {
     )
   }
 
-  // Строка под раскрытым документом: слева работа юриста, справа ДС и сведения для просмотра.
+  // Строка под раскрытым документом (29.10.2026, по просьбе пользователя: «рабочая область юриста слишком
+  // маленькая»): сверху во всю ширину — работа юриста, под ней — полоса ДС (по строке на ДС), внизу
+  // одной строкой — реквизиты и стороны договора. Раньше работа юриста и ДС стояли рядом пополам, и
+  // таблица приложений юриста не помещалась.
   const renderExpandedRow = (contract) => {
     const docDeleted = !!contract.deleted_at
     const isDs = isAmendment(contract)
@@ -2493,19 +2497,38 @@ function ContractRegistry() {
     // Вкладка статуса показывает ДС только этого статуса — говорим, сколько их у договора всего.
     const totalDs = nestDs ? flattenTree(contract, docIndex).length : dsList.length
     const q = searchText.trim().toLowerCase()
+    const details = [
+      contract.display_id != null && ['ID портала', contract.display_id],
+      ['Тип', DOC_TYPE_SHORT[contract.record_type] || 'Договор'],
+      divisionEnabled && ['Подразделение', VOR_DIVISION_LABEL[divisionOf(contract)] || 'не указано'],
+      shown.gen_director_name && ['Ген.директор', shown.gen_director_name],
+      shown.phone && ['Телефон', shown.phone],
+      shown.email && ['Email', shown.email],
+      shown.bsm && ['БСМ', shown.bsm],
+    ].filter(Boolean)
     return (
       <tr className="contract-expanded-row" onClick={(e) => e.stopPropagation()}>
         <td colSpan={tableColCount}>
-          {/* ce2-wrap — контейнер для @container: две области рядом или одна под другой по ширине
-              таблицы, а не окна (слева меню, у браузера свой масштаб). */}
+          {/* ce2-wrap — контейнер для @container: раскладка полей и строк ДС — по ширине таблицы, а не
+              окна (слева меню, у браузера свой масштаб). */}
           <div className="ce2-wrap">
-          <div className="ce2">
             <section className="ce2-area ce2-area-lawyer" aria-label="Работа юриста">
               <div className="ce2-area-head">
                 <span className="ce2-area-title">Работа юриста</span>
                 <span className="ce2-area-sub">
                   {isDs ? 'по этому ДС' : 'по договору'}: юрист, сроки, примечание и приложения
                 </span>
+                {/* Действия раскрытого блока — в шапке, справа: не теряются под длинной таблицей. */}
+                <div className="ce-actions ce2-area-actions">
+                  <button type="button" className="ce-open-card" onClick={() => navigate(`/contracts/${contract.id}`)}>
+                    {isDs ? 'Открыть карточку ДС' : 'Открыть карточку договора'}
+                  </button>
+                  {canEditContracts && !docDeleted && (
+                    <button type="button" className="ce-edit-link" onClick={() => handleEditContract(contract)}>
+                      {isDs ? 'Редактировать ДС' : 'Редактировать договор'}
+                    </button>
+                  )}
+                </div>
               </div>
               {renderLawyerWork(contract)}
             </section>
@@ -2534,11 +2557,22 @@ function ContractRegistry() {
                   {dsList.map(ds => renderDsItem(ds, q))}
                 </ul>
               )}
+            </section>
 
+            {/* Реквизиты и стороны — только для просмотра, одной строкой под областями. */}
+            <section className="ce2-info" aria-label="Реквизиты">
+              <dl className="ce2-info-list">
+                {details.map(([label, value]) => (
+                  <div key={label} className="ce2-info-item">
+                    <dt>{label}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+              </dl>
               {/* Стороны договора (может быть несколько — трёхсторонний договор) */}
               {parties.length > 1 && (
-                <section className="ce-block">
-                  <div className="ce-block-title">Стороны договора</div>
+                <div className="ce2-info-row">
+                  <span className="ce2-info-label">Стороны договора</span>
                   <ul className="ce-parties">
                     {parties.map((p, i) => (
                       <li key={p.id}>
@@ -2549,54 +2583,15 @@ function ContractRegistry() {
                       </li>
                     ))}
                   </ul>
-                </section>
-              )}
-
-              {/* Реквизиты: постоянный ID, тип и дополнительные поля */}
-              <section className="ce-block">
-                <div className="ce-block-title">Реквизиты</div>
-                <div className="ce-details-grid">
-                  {contract.display_id != null && (
-                    <div className="ce-detail"><span className="ce-detail-l">ID портала</span><span className="ce-detail-v">{contract.display_id}</span></div>
-                  )}
-                  <div className="ce-detail"><span className="ce-detail-l">Тип</span><span className="ce-detail-v">{DOC_TYPE_SHORT[contract.record_type] || 'Договор'}</span></div>
-                  {divisionEnabled && (
-                    <div className="ce-detail">
-                      <span className="ce-detail-l">Подразделение</span>
-                      <span className="ce-detail-v">{VOR_DIVISION_LABEL[divisionOf(contract)] || 'не указано'}</span>
-                    </div>
-                  )}
-                  {shown.gen_director_name && (
-                    <div className="ce-detail"><span className="ce-detail-l">Ген.директор</span><span className="ce-detail-v">{shown.gen_director_name}</span></div>
-                  )}
-                  {shown.phone && (
-                    <div className="ce-detail"><span className="ce-detail-l">Телефон</span><span className="ce-detail-v">{shown.phone}</span></div>
-                  )}
-                  {shown.email && (
-                    <div className="ce-detail"><span className="ce-detail-l">Email</span><span className="ce-detail-v">{shown.email}</span></div>
-                  )}
-                  {shown.bsm && (
-                    <div className="ce-detail"><span className="ce-detail-l">БСМ</span><span className="ce-detail-v">{shown.bsm}</span></div>
-                  )}
-                  {shown.comments && (
-                    <div className="ce-detail ce-detail-wide"><span className="ce-detail-l">Комментарии</span><span className="ce-detail-v">{shown.comments}</span></div>
-                  )}
                 </div>
-              </section>
+              )}
+              {shown.comments && (
+                <div className="ce2-info-row">
+                  <span className="ce2-info-label">Комментарии</span>
+                  <span className="ce2-info-text">{shown.comments}</span>
+                </div>
+              )}
             </section>
-          </div>
-
-          {/* Действия раскрытого блока */}
-          <div className="ce-actions">
-            <button type="button" className="ce-open-card" onClick={() => navigate(`/contracts/${contract.id}`)}>
-              {isDs ? 'Открыть карточку ДС' : 'Открыть карточку договора'}
-            </button>
-            {canEditContracts && !docDeleted && (
-              <button type="button" className="ce-edit-link" onClick={() => handleEditContract(contract)}>
-                {isDs ? 'Редактировать ДС' : 'Редактировать договор'}
-              </button>
-            )}
-          </div>
           </div>
         </td>
       </tr>

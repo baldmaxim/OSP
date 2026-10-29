@@ -24,7 +24,7 @@
   gap: 0.375rem;
   font-size: 0.75rem;
   line-height: 1rem;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--tc-color);
   background: color-mix(in srgb, var(--tc-color) 10%, var(--bg-secondary));
   border: 1px solid color-mix(in srgb, var(--tc-color) 35%, transparent);
@@ -38,6 +38,7 @@
 .tc-status-fdrop .fdrop-value,
 .fdrop.tc-status-fdrop.is-active .fdrop-value {
   color: var(--tc-color);
+  font-weight: 500;
   overflow: visible;
 }
 .tc-status-fdrop .fdrop-arrow { color: var(--tc-color); opacity: 0.8; }

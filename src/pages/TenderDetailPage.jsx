@@ -15,6 +15,8 @@ import { useRole } from '../contexts/RoleContext'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import ParticipantStatusSelect from '../components/ParticipantStatusSelect'
 import ParticipantContacts from '../components/ParticipantContacts'
+import KpCollapseToggle, { useKpCollapsed } from '../components/KpCollapseToggle'
+import '../components/ParticipantsTable.css'
 import TenderFilesZipButton from '../components/TenderFilesZipButton'
 import TenderProposalsCompare from '../components/TenderProposalsCompare'
 import VorDocsModal from '../components/VorDocsModal'
@@ -530,6 +532,8 @@ function TenderDetailPage() {
   // Когда КП контрагента фактически попало на сайт: counterparty_id → ISO-дата.
   // Источник — загруженный файл КП, а если файла нет (кабинет подрядчика) — строки расценок.
   const [kpUploadedAt, setKpUploadedAt] = useState({})
+  // Галочка «Свернуть КП» над участниками — общая с реестром тендеров, помнится в браузере.
+  const [kpCollapsed, setKpCollapsed] = useKpCollapsed()
   // task 427: DnD-перестановка участников
   const [draggedTc, setDraggedTc] = useState(null) // { id }
   const [tcDragOver, setTcDragOver] = useState(null) // { id, position }
@@ -2598,6 +2602,9 @@ function TenderDetailPage() {
             <div className="section-header">
               <h3>Участники тендера</h3>
               <div className="section-actions">
+                {tenderCounterparties.length > 0 && (
+                  <KpCollapseToggle collapsed={kpCollapsed} onChange={setKpCollapsed} />
+                )}
                 {canEditTenders && (
                   <button
                     className="btn-primary"
@@ -2616,23 +2623,22 @@ function TenderDetailPage() {
               </div>
             ) : (
               <div className="table-container">
-                <table className="data-table" style={{ fontSize: '0.8125rem' }}>
+                <table className="data-table tc-table" style={{ fontSize: '0.8125rem' }}>
                   <thead>
                     <tr>
                       {canEditTenders && <th style={{ width: '26px' }}></th>}
                       <th style={{ width: '40px' }}>№</th>
-                      <th style={{ width: '16%', minWidth: '150px' }}>Наименование компании</th>
-                      {/* КП и документы — сразу за компанией, контакты (ФИО, телефон, почта одной
-                          колонкой) — справа, как в раскрытой строке реестра (29.10.2026). */}
-                      <th style={{ width: '23rem', minWidth: '21rem' }}>
+                      {/* Как в раскрытой строке реестра (29.10.2026): статус — под названием компании,
+                          контакты — сразу за ней, затем КП и документы, примечание — справа. */}
+                      <th className="tc-col-company">Наименование компании</th>
+                      <th className="tc-col-contacts">Контакты</th>
+                      <th className="tc-col-files">
                         <div className="tc-files-head">
                           <TenderFilesZipButton tender={tender} participants={tenderCounterparties} />
                           <span>КП / Документы</span>
                         </div>
                       </th>
-                      <th style={{ width: '190px' }}>Статус</th>
-                      {!hideNotes && <th style={{ minWidth: '18rem', width: '30%' }}>Примечание</th>}
-                      <th style={{ width: '15rem' }}>Контакты</th>
+                      {!hideNotes && <th className="tc-col-notes">Примечание</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -2642,8 +2648,7 @@ function TenderDetailPage() {
                       return (
                         <tr
                           key={tc.id}
-                          className={`${draggedTc?.id === tc.id ? 'tc-dragging' : ''}${tcDragOver?.id === tc.id ? ` tc-drop-${tcDragOver.position}` : ''}`}
-                          style={isWinner ? { background: 'rgba(22, 163, 74, 0.08)' } : {}}
+                          className={`${isWinner ? 'is-winner' : ''}${draggedTc?.id === tc.id ? ' tc-dragging' : ''}${tcDragOver?.id === tc.id ? ` tc-drop-${tcDragOver.position}` : ''}`}
                           onDragOver={!canEditTenders ? undefined : (e) => {
                             e.preventDefault()
                             e.dataTransfer.dropEffect = 'move'
@@ -2674,48 +2679,50 @@ function TenderDetailPage() {
                               >⋮⋮</span>
                             </td>
                           )}
-                          <td style={{ textAlign: 'center', fontWeight: 600, color: 'var(--text-tertiary)' }}>{idx + 1}</td>
-                          <td>
-                            <div style={{ fontWeight: 600, wordBreak: 'break-word' }}>
+                          <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>{idx + 1}</td>
+                          <td className="tc-company-cell">
+                            <div className="tc-company-name">
                               {isWinner && <span title="Победитель" style={{ marginRight: '0.25rem' }}>🏆</span>}
                               {tc.counterparties?.name}
                               {isWinner && winnerScope && (
-                                <span style={{ marginLeft: '0.375rem', fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-tertiary)' }}>
-                                  — {winnerScope}
-                                </span>
+                                <span className="tc-company-scope">— {winnerScope}</span>
                               )}
                             </div>
                             {tc.counterparties?.work_type && (
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>{tc.counterparties.work_type}</div>
+                              <div className="tc-company-sub" title={tc.counterparties.work_type}>{tc.counterparties.work_type}</div>
                             )}
+                            {/* Когда КП загрузили на сайт — в подсказке статуса: у каждого файла КП
+                                дата и время и так видны, отдельная строка перегружала ячейку. */}
+                            <div
+                              className="tc-company-status"
+                              title={kpUploadedAt[tc.counterparty_id]
+                                ? `КП загружено ${formatKpUploadedAt(kpUploadedAt[tc.counterparty_id])}`
+                                : undefined}
+                            >
+                              <ParticipantStatusSelect
+                                value={tc.status}
+                                onChange={(v) => handleUpdateParticipantStatus(tc.id, v)}
+                                disabled={!canEditTenders}
+                              />
+                            </div>
                           </td>
-                          <td style={{ verticalAlign: 'top', padding: '0.5rem' }}>
+                          <td>
+                            <ParticipantContacts contacts={tc.counterparties?.counterparty_contacts} />
+                          </td>
+                          <td>
                             <TenderCounterpartyFiles
                               tenderId={tenderId}
                               counterpartyId={tc.counterparty_id}
                               canEdit={canEditTenders}
                               tender={tender}
                               counterpartyName={tc.counterparties?.name}
+                              collapsed={kpCollapsed}
                             />
-                          </td>
-                          <td>
-                            <ParticipantStatusSelect
-                              value={tc.status}
-                              onChange={(v) => handleUpdateParticipantStatus(tc.id, v)}
-                              disabled={!canEditTenders}
-                            />
-                            {kpUploadedAt[tc.counterparty_id] && (
-                              <div
-                                title="Когда КП загрузили на сайт"
-                                style={{ marginTop: '0.25rem', fontSize: '0.6875rem', color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}
-                              >
-                                КП загружено {formatKpUploadedAt(kpUploadedAt[tc.counterparty_id])}
-                              </div>
-                            )}
                           </td>
                           {!hideNotes && (
-                          <td style={{ verticalAlign: 'top', padding: '0.5rem' }}>
+                          <td>
                             <textarea
+                              className="tc-note-area"
                               value={tc.notes || ''}
                               onChange={(e) => {
                                 setTenderCounterparties(prev =>
@@ -2734,27 +2741,9 @@ function TenderDetailPage() {
                               placeholder="Даты обзвонов, комментарии..."
                               readOnly={!canEditTenders}
                               disabled={!canEditTenders}
-                              style={{
-                                width: '100%',
-                                minHeight: '60px',
-                                padding: '0.5rem',
-                                fontSize: '0.8125rem',
-                                border: '1px solid var(--border-color)',
-                                borderRadius: '4px',
-                                background: 'var(--bg-secondary)',
-                                color: 'var(--text-primary)',
-                                resize: 'none',
-                                overflow: 'hidden',
-                                fontFamily: 'inherit',
-                                lineHeight: 1.5,
-                                boxSizing: 'border-box',
-                              }}
                             />
                           </td>
                           )}
-                          <td style={{ verticalAlign: 'top', padding: '0.5rem' }}>
-                            <ParticipantContacts contacts={tc.counterparties?.counterparty_contacts} />
-                          </td>
                         </tr>
                       )
                     })}

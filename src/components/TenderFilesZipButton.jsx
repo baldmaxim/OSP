@@ -3,6 +3,8 @@
 // С counterparty ({ id, name }) — та же кнопка в ячейке одного участника: архив только его
 // файлов, без папки компании (она — в имени архива).
 // Права — как у скачивания одного файла: та же ссылка из requestDownloadUrl.
+// iconOnly — в ячейке участника только значок (подпись — для чтения с экрана), пока архив
+// собирается — «Скачано N из M» текстом.
 import { useState } from 'react'
 import { saveAs } from 'file-saver'
 import { fetchTenderFilesForArchive } from '../services/tenderProposalFiles'
@@ -18,7 +20,7 @@ const LARGE_ARCHIVE_BYTES = 500 * 1024 * 1024
 
 const formatMegabytes = (bytes) => `${(bytes / 1024 / 1024).toFixed(0)} МБ`
 
-export default function TenderFilesZipButton({ tender, participants, counterparty = null, className = 'tc-zip-btn' }) {
+export default function TenderFilesZipButton({ tender, participants, counterparty = null, className = 'tc-zip-btn', iconOnly = false }) {
   // null — свободна; { done, total } — идёт сборка (total = 0 — ещё готовим список).
   const [progress, setProgress] = useState(null)
   const busy = progress != null
@@ -84,7 +86,7 @@ export default function TenderFilesZipButton({ tender, participants, counterpart
         : 'Все файлы участников одним ZIP-архивом, по папкам компаний'}
     >
       <IconDownload size={14} />
-      <span>{label}</span>
+      <span className={iconOnly && !busy ? 'ui-sr-only' : undefined}>{label}</span>
     </button>
   )
 }

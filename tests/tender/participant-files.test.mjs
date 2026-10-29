@@ -1,17 +1,19 @@
 // Ячейка «КП / Документы» участника тендера (TenderCounterpartyFiles) и статус участника
-// (ParticipantStatusSelect) — лента по образцу «Проверки КП» (29.10.2026; позже в тот же день — карточки с цветом
-// состояния проверки, имя файла целиком):
+// (ParticipantStatusSelect) — лента по образцу «Проверки КП» (29.10.2026; позже в тот же день — по
+// замечаниям пользователя: КП блоками по версиям, имя файла в одну строку, состояние — только полосой
+// слева, «ждёт проверки» — серым, галочка «Свернуть КП», колонки «компания (со статусом) · контакты · КП ·
+// примечание»):
 //   • разбор ленты (src/utils/proposalTimeline.js): КП и документы — старые сверху, версии одного КП
-//     по порядку загрузки, у прежних — когда заменены;
+//     по порядку загрузки, у прежних — когда заменены; группы версий и сводка проверки;
 //   • в Chromium на стенде (tcFiles=1&tcReview=1): карточка тендера → «Участники» и раскрытая строка
 //     реестра «Тендеры — Основное строительство» — дата и время загрузки, кто загрузил, версия, проверка,
 //     имя файла открывает просмотр (отдельной кнопки нет), документы, новая версия КП в окне загрузки,
-//     статус участника плашкой (и без права правки — читаемой).
+//     статус участника плашкой (и без права правки — читаемой), сворачивание КП.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
-import { buildFilesTimeline, currentProposals, byUploadTime } from '../../src/utils/proposalTimeline.js'
+import { buildFilesTimeline, currentProposals, byUploadTime, groupProposals, reviewSummary } from '../../src/utils/proposalTimeline.js'
 import { participantStatusKey, participantStatusLabel, PARTICIPANT_STATUS_OPTIONS } from '../../src/utils/participantStatus.js'
 
 const kp = (id, at, group, extra = {}) => ({ id, created_at: at, file_kind: 'commercial_proposal', proposal_group_id: group, ...extra })
@@ -41,6 +43,21 @@ describe('Лента файлов участника: разбор', () => {
     assert.deepEqual(proposals.map((p) => [p.file.id, p.version, p.versions, p.groupId]), [['y', 1, 1, 'y'], ['z', 1, 1, 'z']])
     assert.deepEqual(buildFilesTimeline(null), { proposals: [], attachments: [] })
     assert.ok(byUploadTime({ id: 'a', created_at: null }, { id: 'b', created_at: same }) < 0, 'без даты — в начало, не падает')
+  })
+
+  it('КП — блоками по группам версий: КП по первой загрузке, версии по порядку; сводка — по текущим версиям', () => {
+    const { proposals } = buildFilesTimeline([
+      kp('a', '2026-10-18T10:00:00Z', 'g1', { review_required: true, review_status: 'approved' }),
+      kp('b', '2026-10-20T10:00:00Z', 'g2', { review_required: true, review_status: 'has_remarks' }),
+      kp('c', '2026-10-21T10:00:00Z', 'g1', { review_required: true }),
+      kp('d', '2026-10-22T10:00:00Z', 'g3'),
+    ])
+    const groups = groupProposals(proposals)
+    assert.deepEqual(groups.map((g) => [g.groupId, g.items.map((p) => p.file.id), g.current.file.id]),
+      [['g1', ['a', 'c'], 'c'], ['g2', ['b'], 'b'], ['g3', ['d'], 'd']])
+    // У g1 текущая версия ещё на проверке — прежнее «проверено» не в счёт; КП без проверки (g3) не считается.
+    assert.deepEqual(reviewSummary(groups), { approved: 0, has_remarks: 1, pending: 1 })
+    assert.deepEqual(groupProposals([]), [])
   })
 
   it('статус участника: пустой — «Запрос отправлен», подписи — из одного списка', () => {
@@ -90,21 +107,33 @@ describe('Лента файлов участника: карточка тенд�
   const kpItems = (scope) => scope.locator('section[aria-label="Коммерческие предложения"] .tcpf-item')
   const docItems = (scope) => scope.locator('section[aria-label="Документы"] .tcpf-item')
 
-  it('КП — старые сверху: дата и время, кто загрузил, версия и метка; дата не обрезана, столбец ровный', async () => {
+  it('КП — блоками по версиям: «в1», «в2», дата и время, кто загрузил, метка; дата не обрезана, столбец ровный', async () => {
     const { page, errors, close } = await openCard()
     try {
-      const items = kpItems(row(page, 'Подрядчик 01'))
+      const one = row(page, 'Подрядчик 01')
+      const items = kpItems(one)
       assert.deepEqual(await items.locator('.tcpf-date').allTextContents(), ['18.10.26', '21.10.26'])
       assert.deepEqual(await items.locator('.tcpf-time').allTextContents(), ['13:00', '13:00'])
       assert.equal(await items.first().locator('.tcpf-when').getAttribute('title'), 'Загружено 18.10.2026, 13:00')
-      assert.deepEqual(await items.locator('.tcpf-ver').allTextContents(), ['заменена 21.10.26', 'версия 2'])
+      // Версии одного КП — одним блоком с метками «в1», «в2»; у прежней — когда заменена.
+      assert.equal(await one.locator('.tcpf-kp').count(), 1)
+      assert.deepEqual(await items.locator('.tcpf-vtag').allTextContents(), ['в1', 'в2'])
+      assert.match(await items.nth(1).locator('.tcpf-vtag').getAttribute('class'), /is-current/)
+      assert.deepEqual(await items.locator('.tcpf-ver').allTextContents(), ['заменена 21.10.26'])
       assert.deepEqual(await items.locator('.tcpf-vlabel').allTextContents(), ['«исходное»', '«после переторжки»'])
       assert.match(await items.first().getAttribute('class'), /is-replaced/)
       assert.doesNotMatch(await items.nth(1).getAttribute('class'), /is-replaced/)
       assert.deepEqual(await items.locator('.tcpf-uploader').allTextContents(), ['Иванов И. И.', 'Иванов И. И.'])
+      // Сводка: одно КП в двух версиях; подписи блоков «КП 1» у одного КП нет — число версий в сводке.
+      assert.equal((await one.locator('.tcpf-sum-kp').textContent()).replace(/\s+/g, ' ').trim(), 'КП · 1 · 2 версии')
+      assert.equal(await one.locator('.tcpf-kp-head').count(), 0)
+      // Несколько КП — блоки подписаны «КП 1», «КП 2», у одиночных версий меток нет.
+      const two = row(page, 'Подрядчик 02')
+      assert.deepEqual(await two.locator('.tcpf-kp-name').allTextContents(), ['КП 1', 'КП 2'])
+      assert.equal(await two.locator('.tcpf-vtag').count(), 0)
 
-      // Имя файла — целиком (длинное переносится, не режется многоточием); дата — целиком;
-      // имена в одной ленте начинаются с одной линии.
+      // Имя файла — в одну строку (основа многоточием, расширение видно, полное — в подсказке); дата —
+      // целиком; имена в одном блоке начинаются с одной линии.
       const geometry = await page.evaluate(() => {
         const dates = [...document.querySelectorAll('.participants-section .tcpf-date')]
         const files = [...document.querySelectorAll('.participants-section .tcpf-list')].map((list) =>
@@ -116,23 +145,45 @@ describe('Лента файлов участника: карточка тенд�
       })
       assert.deepEqual(geometry.clipped, [], 'дата помещается целиком')
       assert.deepEqual(geometry.ragged, [], 'имена файлов в одной ленте начинаются с одной линии')
-      const long = kpItems(row(page, 'Подрядчик 02')).nth(1)
-      const name = long.locator('.tcpf-file-name')
-      assert.equal(await name.textContent(), 'КП Подрядчик 02 — кровля и водосток, корпус 2, секции 1–4.pdf')
-      const shape = await name.evaluate((el) => ({
-        clipped: el.scrollWidth > el.clientWidth + 0.5,
-        lines: Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)),
-      }))
-      assert.equal(shape.clipped, false, 'длинное имя видно целиком')
-      assert.ok(shape.lines >= 2, `длинное имя переносится (строк: ${shape.lines})`)
-      // Тип файла — цветом значка; состояние КП — цветом карточки.
+      const long = kpItems(two).nth(1)
+      assert.equal(await long.locator('.tcpf-file-name').textContent(), 'КП Подрядчик 02 — кровля и водосток, корпус 2, секции 1–4')
+      assert.equal(await long.locator('.tcpf-file-ext').textContent(), '.pdf')
+      assert.match(await long.locator('.tcpf-file').getAttribute('title'), /^Открыть: КП Подрядчик 02 — кровля и водосток, корпус 2, секции 1–4\.pdf/)
+      const shape = await long.locator('.tcpf-file').evaluate((btn) => {
+        const name = btn.querySelector('.tcpf-file-name')
+        const ext = btn.querySelector('.tcpf-file-ext').getBoundingClientRect()
+        const cell = btn.closest('td').getBoundingClientRect()
+        return {
+          lines: Math.round(name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).lineHeight)),
+          extInside: ext.right <= cell.right + 0.5 && ext.width > 0,
+        }
+      })
+      assert.equal(shape.lines, 1, 'имя — в одну строку')
+      assert.equal(shape.extInside, true, 'расширение видно')
+      // Тип файла — цветом значка; состояние КП — полосой слева у блока (по текущей версии), без фона и рамки;
+      // «ждёт проверки» — серой полосой, как в «Проверке КП».
       assert.equal(await long.locator('.tcpf-ftype.is-pdf').count(), 1)
-      assert.equal(await kpItems(row(page, 'Подрядчик 01')).first().locator('.tcpf-ftype.is-sheet').count(), 1)
-      const tones = async (name) => kpItems(row(page, name)).evaluateAll((els) =>
+      assert.equal(await items.first().locator('.tcpf-ftype.is-sheet').count(), 1)
+      const tones = async (name) => row(page, name).locator('.tcpf-kp').evaluateAll((els) =>
         els.map((el) => [...el.classList].find((c) => c.startsWith('tcpf-tone-'))))
-      assert.deepEqual(await tones('Подрядчик 01'), ['tcpf-tone-old', 'tcpf-tone-pending'])
+      assert.deepEqual(await tones('Подрядчик 01'), ['tcpf-tone-pending'])
       assert.deepEqual(await tones('Подрядчик 02'), ['tcpf-tone-ok', 'tcpf-tone-warn'])
-      assert.deepEqual(await docItems(row(page, 'Подрядчик 01')).evaluateAll((els) => els.map((el) => el.classList.contains('tcpf-tone-doc'))), [true])
+      const look = await page.evaluate(() => {
+        const kps = [...document.querySelectorAll('.participants-section .tcpf-kp')]
+        const files = [...document.querySelectorAll('.participants-section .tcpf-item')]
+        const pending = document.querySelector('.participants-section .tcpf-kp.tcpf-tone-pending')
+        return {
+          tinted: [...kps, ...files].filter((el) => getComputedStyle(el).backgroundColor !== 'rgba(0, 0, 0, 0)').length,
+          boxed: files.filter((el) => getComputedStyle(el).borderTopWidth !== '0px').length,
+          lines: kps.map((el) => getComputedStyle(el).borderLeftWidth),
+          pendingLine: getComputedStyle(pending).borderLeftColor,
+        }
+      })
+      assert.equal(look.tinted, 0, 'фон блоков и строк не красится')
+      assert.equal(look.boxed, 0, 'у строк файлов нет рамки')
+      assert.deepEqual(look.lines, ['3px', '3px', '3px'])
+      assert.equal(look.pendingLine, 'rgb(148, 163, 184)', 'ждёт проверки — серая полоса, не синяя')
+      assert.equal(await docItems(one).count(), 1)
       assert.deepEqual(errors, [])
     } finally {
       await close()
@@ -144,7 +195,7 @@ describe('Лента файлов участника: карточка тенд�
     try {
       const cell = row(page, 'Подрядчик 01')
       assert.equal(await cell.locator('button[title="Просмотр"]').count(), 0)
-      assert.equal(await cell.locator('.tcpf-toggle-header, .tcpf-toggle').count(), 0, 'файлы видны сразу, без переключателя')
+      assert.equal(await cell.locator('.tcpf-summary').getAttribute('aria-expanded'), 'true', 'файлы видны сразу')
       const first = kpItems(cell).first()
       assert.deepEqual(await first.locator('.tcpf-line .tcpf-icon-btn').evaluateAll((els) => els.map((b) => b.getAttribute('aria-label'))),
         ['Скачать КП Подрядчик 01.xlsx', 'Удалить КП Подрядчик 01.xlsx'])
@@ -166,7 +217,8 @@ describe('Лента файлов участника: карточка тенд�
       assert.equal(await own.first().locator('.tcpf-who').count(), 0)
       const who = await own.first().locator('.kpb-pill').getAttribute('title')
       assert.ok(who.includes('Петрова') && who.includes('19.10.2026'), who)
-      assert.deepEqual(await own.first().locator('.tcpf-step').allTextContents(), ['в сводной'])
+      // Шаги — только у текущей версии: у заменённой «в сводной» уже не задача.
+      assert.deepEqual(await own.first().locator('.tcpf-step').allTextContents(), [])
       assert.equal(await own.nth(1).locator('.kpb-pill').count(), 0)
       await own.nth(1).locator('.tcpf-check-btn', { hasText: 'Проверить' }).click()
       await page.locator('.kprm-modal .kprm-title', { hasText: 'Проверка КП' }).waitFor({ timeout: 10000 })
@@ -176,7 +228,11 @@ describe('Лента файлов участника: карточка тенд�
       assert.deepEqual(await other.first().locator('.tcpf-step').allTextContents(), ['к занесению в сводную'])
       assert.match(await other.nth(1).locator('.kpb-pill').textContent(), /Замечания/)
       assert.match(await other.nth(1).locator('.kpb-pill').getAttribute('title'), /^Замечания · Смирнов/)
-      assert.match(await other.nth(1).locator('.tcpf-remarks').textContent(), /Нет цены на водосточную систему/)
+      // Замечания — одной строкой, полностью — в подсказке.
+      const remarks = other.nth(1).locator('.tcpf-remarks')
+      assert.match(await remarks.textContent(), /Нет цены на водосточную систему/)
+      assert.match(await remarks.getAttribute('title'), /гарантия 2 года вместо 5/)
+      assert.equal(await remarks.evaluate((el) => Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight))), 1)
       assert.deepEqual(await other.nth(1).locator('.tcpf-step').allTextContents(), ['в сводной', 'к отправке подрядчику'])
       assert.deepEqual(errors, [])
     } finally {
@@ -184,14 +240,26 @@ describe('Лента файлов участника: карточка тенд�
     }
   })
 
-  it('колонки: «КП / Документы» сразу за компанией, «Контакты» (телефон и почта вместе) — справа', async () => {
+  it('колонки: компания со статусом под названием, «Контакты» сразу за ней, затем КП, примечание — справа', async () => {
     const heads = (page, sel) => page.locator(`${sel} thead th`).evaluateAll((ths) =>
       ths.map((th) => th.textContent.replace(/Скачать всё/, '').trim()).filter(Boolean))
-    const expected = ['№', 'Наименование компании', 'КП / Документы', 'Статус', 'Примечание', 'Контакты']
+    const expected = ['№', 'Наименование компании', 'Контакты', 'КП / Документы', 'Примечание']
     const card = await openCard('&cpContacts=1')
     try {
       const { page, errors } = card
       assert.deepEqual(await heads(page, '.participants-section'), expected)
+      // Статус — плашкой под названием компании; название — 500, не жирное.
+      const company = row(page, 'Подрядчик 01').locator('td.tc-company-cell')
+      assert.equal(await company.locator('.tc-status-fdrop').count(), 1)
+      assert.equal(await company.locator('.tc-company-name').evaluate((el) => getComputedStyle(el).fontWeight), '500')
+      // Подрядчики разделены: всё по верхнему краю, через одного — подложка.
+      const rows = await page.locator('.participants-section tbody tr').evaluateAll((trs) => trs.map((tr) => ({
+        bg: getComputedStyle(tr).backgroundColor,
+        top: [...tr.cells].every((td) => getComputedStyle(td).verticalAlign === 'top'),
+      })))
+      assert.ok(rows.every((r) => r.top), 'ячейки — по верхнему краю')
+      assert.equal(rows[0].bg, 'rgba(0, 0, 0, 0)')
+      assert.notEqual(rows[1].bg, 'rgba(0, 0, 0, 0)', 'у второго подрядчика — подложка')
       const contacts = row(page, 'Подрядчик 01').locator('.tcc-item')
       assert.equal(await contacts.count(), 2)
       assert.equal(await contacts.first().locator('.tcc-name').textContent(), 'Шахмиров Джабраил Алиевич')
@@ -213,6 +281,7 @@ describe('Лента файлов участника: карточка тенд�
       await page.locator('.expand-toggle').first().click()
       await page.locator('.expanded-cp-table-wrap .tcc-item').first().waitFor({ timeout: 30000 })
       assert.deepEqual(await heads(page, '.expanded-cp-table-wrap'), expected)
+      assert.equal(await page.locator('.expanded-cp-table-wrap tbody tr').first().locator('td.tc-company-cell .tc-status-fdrop').count(), 1)
       assert.deepEqual(errors, [])
     } finally {
       await reg.close()
@@ -224,7 +293,7 @@ describe('Лента файлов участника: карточка тенд�
     try {
       const one = row(page, 'Подрядчик 01')
       assert.equal(await one.locator('.tcpf-section-toggle').getAttribute('aria-expanded'), 'true')
-      assert.deepEqual(await docItems(one).locator('.tcpf-file-name').allTextContents(), ['Выписка ЕГРЮЛ.pdf'])
+      assert.deepEqual(await docItems(one).locator('.tcpf-file').allTextContents(), ['Выписка ЕГРЮЛ.pdf'])
 
       const many = row(page, 'Подрядчик 02')
       const toggle = many.locator('.tcpf-section-toggle')
@@ -272,7 +341,8 @@ describe('Лента файлов участника: карточка тенд�
         const p = (x) => String(x).padStart(2, '0')
         return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${p(d.getFullYear() % 100)}`
       })
-      assert.deepEqual(await items.locator('.tcpf-ver').allTextContents(), ['заменена 21.10.26', `заменена ${today}`, 'версия 3'])
+      assert.deepEqual(await items.locator('.tcpf-ver').allTextContents(), ['заменена 21.10.26', `заменена ${today}`])
+      assert.deepEqual(await items.locator('.tcpf-vtag').allTextContents(), ['в1', 'в2', 'в3'])
       assert.equal(await items.nth(2).locator('.tcpf-vlabel').textContent(), '«финальная»')
       const saved = await page.evaluate(() => window.__fakeDb.tender_proposal_files.at(-1))
       assert.equal(saved.proposal_group_id, 'g-1')
@@ -312,6 +382,59 @@ describe('Лента файлов участника: карточка тенд�
       assert.deepEqual(ro.errors, [])
     } finally {
       await ro.close()
+    }
+  })
+
+  it('«Свернуть КП»: у всех участников — строка-сводка, стрелка раскрывает одного; выбор помнится', async () => {
+    const { page, errors, close } = await openCard()
+    try {
+      const toggle = page.locator('.participants-section .tcpf-collapse-toggle')
+      assert.match(await toggle.textContent(), /Свернуть КП/)
+      assert.equal(await toggle.locator('input').isChecked(), false)
+      await toggle.click()
+      await page.waitForFunction(() => document.querySelectorAll('.participants-section .tcpf-kp').length === 0)
+      assert.equal(await page.locator('.participants-section .tcpf-item').count(), 0, 'и документы свёрнуты')
+      // Сводка свёрнутого: КП, документы и проверка текущих версий.
+      const one = row(page, 'Подрядчик 01')
+      assert.equal(await one.locator('.tcpf-summary').getAttribute('aria-expanded'), 'false')
+      assert.match(await one.locator('.tcpf-summary').textContent(), /КП · 1 · 2 версии.*Документы · 1.*на проверке 1/)
+      assert.match(await row(page, 'Подрядчик 02').locator('.tcpf-summary').textContent(), /проверено 1.*замечания 1/)
+      // Загрузка — и в свёрнутом виде.
+      assert.equal(await one.locator('.tcpf-quick-actions button', { hasText: '+ КП' }).count(), 1)
+      // Стрелка раскрывает только этого участника.
+      await one.locator('.tcpf-summary').click()
+      assert.equal(await kpItems(one).count(), 2)
+      assert.equal(await kpItems(row(page, 'Подрядчик 02')).count(), 0)
+      assert.equal(await page.evaluate(() => localStorage.getItem('tenders:kpCollapsed')), '1')
+      // Снятая галочка раскрывает всех.
+      await toggle.click()
+      assert.equal(await kpItems(row(page, 'Подрядчик 02')).count(), 2)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+
+    // Выбор общий с реестром: в раскрытой строке тендера галочка уже стоит.
+    const reg = await openPage('/tenders/construction')
+    try {
+      const { page, errors } = reg
+      await page.evaluate(() => localStorage.setItem('tenders:kpCollapsed', '1'))
+      await page.reload()
+      const search = page.locator('input[placeholder^="№, объект"]')
+      await search.waitFor({ timeout: 120000 })
+      await search.fill('200')
+      await page.locator('.expand-toggle').first().click()
+      const toolbar = page.locator('.expanded-cp-toolbar')
+      await toolbar.locator('.tcpf-collapse-toggle').waitFor({ timeout: 30000 })
+      assert.equal(await toolbar.locator('.tcpf-collapse-toggle input').isChecked(), true)
+      // Галочка — справа от «Копировать email».
+      const order = await toolbar.evaluate((el) => [...el.children].map((c) => c.textContent.trim()))
+      assert.ok(order.indexOf('Свернуть КП') > order.findIndex((t) => /Копировать email/.test(t)), order.join(' | '))
+      await page.locator('.expanded-cp-table-wrap .tcpf[aria-busy="false"] .tcpf-summary').first().waitFor({ timeout: 30000 })
+      assert.equal(await page.locator('.expanded-cp-table-wrap .tcpf-kp').count(), 0)
+      assert.deepEqual(errors, [])
+    } finally {
+      await reg.close()
     }
   })
 

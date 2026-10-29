@@ -25,6 +25,8 @@ import { TENDERS_STRUCTURE } from '../utils/docStorageStructures'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import ParticipantStatusSelect from '../components/ParticipantStatusSelect'
 import ParticipantContacts from '../components/ParticipantContacts'
+import KpCollapseToggle, { useKpCollapsed } from '../components/KpCollapseToggle'
+import '../components/ParticipantsTable.css'
 import { participantStatusKey, participantStatusLabel } from '../utils/participantStatus'
 import VorDocsModal from '../components/VorDocsModal'
 import VorRdModal from '../components/VorRdModal'
@@ -267,6 +269,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [notesHistoryRows, setNotesHistoryRows] = useState([])
   const [notesHistoryLoading, setNotesHistoryLoading] = useState(false)
   const [copiedEmailsTenderId, setCopiedEmailsTenderId] = useState(null)
+  // Галочка «Свернуть КП» над участниками раскрытого тендера — одна на все тендеры, помнится в браузере.
+  const [kpCollapsed, setKpCollapsed] = useKpCollapsed()
   const [editingResponsibleTenderId, setEditingResponsibleTenderId] = useState(null)
   const [showAddCounterpartyModal, setShowAddCounterpartyModal] = useState(false)
   const [selectedTenderForCounterparty, setSelectedTenderForCounterparty] = useState(null)
@@ -4402,6 +4406,9 @@ ${ATTACHMENT_BLOCK}
                               {copiedEmailsTenderId === tender.id ? '✓ Скопировано' : <><IconLetter size={14} /> Копировать email</>}
                             </button>
                           )}
+                          {tenderCounterparties[tender.id]?.length > 0 && (
+                            <KpCollapseToggle collapsed={kpCollapsed} onChange={setKpCollapsed} />
+                          )}
                         </div>
                         {!isMaterialsView && (
                           <BidRequestsBlock
@@ -4422,19 +4429,18 @@ ${ATTACHMENT_BLOCK}
                         )}
                         {tenderCounterparties[tender.id] && tenderCounterparties[tender.id].length > 0 ? (
                           <div className="expanded-cp-table-wrap">
-                            <table className="data-table" style={{ margin: 0 }}>
+                            <table className="data-table tc-table" style={{ margin: 0 }}>
                               <thead>
                                 <tr>
                                   {canEditTenders && <th style={{ width: '26px' }}></th>}
                                   <th style={{ width: '40px' }}>№</th>
-                                  <th style={{ width: '16%', minWidth: '150px' }}>Наименование компании</th>
-                                  {/* КП и документы — сразу за компанией, контакты (телефон и почта
-                                      одной колонкой) — справа (29.10.2026, по просьбе пользователя). */}
-                                  <th style={{ width: '23rem', minWidth: '21rem' }}>КП / Документы</th>
-                                  <th style={{ width: '190px' }}>Статус</th>
-                                  {!hideNotes && <th>Примечание</th>}
-                                  <th style={{ width: '15rem' }}>Контакты</th>
-                                  <th style={{ width: '56px' }}></th>
+                                  {/* 29.10.2026, по просьбе пользователя: статус — под названием компании,
+                                      контакты — сразу за ней, затем КП и документы, примечание — справа. */}
+                                  <th className="tc-col-company">Наименование компании</th>
+                                  <th className="tc-col-contacts">Контакты</th>
+                                  <th className="tc-col-files">КП / Документы</th>
+                                  {!hideNotes && <th className="tc-col-notes">Примечание</th>}
+                                  <th style={{ width: '48px' }}></th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -4475,35 +4481,35 @@ ${ATTACHMENT_BLOCK}
                                     <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>
                                       {index + 1}
                                     </td>
-                                    <td>
-                                      <div style={{ fontWeight: 600, wordBreak: 'break-word' }}>
+                                    <td className="tc-company-cell">
+                                      {/* ИНН — в подсказке названия: в строке он почти не нужен, а место занимал. */}
+                                      <div className="tc-company-name" title={tc.counterparties?.inn ? `ИНН ${tc.counterparties.inn}` : undefined}>
                                         {tc.counterparties?.name}
                                       </div>
                                       {tc.counterparties?.work_type && (
-                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
+                                        <div className="tc-company-sub" title={tc.counterparties.work_type}>
                                           {tc.counterparties.work_type}
                                         </div>
                                       )}
-                                      {tc.counterparties?.inn && (
-                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-                                          ИНН: {tc.counterparties.inn}
-                                        </div>
-                                      )}
+                                      <div className="tc-company-status">
+                                        <ParticipantStatusSelect
+                                          value={tc.status}
+                                          onChange={(v) => handleUpdateCounterpartyStatus(tender.id, tc.id, v)}
+                                          disabled={!canEditTenders}
+                                        />
+                                      </div>
                                     </td>
-                                    <td style={{ verticalAlign: 'top' }}>
+                                    <td>
+                                      <ParticipantContacts contacts={tc.counterparties?.counterparty_contacts} />
+                                    </td>
+                                    <td>
                                       <TenderCounterpartyFiles
                                         tenderId={tender.id}
                                         counterpartyId={tc.counterparty_id}
                                         canEdit={canEditTenders}
                                         tender={tender}
                                         counterpartyName={tc.counterparties?.name}
-                                      />
-                                    </td>
-                                    <td>
-                                      <ParticipantStatusSelect
-                                        value={tc.status}
-                                        onChange={(v) => handleUpdateCounterpartyStatus(tender.id, tc.id, v)}
-                                        disabled={!canEditTenders}
+                                        collapsed={kpCollapsed}
                                       />
                                     </td>
                                     {!hideNotes && (
@@ -4580,9 +4586,6 @@ ${ATTACHMENT_BLOCK}
                                       )}
                                     </td>
                                     )}
-                                    <td>
-                                      <ParticipantContacts contacts={tc.counterparties?.counterparty_contacts} />
-                                    </td>
                                     <td style={{ textAlign: 'center' }}>
                                       {canEditTenders && (
                                         <button
