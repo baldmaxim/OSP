@@ -1,8 +1,11 @@
 /* TenderCounterpartyFiles — ячейка «КП / Документы» участника тендера: раскрытая
    строка реестра тендеров и вкладка «Участники» карточки (task 290 + 300).
    29.10.2026 — лента по образцу «Проверки КП»: файлы видны сразу, старые сверху,
-   слева дата и время загрузки, имя файла — ссылка на просмотр, «Скачать» и
-   «Удалить» — иконки 24px. Размеры в rem, свои: ячейка одна на реестр (плотная
+   имя файла — ссылка на просмотр, «Скачать» и «Удалить» — иконки 24px. Тот же день,
+   позже: каждый файл — карточка с цветом состояния проверки, имя файла целиком (с
+   переносом) и значком типа, дата и кто загрузил — строкой под именем (раньше дата
+   стояла отдельной колонкой слева и отнимала ширину у имени — оно резалось многоточием).
+   Размеры в rem, свои: ячейка одна на реестр (плотная
    шкала) и карточку (обычная), токены --ui-text там разные. Данные — 13/18,
    подписи — 12/16 (не мельче 12px, docs/UI_GUIDELINES.md). */
 
@@ -129,101 +132,114 @@
 .tcpf-chev { display: inline-flex; transform: rotate(-90deg); transition: transform 0.15s ease; }
 .tcpf-chev.is-open { transform: none; }
 
-/* === Лента: строка — дата и время слева, файл и сведения справа === */
+/* === Лента: каждый файл — карточка ===
+   Полоса слева и лёгкий фон — состояние (класс tcpf-tone-*): видно с ходу, какие КП
+   проверены, с замечаниями или ждут проверки, даже на белом фоне строки. Карточки
+   разделены промежутком, а не общей рамкой: в общей рамке строки сливались. */
 .tcpf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-secondary);
 }
 
-/* Колонка даты — по содержимому: формат даты у всех строк один (цифры одной
-   ширины), поэтому даты стоят ровным столбцом при любом шрифте. */
 .tcpf-item {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  column-gap: 0.5rem;
-  padding: 0.25rem 0.25rem 0.3125rem 0.4375rem;
-}
-.tcpf-item + .tcpf-item { border-top: 1px solid var(--border-color); }
-.tcpf-item:first-child { border-radius: 5px 5px 0 0; }
-.tcpf-item:last-child { border-radius: 0 0 5px 5px; }
-.tcpf-item:only-child { border-radius: 5px; }
-.tcpf-item:hover { background: var(--hover-bg); }
-
-/* Дата — главное в ленте: полужирная, цифры одной ширины; время — под ней. */
-.tcpf-when {
+  --tcpf-tone: #64748b;
   display: flex;
   flex-direction: column;
-  padding-top: 0.1875rem;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  min-width: 0;
+  padding: 0.375rem 0.25rem 0.4375rem 0.625rem;
+  border: 1px solid color-mix(in srgb, var(--tcpf-tone) 24%, var(--border-color));
+  border-left: 3px solid var(--tcpf-tone);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--tcpf-tone) 6%, var(--bg-secondary));
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
-.tcpf-date {
-  font-size: 0.8125rem;
-  line-height: 1.125rem;
-  font-weight: 600;
-  color: var(--text-primary);
+.tcpf-item:hover {
+  border-color: color-mix(in srgb, var(--tcpf-tone) 45%, var(--border-color));
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
 }
-.tcpf-time {
-  font-size: 0.75rem;
-  line-height: 1rem;
-  color: var(--text-secondary);
+.tcpf-tone-ok { --tcpf-tone: #16a34a; }
+.tcpf-tone-warn { --tcpf-tone: #d97706; }
+.tcpf-tone-pending { --tcpf-tone: #2563eb; }
+.tcpf-tone-plain { --tcpf-tone: #64748b; }
+.tcpf-tone-doc { --tcpf-tone: #94a3b8; }
+/* Заменённая версия — серая и без тени: в ленте она для истории, текущая — ниже. */
+.tcpf-tone-old {
+  --tcpf-tone: #94a3b8;
+  background: var(--bg-tertiary);
+  box-shadow: none;
 }
+[data-theme='dark'] .tcpf-item { box-shadow: none; }
+[data-theme='dark'] .tcpf-tone-ok { --tcpf-tone: #22c55e; }
+[data-theme='dark'] .tcpf-tone-warn { --tcpf-tone: #f59e0b; }
+[data-theme='dark'] .tcpf-tone-pending { --tcpf-tone: #60a5fa; }
 
 .tcpf-body {
   display: flex;
   flex-direction: column;
-  gap: 0.0625rem;
+  gap: 0.125rem;
   min-width: 0;
 }
 
-/* Имя файла — ссылка на просмотр; основа сокращается многоточием, расширение
-   видно всегда, полное имя и размер — в подсказке. */
+/* Имя файла — целиком, с переносом (по нему КП и узнают), тёмным и полужирным: читается
+   с ходу. Нажатие — просмотр; полное имя, тип и размер — ещё и в подсказке. */
 .tcpf-line {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.125rem;
   min-width: 0;
 }
 .tcpf-file {
-  display: inline-flex;
-  flex: 0 1 auto;
-  align-items: center;
-  gap: 0.25rem;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  gap: 0.375rem;
   min-width: 0;
-  height: 1.5rem;
-  margin-left: -0.3125rem;
-  margin-right: auto;
-  padding: 0 0.3125rem;
+  margin: 0 0 0 -0.3125rem;
+  padding: 0.125rem 0.3125rem;
   border: 1px solid transparent;
   border-radius: 6px;
   background: none;
-  color: var(--ui-link, var(--primary-color));
+  color: var(--text-primary);
   font: inherit;
   font-size: 0.8125rem;
-  font-weight: 500;
+  line-height: 1.125rem;
+  font-weight: 600;
   text-align: left;
   cursor: pointer;
 }
-.tcpf-file > svg { flex: 0 0 auto; color: var(--text-tertiary); }
 .tcpf-file-name {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
-.tcpf-file-ext { flex: 0 0 auto; margin-left: -0.25rem; white-space: nowrap; }
-.tcpf-file:hover {
-  border-color: var(--border-color-dark);
-  background: var(--bg-secondary);
-}
-.tcpf-file:hover :is(.tcpf-file-name, .tcpf-file-ext) {
+.tcpf-file:hover { color: var(--ui-link, var(--primary-color)); }
+.tcpf-file:hover .tcpf-file-name {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+/* Значок типа файла — цветом: таблица зелёная, PDF красный, Word синий. */
+.tcpf-ftype {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-top: -0.0625rem;
+  color: #64748b;
+}
+.tcpf-ftype.is-sheet { color: #15803d; }
+.tcpf-ftype.is-pdf { color: #dc2626; }
+.tcpf-ftype.is-doc { color: #2563eb; }
+.tcpf-ftype.is-zip { color: #b45309; }
+.tcpf-ftype.is-img { color: #7c3aed; }
+[data-theme='dark'] .tcpf-ftype.is-sheet { color: #4ade80; }
+[data-theme='dark'] .tcpf-ftype.is-pdf { color: #f87171; }
+[data-theme='dark'] .tcpf-ftype.is-doc { color: #60a5fa; }
+[data-theme='dark'] .tcpf-ftype.is-zip { color: #fbbf24; }
+[data-theme='dark'] .tcpf-ftype.is-img { color: #a78bfa; }
 
 .tcpf-icon-btn {
   display: inline-flex;
@@ -249,7 +265,7 @@
   background: rgba(220, 38, 38, 0.08);
   color: #b91c1c;
 }
-/* «Удалить» — по наведению на строку (место за ней держится — ничего не прыгает);
+/* «Удалить» — по наведению на карточку (место за ней держится — ничего не прыгает);
    на сенсорном экране наведения нет — видна всегда. */
 @media (hover: hover) {
   .tcpf-icon-del { opacity: 0; }
@@ -257,17 +273,29 @@
   .tcpf-icon-del:focus-visible { opacity: 1; }
 }
 
-/* Кто загрузил, версия, метка версии. */
+/* Под именем: дата и время загрузки, кто загрузил, версия, метка версии — с отступом под
+   значком, чтобы строка начиналась под именем. Дата — тёмная: по ней сверяют сроки КП. */
 .tcpf-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.125rem 0.5rem;
+  gap: 0.125rem 0.625rem;
+  padding-left: 1.5rem;
   font-size: 0.75rem;
   line-height: 1rem;
   color: var(--text-secondary);
 }
-.tcpf-meta:empty { display: none; }
+.tcpf-when {
+  display: inline-flex;
+  gap: 0.25rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tcpf-date {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.tcpf-time { color: var(--text-secondary); }
 .tcpf-uploader {
   display: inline-flex;
   align-items: center;
@@ -279,19 +307,21 @@
   padding: 0 0.375rem;
   border-radius: 999px;
   background: var(--bg-tertiary);
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 .tcpf-ver.is-current {
   background: color-mix(in srgb, var(--primary-color) 12%, transparent);
   color: var(--ui-link, var(--primary-color));
-  font-weight: 500;
+  font-weight: 600;
 }
-.tcpf-vlabel { overflow-wrap: anywhere; }
+.tcpf-tone-old .tcpf-ver { background: var(--bg-secondary); }
+.tcpf-vlabel { overflow-wrap: anywhere; color: var(--text-primary); }
 
 /* Заменённая версия КП — приглушена, но читается (контраст ≥ 4,5:1). */
-/* Вес даты тот же: колонка даты — по содержимому, иначе строки разъедутся. */
+.tcpf-item.is-replaced .tcpf-file { color: var(--text-secondary); font-weight: 500; }
 .tcpf-item.is-replaced .tcpf-date { color: var(--text-secondary); }
-.tcpf-item.is-replaced .tcpf-file { color: var(--text-secondary); }
+.tcpf-item.is-replaced .tcpf-ftype { color: var(--text-tertiary); }
 
 /* Проверка: вердикт · кто · когда, ниже замечания, файл замечаний и шаги. Бейдж
    общий с «Проверкой КП» (KpReviewBadge): его обёртка растворяется, плашка и файл
@@ -301,7 +331,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.5rem;
-  margin-top: 0.1875rem;
+  margin-top: 0.25rem;
+  padding-left: 1.5rem;
   min-width: 0;
 }
 .tcpf-review .kpb-wrap { display: contents; }

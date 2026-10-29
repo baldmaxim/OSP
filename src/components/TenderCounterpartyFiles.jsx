@@ -33,6 +33,12 @@ import '../styles/workUi.css'
 // «Скачать всё» — все файлы только этого участника одним ZIP; кнопка есть, только
 // когда файлы есть. tender — для имени архива (№ и работы), counterpartyName —
 // название компании в имени архива.
+//
+// Тот же день, позже (замечания пользователя: на белом фоне некрасиво и непонятно, текст
+// трудно читать с ходу, имя файла не видно целиком): каждый файл — карточка с цветной
+// полосой и лёгким фоном по состоянию проверки (зелёный — проверено, янтарный — замечания,
+// синий — ждёт проверки, серый — без проверки / заменена / документ), имя файла целиком и
+// крупнее, со значком типа файла по цвету; дата, время, кто загрузил и версия — строкой под ним.
 
 // Документов больше — список свёрнут до нажатия на «Документы · N».
 const DOCS_OPEN_MAX = 3
@@ -70,11 +76,30 @@ function fmtDateTime(iso) {
   return d ? `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()}, ${fmtTime(iso)}` : ''
 }
 
-// Основа и расширение порознь: длинная основа сокращается многоточием (CSS),
-// расширение видно всегда.
-function splitFileName(name) {
-  const m = /^(.+?)(\.[^.\s]{1,5})$/.exec(name || '')
-  return m ? [m[1], m[2]] : [name || '', '']
+// Тип файла — цветом значка (таблица, PDF, Word, архив, картинка; прочее — серым): при беглом
+// взгляде видно, Excel это или скан, не читая расширение.
+const FILE_KINDS = [
+  ['sheet', /^(xlsx?|xlsm|xlsb|csv|ods)$/i, 'Таблица'],
+  ['pdf', /^pdf$/i, 'PDF'],
+  ['doc', /^(docx?|odt|rtf)$/i, 'Документ Word'],
+  ['zip', /^(zip|rar|7z)$/i, 'Архив'],
+  ['img', /^(png|jpe?g|gif|webp|bmp|tiff?|heic)$/i, 'Изображение'],
+]
+function fileKind(name) {
+  const ext = /\.([^.\s]{1,5})$/.exec(name || '')?.[1] || ''
+  return FILE_KINDS.find(([, re]) => re.test(ext)) || ['file', null, 'Файл']
+}
+
+// Цвет карточки КП — состояние: проверено, замечания, ждёт проверки, без проверки, заменена;
+// у документа — нейтральный.
+function itemTone(file, isProposal, replaced) {
+  if (!isProposal) return 'doc'
+  if (replaced) return 'old'
+  if (file.review_required !== true) return 'plain'
+  const status = file.review_status || 'pending'
+  if (status === 'approved') return 'ok'
+  if (status === 'has_remarks') return 'warn'
+  return 'pending'
 }
 
 const IconFile = () => (
@@ -82,6 +107,15 @@ const IconFile = () => (
     stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
     <path d="M14 2v6h6" />
+  </svg>
+)
+
+// Значок файла с заливкой цвета типа (цвет — классом .tcpf-ftype.is-<тип>).
+const IconFileTyped = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+      fill="currentColor" fillOpacity="0.16" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+    <path d="M14 2v6h6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
   </svg>
 )
 
@@ -180,32 +214,30 @@ function ReviewLine({ file, canReview, onReview }) {
   )
 }
 
-// Строка ленты: слева дата и время загрузки, справа — файл, кто загрузил и прочее.
+// Карточка файла: сверху имя целиком (переносится, не режется — по нему КП и узнают) со
+// значком типа, «Скачать» и «Удалить»; ниже дата и время загрузки, кто загрузил, версия;
+// у КП — проверка. Цвет полосы слева и фона — состояние (itemTone).
 // item — элемент proposals из buildFilesTimeline (у документа — { file }).
 function FileItem({ item, isProposal, onDownload, onPreview, onDelete, canReview, onReview }) {
   const { file } = item
   const s3 = file.s3
   if (!s3) return null
-  const [stem, ext] = splitFileName(s3.file_name || 'Файл')
+  const fileName = s3.file_name || 'Файл'
+  const [kind, , kindLabel] = fileKind(fileName)
   const replaced = isProposal && !!item.replacedAt
   const size = formatBytes(s3.size_bytes)
   return (
-    <li className={`tcpf-item${replaced ? ' is-replaced' : ''}`} data-file={file.id}>
-      <span className="tcpf-when" title={`Загружено ${fmtDateTime(file.created_at)}`}>
-        <span className="tcpf-date">{fmtDate(file.created_at)}</span>
-        <span className="tcpf-time">{fmtTime(file.created_at)}</span>
-      </span>
+    <li className={`tcpf-item tcpf-tone-${itemTone(file, isProposal, replaced)}${replaced ? ' is-replaced' : ''}`} data-file={file.id}>
       <div className="tcpf-body">
         <div className="tcpf-line">
           <button
             type="button"
             className="tcpf-file"
-            title={`Открыть: ${s3.file_name}${size ? ` (${size})` : ''}`}
+            title={`Открыть: ${fileName}${size ? ` (${kindLabel}, ${size})` : ` (${kindLabel})`}`}
             onClick={() => onPreview(s3)}
           >
-            <IconFile />
-            <span className="tcpf-file-name">{stem}</span>
-            {ext && <span className="tcpf-file-ext">{ext}</span>}
+            <span className={`tcpf-ftype is-${kind}`}><IconFileTyped /></span>
+            <span className="tcpf-file-name">{fileName}</span>
           </button>
           <button
             type="button"
@@ -225,6 +257,10 @@ function FileItem({ item, isProposal, onDownload, onPreview, onDelete, canReview
           )}
         </div>
         <div className="tcpf-meta">
+          <span className="tcpf-when" title={`Загружено ${fmtDateTime(file.created_at)}`}>
+            <span className="tcpf-date">{fmtDate(file.created_at)}</span>
+            <span className="tcpf-time">{fmtTime(file.created_at)}</span>
+          </span>
           {s3.uploaded_by_name && (
             <span className="tcpf-uploader">
               <IconUser size={12} />

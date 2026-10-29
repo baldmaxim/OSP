@@ -1,5 +1,6 @@
 // Ячейка «КП / Документы» участника тендера (TenderCounterpartyFiles) и статус участника
-// (ParticipantStatusSelect) — лента по образцу «Проверки КП» (29.10.2026):
+// (ParticipantStatusSelect) — лента по образцу «Проверки КП» (29.10.2026; позже в тот же день — карточки с цветом
+// состояния проверки, имя файла целиком):
 //   • разбор ленты (src/utils/proposalTimeline.js): КП и документы — старые сверху, версии одного КП
 //     по порядку загрузки, у прежних — когда заменены;
 //   • в Chromium на стенде (tcFiles=1&tcReview=1): карточка тендера → «Участники» и раскрытая строка
@@ -102,7 +103,8 @@ describe('Лента файлов участника: карточка тенд�
       assert.doesNotMatch(await items.nth(1).getAttribute('class'), /is-replaced/)
       assert.deepEqual(await items.locator('.tcpf-uploader').allTextContents(), ['Иванов И. И.', 'Иванов И. И.'])
 
-      // Длинное имя — многоточием в основе, расширение видно; дата — целиком; даты одним столбцом.
+      // Имя файла — целиком (длинное переносится, не режется многоточием); дата — целиком;
+      // имена в одной ленте начинаются с одной линии.
       const geometry = await page.evaluate(() => {
         const dates = [...document.querySelectorAll('.participants-section .tcpf-date')]
         const files = [...document.querySelectorAll('.participants-section .tcpf-list')].map((list) =>
@@ -115,8 +117,22 @@ describe('Лента файлов участника: карточка тенд�
       assert.deepEqual(geometry.clipped, [], 'дата помещается целиком')
       assert.deepEqual(geometry.ragged, [], 'имена файлов в одной ленте начинаются с одной линии')
       const long = kpItems(row(page, 'Подрядчик 02')).nth(1)
-      assert.equal(await long.locator('.tcpf-file-ext').textContent(), '.pdf')
-      assert.ok(await long.locator('.tcpf-file-name').evaluate((el) => el.scrollWidth > el.clientWidth), 'длинное имя сокращено')
+      const name = long.locator('.tcpf-file-name')
+      assert.equal(await name.textContent(), 'КП Подрядчик 02 — кровля и водосток, корпус 2, секции 1–4.pdf')
+      const shape = await name.evaluate((el) => ({
+        clipped: el.scrollWidth > el.clientWidth + 0.5,
+        lines: Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)),
+      }))
+      assert.equal(shape.clipped, false, 'длинное имя видно целиком')
+      assert.ok(shape.lines >= 2, `длинное имя переносится (строк: ${shape.lines})`)
+      // Тип файла — цветом значка; состояние КП — цветом карточки.
+      assert.equal(await long.locator('.tcpf-ftype.is-pdf').count(), 1)
+      assert.equal(await kpItems(row(page, 'Подрядчик 01')).first().locator('.tcpf-ftype.is-sheet').count(), 1)
+      const tones = async (name) => kpItems(row(page, name)).evaluateAll((els) =>
+        els.map((el) => [...el.classList].find((c) => c.startsWith('tcpf-tone-'))))
+      assert.deepEqual(await tones('Подрядчик 01'), ['tcpf-tone-old', 'tcpf-tone-pending'])
+      assert.deepEqual(await tones('Подрядчик 02'), ['tcpf-tone-ok', 'tcpf-tone-warn'])
+      assert.deepEqual(await docItems(row(page, 'Подрядчик 01')).evaluateAll((els) => els.map((el) => el.classList.contains('tcpf-tone-doc'))), [true])
       assert.deepEqual(errors, [])
     } finally {
       await close()
@@ -170,7 +186,7 @@ describe('Лента файлов участника: карточка тенд�
     try {
       const one = row(page, 'Подрядчик 01')
       assert.equal(await one.locator('.tcpf-section-toggle').getAttribute('aria-expanded'), 'true')
-      assert.deepEqual(await docItems(one).locator('.tcpf-file-name').allTextContents(), ['Выписка ЕГРЮЛ'])
+      assert.deepEqual(await docItems(one).locator('.tcpf-file-name').allTextContents(), ['Выписка ЕГРЮЛ.pdf'])
 
       const many = row(page, 'Подрядчик 02')
       const toggle = many.locator('.tcpf-section-toggle')
