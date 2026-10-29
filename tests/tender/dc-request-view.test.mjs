@@ -27,7 +27,7 @@ describe('Вид реестра заявок на ДС в хранилище в�
     const storage = memoryStorage()
     const view = {
       tab: 'in_work', search: 'ДС-12', statuses: [], objects: ['obj-1'], counterparties: ['cp-1', 'cp-2'],
-      responsibles: ['c-1'], divisions: ['monolith', 'none'], expanded: ['d2'],
+      responsibles: ['c-1'], divisions: ['monolith', 'none'], subResps: ['user-7', '__none__'], expanded: ['d2'],
     }
     writeDcView(view, storage)
     assert.deepEqual(readDcView(storage, TABS), view)

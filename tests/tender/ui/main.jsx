@@ -9,7 +9,8 @@
 //             подразделения, миграция 20261112, и три ДС у договора ctr-2), /tenders/other&tendersDept=other
 //             («Тендеры — Прочее»: плотный реестр, тендеры без объекта),
 //             /dc-requests&dcStats=1 (реестр заявок на ДС с файлами; dcNumbers=1 — номера заявок из базы, миграция 20261106;
-//             dcSubmission=1 — столбцы «Статус ОКС» и «Комментарий», миграция 20261108;
+//             dcSubmission=1 — столбцы «Статус ОКС» и «Комментарий», миграция 20261108; с dcSubResp=1 —
+//             ответственный за статус ОКС из «Отдела по удорожанию» и фильтр по нему, миграция 20261117;
 //             dcContracts=1 — договор, ДС и подразделение заявок, миграция 20261109;
 //             dcMany=N — ещё N заявок; dcOldFiles=N — ещё N старых файлов, с maxRows=1000 — потолок строк PostgREST;
 //             /dc-requests?file=<id> — ссылка на файл из выгрузки в Excel),
@@ -25,7 +26,8 @@
 //   latency — задержка «сети» на запрос, мс;
 //   cpContacts=1 — у контрагентов контакты с телефонами и один в чёрном списке;
 //   shell=1 — страница внутри обвязки приложения (.layout / .main-content и полоса меню телефона):
-//             на телефоне прокрутка зависит от неё, без обвязки стенд прокручивает окно.
+//             на телефоне прокрутка зависит от неё, без обвязки стенд прокручивает окно;
+//             sidebar=1 (с shell=1) — с настоящим боковым меню (Sidebar) вместо полосы: сворачивание меню.
 //   callReminder=1 — показать вторничное напоминание об обзвоне (TenderCallReminder); без него оно
 //             отмечено закрытым на эту неделю: во вторник окно открывалось поверх реестра и
 //             перекрывало строки — тесты реестра падали раз в неделю.
@@ -62,6 +64,8 @@ const DocCheckRequestsPage = lazy(() => import('../../../src/pages/DocCheckReque
 const CostPlansPage = lazy(() => import('../../../src/pages/CostPlansPage'))
 // «Доступ к API» — так же (AdminPage.css) и со своим «сервером» в памяти (api-keys-stand.jsx).
 const ApiKeysStand = lazy(() => import('./api-keys-stand.jsx'))
+// Боковое меню — так же (Sidebar.css: .nav-item и др. глобальные), с темой (переключатель темы в меню).
+const SidebarStand = lazy(() => import('./sidebar-stand.jsx'))
 import { weekKey } from '../../../src/utils/weeks'
 
 const params = new URLSearchParams(window.location.search)
@@ -112,7 +116,9 @@ createRoot(document.getElementById('root')).render(
     <NavBridge />
     {params.get('shell') === '1' ? (
       <div className="layout">
-        {window.matchMedia('(max-width: 768px)').matches && phoneTopbar}
+        {params.get('sidebar') === '1'
+          ? <Suspense fallback={null}><SidebarStand /></Suspense>
+          : window.matchMedia('(max-width: 768px)').matches && phoneTopbar}
         <main className="main-content">{routes}</main>
       </div>
     ) : routes}

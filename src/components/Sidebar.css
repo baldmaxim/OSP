@@ -9,7 +9,13 @@
   --sb-active-ind: #3b82f6;
   --sb-focus: rgba(59, 130, 246, 0.55);
 
-  width: 200px;
+  /* Свёрнутое меню (.is-collapsed) — колонка иконок; ширина меняется быстрой анимацией. */
+  --sb-width: 200px;
+  --sb-width-collapsed: 52px;
+  --sb-anim: 180ms cubic-bezier(0.2, 0, 0, 1);
+
+  width: var(--sb-width);
+  flex-shrink: 0;
   background: var(--sb-bg);
   color: var(--sb-text);
   display: flex;
@@ -19,14 +25,56 @@
   position: sticky;
   top: 0;
   border-right: 1px solid var(--sb-border);
+  transition: width var(--sb-anim);
 }
 
 /* ── Шапка ─────────────────────────────────────────────── */
 .sidebar-header {
+  position: relative;
+  min-height: 2.875rem;
   padding: 0.75rem 0.875rem 0.625rem;
   border-bottom: 1px solid var(--sb-border);
   flex-shrink: 0;
+  overflow: hidden;
 }
+
+/* Логотип, подпись и роль: при сворачивании высота плавно уходит в ноль (grid 1fr → 0fr), без скачка меню. */
+.sidebar-brand {
+  display: grid;
+  grid-template-rows: 1fr;
+  padding-right: 1.75rem; /* место под кнопку сворачивания */
+  transition: grid-template-rows var(--sb-anim), opacity 120ms ease;
+}
+.sidebar-brand-inner { min-height: 0; overflow: hidden; }
+
+/* Кнопка «свернуть / развернуть меню» — в правом верхнем углу шапки, только шеврон. */
+.sidebar-collapse-btn {
+  position: absolute;
+  top: 0.625rem;
+  right: 0.5rem;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sb-text-muted);
+  cursor: pointer;
+  transition: right var(--sb-anim), background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+.sidebar-collapse-btn:hover {
+  background: var(--sb-hover);
+  border-color: var(--sb-border);
+  color: var(--sb-text);
+}
+.sidebar-collapse-btn:focus-visible {
+  outline: 2px solid var(--sb-focus);
+  outline-offset: 1px;
+}
+.sidebar-collapse-btn svg { transition: transform var(--sb-anim); }
 
 .sidebar-title {
   /* Обёртка для BrandLogo — размер логотипа задаём здесь (цвет — из BrandLogo, не менять). */
@@ -121,6 +169,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: opacity 120ms ease;
 }
 
 /* Счётчик непрочитанных уведомлений */
@@ -196,6 +245,10 @@
 
 .logout-btn {
   width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
   padding: 0.3125rem 0.625rem;
   background: rgba(239, 68, 68, 0.12);
   border: 1px solid rgba(239, 68, 68, 0.25);
@@ -216,6 +269,46 @@
 .logout-btn:focus-visible {
   outline: 2px solid var(--sb-focus);
   outline-offset: 2px;
+}
+
+/* Иконка «Выйти» — только в свёрнутом меню. */
+.logout-ic { display: none; flex-shrink: 0; }
+.logout-label { white-space: nowrap; overflow: hidden; }
+
+/* ── Свёрнутое меню: только иконки ───────────────────────
+   Иконки стоят на тех же местах, что в развёрнутом (отступы пунктов не
+   меняются) — при анимации двигается только правый край, подписи гаснут.
+   Название пункта — в подсказке (title). Счётчик — кружком на иконке. */
+.sidebar.is-collapsed { width: var(--sb-width-collapsed); }
+.sidebar.is-collapsed .sidebar-brand { grid-template-rows: 0fr; opacity: 0; visibility: hidden; }
+.sidebar.is-collapsed .sidebar-collapse-btn { right: calc((var(--sb-width-collapsed) - 26px - 1px) / 2); }
+.sidebar.is-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
+.sidebar.is-collapsed .sidebar-nav { scrollbar-width: none; }
+.sidebar.is-collapsed .sidebar-nav::-webkit-scrollbar { display: none; }
+.sidebar.is-collapsed .nav-label { opacity: 0; }
+.sidebar.is-collapsed .nav-badge {
+  position: absolute;
+  top: 1px;
+  left: 22px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  font-size: 0.5625rem;
+  box-shadow: 0 0 0 2px var(--sb-bg);
+}
+.sidebar.is-collapsed .sidebar-footer { overflow: hidden; }
+.sidebar.is-collapsed .theme-toggle { overflow: hidden; }
+.sidebar.is-collapsed .theme-label { opacity: 0; }
+.sidebar.is-collapsed .logout-btn { padding-left: 0; padding-right: 0; }
+.sidebar.is-collapsed .logout-ic { display: block; }
+.sidebar.is-collapsed .logout-label { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .sidebar-brand,
+  .sidebar-collapse-btn,
+  .sidebar-collapse-btn svg,
+  .nav-label { transition: none; }
 }
 
 /* ── Мобильный слим-топбар (виден только на телефоне) ───── */
@@ -318,6 +411,7 @@
   border-radius: 6px;
 }
 .sidebar .theme-icon { font-size: 0.875rem; }
+.sidebar .theme-label { white-space: nowrap; overflow: hidden; transition: opacity 120ms ease; }
 
 /* ── Мобильная раскладка: сайдбар = выезжающий слева drawer ─ */
 @media (max-width: 768px) {
@@ -341,6 +435,8 @@
   .sidebar.is-open {
     transform: translateX(0);
   }
+  /* Кнопки сворачивания на телефоне нет — место под неё не нужно. */
+  .sidebar-brand { padding-right: 0; }
   /* Внутренняя раскладка (шапка / вертикальный список / футер) — как на десктопе,
      специально ничего не переопределяем: это и есть содержимое drawer. */
 }

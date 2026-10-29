@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS dc_requests (
   submission_by UUID,
   submission_by_name TEXT,
   submission_at TIMESTAMPTZ,
+  -- Ответственный за статус ОКС — сотрудник «Отдела по удорожанию» (выбор — на странице) и его ФИО на момент
+  -- назначения (миграция 20261117); ФИО — только при ответственном.
+  submission_resp_user_id UUID,
+  submission_resp_name TEXT CHECK (char_length(submission_resp_name) <= 300),
   -- Договор и номер ДС раздельно (миграция 20261109): договор реестра «Договоры и ДС», к которому подаётся заявка
   -- (ds_number — номер самого ДС), ДС реестра, в которое заявка занесена, и подразделение (коды подразделений ВОР).
   contract_id UUID REFERENCES contracts(id) ON DELETE SET NULL,

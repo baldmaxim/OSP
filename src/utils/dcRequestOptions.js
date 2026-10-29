@@ -61,6 +61,21 @@ export const submissionOf = (req) => req?.submission_check || SUBMISSION_DEFAULT
 // Вариант требует пояснения, а комментария нет — поле подсвечивается.
 export const submissionNeedsComment = (req) => !!SUBMISSION_HINT[submissionOf(req)] && !req?.submission_comment?.trim()
 
+// Ответственный за статус ОКС (миграция 20261117) — только сотрудник с ролью «Отдел по удорожанию» (ключ роли в базе —
+// udorojanie, роли заводит администратор: ищем и по ключу, и по названию). В заявке — submission_resp_user_id и
+// ФИО на момент назначения (submission_resp_name). Колонок нет — выбора и фильтра нет.
+export const NO_SUBMISSION_RESP = '__none__'
+export const hasSubmissionRespColumns = (requests) => (requests || []).some(r => r.submission_resp_user_id !== undefined)
+export const isCostIncreaseRole = (key, label) => /^udoroj/i.test(key || '') || /удорож/i.test(label || '')
+// Сотрудники «Отдела по удорожанию» из справочника employee_directory (role — ключ роли) по алфавиту.
+export function costIncreaseEmployees(employees, roleLabels = {}) {
+  return (employees || [])
+    .filter(e => e?.user_id && isCostIncreaseRole(e.role, roleLabels?.[e.role]))
+    .sort((a, b) => String(a.display_name || '').localeCompare(String(b.display_name || ''), 'ru'))
+}
+// Ключ заявки для фильтра «Ответственный ОКС»: id сотрудника или «не назначен».
+export const submissionRespKey = (req) => req?.submission_resp_user_id || NO_SUBMISSION_RESP
+
 // task 370: тип материала по ДС.
 export const MATERIAL_OPTIONS = [
   { value: 'tolling', label: 'Давальческие (М-15)', className: 'material-tolling' },

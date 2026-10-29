@@ -3073,6 +3073,98 @@
 /* Комментарий — под статусом ОКС и подписью, отдельного столбца нет. */
 .dc-requests-page .dcr-cell-sub :is(.dcr-sub-comment, .dcr-sub-comment-text) { margin-top: 0.25rem; }
 
+/* ══ Ответственный за статус ОКС (миграция 20261117) ═════════════════════════
+   Под статусом и подписью, над комментарием: кружок с инициалами и «Фамилия
+   И. О.»; не назначен — тихая подпись «Ответственный». Выбор — тихий, как
+   встроенные выборы строки: рамка и стрелка — при наведении. Выбор только из
+   сотрудников «Отдела по удорожанию». */
+.dc-requests-page .dcr-sub-resp { margin-top: 0.25rem; min-width: 0; }
+.dc-requests-page .fdrop.dcr-resp-fdrop { display: flex; width: 100%; min-width: 0; }
+.dc-requests-page .fdrop.fdrop.dcr-resp-fdrop .fdrop-trigger,
+.dc-requests-page .fdrop.fdrop.dcr-resp-fdrop.is-active .fdrop-trigger {
+  width: 100%;
+  height: auto;
+  min-height: 1.5rem;
+  gap: 0.25rem;
+  padding: 0.0625rem 0.25rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  box-shadow: none;
+  font-size: var(--ui-hint, 0.75rem);
+  line-height: var(--ui-hint-lh, 1rem);
+}
+.dc-requests-page .fdrop.fdrop.dcr-resp-fdrop .fdrop-trigger:hover,
+.dc-requests-page .fdrop.fdrop.dcr-resp-fdrop.is-open .fdrop-trigger {
+  border-color: rgba(148, 163, 184, 0.45);
+  background: var(--bg-secondary);
+}
+.dc-requests-page .fdrop.fdrop.dcr-resp-fdrop .fdrop-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: var(--ui-regular, 400);
+  text-align: left;
+}
+.dc-requests-page .fdrop.fdrop.dcr-resp-fdrop .fdrop-arrow { opacity: 0; transition: opacity 0.12s ease; }
+.dc-requests-page tbody tr:hover .fdrop.dcr-resp-fdrop .fdrop-arrow,
+.dc-requests-page .fdrop.dcr-resp-fdrop.is-open .fdrop-arrow { opacity: 0.6; }
+.dcr-resp-person { display: inline-flex; align-items: center; gap: 0.3125rem; min-width: 0; max-width: 100%; }
+.dcr-resp-avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-color) 16%, transparent);
+  color: var(--primary-color);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.dcr-resp-name { min-width: 0; color: var(--text-primary); }
+.dc-requests-page .dcr-resp-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--text-secondary);
+}
+.dc-requests-page .dcr-resp-empty svg { flex-shrink: 0; }
+.dc-requests-page .dcr-sub-resp > .dcr-resp-person { font-size: var(--ui-hint, 0.75rem); line-height: var(--ui-hint-lh, 1rem); }
+.dc-requests-page .dcr-resp-note {
+  margin-top: 0.125rem;
+  font-size: 0.6875rem;
+  line-height: 0.9375rem;
+  color: #b45309;
+}
+[data-theme='dark'] .dc-requests-page .dcr-resp-note { color: #fcd34d; }
+/* Список выбора рисуется в <body> — без класса страницы. */
+.fdrop-panel .dcr-resp-person { font-size: 0.8125rem; }
+.fdrop-panel .dcr-resp-option { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fdrop-panel .dcr-resp-option small { color: var(--text-tertiary); }
+.fdrop-panel .dcr-resp-option.is-muted { color: var(--text-tertiary); font-style: italic; }
+
+/* Фильтр по ответственному — в заголовке «Статус ОКС» (вид — как у фильтра
+   подразделений, VorDivisionFilter.css): подпись и фильтр в строку, при
+   нехватке ширины фильтр уходит под подпись; выбран — акцентная черта снизу. */
+.dc-requests-page .dcr-th-sub {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.375rem;
+  max-width: 100%;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.dc-requests-page .dcr-th-sub .vdivf,
+.dc-requests-page .dcr-th-sub .fdrop-trigger { max-width: 100%; min-width: 0; }
+.dc-requests-page table.dcr-table > thead > tr > th.dcr-th-filtered,
+.main-content > .dc-requests-page.ui-work.dcr-dense table.dcr-table > thead > tr > th.dcr-th-filtered {
+  box-shadow: inset 0 -2px 0 var(--primary-color);
+}
+
 /* ══ Сетка реестра ════════════════════════════════════════════════════════════
    Связанное — в одном столбце, чтобы таблица помещалась в окно: № ДС — под
    договором (миграция 20261109, .has-link: «Договор и № ДС» 8.5rem вместо

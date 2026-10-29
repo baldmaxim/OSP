@@ -50,6 +50,33 @@ function NavItem({ to, label, tone, Icon, forceActive, badge }) {
   )
 }
 
+// Двойной шеврон «свернуть меню»; в свёрнутом меню повёрнут на 180° — «развернуть» (поворот анимирован в CSS).
+function CollapseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M11 17l-5-5 5-5" />
+      <path d="M18 17l-5-5 5-5" />
+    </svg>
+  )
+}
+
+// Иконка «Выйти» — видна только в свёрнутом меню, где нет места для подписи.
+function LogoutIcon() {
+  return (
+    <svg className="logout-ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" />
+      <path d="M21 12H9" />
+    </svg>
+  )
+}
+
+// Свёрнутое меню (только иконки) запоминается в браузере; хранилище закрыто — меню просто развёрнуто.
+const COLLAPSED_KEY = 'sidebar:collapsed'
+function readCollapsed() {
+  try { return localStorage.getItem(COLLAPSED_KEY) === '1' } catch { return false }
+}
+
 // Иконка-бургер для мобильного топбара.
 function MenuIcon() {
   return (
@@ -75,6 +102,18 @@ function Sidebar() {
   // Мобильное меню: скрытый off-canvas drawer вместо горизонтальной ленты.
   const isMobileNav = useMediaQuery('(max-width: 768px)')
   const [open, setOpen] = useState(false)
+
+  // На компьютере меню сворачивается до колонки иконок — рабочей области больше. На телефоне меню — выезжающая
+  // панель, там не сворачивается.
+  const [collapsed, setCollapsed] = useState(readCollapsed)
+  const isCollapsed = collapsed && !isMobileNav
+  const toggleCollapsed = () => {
+    setCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem(COLLAPSED_KEY, next ? '1' : '0') } catch { /* приватный режим */ }
+      return next
+    })
+  }
 
   // Закрываем drawer при переходе (клик по пункту → навигация) и по Escape.
   useEffect(() => { setOpen(false) }, [location.pathname])
@@ -275,12 +314,28 @@ function Sidebar() {
           aria-hidden
         />
       )}
-      <aside className={`sidebar ${open ? 'is-open' : ''}`}>
+      <aside className={`sidebar ${open ? 'is-open' : ''} ${isCollapsed ? 'is-collapsed' : ''}`}>
       <div className="sidebar-header">
-        <h1 className="sidebar-title"><BrandLogo /></h1>
-        <p className="sidebar-subtitle">Тендеры</p>
-        {role && role !== 'contractor' && (
-          <span className="sidebar-role">{roleLabels?.[role] || role}</span>
+        <div className="sidebar-brand">
+          <div className="sidebar-brand-inner">
+            <h1 className="sidebar-title"><BrandLogo /></h1>
+            <p className="sidebar-subtitle">Тендеры</p>
+            {role && role !== 'contractor' && (
+              <span className="sidebar-role">{roleLabels?.[role] || role}</span>
+            )}
+          </div>
+        </div>
+        {!isMobileNav && (
+          <button
+            type="button"
+            className="sidebar-collapse-btn"
+            onClick={toggleCollapsed}
+            aria-label={isCollapsed ? 'Развернуть меню' : 'Свернуть меню'}
+            aria-expanded={!isCollapsed}
+            title={isCollapsed ? 'Развернуть меню' : 'Свернуть меню'}
+          >
+            <CollapseIcon />
+          </button>
         )}
       </div>
 
@@ -321,12 +376,14 @@ function Sidebar() {
         <ThemeToggle />
         <button
           className="logout-btn"
+          title="Выйти"
           onClick={async () => {
             await logout()
             navigate('/login')
           }}
         >
-          Выйти
+          <LogoutIcon />
+          <span className="logout-label">Выйти</span>
         </button>
       </div>
     </aside>

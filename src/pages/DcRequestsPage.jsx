@@ -14,7 +14,7 @@ import VorDivisionFilter from '../components/VorDivisionFilter'
 import IconTile from '../components/IconTile'
 import { IconDcRequest } from '../components/icons/NavIcons'
 import { IconHardHat } from '../components/icons/TenderHubIcons'
-import { IconObject, IconUser, IconSearch, IconDocsStack } from '../components/icons/ToolbarIcons'
+import { IconObject, IconUser, IconSearch, IconDocsStack, IconFilter, IconClose } from '../components/icons/ToolbarIcons'
 import { IconFileSpreadsheet } from '../components/icons/BsmIcons'
 import { IconPencil as IconEdit, IconTrash, IconRestore, IconClock, IconCalendar, IconLink, IconCheck as IconCheckMark } from '../components/icons/ActionIcons'
 import ClampText from '../components/ClampText'
@@ -30,7 +30,10 @@ import {
   DS_TYPE_OPTIONS, MATERIAL_CLASS, MATERIAL_LABEL, MATERIAL_OPTIONS, STATUS_LABEL, STATUS_OPTIONS, SUBMISSION_CLASS,
   SUBMISSION_DEFAULT, SUBMISSION_HINT, SUBMISSION_LABEL, SUBMISSION_OPTIONS, hasSubmissionColumns, hasVerdict,
   matchesRequestNo, submissionNeedsComment, submissionOf, withRequestNumbers,
+  NO_SUBMISSION_RESP, costIncreaseEmployees, hasSubmissionRespColumns, submissionRespKey,
 } from '../utils/dcRequestOptions'
+import { fetchEmployees } from '../services/employees'
+import { initials } from '../utils/docCheckHelpers'
 import { DC_FILE_PARAM, DOC_SECTIONS, SPECIAL_DOC_CATEGORIES, dcRequestDocRows, dcRequestFileLink } from '../utils/dcRequestDocs'
 import { amendmentLabel, amendmentsOf, autoContractFor, contractChoicesFor, contractLabel, matchAmendment } from '../utils/dcRequestContracts'
 import { VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION } from '../utils/vorDivisions'
@@ -156,6 +159,7 @@ const AUDIT_FIELD_LABEL = {
   division: 'Подразделение',
   submission_check: 'Статус ОКС',
   submission_comment: 'Комментарий к статусу ОКС',
+  submission_resp_user_id: 'Ответственный за статус ОКС',
 }
 
 function formatDateTime(ts) {
@@ -447,8 +451,102 @@ function SubmissionCommentInput({ value, hint, missing, onSave }) {
   )
 }
 
+// Ответственный за статус ОКС — под статусом: выбор только из «Отдела по удорожанию» (staff), с поиском. Назначенный
+// раньше и ушедший из отдела виден по сохранённому ФИО, пока его не сменят. Без права правки — только ФИО.
+function SubRespPicker({ req, staff, canEdit, loadError, onChange }) {
+  const name = req.submission_resp_name || ''
+  const person = (full) => (
+    <span className="dcr-resp-person">
+      <span className="dcr-resp-avatar" aria-hidden>{initials(full)}</span>
+      <PersonName full={full} className="dcr-resp-name" />
+    </span>
+  )
+  if (!canEdit) {
+    return name ? <div className="dcr-sub-resp" title={`Ответственный за статус ОКС: ${name}`}>{person(name)}</div> : null
+  }
+  const options = [{ value: '', label: 'Не назначен' }, ...staff.map(e => ({ value: e.user_id, label: e.display_name }))]
+  if (req.submission_resp_user_id && !staff.some(e => e.user_id === req.submission_resp_user_id)) {
+    options.push({ value: req.submission_resp_user_id, label: name || 'Сотрудник удалён', away: true })
+  }
+  return (
+    <div className="dcr-sub-resp">
+      <FilterDropdown
+        className="dcr-resp-fdrop"
+        label=""
+        searchable
+        searchPlaceholder="Поиск сотрудника…"
+        allLabel="Не назначен"
+        value={req.submission_resp_user_id || ''}
+        onChange={onChange}
+        options={options}
+        triggerTitle={name
+          ? `Ответственный за статус ОКС: ${name}. Сменить — сотрудник отдела по удорожанию`
+          : 'Назначить ответственного за статус ОКС — сотрудника отдела по удорожанию'}
+        formatTrigger={() => (name
+          ? person(name)
+          : <span className="dcr-resp-empty"><IconUser size={12} />Ответственный</span>)}
+        renderOption={(o) => (o.value
+          ? <span className="dcr-resp-person">
+              <span className="dcr-resp-avatar" aria-hidden>{initials(o.label)}</span>
+              <span className="dcr-resp-option">{o.label}{o.away && <small> · не в отделе</small>}</span>
+            </span>
+          : <span className="dcr-resp-option is-muted">Не назначен</span>)}
+      />
+      {loadError && <div className="dcr-resp-note">{loadError}</div>}
+      {!loadError && staff.length === 0 && (
+        <div className="dcr-resp-note">Нет пользователей с ролью «Отдел по удорожанию»</div>
+      )}
+    </div>
+  )
+}
+
+// Фильтр «Ответственный за статус ОКС» — в заголовке столбца (inHeader, вид как у фильтра подразделений) или в
+// панели фильтров на телефоне. value — id сотрудников и NO_SUBMISSION_RESP; пусто — фильтр не применён.
+function SubRespFilter({ value, onChange, options, inHeader = false }) {
+  const active = value.length > 0
+  const names = value.map(v => options.find(o => o.value === v)?.name).filter(Boolean)
+  const shown = names.length === 1 ? names[0] : `Ответственных: ${value.length}`
+  const dropdown = (
+    <FilterDropdown
+      className={inHeader ? 'vdivf-fdrop' : ''}
+      label=""
+      multiple
+      searchable
+      searchPlaceholder="Поиск сотрудника…"
+      allLabel="Все ответственные"
+      icon={inHeader ? <IconFilter size={11} /> : <IconUser size={15} />}
+      value={value}
+      onChange={onChange}
+      options={options}
+      triggerTitle={active
+        ? `Фильтр по ответственному за статус ОКС: ${names.join(', ')}`
+        : 'Фильтр по ответственному за статус ОКС: показаны все заявки'}
+      formatTrigger={() => (active
+        ? <><span className="ui-sr-only">Ответственный за статус ОКС: </span>{shown}</>
+        : (inHeader ? 'Ответственный' : 'Все ответственные ОКС'))}
+    />
+  )
+  if (!inHeader) return dropdown
+  return (
+    <span className={`vdivf${active ? ' is-active' : ''}`}>
+      {dropdown}
+      {active && (
+        <button
+          type="button"
+          className="vdivf-clear"
+          onClick={() => onChange([])}
+          aria-label="Сбросить фильтр по ответственному за статус ОКС"
+          title="Сбросить фильтр: все ответственные"
+        >
+          <IconClose size={10} />
+        </button>
+      )}
+    </span>
+  )
+}
+
 function DcRequestsPage() {
-  const { userProfile, canEdit, isAdmin, isSuperAdmin, role, scopedObjectIds } = useRole()
+  const { userProfile, canEdit, isAdmin, isSuperAdmin, role, roleLabels, scopedObjectIds } = useRole()
   // Всплывающие списки фильтров и окошко срока рисуются в <body>.
   useBodyClass('ui-work-portal')
   // Телефон: список заявок рендерим карточками вместо широкой таблицы
@@ -513,6 +611,12 @@ function DcRequestsPage() {
   const [historyLoading, setHistoryLoading] = useState(false)
   // Фильтр по подразделению (коды подразделений ВОР, NO_VOR_DIVISION — «Не указано»).
   const [filterDivisions, setFilterDivisions] = useState(savedView.divisions)
+  // Фильтр «Ответственный за статус ОКС» (id сотрудников, NO_SUBMISSION_RESP — не назначен) — в заголовке столбца.
+  const [filterSubResps, setFilterSubResps] = useState(savedView.subResps)
+  // Сотрудники для выбора ответственного за статус ОКС (справочник employee_directory; роль — на странице).
+  const [employees, setEmployees] = useState([])
+  const [employeesError, setEmployeesError] = useState('')
+  const costIncreaseStaff = useMemo(() => costIncreaseEmployees(employees, roleLabels), [employees, roleLabels])
   // Договоры и ДС реестра «Договоры и ДС» для выбора договора заявки (миграция 20261109): живые документы
   // и стороны договоров с несколькими контрагентами. null — ещё не загружены (автоподстановка ждёт).
   const [contracts, setContracts] = useState(null)
@@ -578,6 +682,9 @@ function DcRequestsPage() {
     fetchAllDocs()
     fetchExternalLink()
     fetchContracts()
+    fetchEmployees()
+      .then(list => setEmployees(list || []))
+      .catch(err => setEmployeesError(`Список сотрудников не загрузился: ${err?.message || err}`))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -585,9 +692,10 @@ function DcRequestsPage() {
     writeDcView({
       tab: activeTab, search: searchQuery, statuses: filterStatuses, objects: filterObjectIds,
       counterparties: filterCounterpartyIds, responsibles: filterResponsibleIds, divisions: filterDivisions,
-      expanded: [...expandedDocs],
+      subResps: filterSubResps, expanded: [...expandedDocs],
     })
-  }, [activeTab, searchQuery, filterStatuses, filterObjectIds, filterCounterpartyIds, filterResponsibleIds, filterDivisions, expandedDocs])
+  }, [activeTab, searchQuery, filterStatuses, filterObjectIds, filterCounterpartyIds, filterResponsibleIds, filterDivisions,
+    filterSubResps, expandedDocs])
 
   // Прокрутку возвращаем, когда высота строк окончательная: заявки, их файлы и договоры (подписи договоров).
   // На компьютере прокручивается таблица под закреплённой шапкой, на телефоне — страница.
@@ -614,6 +722,7 @@ function DcRequestsPage() {
     setFilterObjectIds([])
     setFilterResponsibleIds([])
     setFilterDivisions([])
+    setFilterSubResps([])
     setSearchQuery('')
     setActiveTab('all')
     setSearchParams(prev => {
@@ -1362,6 +1471,31 @@ function DcRequestsPage() {
     }
   }
 
+  // Ответственный за статус ОКС (миграция 20261117) — только из «Отдела по удорожанию»; ФИО пишется вместе с id,
+  // чтобы реестр, выгрузка и фильтр показывали его и без справочника сотрудников. В журнал — ФИО, как у тендеров.
+  const handleSaveSubmissionResp = async (id, userId) => {
+    const req = requests.find(r => r.id === id)
+    if (!req) return
+    const next = userId || null
+    if ((req.submission_resp_user_id || null) === next) return
+    const emp = next ? costIncreaseStaff.find(e => e.user_id === next) : null
+    if (next && !emp) { alert('Выберите сотрудника отдела по удорожанию из списка.'); return }
+    const patch = { submission_resp_user_id: next, submission_resp_name: emp?.display_name || null }
+    try {
+      const { error } = await db
+        .from('dc_requests')
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq('id', id)
+      if (error) throw error
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))
+      await logFieldChange(id, 'submission_resp_user_id', req.submission_resp_name || null, patch.submission_resp_name)
+    } catch (err) {
+      alert((err?.code === 'PGRST204' || err?.code === '42703')
+        ? 'Не удалось назначить ответственного: в базе не применена миграция 20261117_dc_request_submission_responsible.'
+        : `Ошибка назначения ответственного за статус ОКС: ${err?.message || err}`)
+    }
+  }
+
   // Путь к папке правится прямо в таблице: открывать форму заявки ради одной
   // строки неудобно, а меняют её чаще, чем остальные поля.
   const handleSaveFolderPath = async (id, value) => {
@@ -1512,6 +1646,9 @@ function DcRequestsPage() {
   const isDeletedTab = activeTab === 'deleted'
   // Столбцы «Статус ОКС» и «Комментарий» — когда в базе есть их колонки (миграция 20261108).
   const submissionEnabled = hasSubmissionColumns(requests)
+  // Ответственный за статус ОКС и фильтр по нему — когда есть и его колонки (миграция 20261117).
+  const subRespEnabled = submissionEnabled && hasSubmissionRespColumns(requests)
+  const subRespFilterOn = subRespEnabled && filterSubResps.length > 0
 
   // Фильтр по подразделению — когда колонка есть в базе; счётчики — по заявкам вкладки (без этого фильтра).
   const divisionFilterOn = linkEnabled && filterDivisions.length > 0
@@ -1525,7 +1662,27 @@ function DcRequestsPage() {
     return map
   })()
 
-  // Фильтрация: таб (soft-delete) → статусы → объект → контрагент → ответственный → подразделение → поиск.
+  // Фильтр «Ответственный за статус ОКС»: сотрудники отдела и те, кто назначен на заявки (в том числе ушедшие из
+  // отдела), «Не назначен» — первым; число — заявок вкладки без этого фильтра.
+  const subRespOptions = (() => {
+    if (!subRespEnabled) return []
+    const counts = new Map()
+    const names = new Map(costIncreaseStaff.map(e => [e.user_id, e.display_name]))
+    for (const r of requests) {
+      if (isDeletedTab ? r.deleted_at == null : r.deleted_at != null) continue
+      const key = submissionRespKey(r)
+      counts.set(key, (counts.get(key) || 0) + 1)
+      if (r.submission_resp_user_id && !names.has(r.submission_resp_user_id)) {
+        names.set(r.submission_resp_user_id, r.submission_resp_name || 'Сотрудник удалён')
+      }
+    }
+    const people = [...names].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'ru'))
+    return [[NO_SUBMISSION_RESP, 'Не назначен'], ...people]
+      .map(([value, label]) => ({ value, label: `${label} (${counts.get(value) || 0})`, name: label }))
+  })()
+
+  // Фильтрация: таб (soft-delete) → статусы → объект → контрагент → ответственный → подразделение → ответственный
+  // за статус ОКС → поиск.
   // Выгрузка в Excel берёт этот же список, поэтому при нескольких выбранных
   // статусах в файл попадают заявки всех этих статусов.
   const filtered = requests
@@ -1537,6 +1694,7 @@ function DcRequestsPage() {
     .filter(r => filterCounterpartyIds.length === 0 || filterCounterpartyIds.includes(r.counterparty_id))
     .filter(r => filterResponsibleIds.length === 0 || filterResponsibleIds.includes(r.responsible_contact_id))
     .filter(r => !divisionFilterOn || filterDivisions.includes(r.division || NO_VOR_DIVISION))
+    .filter(r => !subRespFilterOn || filterSubResps.includes(submissionRespKey(r)))
     .filter(r => {
       const q = searchQuery.trim().toLowerCase()
       if (!q) return true
@@ -1646,6 +1804,7 @@ function DcRequestsPage() {
         // Статус ОКС — как в таблице, в конце (перед сведениями о создании).
         ...(submissionEnabled ? {
           'Статус ОКС': SUBMISSION_LABEL[submissionOf(req)] || '',
+          ...(subRespEnabled ? { 'Ответственный за статус ОКС': req.submission_resp_name || '' } : {}),
           'Комментарий к статусу ОКС': req.submission_comment || '',
           'Статус ОКС изменил': req.submission_by_name || '',
           'Дата изменения статуса ОКС': formatShortDate(req.submission_at),
@@ -1665,7 +1824,7 @@ function DcRequestsPage() {
       { wch: 22 }, { wch: 26 }, { wch: 50 }, { wch: 22 }, { wch: 14 },
       { wch: 16 }, { wch: 9 }, { wch: 11 }, { wch: 16 },
       { wch: 16 }, { wch: 16 }, { wch: 40 },
-      ...(submissionEnabled ? [{ wch: 34 }, { wch: 40 }, { wch: 22 }, { wch: 16 }] : []),
+      ...(submissionEnabled ? [{ wch: 34 }, ...(subRespEnabled ? [{ wch: 26 }] : []), { wch: 40 }, { wch: 22 }, { wch: 16 }] : []),
       { wch: 22 }, { wch: 12 },
     ]
     // Второй лист — задачи и ответы по тем же заявкам: в основной строке для
@@ -1984,11 +2143,17 @@ function DcRequestsPage() {
             <VorDivisionFilter subject="dc" value={filterDivisions} onChange={setFilterDivisions} counts={divisionCounts} />
           </div>
         )}
-        {(filterStatuses.length > 0 || filterObjectIds.length > 0 || filterCounterpartyIds.length > 0 || filterResponsibleIds.length > 0 || divisionFilterOn) && (
+        {/* Ответственный за статус ОКС: на компьютере — в заголовке столбца, на телефоне шапки нет — здесь. */}
+        {subRespEnabled && isPhone && (
+          <div className={`dcr-filter-drop${filterSubResps.length ? ' is-active' : ''}`}>
+            <SubRespFilter value={filterSubResps} onChange={setFilterSubResps} options={subRespOptions} />
+          </div>
+        )}
+        {(filterStatuses.length > 0 || filterObjectIds.length > 0 || filterCounterpartyIds.length > 0 || filterResponsibleIds.length > 0 || divisionFilterOn || subRespFilterOn) && (
           <button
             type="button"
             className="dcr-filter-clear"
-            onClick={() => { setFilterStatuses([]); setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterResponsibleIds([]); setFilterDivisions([]) }}
+            onClick={() => { setFilterStatuses([]); setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterResponsibleIds([]); setFilterDivisions([]); setFilterSubResps([]) }}
             title="Сбросить фильтры"
           >Сбросить</button>
         )}
@@ -2106,6 +2271,12 @@ function DcRequestsPage() {
                         </span>
                       </div>
                     )}
+                    {subRespEnabled && (
+                      <div className="mcard-row">
+                        <span className="mcard-label">Ответственный ОКС</span>
+                        <span className="mcard-value">{req.submission_resp_name || 'Не назначен'}</span>
+                      </div>
+                    )}
                     {submissionEnabled && req.submission_comment && (
                       <div className="mcard-row">
                         <span className="mcard-label">Комментарий</span>
@@ -2179,7 +2350,16 @@ function DcRequestsPage() {
                 <th>Документы</th>
                 {/* Статус ОКС — подаётся ли ДС заказчику; под ним пояснение (номер письма, срок…).
                     Перед последним столбцом («Действия»). */}
-                {submissionEnabled && <th>Статус ОКС</th>}
+                {submissionEnabled && (
+                  <th className={subRespFilterOn ? 'dcr-th-filtered' : undefined}>
+                    {subRespEnabled ? (
+                      <span className="dcr-th-sub">
+                        <span>Статус ОКС</span>
+                        <SubRespFilter inHeader value={filterSubResps} onChange={setFilterSubResps} options={subRespOptions} />
+                      </span>
+                    ) : 'Статус ОКС'}
+                  </th>
+                )}
                 <th><span className="ui-sr-only">Действия</span></th>
               </tr>
             </thead>
@@ -2699,6 +2879,15 @@ function DcRequestsPage() {
                               )}
                               <span className="ui-num">{formatShortDate(req.submission_at)}</span>
                             </div>
+                          )}
+                          {subRespEnabled && (
+                            <SubRespPicker
+                              req={req}
+                              staff={costIncreaseStaff}
+                              canEdit={canEditSubmission}
+                              loadError={employeesError}
+                              onChange={(v) => handleSaveSubmissionResp(req.id, v)}
+                            />
                           )}
                           {canEditSubmission ? (
                             <SubmissionCommentInput

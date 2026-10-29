@@ -4,10 +4,12 @@
 export const DC_VIEW_KEY = 'dcRequests:view:v1'
 export const DC_SCROLL_KEY = 'dcRequests:scroll:v1'
 
-const LISTS = ['statuses', 'objects', 'counterparties', 'responsibles', 'divisions', 'expanded']
+// subResps — фильтр «Ответственный за статус ОКС» (id сотрудников, NO_SUBMISSION_RESP — не назначен).
+const LISTS = ['statuses', 'objects', 'counterparties', 'responsibles', 'divisions', 'subResps', 'expanded']
 
 export const EMPTY_DC_VIEW = Object.freeze({
-  tab: 'all', search: '', statuses: [], objects: [], counterparties: [], responsibles: [], divisions: [], expanded: [],
+  tab: 'all', search: '', statuses: [], objects: [], counterparties: [], responsibles: [], divisions: [], subResps: [],
+  expanded: [],
 })
 
 export function sessionStore() {
