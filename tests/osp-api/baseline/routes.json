@@ -1,5 +1,65 @@
 [
   {
+    "method": "GET",
+    "url": "/api/admin/api-keys",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "POST",
+    "url": "/api/admin/api-keys",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "expiresOn",
+      "name",
+      "note",
+      "scopes"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/admin/api-keys/:id",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "expiresOn",
+      "name",
+      "note",
+      "scopes"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/admin/api-keys/:id/delete",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": []
+  },
+  {
+    "method": "POST",
+    "url": "/api/admin/api-keys/:id/revoke",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "reason"
+    ]
+  },
+  {
+    "method": "GET",
+    "url": "/api/admin/api-keys/calls",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": null
+  },
+  {
     "method": "POST",
     "url": "/api/auth/admin/reset-password",
     "kind": "user",

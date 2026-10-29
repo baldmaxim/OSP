@@ -12,7 +12,9 @@
 //             dcMany=N — ещё N заявок; dcOldFiles=N — ещё N старых файлов, с maxRows=1000 — потолок строк PostgREST;
 //             /dc-requests?file=<id> — ссылка на файл из выгрузки в Excel),
 //             /kp-review&kpReview=1 («Проверка КП»; kpReviewMany=N — длинный список, kpRole — роль, см. seed.js),
-//             /cost-plans («Планы затрат», «Документы» → «Экономисты ОСП»);
+//             /cost-plans («Планы затрат», «Документы» → «Экономисты ОСП»),
+//             /stand/api-keys («Администрирование» → «Доступ к API»; apiKeys=missing — раздела у сервера нет,
+//             apiKeysMany=N — ещё N ключей);
 //   items   — позиций ВОР (по умолчанию 5000, три документа, разделы),
 //   cps     — подрядчиков с КП (по умолчанию 10),
 //   tenders — тендеров в реестре (по умолчанию 40),
@@ -52,6 +54,8 @@ const KpReviewPage = lazy(() => import('../../../src/pages/KpReviewPage'))
 const DcRequestsPage = lazy(() => import('../../../src/pages/DcRequestsPage'))
 // «Планы затрат» — так же (CostPlansPage.css, рабочий слой).
 const CostPlansPage = lazy(() => import('../../../src/pages/CostPlansPage'))
+// «Доступ к API» — так же (AdminPage.css) и со своим «сервером» в памяти (api-keys-stand.jsx).
+const ApiKeysStand = lazy(() => import('./api-keys-stand.jsx'))
 import { weekKey } from '../../../src/utils/weeks'
 
 const params = new URLSearchParams(window.location.search)
@@ -78,6 +82,7 @@ const routes = (
     <Route path="/general/departments" element={<DepartmentsPage />} />
     <Route path="/tasks" element={<TasksPage />} />
     <Route path="/stand/dgp" element={<Suspense fallback={null}><DgpStand /></Suspense>} />
+    <Route path="/stand/api-keys" element={<Suspense fallback={null}><ApiKeysStand /></Suspense>} />
     <Route path="/public/tenders" element={<PublicTendersPage />} />
     <Route path="/general/counterparties" element={<CounterpartiesPage />} />
     <Route path="/contracts" element={<Suspense fallback={null}><ContractsPage /></Suspense>} />

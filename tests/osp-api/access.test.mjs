@@ -141,6 +141,14 @@ describe('osp-api: права объявлены на маршруте, закр
       'POST /api/auth/password': { method: 'POST', url: '/api/auth/password', payload: {} },
       'POST /api/auth/admin/users': { method: 'POST', url: '/api/auth/admin/users', payload: {} },
       'POST /api/auth/admin/reset-password': { method: 'POST', url: '/api/auth/admin/reset-password', payload: {} },
+      // Ключи API — только администратор. Здесь своей базы нет: пропущенный правами получает 503 (ключи хранятся в
+      // ней) или 400 (тело не по схеме). Работа на настоящей базе — tests/osp-api/api-keys.test.mjs.
+      'GET /api/admin/api-keys': { method: 'GET', url: '/api/admin/api-keys' },
+      'POST /api/admin/api-keys': { method: 'POST', url: '/api/admin/api-keys', payload: {} },
+      'POST /api/admin/api-keys/:id': { method: 'POST', url: '/api/admin/api-keys/0f0e0d0c-0b0a-4908-8706-050403020100', payload: {} },
+      'POST /api/admin/api-keys/:id/revoke': { method: 'POST', url: '/api/admin/api-keys/0f0e0d0c-0b0a-4908-8706-050403020100/revoke', payload: {} },
+      'POST /api/admin/api-keys/:id/delete': { method: 'POST', url: '/api/admin/api-keys/0f0e0d0c-0b0a-4908-8706-050403020100/delete', payload: {} },
+      'GET /api/admin/api-keys/calls': { method: 'GET', url: '/api/admin/api-keys/calls' },
       'GET /api/ready через nginx': { method: 'GET', url: '/api/ready', headers: { 'x-forwarded-for': '203.0.113.7' } },
     }
     const measured = {}
@@ -190,6 +198,13 @@ describe('osp-api: права объявлены на маршруте, закр
       assert.equal(row['без токена'], 401, title)
       assert.equal(row['неверный токен'], 401, title)
       for (const denied of ['unapproved', 'blocked', 'no_user_roles']) assert.equal(row[denied], 403, `${title}: ${denied}`)
+    }
+    // Ключи API: кроме администратора — никто, ни сотрудник, ни подрядчик.
+    for (const [title, row] of Object.entries(measured)) {
+      if (!title.includes('/api/admin/api-keys')) continue
+      assert.equal(row['без токена'], 401, title)
+      for (const denied of ['employee', 'unapproved', 'contractor', 'contractor_noorg', 'no_user_roles', 'blocked']) assert.equal(row[denied], 403, `${title}: ${denied}`)
+      assert.ok(row.admin !== 401 && row.admin !== 403, `${title}: администратор`)
     }
     assert.equal(measured['POST /api/fn/ai-assist clause_suggest'].contractor, 403)
     assert.equal(measured['POST /api/fn/cover-upload'].contractor, 403, 'обложку загружает только сотрудник')

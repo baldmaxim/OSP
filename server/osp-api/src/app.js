@@ -33,7 +33,9 @@ import { access, installAccess } from './lib/access.js'
 import { OPEN_ROUTES } from './open-routes.js'
 import { registerS3Presign } from './routes/s3Presign.js'
 import { registerAiAssist } from './routes/aiAssist.js'
-import { registerRates } from './routes/rates.js'
+import { registerRates, parseRatesKeys } from './routes/rates.js'
+import { registerApiKeys } from './routes/apiKeys.js'
+import { createApiKeyStore } from './lib/apiKeys.js'
 import { registerCovers } from './routes/covers.js'
 import { registerDbGateway, createInternalTokens, createRemoteVerifier } from './routes/dbGateway.js'
 import { createAuthAdmin, createAuthUsersMirror } from './lib/authUsers.js'
@@ -58,6 +60,8 @@ const AUTH_ADMIN_RPC = { admin_delete_user: 'deleteUser', admin_confirm_user_ema
 const REGISTRY_REFRESH_MS = 10 * 60_000
 const AUTH_CLEANUP_MS = 10 * 60_000
 const SUPERADMIN_TTL_MS = 30_000
+// Ключи API: занести ключи из настроек сервера (пока не вышло) и убрать журнал вызовов старше 90 дней.
+const API_KEYS_TICK_MS = 10 * 60_000
 const DAY_MS = 24 * 60 * 60 * 1000
 
 // Ответ ИИ ждём меньше, чем nginx ждёт нас (proxy_read_timeout 180 с, deploy/nginx/osp.root.sx.conf).
@@ -386,6 +390,34 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     app.decorate('larixSync', larixSync)
   }
 
+  // Ключи API для смежных систем: выпуск в «Администрировании», проверка на /api/rates/*, журнал вызовов
+  // (src/lib/apiKeys.js). Ключи из RATES_API_KEYS заносятся в список при запуске; таблиц ещё нет — повтор по такту.
+  const apiKeys = createApiKeyStore({ db, envEntries: parseRatesKeys(config.ratesApiKeys || [], app.log), log: app.log, isReadOnly })
+  app.decorate('apiKeys', apiKeys)
+  if (db) {
+    let envSynced = false
+    let running = null
+    const tick = () => {
+      running ??= Promise.all([
+        envSynced ? null : apiKeys.syncEnv().then((r) => {
+          if (r.skipped) return
+          envSynced = true
+          app.log.info(r, 'api keys from server settings')
+        }),
+        apiKeys.cleanup(),
+      ]).catch((err) => app.log.warn({ code: err?.code || err?.name }, 'api keys maintenance'))
+        .finally(() => { running = null })
+    }
+    app.addHook('onReady', async () => tick())
+    const timer = setInterval(tick, API_KEYS_TICK_MS)
+    timer.unref()
+    app.addHook('preClose', async () => {
+      clearInterval(timer)
+      await running
+      await apiKeys.idle()
+    })
+  }
+
   const limiters = {
     loginIp: createRateLimit(limits.loginPerIp || DEFAULT_LIMITS.loginPerIp),
     authAdmin: createRateLimit(limits.authAdminPerUser || DEFAULT_LIMITS.authAdminPerUser),
@@ -505,12 +537,13 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
 
   const ctx = { config, getS3, getAnthropic, getServiceClient, limiters, db, refreshRegistry,
     verifyUserToken, allow: deps.allow || ALLOW, mint, beforeGateway, gatewayOn, isReadOnly, loadStatus,
-    principal, authService, sessions, isSuperadmin }
+    principal, authService, sessions, isSuperadmin, apiKeys }
   registerAuth(app, ctx)
   registerDbGateway(app, ctx)
   registerS3Presign(app, ctx)
   registerAiAssist(app, ctx)
   registerRates(app, ctx)
+  registerApiKeys(app, ctx)
   registerCovers(app, ctx)
   return app
 }

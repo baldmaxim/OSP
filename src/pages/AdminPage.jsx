@@ -9,6 +9,7 @@ import UserAvatar from '../components/admin/UserAvatar'
 import UserActionsMenu from '../components/admin/UserActionsMenu'
 import { AddUserDrawer, TemporaryPasswordDialog } from '../components/admin/AccountModals'
 import UserEditDrawer from '../components/admin/UserEditDrawer'
+import ApiKeysTab from '../components/admin/ApiKeysTab'
 import { fetchAllActiveCounterparties } from '../utils/fetchAllRows'
 import './AdminPage.css'
 
@@ -584,7 +585,18 @@ function AdminPage() {
           {canPreviewRoles && (
             <button className={`admin-tab ${activeTab === 'preview' ? 'active' : ''}`} onClick={() => setActiveTab('preview')}>Просмотр от имени роли</button>
           )}
+          {/* Ключи выдаёт только администратор — так же проверяет сервер (server/osp-api/src/routes/apiKeys.js). */}
+          {(isAdmin || isSuperAdmin) && (
+            <button className={`admin-tab ${activeTab === 'api' ? 'active' : ''}`} onClick={() => setActiveTab('api')}>Доступ к API</button>
+          )}
         </div>
+
+        {/* ===== Доступ к API ===== */}
+        {activeTab === 'api' && (isAdmin || isSuperAdmin) && (
+          <div className="admin-tabpane">
+            <ApiKeysTab notify={notify} />
+          </div>
+        )}
 
         {/* ===== Пользователи ===== */}
         {activeTab === 'users' && (

@@ -2,13 +2,15 @@
 // реестр расценок смежным отделам, по ключу, только чтение. У kp и supply параметры, колонки, ответ и коды — как
 // у функции; larix — договорные расценки из Larix.CPM (вкладка «Договорные расценки (Larix)»), только своя база.
 //
-// Ключ — заголовок X-API-Key или параметр ?key= (ради Excel/Power Query). Ключи — RATES_API_KEYS, через
-// запятую; запись «ключ:kp+larix» открывает ключу только перечисленные ресурсы, запись без «:» — kp и supply,
-// как было до larix (прежний ключ договорные расценки сам не получает). Адрес с ?key= не логируется (app.js
-// пишет в журнал только шаблон маршрута). Инструкция для потребителя — docs/RATES_API.md.
-import { safeEqual } from '../lib/keys.js'
+// Ключ — заголовок X-API-Key или параметр ?key= (ради Excel/Power Query). Ключи выпускает администратор портала
+// («Администрирование» → «Доступ к API», src/lib/apiKeys.js): в базе — отпечаток, права (ресурсы) и срок. Прежние
+// ключи — строка RATES_API_KEYS через запятую: запись «ключ:kp+larix» открывает только перечисленные ресурсы,
+// запись без «:» — kp и supply, как было до larix; они тоже видны в списке администратора, там их можно отозвать.
+// Каждый вызов известного ключа пишется в журнал (ресурс, код, строк, время, адрес) — после ответа. Адрес с ?key=
+// не логируется (app.js пишет в журнал только шаблон маршрута). Инструкция для потребителя — docs/RATES_API.md.
 import { access } from '../lib/access.js'
-import { dbUnavailable } from '../lib/db.js'
+import { dbUnavailable, DB_UNAVAILABLE, DB_UNAVAILABLE_TEXT } from '../lib/db.js'
+import { RESOURCE_CODES, REFUSALS } from '../lib/apiKeys.js'
 import { OPEN_ROUTES } from '../open-routes.js'
 
 export const CORS_HEADERS = {
@@ -43,7 +45,7 @@ export const LARIX_COLS = [
 const LARIX_NUMBERS = new Set(['id', 'price_material', 'price_work', 'vat_rate', 'project_id', 'contractor_id', 'contract_id'])
 const LARIX_SELECT = LARIX_COLS.map((c) => (c === 'contract_date' ? 'r.contract_date::text as contract_date' : `r.${c}`)).join(', ')
 
-export const RESOURCES = ['kp', 'supply', 'larix']
+export const RESOURCES = RESOURCE_CODES
 // Ключ без перечня ресурсов — то, что ключи открывали до larix.
 const LEGACY_RESOURCES = ['kp', 'supply']
 
@@ -87,14 +89,18 @@ export function toCsv(rows) {
   return [headers.join(';'), ...rows.map((r) => headers.map((h) => esc(r[h])).join(';'))].join('\n')
 }
 
-// Номер совпавшего ключа (для лимитов — без самого ключа) или -1.
-function keyIndex(keys, request, params) {
-  if (keys.length === 0) return -1
-  const provided = String(request.headers['x-api-key'] || params.get('key') || '').trim()
-  if (!provided) return -1
-  let found = -1
-  keys.forEach((k, i) => { if (safeEqual(k.key, provided) && found < 0) found = i })
-  return found
+// Ключ из запроса: заголовок или ?key=.
+function providedKey(request) {
+  const params = new URL(request.url, 'http://localhost').searchParams
+  return String(request.headers['x-api-key'] || params.get('key') || '').trim()
+}
+
+// Ресурс вызова для журнала — только из известных: в адрес можно написать что угодно.
+function callResource(request) {
+  const segments = new URL(request.url, 'http://localhost').pathname.split('/').filter(Boolean)
+  const last = segments[segments.length - 1] || ''
+  if (last === 'rates' || last === 'health') return 'health'
+  return RESOURCES.includes(last) ? last : 'other'
 }
 
 class BadParam extends Error {}
@@ -155,25 +161,53 @@ export function larixWhere(p) {
   return { sql: where.length ? `where ${where.join(' and ')}` : '', args }
 }
 
-export function registerRates(app, { config, getServiceClient, limiters, db, gatewayOn }) {
-  app.decorateRequest('ratesKey', -1)
-  const keys = parseRatesKeys(config.ratesApiKeys || [], app.log)
+export function registerRates(app, { config, getServiceClient, limiters, db, gatewayOn, apiKeys }) {
+  app.decorateRequest('ratesKey', null)
+  // Вызов для журнала ключа: { key, reason?, rows? } — пишется после ответа (onResponse маршрута).
+  app.decorateRequest('apiCall', null)
 
   // Проверка ключа объявлена на маршруте (lib/access.js) и выполняется до обработчика. Заголовки CORS —
   // и на отказе: Excel и браузер должны увидеть текст ошибки.
   const checkKey = async (request, reply) => {
     reply.headers(CORS_HEADERS)
-    const key = keyIndex(keys, request, new URL(request.url, 'http://localhost').searchParams)
-    if (key < 0) {
+    const provided = providedKey(request)
+    let found = null
+    if (provided) {
+      try {
+        found = await apiKeys.resolve(provided)
+      } catch (err) {
+        // База не ответила, а ключа нет в настройках сервера: это не «неверный ключ» — клиент может повторить.
+        request.log.error({ code: err?.code || err?.name }, 'rates-api key lookup')
+        reply.code(503).send({ error: DB_UNAVAILABLE_TEXT, code: DB_UNAVAILABLE })
+        return false
+      }
+    }
+    if (!found) {
       reply.code(401).send({ error: 'Неверный или отсутствующий ключ доступа (X-API-Key)' })
       return false
     }
-    if (!limiters.ratesRate.take(`key${key}`)) {
+    request.apiCall = { key: found.key }
+    if (!found.ok) {
+      request.apiCall.reason = found.reason
+      reply.code(401).send({ error: REFUSALS[found.reason], code: `OSP_API_KEY_${found.reason.toUpperCase()}` })
+      return false
+    }
+    if (!limiters.ratesRate.take(found.key.limitKey)) {
+      request.apiCall.reason = 'rate_limit'
       reply.code(429).send({ error: 'Слишком много запросов — не чаще 60 в минуту на ключ' })
       return false
     }
-    request.ratesKey = key
+    request.ratesKey = found.key
     return true
+  }
+
+  const logCall = async (request, reply) => {
+    const call = request.apiCall
+    if (!call?.key?.id) return
+    apiKeys.logCall({
+      keyId: call.key.id, resource: callResource(request), status: reply.statusCode, rows: call.rows ?? null,
+      ms: reply.elapsedTime, ip: request.ip, reason: call.reason || null,
+    })
   }
 
   const preflight = async (request, reply) => reply.headers(CORS_HEADERS).type('text/plain; charset=utf-8').send('ok')
@@ -181,19 +215,23 @@ export function registerRates(app, { config, getServiceClient, limiters, db, gat
   const handler = async (request, reply) => {
     const url = new URL(request.url, 'http://localhost')
     const p = url.searchParams
-    const key = request.ratesKey
+    const key = request.ratesKey.limitKey
+    const refuse = (status, reason, error) => {
+      request.apiCall.reason = reason
+      return reply.code(status).send({ error })
+    }
 
     const segments = url.pathname.split('/').filter(Boolean)
     const resource = segments[segments.length - 1] || ''
-    const allowed = keys[key].resources
+    const allowed = request.ratesKey.resources
     if (resource === 'health' || resource === 'rates') {
       return { ok: true, resources: allowed }
     }
     if (!RESOURCES.includes(resource)) {
-      return reply.code(404).send({ error: `Неизвестный ресурс «${resource}». Доступны: ${RESOURCES.join(', ')}` })
+      return refuse(404, 'unknown_resource', `Неизвестный ресурс «${resource}». Доступны: ${RESOURCES.join(', ')}`)
     }
     if (!allowed.includes(resource)) {
-      return reply.code(403).send({ error: `Этому ключу ресурс «${resource}» не открыт. Открыты: ${allowed.join(', ')}` })
+      return refuse(403, 'forbidden_resource', `Этому ключу ресурс «${resource}» не открыт. Открыты: ${allowed.join(', ')}`)
     }
 
     const limit = clampInt(p.get('limit'), DEFAULT_LIMIT, 1, MAX_LIMIT)
@@ -211,11 +249,11 @@ export function registerRates(app, { config, getServiceClient, limiters, db, gat
       try {
         filter = larixWhere(p)
       } catch (err) {
-        if (err instanceof BadParam) return reply.code(400).send({ error: err.message })
+        if (err instanceof BadParam) return refuse(400, 'bad_param', err.message)
         throw err
       }
-      const release = limiters.ratesKey.acquire(`key${key}`)
-      if (!release) return reply.code(429).send({ error: 'Предыдущие запросы этого ключа ещё выполняются — повторите позже' })
+      const release = limiters.ratesKey.acquire(key)
+      if (!release) return refuse(429, 'busy', 'Предыдущие запросы этого ключа ещё выполняются — повторите позже')
       try {
         const { rows, loadedAt } = await db.read(null, async (tx) => {
           const page = await tx.query(
@@ -225,6 +263,7 @@ export function registerRates(app, { config, getServiceClient, limiters, db, gat
           return { rows: page.rows, loadedAt: run.rows[0]?.finished_at ?? null }
         })
         for (const r of rows) for (const c of LARIX_NUMBERS) if (r[c] !== null) r[c] = Number(r[c])
+        request.apiCall.rows = rows.length
         // Подсчёт — отдельной транзакцией: не уложился — строки всё равно отдаются, count: null.
         let count = null
         try {
@@ -285,8 +324,8 @@ export function registerRates(app, { config, getServiceClient, limiters, db, gat
       return out
     }
 
-    const release = limiters.ratesKey.acquire(`key${key}`)
-    if (!release) return reply.code(429).send({ error: 'Предыдущие запросы этого ключа ещё выполняются — повторите позже' })
+    const release = limiters.ratesKey.acquire(key)
+    if (!release) return refuse(429, 'busy', 'Предыдущие запросы этого ключа ещё выполняются — повторите позже')
     try {
       const { data, error } = await applyFilters(supabase.from(view).select(isKp ? KP_COLS : SUPPLY_COLS))
         .order('item_name', { ascending: true })
@@ -294,6 +333,7 @@ export function registerRates(app, { config, getServiceClient, limiters, db, gat
         .range(offset, offset + limit - 1)
       if (error) throw error
       const rows = data || []
+      request.apiCall.rows = rows.length
 
       // Подсчёт по дедуп-представлению дорогой и может упереться в таймаут — строки отдаём всё
       // равно, count: null, обход страницами идёт по has_more.
@@ -322,7 +362,7 @@ export function registerRates(app, { config, getServiceClient, limiters, db, gat
 
   const reason = (method, url) => OPEN_ROUTES.find((r) => r.method === method && r.url === url).reason
   for (const url of ['/api/rates', '/api/rates/*']) {
-    app.route({ method: 'GET', url, config: { access: access.apiKey({ reason: reason('GET', url), check: checkKey }) }, handler })
+    app.route({ method: 'GET', url, config: { access: access.apiKey({ reason: reason('GET', url), check: checkKey }) }, onResponse: logCall, handler })
     app.route({ method: 'OPTIONS', url, config: { access: access.open(reason('OPTIONS', url)) }, handler: preflight })
   }
 }
