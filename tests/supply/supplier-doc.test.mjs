@@ -10,7 +10,8 @@ import { chromium } from 'playwright'
 import { browserLaunchOptions } from '../tender/lib/stand.mjs'
 import { classifyHeader, parseNum, unitPriceWithVat, vatFromText } from '../../src/utils/supplierDoc.js'
 import { parseSupplierPdfPages, parseSupplierWorkbook, readPdfPages, readWorkbookBytes } from '../../src/utils/supplierDocRead.js'
-import { deliveryFactor, matchDocItems, positionGroups, searchGroups } from '../../src/utils/supplyDocMatch.js'
+import { codeTokens, deliveryFactor, expandName, matchDocItems, offerMatches, positionGroups, searchGroups } from '../../src/utils/supplyDocMatch.js'
+import { OFFER_LINES_MAX, offerNotes, readOffer } from '../../src/utils/supplyOffers.js'
 import { normName } from '../../src/utils/supplyRateHelpers.js'
 
 const launch = browserLaunchOptions()
@@ -274,5 +275,99 @@ describe('сопоставление строк документа с позиц
     const d = deliveryFactor([item('Труба', 'м', { qty: 10, price: 100 }), item('Доставка', 'усл', { qty: 1, price: 50, delivery: true })], (i) => i.price)
     assert.deepEqual([d.delivery, d.goods, d.factor], [50, 1000, 1.05])
     assert.equal(deliveryFactor([item('Труба')], (i) => i.price).factor, 1)
+  })
+})
+
+// Позиции ВОР тендера 914 «ЗИЛ 33, АСУД.И» (снимок 29.10.2026, часть) и строки счетов так, как их пишут дистрибьюторы
+// (ЭТМ, DKC, IEK, WAGO): другой порядок слов, сокращения, артикул вместо названия, слитное написание.
+describe('сопоставление: похожесть текста, артикулы, сокращения (тендер 914)', () => {
+  const names = [
+    ['Труба гофрированная ПВХ с протяжкой D=20мм, арт.91920, DKC', 'м'],
+    ['Труба гофрированная ПВХ легкая, D=32мм, арт.91932, DKC', 'м'],
+    ['Держатель пластиковый с защёлкой d20мм, 51020R, DKC', 'шт'],
+    ['Металлорукав оцинкованный РЗ-ЦХ-10, Ду=10 мм, IEK', 'м'],
+    ['Металлорукав оцинкованный РЗ-ЦХ-12, Ду=12 мм, IEK', 'м'],
+    ['Кабель МКШВнг(А)-HF 2х2х0,75; СегментЭнерго', 'м'],
+    ['Кабель МКШВнг(А)-HF 4х2х0,75; СегментЭнерго', 'м'],
+    ['Клемма строительно-монтажная трехпроводная, арт.221-413, WAGO', 'шт'],
+    ['Клемма строительно-монтажная двухпроводная, арт.221-412, WAGO', 'шт'],
+    ['Скоба металлическая двухлапковая d=12-13 мм, арт.CMAT11-12-010', 'шт'],
+    ['Труба стальная водогазопроводная 25х2,8', 'м'],
+    ['Шкаф управления SK-712/d-2-1.5, Wilo', 'шт'],
+    ['Шкаф управления SK-712/d-1-1.5, Wilo', 'шт'],
+    ['Переговорное голосовое устройство ПГУ-RS, RS485, Текон-Автоматика', 'шт'],
+    ['Плата для подключения RS485 к щитам управления SK-712, арт.2785193, Wilo', 'шт'],
+  ]
+  const groups = positionGroups([{ name: 'ПЧ', positions: names.map(([name, unit]) => ({ name, unit, volume: 1, k: normName(name) })) }])
+  const item = (name, unit) => ({ name, unit, code: null, qty: 1, price: 100, priceVat: null, sum: null, sumVat: null, vatRate: null, delivery: false })
+  const matchOf = (name, unit) => matchDocItems([item(name, unit)], groups)[0]
+
+  it('артикул, который в тендере только у одной позиции, — почти наверняка она; общий у нескольких («RS485») — нет', () => {
+    assert.deepEqual([...codeTokens('Клемма WAGO 221-413 3-проводная с рычагами 0,2-4мм2')], ['221413'])
+    assert.deepEqual([...codeTokens('Кабель МКШВнг(А)-HF 2х2х0,75 ГОСТ 10348-80 d20мм')], [], 'размеры и ГОСТ — не артикулы')
+    const m = matchOf('Клемма WAGO 221-413 3-проводная с рычагами', 'шт')
+    assert.match(m.match.group.name, /трехпроводная/)
+    assert.equal(m.match.code, true)
+    assert.match(matchOf('WILO Модуль RS-485 для SK-712 арт. 2785193', 'шт').match.group.name, /^Плата для подключения RS485/)
+    assert.match(matchOf('Прибор управления насосом SK-712/D-2-1,5 WILO', 'шт').match.group.name, /d-2-1\.5/)
+  })
+
+  it('сокращения и другая запись: ВГП, «2-лапковая», гофротруба с зондом, другой порядок слов', () => {
+    assert.match(expandName('Скоба 2-лапковая, 5 штук'), /Скоба двухлапковая, 5 штук/)
+    assert.match(matchOf('Труба ВГП 25х2,8 ГОСТ 3262-75', 'м').match.group.name, /водогазопроводная 25х2,8/)
+    assert.match(matchOf('Скоба 2-лапковая d12-13 мм IEK', 'шт').match.group.name, /d=12-13/)
+    assert.match(matchOf('Гофротруба ПВХ 20мм с зондом DKC (100м)', 'м').match.group.name, /D=20мм/)
+    assert.match(matchOf('МКШвнг(А)-HF 4х2х0,75 кабель монтажный', 'м').match.group.name, /4х2х0,75/)
+  })
+
+  it('другой размер, сечение, диаметр — в списке выбора, но не сопоставляется сам', () => {
+    for (const [name, unit] of [['Кабель МКШВнг(А)-HF 3х2х0,75', 'м'], ['Труба гофрированная ПВХ d25 мм с протяжкой DKC 91925', 'м'],
+      ['Металлорукав РЗ-ЦХ-16 IEK', 'м']]) {
+      const m = matchOf(name, unit)
+      assert.equal(m.match, null, name)
+      assert.ok(m.candidates.length > 0 && m.candidates.every((c) => c.score <= 0.5), name)
+    }
+  })
+
+  it('цены документа как похожие цены: выбранная в окне позиция; «не сопоставлять» — никуда; без выбора — самые похожие', () => {
+    const pipe20 = groups.find((g) => /D=20мм/.test(g.name))
+    const res = offerMatches([
+      { name: 'Что-то своё', unit: 'м', k: pipe20.k },
+      { name: 'Клемма WAGO 221-412 2-проводная', unit: 'шт', skip: true },
+      { name: 'Кабель МКШвнг(А)-HF 2х2х0,75', unit: 'м' },
+      { name: 'Болт М12х80', unit: 'шт' },
+    ], groups)
+    assert.deepEqual(res.get(pipe20.key).map((o) => [o.line.name, o.picked]), [['Что-то своё', true]])
+    const cable = groups.find((g) => /2х2х0,75/.test(g.name))
+    assert.deepEqual(res.get(cable.key).map((o) => o.line.name), ['Кабель МКШвнг(А)-HF 2х2х0,75'])
+    assert.equal(res.has(groups.find((g) => /4х2х0,75/.test(g.name)).key), false, 'другое сечение — не туда')
+    assert.equal([...res.values()].flat().some((o) => /Болт|Клемма/.test(o.line.name)), false)
+  })
+})
+
+describe('цены документа «в похожие цены»: строки в notes файла', () => {
+  it('строки без цены и доставка не хранятся; выбор окна — k, «не сопоставлять» — x; чтение обратно', () => {
+    const notes = offerNotes({ source: 'pdf', vat: { mode: 'net', rate: 22, cue: 'без НДС' }, delivery: 1.0123456, lines: [
+      { name: '  Кран  шаровой Ду15 ', unit: 'шт', qty: 48, code: 'КШ-15', price: 1220.004, docPrice: 1000, docVat: 'net', k: 'kpah' },
+      { name: 'Болт', unit: 'шт', price: null },
+      { name: 'Хомут', unit: 'шт', price: 43.31, skip: true },
+    ] })
+    const o = readOffer(notes)
+    assert.equal(o.source, 'pdf')
+    assert.deepEqual(o.vat, { mode: 'net', rate: 22 })
+    assert.equal(o.delivery, 1.0123)
+    assert.deepEqual(o.lines, [
+      { name: 'Кран шаровой Ду15', price: 1220, unit: 'шт', qty: 48, code: 'КШ-15', docPrice: 1000, docVat: 'net', k: 'kpah', skip: false },
+      { name: 'Хомут', price: 43.31, unit: 'шт', qty: null, code: null, docPrice: null, docVat: null, k: null, skip: true },
+    ])
+  })
+
+  it('не наш JSON, испорченный, другая версия — null; строк не больше OFFER_LINES_MAX', () => {
+    assert.equal(readOffer(null), null)
+    assert.equal(readOffer('{"passport":1}'), null)
+    assert.equal(readOffer('{"kind":"supply_offer","v":1,'), null)
+    assert.equal(readOffer(JSON.stringify({ kind: 'supply_offer', v: 2, lines: [] })), null)
+    const many = Array.from({ length: OFFER_LINES_MAX + 10 }, (_, i) => ({ name: `Позиция ${i}`, price: 1 }))
+    assert.equal(readOffer(offerNotes({ lines: many })).lines.length, OFFER_LINES_MAX)
   })
 })

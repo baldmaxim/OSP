@@ -4,26 +4,33 @@ import { isWebLink, loadRateSuggestions } from '../../services/supplyPricing'
 import { formatAmount } from '../../utils/money'
 import { fmtPriceDate } from '../../utils/supplyRateHelpers'
 
-// Меню похожих цен позиции (миграция 20261023): расценки снабжения других тендеров (и других ВОР этого) с похожим
-// наименованием, той же ед. изм., не старше 3 месяцев. С миграцией 20261025 — сначала то же наименование, затем самые
-// похожие (размер «700x700» и числа наименования важнее слов), затем самые новые; у каждой — тот ли размер и документ
-// исходной позиции (ссылка или файл). «Взять» — цена за единицу в позицию с отметкой, откуда она; документ исходной
-// позиции прикладывается, если у позиции своего нет. Без права правки — только просмотр. Поверх страницы (портал):
-// прокрутка таблицы его не обрезает; прокрутили или кликнули мимо — закрывается. Клавиатура: стрелки — по строкам,
-// Enter — взять, Esc — закрыть.
-export default function SupplySuggestMenu({ anchor, mainId, row, editable, currentSourceId = null, onPick, onClose, onOpenFile }) {
-  const [state, setState] = useState({ loading: true, rows: [], error: '' })
+// Меню похожих цен позиции. Сверху — цены из документов поставщиков этого тендера, добавленных «в похожие цены»
+// (offers — строки счетов и КП, похожие на позицию: utils/supplyDocMatch.offerMatches): файл, строка документа, цена
+// в документе и в расценку; «Взять» (onPickOffer) — цена в позицию, файл — её документом. Ниже (others) — расценки
+// снабжения других тендеров (и других ВОР этого) с похожим наименованием, той же ед. изм., не старше 3 месяцев
+// (миграция 20261023; с 20261025 — сначала то же наименование, затем самые похожие: размер «700x700» и числа
+// наименования важнее слов, затем самые новые; у каждой — тот ли размер и документ исходной позиции). «Взять» —
+// цена за единицу в позицию с отметкой, откуда она; документ исходной позиции прикладывается, если у позиции своего
+// нет. У расценённой позиции others нет — только цены поставщиков (сравнить КП); своя цена отмечена «сейчас в
+// позиции». Без права правки — только просмотр. Поверх страницы (портал): прокрутка таблицы его не обрезает;
+// прокрутили или кликнули мимо — закрывается. Клавиатура: стрелки — по строкам, Enter — взять, Esc — закрыть.
+export default function SupplySuggestMenu({
+  anchor, mainId, row, editable, currentSourceId = null, others = true, offers = null, currentPrice = null,
+  onPick, onPickOffer, onClose, onOpenFile,
+}) {
+  const [state, setState] = useState({ loading: others, rows: [], error: '' })
   const [pos, setPos] = useState(null)
   const menuRef = useRef(null)
   const unit = row.p.unit || ''
 
   useEffect(() => {
+    if (!others) return undefined
     let alive = true
     loadRateSuggestions(mainId, { estimateName: row.doc, name: row.p.name, unit: row.p.unit })
       .then((rows) => { if (alive) setState({ loading: false, rows: rows || [], error: rows == null ? 'Подбор цен из других тендеров ещё не включён на сервере.' : '' }) })
       .catch((e) => { if (alive) setState({ loading: false, rows: [], error: e.message || 'Не удалось загрузить похожие цены' }) })
     return () => { alive = false }
-  }, [mainId, row.doc, row.p.name, row.p.unit])
+  }, [others, mainId, row.doc, row.p.name, row.p.unit])
 
   // Под кнопкой, а если внизу мало места — над ней; не шире окна.
   const place = useCallback(() => {
@@ -77,6 +84,7 @@ export default function SupplySuggestMenu({ anchor, mainId, row, editable, curre
   const title = `Похожие цены: ${row.p.name}`
   // Новый подбор (20261025) отдаёт похожесть и размер — порядок «самые похожие первыми»; прежний — от новых.
   const byScore = state.rows.some((s) => 'same_size' in s)
+  const offerList = offers || []
   return createPortal(
     <div
       ref={menuRef}
@@ -87,8 +95,25 @@ export default function SupplySuggestMenu({ anchor, mainId, row, editable, curre
       style={pos ? { top: pos.top, left: pos.left, width: pos.width } : { visibility: 'hidden' }}
       onKeyDown={onListKey}
     >
+      <div className="sp-suggest-scroll">
+      {offerList.length > 0 && (
+        <>
+          <div className="sp-suggest-head">
+            <span className="sp-suggest-title">Цены поставщиков</span>
+            <span className="sp-muted">из счетов и КП, добавленных к тендеру «в похожие цены»: с НДС и доставкой, как посчитано при загрузке</span>
+          </div>
+          <ul className="sp-suggest-list" aria-label="Цены поставщиков">
+            {offerList.map((o, i) => (
+              <OfferItem key={`${o.line.doc.id}:${i}`} o={o} unit={unit} editable={editable} current={currentPrice != null && o.line.price === currentPrice}
+                onPick={onPickOffer} onOpenFile={onOpenFile} />
+            ))}
+          </ul>
+        </>
+      )}
+      {others && (
+      <>
       <div className="sp-suggest-head">
-        <span className="sp-suggest-title">Цены похожих позиций</span>
+        <span className="sp-suggest-title">{offerList.length ? 'Цены похожих позиций других тендеров' : 'Цены похожих позиций'}</span>
         <span className="sp-muted">та же ед. изм. ({unit || '—'}), не старше 3 месяцев, {byScore ? 'сначала самые похожие' : 'сначала новые'}</span>
       </div>
       {state.loading && <p className="sp-suggest-empty">Ищем похожие цены…</p>}
@@ -143,7 +168,55 @@ export default function SupplySuggestMenu({ anchor, mainId, row, editable, curre
           })}
         </ul>
       )}
+      </>
+      )}
+      </div>
     </div>,
     document.body,
+  )
+}
+
+const fmtDay = (iso) => (iso ? new Date(iso).toLocaleDateString('ru-RU') : '')
+
+// Цена поставщика: строка документа (и почему она здесь), файл, когда и кем загружен, цена в документе; справа —
+// цена в расценку и «Взять».
+function OfferItem({ o, unit, editable, current, onPick, onOpenFile }) {
+  const { line } = o
+  const take = () => { if (editable && !current) onPick(o) }
+  const docVat = line.docVat === 'net' ? ' без НДС' : line.docVat === 'gross' ? ' с НДС' : ''
+  return (
+    <li
+      data-item=""
+      tabIndex={-1}
+      className={`is-offer${current ? ' is-current' : ''}`}
+      onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) { e.preventDefault(); take() } }}
+      aria-label={`${line.name}, ${formatAmount(line.price)} ₽ за ${line.unit || unit || 'ед.'}, «${line.doc.file_name}»`}
+    >
+      <div className="sp-suggest-info">
+        <span className="sp-suggest-name">
+          {line.name}
+          {o.picked ? <span className="sp-suggest-tag">выбрано при загрузке</span>
+            : o.exact ? <span className="sp-suggest-tag">то же наименование</span>
+              : <span className="sp-suggest-tag is-score">похоже на {Math.round(o.score * 100)} %</span>}
+          {!o.unitOk && <span className="sp-suggest-tag is-warn">в документе — «{line.unit}»</span>}
+          {current && <span className="sp-suggest-tag is-current">сейчас в позиции</span>}
+        </span>
+        <span className="sp-suggest-meta">
+          <button type="button" className="link sp-doc-copy" title={`Открыть «${line.doc.file_name}»`}
+            onClick={() => onOpenFile?.(line.doc)}>{line.doc.file_name}</button>
+          {line.doc.created_at && <span className="ui-num">{fmtDay(line.doc.created_at)}</span>}
+          {line.doc.uploaded_by_name && <span>{line.doc.uploaded_by_name}</span>}
+          {line.docPrice != null && <span className="ui-num">в документе {formatAmount(line.docPrice)}{docVat}</span>}
+          {line.qty != null && <span className="ui-num">{String(line.qty).replace('.', ',')} {line.unit || ''}</span>}
+        </span>
+      </div>
+      <div className="sp-suggest-side">
+        <span className="sp-suggest-price ui-num">{formatAmount(line.price)} ₽<span className="sp-muted"> за {line.unit || unit || 'ед.'}</span></span>
+        {editable && !current && (
+          <button type="button" className="btn-secondary sp-suggest-take" onClick={take}
+            aria-label={`Взять цену ${formatAmount(line.price)} ₽ из «${line.doc.file_name}»: ${line.name}`}>Взять</button>
+        )}
+      </div>
+    </li>
   )
 }

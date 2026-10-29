@@ -19,7 +19,7 @@ import {
   downloadVorFile, estimateSignatures, loadChangeMarker, loadChangedRateIds, isWebLink, linkFilesEnabled, loadDocsByIds,
   loadEstimateItems, loadLinks, loadLinksMarker, loadPricingBundle, loadPricingContext, loadPricingData, loadRateOrigins, loadRates,
   loadRatesByIds, loadRevisions, loadRevisionsMarker, loadSources, loadSuggestionCounts, loadVorFiles, markSeparate, removeLinks,
-  renameEstimate, reviewRevisions, saveLinks, saveRate, saveSource, sourcesSignature, SUGGEST_BATCH, uploadSupplyDoc,
+  loadSupplyOffers, renameEstimate, reviewRevisions, saveLinks, saveRate, saveSource, sourcesSignature, SUGGEST_BATCH, uploadSupplyDoc,
 } from '../../services/supplyPricing'
 import { fmtPriceDate, isFreshPriceDate, rateUnitPrice } from '../../utils/supplyRateHelpers'
 import { formatAmount, parseAmount, roundMoney } from '../../utils/money'
@@ -28,7 +28,8 @@ import { VOR_PARSER_VERSION } from '../../utils/vorFiles'
 import {
   estimateVersion, fileVersion, identicalTargets, planCleanup, planFileImports, planTabImports,
 } from '../../utils/supplyAutoImport'
-import { positionGroups } from '../../utils/supplyDocMatch'
+import { offerMatches, positionGroups } from '../../utils/supplyDocMatch'
+import { readOffer } from '../../utils/supplyOffers'
 import {
   carrySuggestions, carryTargets, composeChanges, revisionTitle, unitMismatch, versionQuestions,
 } from '../../utils/supplyVorVersions'
@@ -76,6 +77,9 @@ const DOC_APPLY_PARALLEL = 4
 // «Цены из счёта / КП» — распознавание документа поставщика в Excel или PDF (SupplyDocImportDialog): строки с ценами
 // сопоставляются с позициями всех ВОР (точно по наименованию, иначе по похожести), человек проверяет, и цены пишутся
 // как ввод руками — той же очередью записей с версией строки; файл становится документом позиций, получивших цену.
+// Документ можно и не применять, а добавить «в похожие цены» (один после проверки или сразу несколько без неё):
+// распознанные строки хранятся вместе с файлом (utils/supplyOffers), у похожих позиций — «цены поставщиков» (и у
+// расценённых — сравнить КП), «Взять» ставит цену и прикладывает файл документом позиции.
 //
 // Цены из других тендеров (миграция 20261023). Одинаковые позиции без цены (то же наименование по ключу и та же
 // ед. изм.) получают самую свежую цену другого тендера не старше 3 месяцев сами — при открытии у того, у кого право
@@ -118,10 +122,26 @@ const ACTIVE_STATUSES = new Set(['saving', 'queued', 'error', 'conflict'])
 const VIRTUALIZE_FROM = 150
 const SIMILAR_DELAY_MS = 250
 const SIMILAR_PAUSE_MS = 30000
+const OFFERS_REFRESH_MS = 60000
 // Позиция, у которой спросить похожие цены: своей цены нет (пусто или скопирована), одна ед. изм.
 const wantsSimilar = (row) => !!row.p.k && !row.p.units && !!String(row.p.unit || '').trim() && (!row.rate || !!row.rate.source_kind)
 // У скопированной цены её источник — тоже среди похожих (свежий — в счёте базы): показываем остальные.
 const similarOthers = (row, n) => (row.rate?.source_rate_id && isFreshPriceDate(row.rate.price_date) ? Math.max(0, n - 1) : n)
+// Перетаскивают файл (а не текст или ссылку).
+const withFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files')
+// Файл бросили мимо ячейки «Документ» и окна загрузки — браузер не открывает его вместо расценки (ввод не теряется).
+const blockStrayDrop = {
+  onDragOver: (e) => { if (withFiles(e) && !e.defaultPrevented) { e.preventDefault(); e.dataTransfer.dropEffect = 'none' } },
+  onDrop: (e) => { if (withFiles(e) && !e.defaultPrevented) e.preventDefault() },
+}
+// Своя цена позиции за единицу (не скопированная) — или null.
+const ownPriceOf = (rate) => (rate && !rate.source_kind ? roundMoney(rateUnitPrice(rate)) : null)
+// Цены поставщиков, которые не совпадают со своей ценой позиции (её саму взяли из документа — не предлагаем снова).
+const otherOffers = (offers, rate) => {
+  if (!offers) return 0
+  const own = ownPriceOf(rate)
+  return own == null ? offers.length : offers.filter((o) => o.line.price !== own).length
+}
 
 // Почему ВОР не загрузился и что сделать.
 const PROBLEM_TEXT = {
@@ -313,6 +333,8 @@ export default function SupplyPricingPanel({
   const [linkDocs, setLinkDocs] = useState(() => new Map())
   const [preview, setPreview] = useState(null) // файл документа в окне просмотра
   const [docImport, setDocImport] = useState(null) // { groups } — окно «Цены из счёта / КП»
+  // Документы поставщиков «в похожие цены»: [{ doc, offer }] (utils/supplyOffers); null — ещё не загружены.
+  const [offerDocs, setOfferDocs] = useState(null)
   // Цены из других тендеров: reuseOff — функций в базе ещё нет; origins — откуда скопированы цены (id цены →
   // тендер, объект, документ); similar — сколько похожих у позиции («ВОР∣ключ» → n); suggest — открытое меню.
   const [reuseOff, setReuseOff] = useState(false)
@@ -630,8 +652,42 @@ export default function SupplyPricingPanel({
     return [...byId.values()]
   }), [])
 
+  // Документы поставщиков «в похожие цены» — при открытии, после своих загрузок и удалений, при возврате на вкладку
+  // браузера (коллега мог добавить КП; не чаще раза в минуту). Не загрузились — таблица работает без цен поставщиков.
+  const offersAt = useRef(0)
+  const reloadOffers = useCallback(async (throttled = false) => {
+    if (!mainId || !filesOn || (throttled && Date.now() - offersAt.current < OFFERS_REFRESH_MS)) return
+    offersAt.current = Date.now()
+    try {
+      const list = await loadSupplyOffers(mainId)
+      setOfferDocs(list)
+      for (const { doc } of list) rememberDoc(doc)
+    } catch { /* следующий раз */ }
+  }, [mainId, filesOn, rememberDoc])
+  const reloadOffersRef = useRef(reloadOffers)
+  reloadOffersRef.current = reloadOffers
+  useEffect(() => { if (!loading && !missing && active) reloadOffers() }, [loading, missing, active, reloadOffers])
+
   // Позиции — только от списков (не пересобираются при каждой цене: строки таблицы не перерисовываются зря).
   const sourceViews = useMemo(() => sources.map((s) => ({ source: s, name: s.estimate_name, positions: mergePositions(s.positions) })), [sources])
+
+  // Цены поставщиков по позициям («ВОР∣ключ» → [{ line, score, exact, picked, unitOk }]): строки документов «в
+  // похожие цены» → похожие позиции (utils/supplyDocMatch.offerMatches). Сначала выбранные при загрузке и с тем же
+  // наименованием, затем самые похожие, при равенстве — дешевле. Пересчёт — только при смене документов или позиций,
+  // не при каждой цене.
+  const offerLineCounts = useMemo(() => new Map((offerDocs || []).map((x) => [x.doc.id, x.offer.lines.length])), [offerDocs])
+  const offersByKey = useMemo(() => {
+    const out = new Map()
+    if (!offerDocs?.length) return out
+    const lines = []
+    for (const { doc, offer } of offerDocs) for (const line of offer.lines) lines.push({ ...line, doc })
+    const rank = (o) => (o.picked || o.exact ? 2 : o.score)
+    for (const list of offerMatches(lines, positionGroups(sourceViews)).values()) {
+      const sorted = list.sort((a, b) => rank(b) - rank(a) || a.line.price - b.line.price)
+      for (const t of sorted[0].group.targets) out.set(posKey(t.doc, t.position.k), sorted)
+    }
+    return out
+  }, [offerDocs, sourceViews])
 
   const docViews = useMemo(() => sourceViews.map((d) => {
     let priced = 0
@@ -1113,6 +1169,7 @@ export default function SupplyPricingPanel({
       if (document.visibilityState !== 'visible' || !activeRef.current) return
       tick()
       loadVorFiles(mainId).then(setFiles).catch(() => {})
+      reloadOffersRef.current?.(true)
     }
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('focus', onVisible)
@@ -1246,7 +1303,33 @@ export default function SupplyPricingPanel({
     }
   }
 
+  // «Взять» цену поставщика (документ «в похожие цены»): цена — как ввод руками (своя, с подстановкой в такие же
+  // позиции других ВОР без цены), файл документа — документом позиции вместо прежнего: цена теперь из него.
+  const pickOffer = (row, o) => {
+    setSuggest(null)
+    runSave(row.key, { mode: 'unit', value: o.line.price, estimateName: row.doc, position: row.p })
+    const doc = o.line.doc
+    if (linksByKey && filesOn && linksByKey.get(row.key)?.s3_document_id !== doc.id) {
+      rememberDoc(doc)
+      saveLinks(mainId, [{ estimateName: row.doc, name: row.p.name }], { docId: doc.id })
+        .then(mergeLinks)
+        .catch((e) => setNotice(`Цена взята, а файл к позиции не прикрепился: ${e.message}`))
+    }
+    linkDone(`«${row.p.name}»: цена из «${doc.file_name}», файл — документ позиции.`)
+  }
+
   // ── Цены из счёта / КП поставщика ─────────────────────────────────────────────────────────────────
+  // Документ «в похожие цены» загружен — сразу в таблицу (без повторного чтения).
+  const offerLoaded = useCallback((doc, notes) => {
+    const offer = readOffer(notes)
+    rememberDoc(doc)
+    if (offer?.lines.length) setOfferDocs((prev) => [{ doc, offer }, ...(prev || []).filter((x) => x.doc.id !== doc.id)])
+  }, [rememberDoc])
+  const addOffer = async (file, notes) => offerLoaded(await uploadSupplyDoc(mainId, file, notes), notes)
+  const offersDone = ({ files: names, lines }) => {
+    setDocImport(null)
+    linkDone(`В похожие цены: ${names.map((n) => `«${n}»`).join(', ')} — строк с ценой ${lines}. У позиций — «цены поставщиков», выбирайте «Взять».`)
+  }
   // Что сейчас в расценке у позиций группы: свои цены, цены из других тендеров, позиции без цены.
   const currentOf = useCallback((group) => {
     const own = []
@@ -1263,13 +1346,15 @@ export default function SupplyPricingPanel({
 
   // Записать цены строк документа: сначала файл (не загрузился — ничего не пишем, человек решает), затем цены всех
   // позиций групп — той же очередью, что ввод руками (версия строки, повтор при сбое сети, «изменено другим»), по
-  // нескольку разом; та же своя цена не переписывается. Затем файл — документом этих позиций (прежний заменяется).
-  const applyDocPrices = async ({ lines, file, attach }, onProgress) => {
+  // нескольку разом; та же своя цена не переписывается. Затем файл — документом этих позиций (прежний заменяется), а
+  // его строки — «в похожие цены».
+  const applyDocPrices = async ({ lines, file, attach, notes = null }, onProgress) => {
     let doc = null
     if (attach && file) {
       try {
-        doc = await uploadSupplyDoc(mainId, file)
-        rememberDoc(doc)
+        // Строки документа — заодно «в похожие цены»: не применённые остаются ценами поставщика у похожих позиций.
+        doc = await uploadSupplyDoc(mainId, file, notes)
+        offerLoaded(doc, notes)
       } catch (e) {
         return { error: `Файл не загрузился (${e.message}). Цены не записаны — повторите или снимите «Прикрепить файл».` }
       }
@@ -1387,7 +1472,7 @@ export default function SupplyPricingPanel({
   })
 
   // Окно ссылки для позиций по ключам: одна (кнопка в строке) или все отмеченные.
-  const openLinkDialog = (keys) => {
+  const openLinkDialog = (keys, file = null) => {
     const targets = []
     for (const d of docViewsRef.current) {
       for (const p of d.positions) {
@@ -1397,7 +1482,7 @@ export default function SupplyPricingPanel({
     }
     if (!targets.length) return
     setLinkError('')
-    setLinkDialog({ targets })
+    setLinkDialog({ targets, file })
   }
   const linkDone = (text) => {
     setFillNote(text)
@@ -1433,11 +1518,14 @@ export default function SupplyPricingPanel({
   // куда цену брали вместе с ним.
   const deleteFile = async (doc) => {
     const used = (links || []).filter((l) => l.s3_document_id === doc.id).length
+    const offered = offerDocs?.find((x) => x.doc.id === doc.id)?.offer.lines.length || 0
     if (!window.confirm(`Удалить файл «${doc.file_name}»?${used ? `\n\nОн документ у позиций этого тендера: ${used} — у них документа не станет.` : ''}`
+      + `${offered ? `\nЕго цены (строк: ${offered}) уйдут из похожих цен.` : ''}`
       + '\nЕсли цену брали в другие тендеры вместе с этим файлом, там документ тоже пропадёт.')) return false
     try {
       await deleteSupplyDoc(doc)
       setLinks((prev) => (prev || []).filter((l) => l.s3_document_id !== doc.id))
+      setOfferDocs((prev) => (prev ? prev.filter((x) => x.doc.id !== doc.id) : prev))
       return true
     } catch (e) {
       setLinkError(`Файл не удалился: ${e.message}`)
@@ -1597,6 +1685,8 @@ export default function SupplyPricingPanel({
     removeDuplicates,
     toggleSelect,
     editLink: (key) => openLinkDialog(new Set([key])),
+    // Файл перетащили на ячейку «Документ» — окно документа сразу с этим файлом.
+    dropDoc: (key, file) => openLinkDialog(new Set([key]), file),
     suggest: (row, anchor) => setSuggest((cur) => (cur?.row.key === row.key ? null : { row, anchor })),
     openFile: (doc) => setPreview(doc),
     carry: (row) => carryPrice(row.carry.rate, row.doc, row.p),
@@ -1721,6 +1811,7 @@ export default function SupplyPricingPanel({
     if (!reuseOff) noteSimilar(row)
     return (
       <PriceRow key={row.key} row={row} flash={flash[row.key]} editable={editable} nameOf={nameOf} act={act}
+        offerCount={otherOffers(offersByKey.get(row.key), row.rate)} fileDrop={editable && filesOn}
         linksOn={linksOn} link={linksByKey?.get(row.key) || null} linkDoc={linkDocOf(linksByKey?.get(row.key))}
         selectable={selectable} selected={selected.has(row.key)}
         origin={row.rate?.source_kind ? (origins.get(row.rate.id) || null) : null} datesOn={datesOn} showAuthor={showAuthor}
@@ -1730,7 +1821,7 @@ export default function SupplyPricingPanel({
   }
 
   return (
-    <div className={`ui-work sp-panel sp-panel-${variant}`}>
+    <div className={`ui-work sp-panel sp-panel-${variant}`} {...blockStrayDrop}>
       {missing && (
         <div className="sp-banner is-warn" role="status">
           <IconAlert size={16} />
@@ -2021,17 +2112,20 @@ export default function SupplyPricingPanel({
       {suggest && (
         <SupplySuggestMenu anchor={suggest.anchor} mainId={mainId} row={suggest.row} editable={editable}
           currentSourceId={rateIn(ratesRef.current, suggest.row.key)?.source_rate_id || null}
-          onPick={(s) => pickSuggestion(suggest.row, s)} onClose={closeSuggest}
+          others={!reuseOff && wantsSimilar(suggest.row)} offers={offersByKey.get(suggest.row.key) || null}
+          currentPrice={ownPriceOf(rateIn(ratesRef.current, suggest.row.key))}
+          onPick={(s) => pickSuggestion(suggest.row, s)} onPickOffer={(o) => pickOffer(suggest.row, o)} onClose={closeSuggest}
           onOpenFile={(doc) => { setSuggest(null); setPreview(doc) }} />
       )}
       {linkDialog && (
         <SupplyLinkDialog mainId={mainId} targets={linkDialog.targets} busy={linkBusy} error={linkError} filesOn={filesOn}
+          initialFile={linkDialog.file || null} offerLines={offerLineCounts}
           onSave={saveLink} onRemove={removeLink} onDeleteFile={deleteFile} onClose={() => { if (!linkBusy) setLinkDialog(null) }} />
       )}
       {docImport && (
         <Suspense fallback={<div className="sp-modal-backdrop"><div className="sp-modal"><p className="sp-modal-body">Открываем…</p></div></div>}>
           <SupplyDocImportDialog groups={docImport.groups} currentOf={currentOf} filesOn={filesOn}
-            onApply={applyDocPrices} onClose={() => setDocImport(null)} />
+            onApply={applyDocPrices} onAddOffers={addOffer} onOffersDone={offersDone} onClose={() => setDocImport(null)} />
         </Suspense>
       )}
       {preview && (
@@ -2085,11 +2179,30 @@ const samePriceRow = (a, b) => a.row.p === b.row.p && a.row.rate === b.row.rate 
   && a.flash === b.flash && a.editable === b.editable && a.nameOf === b.nameOf && a.act === b.act
   && a.linksOn === b.linksOn && a.link === b.link && a.linkDoc === b.linkDoc && a.selectable === b.selectable && a.selected === b.selected
   && a.origin === b.origin && a.similar === b.similar && a.suggestOpen === b.suggestOpen
+  && a.offerCount === b.offerCount && a.fileDrop === b.fileDrop
   && a.datesOn === b.datesOn && a.showAuthor === b.showAuthor
   && a.row.change === b.row.change && a.row.carry === b.row.carry && a.row.unitOff === b.row.unitOff
 
-const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, linksOn, link, linkDoc, selectable, selected, origin, similar, suggestOpen, datesOn, showAuthor }) {
+const PriceRow = memo(function PriceRow({
+  row, flash, editable, nameOf, act, linksOn, link, linkDoc, selectable, selected, origin, similar, suggestOpen, datesOn, showAuthor,
+  offerCount = 0, fileDrop = false,
+}) {
   const { p, draft, view, index, gi, change } = row
+  const [dropping, setDropping] = useState(false)
+  const choices = similar + offerCount
+  const choicesLabel = row.rate && !row.rate.source_kind ? 'цены поставщиков' : row.rate?.source_kind ? 'другие похожие цены' : 'похожие цены'
+  // Файл, перетащенный на ячейку «Документ», — окно документа с этим файлом (перетаскивают не только файлы — текст тоже).
+  const drop = fileDrop ? {
+    onDragOver: (e) => { if (withFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDropping(true) } },
+    onDragLeave: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDropping(false) },
+    onDrop: (e) => {
+      if (!withFiles(e)) return
+      e.preventDefault()
+      setDropping(false)
+      const f = e.dataTransfer.files?.[0]
+      if (f) act('dropDoc', row.key, f)
+    },
+  } : null
   const mixed = !!p.units
   const noVolume = !mixed && !(view.volume > 0)
   const totalDisabled = !editable || mixed || noVolume
@@ -2151,12 +2264,12 @@ const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, lin
           </span>
         )}
         {row.rate?.source_kind && !draft && <OriginHint rate={row.rate} origin={origin} onOpenFile={(doc) => act('openFile', doc)} />}
-        {similar > 0 && (
+        {choices > 0 && (
           <span className="sp-hint">
-            <button type="button" className={`sp-similar-btn${suggestOpen ? ' is-open' : ''}`} aria-haspopup="dialog" aria-expanded={suggestOpen}
-              aria-label={`Похожие цены других позиций: ${similar}. ${p.name} (ВОР «${row.doc}»)`}
+            <button type="button" className={`sp-similar-btn${suggestOpen ? ' is-open' : ''}${offerCount ? ' has-offers' : ''}`} aria-haspopup="dialog" aria-expanded={suggestOpen}
+              aria-label={`${offerCount && !similar ? 'Цены поставщиков' : 'Похожие цены'}: ${choices}${offerCount && similar ? `, из документов поставщиков — ${offerCount}` : ''}. ${p.name} (ВОР «${row.doc}»)`}
               onClick={(e) => act('suggest', row, e.currentTarget)}>
-              {row.rate?.source_kind ? 'другие похожие цены' : 'похожие цены'}: <span className="ui-num">{similar}</span> <IconChevronDown size={14} />
+              {choicesLabel}: <span className="ui-num">{choices}</span> <IconChevronDown size={14} />
             </button>
           </span>
         )}
@@ -2203,7 +2316,8 @@ const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, lin
         </td>
       )}
       {linksOn && (
-        <td className="sp-doc" data-label="Документ">
+        <td className={`sp-doc${dropping ? ' is-drop' : ''}`} data-label="Документ" {...drop}
+          title={fileDrop && !link ? 'Перетащите сюда файл документа или нажмите «+ документ»' : undefined}>
           <LinkCell link={link} file={linkDoc} editable={editable} name={p.name} doc={row.doc} nameOf={nameOf}
             onEdit={() => act('editLink', row.key)} onOpenFile={(d) => act('openFile', d)} />
         </td>

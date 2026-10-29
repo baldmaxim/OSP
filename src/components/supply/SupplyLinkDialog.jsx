@@ -14,18 +14,23 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString('ru-RU') : '')
 // путь) или файл — загрузить с компьютера или выбрать уже загруженный к этому тендеру (миграция 20261025; без неё —
 // только ссылка). targets — [{ key, name, estimateName, link }]: у кого документ уже есть — он заменяется; у всех
 // один и тот же — подставлен. onSave({ url } | { docId } | { file }); «Убрать» — у тех, у кого документ есть.
-// Удалить файл можно здесь же: он пропадёт у всех позиций, где он документ.
-export default function SupplyLinkDialog({ mainId, targets, busy, error, filesOn = false, onSave, onRemove, onDeleteFile, onClose }) {
+// Удалить файл можно здесь же: он пропадёт у всех позиций, где он документ. Файл с компьютера — кнопкой или
+// перетащить в окно (в любое место); initialFile — файл, перетащенный на ячейку «Документ» таблицы: окно открывается
+// сразу с ним. offerLines — id файла → сколько его строк «в похожих ценах» (подпись в списке).
+export default function SupplyLinkDialog({
+  mainId, targets, busy, error, filesOn = false, initialFile = null, offerLines = null, onSave, onRemove, onDeleteFile, onClose,
+}) {
   const first = targets[0]?.link
   const sameLink = targets.length > 0 && targets.every((t) => t.link && (t.link.url || null) === (first?.url || null)
     && (t.link.s3_document_id || null) === (first?.s3_document_id || null))
-  const [mode, setMode] = useState(filesOn && sameLink && first?.s3_document_id ? 'file' : 'link')
+  const [mode, setMode] = useState(filesOn && (initialFile || (sameLink && first?.s3_document_id)) ? 'file' : 'link')
   const [value, setValue] = useState(sameLink && first?.url ? first.url : '')
   const [invalid, setInvalid] = useState('')
   const [docs, setDocs] = useState(null) // файлы документов поставщиков тендера
   const [docsError, setDocsError] = useState('')
-  const [picked, setPicked] = useState(sameLink && first?.s3_document_id ? first.s3_document_id : '')
-  const [file, setFile] = useState(null)
+  const [picked, setPicked] = useState(!initialFile && sameLink && first?.s3_document_id ? first.s3_document_id : '')
+  const [file, setFile] = useState(filesOn ? initialFile : null)
+  const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef(null)
   const fileRef = useRef(null)
 
@@ -76,6 +81,21 @@ export default function SupplyLinkDialog({ mainId, targets, busy, error, filesOn
     setFile(f || null)
     if (f) setPicked('')
   }
+  // Перетащили файл в окно — вкладка «Файл» с этим файлом (перетаскивают и текст — его не берём).
+  const withFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files')
+  const drop = filesOn && !busy ? {
+    onDragOver: (e) => { if (withFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDragOver(true) } },
+    onDragLeave: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(false) },
+    onDrop: (e) => {
+      if (!withFiles(e)) return
+      e.preventDefault()
+      setDragOver(false)
+      const f = e.dataTransfer.files?.[0]
+      if (!f) return
+      setMode('file')
+      chooseFile(f)
+    },
+  } : null
 
   const removeDoc = async (doc) => {
     const ok = await onDeleteFile?.(doc)
@@ -87,7 +107,7 @@ export default function SupplyLinkDialog({ mainId, targets, busy, error, filesOn
 
   return (
     <div className="sp-modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose() }}>
-      <form className="sp-modal sp-modal-wide" role="dialog" aria-modal="true" aria-labelledby="sp-link-title" onSubmit={submit}>
+      <form className={`sp-modal sp-modal-wide${dragOver ? ' is-drop' : ''}`} role="dialog" aria-modal="true" aria-labelledby="sp-link-title" onSubmit={submit} {...drop}>
         <h3 id="sp-link-title">{one ? 'Документ к позиции' : `Документ — ${targets.length} позициям`}</h3>
         <div className="sp-modal-body">
           {one
@@ -126,15 +146,15 @@ export default function SupplyLinkDialog({ mainId, targets, busy, error, filesOn
             </label>
           ) : (
             <div className="sp-doc-files">
-              <div className="sp-doc-upload">
-                <input ref={fileRef} type="file" hidden onChange={(e) => chooseFile(e.target.files?.[0])} />
+              <div className={`sp-doc-upload sp-doc-drop${dragOver ? ' is-over' : ''}${file ? ' has-file' : ''}`}>
+                <input ref={fileRef} type="file" hidden onChange={(e) => { chooseFile(e.target.files?.[0]); e.target.value = '' }} />
                 <button type="button" className="btn-secondary" onClick={() => fileRef.current?.click()} disabled={busy}>
                   <IconUpload size={16} /> Загрузить с компьютера
                 </button>
                 {file
                   ? <span className="sp-doc-chosen"><PaperclipIcon size={14} /> {file.name} <span className="sp-muted">· {fmtSize(file.size)}</span>
                     <button type="button" className="sp-link-btn" onClick={() => chooseFile(null)} disabled={busy}>убрать</button></span>
-                  : <span className="sp-muted">счёт, КП, чек — PDF, Excel, фото; до {fmtSize(SUPPLY_DOC_MAX_BYTES)}</span>}
+                  : <span className="sp-muted">или перетащите файл сюда · счёт, КП, чек — PDF, Excel, фото; до {fmtSize(SUPPLY_DOC_MAX_BYTES)}</span>}
               </div>
               <p className="sp-doc-list-title">или уже загруженный к этому тендеру:</p>
               {docs == null && <p className="sp-muted">Загружаем список файлов…</p>}
@@ -148,7 +168,8 @@ export default function SupplyLinkDialog({ mainId, targets, busy, error, filesOn
                         <input type="radio" name="sp-doc" checked={picked === d.id && !file} disabled={busy}
                           onChange={() => { setPicked(d.id); setFile(null); setInvalid('') }} />
                         <span className="sp-doc-name">{d.file_name}</span>
-                        <span className="sp-muted">{fmtDate(d.created_at)}{d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ''}{d.size_bytes ? ` · ${fmtSize(d.size_bytes)}` : ''}</span>
+                        <span className="sp-muted">{fmtDate(d.created_at)}{d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ''}{d.size_bytes ? ` · ${fmtSize(d.size_bytes)}` : ''}
+                          {offerLines?.get(d.id) ? ` · в похожих ценах (строк с ценой: ${offerLines.get(d.id)})` : ''}</span>
                       </label>
                       {onDeleteFile && (
                         <button type="button" className="sp-icon-btn" onClick={() => removeDoc(d)} disabled={busy}

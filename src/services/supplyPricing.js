@@ -15,6 +15,7 @@ import { isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
 import { deleteDocument, fetchFileBytes, uploadFile } from './s3'
 import { VOR_STATEMENT_CATEGORY, LEGACY_VOR_CATEGORY, isNetworkError } from './tenderVorRd'
 import { isWorkbookFileName } from '../utils/vorFiles'
+import { readOffer } from '../utils/supplyOffers'
 // Библиотека Excel (vorMaterialsSheet → xlsx, 430 КБ) — только по требованию: сервис импортирует и реестр
 // тендеров (прогресс расценки), которому она не нужна.
 
@@ -397,9 +398,30 @@ export async function loadDocsByIds(ids) {
   return out
 }
 
-// Загрузить файл документа поставщика в хранилище документов основного тендера.
-export async function uploadSupplyDoc(mainId, file) {
-  return uploadFile({ file, ownerType: 'tender', ownerId: mainId, category: SUPPLY_DOC_CATEGORY })
+// Загрузить файл документа поставщика в хранилище документов основного тендера. notes — распознанные строки
+// «в похожие цены» (utils/supplyOffers.offerNotes) или null.
+export async function uploadSupplyDoc(mainId, file, notes = null) {
+  return uploadFile({ file, ownerType: 'tender', ownerId: mainId, category: SUPPLY_DOC_CATEGORY, notes })
+}
+
+// Документы поставщиков «в похожие цены» (utils/supplyOffers): файлы тендера с распознанными строками. Ответ —
+// [{ doc, offer }], новые первыми; файлы без строк (просто документ позиции) не входят.
+export async function loadSupplyOffers(mainId) {
+  let rows
+  try {
+    rows = await fetchAllRows((from, to) => db.from('s3_documents').select(`${DOC_COLUMNS}, notes`)
+      .eq('owner_type', 'tender').eq('owner_id', mainId).eq('doc_category', SUPPLY_DOC_CATEGORY)
+      .order('created_at', { ascending: false }).order('id', { ascending: true })
+      .range(from, to))
+  } catch (e) {
+    fail(e)
+  }
+  const out = []
+  for (const { notes, ...doc } of rows) {
+    const offer = readOffer(notes)
+    if (offer?.lines.length) out.push({ doc, offer })
+  }
+  return out
 }
 
 // Удалить файл: пропадает у всех позиций, где он документ (ON DELETE CASCADE).
