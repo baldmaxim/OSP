@@ -185,13 +185,16 @@
   min-width: 0;
 }
 
-/* Имя файла — целиком, с переносом (по нему КП и узнают), тёмным и полужирным: читается
-   с ходу. Нажатие — просмотр; полное имя, тип и размер — ещё и в подсказке. */
+/* Имя файла — целиком, с переносом после «_ - . @» (SoftBreaks; по имени КП и узнают),
+   тёмным, но не жирным: жирное имя рядом с жирной датой и плашкой вердикта не выделялось.
+   От строки сведений его отделяет отступ. Нажатие — просмотр; полное имя, тип и размер — в
+   подсказке. */
 .tcpf-line {
   display: flex;
   align-items: flex-start;
   gap: 0.125rem;
   min-width: 0;
+  margin-bottom: 0.125rem;
 }
 .tcpf-file {
   display: flex;
@@ -208,7 +211,7 @@
   font: inherit;
   font-size: 0.8125rem;
   line-height: 1.125rem;
-  font-weight: 600;
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
 }
@@ -273,8 +276,8 @@
   .tcpf-icon-del:focus-visible { opacity: 1; }
 }
 
-/* Под именем: дата и время загрузки, кто загрузил, версия, метка версии — с отступом под
-   значком, чтобы строка начиналась под именем. Дата — тёмная: по ней сверяют сроки КП. */
+/* Под именем: дата и время загрузки, кто загрузил, версия, метка версии — мельче и серым, с
+   отступом под значком, чтобы строка начиналась под именем. */
 .tcpf-meta {
   display: flex;
   flex-wrap: wrap;
@@ -291,10 +294,7 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.tcpf-date {
-  font-weight: 600;
-  color: var(--text-primary);
-}
+.tcpf-date { color: var(--text-primary); }
 .tcpf-time { color: var(--text-secondary); }
 .tcpf-uploader {
   display: inline-flex;
@@ -313,19 +313,20 @@
 .tcpf-ver.is-current {
   background: color-mix(in srgb, var(--primary-color) 12%, transparent);
   color: var(--ui-link, var(--primary-color));
-  font-weight: 600;
+  font-weight: 500;
 }
 .tcpf-tone-old .tcpf-ver { background: var(--bg-secondary); }
 .tcpf-vlabel { overflow-wrap: anywhere; color: var(--text-primary); }
 
 /* Заменённая версия КП — приглушена, но читается (контраст ≥ 4,5:1). */
-.tcpf-item.is-replaced .tcpf-file { color: var(--text-secondary); font-weight: 500; }
+.tcpf-item.is-replaced .tcpf-file { color: var(--text-secondary); font-weight: 400; }
 .tcpf-item.is-replaced .tcpf-date { color: var(--text-secondary); }
 .tcpf-item.is-replaced .tcpf-ftype { color: var(--text-tertiary); }
 
-/* Проверка: вердикт · кто · когда, ниже замечания, файл замечаний и шаги. Бейдж
-   общий с «Проверкой КП» (KpReviewBadge): его обёртка растворяется, плашка и файл
-   замечаний встают в общий ряд со своим местом (order). */
+/* Проверка одной строкой: вердикт и шаги («в сводной»), ниже замечания и файл замечаний.
+   Кто и когда проверил — в подсказке вердикта. Бейдж общий с «Проверкой КП» (KpReviewBadge):
+   его обёртка растворяется, вердикт и файл замечаний встают в общий ряд со своим местом
+   (order). Вердикт здесь — цветное слово без плашки: состояние уже показывает цвет карточки. */
 .tcpf-review {
   display: flex;
   flex-wrap: wrap;
@@ -337,10 +338,24 @@
 }
 .tcpf-review .kpb-wrap { display: contents; }
 .tcpf-review :is(.kpb-pill, .tcpf-check-btn) { order: 1; }
-.tcpf-review .tcpf-who { order: 2; }
+.tcpf-review .tcpf-steps { order: 2; }
 .tcpf-review .tcpf-remarks { order: 3; flex: 1 1 100%; min-width: 0; }
 .tcpf-review .kpb-remarks-file { order: 4; }
-.tcpf-review .tcpf-steps { order: 5; flex: 1 1 100%; }
+.tcpf-review .kpb-pill {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 500;
+}
+.tcpf-review button.kpb-pill {
+  margin: -0.125rem -0.25rem;
+  padding: 0.125rem 0.25rem;
+  border-radius: 4px;
+}
+.tcpf-review button.kpb-pill:hover { background: color-mix(in srgb, currentColor 10%, transparent); filter: none; }
+.tcpf-review .kpb-pending { color: var(--text-secondary); }
 
 .tcpf-check-btn {
   display: inline-flex;
@@ -360,16 +375,6 @@
 }
 .tcpf-check-btn:hover { background: color-mix(in srgb, var(--primary-color) 10%, var(--bg-secondary)); }
 
-.tcpf-who {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.375rem;
-  font-size: 0.75rem;
-  line-height: 1rem;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-.tcpf-sub { font-variant-numeric: tabular-nums; }
 .tcpf-remarks {
   font-size: 0.75rem;
   line-height: 1rem;
@@ -388,12 +393,11 @@
   gap: 0.25rem;
   font-size: 0.75rem;
   line-height: 1rem;
-  font-weight: 500;
   white-space: nowrap;
 }
 .tcpf-step.is-done { color: #15803d; }
 .tcpf-step.is-todo { color: #b45309; }
-.tcpf-step.is-muted { color: var(--text-secondary); font-weight: 400; }
+.tcpf-step.is-muted { color: var(--text-secondary); }
 [data-theme='dark'] .tcpf-step.is-done { color: #4ade80; }
 [data-theme='dark'] .tcpf-step.is-todo { color: #fbbf24; }
 

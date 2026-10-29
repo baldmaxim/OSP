@@ -162,8 +162,10 @@ describe('Лента файлов участника: карточка тенд�
     try {
       const own = kpItems(row(page, 'Подрядчик 01'))
       assert.match(await own.first().locator('.kpb-pill').textContent(), /Проверено/)
-      const who = await own.first().locator('.tcpf-who').textContent()
-      assert.ok(who.includes('Петрова') && who.includes('19.10.26'), who)
+      // Кто и когда проверил — не строкой в ячейке, а в подсказке вердикта.
+      assert.equal(await own.first().locator('.tcpf-who').count(), 0)
+      const who = await own.first().locator('.kpb-pill').getAttribute('title')
+      assert.ok(who.includes('Петрова') && who.includes('19.10.2026'), who)
       assert.deepEqual(await own.first().locator('.tcpf-step').allTextContents(), ['в сводной'])
       assert.equal(await own.nth(1).locator('.kpb-pill').count(), 0)
       await own.nth(1).locator('.tcpf-check-btn', { hasText: 'Проверить' }).click()
@@ -173,11 +175,47 @@ describe('Лента файлов участника: карточка тенд�
       const other = kpItems(row(page, 'Подрядчик 02'))
       assert.deepEqual(await other.first().locator('.tcpf-step').allTextContents(), ['к занесению в сводную'])
       assert.match(await other.nth(1).locator('.kpb-pill').textContent(), /Замечания/)
+      assert.match(await other.nth(1).locator('.kpb-pill').getAttribute('title'), /^Замечания · Смирнов/)
       assert.match(await other.nth(1).locator('.tcpf-remarks').textContent(), /Нет цены на водосточную систему/)
       assert.deepEqual(await other.nth(1).locator('.tcpf-step').allTextContents(), ['в сводной', 'к отправке подрядчику'])
       assert.deepEqual(errors, [])
     } finally {
       await close()
+    }
+  })
+
+  it('колонки: «КП / Документы» сразу за компанией, «Контакты» (телефон и почта вместе) — справа', async () => {
+    const heads = (page, sel) => page.locator(`${sel} thead th`).evaluateAll((ths) =>
+      ths.map((th) => th.textContent.replace(/Скачать всё/, '').trim()).filter(Boolean))
+    const expected = ['№', 'Наименование компании', 'КП / Документы', 'Статус', 'Примечание', 'Контакты']
+    const card = await openCard('&cpContacts=1')
+    try {
+      const { page, errors } = card
+      assert.deepEqual(await heads(page, '.participants-section'), expected)
+      const contacts = row(page, 'Подрядчик 01').locator('.tcc-item')
+      assert.equal(await contacts.count(), 2)
+      assert.equal(await contacts.first().locator('.tcc-name').textContent(), 'Шахмиров Джабраил Алиевич')
+      // Каждый телефон и каждая почта — своей строкой-ссылкой; почта копируется без невидимых знаков.
+      assert.deepEqual(await contacts.first().locator('.tcc-line').evaluateAll((as) => as.map((a) => a.getAttribute('href'))),
+        ['tel:+79637950185', 'tel:+77273000000', 'mailto:shahmirov.dzhabrail@yahoo.com'])
+      assert.equal(await contacts.first().locator('.tcc-mail').textContent(), 'shahmirov.dzhabrail@yahoo.com')
+      assert.equal(await row(page, 'Подрядчик 03').locator('.tcc-none').textContent(), '—')
+      assert.deepEqual(errors, [])
+    } finally {
+      await card.close()
+    }
+    const reg = await openPage('/tenders/construction', '&cpContacts=1')
+    try {
+      const { page, errors } = reg
+      const search = page.locator('input[placeholder^="№, объект"]')
+      await search.waitFor({ timeout: 120000 })
+      await search.fill('200')
+      await page.locator('.expand-toggle').first().click()
+      await page.locator('.expanded-cp-table-wrap .tcc-item').first().waitFor({ timeout: 30000 })
+      assert.deepEqual(await heads(page, '.expanded-cp-table-wrap'), expected)
+      assert.deepEqual(errors, [])
+    } finally {
+      await reg.close()
     }
   })
 

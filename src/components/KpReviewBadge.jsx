@@ -70,10 +70,13 @@ export default function KpReviewBadge({ file, canReview = false, onReview, showR
     }
   }
 
+  // Кто и когда проверил — в подсказке и у замечаний: в ячейке участника тендера отдельной
+  // строки «кто проверил» нет (решение пользователя 29.10.2026 — разгрузить ячейку).
+  const who = `${file.reviewed_by ? ` · ${file.reviewed_by}` : ''}${file.reviewed_at ? ` · ${fmt(file.reviewed_at)}` : ''}`
   const tooltip = status === 'has_remarks'
-    ? (file.review_note || 'Есть замечания')
+    ? `Замечания${who}${file.review_note ? `\n${file.review_note}` : ''}`
     : status === 'approved'
-      ? `Проверено${file.reviewed_by ? ` · ${file.reviewed_by}` : ''}${file.reviewed_at ? ` · ${fmt(file.reviewed_at)}` : ''}`
+      ? `Проверено${who}`
       : 'Ожидает проверки аналитиком'
 
   const pill = (

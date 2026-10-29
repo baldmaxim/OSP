@@ -103,6 +103,16 @@ const MATERIALS = params.get('matTenders') === '1'
   }))
   : []
 
+// cpContacts=1 — у участников тендера tender-1 контакты (колонка «Контакты» раскрытой строки и карточки):
+// у первого — два контакта (телефоны через «;», длинная почта), у второго — один без почты, у остальных — нет.
+const participantContacts = (i) => [
+  [
+    { id: 'pcc-1', full_name: 'Шахмиров Джабраил Алиевич', position: 'Директор', phone: '+7(963)795-01-85; +7 727 300-00-00', email: 'shahmirov.dzhabrail@yahoo.com' },
+    { id: 'pcc-2', full_name: 'Петров Пётр', position: 'Сметчик', phone: null, email: 'smeta@example.invalid' },
+  ],
+  [{ id: 'pcc-3', full_name: 'Сапаров Ержан Болатович', position: null, phone: '+7 701 555-12-34', email: null }],
+][i] || []
+
 window.__fakeDb = {
   tenders: [...registry, ...MATERIALS],
   objects,
@@ -112,7 +122,7 @@ window.__fakeDb = {
     { id: `rd-${i}-1`, tender_id: t.id, code: `2026-${t.public_tender_number}-АР`, title: 'Архитектурные решения', sort_order: 10 },
     { id: `rd-${i}-2`, tender_id: t.id, code: `2026-${t.public_tender_number}-КЖ`, title: 'Конструкции железобетонные', sort_order: 20 },
   ]),
-  tender_counterparties: [...registry.slice(1, 9).map((t, i) => ({ id: `tch-${i}`, tender_id: t.id, counterparty_id: 'cp-1', status: i % 3 === 0 ? 'declined' : 'proposal_provided', sort_order: 0, tenders: { id: t.id, work_description: t.work_description, tender_start_date: t.tender_start_date, tender_end_date: t.tender_end_date, objects: t.objects ? { name: t.objects.name } : null } })), ...counterparties.map((cp, i) => ({ id: `tc-${i + 1}`, tender_id: 'tender-1', counterparty_id: cp.id, status: 'proposal_provided', sort_order: i, invited_at: '2026-08-01', counterparties: { ...cp, counterparty_contacts: [] } }))],
+  tender_counterparties: [...registry.slice(1, 9).map((t, i) => ({ id: `tch-${i}`, tender_id: t.id, counterparty_id: 'cp-1', status: i % 3 === 0 ? 'declined' : 'proposal_provided', sort_order: 0, tenders: { id: t.id, work_description: t.work_description, tender_start_date: t.tender_start_date, tender_end_date: t.tender_end_date, objects: t.objects ? { name: t.objects.name } : null } })), ...counterparties.map((cp, i) => ({ id: `tc-${i + 1}`, tender_id: 'tender-1', counterparty_id: cp.id, status: 'proposal_provided', sort_order: i, invited_at: '2026-08-01', counterparties: { ...cp, counterparty_contacts: CP_CONTACTS ? participantContacts(i) : [] } }))],
   // ?cpContacts=1 — у контрагентов есть контакты с телефонами, третий — в чёрном списке (реестр контрагентов на телефоне);
   // &phoneExt=1 — у первого номера добавочный («… доб. 123»).
   counterparties: counterparties.map((cp, i) => ({

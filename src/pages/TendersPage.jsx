@@ -24,6 +24,7 @@ import TenderDocsModal from '../components/TenderDocsModal'
 import { TENDERS_STRUCTURE } from '../utils/docStorageStructures'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import ParticipantStatusSelect from '../components/ParticipantStatusSelect'
+import ParticipantContacts from '../components/ParticipantContacts'
 import { participantStatusKey, participantStatusLabel } from '../utils/participantStatus'
 import VorDocsModal from '../components/VorDocsModal'
 import VorRdModal from '../components/VorRdModal'
@@ -34,7 +35,6 @@ import { fetchStoEmployees, vorResponsibleName, isMissingStoColumnError, STO_MIG
 import { formatDateRange as formatShortDateRange, breakAfterDash } from '../utils/dateRange'
 import DateRangeCell from '../components/DateRangeCell'
 import { vorStartDate } from '../utils/vorDates'
-import { phoneHref } from '../utils/phoneFormat'
 import { VOR_DIVISION_LABEL, NO_VOR_DIVISION, vorDivisionLogPayload, vorDivisionSaveError } from '../utils/vorDivisions'
 import {
   SITE_CONTACT_LINE, SITE_CONTACT_MISSING, TENDER_MAILBOX, ATTACHMENT_BLOCK,
@@ -4428,13 +4428,12 @@ ${ATTACHMENT_BLOCK}
                                   {canEditTenders && <th style={{ width: '26px' }}></th>}
                                   <th style={{ width: '40px' }}>№</th>
                                   <th style={{ width: '16%', minWidth: '150px' }}>Наименование компании</th>
-                                  <th style={{ width: '13%' }}>Контактные данные</th>
-                                  <th style={{ width: '140px' }}>Email</th>
-                                  <th style={{ width: '190px' }}>Статус</th>
-                                  {/* Лента КП и документов с датами (TenderCounterpartyFiles) — шире
-                                      прежних 280px: дата слева, имя файла не режется до «КП Подр…». */}
+                                  {/* КП и документы — сразу за компанией, контакты (телефон и почта
+                                      одной колонкой) — справа (29.10.2026, по просьбе пользователя). */}
                                   <th style={{ width: '23rem', minWidth: '21rem' }}>КП / Документы</th>
+                                  <th style={{ width: '190px' }}>Статус</th>
                                   {!hideNotes && <th>Примечание</th>}
+                                  <th style={{ width: '15rem' }}>Контакты</th>
                                   <th style={{ width: '56px' }}></th>
                                 </tr>
                               </thead>
@@ -4491,83 +4490,6 @@ ${ATTACHMENT_BLOCK}
                                         </div>
                                       )}
                                     </td>
-                                    <td>
-                                      {tc.counterparties?.counterparty_contacts && tc.counterparties.counterparty_contacts.length > 0 ? (
-                                        <div className="tc-contacts-stack">
-                                          {tc.counterparties.counterparty_contacts.map((contact, idx) => (
-                                            <div key={contact.id || idx} className="tc-contact-item">
-                                              {contact.full_name && (
-                                                <div style={{ fontWeight: 500 }}>{contact.full_name}</div>
-                                              )}
-                                              {contact.position && (
-                                                <div style={{
-                                                  color: 'var(--text-tertiary)',
-                                                  fontWeight: 400,
-                                                  fontSize: '0.75rem'
-                                                }}>
-                                                  {contact.position}
-                                                </div>
-                                              )}
-                                              {/* Несколько телефонов (через «;») — каждый с новой строки. */}
-                                              {contact.phone && contact.phone.split(';').map(p => p.trim()).filter(Boolean).map((p, pi) => (
-                                                <a
-                                                  key={pi}
-                                                  href={phoneHref(p)}
-                                                  style={{
-                                                    color: 'var(--primary-color)',
-                                                    textDecoration: 'none',
-                                                    display: 'block',
-                                                    fontSize: '0.75rem'
-                                                  }}
-                                                >
-                                                  {p}
-                                                </a>
-                                              ))}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      ) : (
-                                        <span style={{ color: 'var(--text-tertiary)' }}>—</span>
-                                      )}
-                                    </td>
-                                    <td>
-                                      {tc.counterparties?.counterparty_contacts && tc.counterparties.counterparty_contacts.length > 0 ? (
-                                        <div className="tc-contacts-stack">
-                                          {/* Итерируем ВСЕ контакты (1:1 с колонкой контактов),
-                                              чтобы разделители и email стояли на уровне своего контакта. */}
-                                          {tc.counterparties.counterparty_contacts.map((contact, idx) => (
-                                            <div key={contact.id || idx} className="tc-contact-item">
-                                              {contact.email
-                                                ? contact.email.split(';').map(em => em.trim()).filter(Boolean).map((em, ei) => (
-                                                  <a
-                                                    key={ei}
-                                                    href={`mailto:${em}`}
-                                                    style={{
-                                                      color: 'var(--primary-color)',
-                                                      textDecoration: 'none',
-                                                      display: 'block',
-                                                      fontSize: '0.75rem',
-                                                      wordBreak: 'break-all',
-                                                    }}
-                                                  >
-                                                    {em}
-                                                  </a>
-                                                ))
-                                                : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      ) : (
-                                        <span style={{ color: 'var(--text-tertiary)' }}>—</span>
-                                      )}
-                                    </td>
-                                    <td>
-                                      <ParticipantStatusSelect
-                                        value={tc.status}
-                                        onChange={(v) => handleUpdateCounterpartyStatus(tender.id, tc.id, v)}
-                                        disabled={!canEditTenders}
-                                      />
-                                    </td>
                                     <td style={{ verticalAlign: 'top' }}>
                                       <TenderCounterpartyFiles
                                         tenderId={tender.id}
@@ -4575,6 +4497,13 @@ ${ATTACHMENT_BLOCK}
                                         canEdit={canEditTenders}
                                         tender={tender}
                                         counterpartyName={tc.counterparties?.name}
+                                      />
+                                    </td>
+                                    <td>
+                                      <ParticipantStatusSelect
+                                        value={tc.status}
+                                        onChange={(v) => handleUpdateCounterpartyStatus(tender.id, tc.id, v)}
+                                        disabled={!canEditTenders}
                                       />
                                     </td>
                                     {!hideNotes && (
@@ -4651,6 +4580,9 @@ ${ATTACHMENT_BLOCK}
                                       )}
                                     </td>
                                     )}
+                                    <td>
+                                      <ParticipantContacts contacts={tc.counterparties?.counterparty_contacts} />
+                                    </td>
                                     <td style={{ textAlign: 'center' }}>
                                       {canEditTenders && (
                                         <button

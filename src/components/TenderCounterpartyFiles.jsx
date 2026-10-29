@@ -14,6 +14,7 @@ import KpReviewModal from './KpReviewModal'
 import KpReviewBadge from './KpReviewBadge'
 import PersonName from './PersonName'
 import ClampText from './ClampText'
+import SoftBreaks from './SoftBreaks'
 import TenderFilesZipButton from './TenderFilesZipButton'
 import './TenderCounterpartyFiles.css'
 // Токены рабочего стиля (--ui-link) и .ui-sr-only для PersonName: карточка тендера
@@ -155,9 +156,10 @@ function StepTag({ done, at, by, doneText, todoText }) {
   )
 }
 
-// Проверка КП в одну строку, как в «Проверке КП»: у проверяющего КП на проверке —
-// кнопка «Проверить», иначе плашка вердикта (у проверяющего — с карандашом, открывает
-// окно проверки); рядом кто и когда проверил, ниже замечания, файл замечаний и шаги.
+// Проверка КП одной строкой: у проверяющего КП на проверке — кнопка «Проверить», иначе
+// вердикт (у проверяющего — с карандашом, открывает окно проверки) и рядом шаги; ниже —
+// замечания и файл замечаний. Вердикт — не плашкой, а цветным словом: состояние уже
+// показывает цвет карточки. Кто и когда проверил — в подсказке вердикта (KpReviewBadge).
 function ReviewLine({ file, canReview, onReview }) {
   const status = file.review_status || 'pending'
   const reviewed = status === 'approved' || status === 'has_remarks'
@@ -173,14 +175,6 @@ function ReviewLine({ file, canReview, onReview }) {
         >Проверить</button>
       ) : (
         <KpReviewBadge file={file} canReview={canReview} onReview={onReview} editHint />
-      )}
-      {reviewed && file.reviewed_by && (
-        <span className="tcpf-who">
-          <PersonName full={file.reviewed_by} titlePrefix="Кто проверил" />
-          {file.reviewed_at && (
-            <span className="tcpf-sub" title={`Проверено ${fmtDateTime(file.reviewed_at)}`}>{fmtDate(file.reviewed_at)}</span>
-          )}
-        </span>
       )}
       {remarks && file.review_note && (
         <div className="tcpf-remarks"><ClampText text={file.review_note} lines={2} /></div>
@@ -237,7 +231,7 @@ function FileItem({ item, isProposal, onDownload, onPreview, onDelete, canReview
             onClick={() => onPreview(s3)}
           >
             <span className={`tcpf-ftype is-${kind}`}><IconFileTyped /></span>
-            <span className="tcpf-file-name">{fileName}</span>
+            <span className="tcpf-file-name"><SoftBreaks text={fileName} /></span>
           </button>
           <button
             type="button"

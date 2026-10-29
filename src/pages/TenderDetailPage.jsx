@@ -4,7 +4,6 @@ import * as XLSX from 'xlsx'
 import { db } from '../api'
 import { fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { getColumnPreviews } from '../utils/parseProposalExcel'
-import { phoneHref } from '../utils/phoneFormat'
 import { normName, supplyKey, rateUnitPrice } from '../utils/supplyRateHelpers'
 import { isWorkItem, aggregateEstimate } from '../utils/vorMaterials'
 import { reorderSiblings } from '../utils/appendixTree'
@@ -15,6 +14,7 @@ import { describeSupabaseError, isAuthError, SESSION_EXPIRED_MESSAGE } from '../
 import { useRole } from '../contexts/RoleContext'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import ParticipantStatusSelect from '../components/ParticipantStatusSelect'
+import ParticipantContacts from '../components/ParticipantContacts'
 import TenderFilesZipButton from '../components/TenderFilesZipButton'
 import TenderProposalsCompare from '../components/TenderProposalsCompare'
 import VorDocsModal from '../components/VorDocsModal'
@@ -2622,21 +2622,21 @@ function TenderDetailPage() {
                       {canEditTenders && <th style={{ width: '26px' }}></th>}
                       <th style={{ width: '40px' }}>№</th>
                       <th style={{ width: '16%', minWidth: '150px' }}>Наименование компании</th>
-                      <th>Контакт</th>
-                      <th style={{ width: '140px' }}>Телефон</th>
-                      <th style={{ width: '190px' }}>Статус</th>
+                      {/* КП и документы — сразу за компанией, контакты (ФИО, телефон, почта одной
+                          колонкой) — справа, как в раскрытой строке реестра (29.10.2026). */}
                       <th style={{ width: '23rem', minWidth: '21rem' }}>
                         <div className="tc-files-head">
                           <TenderFilesZipButton tender={tender} participants={tenderCounterparties} />
                           <span>КП / Документы</span>
                         </div>
                       </th>
-                      {!hideNotes && <th style={{ minWidth: '350px', width: '35%' }}>Примечание</th>}
+                      <th style={{ width: '190px' }}>Статус</th>
+                      {!hideNotes && <th style={{ minWidth: '18rem', width: '30%' }}>Примечание</th>}
+                      <th style={{ width: '15rem' }}>Контакты</th>
                     </tr>
                   </thead>
                   <tbody>
                     {tenderCounterparties.map((tc, idx) => {
-                      const firstContact = tc.counterparties?.counterparty_contacts?.[0]
                       const isWinner = winnerIds.has(tc.counterparty_id)
                       const winnerScope = winnersList.find(w => w.id === tc.counterparty_id)?.scope || ''
                       return (
@@ -2689,22 +2689,14 @@ function TenderDetailPage() {
                               <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>{tc.counterparties.work_type}</div>
                             )}
                           </td>
-                          <td>
-                            {firstContact ? (
-                              <div>
-                                <div style={{ fontWeight: 500 }}>{firstContact.full_name}</div>
-                                {firstContact.position && <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{firstContact.position}</div>}
-                              </div>
-                            ) : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
-                          </td>
-                          <td>
-                            {firstContact?.phone ? (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
-                                {firstContact.phone.split(';').map((ph, i) => (
-                                  ph.trim() && <a key={i} href={phoneHref(ph)} style={{ color: 'var(--primary-color)', textDecoration: 'none', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>{ph.trim()}</a>
-                                ))}
-                              </div>
-                            ) : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
+                          <td style={{ verticalAlign: 'top', padding: '0.5rem' }}>
+                            <TenderCounterpartyFiles
+                              tenderId={tenderId}
+                              counterpartyId={tc.counterparty_id}
+                              canEdit={canEditTenders}
+                              tender={tender}
+                              counterpartyName={tc.counterparties?.name}
+                            />
                           </td>
                           <td>
                             <ParticipantStatusSelect
@@ -2720,15 +2712,6 @@ function TenderDetailPage() {
                                 КП загружено {formatKpUploadedAt(kpUploadedAt[tc.counterparty_id])}
                               </div>
                             )}
-                          </td>
-                          <td style={{ verticalAlign: 'top', padding: '0.5rem' }}>
-                            <TenderCounterpartyFiles
-                              tenderId={tenderId}
-                              counterpartyId={tc.counterparty_id}
-                              canEdit={canEditTenders}
-                              tender={tender}
-                              counterpartyName={tc.counterparties?.name}
-                            />
                           </td>
                           {!hideNotes && (
                           <td style={{ verticalAlign: 'top', padding: '0.5rem' }}>
@@ -2769,6 +2752,9 @@ function TenderDetailPage() {
                             />
                           </td>
                           )}
+                          <td style={{ verticalAlign: 'top', padding: '0.5rem' }}>
+                            <ParticipantContacts contacts={tc.counterparties?.counterparty_contacts} />
+                          </td>
                         </tr>
                       )
                     })}
