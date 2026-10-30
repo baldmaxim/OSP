@@ -370,6 +370,13 @@ Task 277. Универсальное хранение файлов в S3-сов�
   страница на возврате перечитывала данные (visibilitychange). Файл дольше 0,4 с — плашка внизу справа с ходом и отменой;
   повторное нажатие на тот же файл второй не качает; ошибка — исключением (сообщение — у вызывающего), отмена — `false`.
   Тест — `tests/tender/file-download.test.mjs` (стенд: `__fakeRemoteFiles` — хранилище на другом домене, `__fakeFileDelay`).
+  Документ по ссылке — `downloadLinkFile(link, имяПоУмолчанию)` там же (30.10): ссылка Google Docs / Таблиц / Презентаций →
+  `…/export?format=docx|xlsx|pptx` (у Word-файла, открытого в Google, — тот же файл байт в байт), файл Диска →
+  `drive.usercontent.google.com/download` ([linkDownload.js](src/utils/linkDownload.js)); Google разрешает чтение со
+  страницы (CORS), если доступ — «все, у кого есть ссылка»; имя — из `Content-Disposition` (`filename*`). Запрос без куки и
+  адреса страницы; закрытый документ — исключение с причиной. Первое место — «Скачать ДП» в окне письма подрядчикам
+  «Тендеров — Основное строительство» (вместо «Закрыть», окно закрывается крестиком; ссылка — `contracts_dp_template_link`,
+  читается при каждом открытии окна; у других направлений «Закрыть» как раньше). Тест — `tests/tender/letter-dp-download.test.mjs`.
 - Универсальный UI-компонент [src/components/S3DocumentList.jsx](src/components/S3DocumentList.jsx): список + загрузка + удаление + превью. Принимает props `{ownerType, ownerId, title, canEdit?}`. По умолчанию `canEdit = isEmployee`, подрядчики только смотрят.
 - Модалка просмотра [src/components/S3DocumentPreview.jsx](src/components/S3DocumentPreview.jsx) — PDF через iframe, изображения через `<img>`, прочие типы — fallback с кнопкой скачать. Окно почти во весь экран (`.s3-doc-preview`: до 1800px, поля 12px; 28.10, было 1100×800) — одно на весь сайт; каркас `.s3-doc-modal` общий с другими окнами (ВОРы и РД, заявки ВОР), его размер не трогать.
 

@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { saveAs } from 'file-saver'
 import { requestDownloadUrl } from '../services/s3'
+import { directDownloadUrl, fileNameFromDisposition } from '../utils/linkDownload'
 import { IconDownload } from './icons/ActionIcons'
 import './FileDownload.css'
 
@@ -16,6 +17,9 @@ import './FileDownload.css'
 // Файл идёт дольше SHOW_AFTER_MS — внизу справа «Скачиваем «имя»» с ходом загрузки и отменой (свой корень в
 // <body>, как у FolderOpen). Повторное нажатие на тот же файл, пока он качается, второй файл не качает.
 // Ошибка — исключением (сообщение показывает вызывающий), отмена — false без исключения.
+//
+// downloadLinkFile — то же для документа по ссылке (30.10.2026, «Скачать ДП» в окне письма подрядчикам): адрес
+// выгрузки файла — utils/linkDownload.js, имя — из ответа сервера документа.
 
 const SHOW_AFTER_MS = 400
 
@@ -59,7 +63,8 @@ async function readBody(res, onProgress) {
   return new Blob(chunks, { type })
 }
 
-async function transfer(s3Key, fileName) {
+// open(signal) → { res, name? }: ответ с телом файла (уже проверенный) и имя, если его сообщил сервер.
+async function transfer(fileName, open) {
   ensureHost()
   const id = ++seq
   const controller = new AbortController()
@@ -68,9 +73,8 @@ async function transfer(s3Key, fileName) {
   // Плашку перерисовываем по процентам (или по 256 КБ без размера), а не на каждый кусок.
   let mark = -1
   try {
-    const { presigned_url } = await requestDownloadUrl(s3Key, { fileName, download: true })
-    const res = await fetch(presigned_url, { signal: controller.signal })
-    if (!res.ok) throw new Error(res.status === 404 ? 'файла нет в хранилище' : `хранилище ответило ${res.status}`)
+    const { res, name = fileName } = await open(controller.signal)
+    if (name !== fileName) patchItem(id, { name })
     const blob = await readBody(res, (loaded, total) => {
       const next = total ? Math.floor((loaded * 100) / total) : Math.floor(loaded / 262144)
       if (next === mark) return
@@ -78,7 +82,7 @@ async function transfer(s3Key, fileName) {
       patchItem(id, { loaded, total })
     })
     if (controller.signal.aborted) return false
-    saveAs(blob, fileName)
+    saveAs(blob, name)
     return true
   } catch (e) {
     if (controller.signal.aborted) return false
@@ -89,13 +93,44 @@ async function transfer(s3Key, fileName) {
   }
 }
 
+function once(key, run) {
+  if (inflight.has(key)) return inflight.get(key)
+  const p = run().finally(() => inflight.delete(key))
+  inflight.set(key, p)
+  return p
+}
+
 // Файл хранилища под именем fileName (без имени — последняя часть ключа).
 export function downloadS3File(s3Key, fileName) {
-  if (inflight.has(s3Key)) return inflight.get(s3Key)
   const name = fileName || String(s3Key).split('/').pop() || 'файл'
-  const p = transfer(s3Key, name).finally(() => inflight.delete(s3Key))
-  inflight.set(s3Key, p)
-  return p
+  return once(s3Key, () => transfer(name, async (signal) => {
+    const { presigned_url } = await requestDownloadUrl(s3Key, { fileName: name, download: true })
+    const res = await fetch(presigned_url, { signal })
+    if (!res.ok) throw new Error(res.status === 404 ? 'файла нет в хранилище' : `хранилище ответило ${res.status}`)
+    return { res }
+  }))
+}
+
+// Документ по ссылке (http(s)): имя — из ответа сервера, иначе fallbackName. Без куки и адреса страницы: документ
+// должен быть открыт по ссылке. Закрытый документ (Google уводит на вход) и сервер, не разрешающий чтение со
+// страницы, — исключение с понятной причиной.
+export function downloadLinkFile(link, fallbackName = 'документ') {
+  const url = directDownloadUrl(link)
+  if (!url) return Promise.reject(new Error('это не ссылка на документ'))
+  return once(`link:${url}`, () => transfer(fallbackName, async (signal) => {
+    let res
+    try {
+      res = await fetch(url, { signal, credentials: 'omit', referrerPolicy: 'no-referrer' })
+    } catch (e) {
+      if (signal.aborted) throw e
+      throw new Error('документ не отдаётся по ссылке — проверьте, что доступ открыт всем, у кого есть ссылка')
+    }
+    if (!res.ok) throw new Error(res.status === 404 ? 'документа по ссылке нет' : `сервер документа ответил ${res.status}`)
+    if (/text\/html/i.test(res.headers.get('content-type') || '')) {
+      throw new Error('по ссылке открывается страница, а не файл')
+    }
+    return { res, name: fileNameFromDisposition(res.headers.get('content-disposition')) || fallbackName }
+  }))
 }
 
 const fmtMb = (n) => `${(n / 1024 / 1024).toFixed(1).replace('.', ',')}\u00a0МБ`

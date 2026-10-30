@@ -21,6 +21,9 @@ import FolderPathCell from '../components/FolderPathCell'
 import RootFolderPathButton from '../components/RootFolderPathButton'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
 import TenderDocsModal from '../components/TenderDocsModal'
+import { downloadLinkFile } from '../components/FileDownload'
+import { fetchTemplateLinks, isWebLink } from '../services/sectionTemplates'
+import { CONTRACTS_DP_TEMPLATE } from '../utils/sectionTemplateItems'
 import { TENDERS_STRUCTURE } from '../utils/docStorageStructures'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import ParticipantStatusSelect from '../components/ParticipantStatusSelect'
@@ -73,7 +76,7 @@ import { useIsPhone } from '../hooks/useMediaQuery'
 import useBodyClass from '../hooks/useBodyClass'
 import ClampText from '../components/ClampText'
 import PersonName from '../components/PersonName'
-import { IconPencil, IconTrash, IconRestore, IconLetter } from '../components/icons/ActionIcons'
+import { IconPencil, IconTrash, IconRestore, IconLetter, IconDownload } from '../components/icons/ActionIcons'
 import '../components/Tenders.css'
 import '../components/TendersRegistryPolish.css'
 // Общий рабочий стиль разделов (docs/UI_GUIDELINES.md) — после стилей страницы.
@@ -286,6 +289,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [letterCopied, setLetterCopied] = useState(false)
   // Предупреждение о контакте площадки в окне письма: { level: 'warn' | 'error', text, objectId } | null.
   const [letterNotice, setLetterNotice] = useState(null)
+  // Окно письма ОС (30.10.2026): вместо «Закрыть» — «Скачать ДП», файл по ссылке «Шаблон ДП» из «Документов
+  // раздела» → «Материалы» (app_settings, та же ссылка, что в «Договорах и ДС»). Ссылка читается при каждом
+  // открытии окна. state — loading | ready | error; error — почему файл не скачался.
+  const letterDpShown = department === 'construction' && !isMaterialsView
+  const [letterDp, setLetterDp] = useState({ state: 'loading', link: '', busy: false, error: '' })
 
   const DEFAULT_LETTER_TEMPLATE = `Тема письма: Объект {object_name} / Тендер № {tender_number} / Приглашение на участие в тендере на выполнение работ {work_description}
 
@@ -2545,6 +2553,41 @@ ${ATTACHMENT_BLOCK}
       alert('Не удалось скопировать текст')
     }
   }
+
+  useEffect(() => {
+    if (!showLetterModal || !letterDpShown) return undefined
+    let alive = true
+    setLetterDp({ state: 'loading', link: '', busy: false, error: '' })
+    fetchTemplateLinks([CONTRACTS_DP_TEMPLATE.linkKey])
+      .then((links) => {
+        if (alive) setLetterDp({ state: 'ready', link: links.get(CONTRACTS_DP_TEMPLATE.linkKey) || '', busy: false, error: '' })
+      })
+      .catch((err) => {
+        console.error('Ссылка на шаблон ДП не загрузилась:', err?.message)
+        if (alive) setLetterDp({ state: 'error', link: '', busy: false, error: '' })
+      })
+    return () => { alive = false }
+  }, [showLetterModal, letterDpShown])
+
+  // Файл — сразу на компьютер (fetch + сохранение из памяти), без перехода по ссылке и без новой вкладки.
+  const handleDownloadDp = async () => {
+    setLetterDp(prev => ({ ...prev, busy: true, error: '' }))
+    let error = ''
+    try {
+      await downloadLinkFile(letterDp.link, `${CONTRACTS_DP_TEMPLATE.title}.docx`)
+    } catch (err) {
+      console.error('Шаблон ДП не скачался:', err?.message)
+      error = err?.message || 'неизвестная ошибка'
+    }
+    setLetterDp(prev => ({ ...prev, busy: false, error }))
+  }
+
+  let letterDpTitle = 'Скачать шаблон договора подряда (ссылка «Шаблон ДП» в «Документах раздела»)'
+  if (letterDp.state === 'loading') letterDpTitle = 'Загружаем ссылку на шаблон ДП…'
+  else if (letterDp.state === 'error') letterDpTitle = 'Не удалось загрузить ссылку на шаблон ДП'
+  else if (!letterDp.link) letterDpTitle = 'Шаблон ДП ещё не указан — ссылку добавляет администратор: «Документы раздела» → «Материалы» → «Шаблон ДП»'
+  else if (!isWebLink(letterDp.link)) letterDpTitle = 'Шаблон ДП указан сетевым путём — браузер его не скачает; путь — в «Документах раздела» → «Материалы»'
+  const letterDpReady = letterDp.state === 'ready' && isWebLink(letterDp.link)
 
   const getStatusBadgeClass = (status) => {
     const statusClasses = {
@@ -5806,15 +5849,49 @@ ${ATTACHMENT_BLOCK}
                 paddingTop: '1rem',
                 borderTop: '1px solid var(--border-color)'
               }}>
-                <button
-                  className="btn-secondary"
-                  onClick={() => {
-                    setShowLetterModal(false)
-                    setLetterCopied(false)
-                  }}
-                >
-                  Закрыть
-                </button>
+                {letterDpShown && letterDp.error && (
+                  <span className="letter-dp-error" role="alert" style={{
+                    marginRight: 'auto',
+                    alignSelf: 'center',
+                    color: 'var(--danger-color)',
+                    fontSize: '0.8125rem',
+                    lineHeight: 1.4,
+                  }}>
+                    Не удалось скачать ДП: {letterDp.error}.{' '}
+                    <a href={letterDp.link} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', fontWeight: 600 }}>
+                      Открыть документ
+                    </a>
+                  </span>
+                )}
+                {letterDpShown ? (
+                  <button
+                    type="button"
+                    className="btn-secondary letter-dp-btn"
+                    onClick={handleDownloadDp}
+                    disabled={!letterDpReady || letterDp.busy}
+                    title={letterDpTitle}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      opacity: !letterDpReady || letterDp.busy ? 0.6 : undefined,
+                      cursor: !letterDpReady ? 'not-allowed' : letterDp.busy ? 'progress' : undefined,
+                    }}
+                  >
+                    <IconDownload size={15} />
+                    {letterDp.busy ? 'Скачиваем…' : 'Скачать ДП'}
+                  </button>
+                ) : (
+                  <button
+                    className="btn-secondary"
+                    onClick={() => {
+                      setShowLetterModal(false)
+                      setLetterCopied(false)
+                    }}
+                  >
+                    Закрыть
+                  </button>
+                )}
                 <button
                   className="btn-primary"
                   onClick={handleCopyLetter}
