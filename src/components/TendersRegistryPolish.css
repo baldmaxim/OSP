@@ -277,9 +277,10 @@ tr:hover .mat-notes-tools { opacity: 1; }
    тендеров: сетка колонок и мелкие элементы строки. Класс .ui-work стоит на
    странице только у этих двух представлений (TendersPage: uiWork). */
 
-/* Сетка: всё, кроме описания, — фиксированной ширины в rem; описание забирает
-   остаток. min-width не даёт ужать данные: в окне уже таблица прокручивается
-   внутри себя, шрифт не мельчает. Номер тендера не переносится. */
+/* Сетка: колонки фиксированной ширины в rem (в плотных вариантах — и описание:
+   окно шире суммы — растут все пропорционально, 30.10.2026). min-width не даёт
+   ужать данные: в окне уже таблица прокручивается внутри себя, шрифт не
+   мельчает. Номер тендера не переносится. */
 .ui-work.ui-work .tp-grid { table-layout: fixed; width: 100%; }
 .ui-work.ui-work .tp-grid.data-table--compact { table-layout: fixed; }
 .ui-work.ui-work .tenders-registry.tp-grid > tbody > tr > td.tender-desc-cell { width: auto; min-width: 0; max-width: none; }
@@ -527,6 +528,12 @@ tr:hover .mat-notes-tools { opacity: 1; }
 .ui-work.ui-work.tp-dense .tp-c-mat { width: 6.5rem; }   /* «Не требуется» */
 .ui-work.ui-work.tp-dense .tp-c-summary { width: 5rem; }   /* «+ ссылка» */
 .ui-work.ui-work.tp-dense .tp-c-actions { width: 5.5rem; }   /* три кнопки 26px */
+/* Описание — тоже своей шириной (30.10.2026): прежде оно одно забирало весь остаток окна, и при свёрнутом меню или
+   на широком мониторе росло только оно. Теперь у всех столбцов ширины, и браузер (table-layout: fixed) делит
+   лишнее место между ВСЕМИ пропорционально. 14rem — то, что описанию оставалось в самом узком окне без
+   прокрутки (92rem − 78rem остальных); в других наборах столбцов (завершённые, компактный вид, «Прочее») сумма
+   не больше их min-width — прокрутка появляется на том же окне, что и раньше. */
+.ui-work.ui-work.tp-dense .tp-c-desc { width: 14rem; }
 /* «Прочее» (29.10.2026) — тот же плотный вариант, но без «ВОРов и РД», плана затрат и тендера
    на материалы (−20,5rem): иначе в окне уже 92rem таблица прокручивалась бы ради широкого описания. */
 .ui-work.ui-work.tp-dense.tp-dept-other .tp-grid:not(.data-table--compact) { min-width: 71.5rem; }
@@ -787,6 +794,9 @@ tr:hover .mat-notes-tools { opacity: 1; }
 .ui-work.ui-work.tp-dense-mat .tp-mc-status { width: 8rem; }
 .ui-work.ui-work.tp-dense-mat .tp-mc-notes { width: 12rem; }
 .ui-work.ui-work.tp-dense-mat .tp-mc-actions { width: 4.5rem; }   /* две кнопки 26px */
+/* Описание — своей шириной (101.25rem − 88.25rem остальных): лишнее место окна делится между всеми столбцами
+   пропорционально, а не уходит одному описанию (30.10.2026, как у «Основного строительства»). */
+.ui-work.ui-work.tp-dense-mat .tp-mc-desc { width: 13rem; }
 
 /* Сроки: плашка и пояснение под ней — один блок. Перенос диапазона — только
    после тире (breakAfterDash), даты целиком, без многоточия. */

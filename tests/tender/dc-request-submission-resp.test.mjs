@@ -1,5 +1,7 @@
 // «Заявки на ДС»: ответственный за «Статус ОКС» — выбор под статусом только из сотрудников «Отдела по удорожанию»
-// (роль udorojanie), фильтр по ответственному — в заголовке столбца; миграция 20261117, обе базы.
+// (роль udorojanie), фильтр по ответственному — само название столбца «Статус ОКС»; миграция 20261117, обе базы.
+// С 30.10.2026 (миграция 20261118 — dc-request-submission-access.test.mjs) статус ОКС и ответственного меняет только
+// отдел, а сменивший статус сам становится ответственным; на стенде — вход с ролью отдела (asRole=udorojanie).
 // Ограничение и проверки миграции — на временном PostgreSQL (локальный или Docker); реестр — в Chromium, стенд
 // tests/tender/ui (route=/dc-requests&dcStats=1&dcSubmission=1&dcSubResp=1).
 import { describe, it, before, after } from 'node:test'
@@ -187,7 +189,7 @@ describe('Реестр заявок на ДС: ответственный за �
   })
 
   it('выбор — только «Отдел по удорожанию»; назначение пишет id и ФИО, в журнал — ФИО', async () => {
-    const { page, errors, close } = await open('&dcSubResp=1')
+    const { page, errors, close } = await open('&dcSubResp=1&asRole=udorojanie&asUser=ud-1')
     try {
       const d2 = rowOf(page, 'd2')
       assert.match(await d2.locator('.dcr-sub-resp').textContent(), /Удорожаев И\.\s*П\./)
@@ -220,13 +222,18 @@ describe('Реестр заявок на ДС: ответственный за �
     } finally { await close() }
   })
 
-  it('фильтр в заголовке «Статус ОКС»: по сотруднику и «Не назначен», сброс — крестиком', async () => {
+  it('фильтр — нажатием на название «Статус ОКС»: по сотруднику и «Не назначен», сброс — крестиком', async () => {
     const { page, errors, close } = await open('&dcSubResp=1')
     try {
       const all = await visibleIds(page)
       assert.deepEqual([...all].sort(), ['d1', 'd2', 'd3', 'd4', 'd5'])
       const th = page.locator('.dcr-table thead th', { hasText: 'Статус ОКС' })
-      await th.locator('.fdrop-trigger').click()
+      // Отдельной плашки «Ответственный» нет: кнопка фильтра — само название столбца.
+      const title = th.locator('.dcr-th-fdrop .fdrop-trigger')
+      assert.equal((await th.innerText()).trim(), 'Статус ОКС')
+      assert.equal(await th.locator('.fdrop-trigger').count(), 1)
+      assert.match(await title.getAttribute('title'), /отобрать заявки по ответственному/)
+      await title.click()
       const options = await panelOptions(page)
       assert.deepEqual(options.map(o => o.trim()), [
         'Не назначен (3)', 'Анисимова Мария Сергеевна (0)', 'Сметанин Олег Олегович (1)', 'Удорожаев Иван Петрович (1)',
@@ -235,12 +242,15 @@ describe('Реестр заявок на ДС: ответственный за �
       await page.keyboard.press('Escape')
       assert.deepEqual(await visibleIds(page), ['d2'])
       assert.equal(await th.evaluate(el => el.classList.contains('dcr-th-filtered')), true)
-      assert.match(await th.textContent(), /Удорожаев Иван Петрович/)
+      // Выбран — под названием кто выбран (Фамилия И. О., полное ФИО — в подсказке).
+      assert.match(await th.locator('.dcr-th-sub-chosen').innerText(), /Удорожаев И\.\s*П\./)
+      assert.match(await title.getAttribute('title'), /Удорожаев Иван Петрович/)
 
-      await th.locator('.vdivf-clear').click()
+      await th.locator('.dcr-th-sub-clear').click()
       assert.deepEqual(await visibleIds(page), all)
+      assert.equal(await th.locator('.dcr-th-sub-chosen').count(), 0)
 
-      await th.locator('.fdrop-trigger').click()
+      await title.click()
       await page.locator('.fdrop-panel .fdrop-option', { hasText: 'Не назначен' }).click()
       await page.keyboard.press('Escape')
       assert.deepEqual((await visibleIds(page)).sort(), all.filter(id => id !== 'd2' && id !== 'd4').sort())
@@ -251,12 +261,49 @@ describe('Реестр заявок на ДС: ответственный за �
     } finally { await close() }
   })
 
-  it('без права правки — только ФИО назначенного', async () => {
-    const { page, errors, close } = await open('&dcSubResp=1&canEdit=0')
+  it('не «Отдел по удорожанию» (администратор, без права правки) — только ФИО назначенного; фильтр — у всех', async () => {
+    for (const extra of ['', '&canEdit=0']) {
+      const { page, errors, close } = await open(`&dcSubResp=1${extra}`)
+      try {
+        assert.equal(await page.locator('.dcr-table .dcr-resp-fdrop').count(), 0, extra)
+        assert.match(await rowOf(page, 'd2').locator('.dcr-sub-resp').textContent(), /Удорожаев И\.\s*П\./)
+        assert.equal(await rowOf(page, 'd1').locator('.dcr-sub-resp').count(), 0)
+        assert.equal(await page.locator('.dcr-table thead .dcr-th-fdrop').count(), 1)
+        assert.deepEqual(errors, [])
+      } finally { await close() }
+    }
+  })
+
+  it('сменил статус ОКС — сам стал ответственным: id и ФИО из справочника, в журнал — оба изменения', async () => {
+    const { page, errors, close } = await open('&dcSubResp=1&asRole=udorojanie&asUser=ud-2')
     try {
-      assert.equal(await page.locator('.dcr-table .dcr-resp-fdrop').count(), 0)
-      assert.match(await rowOf(page, 'd2').locator('.dcr-sub-resp').textContent(), /Удорожаев И\.\s*П\./)
-      assert.equal(await rowOf(page, 'd1').locator('.dcr-sub-resp').count(), 0)
+      const saved = (id) => page.evaluate((rid) => {
+        const r = window.__fakeDb.dc_requests.find(x => x.id === rid)
+        return [r.submission_check, r.submission_resp_user_id, r.submission_resp_name]
+      }, id)
+      // d1 — без ответственного, d2 — у Удорожаева: оба переходят к Анисимовой, сменившей статус.
+      for (const [id, prev] of [['d1', '—'], ['d2', 'Удорожаев Иван Петрович']]) {
+        const tr = rowOf(page, id)
+        await tr.locator('select[aria-label="Статус ОКС"]').selectOption('incomplete')
+        await page.waitForFunction((rid) => window.__fakeDb.dc_requests.find(x => x.id === rid).submission_resp_user_id === 'ud-2', id)
+        assert.deepEqual(await saved(id), ['incomplete', 'ud-2', 'Анисимова Мария Сергеевна'])
+        assert.match(await tr.locator('.dcr-sub-resp').textContent(), /Анисимова М\.\s*С\./)
+        // Журнал пишется после ответа базы — ждём обе записи.
+        await page.waitForFunction((rid) => window.__fakeDb.dc_request_audit_log
+          .filter(e => e.dc_request_id === rid && e.field_name === 'submission_resp_user_id').length === 1, id)
+        const audit = await page.evaluate((rid) => window.__fakeDb.dc_request_audit_log
+          .filter(e => e.dc_request_id === rid).map(e => e.description), id)
+        assert.ok(audit.includes(`Ответственный за статус ОКС: ${prev} → Анисимова Мария Сергеевна`), audit.join(' | '))
+        assert.ok(audit.some(a => a.startsWith('Статус ОКС: ')), audit.join(' | '))
+      }
+      // Комментарий ответственного не меняет; уже ответственный — повторной записи в журнал нет.
+      const d2 = rowOf(page, 'd2')
+      await d2.locator('select[aria-label="Статус ОКС"]').selectOption('accepted')
+      await page.waitForFunction(() => window.__fakeDb.dc_request_audit_log
+        .some(e => e.dc_request_id === 'd2' && e.description?.includes('Принято в работу')))
+      const respLog = await page.evaluate(() => window.__fakeDb.dc_request_audit_log
+        .filter(e => e.dc_request_id === 'd2' && e.field_name === 'submission_resp_user_id').length)
+      assert.equal(respLog, 1)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })

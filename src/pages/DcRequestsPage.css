@@ -2816,16 +2816,9 @@
 /* Сетка. Место отдано «Документам» (было 12.5rem — имена файлов шли столбиком
    по 5–15 строк), «Сумме» (подпись и значение в строку) и «Статусу»
    («Проверка по договору» в одну строку; под ним — ответственный,
-   «Садовников Д. Ю.» в строку); «Действия» — три кнопки 24px. min-width
-   таблицы и порог прокрутки — в конце файла («Сетка реестра»). */
-.dc-requests-page.ui-work.dcr-dense .dcr-col-num { width: 2.25rem; }
-.dc-requests-page.ui-work.dcr-dense .dcr-col-object { width: 11rem; }      /* значок + «Ориентировочный срок:» в строку */
-.dc-requests-page.ui-work.dcr-dense .dcr-col-cp { width: 13rem; }          /* подпись 3.875rem + «Изменение ПСДЦ» в строку */
-.dc-requests-page.ui-work.dcr-dense .dcr-col-dsnum { width: 5.75rem; }
-.dc-requests-page.ui-work.dcr-dense .dcr-col-amount { width: 13.25rem; }   /* «Было подано» и сумма до «999 999 999,99» в строку */
-.dc-requests-page.ui-work.dcr-dense .dcr-col-status { width: 10.75rem; }   /* «Проверка по договору ▾» в строку */
-.dc-requests-page.ui-work.dcr-dense .dcr-col-docs { width: 16rem; }
-.dc-requests-page.ui-work.dcr-dense .dcr-col-actions { width: 5rem; }
+   «Садовников Д. Ю.» в строку); «Действия» — три кнопки 24px. Ширины по
+   умолчанию — DCR_COLUMNS в DcRequestsPage.jsx (у <col> и min-width таблицы —
+   inline: человек меняет их перетаскиванием границ, «Сетка реестра» в конце). */
 /* Меню статуса открывается вниз прямо из ячейки. Строки стали ниже, и у
    короткой последней строки меню уходило за нижний край таблицы (карточка
    раздела обрезает содержимое) — «Завершено» было не нажать. Пока меню
@@ -3146,20 +3139,110 @@
 .fdrop-panel .dcr-resp-option small { color: var(--text-tertiary); }
 .fdrop-panel .dcr-resp-option.is-muted { color: var(--text-tertiary); font-style: italic; }
 
-/* Фильтр по ответственному — в заголовке «Статус ОКС» (вид — как у фильтра
-   подразделений, VorDivisionFilter.css): подпись и фильтр в строку, при
-   нехватке ширины фильтр уходит под подпись; выбран — акцентная черта снизу. */
+/* Фильтр по ответственному — само название столбца «Статус ОКС» (30.10.2026:
+   отдельной плашки «Ответственный» нет). Название — кнопка в шрифте заголовка
+   со значком фильтра; наведение — как у ссылки. Выбран — название и значок
+   акцентом, под ними — кто выбран и крестик сброса, у заголовка — акцентная
+   черта снизу (видно и при прокрутке к шапке). */
 .dc-requests-page .dcr-th-sub {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.25rem 0.375rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+  min-width: 0;
   max-width: 100%;
-  text-transform: none;
-  letter-spacing: normal;
 }
-.dc-requests-page .dcr-th-sub .vdivf,
-.dc-requests-page .dcr-th-sub .fdrop-trigger { max-width: 100%; min-width: 0; }
+.dc-requests-page .fdrop.dcr-th-fdrop { display: flex; max-width: 100%; min-width: 0; }
+.dc-requests-page .fdrop.dcr-th-fdrop .fdrop-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dc-requests-page .fdrop.dcr-th-fdrop .fdrop-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-weight: inherit;
+}
+/* Без многоточия: у короткой подписи Chromium ставил его от долей пикселя («Статус …»). Столбец сузили
+   совсем — подпись обрезается краем кнопки (.fdrop-value). */
+.dc-requests-page .dcr-th-sub-title { white-space: nowrap; }
+.dc-requests-page .fdrop.dcr-th-fdrop .fdrop-value svg { flex: none; opacity: 0.75; }
+/* Стрелки нет: в заголовке кнопку фильтра обозначает значок воронки. */
+.dc-requests-page .fdrop.dcr-th-fdrop .fdrop-arrow { display: none; }
+.dc-requests-page .fdrop.dcr-th-fdrop .fdrop-trigger:hover,
+.dc-requests-page .fdrop.dcr-th-fdrop.is-open .fdrop-trigger { color: var(--ui-link, var(--primary-color)); }
+.dc-requests-page .fdrop.dcr-th-fdrop .fdrop-trigger:hover .fdrop-value svg,
+.dc-requests-page .fdrop.dcr-th-fdrop.is-open .fdrop-value svg { opacity: 1; }
+.dc-requests-page .fdrop.dcr-th-fdrop .fdrop-trigger:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 1px;
+}
+.dc-requests-page .dcr-th-sub.is-active .fdrop.dcr-th-fdrop .fdrop-trigger { color: var(--ui-link, var(--primary-color)); font-weight: var(--ui-semibold, 600); }
+.dc-requests-page .dcr-th-sub.is-active .fdrop.dcr-th-fdrop .fdrop-value svg { opacity: 1; }
+.dc-requests-page .dcr-th-sub-chosen {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  min-width: 0;
+  color: var(--text-primary);
+  font-weight: var(--ui-medium, 500);
+}
+.dc-requests-page .dcr-th-sub-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dc-requests-page .dcr-th-sub-clear {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  padding: 0;
+  border: 1px solid var(--primary-color);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-color) 16%, transparent);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.dc-requests-page .dcr-th-sub-clear:hover { background: color-mix(in srgb, var(--primary-color) 28%, transparent); }
+.dc-requests-page .dcr-th-sub-clear:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+
+/* Границы столбцов для перетаскивания (ColumnResizeHandle) — у правого края
+   каждой ячейки шапки, кроме «Действий». Ячейке нужно position: на компьютере в
+   обвязке приложения она sticky, без неё (стенды) — relative. */
+.dc-requests-page table.dcr-table > thead > tr > th { position: relative; }
+.dc-requests-page.ui-work .dcr-widths-reset {
+  margin-left: auto;
+  padding: 0 0.25rem;
+  border: 0;
+  background: none;
+  color: var(--ui-link, var(--primary-color));
+  font: inherit;
+  font-size: var(--ui-hint, 0.75rem);
+  line-height: var(--ui-hint-lh, 1rem);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dc-requests-page.ui-work .dcr-widths-reset:hover { text-decoration: underline; }
+.dc-requests-page.ui-work .dcr-widths-reset:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: 3px; }
 .dc-requests-page table.dcr-table > thead > tr > th.dcr-th-filtered,
 .main-content > .dc-requests-page.ui-work.dcr-dense table.dcr-table > thead > tr > th.dcr-th-filtered {
   box-shadow: inset 0 -2px 0 var(--primary-color);
@@ -3172,11 +3255,14 @@
    ответственный — под статусом, комментарий — под статусом ОКС (миграция
    20261108, .has-sub: 10rem — «Не будет подаваться ▾» в строку, «Принято в
    работу (будет подаваться)» в две). Колонки «Задачи» нет.
-   Плотный вариант (на компьютере таблица только в нём): фиксированные —
-   77rem, + «Договор» 2.75rem, + «Статус ОКС» 10rem; описанию — от 9.75rem.
-   Со всеми столбцами — 99.5rem, как до 20261108: помещается без прокрутки от
-   ≈ 1900px окна (сайдбар 200px, поля страницы и контейнера 88px, полоса
-   прокрутки 17px); на 1920 описанию ≈ 11rem, на мониторе шире — больше.
+   Плотный вариант (на компьютере таблица только в нём): ширины по умолчанию —
+   DCR_COLUMNS в DcRequestsPage.jsx (фиксированные — 77rem, + «Договор»
+   2.75rem, + «Статус ОКС» 10rem, «Описание ДС» — 9.75rem); у каждого <col> и
+   min-width таблицы (сумма) — inline, человек меняет ширины перетаскиванием
+   границ в заголовке (useColumnWidths, запоминаются в браузере). Со всеми
+   столбцами по умолчанию — 99.5rem, как до 20261108: помещается без прокрутки
+   от ≈ 1900px окна; окно шире — растут ВСЕ столбцы пропорционально своим
+   ширинам (30.10.2026: и при свёрнутом меню), а не одно описание.
    Обычный вариант — те же столбцы по своим ширинам, описанию — от 12rem. */
 .dc-requests-page.ui-work .dcr-col-contract { width: 8.5rem; }
 .dc-requests-page.ui-work .dcr-col-sub { width: 10rem; }
@@ -3184,13 +3270,12 @@
 .dc-requests-page.ui-work .dcr-table.has-link { min-width: 87.25rem; }
 .dc-requests-page.ui-work .dcr-table.has-sub { min-width: 95.25rem; }
 .dc-requests-page.ui-work .dcr-table.has-link.has-sub { min-width: 97.25rem; }
-.dc-requests-page.ui-work.dcr-dense .dcr-table { min-width: 86.75rem; }
-.dc-requests-page.ui-work.dcr-dense .dcr-table.has-link { min-width: 89.5rem; }
-.dc-requests-page.ui-work.dcr-dense .dcr-table.has-sub { min-width: 96.75rem; }
-.dc-requests-page.ui-work.dcr-dense .dcr-table.has-link.has-sub { min-width: 99.5rem; }
-@media (min-width: 118.75rem) {  /* 99.5rem самой широкой таблицы + 305px ≈ 1897px окна */
-  .dc-requests-page.ui-work .table-container { overflow-x: clip; }
-}
+/* Таблица помещается в своё место (.is-fit — меряет useColumnWidths, порог —
+   сумма ширин, в том числе своих) — горизонтальной прокрутки нет, микро-
+   переполнение ячеек обрезается, выбор статуса открывается прямо в ячейке.
+   Пока тянут границу — прокрутка на месте: таблица может стать шире окна. */
+.dc-requests-page.ui-work .table-container.is-fit { overflow-x: clip; }
+body.is-col-resizing .dc-requests-page.ui-work .table-container.is-fit { overflow-x: auto; }
 
 /* Договор и № ДС (миграция 20261109): номер — строкой под выбором договора, с подписью, как «Материал:». */
 .dc-requests-page .dcr-cell-contract { position: relative; }
@@ -3337,11 +3422,10 @@
   min-height: 12rem;
   overflow: auto;
 }
-/* Таблица помещается в окно — горизонтальной прокрутки нет, а микропереполнение
-   ячеек обрезается, как прежде делал clip («Сетка реестра»). */
-@media (min-width: 118.75rem) {
-  .main-content > .dc-requests-page.ui-work.dcr-dense > .table-container { overflow-x: hidden; }
-}
+/* Таблица помещается в своё место — горизонтальной прокрутки нет, а микропере-
+   полнение ячеек обрезается, как прежде делал clip («Сетка реестра»). */
+.main-content > .dc-requests-page.ui-work.dcr-dense > .table-container.is-fit { overflow-x: hidden; }
+body.is-col-resizing .main-content > .dc-requests-page.ui-work.dcr-dense > .table-container.is-fit { overflow-x: auto; }
 /* Линия под заголовками — тенью: при border-collapse рамка остаётся у таблицы
    и при прокрутке уезжает вместе со строками. */
 .main-content > .dc-requests-page.ui-work.dcr-dense table.dcr-table > thead > tr > th {

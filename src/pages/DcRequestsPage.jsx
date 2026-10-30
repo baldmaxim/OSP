@@ -30,7 +30,7 @@ import {
   DS_TYPE_OPTIONS, MATERIAL_CLASS, MATERIAL_LABEL, MATERIAL_OPTIONS, STATUS_LABEL, STATUS_OPTIONS, SUBMISSION_CLASS,
   SUBMISSION_DEFAULT, SUBMISSION_HINT, SUBMISSION_LABEL, SUBMISSION_OPTIONS, hasSubmissionColumns, hasVerdict,
   matchesRequestNo, submissionNeedsComment, submissionOf, withRequestNumbers,
-  NO_SUBMISSION_RESP, costIncreaseEmployees, hasSubmissionRespColumns, submissionRespKey,
+  NO_SUBMISSION_RESP, costIncreaseEmployees, hasSubmissionRespColumns, isCostIncreaseRole, submissionRespKey,
 } from '../utils/dcRequestOptions'
 import { fetchEmployees } from '../services/employees'
 import { initials } from '../utils/docCheckHelpers'
@@ -40,6 +40,8 @@ import { VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION } from '../utils/vor
 import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { DC_SCROLL_KEY, groupDocsByRequest, readDcView, sessionStore, writeDcView } from '../utils/dcRequestView'
 import useScrollMemory from '../hooks/useScrollMemory'
+import useColumnWidths from '../hooks/useColumnWidths'
+import ColumnResizeHandle from '../components/ColumnResizeHandle'
 import { openFolder } from '../components/FolderOpen'
 import { canOpenFolders, isFolderPath } from '../utils/folderOpen'
 import '../components/ContractRegistry.css'
@@ -92,6 +94,25 @@ const STATUS_POPOVER_SPACE = 180
 
 // Путь заявки открывается в проводнике нажатием: путь к папке Windows и компьютер на Windows.
 const folderOpenable = (path) => isFolderPath(path) && canOpenFolders()
+
+// Столбцы таблицы (на компьютере): ширины по умолчанию в rem — по замерам содержимого (см. «Сетка реестра» в
+// DcRequestsPage.css), «Описание ДС» — то, что оставалось ему в самом узком окне без прокрутки. Человек меняет
+// ширины, перетаскивая границы в заголовке (hooks/useColumnWidths.js), — они запоминаются в браузере. Окно шире
+// суммы — растут все столбцы пропорционально (в том числе при свёрнутом меню), уже — таблица прокручивается.
+const DCR_WIDTHS_KEY = 'dcRequests:colWidths:v1'
+const DCR_COLUMNS = [
+  { key: 'num', label: '№', rem: 2.25 },
+  { key: 'object', label: 'Объект', rem: 11 },              // значок + «Ориентировочный срок:» в строку
+  { key: 'cp', label: 'Контрагент', rem: 13 },              // подпись 3.875rem + «Изменение ПСДЦ» в строку
+  { key: 'contract', label: 'Договор и № ДС', rem: 8.5 },   // «№ СУ2-ЗИЛ33-СП-Э005-9 от 12.11.2025» в две строки
+  { key: 'dsnum', label: '№ ДС', rem: 5.75 },               // без колонок договора (до миграции 20261109)
+  { key: 'desc', label: 'Описание ДС', rem: 9.75 },
+  { key: 'amount', label: 'Сумма', rem: 13.25 },            // «Было подано» и сумма до «999 999 999,99» в строку
+  { key: 'status', label: 'Статус и ответственный', rem: 10.75 }, // «Проверка по договору ▾» в строку
+  { key: 'docs', label: 'Документы', rem: 16 },
+  { key: 'sub', label: 'Статус ОКС', rem: 10 },             // «Не будет подаваться ▾» в строку
+  { key: 'actions', label: 'Действия', rem: 5 },            // три кнопки 24px
+]
 
 const TABS = [
   { key: 'all', label: 'Все заявки' },
@@ -500,53 +521,62 @@ function SubRespPicker({ req, staff, canEdit, loadError, onChange }) {
   )
 }
 
-// Фильтр «Ответственный за статус ОКС» — в заголовке столбца (inHeader, вид как у фильтра подразделений) или в
-// панели фильтров на телефоне. value — id сотрудников и NO_SUBMISSION_RESP; пусто — фильтр не применён.
+// Фильтр «Ответственный за статус ОКС». На компьютере (inHeader) кнопка фильтра — само название столбца «Статус ОКС»
+// (решение 30.10.2026: отдельной плашки «Ответственный» нет): нажатие открывает список ответственных; выбран — название
+// акцентом, под ним — кто выбран и крестик сброса. На телефоне шапки нет — в панели фильтров. value — id сотрудников и
+// NO_SUBMISSION_RESP; пусто — фильтр не применён.
 function SubRespFilter({ value, onChange, options, inHeader = false }) {
   const active = value.length > 0
   const names = value.map(v => options.find(o => o.value === v)?.name).filter(Boolean)
   const shown = names.length === 1 ? names[0] : `Ответственных: ${value.length}`
   const dropdown = (
     <FilterDropdown
-      className={inHeader ? 'vdivf-fdrop' : ''}
+      className={inHeader ? 'dcr-th-fdrop' : ''}
       label=""
       multiple
       searchable
       searchPlaceholder="Поиск сотрудника…"
       allLabel="Все ответственные"
-      icon={inHeader ? <IconFilter size={11} /> : <IconUser size={15} />}
+      icon={inHeader ? null : <IconUser size={15} />}
       value={value}
       onChange={onChange}
       options={options}
       triggerTitle={active
-        ? `Фильтр по ответственному за статус ОКС: ${names.join(', ')}`
-        : 'Фильтр по ответственному за статус ОКС: показаны все заявки'}
-      formatTrigger={() => (active
-        ? <><span className="ui-sr-only">Ответственный за статус ОКС: </span>{shown}</>
-        : (inHeader ? 'Ответственный' : 'Все ответственные ОКС'))}
+        ? `Статус ОКС — фильтр по ответственному: ${names.join(', ')}`
+        : 'Статус ОКС — нажмите, чтобы отобрать заявки по ответственному'}
+      formatTrigger={() => (inHeader
+        ? <><span className="dcr-th-sub-title">Статус ОКС</span><IconFilter size={11} /></>
+        : active
+          ? <><span className="ui-sr-only">Ответственный за статус ОКС: </span>{shown}</>
+          : 'Все ответственные ОКС')}
     />
   )
   if (!inHeader) return dropdown
   return (
-    <span className={`vdivf${active ? ' is-active' : ''}`}>
+    <span className={`dcr-th-sub${active ? ' is-active' : ''}`}>
       {dropdown}
       {active && (
-        <button
-          type="button"
-          className="vdivf-clear"
-          onClick={() => onChange([])}
-          aria-label="Сбросить фильтр по ответственному за статус ОКС"
-          title="Сбросить фильтр: все ответственные"
-        >
-          <IconClose size={10} />
-        </button>
+        <span className="dcr-th-sub-chosen">
+          <span className="dcr-th-sub-who">
+            {names.length === 1 && value[0] !== NO_SUBMISSION_RESP ? <PersonName full={names[0]} /> : shown}
+          </span>
+          <button
+            type="button"
+            className="dcr-th-sub-clear"
+            onClick={() => onChange([])}
+            aria-label="Сбросить фильтр по ответственному за статус ОКС"
+            title="Сбросить фильтр: все ответственные"
+          >
+            <IconClose size={10} />
+          </button>
+        </span>
       )}
     </span>
   )
 }
 
 function DcRequestsPage() {
-  const { userProfile, canEdit, isAdmin, isSuperAdmin, role, roleLabels, scopedObjectIds } = useRole()
+  const { user, userProfile, canEdit, isAdmin, isSuperAdmin, role, roleLabels, scopedObjectIds } = useRole()
   // Всплывающие списки фильтров и окошко срока рисуются в <body>.
   useBodyClass('ui-work-portal')
   // Телефон: список заявок рендерим карточками вместо широкой таблицы
@@ -617,6 +647,9 @@ function DcRequestsPage() {
   const [employees, setEmployees] = useState([])
   const [employeesError, setEmployeesError] = useState('')
   const costIncreaseStaff = useMemo(() => costIncreaseEmployees(employees, roleLabels), [employees, roleLabels])
+  // Статус ОКС, комментарий к нему и ответственного меняет только «Отдел по удорожанию» (решение 30.10.2026; база
+  // проверяет то же — миграция 20261118). Его сотрудник, сменивший статус, сам становится ответственным.
+  const isCostIncreaseUser = isCostIncreaseRole(role, roleLabels?.[role])
   // Договоры и ДС реестра «Договоры и ДС» для выбора договора заявки (миграция 20261109): живые документы
   // и стороны договоров с несколькими контрагентами. null — ещё не загружены (автоподстановка ждёт).
   const [contracts, setContracts] = useState(null)
@@ -1444,8 +1477,10 @@ function DcRequestsPage() {
     }
   }
 
-  // «Статус ОКС» и «Комментарий» — прямо из таблицы (миграция 20261108). Кто и когда сменил статус, ставит база
-  // (триггер), поэтому строку берём из ответа, а не подставляем имя со страницы.
+  // «Статус ОКС» и «Комментарий» — прямо из таблицы (миграция 20261108), только «Отдел по удорожанию». Кто и когда
+  // сменил статус, ставит база (триггер), поэтому строку берём из ответа, а не подставляем имя со страницы.
+  // Сменил статус — он же ответственный: с миграцией 20261118 его ставит база, без неё (но с колонками 20261117) —
+  // страница, тем же id и ФИО, что в справочнике сотрудников.
   const handleSaveSubmission = async (id, field, rawValue) => {
     const req = requests.find(r => r.id === id)
     if (!req) return
@@ -1453,25 +1488,38 @@ function DcRequestsPage() {
     const next = isCheck ? (rawValue || SUBMISSION_DEFAULT) : (rawValue.trim() || null)
     const prevValue = isCheck ? submissionOf(req) : (req.submission_comment ?? null)
     if (prevValue === next) return
+    const withResp = isCheck && subRespEnabled
+    const meId = user?.id || null
+    const resp = withResp && meId ? {
+      submission_resp_user_id: meId,
+      submission_resp_name: costIncreaseStaff.find(e => e.user_id === meId)?.display_name
+        || userProfile?.full_name?.trim() || user?.email || null,
+    } : {}
     try {
       const { data, error } = await db
         .from('dc_requests')
-        .update({ [field]: next, updated_at: new Date().toISOString() })
+        .update({ [field]: next, ...resp, updated_at: new Date().toISOString() })
         .eq('id', id)
-        .select('submission_check, submission_comment, submission_by_name, submission_at')
+        .select(`submission_check, submission_comment, submission_by_name, submission_at${withResp ? ', submission_resp_user_id, submission_resp_name' : ''}`)
         .single()
       if (error) throw error
       setRequests(prev => prev.map(r => r.id === id ? { ...r, ...data } : r))
       await logFieldChange(id, field, prevValue, next)
+      if (withResp && (data.submission_resp_user_id || null) !== (req.submission_resp_user_id || null)) {
+        await logFieldChange(id, 'submission_resp_user_id', req.submission_resp_name || null, data.submission_resp_name || null)
+      }
     } catch (err) {
-      // PGRST204 / 42703 — колонок проверки в базе ещё нет.
+      // PGRST204 / 42703 — колонок проверки в базе ещё нет; 42501 — не «Отдел по удорожанию» (миграция 20261118).
       alert((err?.code === 'PGRST204' || err?.code === '42703')
         ? 'Не удалось сохранить статус ОКС: в базе не применена миграция 20261108_dc_request_submission_check.'
-        : `Ошибка сохранения ${isCheck ? 'статуса ОКС' : 'комментария'}: ${err?.message || err}`)
+        : err?.code === '42501'
+          ? 'Статус ОКС меняет только отдел по удорожанию.'
+          : `Ошибка сохранения ${isCheck ? 'статуса ОКС' : 'комментария'}: ${err?.message || err}`)
     }
   }
 
-  // Ответственный за статус ОКС (миграция 20261117) — только из «Отдела по удорожанию»; ФИО пишется вместе с id,
+  // Ответственный за статус ОКС (миграция 20261117) — только из «Отдела по удорожанию» (передать коллеге; сам он
+  // ставится при смене статуса); назначает тоже только этот отдел. ФИО пишется вместе с id,
   // чтобы реестр, выгрузка и фильтр показывали его и без справочника сотрудников. В журнал — ФИО, как у тендеров.
   const handleSaveSubmissionResp = async (id, userId) => {
     const req = requests.find(r => r.id === id)
@@ -1492,7 +1540,9 @@ function DcRequestsPage() {
     } catch (err) {
       alert((err?.code === 'PGRST204' || err?.code === '42703')
         ? 'Не удалось назначить ответственного: в базе не применена миграция 20261117_dc_request_submission_responsible.'
-        : `Ошибка назначения ответственного за статус ОКС: ${err?.message || err}`)
+        : err?.code === '42501'
+          ? 'Ответственного за статус ОКС назначает только отдел по удорожанию.'
+          : `Ошибка назначения ответственного за статус ОКС: ${err?.message || err}`)
     }
   }
 
@@ -1649,6 +1699,19 @@ function DcRequestsPage() {
   // Ответственный за статус ОКС и фильтр по нему — когда есть и его колонки (миграция 20261117).
   const subRespEnabled = submissionEnabled && hasSubmissionRespColumns(requests)
   const subRespFilterOn = subRespEnabled && filterSubResps.length > 0
+
+  // Столбцы таблицы по набору колонок в базе и их ширины (свои — из браузера).
+  const tableColumns = useMemo(() => DCR_COLUMNS.filter(c => (
+    c.key === 'contract' ? linkEnabled
+      : c.key === 'dsnum' ? !linkEnabled
+        : c.key === 'sub' ? submissionEnabled
+          : true
+  )), [linkEnabled, submissionEnabled])
+  const colWidths = useColumnWidths(DCR_WIDTHS_KEY, tableColumns)
+  const resizer = (key) => {
+    const col = tableColumns.find(c => c.key === key)
+    return col ? <ColumnResizeHandle label={col.label} {...colWidths.handle(key)} /> : null
+  }
 
   // Фильтр по подразделению — когда колонка есть в базе; счётчики — по заявкам вкладки (без этого фильтра).
   const divisionFilterOn = linkEnabled && filterDivisions.length > 0
@@ -2157,6 +2220,15 @@ function DcRequestsPage() {
             title="Сбросить фильтры"
           >Сбросить</button>
         )}
+        {/* Ширины столбцов, выставленные перетаскиванием границ, — вернуть как было. */}
+        {!isPhone && colWidths.customized && (
+          <button
+            type="button"
+            className="dcr-widths-reset"
+            onClick={colWidths.resetAll}
+            title="Вернуть ширины столбцов по умолчанию"
+          >Ширина столбцов по умолчанию</button>
+        )}
       </div>
 
       {!requestsLoaded ? (
@@ -2319,45 +2391,39 @@ function DcRequestsPage() {
           </div>
         )
       ) : (
-        <div className="table-container">
-          <table className={`dcr-table${linkEnabled ? ' has-link' : ''}${submissionEnabled ? ' has-sub' : ''}`}>
-            {/* Ширины — в DcRequestsPage.css (.dcr-col-*): суммы и номера целиком,
-                описание ДС забирает остаток. Связанное — в одном столбце, иначе
-                таблица не помещается в окно: № ДС — под договором, ответственный —
-                под статусом, комментарий — под статусом ОКС. */}
+        <div className={`table-container${colWidths.fits ? ' is-fit' : ''}`}>
+          <table
+            ref={colWidths.tableRef}
+            style={colWidths.tableStyle}
+            className={`dcr-table${linkEnabled ? ' has-link' : ''}${submissionEnabled ? ' has-sub' : ''}`}
+          >
+            {/* Ширины — DCR_COLUMNS (по умолчанию) и свои, перетаскиванием границ в заголовке; окно шире суммы —
+                растут все столбцы пропорционально. Связанное — в одном столбце, иначе таблица не помещается в окно:
+                № ДС — под договором, ответственный — под статусом, комментарий — под статусом ОКС. */}
             <colgroup>
-              <col className="dcr-col-num" />
-              <col className="dcr-col-object" />
-              <col className="dcr-col-cp" />
-              <col className={linkEnabled ? 'dcr-col-contract' : 'dcr-col-dsnum'} />
-              <col className="dcr-col-desc" />
-              <col className="dcr-col-amount" />
-              <col className="dcr-col-status" />
-              <col className="dcr-col-docs" />
-              {submissionEnabled && <col className="dcr-col-sub" />}
-              <col className="dcr-col-actions" />
+              {tableColumns.map(c => (
+                <col key={c.key} data-col={c.key} className={`dcr-col-${c.key}`} style={colWidths.colStyle(c.key)} />
+              ))}
             </colgroup>
             <thead>
               <tr>
-                <th style={{ textAlign: 'center' }}>№</th>
-                <th>Объект</th>
-                <th>Контрагент</th>
-                <th>{linkEnabled ? 'Договор и № ДС' : '№ ДС'}</th>
-                <th>Описание ДС</th>
+                <th style={{ textAlign: 'center' }}>№{resizer('num')}</th>
+                <th>Объект{resizer('object')}</th>
+                <th>Контрагент{resizer('cp')}</th>
+                <th>{linkEnabled ? 'Договор и № ДС' : '№ ДС'}{resizer(linkEnabled ? 'contract' : 'dsnum')}</th>
+                <th>Описание ДС{resizer('desc')}</th>
                 {/* task 370: сумма ДС («Было подано» / «Утверждено») с НДС 22% перед статусом */}
-                <th style={{ textAlign: 'right' }}>Сумма, руб. с НДС 22%</th>
-                <th>Статус и ответственный</th>
-                <th>Документы</th>
+                <th style={{ textAlign: 'right' }}>Сумма, руб. с НДС 22%{resizer('amount')}</th>
+                <th>Статус и ответственный{resizer('status')}</th>
+                <th>Документы{resizer('docs')}</th>
                 {/* Статус ОКС — подаётся ли ДС заказчику; под ним пояснение (номер письма, срок…).
-                    Перед последним столбцом («Действия»). */}
+                    Перед последним столбцом («Действия»). Название — кнопка фильтра по ответственному. */}
                 {submissionEnabled && (
                   <th className={subRespFilterOn ? 'dcr-th-filtered' : undefined}>
-                    {subRespEnabled ? (
-                      <span className="dcr-th-sub">
-                        <span>Статус ОКС</span>
-                        <SubRespFilter inHeader value={filterSubResps} onChange={setFilterSubResps} options={subRespOptions} />
-                      </span>
-                    ) : 'Статус ОКС'}
+                    {subRespEnabled
+                      ? <SubRespFilter inHeader value={filterSubResps} onChange={setFilterSubResps} options={subRespOptions} />
+                      : 'Статус ОКС'}
+                    {resizer('sub')}
                   </th>
                 )}
                 <th><span className="ui-sr-only">Действия</span></th>
@@ -2399,7 +2465,8 @@ function DcRequestsPage() {
                   const { diff: amountDiff, pct: amountPct } = amountChange(amountBefore, amountAfter)
 
                   const submission = submissionOf(req)
-                  const canEditSubmission = canEditDc && !isDeletedTab
+                  // Статус ОКС, комментарий и ответственный — только «Отдел по удорожанию», не в «Удаленных».
+                  const canEditSubmission = isCostIncreaseUser && !isDeletedTab
 
                   return (
                     <tr key={req.id} className={req.deleted_at ? 'row-deleted' : ''}>

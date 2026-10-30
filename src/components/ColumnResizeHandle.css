@@ -1,0 +1,36 @@
+/* Граница столбца для перетаскивания (ColumnResizeHandle): полоса 8px у правого края ячейки заголовка, поверх её
+   содержимого. Видна при наведении и во время перетаскивания — тонкой акцентной чертой по границе столбца. */
+.col-resize {
+  position: absolute;
+  top: 0;
+  right: -1px;
+  bottom: 0;
+  z-index: 2;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+.col-resize::after {
+  content: '';
+  position: absolute;
+  top: 15%;
+  right: 0;
+  bottom: 15%;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+.col-resize:hover::after,
+.col-resize:active::after,
+.col-resize:focus-visible::after { top: 0; bottom: 0; background: var(--primary-color); }
+.col-resize:focus-visible { outline: none; }
+
+/* Пока тянут границу: курсор не мигает над другими элементами, текст не выделяется. */
+body.is-col-resizing,
+body.is-col-resizing * { cursor: col-resize !important; user-select: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .col-resize::after { transition: none; }
+}

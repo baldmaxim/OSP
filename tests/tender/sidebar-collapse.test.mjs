@@ -101,6 +101,44 @@ describe('Боковое меню: свернуть до иконок', { skip: 
     } finally { await close() }
   })
 
+  // 30.10.2026: «расширялась не только область слева, а пропорционально все области» — раньше освободившиеся 148px
+  // целиком забирал один столбец-описание. Теперь у всех столбцов ширины, и таблица растёт вся, в одной пропорции.
+  it('свернули меню — все столбцы реестров растут пропорционально, а не одно описание', async () => {
+    const T = 'tenders=10&items=20&cps=2&latency=0'
+    const registries = [
+      ['Заявка на ДС', 'route=/dc-requests&dcStats=1&dcContracts=1&dcSubmission=1&dcSubResp=1', '.dcr-table'],
+      ['Тендеры — Основное строительство', `route=/tenders/construction&${T}`, 'table.tp-grid'],
+      ['Тендеры — Прочее', `route=/tenders/other&tendersDept=other&${T}`, 'table.tp-grid'],
+      ['Тендеры на материалы', 'route=/tenders/materials&tenders=10&matTenders=1&latency=0', 'table.tp-grid'],
+      ['Планы затрат', `route=/cost-plans&${T}`, 'table.cp-table'],
+      ['ВОРы и РД', `route=/vors&${T}`, 'table.vors-table'],
+    ]
+    for (const [name, query, table] of registries) {
+      const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 2200, height: 1000 } })
+      const page = await context.newPage()
+      const errors = []
+      page.on('pageerror', (e) => errors.push(e.message))
+      try {
+        await page.goto(`${stand.url}?${query}&shell=1&sidebar=1`)
+        await page.locator(`${table} tbody tr`).first().waitFor({ timeout: 120000 })
+        await page.locator('.sidebar .nav-item').first().waitFor()
+        await settled(page, 200)
+        const cols =() => page.locator(`${table} > thead > tr:first-child > th`).evaluateAll(ths => ths.map(th => th.getBoundingClientRect().width))
+        const before = await cols()
+        await page.locator('.sidebar-collapse-btn').click()
+        await settled(page, 52)
+        await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))
+        const after = await cols()
+        const sum = (a) => a.reduce((s, w) => s + w, 0)
+        const k = sum(after) / sum(before)
+        assert.ok(Math.abs(sum(after) - sum(before) - 148) <= 2, `${name}: таблица шире на ${sum(after) - sum(before)}px`)
+        before.forEach((w, i) => assert.ok(Math.abs(after[i] - w * k) <= 1.5,
+          `${name}, столбец ${i + 1}: ${w.toFixed(1)} → ${after[i].toFixed(1)}px, ожидалось ≈ ${(w * k).toFixed(1)}`))
+        assert.deepEqual(errors, [], name)
+      } finally { await context.close().catch(() => {}) }
+    }
+  })
+
   it('на телефоне кнопки нет и меню не сворачивается, даже если на компьютере его свернули', async () => {
     const { page, context, errors, close } = await open({ width: 390, height: 800 })
     try {

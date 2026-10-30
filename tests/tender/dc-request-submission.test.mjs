@@ -1,4 +1,5 @@
 // «Заявки на ДС»: столбец «Статус ОКС» (подаётся ли ДС заказчику) с комментарием под ним — перед «Действиями»; миграция 20261108, обе базы.
+// Менять статус ОКС и комментарий может только «Отдел по удорожанию» (миграция 20261118 — dc-request-submission-access.test.mjs).
 // У всех заявок по умолчанию «Не проверено»; кто и когда сменил проверку, ставит триггер базы (ФИО — из user_roles,
 // со страницы не подменить), правка одного комментария подпись не меняет. Тела миграций обеих баз совпадают.
 // Триггер и проверки миграции — на временном PostgreSQL (локальный или Docker); реестр — в Chromium, стенд
@@ -212,8 +213,9 @@ describe('Реестр заявок на ДС: «Статус ОКС» и «Ко
     } finally { await close() }
   })
 
+  // Статус ОКС меняет только «Отдел по удорожанию» (миграция 20261118) — на стенде входим с его ролью.
   it('по умолчанию «Не проверено» без подписи; смена — подпись из ответа базы, комментарий подсвечен', async () => {
-    const { page, errors, close } = await open('&dcSubmission=1')
+    const { page, errors, close } = await open('&dcSubmission=1&asRole=udorojanie')
     try {
       const th = await headers(page)
       // Столбец — перед последним («Действия»), сразу после «Документов»; комментарий — в нём же, под статусом.
@@ -261,8 +263,23 @@ describe('Реестр заявок на ДС: «Статус ОКС» и «Ко
     } finally { await close() }
   })
 
-  it('в «Удаленных» — только просмотр', async () => {
+  it('не «Отдел по удорожанию» (администратор) — статус ОКС и комментарий только для чтения', async () => {
     const { page, errors, close } = await open('&dcSubmission=1')
+    try {
+      const d2 = rowOf(page, 'd2')
+      assert.equal(await page.locator('.dcr-table select[aria-label="Статус ОКС"]').count(), 0)
+      assert.equal(await page.locator('.dcr-table td.dcr-cell-sub textarea').count(), 0)
+      assert.equal((await d2.locator('.dcr-sub-tag').textContent()).trim(), 'Подано заказчику')
+      assert.match(await d2.locator('.dcr-sub-meta').textContent(), /Юристов Ю\.\s*Ю\./)
+      assert.equal((await d2.locator('.dcr-sub-comment-text').textContent()).trim(), 'Письмо № 123')
+      // Остальное в строке администратор по-прежнему правит.
+      assert.ok(await d2.locator('.dcr-material-select').count() > 0)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('в «Удаленных» — только просмотр', async () => {
+    const { page, errors, close } = await open('&dcSubmission=1&asRole=udorojanie')
     try {
       await page.locator('.status-tab', { hasText: 'Удаленные' }).click()
       const d6 = rowOf(page, 'd6')

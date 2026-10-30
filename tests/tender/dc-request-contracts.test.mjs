@@ -251,6 +251,8 @@ describe('Договоры в заявках на ДС и у контраген�
       const { page, errors, close } = await openPage(`${DC}&dcContracts=1&dcSubmission=1&shell=1`, '.dcr-table tbody tr', { width, height: 1000 })
       try {
         await page.addStyleTag({ content: '.layout { display: flex; } .layout::before { content: ""; flex: 0 0 217px; }' })
+        // Помещается ли таблица, страница узнаёт по изменению размера места под неё — кадр-другой.
+        await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))
         const m = await page.evaluate(() => {
           const t = document.querySelector('.dcr-table')
           const c = t.closest('.table-container')
@@ -272,7 +274,8 @@ describe('Договоры в заявках на ДС и у контраген�
         if (width === 1920) {
           assert.match(await row(page, 12).locator('.dcr-resp-line').innerText(), /Юристов Ю\.\s*Ю\./)
           assert.match(await row(page, 14).locator('.dcr-resp-line').innerText(), /Не назначен/)
-          assert.equal(await row(page, 12).locator('td.dcr-cell-sub textarea.dcr-sub-comment').inputValue(), 'Письмо № 123')
+          // Комментарий статуса ОКС правит только «Отдел по удорожанию» (20261118) — у администратора стенда он текстом.
+          assert.equal((await row(page, 12).locator('td.dcr-cell-sub .dcr-sub-comment-text').innerText()).trim(), 'Письмо № 123')
         }
         assert.deepEqual(errors, [])
       } finally { await close() }
