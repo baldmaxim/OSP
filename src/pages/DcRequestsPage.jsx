@@ -41,7 +41,7 @@ import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { DC_SCROLL_KEY, groupDocsByRequest, readDcView, sessionStore, writeDcView } from '../utils/dcRequestView'
 import useScrollMemory from '../hooks/useScrollMemory'
 import useColumnWidths from '../hooks/useColumnWidths'
-import ColumnResizeHandle from '../components/ColumnResizeHandle'
+import ColumnResizeHandle, { ColumnWidthsReset } from '../components/ColumnResizeHandle'
 import { openFolder } from '../components/FolderOpen'
 import { canOpenFolders, isFolderPath } from '../utils/folderOpen'
 import '../components/ContractRegistry.css'
@@ -2221,13 +2221,10 @@ function DcRequestsPage() {
           >Сбросить</button>
         )}
         {/* Ширины столбцов, выставленные перетаскиванием границ, — вернуть как было. */}
-        {!isPhone && colWidths.customized && (
-          <button
-            type="button"
-            className="dcr-widths-reset"
-            onClick={colWidths.resetAll}
-            title="Вернуть ширины столбцов по умолчанию"
-          >Ширина столбцов по умолчанию</button>
+        {!isPhone && (
+          <ColumnWidthsReset widths={colWidths} className="dcr-widths-reset" title="Вернуть ширины столбцов по умолчанию">
+            Ширина столбцов по умолчанию
+          </ColumnWidthsReset>
         )}
       </div>
 

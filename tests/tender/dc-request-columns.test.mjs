@@ -2,6 +2,8 @@
 // (localStorage, hooks/useColumnWidths.js); окно шире суммы — растут все столбцы пропорционально; шире окна —
 // прокрутка, а не обрезка. Название «Статус ОКС» — кнопка фильтра, граница рядом его не открывает.
 // Расчёт — utils/columnWidths.js; реестр — в Chromium, стенд tests/tender/ui (route=/dc-requests&dcStats=1&shell=1).
+// Длинный реестр (30.10: «автомасштабирование столбцов очень сильно лагает»): пока тянут границу, строки вне экрана
+// скрыты, верхняя видимая строка не сдвигается; отпустили — строки показываются фоном (dcMany=N).
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
@@ -199,6 +201,65 @@ describe('Реестр заявок на ДС: ширины столбцов', {
       await page.locator('.fdrop-panel .fdrop-option', { hasText: 'Удорожаев' }).click()
       await page.keyboard.press('Escape')
       assert.equal(await page.locator('.dcr-table tbody tr').count(), 1)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('длинный реестр: пока тянут, строки вне экрана скрыты, видимое на месте; отпустили — все строки снова на месте', async () => {
+    const { page, errors, close } = await open('&dcMany=150')
+    try {
+      // Таблица прокручена в середину; верхняя строка на экране — якорь.
+      const anchor = () => page.evaluate(() => {
+        const box = document.querySelector('.dcr-table').closest('.table-container')
+        const top = box.getBoundingClientRect().top + 60
+        const rows = [...document.querySelectorAll('.dcr-table tbody tr')]
+        const i = rows.findIndex(r => r.getBoundingClientRect().bottom > top)
+        return { i, top: rows[i].getBoundingClientRect().top, no: rows[i].querySelector('.ui-rownum').textContent }
+      })
+      const state = () => page.evaluate(() => {
+        const rows = [...document.querySelectorAll('.dcr-table tbody tr')]
+        return {
+          rows: rows.length,
+          hidden: rows.filter(r => getComputedStyle(r).display === 'none').length,
+          marked: document.querySelectorAll('.dcr-table [data-col-frozen]').length,
+          inlineHeights: rows.filter(r => r.style.height).length,
+          veils: document.querySelectorAll('.col-resize-veil').length, // курсор над всей страницей
+          selected: window.getSelection().toString(),
+        }
+      })
+      await page.evaluate(() => { document.querySelector('.dcr-table').closest('.table-container').scrollTop = 6000 })
+      await frames(page)
+      const a0 = await anchor()
+      assert.ok(a0.i > 20, `прокручено: ${JSON.stringify(a0)}`)
+      const before = await widths(page)
+
+      const handle = page.locator('.dcr-table thead th').nth(4).locator('.col-resize') // «Описание ДС»
+      const b = await handle.boundingBox()
+      const x = b.x + b.width / 2
+      const y = b.y + b.height / 2
+      await page.mouse.move(x, y)
+      await page.mouse.down()
+      for (let s = 1; s <= 6; s++) { await page.mouse.move(x + s * 30, y); await frames(page) }
+      const during = await state()
+      assert.ok(during.hidden > 100, `во время перетаскивания скрыты строки вне экрана: ${JSON.stringify(during)}`)
+      assert.equal(during.veils, 1)
+      const a1 = await anchor()
+      assert.equal(a1.no, a0.no, 'верхняя строка на экране — та же')
+      assert.ok(Math.abs(a1.top - a0.top) <= 1, `и на том же месте: ${a0.top} → ${a1.top}`)
+      const visible = await page.locator('.dcr-table tbody tr', { hasText: a0.no }).first().evaluate(r => getComputedStyle(r).display)
+      assert.notEqual(visible, 'none')
+
+      await page.mouse.up()
+      await page.waitForFunction(() => !document.querySelector('.dcr-table [data-col-frozen]'), null, { timeout: 30000 })
+      await frames(page)
+      const after = await state()
+      assert.deepEqual(after, { rows: during.rows, hidden: 0, marked: 0, inlineHeights: 0, veils: 0, selected: '' })
+      const a2 = await anchor()
+      assert.equal(a2.no, a0.no, 'после — та же строка вверху')
+      assert.ok(Math.abs(a2.top - a0.top) <= 1, `на том же месте: ${a0.top} → ${a2.top}`)
+      const now = await widths(page)
+      assert.ok(Math.abs(now[4] - before[4] - 180) <= 2, `описание: ${before[4]} → ${now[4]}`)
+      assert.ok((await stored(page)).desc > 9.75)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })

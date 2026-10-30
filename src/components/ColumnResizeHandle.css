@@ -24,12 +24,28 @@
 }
 .col-resize:hover::after,
 .col-resize:active::after,
+.col-resize[data-dragging]::after,
 .col-resize:focus-visible::after { top: 0; bottom: 0; background: var(--primary-color); }
 .col-resize:focus-visible { outline: none; }
 
-/* Пока тянут границу: курсор не мигает над другими элементами, текст не выделяется. */
-body.is-col-resizing,
-body.is-col-resizing * { cursor: col-resize !important; user-select: none !important; }
+/* Пока тянут границу (и после — пока не покажутся фоном), строки вне экрана скрыты (hooks/useColumnWidths.js,
+   createRowFreezer): раскладывается и рисуется только видимое. Их место держат соседние с видимыми строки-распорки —
+   пустые, высота inline. Видимое на месте держит сам хук, прокрутка браузера по якорю отключена — иначе поправка
+   вышла бы двойной. */
+tbody[data-col-frozen] { overflow-anchor: none; }
+tr[data-col-frozen="hidden"] { display: none !important; }
+tr[data-col-frozen="spacer"] > :is(td, th) {
+  padding: 0 !important;
+  border: 0 !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+}
+tr[data-col-frozen="spacer"] > :is(td, th) > * { display: none !important; }
+
+/* Пока тянут границу, курсор не мигает над другими элементами: поверх страницы — прозрачная шторка с курсором
+   (hooks/useColumnWidths.js). Не правило «body.is-col-resizing *»: оно пересчитывало стили всего документа при нажатии
+   и при отпускании (реестр на 400 заявок — 0,4 с). Текст не выделяется и так — нажатие отменено. */
+.col-resize-veil { position: fixed; inset: 0; z-index: 2147483647; cursor: col-resize; }
 
 @media (prefers-reduced-motion: reduce) {
   .col-resize::after { transition: none; }

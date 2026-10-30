@@ -19,7 +19,11 @@ export default function ClampText({ text, lines = 3, wrap, empty = '—', classN
     const el = ref.current
     if (!el || typeof ResizeObserver === 'undefined') return undefined
     const check = () => {
-      if (!el.classList.contains('is-expanded')) setOverflows(el.scrollHeight > el.clientHeight + 1)
+      if (el.classList.contains('is-expanded')) return
+      // Не отрисован (скрытая вкладка, строка таблицы заморожена — hooks/useColumnWidths.js) — мерить нечего,
+      // прежний ответ остаётся: иначе каждая скрытая ячейка перерисовывалась бы дважды, при скрытии и при показе.
+      if (el.getClientRects().length === 0) return
+      setOverflows(el.scrollHeight > el.clientHeight + 1)
     }
     check()
     const ro = new ResizeObserver(check)
