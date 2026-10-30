@@ -75,6 +75,9 @@ describe('Реестр контрагентов: «Малые суммы» и ф
       assert.ok(look.cut <= 1, `подпись «Малые суммы» не помещается: ${look.cut}px`)
       const options = await sel.locator('option').allInnerTexts()
       assert.deepEqual(options, ['Активный', 'Малые суммы', 'ЧС'])
+      // Пункты раскрытого списка — своими цветами: «Малые суммы» жёлтым, «ЧС» красным.
+      const optionBg = await sel.locator('option').evaluateAll((els) => els.map(el => getComputedStyle(el).backgroundColor))
+      assert.deepEqual(optionBg, ['rgb(209, 250, 229)', 'rgb(254, 243, 199)', 'rgb(254, 226, 226)'])
 
       // «Малые суммы» — в «Активных» (6 контрагентов, из них один в чёрном списке), в «Чёрном списке» — нет.
       assert.match(await page.locator('.cp-tab', { hasText: 'Активные' }).innerText(), /5/)

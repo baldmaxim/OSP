@@ -2715,6 +2715,7 @@ function CounterpartiesPage() {
                 <div className="form-group">
                   <label>Статус</label>
                   <select
+                    className="cp-status-select"
                     value={counterpartyFormData.status}
                     onChange={(e) =>
                       setCounterpartyFormData({
