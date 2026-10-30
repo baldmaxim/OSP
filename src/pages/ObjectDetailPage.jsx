@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { db } from '../api'
 import * as XLSX from 'xlsx'
 import { useRole } from '../contexts/RoleContext'
@@ -38,6 +38,9 @@ const EMPTY_AREA_FORM = {
 // Объявлена вне ObjectDetailPage — иначе при каждом рендере родителя пересоздаётся компонент,
 // что приводит к unmount-mount всех строк документа и «вылетающим» модалкам редактирования.
 // Ячейка одного файла в строке документа: имя + просмотр + скачать.
+// Вкладки карточки: ?tab= открывает нужную сразу.
+const OBJECT_TABS = ['info', 'documents', 'warranty', 'retentions', 'estimate', 'areas']
+
 function DocFileCell({ s3doc, accent, onPreview, onDownload, compact = false }) {
   if (!s3doc) return <span className="muted">—</span>
   return (
@@ -96,6 +99,7 @@ function DocRow({
   onDownloadFile,
   drag, // общий набор обработчиков перетаскивания (см. docDragProps)
   canEdit = true, // task 333: гейт edit/delete/add-attachment действий
+  linkedId = null, // документ из ссылки ?doc= («Планы затрат» → «Расчёт ПЗ»: подтверждающий документ) — подсвечен
 }) {
   const isAttachment = level > 0
   const kids = attachments || getAttachments?.(doc.id) || []
@@ -109,9 +113,11 @@ function DocRow({
   return (
     <>
       <tr
+        data-doc-id={doc.id}
         className={[
           'doc-row-tr',
           isAttachment ? 'doc-row-tr-attachment' : '',
+          linkedId === doc.id ? 'doc-row-linked' : '',
           draggableRow && drag.draggedId === doc.id ? 'doc-row-dragging' : '',
           dragOverPosition === 'before' ? 'doc-row-drop-before' : '',
           dragOverPosition === 'after' ? 'doc-row-drop-after' : '',
@@ -412,14 +418,17 @@ function AgreementRow({
   drag, // общий набор обработчиков для вложенных приложений
   // task 333: гейт edit/delete/add-attachment/drag-handle
   canEdit = true,
+  linkedId = null, // ДС из ссылки ?doc= — подсвечен
 }) {
   const hasAttachments = attachments.length > 0
   const isExpanded = expandedDocs.has(doc.id)
   return (
     <>
       <tr
+        data-doc-id={doc.id}
         className={[
           'doc-row-tr',
+          linkedId === doc.id ? 'doc-row-linked' : '',
           isDragging ? 'doc-row-dragging' : '',
           /* task 331: индикатор «before» рисуется на главной строке ДС.
              «after» рисуется ниже — на строке «+ Приложение», чтобы линия
@@ -565,7 +574,11 @@ function ObjectDetailPage() {
   const [documents, setDocuments] = useState([])
   const [estimateItems, setEstimateItems] = useState([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('info')
+  // ?tab=documents&doc=<id> — сразу вкладка и подсвеченный документ (ссылка «Расчёта ПЗ» на подтверждающий ДС).
+  const [searchParams] = useSearchParams()
+  const linkedDocId = searchParams.get('doc')
+  const [activeTab, setActiveTab] = useState(() => (OBJECT_TABS.includes(searchParams.get('tab')) ? searchParams.get('tab') : 'info'))
+  const linkedDocShown = useRef(false)
   const [expandedDocs, setExpandedDocs] = useState(new Set())
   const didInitExpand = useRef(false)
   const [docSearchQuery, setDocSearchQuery] = useState('')
@@ -793,6 +806,16 @@ function ObjectDetailPage() {
     // Чужой объект не грузим — данные не должны попадать даже в память.
     if (objectId && !objectDenied) fetchObjectData()
   }, [objectId, objectDenied, fetchObjectData])
+
+  // Документ из ссылки ?doc= — один раз прокрутить к его строке, когда документы на экране.
+  useEffect(() => {
+    if (!linkedDocId || linkedDocShown.current || loading || activeTab !== 'documents') return
+    if (!documents.some(d => d.id === linkedDocId)) return
+    linkedDocShown.current = true
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-doc-id="${CSS.escape(linkedDocId)}"]`)?.scrollIntoView({ block: 'center' })
+    })
+  }, [linkedDocId, loading, activeTab, documents])
 
   // task 355: autosize для textarea «Примечание» и «Описание события» в модалке гарантии.
   //   Срабатывает при изменении значения и при открытии модалки (тогда editingWarranty
@@ -2013,6 +2036,7 @@ function ObjectDetailPage() {
                             onPreviewFile={handlePreviewFile}
                             onDownloadFile={handleDownloadFile}
                             canEdit={canEditObj}
+                            linkedId={linkedDocId}
                           />
                         </tbody>
                       </table>
@@ -2068,6 +2092,7 @@ function ObjectDetailPage() {
                               onDragEnd={handleAgreementDragEnd}
                               onDrop={handleAgreementDrop}
                               canEdit={canEditObj}
+                              linkedId={linkedDocId}
                             />
                           ))}
                         </tbody>

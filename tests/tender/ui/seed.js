@@ -931,6 +931,19 @@ if (params.get('dcStats') === '1') {
     Object.assign(fdb.dc_requests.find((r) => r.id === 'd3'), { division: 'electrical' })
     Object.assign(fdb.dc_requests.find((r) => r.id === 'd4'), { contract_id: 'kd-1', amendment_id: 'kd-1-ds3', ds_number: 'ДС №3' })
   }
+  // ?dcSubResp=1 (вместе с dcSubmission=1) — ответственный за статус ОКС (миграция 20261117): в «Отделе по удорожанию»
+  // (роль udorojanie) двое, у d2 — Удорожаев, у d4 — Сметанин, который из отдела ушёл (теперь сметный отдел).
+  if (params.get('dcSubResp') === '1') {
+    const fdb = window.__fakeDb
+    for (const r of fdb.dc_requests) Object.assign(r, { submission_resp_user_id: null, submission_resp_name: null })
+    Object.assign(fdb.dc_requests.find((r) => r.id === 'd2'), { submission_resp_user_id: 'ud-1', submission_resp_name: 'Удорожаев Иван Петрович' })
+    Object.assign(fdb.dc_requests.find((r) => r.id === 'd4'), { submission_resp_user_id: 'sm-1', submission_resp_name: 'Сметанин Олег Олегович' })
+    fdb.employee_directory.push(
+      { user_id: 'ud-1', display_name: 'Удорожаев Иван Петрович', full_name: 'Удорожаев Иван Петрович', email: 'u1@example.invalid', role: 'udorojanie' },
+      { user_id: 'ud-2', display_name: 'Анисимова Мария Сергеевна', full_name: 'Анисимова Мария Сергеевна', email: 'u2@example.invalid', role: 'udorojanie' },
+      { user_id: 'sm-1', display_name: 'Сметанин Олег Олегович', full_name: 'Сметанин Олег Олегович', email: 's1@example.invalid', role: 'smetno' },
+    )
+  }
   window.__fakeDb.dc_request_audit_log = [
     { id: 'al-1', dc_request_id: 'd4', event_type: 'status_changed', new_value: 'completed', changed_at: iso(-2) },
   ]
@@ -991,19 +1004,6 @@ if (CONTRACTS > 0) {
     const root = contracts.find((c) => c.id === 'ctr-2')
     if (root) {
       const extra = (id, over) => ({ ...root, id, contract_counterparties: root.contract_counterparties, record_type: 'ds_extra',
-  // ?dcSubResp=1 (вместе с dcSubmission=1) — ответственный за статус ОКС (миграция 20261117): в «Отделе по удорожанию»
-  // (роль udorojanie) двое, у d2 — Удорожаев, у d4 — Сметанин, который из отдела ушёл (теперь сметный отдел).
-  if (params.get('dcSubResp') === '1') {
-    const fdb = window.__fakeDb
-    for (const r of fdb.dc_requests) Object.assign(r, { submission_resp_user_id: null, submission_resp_name: null })
-    Object.assign(fdb.dc_requests.find((r) => r.id === 'd2'), { submission_resp_user_id: 'ud-1', submission_resp_name: 'Удорожаев Иван Петрович' })
-    Object.assign(fdb.dc_requests.find((r) => r.id === 'd4'), { submission_resp_user_id: 'sm-1', submission_resp_name: 'Сметанин Олег Олегович' })
-    fdb.employee_directory.push(
-      { user_id: 'ud-1', display_name: 'Удорожаев Иван Петрович', full_name: 'Удорожаев Иван Петрович', email: 'u1@example.invalid', role: 'udorojanie' },
-      { user_id: 'ud-2', display_name: 'Анисимова Мария Сергеевна', full_name: 'Анисимова Мария Сергеевна', email: 'u2@example.invalid', role: 'udorojanie' },
-      { user_id: 'sm-1', display_name: 'Сметанин Олег Олегович', full_name: 'Сметанин Олег Олегович', email: 's1@example.invalid', role: 'smetno' },
-    )
-  }
         parent_contract_id: root.id, root_contract_id: root.id, division: null, contract_date: '2026-10-05', ...over })
       contracts.push(
         extra('ctr-x1', { display_id: 901, contract_number: 'ДР-1', work_name: 'Дополнительные работы: усиление перекрытия секции 2', contract_amount: 80000, status: 'in_work', signed_date: '2026-10-10' }),

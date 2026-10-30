@@ -1,161 +1,304 @@
-/* «Документы» → «Расчёт ПЗ» (CostPlanCalcTab): подвкладки с файлами и «Компенсация НДС и инфляции по объектам».
-   Окно и общие классы tdm-* — TenderDocsModal.css; кнопки btn-primary / btn-secondary / ui-btn — рабочий стиль
-   страницы (workUi.css): окно открывается внутри .ui-work «Планов затрат». */
+/* «Документы» → «Расчёт ПЗ» (CostPlanCalcTab): «Инструкции» и «По объектам» — карточка на объект, как на схеме
+   пользователя: слева «Прямые затраты» и под ними «КП до перекидок» (документы объекта), справа «Компенсация НДС» и
+   под ней «Инфляция». Окно и общие классы tdm-* — TenderDocsModal.css; кнопки btn-primary / btn-secondary / ui-btn —
+   рабочий стиль страницы (workUi.css): окно открывается внутри .ui-work «Планов затрат». */
 
-/* Подвкладки — сегменты, чтобы не путались с вкладками окна над ними. */
-.cpc-subtabs {
-  display: inline-flex;
-  gap: 0.25rem;
-  margin-bottom: 1rem;
-  padding: 0.25rem;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--bg-secondary);
-}
-.cpc-subtab {
-  padding: 0.35rem 0.9rem;
-  border: none;
-  border-radius: 7px;
-  background: none;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-}
-.cpc-subtab:hover { color: var(--text-primary); }
-.cpc-subtab.is-active {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
-}
-.cpc-subtab:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
-
-.cpc-panel { min-height: 6rem; }
-.cpc-panel .tdm-note { margin: 0; }
-
-/* ── Компенсация НДС и инфляции ───────────────────────────────────────── */
-.cpc-comp {
+.cpc-block + .cpc-block {
   margin-top: 1.5rem;
   padding-top: 1.25rem;
   border-top: 1px solid var(--border-color);
 }
-.cpc-comp-title {
-  margin: 0;
+.cpc-block-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+.cpc-block-title {
+  margin: 0 0 0.75rem;
   font-size: 1rem;
   font-weight: 600;
+  line-height: 1.5rem;
   color: var(--text-primary);
 }
-.cpc-comp-lead {
-  margin: 0.25rem 0 0.75rem;
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-}
-.cpc-comp .tdm-note { margin: 0; }
+.cpc-block-head .cpc-block-title { margin-bottom: 0; }
+.cpc-block-head + * { margin-top: 0.75rem; }
+.cpc-block .tdm-note { margin: 0 0 0.75rem; }
 
-.cpc-table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-}
-.cpc-table {
-  width: 100%;
-  min-width: 36rem;
-  table-layout: fixed;
-  border-collapse: collapse;
-  font-size: 0.875rem;
-  line-height: 1.45;
-  color: var(--text-primary);
-}
-.cpc-col-obj { width: 30%; }
-.cpc-col-act { width: 3rem; }
-.cpc-table th,
-.cpc-table td {
-  padding: 0.5rem 0.7rem;
-  border-bottom: 1px solid var(--border-color);
-  text-align: left;
-  vertical-align: top;
-}
-.cpc-table thead th {
-  background: var(--bg-secondary);
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-tertiary);
-  white-space: nowrap;
-}
-.cpc-table tbody tr:last-child > * { border-bottom: none; }
-.cpc-obj { font-weight: 600; }
-.cpc-note { white-space: pre-line; overflow-wrap: anywhere; }
-.cpc-none { color: var(--text-tertiary); }
-.cpc-act { text-align: right; padding-top: 0.3rem; padding-bottom: 0.3rem; }
-.cpc-act .ui-btn.is-icon-only { width: 1.875rem; height: 1.875rem; min-height: 1.875rem; }
-
-.cpc-row.is-editing > * { background: var(--bg-secondary); border-bottom: none; }
-.cpc-input {
-  display: block;
-  width: 100%;
-  min-height: 4.5rem;
-  padding: 0.4rem 0.55rem;
+.cpc-search {
+  width: min(16rem, 100%);
+  padding: 0.35rem 0.6rem;
   border: 1px solid var(--border-color-dark);
   border-radius: 8px;
   background: var(--bg-primary);
   color: var(--text-primary);
   font: inherit;
   font-size: 0.875rem;
-  resize: vertical;
 }
+.cpc-search:focus { outline: 2px solid var(--primary-color); outline-offset: -1px; }
+
+/* ── Инструкции: две ячейки рядом ─────────────────────────────────────── */
+.cpc-instr-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.cpc-instr {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+
+/* ── Карточки объектов ────────────────────────────────────────────────── */
+.cpc-cards { display: grid; gap: 0.75rem; }
+.cpc-card {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+.cpc-card.is-editing { border-color: var(--primary-color); }
+.cpc-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0.35rem 0.5rem 0.35rem 0.8rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+.cpc-card-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  color: var(--text-primary);
+}
+.cpc-edit.ui-btn.is-icon-only { width: 1.875rem; height: 1.875rem; min-height: 1.875rem; }
+
+/* 2 × 2: строка — вид документа слева и пункт компенсации справа. */
+.cpc-card-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  grid-template-areas:
+    "direct vat"
+    "kp inflation";
+}
+.cpc-area-direct { grid-area: direct; }
+.cpc-area-kp { grid-area: kp; }
+.cpc-area-vat { grid-area: vat; }
+.cpc-area-inflation { grid-area: inflation; }
+.cpc-cell { min-width: 0; padding: 0.6rem 0.8rem; }
+.cpc-area-direct,
+.cpc-area-vat { border-bottom: 1px solid var(--border-color); }
+.cpc-area-direct,
+.cpc-area-kp { border-right: 1px solid var(--border-color); }
+
+.cpc-cell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 1.5rem;
+  margin-bottom: 0.25rem;
+}
+.cpc-cell-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.125rem;
+  color: var(--text-secondary);
+}
+.cpc-add {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--ui-link, var(--primary-color));
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cpc-add:hover:not(:disabled) { border-color: var(--border-color); background: var(--bg-primary); }
+.cpc-add:disabled { color: var(--text-tertiary); cursor: default; }
+.cpc-add:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+
+/* Файлы ячейки. */
+.cpc-file-list { margin: 0; padding: 0; list-style: none; }
+.cpc-file {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.75rem;
+}
+.cpc-file + .cpc-file { border-top: 1px dashed var(--border-color); }
+.cpc-ftype { flex: none; }
+.cpc-ftype.is-sheet { color: #15803d; }
+.cpc-ftype.is-pdf { color: #dc2626; }
+.cpc-ftype.is-doc { color: #2563eb; }
+.cpc-ftype.is-file { color: var(--text-tertiary); }
+.cpc-file-name {
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ui-link, var(--primary-color));
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.cpc-file-name:hover { text-decoration: underline; }
+.cpc-file-name:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+.cpc-file-date {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cpc-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.cpc-icon:hover { border-color: var(--border-color); background: var(--bg-secondary); color: var(--text-primary); }
+.cpc-icon.is-danger:hover { color: var(--danger-color); }
+.cpc-icon:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+.cpc-files-empty { margin: 0; font-size: 0.8125rem; }
+
+/* Пункт компенсации. */
+.cpc-item-value { margin: 0.1rem 0 0.25rem; font-size: 0.875rem; }
+.cpc-badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.125rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cpc-badge.is-yes { background: var(--success-light); color: var(--success-color, #15803d); }
+.cpc-badge.is-no { background: var(--bg-tertiary, var(--bg-secondary)); color: var(--text-secondary); }
+.cpc-item-doc { font-size: 0.8125rem; line-height: 1.125rem; color: var(--text-primary); overflow-wrap: anywhere; }
+.cpc-item-doc-label { color: var(--text-tertiary); }
+.cpc-doc-link { color: var(--ui-link, var(--primary-color)); text-decoration: none; font-variant-numeric: tabular-nums; }
+.cpc-doc-link:hover { text-decoration: underline; }
+.cpc-note {
+  margin: 0.3rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  color: var(--text-secondary);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.cpc-none { color: var(--text-tertiary); font-size: 0.8125rem; }
+
+/* Правка пункта. */
+.cpc-item-form { margin: 0; padding: 0; border: none; min-width: 0; }
+.cpc-seg {
+  display: inline-flex;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--bg-secondary);
+}
+.cpc-seg-btn {
+  position: relative;
+  padding: 0.2rem 0.7rem;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+}
+.cpc-seg-btn input { position: absolute; opacity: 0; pointer-events: none; }
+.cpc-seg-btn.is-active {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+.cpc-seg-btn:has(input:focus-visible) { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+.cpc-item-fields {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.cpc-item-fields > p { grid-column: 1 / -1; margin: 0; }
+.cpc-field { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; margin-top: 0.5rem; }
+.cpc-item-fields .cpc-field { margin-top: 0; }
+.cpc-field-label { font-size: 0.75rem; color: var(--text-tertiary); }
+.cpc-pct { display: flex; align-items: center; gap: 0.3rem; font-size: 0.875rem; color: var(--text-secondary); }
+.cpc-pct .cpc-input { width: 4.5rem; text-align: right; font-variant-numeric: tabular-nums; }
+.cpc-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+}
+textarea.cpc-input { min-height: 3.25rem; resize: vertical; }
 .cpc-input:focus { outline: 2px solid var(--primary-color); outline-offset: -1px; }
-.cpc-row-actions > td { background: var(--bg-secondary); padding-top: 0; }
+.cpc-input:disabled { opacity: 0.7; }
+
 .cpc-edit-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
 }
 .cpc-edit-bar .tdm-site-error { flex: 1 0 100%; margin: 0; }
 .cpc-hint { margin-right: auto; font-size: 0.75rem; color: var(--text-tertiary); }
-
-/* Текст для чтения с экрана. */
-.cpc-sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
+.cpc-hint a { color: var(--ui-link, var(--primary-color)); }
 
 @media (max-width: 640px) {
-  .cpc-subtabs { display: flex; }
-  .cpc-subtab { flex: 1 1 0; }
-  .cpc-input { font-size: 1rem; }
-  /* Таблица компенсации — карточка на объект: название, под ним НДС и инфляция с подписями, карандаш в углу. */
-  .cpc-table-wrap { overflow-x: visible; }
-  .cpc-table { min-width: 0; }
-  .cpc-table colgroup,
-  .cpc-table thead { display: none; }
-  .cpc-table :is(tbody, tr, th, td) { display: block; }
-  .cpc-table tbody > tr { position: relative; border-bottom: 1px solid var(--border-color); }
-  .cpc-table tbody > tr:last-child,
-  .cpc-row.is-editing { border-bottom: none; }
-  .cpc-table :is(th, td) { border-bottom: none; padding: 0.15rem 0.75rem; }
-  .cpc-table .cpc-obj { padding: 0.6rem 3rem 0.2rem 0.75rem; }
-  .cpc-table td[data-label]::before {
-    content: attr(data-label);
-    display: block;
-    font-size: 0.75rem;
-    color: var(--text-tertiary);
+  .cpc-instr-grid { grid-template-columns: minmax(0, 1fr); }
+  /* Карточка — в столбик: сначала документы, потом компенсация. */
+  .cpc-card-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "direct" "kp" "vat" "inflation";
   }
-  .cpc-table td[data-label]:last-of-type,
-  .cpc-row.is-editing td[data-label] { padding-bottom: 0.5rem; }
-  .cpc-act { position: absolute; top: 0.4rem; right: 0.4rem; padding: 0; }
-  .cpc-row-actions > td { padding: 0 0.75rem 0.6rem; }
+  .cpc-area-direct,
+  .cpc-area-kp { border-right: none; }
+  .cpc-area-kp { border-bottom: 1px solid var(--border-color); }
+  .cpc-search,
+  .cpc-input { font-size: 1rem; }
+  .cpc-search { width: 100%; }
+  .cpc-icon { width: 2.25rem; height: 2.25rem; }
+  .cpc-seg { display: flex; }
+  .cpc-seg-btn { flex: 1 1 0; text-align: center; padding: 0.4rem 0.5rem; }
 }
 
-/* Окно «Документы» планов затрат шире окна по содержимому (48rem): таблица компенсации и список файлов в пять
-   колонок. Три класса — сильнее .tdm-modal.tdm-modal--fit. */
+/* Окно «Документы» планов затрат шире окна по содержимому (48rem): карточки объектов в две колонки.
+   Три класса — сильнее .tdm-modal.tdm-modal--fit. */
 .tdm-modal.tdm-modal--fit.cpd-modal { width: min(64rem, calc(100vw - 3rem)); }
 @media (max-width: 640px) {
   .tdm-modal.tdm-modal--fit.cpd-modal { width: 100vw; }

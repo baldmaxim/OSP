@@ -4,7 +4,7 @@
 // (tests/osp-api/upload-sites.test.mjs) роняет тест, если место загрузки появилось или поменяло тип
 // владельца, а здесь — нет; server.test.mjs загружает по каждой паре «тип → таблица».
 
-// Прямые вызовы uploadFile({ …, ownerType: '…' }).
+// Прямые вызовы uploadFile({ …, ownerType: '…' }). У файла с вызовами разных типов — запись на каждый тип.
 export const UPLOAD_SITES = [
   { file: 'src/components/TenderDocumentsTab.jsx', calls: 1, owner: 'tender', table: 'tender_docs' }, // id из вставки tender_docs
   { file: 'src/components/TenderFinalDocBlock.jsx', calls: 1, owner: 'tender', table: 'tender_docs' }, // ensureTenderFinalDoc → tender_docs
@@ -13,6 +13,10 @@ export const UPLOAD_SITES = [
   { file: 'src/services/supplyPricing.js', calls: 1, owner: 'tender', table: 'tenders' }, // счёт / КП поставщика к позициям расценки (основной тендер)
   { file: 'src/services/psdc.js', calls: 1, owner: 'general', table: 'psdc' },
   { file: 'src/services/sectionTemplates.js', calls: 1, owner: 'general', table: 'section_templates' }, // шаблон раздела (миграция 20261107)
+  // «Расчёт ПЗ» планов затрат: инструкции (якорь section_templates, 20261116), затем документы объекта по расчёту
+  // (категории — только администратору, osp-api CATEGORY_RULES). Записи одного файла — в порядке вызовов в нём.
+  { file: 'src/services/costPlanCalc.js', calls: 1, owner: 'general', table: 'section_templates' },
+  { file: 'src/services/costPlanCalc.js', calls: 1, owner: 'object', table: 'objects' },
   { file: 'src/pages/GeneralDocumentsPage.jsx', calls: 1, owner: 'general_document', table: 'general_documents' },
   { file: 'src/pages/ObjectDetailPage.jsx', calls: 1, owner: 'object', table: 'objects' },
   { file: 'src/components/ObjectDocumentFileSlot.jsx', calls: 1, owner: 'object', table: 'objects' },
@@ -32,7 +36,6 @@ export const LIST_SITES = [
   { file: 'src/pages/CounterpartiesPage.jsx', count: 2, owner: 'counterparty', table: 'counterparties' },
   { file: 'src/components/doccheck/DocCheckDetailModal.jsx', count: 1, owner: 'doc_check_request', table: 'doc_check_requests' },
   { file: 'src/components/VorRequestModal.jsx', count: 2, owner: 'general', table: 'vor_requests' }, // REQUEST_OWNER_TYPE
-  { file: 'src/components/CostPlanCalcTab.jsx', count: 1, owner: 'general', table: 'section_templates' }, // «Расчёт ПЗ» (миграция 20261116)
   { file: 'src/components/tasks/TaskDetailModal.jsx', count: 1, owner: 'task', table: 'tasks' },
 ]
 

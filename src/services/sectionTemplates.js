@@ -18,7 +18,8 @@ export const sectionTemplatesMigrationHint = (migration = SECTION_TEMPLATES_MIGR
 
 // Коды — те же, что в миграциях (20261107, contracts_dgp — 20261109). contracts_dgp — строка прежнего файла
 // «Шаблон ДГП»: шаблон договоров теперь ссылка «Шаблон ДП», а строка нужна, чтобы показать файл, если его успели
-// прикрепить.
+// прикрепить. Строки «Расчёта ПЗ» (20261116) — якоря списков файлов, а не шаблоны с одним файлом: их коды и своя
+// doc_category — в utils/costPlanCalc.js (COST_PLAN_CALC_SECTIONS).
 export const SECTION_TEMPLATE = {
   conceptAgreement: 'tenders_concept_agreement',
   wasBecame: 'dc_was_became',

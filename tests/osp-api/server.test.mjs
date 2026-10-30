@@ -471,6 +471,33 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.ok(calls.some((c) => c.p_section === 'objects' && c.p_kind === 'edit'))
     })
 
+    it('документы «Расчёта ПЗ» объекта — только администратор; прочие файлы объекта — правка «Объектов»', async () => {
+      const put = async (who, op, category) => {
+        const body = fileBody({ owner_type: 'object', owner_id: OBJECT_1, operation_id: OP(op) })
+        const up = await fn('s3-presign', who, { action: 'upload', ...body })
+        assert.equal(up.statusCode, 200, up.body)
+        await fetch(up.json().presigned_url, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: 'hello' })
+        return fn('s3-presign', who, { action: 'confirm', ...body, ...(category ? { category } : {}) })
+      }
+      for (const category of ['cost_plan_direct_costs', 'cost_plan_kp_before_transfers']) {
+        const denied = await put(U.emp, 11, category)
+        assert.equal(denied.statusCode, 403, `инженер с правкой «Объектов»: ${category}`)
+        assert.deepEqual(denied.json(), { error: 'Нет права на файлы этого раздела' })
+      }
+      assert.equal(Object.values(state.docs).some((d) => d.row.id === OP(11)), false, 'строки нет')
+      assert.equal((await put(U.emp, 12, 'dgp')).statusCode, 200, 'ДГП объекта — как раньше')
+      const ok = await put(U.admin, 13, 'cost_plan_direct_costs')
+      assert.equal(ok.statusCode, 200, ok.body)
+      const key = ok.json().document.s3_key
+      assert.equal(ok.json().document.doc_category, 'cost_plan_direct_costs')
+
+      const del = (who) => fn('s3-presign', who, { action: 'delete', s3_key: key })
+      assert.equal((await del(U.emp)).statusCode, 403, 'удалить — тоже только администратор')
+      assert.ok(state.docs[key], 'строка на месте')
+      assert.deepEqual((await del(U.admin)).json(), { ok: true })
+      assert.equal(state.docs[key], undefined)
+    })
+
     it('задача — тому, кому она видна, без права раздела', async () => {
       assert.equal((await up(U.viewer, 'task', TASK_1)).statusCode, 200)
       assert.equal((await up(U.emp, 'task', TASK_1)).statusCode, 404, 'задача не видна')

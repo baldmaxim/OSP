@@ -66,6 +66,8 @@ const CostPlansPage = lazy(() => import('../../../src/pages/CostPlansPage'))
 const ApiKeysStand = lazy(() => import('./api-keys-stand.jsx'))
 // Боковое меню — так же (Sidebar.css: .nav-item и др. глобальные), с темой (переключатель темы в меню).
 const SidebarStand = lazy(() => import('./sidebar-stand.jsx'))
+// Карточка объекта — так же (ObjectDetailPage.css): переход по ссылке на подтверждающий ДС из «Расчёта ПЗ».
+const ObjectDetailPage = lazy(() => import('../../../src/pages/ObjectDetailPage'))
 import { weekKey } from '../../../src/utils/weeks'
 
 const params = new URLSearchParams(window.location.search)
@@ -96,6 +98,7 @@ const routes = (
     <Route path="/stand/api-keys" element={<Suspense fallback={null}><ApiKeysStand /></Suspense>} />
     <Route path="/public/tenders" element={<PublicTendersPage />} />
     <Route path="/general/counterparties" element={<CounterpartiesPage />} />
+    <Route path="/general/objects/:objectId" element={<Suspense fallback={null}><ObjectDetailPage /></Suspense>} />
     <Route path="/contracts" element={<Suspense fallback={null}><ContractsPage /></Suspense>} />
     <Route path="/kp-review" element={<Suspense fallback={null}><KpReviewPage /></Suspense>} />
     <Route path="/dc-requests" element={<Suspense fallback={null}><DcRequestsPage /></Suspense>} />

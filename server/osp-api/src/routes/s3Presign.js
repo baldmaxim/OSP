@@ -91,6 +91,14 @@ export const WRITE_RULES = {
 }
 // Строки с владельцем вне списка (старые типы) удаляет только администратор.
 const UNKNOWN_OWNER_RULES = [['admin', 'edit']]
+// Категории строже права раздела владельца (doc_category → правила; нужны оба): документы «Расчёта ПЗ» объекта
+// («Прямые затраты», «КП до перекидок» — «Планы затрат» → «Документы» → «Расчёт ПЗ») загружает и удаляет
+// только администратор, хотя прочие файлы объекта — правка «Объектов». Категория известна при подтверждении и у
+// строки — при удалении; ссылка на PUT без строки документа не даёт.
+export const CATEGORY_RULES = {
+  cost_plan_direct_costs: [['admin', 'edit']],
+  cost_plan_kp_before_transfers: [['admin', 'edit']],
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const SHA256_RE = /^[0-9a-f]{64}$/
@@ -271,6 +279,9 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           const { file, category, notes } = req
           const denied = await uploadDenied(file)
           if (denied) return reply.code(denied[0]).send(denied[1])
+          if (category && Object.hasOwn(CATEGORY_RULES, category) && !await allowed(CATEGORY_RULES[category])) {
+            return reply.code(403).send({ error: NO_RIGHT })
+          }
           const existing = await findDocument(file.operation_id)
           if (existing) return sameFile(existing, file) ? { already: true, document: existing } : reply.code(409).send(KEY_REUSE)
 
@@ -338,7 +349,7 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           if (!s3Key) return reply.code(400).send({ error: 'Missing s3_key' })
           const { data: doc, error } = await supabase
             .from('s3_documents')
-            .select('id, owner_type, owner_id, created_at')
+            .select('id, owner_type, owner_id, doc_category, created_at')
             .eq('s3_key', s3Key)
             .maybeSingle()
           if (error) throw error
@@ -351,6 +362,9 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
             rules = table ? WRITE_RULES[table] : OWNER_TABLES[doc.owner_type].flatMap((t) => WRITE_RULES[t])
           }
           if (!await allowed(rules)) return reply.code(403).send({ error: NO_RIGHT })
+          if (Object.hasOwn(CATEGORY_RULES, doc.doc_category || '') && !await allowed(CATEGORY_RULES[doc.doc_category])) {
+            return reply.code(403).send({ error: NO_RIGHT })
+          }
 
           // Перенос данных: решаем до удаления строки, остаётся ли объект в хранилище. Документ пришёл с
           // данными прежнего портала — объект его, пока тот работает (в репетиции — всегда).

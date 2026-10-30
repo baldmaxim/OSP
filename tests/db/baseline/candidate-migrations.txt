@@ -31,3 +31,4 @@
 20261118_dc_request_submission_access.sql
 20261119_work_types_division_other.sql
 20261123_tender_compare_proposals.sql
+20261121_cost_plan_calc_objects.sql

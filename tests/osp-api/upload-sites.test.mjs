@@ -41,10 +41,8 @@ describe('места загрузки файлов в интерфейсе (ре
       }
       if (types.length) found[f] = types
     }
-    const expected = Object.fromEntries([
-      ...UPLOAD_SITES.map((s) => [s.file, Array(s.calls).fill(s.owner)]),
-      ...GENERIC_UPLOADERS.map((f) => [f, ['(props)']]),
-    ])
+    const expected = Object.fromEntries(GENERIC_UPLOADERS.map((f) => [f, ['(props)']]))
+    for (const s of UPLOAD_SITES) (expected[s.file] ||= []).push(...Array(s.calls).fill(s.owner))
     assert.deepEqual(found, expected)
   })
 

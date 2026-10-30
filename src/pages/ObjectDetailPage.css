@@ -496,6 +496,10 @@
   background: var(--hover-bg, var(--bg-tertiary));
 }
 
+/* Документ из ссылки ?doc= (подтверждающий ДС из «Расчёта ПЗ» «Планов затрат»). */
+.doc-row-tr.doc-row-linked td { background: var(--primary-light); }
+.doc-row-tr.doc-row-linked td:first-child { box-shadow: inset 3px 0 0 var(--primary-color); }
+
 .doc-row-tr-attachment td {
   background: rgba(37, 99, 235, 0.03);
 }
