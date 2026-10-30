@@ -28,15 +28,23 @@ export const RATE_COLUMNS = 'id, tender_id, estimate_name, material_name, unit, 
 // читаются без них (таблица работает как раньше); проверяется один раз за сеанс.
 const REUSE_COLUMNS = ', price_date, price_by, source_rate_id, source_tender_id, source_kind'
 let reuseColumns = true
-const rateColumns = () => (reuseColumns ? RATE_COLUMNS + REUSE_COLUMNS : RATE_COLUMNS)
+// Доставка позиции (миграция 20261120): как ввели и значение; цена в базе — уже с доставкой. Колонок ещё нет — колонки
+// «Доставка» в таблице нет, цены пишутся без доставки (как раньше); проверяется один раз за сеанс.
+const DELIVERY_COLUMNS = ', delivery_input, delivery_value'
+let deliveryColumns = true
+export const deliveryEnabled = () => deliveryColumns
+const rateColumns = () => RATE_COLUMNS + (reuseColumns ? REUSE_COLUMNS : '') + (deliveryColumns ? DELIVERY_COLUMNS : '')
 const isMissingColumn = (e) => ['42703', 'PGRST204'].includes(String(e?.code || ''))
+// Новых колонок нет: сначала без доставки (она новее), затем и без цен из других тендеров. true — есть что снять.
+const dropMissingColumns = () => {
+  if (deliveryColumns) { deliveryColumns = false; return true }
+  if (reuseColumns) { reuseColumns = false; return true }
+  return false
+}
 // Запрос цен (ответ { data, error }): новых колонок нет — тот же запрос без них.
 async function withRateColumns(run) {
-  const res = await run(rateColumns())
-  if (res?.error && reuseColumns && isMissingColumn(res.error)) {
-    reuseColumns = false
-    return run(rateColumns())
-  }
+  let res = await run(rateColumns())
+  while (res?.error && isMissingColumn(res.error) && dropMissingColumns()) res = await run(rateColumns())
   return res
 }
 export const SOURCE_COLUMNS = 'id, tender_id, estimate_name, source, s3_document_id, file_name, sheet_name, column_map, '
@@ -246,12 +254,12 @@ export async function deleteSource(src) {
 export async function loadRates(mainId) {
   const all = () => fetchAllRows((from, to) => db.from('tender_vor_supply_rates').select(rateColumns())
     .eq('tender_id', mainId).order('id', { ascending: true }).range(from, to))
-  try {
-    return await all()
-  } catch (e) {
-    if (!reuseColumns || !isMissingColumn(e)) throw e
-    reuseColumns = false
-    return all()
+  for (;;) {
+    try {
+      return await all()
+    } catch (e) {
+      if (!isMissingColumn(e) || !dropMissingColumns()) throw e
+    }
   }
 }
 
@@ -269,24 +277,29 @@ export const positionUnit = (p) => (p.units ? p.units.map((u) => u.unit).filter(
 
 // Записать цену (mode 'unit') или сумму (mode 'total') позиции. rate — текущая расценка позиции (или null).
 // source — цена другого тендера ({ rateId, kind: 'pick' | 'auto' }): день расценки и отметку копии ставит база.
+// delivery — доставка позиции ({ mode: 'unit' | 'total', value } или null — без доставки); undefined — не менять
+// (и без колонок доставки в базе — не пишется).
 // Ответ: { status: 'ok', row } | { status: 'conflict', current } — значение не записано, current — что в базе.
-export async function saveRate({ rate, mainId, estimateName, position, mode, value, source = null }) {
-  const payload = {
+export async function saveRate({ rate, mainId, estimateName, position, mode, value, source = null, delivery = undefined }) {
+  // Строится заново на каждый запрос: колонок доставки нет — повтор уже без неё.
+  const payload = () => ({
     price_input: mode,
     input_value: value,
     volume_at_input: position.units ? null : position.volume,
     unit: positionUnit(position),
     ...(source?.rateId ? { source_rate_id: source.rateId, source_kind: source.kind || 'pick' } : {}),
-  }
+    ...(delivery !== undefined && deliveryColumns
+      ? { delivery_input: delivery ? delivery.mode : null, delivery_value: delivery ? delivery.value : null } : {}),
+  })
   if (rate) {
-    const { data, error } = await withRateColumns((cols) => db.from('tender_vor_supply_rates').update(payload)
+    const { data, error } = await withRateColumns((cols) => db.from('tender_vor_supply_rates').update(payload())
       .eq('id', rate.id).eq('row_version', rate.row_version).select(cols))
     if (error) fail(error)
     if (data?.length) return { status: 'ok', row: data[0] }
     return { status: 'conflict', current: await currentRate({ id: rate.id }) }
   }
   const { data, error } = await withRateColumns((cols) => db.from('tender_vor_supply_rates')
-    .insert({ tender_id: mainId, estimate_name: estimateName, material_name: position.name, ...payload }).select(cols))
+    .insert({ tender_id: mainId, estimate_name: estimateName, material_name: position.name, ...payload() }).select(cols))
   if (error?.code === '23505') {
     return { status: 'conflict', current: await currentRate({ tender_id: mainId, estimate_name: estimateName, material_name: position.name }) }
   }

@@ -4,7 +4,7 @@ import { IconAlert, IconCheck } from '../icons/ActionIcons'
 import { IconSearch } from '../icons/ToolbarIcons'
 import PaperclipIcon from '../icons/PaperclipIcon'
 import { formatAmount, roundMoney } from '../../utils/money'
-import { DEFAULT_VAT_RATE, unitPriceWithVat } from '../../utils/supplierDoc'
+import { DEFAULT_VAT_RATE, deliveryUnitWithVat, unitPriceWithVat } from '../../utils/supplierDoc'
 import { SUPPLIER_DOC_ACCEPT, isPdfFile, isSheetFile, readSupplierDoc } from '../../utils/supplierDocRead'
 import { deliveryFactor, groupUnitOk, matchDocItems, searchGroups } from '../../utils/supplyDocMatch'
 import { offerNotes } from '../../utils/supplyOffers'
@@ -50,14 +50,30 @@ async function readFile(f, groups) {
   }
 }
 
+// Цена строки документа для расценки: price — цена за единицу с НДС, delivery — доставка за единицу с НДС (колонка
+// доставки строки и доля строки доставки — пропорционально сумме, если её разносить; нет — null), full — цена с
+// доставкой. В базе без колонки доставки (до миграции 20261120) доставка — в самой цене, как раньше.
+function linePrice(item, vat, factor, deliveryOn) {
+  const base = unitPriceWithVat(item, vat)
+  if (base == null || !(base > 0)) return { price: null, delivery: null, full: null }
+  const d = (deliveryUnitWithVat(item, vat) || 0) + base * (factor - 1)
+  if (!deliveryOn) {
+    const price = roundMoney(base + d)
+    return { price, delivery: null, full: price }
+  }
+  const price = roundMoney(base)
+  const delivery = d > 0 ? roundMoney(d) : null
+  return { price, delivery, full: roundMoney(price + (delivery || 0)) }
+}
+
 // Строки распознанного документа «в похожие цены» как есть — НДС как в документе, доставка — к ценам (сразу
-// несколько файлов, без окна сопоставления): позиции расценка найдёт сама.
+// несколько файлов, без окна сопоставления): позиции расценка найдёт сама. Цена поставщика — с доставкой.
 function batchNotes(r) {
   const priceOf = (it) => unitPriceWithVat(it, r.vat)
   const { factor } = deliveryFactor(r.items, priceOf)
   const lines = r.items.filter((it) => !it.delivery).map((it) => {
-    const base = priceOf(it)
-    return { name: it.name, unit: it.unit, qty: it.qty, code: it.code, price: base != null && base > 0 ? roundMoney(base * factor) : null, docPrice: docPriceOf(it), docVat: docVatOf(it) }
+    const { full } = linePrice(it, r.vat, factor, false)
+    return { name: it.name, unit: it.unit, qty: it.qty, code: it.code, price: full, docPrice: docPriceOf(it), docVat: docVatOf(it) }
   })
   return { notes: offerNotes({ source: r.kind, vat: r.vat, delivery: factor, lines }), lines: lines.filter((l) => l.price != null).length }
 }
@@ -69,10 +85,12 @@ function batchNotes(r) {
 // позициям, получившим цену), либо добавляет документ «в похожие цены» (цены не пишутся: у позиций — «цены
 // поставщиков», выбирает человек в таблице). Несколько файлов сразу — без проверки, только «в похожие цены».
 // groups — позиции ВОР, сложенные в одинаковые (utils/supplyDocMatch.positionGroups). currentOf(group) — что сейчас
-// в расценке: { own: [цены], copies, empty }. onApply({ lines, file, attach, notes }, onProgress) — записать; ответ
-// { error } оставляет окно открытым. onAddOffers(file, notes) — загрузить файл «в похожие цены» (ошибка — исключением);
+// в расценке: { own: [цены с доставкой], copies, empty }. deliveryOn — в расценке есть колонка «Доставка» (миграция
+// 20261120): доставка документа (колонкой строки или строкой «Доставка», разнесённой пропорционально сумме) пишется в
+// неё за единицу, а не в цену. onApply({ lines: [{ group, price, delivery }], file, attach, notes }, onProgress) —
+// записать; ответ { error } оставляет окно открытым. onAddOffers(file, notes) — загрузить файл «в похожие цены» (ошибка — исключением);
 // onOffersDone({ files, lines }) — все добавлены (панель закрывает окно и пишет, что сделано).
-export default function SupplyDocImportDialog({ groups, currentOf, filesOn, onApply, onAddOffers, onOffersDone, onClose }) {
+export default function SupplyDocImportDialog({ groups, currentOf, filesOn, deliveryOn = false, onApply, onAddOffers, onOffersDone, onClose }) {
   const [phase, setPhase] = useState('pick') // pick | reading | review | applying | batch | adding
   const [file, setFile] = useState(null)
   const [readError, setReadError] = useState('')
@@ -162,8 +180,7 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, onAp
     if (!result) return []
     return result.matches.map((m, i) => {
       const group = choice[i] ? groupByKey.get(choice[i]) : null
-      const base = priceOf(m.item)
-      const price = base != null && base > 0 ? roundMoney(base * factor) : null
+      const { price, delivery, full } = linePrice(m.item, vat, factor, deliveryOn)
       const cand = group ? (m.candidates.find((c) => c.group.key === group.key) || null) : null
       const unitOk = group ? groupUnitOk(m.item.unit, group) : true
       // Сейчас в расценке у позиций группы: своя другая цена — «заменит» (отмечает человек); цена из другого тендера —
@@ -171,13 +188,13 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, onAp
       let status = null
       if (group && price != null) {
         const cur = currentOf(group)
-        const differ = [...new Set(cur.own.map(roundMoney).filter((p) => p !== price))]
+        const differ = [...new Set(cur.own.map(roundMoney).filter((p) => p !== full))]
         status = differ.length ? { kind: 'replace', prices: differ }
           : cur.copies ? { kind: 'copy' } : cur.empty ? { kind: 'new' } : { kind: 'same' }
       }
-      return { i, item: m.item, candidates: m.candidates, group, cand, unitOk, price, status, delivery: m.item.delivery }
+      return { i, item: m.item, candidates: m.candidates, group, cand, unitOk, price, deliveryUnit: delivery, full, status, delivery: m.item.delivery }
     })
-  }, [result, choice, groupByKey, priceOf, factor, currentOf])
+  }, [result, choice, groupByKey, vat, factor, deliveryOn, currentOf])
 
   // Отметки по умолчанию — когда пришли сопоставления: позиция найдена, ед. изм. та же, цена есть, своя цена позиции
   // не меняется (замену своей цены человек отмечает сам).
@@ -229,7 +246,7 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, onAp
     vat,
     delivery: factor,
     lines: goods.map((l) => ({
-      name: l.item.name, unit: l.item.unit, qty: l.item.qty, code: l.item.code, price: l.price,
+      name: l.item.name, unit: l.item.unit, qty: l.item.qty, code: l.item.code, price: l.full,
       docPrice: docPriceOf(l.item), docVat: docVatOf(l.item), k: l.group?.k || null, skip: !l.group && touched.has(l.i),
     })),
   })
@@ -241,7 +258,7 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, onAp
     setProgress({ done: 0, total: targetsCount })
     let res
     try {
-      res = await onApply({ lines: toApply.map((l) => ({ group: l.group, price: l.price })), file, attach: filesOn && attach, notes: reviewNotes() },
+      res = await onApply({ lines: toApply.map((l) => ({ group: l.group, price: l.price, delivery: l.deliveryUnit })), file, attach: filesOn && attach, notes: reviewNotes() },
         (done, total) => setProgress({ done, total }))
     } catch (e) {
       res = { error: e.message || 'Цены не записаны' }
@@ -257,7 +274,7 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, onAp
     setPhase('adding')
     try {
       await onAddOffers(file, reviewNotes())
-      onOffersDone({ files: [file.name], lines: goods.filter((l) => l.price != null).length })
+      onOffersDone({ files: [file.name], lines: goods.filter((l) => l.full != null).length })
     } catch (e) {
       setApplyError(`Файл не добавлен в похожие цены: ${e.message || 'ошибка загрузки'}`)
       setPhase('review')
@@ -396,9 +413,9 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, onAp
                   <label className="sp-di-delivery">
                     <input type="checkbox" checked={withDelivery} onChange={(e) => setWithDelivery(e.target.checked)} disabled={busy || !(delivery.factor > 1)} />
                     <span>
-                      Доставка в документе: <b className="ui-num">{formatAmount(roundMoney(delivery.delivery))} ₽</b> — добавить к ценам
+                      Доставка в документе: <b className="ui-num">{formatAmount(roundMoney(delivery.delivery))} ₽</b> — разнести по позициям
                       пропорционально сумме{delivery.factor > 1 ? ` (+${(Math.round((delivery.factor - 1) * 1000) / 10).toString().replace('.', ',')} %)` : ''}:
-                      в расценке цена «с доставкой»
+                      {deliveryOn ? ' в расценке — колонкой «Доставка» (за единицу), цена позиции — с доставкой' : ' в расценке цена «с доставкой»'}
                     </span>
                   </label>
                 )}
@@ -424,7 +441,7 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, onAp
                     <tr>
                       <th><span className="ui-sr-only">Применить</span></th>
                       <th>Строка документа</th>
-                      <th className="ui-money" title="Цена за единицу с НДС и доставкой — как запишется в расценку">Цена в расценку, ₽</th>
+                      <th className="ui-money" title={deliveryOn ? 'Цена за единицу с НДС и доставкой; доставка — колонкой «Доставка» расценки' : 'Цена за единицу с НДС и доставкой — как запишется в расценку'}>Цена в расценку, ₽</th>
                       <th>Позиция ВОР</th>
                       <th>Сейчас в расценке</th>
                     </tr>
@@ -483,13 +500,13 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, onAp
 // Строка документа: отметка, наименование и цена из документа, цена в расценку, позиция ВОР (список выбора), что
 // сейчас в расценке. Отметка в соседней строке её не перерисовывает.
 const DocLine = memo(function DocLine({ line, checked, busy, groups, takenBy, onCheck, onPick }) {
-  const { item, group, price, status } = line
+  const { item, group, full, deliveryUnit, status } = line
   const docPrice = docPriceOf(item)
   const vatTag = docVatOf(item) === 'net' ? 'без НДС' : docVatOf(item) === 'gross' ? 'с НДС' : ''
   return (
     <tr className={[!group && 'is-unmatched', checked && 'is-checked'].filter(Boolean).join(' ')}>
       <td className="sp-di-sel">
-        <input type="checkbox" checked={checked} disabled={busy || !group || price == null} onChange={(e) => onCheck(line.i, e.target.checked)}
+        <input type="checkbox" checked={checked} disabled={busy || !group || full == null} onChange={(e) => onCheck(line.i, e.target.checked)}
           aria-label={`Применить цену: ${item.name}`} />
       </td>
       <td className="sp-di-doc">
@@ -502,7 +519,10 @@ const DocLine = memo(function DocLine({ line, checked, busy, groups, takenBy, on
           {item.source && <span>{item.source}</span>}
         </span>
       </td>
-      <td className="ui-money sp-di-price">{price != null ? formatAmount(price) : '—'}</td>
+      <td className="ui-money sp-di-price">
+        {full != null ? formatAmount(full) : '—'}
+        {deliveryUnit != null && <span className="sp-di-meta ui-num">в т. ч. доставка {formatAmount(deliveryUnit)}</span>}
+      </td>
       <td className="sp-di-pos">
         <PositionChoice line={line} groups={groups} takenBy={takenBy} busy={busy} onPick={onPick} />
       </td>

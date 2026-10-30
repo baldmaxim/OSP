@@ -203,7 +203,11 @@ async function run(q) {
   if (missing) {
     const asked = String(q.cols || '*').split(',').map((c) => c.trim())
     const absent = missing.find((c) => asked.includes(c))
-    if (absent) return { data: null, count: null, error: { code: '42703', message: `column ${q.table}.${absent} does not exist` } }
+    if (absent) {
+      // Запрос не дошёл до строк: так страница узнаёт, что миграции нет, — в счётчиках загрузок он помечен.
+      stats.requests.findLast((r) => r.table === q.table && r.op === 'select').missing = absent
+      return { data: null, count: null, error: { code: '42703', message: `column ${q.table}.${absent} does not exist` } }
+    }
   }
   const rows = snapshot || tableRows(q.table)
   const now = new Date().toISOString()

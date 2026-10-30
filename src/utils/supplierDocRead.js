@@ -7,8 +7,8 @@
 //  (скан, фото): распознать нечем; no_table — не нашли шапку (наименование и цена / сумма); empty — шапка есть, а
 //  строк с ценой нет.
 import {
-  cellText, detectGridHeader, detectLinesHeader, gridRows, itemsFromRows, linesFromWords, pdfRows, vatFromText,
-  wordsFromTextItems,
+  cellText, detectGridHeader, detectLinesHeader, gridRows, itemsFromRows, linesFromWords, pdfRows, rulingsFromOps,
+  vatFromText, wordsFromTextItems,
 } from './supplierDoc.js'
 
 export const SUPPLIER_DOC_ACCEPT = '.xlsx,.xlsm,.xls,.csv,.pdf'
@@ -77,8 +77,9 @@ export function parseSupplierWorkbook(XLSX, wb) {
   return { kind: 'excel', items: best.items, sheetName: best.sheetName, vat: vatFromText(text) }
 }
 
-// Страницы PDF (текст pdf.js) → строки документа. pages: [{ items, height }]. Шапок может быть несколько (таблица
-// на каждой странице, второй документ в файле) — берётся первая, у которой есть строки с ценой.
+// Страницы PDF (текст pdf.js) → строки документа. pages: [{ items, height, rulings }] (rulings — линии рамок таблицы,
+// supplierDoc.rulingsFromOps; нет — разбор по одному тексту). Шапок может быть несколько (таблица на каждой странице,
+// второй документ в файле) — берётся первая, у которой есть строки с ценой.
 export function parseSupplierPdfPages(pages) {
   const words = []
   let text = ''
@@ -88,21 +89,23 @@ export function parseSupplierPdfPages(pages) {
   })
   if (text.replace(/\s+/g, '').length < 20) return { error: 'scan', pages: pages.length }
   const lines = linesFromWords(words)
+  const rules = pages.map((p) => p.rulings || null)
   let from = 0
   let header = null
   let found = false
   for (let guard = 0; guard < 10; guard++) {
-    header = detectLinesHeader(lines, from)
+    header = detectLinesHeader(lines, from, rules)
     if (!header) break
     found = true
-    const items = itemsFromRows(pdfRows(lines, header), header.columns)
+    const items = itemsFromRows(pdfRows(lines, header, rules), header.columns)
     if (items.length) return { kind: 'pdf', items, pages: pages.length, vat: vatFromText(text) }
     from = header.line + header.span
   }
   return { error: found ? 'empty' : 'no_table', pages: pages.length }
 }
 
-// Текст страниц PDF: pdfjs — модуль pdf.js (в браузере — с отдельным потоком разбора, в тестах — как есть).
+// Текст страниц PDF и линии рамок таблиц: pdfjs — модуль pdf.js (в браузере — с отдельным потоком разбора, в тестах —
+// как есть). Линии (команды рисования страницы) — только если в файле есть текст: у скана читать их незачем.
 export async function readPdfPages(pdfjs, bytes) {
   const task = pdfjs.getDocument({ data: bytes, isEvalSupported: false, disableFontFace: true, useSystemFonts: false })
   const doc = await task.promise
@@ -112,8 +115,19 @@ export async function readPdfPages(pdfjs, bytes) {
       const page = await doc.getPage(i)
       const { height } = page.getViewport({ scale: 1 })
       const content = await page.getTextContent()
-      pages.push({ items: content.items, height })
-      page.cleanup?.()
+      pages.push({ page, items: content.items, height })
+    }
+    const hasText = pages.some((p) => p.items.some((it) => String(it.str || '').trim()))
+    for (const p of pages) {
+      if (hasText) {
+        try {
+          p.rulings = rulingsFromOps(await p.page.getOperatorList(), pdfjs.OPS, { pageHeight: p.height })
+        } catch {
+          p.rulings = null // рисунок страницы не прочитался — разбор по одному тексту
+        }
+      }
+      p.page.cleanup?.()
+      delete p.page
     }
     return pages
   } finally {

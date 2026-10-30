@@ -185,7 +185,33 @@
   .ui-work.ui-work .sp-table.has-dates.has-links { min-width: 73.25rem; }
   .ui-work.ui-work .sp-table.has-authors { min-width: 68rem; }
   .ui-work.ui-work .sp-table.has-authors.has-links { min-width: 76.25rem; }
+  /* «Доставка» (миграция 20261120) — ещё 11rem: поле «12 345,00» и «на позицию». */
+  .ui-work.ui-work .sp-table.has-delivery { min-width: 69.5rem; }
+  .ui-work.ui-work .sp-table.has-delivery.has-links { min-width: 77.75rem; }
+  .ui-work.ui-work .sp-table.has-delivery.has-dates { min-width: 76rem; }
+  .ui-work.ui-work .sp-table.has-delivery.has-dates.has-links { min-width: 84.25rem; }
+  .ui-work.ui-work .sp-table.has-delivery.has-authors { min-width: 79rem; }
+  .ui-work.ui-work .sp-table.has-delivery.has-authors.has-links { min-width: 87.25rem; }
 }
+/* Доставка: поле суммы и «за ед. / на позицию» в одну строку, под ними — та же доставка другим видом; под ценой —
+   цена с доставкой (она идёт в карточку, «Сравнение КП» и реестр). */
+.sp-table .sp-c-delivery { width: 11rem; }
+.sp-delivery-line { display: flex; align-items: center; gap: 0.25rem; }
+.sp-delivery-line .sp-money-input { flex: 1 1 auto; min-width: 0; }
+.sp-delivery-mode {
+  flex: none;
+  height: 1.875rem;
+  max-width: 5.75rem;
+  padding: 0 0.25rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--ui-hint);
+}
+.sp-delivery-mode:disabled { border-color: transparent; background: transparent; color: var(--text-secondary); opacity: 1; }
+.sp-delivery .sp-hint, .sp-with-delivery { text-align: right; }
 .sp-date-cell { display: flex; flex-direction: column; min-height: 1.875rem; justify-content: center; }
 .sp-author { color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); overflow-wrap: anywhere; }
 .sp-author.is-auto { color: #075985; }
@@ -322,6 +348,7 @@
 .sp-di-name { display: block; overflow-wrap: anywhere; }
 .sp-di-meta { display: flex; flex-wrap: wrap; gap: 0 0.75rem; color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
 .sp-di-price { font-weight: var(--ui-semibold); white-space: nowrap; }
+.sp-di-price .sp-di-meta { justify-content: flex-end; font-weight: var(--ui-regular, 400); }
 .sp-di-tag {
   display: inline-flex;
   align-items: center;

@@ -11,7 +11,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8')
 // Пары миграций: расценка (20261020), ссылки на документы к позициям (20261022, переопределяет перенос ВОР), цены
 // из других тендеров (20261023, переопределяет расчёт и пересобирает реестр СУ-10 — у Яндекса он в osp_private) и
-// состояние разбора позиций службой osp-api (20261024).
+// состояние разбора позиций службой osp-api (20261024), доставка позиции (20261120).
 const PAIRS = [
   { name: '20261020_supply_pricing', functions: 8, revoke: /REVOKE ALL ON TABLE public\.tender_supply_sources, public\.tender_supply_rate_log, public\.tender_supply_progress\s+FROM PUBLIC, anon, authenticated;/ },
   { name: '20261022_supply_links', functions: 2, revoke: /REVOKE ALL ON TABLE public\.tender_supply_links FROM PUBLIC, anon, authenticated;/ },
@@ -22,6 +22,8 @@ const PAIRS = [
   // Версии ВОР: расчёт списка и закрытие (переопределены), позиции по ключу, запись версии, новая версия под другим
   // именем, перенос цены, «просмотрено».
   { name: '20261029_supply_vor_versions', functions: 7, revoke: /REVOKE ALL ON TABLE public\.tender_supply_revisions FROM PUBLIC, anon, authenticated;/ },
+  // Доставка позиции: расчёт цены с доставкой и журнал цен (переопределены); новых прав нет.
+  { name: '20261120_supply_rate_delivery', functions: 2, revoke: null },
 ]
 
 // Без комментариев и с одинаковыми пробелами — сравниваются только сами команды.
@@ -82,6 +84,6 @@ for (const pair of PAIRS) {
     assert.doesNotMatch(code, /^\s*(begin|commit|rollback)\s*;/im)
     assert.match(SUPABASE, /^BEGIN;/m)
     assert.match(SUPABASE, /^COMMIT;/m)
-    assert.match(SUPABASE, pair.revoke)
+    if (pair.revoke) assert.match(SUPABASE, pair.revoke)
   })
 }

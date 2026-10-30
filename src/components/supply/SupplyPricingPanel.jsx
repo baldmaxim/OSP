@@ -16,13 +16,14 @@ import { fetchEmployees, employeesById } from '../../services/employees'
 import { downloadS3File } from '../FileDownload'
 import {
   adoptVersion, autofillFromOtherTenders, carryRate, classifyError, clearRate, confirmRateUnit, deleteSource, deleteSupplyDoc,
-  downloadVorFile, estimateSignatures, loadChangeMarker, loadChangedRateIds, isWebLink, linkFilesEnabled, loadDocsByIds,
+  deliveryEnabled, downloadVorFile, estimateSignatures, loadChangeMarker, loadChangedRateIds, isWebLink, linkFilesEnabled, loadDocsByIds,
   loadEstimateItems, loadLinks, loadLinksMarker, loadPricingBundle, loadPricingContext, loadPricingData, loadRateOrigins, loadRates,
   loadRatesByIds, loadRevisions, loadRevisionsMarker, loadSources, loadSuggestionCounts, loadVorFiles, markSeparate, removeLinks,
   loadSupplyOffers, renameEstimate, reviewRevisions, saveLinks, saveRate, saveSource, sourcesSignature, SUGGEST_BATCH, uploadSupplyDoc,
 } from '../../services/supplyPricing'
 import { fmtPriceDate, isFreshPriceDate, normName, rateUnitPrice } from '../../utils/supplyRateHelpers'
 import { formatAmount, parseAmount, roundMoney } from '../../utils/money'
+import { baseTotalFromFull, composePrice, rateBasePrice, rateDelivery, ratePriceInput, sameDelivery } from '../../utils/supplyDelivery'
 import { positionsFromEstimate } from '../../utils/vorMaterials'
 import { VOR_PARSER_VERSION } from '../../utils/vorFiles'
 import {
@@ -223,27 +224,37 @@ function rateTotal(rate, position) {
   return roundMoney(price * v)
 }
 
-// Что показать в строке: сохранённое, а поверх — черновик (пока сервер не подтвердил).
+// Что показать в строке: сохранённое, а поверх — черновик (пока сервер не подтвердил). unitPrice — цена материала
+// за единицу, как её ввели (без доставки), fullPrice — с доставкой (её пишет база), total — итог с доставкой;
+// delivery — доставка как ввели ({ mode, value } | null), deliveryUnit / deliveryTotal — за единицу и на позицию.
+// У черновика без доставки (undefined) — доставка сохранённой цены.
 function rowView(position, rate, draft) {
   const volume = position.units || position.volume == null ? null : Number(position.volume)
-  let unitPrice = rate ? rateUnitPrice(rate) : null
+  let unitPrice = rate ? rateBasePrice(rate) : null
+  let fullPrice = rate ? rateUnitPrice(rate) : null
   let total = rate ? rateTotal(rate, position) : null
   let primary = rate?.price_input === 'total' ? 'total' : 'unit'
+  let delivery = rateDelivery(rate)
   if (draft?.mode === 'clear') {
     unitPrice = null
+    fullPrice = null
     total = null
-  } else if (draft?.mode === 'unit') {
-    unitPrice = roundMoney(draft.value)
-    total = volume != null ? roundMoney(unitPrice * volume) : null
-    primary = 'unit'
-  } else if (draft?.mode === 'total') {
-    total = roundMoney(draft.value)
-    unitPrice = volume > 0 ? total / volume : null
-    primary = 'total'
+    delivery = null
+  } else if (draft?.mode === 'unit' || draft?.mode === 'total') {
+    if (draft.delivery !== undefined) delivery = draft.delivery
+    const c = composePrice({ mode: draft.mode, value: draft.value, delivery, volume })
+    unitPrice = c.base
+    fullPrice = c.full
+    total = c.total
+    primary = draft.mode
   }
+  const parts = delivery ? composePrice({ mode: 'unit', value: 0, delivery, volume }) : null
   const volumeChanged = !!rate && (rate.price_input === 'unit' || rate.price_input === 'total')
     && rate.volume_at_input != null && volume != null && Number(rate.volume_at_input) !== volume
-  return { unitPrice, total, primary, volume, volumeChanged, priced: unitPrice != null }
+  return {
+    unitPrice, fullPrice, total, primary, volume, volumeChanged, priced: unitPrice != null, delivery,
+    deliveryUnit: parts?.deliveryUnit ?? null, deliveryTotal: parts?.deliveryTotal ?? null,
+  }
 }
 
 // Расценка позиции по ключу «ВОР∣ключ наименования»: самая свежая (дубли из Excel — ниже).
@@ -257,6 +268,7 @@ function rateIn(list, key) {
 function reached(current, intent) {
   if (intent.mode === 'clear') return !current
   return !!current && current.price_input === intent.mode && Number(current.input_value) === Number(intent.value)
+    && (intent.delivery === undefined || sameDelivery(rateDelivery(current), intent.delivery))
 }
 
 const loadStoredDrafts = (mainId) => {
@@ -266,7 +278,7 @@ const storeDrafts = (mainId, drafts) => {
   try {
     const keep = {}
     for (const [k, d] of Object.entries(drafts)) {
-      if (ACTIVE_STATUSES.has(d.status) && !d.auto) keep[k] = { mode: d.mode, value: d.value, estimateName: d.estimateName, at: d.at, source: d.source || undefined }
+      if (ACTIVE_STATUSES.has(d.status) && !d.auto) keep[k] = { mode: d.mode, value: d.value, delivery: d.delivery, estimateName: d.estimateName, at: d.at, source: d.source || undefined }
     }
     if (Object.keys(keep).length) localStorage.setItem(draftsKey(mainId), JSON.stringify(keep))
     else localStorage.removeItem(draftsKey(mainId))
@@ -625,6 +637,10 @@ export default function SupplyPricingPanel({
   const selectable = linksOn && editable
   // Документ-файл к позиции (миграция 20261025): колонка s3_document_id есть в базе.
   const filesOn = linksOn && linkFilesEnabled()
+  // Доставка позиции (миграция 20261120): колонки есть в базе — колонка «Доставка» и запись доставки с ценой.
+  const deliveryOn = rates.length ? rates.some((r) => 'delivery_input' in r) : deliveryEnabled()
+  const deliveryOnRef = useRef(deliveryOn)
+  deliveryOnRef.current = deliveryOn
 
   // Имена и ключи файлов-документов — для колонки «Документ» (каждый файл спрашиваем один раз).
   const docsAsked = useRef(new Set())
@@ -910,9 +926,14 @@ export default function SupplyPricingPanel({
   // Цену позиции — в такие же позиции других ВОР, где цены ещё нет (решение пользователя 16.10), и туда, куда
   // её подставили за этот сеанс или база из другого тендера, если там с тех пор ничего не меняли (исправили цену —
   // исправится и там). Выбранная из другого тендера цена переходит с той же отметкой и днём расценки.
+  // Доставка переходит за единицу (у такой же позиции другого ВОР — свой объём).
   const fillIdentical = useCallback((estimateName, position, row) => {
-    const price = roundMoney(rateUnitPrice(row))
+    const price = roundMoney(rateBasePrice(row))
     if (!(price > 0)) return
+    const d = rateDelivery(row)
+    const dUnit = d ? composePrice({ mode: 'unit', value: 0, delivery: d, volume: Number(row.volume_at_input) || null }).deliveryUnit : null
+    const delivery = !deliveryOnRef.current ? undefined : dUnit > 0 ? { mode: 'unit', value: roundMoney(dUnit) } : null
+    const full = roundMoney(price + (delivery?.value || 0))
     const source = row.source_rate_id ? { rateId: row.source_rate_id, kind: row.source_kind } : null
     const taken = (name, k) => {
       const key = posKey(name, k)
@@ -920,11 +941,11 @@ export default function SupplyPricingPanel({
       if (d && !d.auto) return true
       const r = rateIn(ratesRef.current, key)
       if (!r) return false
-      return !replaceable(key, r) || (r.price_input === 'unit' && Number(r.supply_price) === price && (r.source_rate_id || null) === (source?.rateId || null))
+      return !replaceable(key, r) || (r.price_input === 'unit' && Number(r.supply_price) === full && (r.source_rate_id || null) === (source?.rateId || null))
     }
     const targets = identicalTargets(docViewsRef.current, estimateName, position, taken)
     for (const t of targets) {
-      runSaveRef.current(posKey(t.name, t.position.k), { mode: 'unit', value: price, estimateName: t.name, position: t.position, auto: true, from: estimateName, source })
+      runSaveRef.current(posKey(t.name, t.position.k), { mode: 'unit', value: price, delivery, estimateName: t.name, position: t.position, auto: true, from: estimateName, source })
     }
     if (targets.length) {
       const docs = [...new Set(targets.map((t) => `«${t.name}»`))].join(', ')
@@ -954,7 +975,7 @@ export default function SupplyPricingPanel({
       }
       const res = intent.mode === 'clear'
         ? (rate ? await clearRate(rate) : { status: 'ok', row: null })
-        : await saveRate({ rate, mainId, estimateName: intent.estimateName, position: intent.position, mode: intent.mode, value: intent.value, source: intent.source })
+        : await saveRate({ rate, mainId, estimateName: intent.estimateName, position: intent.position, mode: intent.mode, value: intent.value, source: intent.source, delivery: intent.delivery })
       const ok = res.status === 'ok' || reached(res.current, intent)
       const row = res.status === 'ok' ? res.row : res.current
       if (ok) {
@@ -994,7 +1015,7 @@ export default function SupplyPricingPanel({
             retryTimers.current.delete(key)
             const d = draftsRef.current[key]
             if (d?.status === 'error' && d.kind === 'retry') {
-              runSaveRef.current(key, { mode: d.mode, value: d.value, estimateName: d.estimateName, position: d.position, auto: d.auto, from: d.from, source: d.source, fill: d.fill })
+              runSaveRef.current(key, { mode: d.mode, value: d.value, delivery: d.delivery, estimateName: d.estimateName, position: d.position, auto: d.auto, from: d.from, source: d.source, fill: d.fill })
             }
           }, delay))
         }
@@ -1012,35 +1033,55 @@ export default function SupplyPricingPanel({
   runSaveRef.current = runSave
 
   // Ячейка отдала набранное (через секунду после ввода, при уходе из поля). Строка и черновик — последние
-  // известные, а не с прошлой отрисовки.
+  // известные, а не с прошлой отрисовки. Запись несёт и доставку позиции (какая сейчас видна): очередь записей строки
+  // пишет последнее целиком. «Итого» — с доставкой: введённый итог минус доставка — сумма цены материала.
   const commit = useCallback((row, field, raw) => {
     const { p, key, doc } = row
     const rate = rateIn(ratesRef.current, key)
     const draft = draftsRef.current[key] || null
     const view = rowView(p, rate, draft)
     const value = parseAmount(raw)
-    const base = { estimateName: doc, position: p }
+    const base = { estimateName: doc, position: p, ...(deliveryOnRef.current ? { delivery: view.delivery } : {}) }
     if (value == null) {
       if (!rate && !inflight.current.has(key) && !queued.current.has(key)) {
         if (draft) setDraft(key, null)
         return
       }
-      runSave(key, { ...base, mode: 'clear', value: null })
+      runSave(key, { ...base, mode: 'clear', value: null, delivery: undefined })
       return
     }
-    if (value <= 0) {
-      setDraft(key, { ...base, mode: field, value, status: 'error', kind: 'invalid', message: 'Цена и сумма должны быть больше нуля' })
-      return
-    }
-    if (field === 'total' && !(view.volume > 0)) {
-      setDraft(key, { ...base, mode: field, value, status: 'error', kind: 'invalid', message: 'Сумму можно ввести только у позиции с объёмом' })
-      return
-    }
+    const fail = (message) => setDraft(key, { ...base, mode: field, value, status: 'error', kind: 'invalid', message })
+    if (value <= 0) { fail('Цена и сумма должны быть больше нуля'); return }
+    if (field === 'total' && !(view.volume > 0)) { fail('Сумму можно ввести только у позиции с объёмом'); return }
     // То же, что уже сохранено или сохраняется, — не писать ещё раз.
     const pending = !!draft && (draft.status === 'saving' || draft.status === 'queued')
     const shown = field === 'unit' ? view.unitPrice : view.total
     if (shown != null && roundMoney(value) === roundMoney(shown) && (!draft || pending) && !view.volumeChanged) return
-    runSave(key, { ...base, mode: field, value })
+    let input = value
+    if (field === 'total' && deliveryOnRef.current && view.delivery) {
+      input = baseTotalFromFull(value, view.delivery, view.volume)
+      if (input == null) { fail(`Итог меньше доставки (${formatAmount(view.deliveryTotal)} ₽): введите итог с доставкой или уберите доставку`); return }
+    }
+    runSave(key, { ...base, mode: field, value: input })
+  }, [ratesRef, draftsRef, runSave, setDraft])
+
+  // Доставка позиции (mode — за единицу или на позицию): пишется вместе с ценой, как она видна сейчас (черновик или
+  // сохранённая). Без цены доставку не поставить — она прибавляется к цене. Пусто — без доставки.
+  const commitDelivery = useCallback((row, raw, mode) => {
+    const { p, key, doc } = row
+    const rate = rateIn(ratesRef.current, key)
+    const draft = draftsRef.current[key] || null
+    const view = rowView(p, rate, draft)
+    const value = parseAmount(raw)
+    const next = value == null ? null : { mode, value: roundMoney(value) }
+    if (sameDelivery(next, view.delivery)) return
+    const price = draft && (draft.mode === 'unit' || draft.mode === 'total') ? { mode: draft.mode, value: draft.value } : rate ? ratePriceInput(rate) : null
+    const base = { estimateName: doc, position: p }
+    const fail = (message) => setDraft(key, { ...base, ...(price || { mode: 'unit', value: null }), delivery: next, status: 'error', kind: 'invalid', message })
+    if (!price || !view.priced) return // ячейка доставки без цены закрыта: доставка прибавляется к цене
+    if (next && !(next.value > 0)) { fail('Доставка должна быть больше нуля'); return }
+    if (next?.mode === 'total' && !(view.volume > 0)) { fail('Доставку на позицию можно ввести только у позиции с объёмом — введите за единицу'); return }
+    runSave(key, { ...base, ...price, delivery: next })
   }, [ratesRef, draftsRef, runSave, setDraft])
 
   const retryDraft = (key) => {
@@ -1050,7 +1091,7 @@ export default function SupplyPricingPanel({
     const owner = docViews.find((x) => x.name === estimateName)
     const position = d.position || owner?.positions.find((p) => posKey(estimateName, p.k) === key)
     if (!position) return
-    runSave(key, { mode: d.mode, value: d.value, estimateName, position, source: d.source })
+    runSave(key, { mode: d.mode, value: d.value, delivery: d.delivery, estimateName, position, source: d.source })
   }
   const discardDraft = (key) => {
     const timer = retryTimers.current.get(key)
@@ -1064,10 +1105,12 @@ export default function SupplyPricingPanel({
     const rate = rateIn(ratesRef.current, key)
     if (!rate) return
     const volume = p.units || p.volume == null ? null : Number(p.volume)
+    // Доставка — как была (суммой — та же сумма на новый объём).
+    const delivery = deliveryOnRef.current ? rateDelivery(rate) : undefined
     if (rate.price_input === 'total' && volume > 0) {
-      runSave(key, { estimateName: doc, position: p, mode: 'total', value: roundMoney(rateUnitPrice(rate) * volume) })
+      runSave(key, { estimateName: doc, position: p, mode: 'total', value: roundMoney(rateBasePrice(rate) * volume), delivery })
     } else {
-      runSave(key, { estimateName: doc, position: p, mode: 'unit', value: Number(rate.input_value ?? rate.supply_price) })
+      runSave(key, { estimateName: doc, position: p, mode: 'unit', value: Number(rate.input_value ?? rate.supply_price), delivery })
     }
   }
 
@@ -1309,10 +1352,11 @@ export default function SupplyPricingPanel({
   useEffect(() => () => clearTimeout(similarTimer.current), [])
 
   // «Взять» из меню похожих: цена за единицу с отметкой источника; документ исходной позиции (адрес или файл) — если
-  // своего нет.
+  // своего нет. Взятая цена — вся цена позиции (с доставкой там, откуда взяли): своя доставка позиции снимается.
   const pickSuggestion = (row, s) => {
     setSuggest(null)
-    runSave(row.key, { mode: 'unit', value: Number(s.unit_price), estimateName: row.doc, position: row.p, source: { rateId: s.rate_id, kind: 'pick' } })
+    runSave(row.key, { mode: 'unit', value: Number(s.unit_price), estimateName: row.doc, position: row.p, source: { rateId: s.rate_id, kind: 'pick' },
+      ...(deliveryOn ? { delivery: null } : {}) })
     const doc = s.doc_id && filesOn ? { docId: s.doc_id } : s.url ? { url: s.url } : null
     if (linksByKey && doc && !linksByKey.get(row.key)) {
       if (doc.docId) rememberDoc({ id: s.doc_id, file_name: s.doc_name, s3_key: s.doc_key })
@@ -1323,10 +1367,11 @@ export default function SupplyPricingPanel({
   }
 
   // «Взять» цену поставщика (документ «в похожие цены»): цена — как ввод руками (своя, с подстановкой в такие же
-  // позиции других ВОР без цены), файл документа — документом позиции вместо прежнего: цена теперь из него.
+  // позиции других ВОР без цены), файл документа — документом позиции вместо прежнего: цена теперь из него. Цена
+  // поставщика — с его доставкой: своя доставка позиции снимается.
   const pickOffer = (row, o) => {
     setSuggest(null)
-    runSave(row.key, { mode: 'unit', value: o.line.price, estimateName: row.doc, position: row.p })
+    runSave(row.key, { mode: 'unit', value: o.line.price, estimateName: row.doc, position: row.p, ...(deliveryOn ? { delivery: null } : {}) })
     const doc = o.line.doc
     if (linksByKey && filesOn && linksByKey.get(row.key)?.s3_document_id !== doc.id) {
       rememberDoc(doc)
@@ -1365,8 +1410,9 @@ export default function SupplyPricingPanel({
 
   // Записать цены строк документа: сначала файл (не загрузился — ничего не пишем, человек решает), затем цены всех
   // позиций групп — той же очередью, что ввод руками (версия строки, повтор при сбое сети, «изменено другим»), по
-  // нескольку разом; та же своя цена не переписывается. Затем файл — документом этих позиций (прежний заменяется), а
-  // его строки — «в похожие цены».
+  // нескольку разом; та же своя цена не переписывается. Строка документа — цена и доставка за единицу (delivery, из
+  // колонки или строки доставки документа; нет — без доставки: документ — вся цена позиции). Затем файл — документом
+  // этих позиций (прежний заменяется), а его строки — «в похожие цены».
   const applyDocPrices = async ({ lines, file, attach, notes = null }, onProgress) => {
     let doc = null
     if (attach && file) {
@@ -1383,8 +1429,10 @@ export default function SupplyPricingPanel({
       for (const t of l.group.targets) {
         const key = posKey(t.doc, t.position.k)
         const rate = rateIn(ratesRef.current, key)
-        const same = !!rate && !rate.source_kind && rate.price_input === 'unit' && roundMoney(rateUnitPrice(rate)) === l.price
-        jobs.push({ key, target: t, price: l.price, same })
+        const delivery = deliveryOn ? (l.delivery > 0 ? { mode: 'unit', value: l.delivery } : null) : undefined
+        const same = !!rate && !rate.source_kind && rate.price_input === 'unit' && roundMoney(rateBasePrice(rate)) === l.price
+          && (delivery === undefined || sameDelivery(rateDelivery(rate), delivery))
+        jobs.push({ key, target: t, price: l.price, delivery, same })
       }
     }
     const queue = jobs.filter((j) => !j.same)
@@ -1394,7 +1442,7 @@ export default function SupplyPricingPanel({
     const worker = async () => {
       while (next < queue.length) {
         const j = queue[next++]
-        await runSaveRef.current(j.key, { mode: 'unit', value: j.price, estimateName: j.target.doc, position: j.target.position, fill: false })
+        await runSaveRef.current(j.key, { mode: 'unit', value: j.price, delivery: j.delivery, estimateName: j.target.doc, position: j.target.position, fill: false })
         done += 1
         onProgress?.(done, jobs.length)
       }
@@ -1435,21 +1483,21 @@ export default function SupplyPricingPanel({
     const wb = XLSX.utils.book_new()
     const used = new Set()
     for (const d of docViews) {
-      const aoa = [['№', 'Наименование', 'Ед. изм.', 'Объём', 'Цена за ед. с доставкой и НДС, ₽', 'Итого с НДС, ₽',
+      const aoa = [['№', 'Наименование', 'Ед. изм.', 'Объём', 'Цена за ед. с доставкой и НДС, ₽', ...(deliveryOn ? ['В т. ч. доставка за ед., ₽'] : []), 'Итого с НДС, ₽',
         ...(datesOn ? ['Дата цены'] : []), ...(datesOn && showAuthor ? ['Цену поставил'] : []), ...(linksOn ? ['Документ'] : [])]]
       d.positions.forEach((p, i) => {
         const rate = ratesByKey.get(posKey(d.name, p.k))?.[0] || null
         const v = rowView(p, rate, null)
         aoa.push([i + 1, p.name, p.units ? p.units.map((u) => u.unit).filter(Boolean).join(', ') : (p.unit || ''),
           p.units ? p.units.map((u) => `${fmtVolume(u.volume)} ${u.unit || ''}`).join('; ') : (p.volume ?? ''),
-          v.unitPrice != null ? roundMoney(v.unitPrice) : '', v.total ?? '',
+          v.fullPrice != null ? roundMoney(v.fullPrice) : '', ...(deliveryOn ? [v.deliveryUnit != null ? roundMoney(v.deliveryUnit) : ''] : []), v.total ?? '',
           ...(datesOn ? [fmtPriceDate(rate?.price_date)] : []),
           ...(datesOn && showAuthor ? [rate ? authorText(rate, origins.get(rate.id), nameOf) : ''] : []),
           ...(linksOn ? [linkLabel(linksByKey.get(posKey(d.name, p.k)), linkDocs)] : [])])
       })
-      aoa.push(['', 'Итого', '', '', '', d.total])
+      aoa.push(['', 'Итого', '', '', '', ...(deliveryOn ? [''] : []), d.total])
       const ws = XLSX.utils.aoa_to_sheet(aoa)
-      ws['!cols'] = [{ wch: 6 }, { wch: 60 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 18 },
+      ws['!cols'] = [{ wch: 6 }, { wch: 60 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, ...(deliveryOn ? [{ wch: 14 }] : []), { wch: 18 },
         ...(datesOn ? [{ wch: 12 }] : []), ...(datesOn && showAuthor ? [{ wch: 28 }] : []), { wch: 40 }]
       let name = (docViews.length === 1 ? 'Материалы' : `Материалы ${d.name}`).replace(/[\\/:*?[\]]/g, ' ').slice(0, 31)
       for (let i = 2; used.has(name); i++) name = `${name.slice(0, 27)} (${i})`
@@ -1695,9 +1743,10 @@ export default function SupplyPricingPanel({
   const actionsRef = useRef(null)
   actionsRef.current = {
     commit,
+    commitDelivery,
     retry: retryDraft,
     discard: discardDraft,
-    conflict: (row) => setConflict({ key: row.key, intent: { mode: row.draft.mode, value: row.draft.value, estimateName: row.doc, position: row.p }, current: row.rate, position: row.p }),
+    conflict: (row) => setConflict({ key: row.key, intent: { mode: row.draft.mode, value: row.draft.value, delivery: row.draft.delivery, estimateName: row.doc, position: row.p }, current: row.rate, position: row.p }),
     acceptVolume,
     history: (row) => setHistoryFor({ position: row.p, rate: row.rate, estimateName: row.doc, key: row.key }),
     removeDuplicates,
@@ -1726,10 +1775,11 @@ export default function SupplyPricingPanel({
     : !canEditRole ? 'Только просмотр: вводить цены могут снабжение и тендерный отдел (право правки раздела).' : ''
   const fromTab = docViews.length > 0 && docViews.every((d) => d.source.source === 'vor_tab')
 
-  // Колонки: [отметка] № · наименование · ед. · объём · цена · итог · [дата цены] · [документ] · состояние.
+  // Колонки: [отметка] № · наименование · ед. · объём · цена · [доставка] · итог · [дата цены] · [документ] · состояние.
   // «Дата цены» — день расценки (миграция 20261023); колонок ещё нет в базе — нет и её, и фильтра по дате.
+  // «Доставка» — миграция 20261120; без неё колонки нет.
   const datesOn = rates.length ? rates.some((r) => 'price_date' in r) : !reuseOff
-  const colCount = 7 + (linksOn ? 1 : 0) + (selectable ? 1 : 0) + (datesOn ? 1 : 0)
+  const colCount = 7 + (linksOn ? 1 : 0) + (selectable ? 1 : 0) + (datesOn ? 1 : 0) + (deliveryOn ? 1 : 0)
   const shownKeys = items.filter((it) => it.kind === 'row').map((it) => it.row.key)
   const shownSelected = shownKeys.filter((k) => selected.has(k)).length
 
@@ -1834,7 +1884,7 @@ export default function SupplyPricingPanel({
         offerCount={otherOffers(offersByKey.get(row.key), row.rate)} fileDrop={editable && filesOn}
         linksOn={linksOn} link={linksByKey?.get(row.key) || null} linkDoc={linkDocOf(linksByKey?.get(row.key))}
         selectable={selectable} selected={selected.has(row.key)}
-        origin={row.rate?.source_kind ? (origins.get(row.rate.id) || null) : null} datesOn={datesOn} showAuthor={showAuthor}
+        origin={row.rate?.source_kind ? (origins.get(row.rate.id) || null) : null} datesOn={datesOn} showAuthor={showAuthor} deliveryOn={deliveryOn}
         similar={!reuseOff && wantsSimilar(row) ? similarOthers(row, similar.get(row.key) || 0) : 0}
         suggestOpen={suggest?.row.key === row.key} />
     )
@@ -2024,11 +2074,11 @@ export default function SupplyPricingPanel({
           )}
 
           <div ref={tableWrapRef} className={`table-container sp-table-wrap${virtual ? ' is-virtual' : ''}`}>
-            <table className={`data-table sp-table${linksOn ? ' has-links' : ''}${datesOn ? (showAuthor ? ' has-dates has-authors' : ' has-dates') : ''}`}>
+            <table className={`data-table sp-table${linksOn ? ' has-links' : ''}${datesOn ? (showAuthor ? ' has-dates has-authors' : ' has-dates') : ''}${deliveryOn ? ' has-delivery' : ''}`}>
               <colgroup>
                 {selectable && <col className="sp-c-sel" />}
                 <col className="sp-c-num" /><col className="sp-c-name" /><col className="sp-c-unit" /><col className="sp-c-vol" />
-                <col className="sp-c-price" /><col className="sp-c-total" />
+                <col className="sp-c-price" />{deliveryOn && <col className="sp-c-delivery" />}<col className="sp-c-total" />
                 {datesOn && <col className="sp-c-date" />}
                 {linksOn && <col className="sp-c-doc" />}
                 <col className="sp-c-state" />
@@ -2046,8 +2096,11 @@ export default function SupplyPricingPanel({
                   <th>Наименование</th>
                   <th>Ед. изм.</th>
                   <th className="ui-money">Объём</th>
-                  <th className="ui-money" title="Как в листе «Материалы» ВОР: цена с учётом доставки и НДС">Цена за ед. с доставкой и НДС, ₽</th>
-                  <th className="ui-money" title="Объём × цена за единицу, с НДС">Итого с НДС, ₽</th>
+                  {deliveryOn
+                    ? <th className="ui-money" title="Цена материала за единицу с НДС; доставку — в соседней колонке (необязательно): цена позиции = цена + доставка за единицу">Цена за ед. с НДС, ₽</th>
+                    : <th className="ui-money" title="Как в листе «Материалы» ВОР: цена с учётом доставки и НДС">Цена за ед. с доставкой и НДС, ₽</th>}
+                  {deliveryOn && <th className="ui-money" title="Необязательно: за единицу или на всю позицию. Прибавляется к цене — в расценке цена за единицу с доставкой">Доставка, ₽</th>}
+                  <th className="ui-money" title={deliveryOn ? 'Объём × цена за единицу с доставкой, с НДС' : 'Объём × цена за единицу, с НДС'}>Итого с НДС, ₽</th>
                   {datesOn && (
                     <th title={showAuthor ? 'День расценки (по Москве) и кто поставил цену' : 'День расценки — когда ввели или изменили цену (по Москве)'}>
                       {showAuthor ? 'Дата цены, кто' : 'Дата цены'}
@@ -2064,6 +2117,7 @@ export default function SupplyPricingPanel({
                 <tr>
                   <td colSpan={selectable ? 5 : 4}>Итого{docViews.length > 1 ? ` по ${docViews.length} ВОР` : ''} · расценено <span className="ui-num">{grand.priced}</span> из <span className="ui-num">{grand.positions}</span></td>
                   <td />
+                  {deliveryOn && <td />}
                   <td className="ui-money"><b>{formatAmount(grand.total)}</b></td>
                   {datesOn && <td />}
                   {linksOn && <td />}
@@ -2144,7 +2198,7 @@ export default function SupplyPricingPanel({
       )}
       {docImport && (
         <Suspense fallback={<div className="sp-modal-backdrop"><div className="sp-modal"><p className="sp-modal-body">Открываем…</p></div></div>}>
-          <SupplyDocImportDialog groups={docImport.groups} currentOf={currentOf} filesOn={filesOn}
+          <SupplyDocImportDialog groups={docImport.groups} currentOf={currentOf} filesOn={filesOn} deliveryOn={deliveryOn}
             onApply={applyDocPrices} onAddOffers={addOffer} onOffersDone={offersDone} onClose={() => setDocImport(null)} />
         </Suspense>
       )}
@@ -2200,12 +2254,12 @@ const samePriceRow = (a, b) => a.row.p === b.row.p && a.row.rate === b.row.rate 
   && a.linksOn === b.linksOn && a.link === b.link && a.linkDoc === b.linkDoc && a.selectable === b.selectable && a.selected === b.selected
   && a.origin === b.origin && a.similar === b.similar && a.suggestOpen === b.suggestOpen
   && a.offerCount === b.offerCount && a.fileDrop === b.fileDrop
-  && a.datesOn === b.datesOn && a.showAuthor === b.showAuthor
+  && a.datesOn === b.datesOn && a.showAuthor === b.showAuthor && a.deliveryOn === b.deliveryOn
   && a.row.change === b.row.change && a.row.carry === b.row.carry && a.row.unitOff === b.row.unitOff
 
 const PriceRow = memo(function PriceRow({
   row, flash, editable, nameOf, act, linksOn, link, linkDoc, selectable, selected, origin, similar, suggestOpen, datesOn, showAuthor,
-  offerCount = 0, fileDrop = false,
+  offerCount = 0, fileDrop = false, deliveryOn = false,
 }) {
   const { p, draft, view, index, gi, change } = row
   const [dropping, setDropping] = useState(false)
@@ -2303,7 +2357,7 @@ const PriceRow = memo(function PriceRow({
         {mixed ? p.units.map((u, i) => <div key={i}>{fmtVolume(u.volume)} {u.unit || ''}</div>) : fmtVolume(p.volume)}
         {wasVolume && <div className="sp-was" title="Объём в прежней версии ВОР">было {fmtVolume(change.oldVolume)}</div>}
       </td>
-      <td className="sp-input-cell" data-label="Цена с доставкой и НДС, ₽">
+      <td className="sp-input-cell" data-label={deliveryOn ? 'Цена с НДС, ₽' : 'Цена с доставкой и НДС, ₽'}>
         <SupplyMoneyCell
           value={view.unitPrice}
           derived={view.primary === 'total' && view.priced}
@@ -2314,7 +2368,13 @@ const PriceRow = memo(function PriceRow({
           invalid={draft?.status === 'error' && draft.mode === 'unit'}
           onCommit={(raw) => act('commit', row, 'unit', raw)}
         />
+        {view.delivery && view.fullPrice != null && (
+          <span className="sp-hint sp-with-delivery" title="Цена за единицу с доставкой — она идёт в карточку, «Сравнение КП» и реестр СУ-10">
+            с доставкой <span className="ui-num">{formatAmount(roundMoney(view.fullPrice))}</span>
+          </span>
+        )}
       </td>
+      {deliveryOn && <DeliveryCell row={row} editable={editable} act={act} />}
       <td className="sp-input-cell" data-label="Итого с НДС, ₽">
         <SupplyMoneyCell
           value={view.total}
@@ -2348,6 +2408,54 @@ const PriceRow = memo(function PriceRow({
     </tr>
   )
 }, samePriceRow)
+
+// Доставка позиции (миграция 20261120): сумма и как её считать — за единицу или на всю позицию (объём ВОР); под
+// полем — та же доставка другим видом. Без цены — закрыта (доставка прибавляется к цене), без объёма — только за
+// единицу. Смена вида у введённой доставки — та же доставка: на позицию = за единицу × объём, и наоборот.
+const DELIVERY_MODES = [['unit', 'за ед.'], ['total', 'на позицию']]
+function DeliveryCell({ row, editable, act }) {
+  const { p, view, draft, gi } = row
+  const [pendingMode, setPendingMode] = useState('unit')
+  const mode = view.delivery?.mode || pendingMode
+  const canTotal = view.volume > 0
+  const closed = editable && !view.priced
+  const changeMode = (next) => {
+    if (next === mode) return
+    if (!view.delivery) { setPendingMode(next); return }
+    const value = next === 'total' ? view.deliveryTotal : view.deliveryUnit
+    if (value != null) act('commitDelivery', row, String(roundMoney(value)), next)
+  }
+  const other = !view.delivery ? ''
+    : view.delivery.mode === 'total'
+      ? (view.deliveryUnit != null ? `за ед. ${formatAmount(roundMoney(view.deliveryUnit))}` : '')
+      : (view.deliveryTotal != null ? `на позицию ${formatAmount(view.deliveryTotal)}` : '')
+  const invalid = draft?.status === 'error' && draft.kind === 'invalid' && /оставк/.test(draft.message || '')
+  return (
+    <td className="sp-input-cell sp-delivery" data-label="Доставка, ₽">
+      <div className="sp-delivery-line">
+        <SupplyMoneyCell
+          value={view.delivery?.value ?? null}
+          disabled={!editable || !view.priced}
+          cellId={`deliv-${gi}`}
+          label={`Доставка ${mode === 'total' ? 'на позицию' : 'за единицу'}: ${p.name} (ВОР «${row.doc}»)`}
+          placeholder={closed ? 'после цены' : '—'}
+          title={closed ? 'Сначала цена: доставка прибавляется к цене за единицу' : undefined}
+          invalid={invalid}
+          onCommit={(raw) => act('commitDelivery', row, raw, mode)}
+        />
+        {(editable || view.delivery) && (
+          <select className="sp-delivery-mode" value={mode} disabled={!editable || !view.priced || (!canTotal && mode === 'unit')}
+            aria-label={`Доставка за единицу или на позицию: ${p.name} (ВОР «${row.doc}»)`}
+            title={canTotal ? 'За единицу или на всю позицию (объём ВОР)' : 'Без объёма в ВОР — только за единицу'}
+            onChange={(e) => changeMode(e.target.value)}>
+            {DELIVERY_MODES.map(([k, label]) => <option key={k} value={k} disabled={k === 'total' && !canTotal}>{label}</option>)}
+          </select>
+        )}
+      </div>
+      {other && <span className="sp-hint ui-num">{other}</span>}
+    </td>
+  )
+}
 
 // Кто поставил цену — для администратора: свой ввод, импорт Excel или «Взять» — вошедший (price_by, до миграции —
 // последний, кто менял строку); подставленная сама из другого тендера — «автоматически» (автор исходной цены — в

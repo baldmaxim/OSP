@@ -20,6 +20,12 @@ CREATE TABLE IF NOT EXISTS tender_vor_supply_rates (
     row_version INTEGER NOT NULL DEFAULT 1,
     updated_by UUID,
     material_key TEXT GENERATED ALWAYS AS (public.supply_norm_name(material_name)) STORED,
+    -- Миграция 20261120: доставка позиции, как ввели (за единицу или суммой на объём); supply_price / supply_total —
+    -- уже с доставкой (считает триггер расчёта).
+    delivery_input TEXT,
+    delivery_value NUMERIC,
+    CONSTRAINT tender_vor_supply_rates_delivery_check CHECK ((delivery_input IS NULL AND delivery_value IS NULL)
+      OR (delivery_input IN ('unit', 'total') AND delivery_value > 0)),
     UNIQUE(tender_id, estimate_name, material_name)
 );
 -- Расчёт, версия строки, закрытие после завершения тендера на материалы, журнал и права (запись — только

@@ -64,7 +64,7 @@ describe('Файл документа к позиции и похожесть: �
     db = startSnapshot()
     for (const m of appliedAfter()) psqlAt(db.port, null, { file: path.join(MIGRATIONS, m) })
     for (const m of candidateMigrations()) {
-      if (/^2026102[02359]_/.test(m)) continue
+      if (/^2026(102[02359]|1120)_/.test(m)) continue
       psqlAt(db.port, null, { file: path.join(MIGRATIONS, m) })
     }
     for (const m of ['20261020_supply_pricing', '20261022_supply_links', '20261023_supply_rate_reuse']) {

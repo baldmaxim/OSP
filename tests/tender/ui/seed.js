@@ -403,25 +403,43 @@ if (params.get('reuse') === '1') {
   }
 }
 
-// Триггер расчёта tender_vor_supply_rates (миграция 20261020) — та же логика, что в базе.
+// Доставка позиции (миграция 20261120): delivery=1 — колонки есть, расчёт с доставкой (как в базе); без него — колонок
+// ещё нет: выборка с ними отвечает 42703, страница работает без колонки «Доставка».
+const DELIVERY_ON = params.get('delivery') === '1'
+if (DELIVERY_ON) {
+  for (const r of window.__fakeDb.tender_vor_supply_rates) Object.assign(r, { delivery_input: r.delivery_input ?? null, delivery_value: r.delivery_value ?? null })
+} else {
+  window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}), tender_vor_supply_rates: ['delivery_input', 'delivery_value'] }
+}
+
+// Триггер расчёта tender_vor_supply_rates (миграции 20261020, 20261120) — та же логика, что в базе.
 const round2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100
 window.__fakeTriggers = {
   tender_vor_supply_rates(row, old) {
     row.row_version = old ? (old.row_version || 1) + 1 : 1
     row.updated_by = 'user-1'
+    if (DELIVERY_ON) Object.assign(row, { delivery_input: row.delivery_input ?? null, delivery_value: row.delivery_value ?? null })
     const page = ['unit', 'total'].includes(row.price_input)
-      && (!old || row.price_input !== old.price_input || row.input_value !== old.input_value || row.volume_at_input !== old.volume_at_input)
-    if (page && row.price_input === 'unit') {
-      row.supply_price = round2(row.input_value)
+      && (!old || row.price_input !== old.price_input || row.input_value !== old.input_value || row.volume_at_input !== old.volume_at_input
+        || (DELIVERY_ON && (row.delivery_input !== old.delivery_input || row.delivery_value !== old.delivery_value)))
+    const vol = row.volume_at_input > 0 ? row.volume_at_input : null
+    const dMode = DELIVERY_ON ? row.delivery_input : null
+    const dValue = Number(row.delivery_value)
+    const dUnit = dMode === 'unit' ? round2(dValue) : dMode === 'total' ? round2(dValue) / vol : 0
+    const dTotal = dMode === 'unit' ? (vol ? round2(round2(dValue) * vol) : null) : dMode === 'total' ? round2(dValue) : 0
+    if (page && row.price_input === 'unit' && dMode !== 'total') {
+      row.supply_price = round2(round2(row.input_value) + dUnit)
       row.supply_price_exact = null
-      row.supply_total = row.volume_at_input > 0 ? round2(row.supply_price * row.volume_at_input) : null
+      row.supply_total = vol ? round2(row.supply_price * vol) : null
     } else if (page) {
-      row.supply_total = round2(row.input_value)
-      row.supply_price_exact = row.supply_total / row.volume_at_input
+      const baseTotal = row.price_input === 'unit' ? round2(round2(row.input_value) * vol) : round2(row.input_value)
+      row.supply_total = round2(baseTotal + dTotal)
+      row.supply_price_exact = row.supply_total / vol
       row.supply_price = round2(row.supply_price_exact)
     } else if (!old || row.supply_price !== old.supply_price) {
       Object.assign(row, { price_input: 'import', input_value: row.supply_price, volume_at_input: null, supply_price_exact: null, supply_total: null })
     }
+    if (DELIVERY_ON && !page && !['unit', 'total'].includes(row.price_input)) Object.assign(row, { delivery_input: null, delivery_value: null })
     row.material_key = normName(row.material_name)
     // День расценки, автор и копия цены другого тендера (миграция 20261023) — как в базе; без reuse=1 колонок нет.
     if (params.get('reuse') !== '1') return

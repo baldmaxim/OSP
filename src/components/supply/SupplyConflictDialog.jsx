@@ -8,7 +8,11 @@ const fmtTime = (iso) => {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-const describe = (mode, value) => (mode === 'total' ? `сумма ${formatAmount(value)} ₽` : `цена ${formatAmount(value)} ₽ за ед.`)
+// Что ввели: цена или сумма, и доставка позиции, если она есть (миграция 20261120).
+const describe = ({ mode, value, delivery }) => {
+  const price = mode === 'total' ? `сумма${delivery ? ' без доставки' : ''} ${formatAmount(value)} ₽` : `цена ${formatAmount(value)} ₽ за ед.`
+  return delivery ? `${price} + доставка ${formatAmount(delivery.value)} ₽ ${delivery.mode === 'total' ? 'на позицию' : 'за ед.'}` : price
+}
 
 // Цену позиции изменили, пока вы её вводили: значение не записано. Выбор — оставить их или записать своё.
 // current — строка в базе сейчас (null — цену удалили).
@@ -38,7 +42,7 @@ export default function SupplyConflictDialog({ conflict, nameOf, onKeepTheirs, o
           ) : (
             <p>Цену этой позиции удалил другой пользователь.</p>
           )}
-          <p>Ваше значение: <b className="ui-num">{mine ? describe(mine.mode, mine.value) : 'очистить цену'}</b>. Оно не записано.</p>
+          <p>Ваше значение: <b className="ui-num">{mine ? describe(mine) : 'очистить цену'}</b>. Оно не записано.</p>
         </div>
         <div className="sp-modal-actions">
           <button ref={firstRef} type="button" className="btn-secondary" onClick={onKeepTheirs}>

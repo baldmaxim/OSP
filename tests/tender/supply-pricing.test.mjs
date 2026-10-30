@@ -198,7 +198,8 @@ describe('Расценка снабжением: таблица', { skip: !launc
       await card.page.locator('.sp-table').waitFor({ timeout: 120000 })
       await settle(card.page)
       const opened = (await requests(card.page)).slice(before)
-      assert.equal(opened.filter((r) => r.table === 'tender_vor_supply_rates' && r.range).length, 1, 'вкладка загрузила цены один раз')
+      // Без колонок доставки (миграция 20261120) первая выборка узнаёт это ответом 42703 — она не загрузка.
+      assert.equal(opened.filter((r) => r.table === 'tender_vor_supply_rates' && r.range && !r.missing).length, 1, 'вкладка загрузила цены один раз')
       assert.deepEqual(writes(opened), [], 'открытие вкладки ничего не пишет')
       assert.deepEqual(card.errors, [])
     } finally {
@@ -211,7 +212,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
       for (const r of [first, await openPage('', { context: first.context })]) {
         await settle(r.page)
         const list = await requests(r.page)
-        assert.equal(list.filter((q) => q.table === 'tender_vor_supply_rates' && q.range).length, 1, 'цены — один раз за открытие')
+        assert.equal(list.filter((q) => q.table === 'tender_vor_supply_rates' && q.range && !q.missing).length, 1, 'цены — один раз за открытие')
         assert.deepEqual(writes(list), [], 'открытие страницы ничего не пишет')
         assert.ok(list.filter((q) => q.table === 'rpc:supply_autofill').length <= 1, 'подстановка — не больше одного вызова')
         assert.equal(await r.page.locator('.sp-similar-btn, .sp-origin').count(), 0, 'функций подбора нет — ни пометок, ни меню')
@@ -833,6 +834,129 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.equal((await rateOf(page, 'Кран шаровой Ду15', 'ОВ')).supply_price, 1220)
       assert.equal(await page.evaluate(() => window.__fakeDb.s3_documents.filter((d) => d.doc_category === 'supply_doc').length), 0)
       assert.equal(await page.evaluate(() => window.__fakeDb.tender_supply_links.length), 0)
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  // Доставка позиции (миграция 20261120, стенд delivery=1 — колонки есть, триггер считает как база).
+  const deliveryCell = (page, name, vor, mode = 'за единицу') => page.getByLabel(`Доставка ${mode}: ${name} (ВОР «${vor}»)`)
+  const deliveryMode = (page, name, vor) => page.getByLabel(`Доставка за единицу или на позицию: ${name} (ВОР «${vor}»)`)
+  const rateWhen = (page, test, arg) => page.waitForFunction(test, arg, { timeout: 30000 })
+
+  it('доставка: за единицу и на позицию, цена с доставкой и итог; смена вида — та же доставка; итог вводится с доставкой; без цены — закрыта', async () => {
+    const { page, context, errors } = await openPage('&delivery=1')
+    try {
+      await page.locator('.sp-table th', { hasText: 'Доставка, ₽' }).waitFor()
+      const iso = 'Изоляция K-Flex 13×15'
+      const row = rowOf(page, iso, 'ОВ')
+      const isoRate = () => page.evaluate(() => window.__fakeDb.tender_vor_supply_rates.find((r) => r.id === 'rate-p-3'))
+      const parts = (r) => [r.price_input, r.input_value, r.delivery_input, r.delivery_value, r.supply_price, r.supply_total]
+
+      // 96 за ед., объём 1 100: доставка 4 за ед. → цена позиции 100, итог 110 000; в поле цены — по-прежнему 96.
+      await enter(deliveryCell(page, iso, 'ОВ'), '4')
+      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.find((r) => r.id === 'rate-p-3').delivery_value === 4)
+      assert.deepEqual(parts(await isoRate()), ['unit', 96, 'unit', 4, 100, 110000])
+      assert.equal(plain(await page.getByLabel(price(iso, 'ОВ')).inputValue()), '96,00')
+      assert.equal(plain(await page.getByLabel(sum(iso, 'ОВ')).inputValue()), '110000,00')
+      assert.match(plain(await row.innerText()), /сдоставкой100,00/)
+      assert.match(plain(await row.innerText()), /напозицию4400,00/)
+
+      // «На позицию» — та же доставка суммой: 4 × 1 100 = 4 400, цена и итог те же.
+      await deliveryMode(page, iso, 'ОВ').selectOption('total')
+      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.find((r) => r.id === 'rate-p-3').delivery_input === 'total')
+      assert.deepEqual(parts(await isoRate()), ['unit', 96, 'total', 4400, 100, 110000])
+      // Своя сумма доставки: 1 100 на позицию → 1 за ед., цена 97, итог 106 700.
+      await enter(deliveryCell(page, iso, 'ОВ', 'на позицию'), '1100')
+      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.find((r) => r.id === 'rate-p-3').delivery_value === 1100)
+      assert.deepEqual(parts(await isoRate()), ['unit', 96, 'total', 1100, 97, 106700])
+      assert.match(plain(await row.innerText()), /заед\.1,00/)
+
+      // «Итого» — с доставкой: ввели 110 000 → сумма материала 108 900 (99 за ед.), доставка та же.
+      await enter(page.getByLabel(sum(iso, 'ОВ')), '110000')
+      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.find((r) => r.id === 'rate-p-3').price_input === 'total')
+      assert.deepEqual(parts(await isoRate()), ['total', 108900, 'total', 1100, 100, 110000])
+      assert.equal(plain(await page.getByLabel(price(iso, 'ОВ')).inputValue()), '99,00')
+      // Убрали доставку — цена позиции без неё.
+      await enter(deliveryCell(page, iso, 'ОВ', 'на позицию'), '')
+      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.find((r) => r.id === 'rate-p-3').delivery_input === null)
+      assert.deepEqual(parts(await isoRate()), ['total', 108900, null, null, 99, 108900])
+
+      // Хомут: цены нет — доставка закрыта; после цены — только за единицу (объёма в ВОР нет).
+      assert.equal(await deliveryCell(page, 'Хомут монтажный', 'ОВ').isDisabled(), true)
+      await enter(page.getByLabel(price('Хомут монтажный', 'ОВ')), '35')
+      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Хомут монтажный'))
+      await page.waitForFunction((l) => !document.querySelector(`[aria-label="${l}"]`)?.disabled, 'Доставка за единицу: Хомут монтажный (ВОР «ОВ»)')
+      assert.equal(await deliveryMode(page, 'Хомут монтажный', 'ОВ').locator('option[value=total]').isDisabled(), true)
+      await enter(deliveryCell(page, 'Хомут монтажный', 'ОВ'), '5')
+      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.find((r) => r.material_name === 'Хомут монтажный').delivery_value === 5)
+      assert.equal((await rateOf(page, 'Хомут монтажный', 'ОВ')).supply_price, 40)
+
+      // Труба: цена сама ушла в такую же позицию ВК — и доставка за единицу туда же (у ВК свой объём).
+      await enter(page.getByLabel(price('Труба медная Ø12,7', 'ОВ')), '412,5')
+      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.some((r) => r.estimate_name === 'ВК' && r.material_name === 'труба медная ∅12.7'))
+      await enter(deliveryCell(page, 'Труба медная Ø12,7', 'ОВ'), '10')
+      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.find((r) => r.estimate_name === 'ВК' && r.material_name === 'труба медная ∅12.7').delivery_value === 10)
+      const vk = await rateOf(page, 'труба медная ∅12.7', 'ВК')
+      assert.deepEqual([vk.input_value, vk.delivery_input, vk.supply_price, vk.supply_total], [412.5, 'unit', 422.5, 84500])
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('без колонок доставки (миграция 20261120 не применена) — колонки нет, цены пишутся как раньше', async () => {
+    const { page, context, errors } = await openPage()
+    try {
+      await page.getByLabel(price('Изоляция K-Flex 13×15', 'ОВ')).waitFor()
+      assert.equal(await page.locator('.sp-table th', { hasText: 'Доставка, ₽' }).count(), 0)
+      await page.locator('.sp-table th', { hasText: 'Цена за ед. с доставкой и НДС, ₽' }).waitFor()
+      await enter(page.getByLabel(price('Кран шаровой Ду15', 'ОВ')), '500')
+      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Кран шаровой Ду15' && r.estimate_name === 'ОВ'))
+      const kran = await rateOf(page, 'Кран шаровой Ду15', 'ОВ')
+      assert.ok(!('delivery_input' in kran) && !('delivery_value' in kran), 'доставка не пишется')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('окно «Цены из счёта / КП» с доставкой: строка «Доставка» документа — по позициям пропорционально сумме, в колонку «Доставка», а не в цену', async () => {
+    const maker = await browser.newPage()
+    await maker.setContent(`<html><head><meta charset="utf-8"><style>body{font:7pt Arial,sans-serif}table{border-collapse:collapse;width:170mm;table-layout:fixed}
+      td,th{border:1px solid #000;padding:0 2px;vertical-align:top;line-height:1.15}th{background:#ccc;font-weight:normal}.r{text-align:right}</style></head><body>
+      <h3>Коммерческое предложение № 10068</h3>
+      <table><tr><th style="width:5mm">№</th><th style="width:14mm">Артикул</th><th style="width:40mm">Наименование</th><th style="width:7mm">Ед.</th>
+      <th style="width:14mm">Кол-во</th><th style="width:20mm">Цена, шт с<br>НДС</th><th>Сумма, руб. с<br>НДС</th></tr>
+      <tr><td>1</td><td>13015</td><td>Изоляция K-Flex 13×15 трубная, вспененный каучук</td><td>м</td><td class="r">1 100</td><td class="r">101,00</td><td class="r">111 100,00</td></tr>
+      <tr><td>2</td><td>22018</td><td>Кран шаровой Ду15 латунный муфтовый</td><td>шт</td><td class="r">48</td><td class="r">500,00</td><td class="r">24 000,00</td></tr>
+      <tr><td>3</td><td></td><td>Доставка товара (без разгрузочных работ)</td><td>шт</td><td class="r">1</td><td class="r">6 755,00</td><td class="r">6 755,00</td></tr>
+      </table><p style="text-align:right"><b>Итого: 141 855,00</b><br><b>В том числе НДС: 25 580,08</b></p></body></html>`)
+    const pdf = await maker.pdf({ format: 'A4' })
+    await maker.close()
+    const { page, context, errors } = await openPage('&delivery=1')
+    try {
+      await page.getByRole('button', { name: 'Цены из счёта / КП' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Цены из счёта или КП поставщика' })
+      await dialog.locator('input[type=file]').setInputFiles({ name: 'КП 10068.pdf', mimeType: 'application/pdf', buffer: pdf })
+      await dialog.locator('.sp-di-table').waitFor({ timeout: 60000 })
+      const line = (text) => dialog.locator('.sp-di-table tbody tr', { hasText: text })
+      // Доставка 6 755 = 5 % суммы товаров: к цене кранов +25, изоляции +5,05 — отдельной строкой «в т. ч. доставка».
+      assert.match(plain(await dialog.locator('.sp-di-delivery').innerText()), /6755,00₽.*\(\+5%\).*колонкой«Доставка»/)
+      assert.equal(plain(await line('Кран шаровой Ду15').locator('.sp-di-price').innerText()), '525,00вт.ч.доставка25,00')
+      assert.equal(plain(await line('Изоляция K-Flex').locator('.sp-di-price').innerText()), '106,05вт.ч.доставка5,05')
+      assert.match(await line('Изоляция K-Flex').innerText(), /заменит 96,00/)
+      await line('Изоляция K-Flex').getByRole('checkbox').check()
+      await dialog.getByLabel('Прикрепить файл документом к позициям, получившим цену').uncheck()
+      await dialog.getByRole('button', { name: 'Применить цены: 2' }).click()
+      await dialog.waitFor({ state: 'detached', timeout: 30000 })
+      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Кран шаровой Ду15' && r.estimate_name === 'ОВ'))
+      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.find((r) => r.id === 'rate-p-3').input_value === 101)
+      const kran = await rateOf(page, 'Кран шаровой Ду15', 'ОВ')
+      assert.deepEqual([kran.input_value, kran.delivery_input, kran.delivery_value, kran.supply_price], [500, 'unit', 25, 525])
+      const isoRate = await rateOf(page, 'Изоляция K-Flex 13×15', 'ОВ')
+      assert.deepEqual([isoRate.input_value, isoRate.delivery_input, isoRate.delivery_value, isoRate.supply_price], [101, 'unit', 5.05, 106.05])
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
