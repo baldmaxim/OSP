@@ -30,3 +30,4 @@
 20261117_dc_request_submission_responsible.sql
 20261118_dc_request_submission_access.sql
 20261119_work_types_division_other.sql
+20261123_tender_compare_proposals.sql

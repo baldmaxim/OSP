@@ -27,6 +27,51 @@ const proposalColumns = () => (coverageColumns === false ? BASE_COLUMNS : `${BAS
 const isCoverageMissing = (err) => ['42703', 'PGRST204'].includes(String(err?.code || ''))
   && /covered_elsewhere|coverage_note/.test(String(err?.message || ''))
 
+// Все КП тендера одним запросом — функция tender_compare_proposals (миграция 20261123): ответ — одно значение json,
+// потолок PostgREST в 1000 строк его не касается. Страницами у крупного тендера выходило 20+ запросов через шлюз, и
+// каждый заново отбирал и сортировал все КП тендера. Строка ответа — массив полей в этом порядке (как в функции);
+// пометка «учтено» — только если её колонки есть в базе (coverage). Нет функции (база не обновлена) — страницами,
+// как раньше; ответ «функции нет» запоминается на всю вкладку.
+const ROW_FIELDS = ['id', 'counterparty_id', 'estimate_item_id', 'unit_price_materials', 'unit_price_works',
+  'total_materials', 'total_works', 'total_cost', 'proposal_date', 'created_at', 'covered_elsewhere', 'coverage_note']
+let compareRpc = null // null — ещё не спрашивали, false — функции нет
+const isRpcMissing = (err) => ['PGRST202', '42883'].includes(String(err?.code || ''))
+
+async function fetchProposalsRpc(tenderId) {
+  if (compareRpc === false) return null
+  // GET: функция только читает — шлюз пропускает её и в режиме «только чтение».
+  const { data, error } = await db.rpc('tender_compare_proposals', { p_tender: tenderId }, { get: true })
+  if (error) {
+    if (isRpcMissing(error)) compareRpc = false
+    else console.warn('КП одним запросом не загрузились, читаем страницами:', error.message)
+    return null
+  }
+  if (!Array.isArray(data?.rows)) {
+    compareRpc = false
+    return null
+  }
+  compareRpc = true
+  const coverage = data.coverage === true
+  const n = coverage ? ROW_FIELDS.length : ROW_FIELDS.length - 2
+  const rows = new Array(data.rows.length)
+  for (let i = 0; i < rows.length; i++) {
+    const src = data.rows[i]
+    const row = {}
+    for (let f = 0; f < n; f++) row[ROW_FIELDS[f]] = src[f]
+    rows[i] = row
+  }
+  return { rows, coverage }
+}
+
+// Прежний путь: страницами по 1000 строк, по 8 одновременно (у крупного тендера страниц 20+, каждая — запрос
+// через шлюз; больше одновременных — меньше ожидания по кругу).
+const fetchProposalsPaged = (tenderId) => fetchAllRowsParallel((from, to, withCount) => db
+  .from('tender_counterparty_proposals')
+  .select(proposalColumns(), withCount ? { count: 'exact' } : undefined)
+  .eq('tender_id', tenderId)
+  .order('id', { ascending: true })
+  .range(from, to), { concurrency: 8 })
+
 // Загруженные КП по тендеру живут между переключениями вкладок: вкладка
 // размонтируется при уходе, и раньше каждый возврат заново качал все КП.
 // При возврате данные показываются сразу, а свежие подтягиваются в фоне.
@@ -136,23 +181,24 @@ function TenderProposalsCompare({
     if (!tenderId) return
     if (!silent) setLoading(true)
     try {
-      // task 399: пагинация — Supabase отдаёт максимум 1000 строк за запрос.
-      // Страницы идут параллельно, тай-брейк по id — однозначный порядок страниц.
-      const fetchAll = () => fetchAllRowsParallel((from, to, withCount) => db
-        .from('tender_counterparty_proposals')
-        .select(proposalColumns(), withCount ? { count: 'exact' } : undefined)
-        .eq('tender_id', tenderId)
-        .order('id', { ascending: true })
-        .range(from, to))
       let all
-      try {
-        all = await fetchAll()
-        if (coverageColumns === null) coverageColumns = true
-      } catch (err) {
-        if (coverageColumns === false || !isCoverageMissing(err)) throw err
-        coverageColumns = false
-        setCoverageOn(false)
-        all = await fetchAll()
+      const viaRpc = await fetchProposalsRpc(tenderId)
+      if (viaRpc) {
+        all = viaRpc.rows
+        coverageColumns = viaRpc.coverage
+        setCoverageOn(viaRpc.coverage)
+      } else {
+        // task 399: пагинация — Supabase отдаёт максимум 1000 строк за запрос.
+        // Страницы идут параллельно, тай-брейк по id — однозначный порядок страниц.
+        try {
+          all = await fetchProposalsPaged(tenderId)
+          if (coverageColumns === null) coverageColumns = true
+        } catch (err) {
+          if (coverageColumns === false || !isCoverageMissing(err)) throw err
+          coverageColumns = false
+          setCoverageOn(false)
+          all = await fetchProposalsPaged(tenderId)
+        }
       }
       const names = await resolveNames(all)
       proposalsCache.set(tenderId, { rows: all, names })
@@ -232,70 +278,99 @@ function TenderProposalsCompare({
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
   }, [proposals, itemIds, cpNames])
 
-  // Lookup: estimate_item_id × counterparty_id → proposal.
-  const proposalLookup = useMemo(() => {
+  // КП по позиции: estimate_item_id → Map(counterparty_id → строка КП), все ВОРы. Строка таблицы берёт карту своей
+  // позиции один раз, а расчёты ниже идут по КП, которые есть, а не по «позиция × подрядчик»: раньше на каждую клетку
+  // склеивался ключ «позиция__подрядчик» — на 12 тыс. позиций × 10 подрядчиков это 120 тыс. строк-ключей в каждом
+  // расчёте. Подрядчики карты позиции из scope — всегда в counterpartiesInScope.
+  const proposalsByItem = useMemo(() => {
     const m = new Map()
     for (const p of proposals) {
-      if (!itemIds.has(p.estimate_item_id)) continue
-      m.set(`${p.estimate_item_id}__${p.counterparty_id}`, p)
+      let row = m.get(p.estimate_item_id)
+      if (!row) {
+        row = new Map()
+        m.set(p.estimate_item_id, row)
+      }
+      row.set(p.counterparty_id, p)
     }
     return m
-  }, [proposals, itemIds])
+  }, [proposals])
 
   // Итоги по контрагенту + разбивка по ВОРам + покрытие позиций (task 355).
   // matTotal/matCovered — сколько позиций МАТЕРИАЛОВ (с material_consumption > 0)
   //   и сколько из них реально расценено (unit_price_materials > 0).
   // Если matCovered < matTotal — есть «дыры», итог нерепрезентативный → подсветка.
-  // Аналогично работы.
+  // Аналогично работы. Сколько позиций требует расценки — одинаково у всех подрядчиков:
+  // считается один раз по ВОРам и раздаётся каждому (и там, где его КП нет).
   const totalsByCp = useMemo(() => {
     const m = new Map()
     for (const cp of counterpartiesInScope) {
-      let mat = 0, wrk = 0, all = 0
-      let matCoveredAll = 0, matTotalAll = 0, workCoveredAll = 0, workTotalAll = 0
-      const byDoc = new Map()
-      for (const it of itemsOfScope) {
-        const docName = it.estimate_name || 'Основная смета'
-        let cur = byDoc.get(docName)
+      m.set(cp.id, {
+        totalMat: 0, totalWork: 0, totalCost: 0, byDoc: new Map(),
+        matCoveredAll: 0, matTotalAll: 0, workCoveredAll: 0, workTotalAll: 0,
+      })
+    }
+    const docTotals = new Map() // ВОР → { matTotal, workTotal }
+    let matTotalAll = 0, workTotalAll = 0
+    for (const it of itemsOfScope) {
+      const docName = it.estimate_name || 'Основная смета'
+      let dt = docTotals.get(docName)
+      if (!dt) {
+        dt = { matTotal: 0, workTotal: 0 }
+        docTotals.set(docName, dt)
+      }
+      // task 403: покрытие считаем на уровне строки по фактически
+      // проставленному объёму (а НЕ по КОДу). Раньше (task 399) объём брался
+      // строго из поля, выбранного по isWorkRow: если КОД и заполненный
+      // столбец объёма расходились (КОД «материал», а объём в work_volume,
+      // или наоборот), позиция не попадала ни в matTotal, ни в workTotal —
+      // и молча выпадала из подсчёта непокрытых, хотя стоимость показывалась.
+      // Теперь бакет определяется наличием объёма, а «расценено» — по total_cost
+      // (любая ненулевая стоимость, в какой бы столбец цена ни попала) или
+      // ручной пометке «учтено». Это убирает и ложный пропуск (403), и старый
+      // ложный оранжевый (399, цена «не в той» колонке → total_cost > 0).
+      const hasMatVol = Number(it.material_consumption) > 0
+      const hasWorkVol = Number(it.work_volume) > 0
+      if (hasMatVol) { dt.matTotal++; matTotalAll++ }
+      if (hasWorkVol) { dt.workTotal++; workTotalAll++ }
+
+      const row = proposalsByItem.get(it.id)
+      if (!row) continue
+      for (const [cpId, p] of row) {
+        const t = m.get(cpId)
+        if (!t) continue
+        let cur = t.byDoc.get(docName)
         if (!cur) {
           cur = { mat: 0, work: 0, matTotal: 0, matCovered: 0, workTotal: 0, workCovered: 0 }
-          byDoc.set(docName, cur)
+          t.byDoc.set(docName, cur)
         }
-        // task 403: покрытие считаем на уровне строки по фактически
-        // проставленному объёму (а НЕ по КОДу). Раньше (task 399) объём брался
-        // строго из поля, выбранного по isWorkRow: если КОД и заполненный
-        // столбец объёма расходились (КОД «материал», а объём в work_volume,
-        // или наоборот), позиция не попадала ни в matTotal, ни в workTotal —
-        // и молча выпадала из подсчёта непокрытых, хотя стоимость показывалась.
-        // Теперь бакет определяется наличием объёма, а «расценено» — по total_cost
-        // (любая ненулевая стоимость, в какой бы столбец цена ни попала) или
-        // ручной пометке «учтено». Это убирает и ложный пропуск (403), и старый
-        // ложный оранжевый (399, цена «не в той» колонке → total_cost > 0).
-        const hasMatVol = Number(it.material_consumption) > 0
-        const hasWorkVol = Number(it.work_volume) > 0
-        if (hasMatVol) { cur.matTotal++; matTotalAll++ }
-        if (hasWorkVol) { cur.workTotal++; workTotalAll++ }
-
-        const p = proposalLookup.get(`${it.id}__${cp.id}`)
-        if (!p) continue
         const m_ = Number(p.total_materials) || 0
         const w_ = Number(p.total_works) || 0
         const c_ = Number(p.total_cost) || 0
-        mat += m_; wrk += w_; all += c_
+        t.totalMat += m_; t.totalWork += w_; t.totalCost += c_
         cur.mat += m_
         cur.work += w_
         // task 401 + 403: расценена, если есть ненулевая стоимость или пометка
         // «учтено в другой позиции».
         const rated = c_ > 0 || !!p.covered_elsewhere
-        if (hasMatVol && rated) { cur.matCovered++; matCoveredAll++ }
-        if (hasWorkVol && rated) { cur.workCovered++; workCoveredAll++ }
+        if (hasMatVol && rated) { cur.matCovered++; t.matCoveredAll++ }
+        if (hasWorkVol && rated) { cur.workCovered++; t.workCoveredAll++ }
       }
-      m.set(cp.id, {
-        totalMat: mat, totalWork: wrk, totalCost: all, byDoc,
-        matCoveredAll, matTotalAll, workCoveredAll, workTotalAll,
-      })
+    }
+    for (const t of m.values()) {
+      t.matTotalAll = matTotalAll
+      t.workTotalAll = workTotalAll
+      for (const [docName, dt] of docTotals) {
+        let cur = t.byDoc.get(docName)
+        if (!cur) {
+          cur = { mat: 0, work: 0, matTotal: 0, matCovered: 0, workTotal: 0, workCovered: 0 }
+          t.byDoc.set(docName, cur)
+        }
+        cur.matTotal = dt.matTotal
+        cur.workTotal = dt.workTotal
+      }
     }
     return m
-  }, [counterpartiesInScope, itemsOfScope, proposalLookup])
+  }, [counterpartiesInScope, itemsOfScope, proposalsByItem])
 
   // Минимум по сравниваемой метрике (для подсветки).
   const minTotalCost = useMemo(() => {
@@ -311,16 +386,17 @@ function TenderProposalsCompare({
   const minByItem = useMemo(() => {
     const m = new Map()
     for (const it of itemsOfScope) {
+      const row = proposalsByItem.get(it.id)
+      if (!row) continue
       let min = Infinity
-      for (const cp of counterpartiesInScope) {
-        const p = proposalLookup.get(`${it.id}__${cp.id}`)
-        const v = p ? Number(p.total_cost) || 0 : 0
+      for (const p of row.values()) {
+        const v = Number(p.total_cost) || 0
         if (v > 0 && v < min) min = v
       }
       if (min !== Infinity) m.set(it.id, min)
     }
     return m
-  }, [itemsOfScope, counterpartiesInScope, proposalLookup])
+  }, [itemsOfScope, proposalsByItem])
 
   // task 409: итоги по материалам от снабжения по каждому ВОРу (для верхней сводной
   // таблицы). Σ(объём × цена за ед. снабжения) по материалам документа; missing —
@@ -345,10 +421,13 @@ function TenderProposalsCompare({
   // В режиме «Объединённый КП» группируем по estimate_name + считаем подытоги.
   // В режиме конкретного ВОРа — одна группа без явного заголовка.
   // task 350: на «Объединённом» хочется видеть Σ по каждому ВОРу + общий ИТОГО.
+  // Строка: позиции с объёмом (itemsTotal, volItemIds) — общие для всех подрядчиков; cpData — только у подрядчиков с
+  // КП в строке (нет записи — у подрядчика в строке ничего, а позиции с объёмом всё равно требуют расценки).
   const aggregatedGroups = useMemo(() => {
     if (subTab === 'source') return []
     const wantWork = subTab === 'works'
-    // groupKey (estimate_name) → { name, rowsMap: Map<key, row>, subtotalByCp: Map<cpId, number> }
+    // groupKey (estimate_name) → { name, rowsMap: Map<key, row>, subtotalByCp: Map<cpId, number>,
+    //   itemsTotal, coveredByCp: Map<cpId, number> }
     const groups = new Map()
     for (const it of itemsOfScope) {
       const isWork = isWorkRow(it)
@@ -360,13 +439,13 @@ function TenderProposalsCompare({
       const vol = isWork
         ? (Number(it.work_volume) || 0) || (Number(it.material_consumption) || 0)
         : (Number(it.material_consumption) || 0) || (Number(it.work_volume) || 0)
-      const hasAnyProposal = counterpartiesInScope.some(cp => proposalLookup.get(`${it.id}__${cp.id}`))
-      if (vol <= 0 && !hasAnyProposal) continue
+      const props = proposalsByItem.get(it.id)
+      if (vol <= 0 && !props) continue
 
       const groupName = it.estimate_name || 'Основная смета'
       let group = groups.get(groupName)
       if (!group) {
-        group = { name: groupName, rowsMap: new Map(), subtotalByCp: new Map() }
+        group = { name: groupName, rowsMap: new Map(), subtotalByCp: new Map(), itemsTotal: 0, coveredByCp: new Map() }
         groups.set(groupName, group)
       }
 
@@ -375,52 +454,44 @@ function TenderProposalsCompare({
       const rowKey = `${normalizeKey(name)}|${normalizeUnit(unit)}`
       let row = group.rowsMap.get(rowKey)
       if (!row) {
-        row = { name, unit, totalVol: 0, cpData: new Map() }
+        // task 355: счётчики покрытия строки. task 401 (вкладки Материалы/Работы): позиции, которые можно пометить
+        // «учтено» из агрегированной ячейки, — volItemIds (у подрядчика — из его byItem, см. AggregateCoverControl).
+        row = { name, unit, totalVol: 0, itemsTotal: 0, volItemIds: [], cpData: new Map() }
         group.rowsMap.set(rowKey, row)
       }
       row.totalVol += vol
+      // Учитываем только позиции с положительным объёмом — иначе они не
+      // требуют расценки и не должны подсвечиваться как «дыра».
+      if (vol > 0) {
+        row.itemsTotal += 1
+        row.volItemIds.push(it.id)
+        group.itemsTotal += 1
+      }
+      if (!props) continue
 
-      for (const cp of counterpartiesInScope) {
-        const cur = row.cpData.get(cp.id) || {
-          totalCost: 0, weightedPriceSum: 0, weightedVolSum: 0,
-          // task 355: счётчики покрытия для row в разрезе контрагента
-          itemsTotal: 0, itemsCovered: 0,
-          // task 401 (вкладки Материалы/Работы): позиции, которые можно пометить
-          // «учтено» из агрегированной ячейки — [{itemId, proposalId, hasPrice, covered, note}].
-          coverItems: [],
+      for (const [cpId, p] of props) {
+        let cur = row.cpData.get(cpId)
+        if (!cur) {
+          cur = { totalCost: 0, weightedPriceSum: 0, weightedVolSum: 0, itemsCovered: 0, byItem: new Map() }
+          row.cpData.set(cpId, cur)
         }
-        // Учитываем только позиции с положительным объёмом — иначе они не
-        // требуют расценки и не должны подсвечиваться как «дыра».
-        if (vol > 0) cur.itemsTotal += 1
-
-        const p = proposalLookup.get(`${it.id}__${cp.id}`)
-        const price = p ? (isWork ? (Number(p.unit_price_works) || 0) : (Number(p.unit_price_materials) || 0)) : 0
-        if (p) {
-          const cost = isWork ? (Number(p.total_works) || 0) : (Number(p.total_materials) || 0)
-          cur.totalCost += cost
-          cur.weightedPriceSum += price * vol
-          cur.weightedVolSum += vol
+        const price = isWork ? (Number(p.unit_price_works) || 0) : (Number(p.unit_price_materials) || 0)
+        const cost = isWork ? (Number(p.total_works) || 0) : (Number(p.total_materials) || 0)
+        cur.totalCost += cost
+        cur.weightedPriceSum += price * vol
+        cur.weightedVolSum += vol
+        if (vol > 0) {
+          cur.byItem.set(it.id, p)
           // task 401 + 403: расценена по факту ненулевой стоимости (в какой бы
           // столбец цена ни попала) или ручной пометке «учтено».
-          if (vol > 0 && ((Number(p.total_cost) || 0) > 0 || p.covered_elsewhere)) cur.itemsCovered += 1
+          if ((Number(p.total_cost) || 0) > 0 || p.covered_elsewhere) {
+            cur.itemsCovered += 1
+            group.coveredByCp.set(cpId, (group.coveredByCp.get(cpId) || 0) + 1)
+          }
+        }
 
-          // Подытог по ВОРу
-          const prev = group.subtotalByCp.get(cp.id) || 0
-          group.subtotalByCp.set(cp.id, prev + cost)
-        }
-        // Кандидаты для пакетной пометки «учтено» — только позиции с объёмом.
-        // task 403: «расценена» определяем по total_cost (не по типовой цене),
-        // иначе позиция с ценой «не в той» колонке ложно считалась бы дырой.
-        if (vol > 0) {
-          cur.coverItems.push({
-            itemId: it.id,
-            proposalId: p?.id ?? null,
-            hasPrice: (Number(p?.total_cost) || 0) > 0,
-            covered: !!p?.covered_elsewhere,
-            note: p?.coverage_note || '',
-          })
-        }
-        row.cpData.set(cp.id, cur)
+        // Подытог по ВОРу
+        group.subtotalByCp.set(cpId, (group.subtotalByCp.get(cpId) || 0) + cost)
       }
     }
 
@@ -430,10 +501,10 @@ function TenderProposalsCompare({
     for (const gName of sortedGroupNames) {
       const g = groups.get(gName)
       const rows = [...g.rowsMap.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
-      out.push({ name: g.name, rows, subtotalByCp: g.subtotalByCp })
+      out.push({ name: g.name, rows, subtotalByCp: g.subtotalByCp, itemsTotal: g.itemsTotal, coveredByCp: g.coveredByCp })
     }
     return out
-  }, [itemsOfScope, counterpartiesInScope, proposalLookup, subTab])
+  }, [itemsOfScope, proposalsByItem, subTab])
 
   // Удалить все КП контрагента в scope.
   const handleClearCpProposals = async (cpId, cpName) => {
@@ -508,7 +579,7 @@ function TenderProposalsCompare({
       } else {
         // Снятие флага: если строка была создана только ради пометки (без цен) —
         // удаляем её, иначе просто сбрасываем флаг, чтобы не плодить «нулевые» КП.
-        const p = proposalLookup.get(`${itemId}__${cpId}`)
+        const p = proposalsByItem.get(itemId)?.get(cpId)
         const isFlagOnly = p && !(Number(p.total_cost) > 0) &&
           !(Number(p.unit_price_materials) > 0) && !(Number(p.unit_price_works) > 0)
         if (isFlagOnly) {
@@ -530,7 +601,7 @@ function TenderProposalsCompare({
       alert('Ошибка: ' + err.message)
       loadProposals({ silent: true })
     }
-  }, [tenderId, proposalLookup, mergeProposalRows, loadProposals])
+  }, [tenderId, proposalsByItem, mergeProposalRows, loadProposals])
 
   // task 401 (вкладки Материалы/Работы): пакетная пометка «учтено» для всех
   // нерасценённых позиций агрегированной строки у одного контрагента.
@@ -715,7 +786,7 @@ function TenderProposalsCompare({
             <SourceTable
               itemsOfScope={itemsOfScope}
               counterpartiesInScope={counterpartiesInScope}
-              proposalLookup={proposalLookup}
+              proposalsByItem={proposalsByItem}
               minByItem={minByItem}
               totalsByCp={totalsByCp}
               minTotalCost={minTotalCost}
@@ -1016,7 +1087,7 @@ function SourceTotalCell({ it, cp, p, isMin, canEdit, onToggleCovered }) {
 // Контрагенты — колонками. Для каждого 5 sub-cells:
 //   Ц.мат / Стоим.мат / Ц.раб / Стоим.раб / Итого.
 const SourceTable = memo(function SourceTable({
-  itemsOfScope, counterpartiesInScope, proposalLookup,
+  itemsOfScope, counterpartiesInScope, proposalsByItem,
   minByItem, totalsByCp, minTotalCost, showDocColumn,
   canEdit, onToggleCovered, supplyRatesMap = EMPTY_MAP,
 }) {
@@ -1052,6 +1123,7 @@ const SourceTable = memo(function SourceTable({
     const supplyUnit = supply.unit[idx]
     const supplyCost = supply.total[idx]
     const supplyMissing = supply.missing[idx]
+    const itemProposals = proposalsByItem.get(it.id)
     return (
       <tr key={it.id} className={supplyMissing ? 'supply-row-missing' : undefined}>
         <td className="td-num">{idx + 1}</td>
@@ -1068,7 +1140,7 @@ const SourceTable = memo(function SourceTable({
           {supplyCost != null ? fmtMoney(supplyCost) : '—'}
         </td>
         {counterpartiesInScope.map(cp => {
-          const p = proposalLookup.get(`${it.id}__${cp.id}`)
+          const p = itemProposals?.get(cp.id)
           const total = p ? Number(p.total_cost) || 0 : 0
           const isMin = total > 0 && minPrice != null && total === minPrice
           // task 401: строка, существующая только ради пометки «учтено»,
@@ -1159,10 +1231,25 @@ const SourceTable = memo(function SourceTable({
 // часть из них без цены («дыра», оранжевая ячейка), сотрудник может пакетно
 // пометить их «учтено в другой позиции» — оранжевый уходит, стоимость
 // остаётся от расценённых позиций (или бейдж «учтено», если расценённых нет).
+// Позиции строки с объёмом и КП подрядчика по ним — [{itemId, proposalId, hasPrice, covered, note}]; считаются только
+// для показанных ячеек (окно виртуализации), а не для всех строк × подрядчиков.
+const coverItemsOf = (r, d) => r.volItemIds.map((itemId) => {
+  const p = d?.byItem.get(itemId)
+  // task 403: «расценена» определяем по total_cost (не по типовой цене),
+  // иначе позиция с ценой «не в той» колонке ложно считалась бы дырой.
+  return {
+    itemId,
+    proposalId: p?.id ?? null,
+    hasPrice: (Number(p?.total_cost) || 0) > 0,
+    covered: !!p?.covered_elsewhere,
+    note: p?.coverage_note || '',
+  }
+})
+
 function AggregateCoverControl({
-  d, cp, total, isMin, isIncomplete, hasPrice, incompleteTip, canEdit, onToggleCovered,
+  r, d, cp, total, isMin, isIncomplete, hasPrice, incompleteTip, canEdit, onToggleCovered,
 }) {
-  const coverItems = d?.coverItems || []
+  const coverItems = useMemo(() => coverItemsOf(r, d), [r, d])
   const noPrice = coverItems.filter(c => !c.hasPrice)
   const hasHoleCandidates = noPrice.length > 0
   const allCovered = hasHoleCandidates && noPrice.every(c => c.covered)
@@ -1252,8 +1339,8 @@ const AggregateView = memo(function AggregateView({ kind, groups, counterparties
   // Минимум по строке (среди контрагентов с непустыми ценами) — для подсветки.
   const computeMinByRow = (row) => {
     let min = Infinity
-    for (const cp of counterpartiesInScope) {
-      const v = row.cpData.get(cp.id)?.totalCost || 0
+    for (const d of row.cpData.values()) {
+      const v = d.totalCost || 0
       if (v > 0 && v < min) min = v
     }
     return min === Infinity ? null : min
@@ -1330,13 +1417,8 @@ const AggregateView = memo(function AggregateView({ kind, groups, counterparties
             const v = group.subtotalByCp.get(cp.id) || 0
             const isMin = v > 0 && minSub != null && v === minSub
             // task 355: подсветка если в группе есть нерасценённые позиции.
-            let incompleteCovered = 0, incompleteTotal = 0
-            for (const r of group.rows) {
-              const d = r.cpData.get(cp.id)
-              if (!d) continue
-              incompleteTotal += d.itemsTotal
-              incompleteCovered += d.itemsCovered
-            }
+            const incompleteTotal = group.itemsTotal
+            const incompleteCovered = group.coveredByCp.get(cp.id) || 0
             const isIncomplete = incompleteTotal > 0 && incompleteCovered < incompleteTotal
             return (
               <td
@@ -1383,10 +1465,11 @@ const AggregateView = memo(function AggregateView({ kind, groups, counterparties
           // task 355: подсветка нерасценённой позиции у контрагента.
           // Если itemsTotal > itemsCovered — есть «дыра» в покрытии
           // (одно и то же название с разными подключёнными позициями).
-          const isIncomplete = d && d.itemsTotal > d.itemsCovered
-          const hasPrice = !!d && total > 0
+          const covered = d?.itemsCovered || 0
+          const isIncomplete = r.itemsTotal > covered
+          const hasPrice = total > 0
           const incompleteTip = isIncomplete
-            ? `Расценено ${d.itemsCovered} из ${d.itemsTotal} позиций — итог неполный`
+            ? `Расценено ${covered} из ${r.itemsTotal} позиций — итог неполный`
             : null
           return (
             <React.Fragment key={cp.id}>
@@ -1397,7 +1480,7 @@ const AggregateView = memo(function AggregateView({ kind, groups, counterparties
                 {hasPrice ? fmtMoney(avgPrice) : '—'}
               </td>
               <AggregateCoverControl
-                d={d} cp={cp} total={total} isMin={isMin}
+                r={r} d={d} cp={cp} total={total} isMin={isMin}
                 isIncomplete={isIncomplete} hasPrice={hasPrice}
                 incompleteTip={incompleteTip}
                 canEdit={canEdit} onToggleCovered={onToggleCovered}

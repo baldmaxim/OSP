@@ -1195,6 +1195,9 @@
     "supply_vor_adopt": [
       "authenticated"
     ],
+    "tender_compare_proposals": [
+      "authenticated"
+    ],
     "touch_last_login": [
       "authenticated"
     ],

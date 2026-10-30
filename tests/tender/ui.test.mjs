@@ -21,15 +21,56 @@ describe('Карточка тендера: производительность 
     await stand?.server.close()
   })
 
-  it('данные грузятся параллельно, таблицы виртуализированы, «учтено» не перекачивает КП, возврат на вкладку мгновенный', async () => {
+  it('данные грузятся параллельно, КП — одним запросом, таблицы виртуализированы, «учтено» не перекачивает КП, возврат на вкладку мгновенный', async () => {
     const m = await runScenario(browser, stand.url)
     console.log('    метрики:', JSON.stringify(m))
     assert.deepEqual(m.errors, [])
     assert.ok(m.maxParallelRequests > 1, 'страницы запрашиваются одновременно')
     assert.ok(m.vorDomRows < 400, `в DOM окно строк ВОР, а не все позиции (${m.vorDomRows})`)
+    assert.equal(m.compareRequests, 1, 'все КП тендера (≈ 50 000 строк) — одним вызовом tender_compare_proposals, без страниц')
     assert.ok(m.compareDomRows < 400, `в DOM окно строк сравнения (${m.compareDomRows})`)
     assert.equal(m.toggleProposalSelects, 0, 'после «учтено» список КП не перезагружается')
-    assert.ok(m.compareReturnMs < m.compareLoadMs / 2, `возврат на вкладку показывает кэш (${m.compareReturnMs} мс против ${m.compareLoadMs} мс)`)
+    assert.equal(m.compareReturnShowedLoading, false, `возврат на вкладку показывает кэш сразу, без «Загрузки…» (${m.compareReturnMs} мс)`)
+  })
+
+  // База без миграции 20261123 (функции нет): КП читаются страницами, как раньше, — те же суммы; ответ «функции нет»
+  // запоминается, повторное открытие её уже не спрашивает.
+  it('«Сравнение КП» без функции tender_compare_proposals: страницами, суммы те же, функция не спрашивается повторно', async () => {
+    const totals = {}
+    for (const rpc of [true, false]) {
+      const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 1600, height: 1000 } })
+      const page = await context.newPage()
+      const errors = []
+      page.on('pageerror', (e) => errors.push(e.message))
+      page.on('console', (msg) => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) errors.push(msg.text()) })
+      const requests = () => page.evaluate(() => ({
+        rpc: window.__supabaseStats.requests.filter((r) => r.table === 'rpc:tender_compare_proposals').length,
+        pages: window.__supabaseStats.requests.filter((r) => r.table === 'tender_counterparty_proposals' && r.op === 'select' && r.range).length,
+      }))
+      try {
+        await page.goto(`${stand.url}?items=2500&cps=4&tenders=2&latency=5${rpc ? '' : '&compareRpc=0'}`)
+        await page.getByRole('button', { name: /Сравнение КП/ }).click({ timeout: 120000 })
+        await page.locator('.proposals-table tbody tr').first().waitFor({ timeout: 60000 })
+        totals[rpc] = await page.locator('.proposals-summary-matrix-table tfoot').textContent()
+        const first = await requests()
+        // 2 500 позиций × 4 подрядчика ≈ 9 600 строк КП — 10 страниц по 1000.
+        assert.deepEqual(first, rpc ? { rpc: 1, pages: 0 } : { rpc: 1, pages: 10 })
+        // Уход и возврат: КП перечитываются в фоне, функцию без неё уже не спрашивают.
+        await page.locator('.tender-tab', { hasText: 'ВОР' }).first().click()
+        await page.locator('.tender-tab', { hasText: 'Сравнение КП' }).click()
+        await page.locator('.proposals-table tbody tr').first().waitFor()
+        await page.waitForFunction((n) => window.__supabaseStats.requests
+          .filter((r) => r.table === 'rpc:tender_compare_proposals' || (r.table === 'tender_counterparty_proposals' && r.range)).length > n,
+        first.rpc + first.pages)
+        await page.waitForTimeout(300)
+        assert.deepEqual(await requests(), rpc ? { rpc: 2, pages: 0 } : { rpc: 1, pages: 20 })
+        assert.deepEqual(errors, [])
+      } finally {
+        await context.close()
+      }
+    }
+    assert.ok(/\d/.test(totals.true), 'итоги посчитаны')
+    assert.equal(totals.true, totals.false, 'одним запросом и страницами — те же итоги')
   })
 
   // Колонок пометки «учтено» (миграция 20260606) нет ни в одной базе портала: выборка с ними отвечала 42703, и с

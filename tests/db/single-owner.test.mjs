@@ -84,7 +84,9 @@ describe('Права под одну учётку на копии прода: ц
     const started = spawnSync('docker', ['run', '-d', '--rm', '--name', name, '--network', 'host',
       ...Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]), PGRST_IMAGE], { encoding: 'utf8' })
     assert.equal(started.status, 0, started.stderr)
-    pgrst = { url: `http://127.0.0.1:${port}`, env, stop: () => spawnSync('docker', ['rm', '-fv', name], { stdio: 'ignore' }) }
+    pgrst = { url: `http://127.0.0.1:${port}`, env, stop: () => spawnSync('docker', ['rm', '-fv', name], { stdio: 'ignore' }),
+      // Перечитать структуру базы — как scripts/deploy-server.sh migrate (канал LISTEN выключен).
+      reload: () => spawnSync('docker', ['kill', '-s', 'SIGUSR1', name], { stdio: 'ignore' }) }
     // Готов, когда описание структуры базы прочитано: запрос без токена отклоняется (401), а не 503.
     const deadline = Date.now() + 120000
     for (;;) {
@@ -243,6 +245,40 @@ describe('Права под одну учётку на копии прода: ц
       assert.deepEqual([anonWrite.status, anonWrite.error.code], [401, '42501'])
       const anonRpc = await as(null).rpc('is_admin')
       assert.equal(anonRpc.status, 401)
+    })
+
+    // Миграция базы нового портала 20261123 (в копии прода её ещё нет): накатывается здесь и после проверки убирается —
+    // замер прав ниже сравнивается с эталоном прода.
+    it('«Сравнение КП» одним запросом: GET-вызов tender_compare_proposals через шлюз — все КП тендера сверх 1000 строк', async () => {
+      const file = path.join(ROOT, 'migration', 'yandex', '20261123_tender_compare_proposals.sql')
+      const tender = internal('select tender_id from public.tender_counterparty_proposals group by 1 order by count(*) desc limit 1')
+      const count = (sub) => Number(db.sql(`begin transaction read only;
+          select set_config('request.jwt.claims', '${claimsOf(sub)}', true);
+          select 'n=' || count(*) from public.tender_counterparty_proposals where tender_id = '${tender}';
+          rollback;`, { appName: 'osp-test-direct' }).match(/^n=(\d+)$/m)[1])
+      db.sql(null, { file, appName: 'osp:internal' })
+      try {
+        pgrst.reload()
+        const call = (sub) => as(sub).rpc('tender_compare_proposals', { p_tender: tender }, { get: true })
+        let res
+        for (const deadline = Date.now() + 30000; ;) {
+          res = await call(users.engineer)
+          if (res.error?.code !== 'PGRST202' || Date.now() > deadline) break
+          await new Promise((r) => setTimeout(r, 300))
+        }
+        assert.equal(res.error, null, JSON.stringify(res.error))
+        const want = count(users.engineer)
+        assert.ok(want > 1000, `в копии прода у крупного тендера больше тысячи строк КП (${want})`)
+        assert.equal(res.data.coverage, false)
+        assert.equal(res.data.rows.length, want, 'все строки одним ответом — потолок 1000 строк его не касается')
+        assert.equal(new Set(res.data.rows.map((r) => r[0])).size, want)
+        assert.equal((await call(null)).status, 401, 'гостю шлюз функцию не выдаёт')
+        assert.equal((await call('00000000-0000-4000-8000-00000000dead')).data.rows.length, count('00000000-0000-4000-8000-00000000dead'),
+          'посторонней учётке — сколько даёт база (правила по строкам)')
+      } finally {
+        internal('drop function if exists public.tender_compare_proposals(uuid)')
+        pgrst.reload()
+      }
     })
 
     it('сервер сам видит, что копия — репетиция: учётки входа не меняет, готовность это показывает', async () => {

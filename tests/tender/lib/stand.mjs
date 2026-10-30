@@ -80,8 +80,10 @@ async function runScenarioSteps(browser, url, { items = 5000, cps = 10, latency 
   // «Failed to load resource» — favicon стенда, к странице отношения не имеет.
   page.on('console', (msg) => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) errors.push(msg.text()) })
   page.on('dialog', (d) => d.accept())
+  // Чтение КП: страницами (выборки из таблицы) или одним вызовом tender_compare_proposals (миграция 20261123).
   const stats = () => page.evaluate(() => ({
     proposalSelects: window.__supabaseStats.requests.filter((r) => r.table === 'tender_counterparty_proposals' && r.op === 'select').length,
+    proposalRpc: window.__supabaseStats.requests.filter((r) => r.table === 'rpc:tender_compare_proposals').length,
     maxActive: window.__supabaseStats.maxActive,
   }))
   const step = async (name, fn) => {
@@ -113,6 +115,7 @@ async function runScenarioSteps(browser, url, { items = 5000, cps = 10, latency 
     m.compareDomRows = await page.locator('.proposals-table tbody tr').count()
     const afterCompare = await stats()
     m.compareRequests = afterCompare.proposalSelects - beforeCompare.proposalSelects
+      + afterCompare.proposalRpc - beforeCompare.proposalRpc
 
     // «учтено» у первой нерасценённой позиции.
     const checkbox = page.locator('.proposals-table .covered-check input').first()
@@ -122,15 +125,28 @@ async function runScenarioSteps(browser, url, { items = 5000, cps = 10, latency 
         await checkbox.click({ timeout: stepTimeout })
         await page.locator('.proposals-table .covered-note-input').first().waitFor({ timeout: stepTimeout })
       })
-      m.toggleProposalSelects = (await stats()).proposalSelects - afterCompare.proposalSelects
+      const afterToggle = await stats()
+      m.toggleProposalSelects = afterToggle.proposalSelects - afterCompare.proposalSelects
+        + afterToggle.proposalRpc - afterCompare.proposalRpc
     }
 
     // Уход на ВОР и возврат.
     await page.locator('.tender-tab', { hasText: 'ВОР' }).first().click({ timeout: stepTimeout })
     await page.locator('.estimate-table').waitFor({ timeout: stepTimeout })
+    // Возврат показывает КП из памяти вкладки сразу, свежие — в фоне: «Загрузка…» не должна мелькнуть ни разу.
+    await page.evaluate(() => {
+      window.__compareLoadingSeen = false
+      const seen = () => [...document.querySelectorAll('.proposals-empty')].some((e) => /Загрузка/.test(e.textContent))
+      window.__compareLoadingObserver = new MutationObserver(() => { if (seen()) window.__compareLoadingSeen = true })
+      window.__compareLoadingObserver.observe(document.body, { childList: true, subtree: true, characterData: true })
+    })
     m.compareReturnMs = await step('возврат на Сравнение КП', async () => {
       await page.locator('.tender-tab', { hasText: 'Сравнение КП' }).click({ timeout: stepTimeout })
       await page.locator('.proposals-table tbody tr').first().waitFor({ timeout: stepTimeout })
+    })
+    m.compareReturnShowedLoading = await page.evaluate(() => {
+      window.__compareLoadingObserver.disconnect()
+      return window.__compareLoadingSeen
     })
 
     m.materialsMs = await step('подвкладка «Материалы»', async () => {

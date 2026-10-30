@@ -1210,3 +1210,23 @@ if (params.get('docCheck') === '1') {
     window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}), doc_check_requests: board }
   }
 }
+
+// «Сравнение КП» одним запросом — функция tender_compare_proposals (миграция 20261123): ответ как у базы — строки
+// массивами полей, пометка «учтено» только при её колонках. ?compareRpc=0 — функции нет (база не обновлена):
+// вкладка читает КП страницами.
+if (params.get('compareRpc') !== '0') {
+  window.__fakeRpc = {
+    ...(window.__fakeRpc || {}),
+    tender_compare_proposals({ p_tender }) {
+      const missing = window.__fakeMissingColumns?.tender_counterparty_proposals || []
+      const coverage = !missing.includes('covered_elsewhere') && !missing.includes('coverage_note')
+      const rows = window.__fakeDb.tender_counterparty_proposals.filter((p) => p.tender_id === p_tender).map((p) => {
+        const row = [p.id, p.counterparty_id, p.estimate_item_id, p.unit_price_materials, p.unit_price_works,
+          p.total_materials, p.total_works, p.total_cost, p.proposal_date, p.created_at]
+        return coverage ? [...row, p.covered_elsewhere ?? false, p.coverage_note ?? null] : row
+      })
+      // Ответ базы — JSON: строки не общие с «таблицей» стенда.
+      return { data: JSON.parse(JSON.stringify({ coverage, rows })), error: null }
+    },
+  }
+}
