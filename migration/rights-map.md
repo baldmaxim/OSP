@@ -97,6 +97,8 @@ BSMContractorRatesPage, BSMRatesPage, BSMComparisonPage, BSMSelectionPage, Contr
 | dc_requests, dc_request_tasks, dc_request_audit_log | DcRequestsPage | E(dc_requests); выход из «проверки по договору» — admin/суперадмин/lawyer; **окончательное удаление — isAdmin только в интерфейсе** |
 | doc_check_requests, doc_check_request_audit_log | DocCheckRequestsPage | E(doc_check_requests) |
 | kp_/supply_rates_registry и фильтры | — (чтение) | раздел rates_registry; `refresh_rates_registry` — **любой зритель реестра** |
+| kp_manual_rates (20261122) | RatesRegistryPage → «Добавить расценку» (KpManualRateDialog), «Проверить по файлу» → «Добавить в реестр» (KpRateCheckDialog), изменить / удалить в колонке «Документ (ВОР)» | **в базе:** E(rates_registry) = `osp_can('rates_registry', 'edit')`; читает читатель реестра (`osp_registry_reader`); кто и когда — триггер; в реестре — сразу (представление kp_rates_registry) |
+| kp_rates_lookup (20261122) | KpRateCheckDialog (похожие расценки для строк файла) | функция с правами вызывающего: строки — представление реестра (читатель реестра); проверять по файлу может любой зритель реестра |
 | app_settings | TendersPage (дежурный — **isAdmin**), RootFolderPathButton (canEditTenders / E(tenders) / E(contracts)), DcRequestsPage (E(dc_requests)) | по ключу |
 | user_roles | вход (своя строка), профиль (свои 3 поля), AdminPage | см. ниже |
 | roles, role_permissions | AdminPage | admin; читают все (роли — даже аноним, с запасным вариантом) |
@@ -115,6 +117,7 @@ BSMContractorRatesPage, BSMRatesPage, BSMComparisonPage, BSMSelectionPage, Contr
 | task | **любой зритель задачи** |
 | general (заявки на ВОР, ПСДЦ) | E(tenders\|vors); ПСДЦ — contracts |
 | general (шаблон раздела, `section_templates`, 20261107) | **isAdmin** (osp-api: `osp_can('admin', …)`); строки шаблонов читает сотрудник, писать некому |
+| general (расценка реестра КП, добавленная вручную, `kp_manual_rates`, `doc_category='kp_manual_rate'`, 20261122) | E(rates_registry) |
 
 ## Кабинет подрядчика (организация — `user_roles.counterparty_id`)
 - **Читает:** свою строку `user_roles`, свою `counterparties`, `roles`, свои `tender_counterparties` (+ тендеры

@@ -952,6 +952,14 @@
       "authenticated": [
         "select"
       ]
+    },
+    "kp_manual_rates": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
     }
   },
   "rpc": {
@@ -1205,6 +1213,9 @@
       "authenticated"
     ],
     "vor_requests_can_access": [
+      "authenticated"
+    ],
+    "kp_rates_lookup": [
       "authenticated"
     ]
   }

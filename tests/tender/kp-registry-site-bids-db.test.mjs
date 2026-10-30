@@ -46,7 +46,9 @@ describe('Реестр КП: цены с сайта после завершен�
     db = startSnapshot()
     for (const m of appliedAfter()) psqlAt(db.port, null, { file: path.join(ROOT, 'supabase', 'migrations', m) })
     for (const m of candidateMigrations()) {
-      if (m.startsWith('20261102_') || m.startsWith(NAME)) continue
+      // 20261122 (ручные расценки и документ строки) пересобирает этот же реестр поверх — проверяется в
+      // kp-registry-manual-db.test.mjs.
+      if (m.startsWith('20261102_') || m.startsWith(NAME) || m.startsWith('20261122_')) continue
       psqlAt(db.port, null, { file: path.join(ROOT, 'supabase', 'migrations', m) })
     }
     psqlAt(db.port, null, { file: BIDS })

@@ -17,6 +17,8 @@ export const UPLOAD_SITES = [
   // (категории — только администратору, osp-api CATEGORY_RULES). Записи одного файла — в порядке вызовов в нём.
   { file: 'src/services/costPlanCalc.js', calls: 1, owner: 'general', table: 'section_templates' },
   { file: 'src/services/costPlanCalc.js', calls: 1, owner: 'object', table: 'objects' },
+  // Документ расценки реестра КП, добавленной вручную (20261122): у первой строки, если файл один на несколько.
+  { file: 'src/services/kpManualRates.js', calls: 1, owner: 'general', table: 'kp_manual_rates' },
   { file: 'src/pages/GeneralDocumentsPage.jsx', calls: 1, owner: 'general_document', table: 'general_documents' },
   { file: 'src/pages/ObjectDetailPage.jsx', calls: 1, owner: 'object', table: 'objects' },
   { file: 'src/components/ObjectDocumentFileSlot.jsx', calls: 1, owner: 'object', table: 'objects' },

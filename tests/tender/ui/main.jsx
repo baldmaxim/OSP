@@ -19,7 +19,9 @@
 //             /doc-check-requests&docCheck=1 («Заявки на проверку ДП/ДС»: доска; docCheckLegacy=1 — колонок
 //             миграции 20261113 ещё нет),
 //             /stand/api-keys («Администрирование» → «Доступ к API»; apiKeys=missing — раздела у сервера нет,
-//             apiKeysMany=N — ещё N ключей);
+//             apiKeysMany=N — ещё N ключей),
+//             /rates-registry (реестр расценок, вкладка КП: ручные расценки, «Документ (ВОР)», проверка по файлу;
+//             kpRegistryLegacy=1 — колонок миграции 20261122 ещё нет);
 //   items   — позиций ВОР (по умолчанию 5000, три документа, разделы),
 //   cps     — подрядчиков с КП (по умолчанию 10),
 //   tenders — тендеров в реестре (по умолчанию 40),
@@ -68,6 +70,8 @@ const ApiKeysStand = lazy(() => import('./api-keys-stand.jsx'))
 const SidebarStand = lazy(() => import('./sidebar-stand.jsx'))
 // Карточка объекта — так же (ObjectDetailPage.css): переход по ссылке на подтверждающий ДС из «Расчёта ПЗ».
 const ObjectDetailPage = lazy(() => import('../../../src/pages/ObjectDetailPage'))
+// Реестр расценок (вкладка КП: ручные расценки, документ строки, проверка по файлу) — со своими данными (kp-registry-stand.jsx).
+const KpRegistryStand = lazy(() => import('./kp-registry-stand.jsx'))
 import { weekKey } from '../../../src/utils/weeks'
 
 const params = new URLSearchParams(window.location.search)
@@ -104,6 +108,7 @@ const routes = (
     <Route path="/dc-requests" element={<Suspense fallback={null}><DcRequestsPage /></Suspense>} />
     <Route path="/doc-check-requests" element={<Suspense fallback={null}><DocCheckRequestsPage /></Suspense>} />
     <Route path="/cost-plans" element={<Suspense fallback={null}><CostPlansPage /></Suspense>} />
+    <Route path="/rates-registry" element={<Suspense fallback={null}><KpRegistryStand /></Suspense>} />
     <Route path="/tenders/materials/:tenderId/pricing" element={<SupplyPricingPage />} />
     <Route path="/tenders/:tenderId" element={<TenderDetailPage />} />
   </Routes>

@@ -3,15 +3,22 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import FilterDropdown from '../components/FilterDropdown'
+import KpRateDocCell from '../components/rates/KpRateDocCell'
 import LarixRegistrySection from './LarixRegistrySection'
 import {
   fmtMoney, fmtDate, fmtRefreshed, describeRegistryError, PAGE_SIZES, useDebounced,
   applyInFilter, fetchAllRows, downloadXlsx, todayStamp, moscowDayStart, moscowDayEnd, fmtMoscowDate,
 } from '../utils/ratesRegistry'
+import { SOURCE_FILTER_OPTIONS, SOURCE_KINDS } from '../utils/kpRegistrySources'
+import { deleteManualRate, loadDocument } from '../services/kpManualRates'
 import './RatesRegistryPage.css'
 
 // Цены подрядчиков из кабинета по идущим тендерам (миграция 20261102) — только администратору.
 const ContractorBidsSection = lazy(() => import('../components/contractor/ContractorBidsSection'))
+// Реестр КП (миграция 20261122): расценка, добавленная вручную, проверка расценок по файлу, просмотр файла-источника.
+const KpManualRateDialog = lazy(() => import('../components/rates/KpManualRateDialog'))
+const KpRateCheckDialog = lazy(() => import('../components/rates/KpRateCheckDialog'))
+const S3DocumentPreview = lazy(() => import('../components/S3DocumentPreview'))
 
 // task 356/354/411: «Реестр расценок» — общий список расценок из разных источников.
 //   1) От подрядчиков (КП) — представление kp_rates_registry (дедуп на стороне БД).
@@ -37,6 +44,12 @@ const SORT_COLUMN = {
 
 const SELECT_COLS =
   'id,item_type,item_name,unit,price,tender_id,counterparty_id,object_id,tender_desc,object_name,counterparty_name,proposal_date'
+// Откуда строка (миграция 20261122): КП из файла (ВОР и файл КП), кабинет подрядчика или добавлена вручную. Колонок ещё
+// нет (база раньше миграции) — 42703: страница работает как раньше, без колонки «Документ (ВОР)» и без кнопок
+// «Проверить по файлу» / «Добавить расценку». Признак — на модуль: повторный заход не спрашивает базу снова.
+const SOURCE_COLS = ',source_kind,estimate_name,source_doc_id,source_doc_name,source_url,manual_id,note'
+let sourcesKnown = null
+const isMissingColumn = (err) => err?.code === '42703' || /column .* does not exist/i.test(String(err?.message || ''))
 
 // task 412: вкладка «Расценки от снабжения СУ-10» — серверная пагинация/поиск/сортировка
 // над представлением supply_rates_registry (источник tender_vor_supply_rates).
@@ -398,7 +411,8 @@ function SupplyRegistrySection() {
 const TOP_TABS = ['kp', 'bids', 'dp_ds', 'supply', 'larix']
 
 function RatesRegistryPage() {
-  const { isAdmin } = useRole()
+  const { isAdmin, canEdit } = useRole()
+  const canEditRegistry = canEdit('rates_registry')
   const [searchParams] = useSearchParams()
   const [topTab, setTopTab] = useState(() => {
     const t = searchParams.get('tab')
@@ -416,6 +430,14 @@ function RatesRegistryPage() {
   const [priceMax, setPriceMax] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  // Источник строки (миграция 20261122): '' — все.
+  const [sourceKind, setSourceKind] = useState('')
+  const [sourcesEnabled, setSourcesEnabled] = useState(sourcesKnown !== false)
+  // Окна: расценка вручную ({ manualId, defaults }), проверка по файлу, просмотр файла-источника; сообщение над таблицей.
+  const [manualDialog, setManualDialog] = useState(null)
+  const [checkOpen, setCheckOpen] = useState(false)
+  const [preview, setPreview] = useState(null)
+  const [notice, setNotice] = useState(null)
 
   // Сортировка + страница
   const [sortBy, setSortBy] = useState('name')
@@ -466,8 +488,10 @@ function RatesRegistryPage() {
     if (priceMax !== '' && !isNaN(Number(priceMax))) q = q.lte('price', Number(priceMax))
     if (dateFrom) q = q.gte('proposal_date', dateFrom)
     if (dateTo) q = q.lte('proposal_date', dateTo)
+    // Фильтр источника виден только с колонками 20261122 — без них sourceKind всегда пуст.
+    if (sourceKind) q = q.eq('source_kind', sourceKind)
     return q
-  }, [debouncedSearch, objectIds, counterpartyIds, tenderIds, priceMin, priceMax, dateFrom, dateTo])
+  }, [debouncedSearch, objectIds, counterpartyIds, tenderIds, priceMin, priceMax, dateFrom, dateTo, sourceKind])
 
   // Когда реестр пересчитывался в последний раз (отметку пишет
   // refresh_rates_registry в app_settings). Запрос лёгкий и не мешает данным.
@@ -521,7 +545,7 @@ function RatesRegistryPage() {
   // Любое изменение фильтров/сортировки/вкладки/размера страницы → на первую страницу.
   useEffect(() => {
     setPage(0)
-  }, [debouncedSearch, objectIds, counterpartyIds, tenderIds, priceMin, priceMax, dateFrom, dateTo, sortBy, sortDir, kindTab, pageSize])
+  }, [debouncedSearch, objectIds, counterpartyIds, tenderIds, priceMin, priceMax, dateFrom, dateTo, sourceKind, sortBy, sortDir, kindTab, pageSize])
 
   // Загрузка текущей страницы (серверная пагинация + фильтры + сортировка).
   useEffect(() => {
@@ -537,18 +561,23 @@ function RatesRegistryPage() {
         // Данные — без count: точный подсчёт по дедуп-вью иногда упирается в
         // statement_timeout и раньше ронял всю выборку. Теперь считаем отдельно
         // и best-effort — таймаут count не мешает показать строки.
-        let q = db
+        const build = (cols) => applyFilters(db
           .from('kp_rates_registry')
-          .select(SELECT_COLS)
-          .eq('item_type', itemType)
-        q = applyFilters(q)
-        q = q
+          .select(cols)
+          .eq('item_type', itemType))
           .order(SORT_COLUMN[sortBy] || 'item_name', { ascending: sortDir === 'asc', nullsFirst: false })
           .order('id', { ascending: true })
           .range(from, to)
-        const { data, error: qErr } = await q
+        let { data, error: qErr } = await build(sourcesKnown === false ? SELECT_COLS : SELECT_COLS + SOURCE_COLS)
+        if (qErr && sourcesKnown !== false && isMissingColumn(qErr)) {
+          sourcesKnown = false
+          ;({ data, error: qErr } = await build(SELECT_COLS))
+        } else if (!qErr) {
+          sourcesKnown = sourcesKnown ?? true
+        }
         if (qErr) throw qErr
         if (cancelled) return
+        setSourcesEnabled(sourcesKnown !== false)
         setRows(data || [])
         // Общее число НЕ считаем здесь: count по дедуп-вью — самый дорогой запрос
         // страницы, а от номера страницы он не зависит. Его берём из счётчиков
@@ -615,12 +644,13 @@ function RatesRegistryPage() {
     setPriceMax('')
     setDateFrom('')
     setDateTo('')
+    setSourceKind('')
     setSortBy('name')
     setSortDir('asc')
   }
   const hasActiveFilters = Boolean(
     search || objectIds.length || counterpartyIds.length || tenderIds.length ||
-    priceMin || priceMax || dateFrom || dateTo
+    priceMin || priceMax || dateFrom || dateTo || sourceKind
   )
 
   // Экспорт КП в Excel: весь реестр под текущие фильтры. Материалы и работы выгружаются
@@ -629,8 +659,9 @@ function RatesRegistryPage() {
   const handleExport = async () => {
     setExporting(true)
     try {
+      const withSources = sourcesEnabled
       const rowsAll = await fetchAllRows((from, to) => {
-        let q = db.from('kp_rates_registry').select(SELECT_COLS)
+        let q = db.from('kp_rates_registry').select(withSources ? SELECT_COLS + SOURCE_COLS : SELECT_COLS)
         q = applyFilters(q)
         return q
           .order(SORT_COLUMN[sortBy] || 'item_name', { ascending: sortDir === 'asc', nullsFirst: false })
@@ -638,7 +669,8 @@ function RatesRegistryPage() {
           .range(from, to)
       })
       if (rowsAll.length === 0) { alert('Нет строк для выгрузки под текущие фильтры.'); return }
-      const headers = ['№ п/п', 'Объект', 'Подрядчик', 'Тип', 'Наименование', 'Ед. изм.', 'Цена, ₽', 'Описание работ (тендер)', 'Дата расценки']
+      const headers = ['№ п/п', 'Объект', 'Подрядчик', 'Тип', 'Наименование', 'Ед. изм.', 'Цена, ₽', 'Описание работ (тендер)',
+        ...(withSources ? ['Источник', 'ВОР', 'Документ'] : []), 'Дата расценки']
       const dataRows = rowsAll.map((r, i) => [
         i + 1,
         r.object_name || '',
@@ -648,9 +680,11 @@ function RatesRegistryPage() {
         r.unit || '',
         r.price != null ? Number(r.price) : '',
         r.tender_desc || '',
+        ...(withSources ? [SOURCE_KINDS[r.source_kind] || '', r.estimate_name || '', r.source_doc_name || r.source_url || ''] : []),
         r.proposal_date ? fmtDate(r.proposal_date) : '',
       ])
-      downloadXlsx(headers, dataRows, 'Расценки КП', `Реестр расценок (КП) ${todayStamp()}.xlsx`, [6, 22, 24, 10, 46, 10, 14, 40, 14])
+      downloadXlsx(headers, dataRows, 'Расценки КП', `Реестр расценок (КП) ${todayStamp()}.xlsx`,
+        [6, 22, 24, 10, 46, 10, 14, 40, ...(withSources ? [18, 24, 36] : []), 14])
     } catch (err) {
       alert('Ошибка выгрузки: ' + (err.message || err))
     } finally {
@@ -681,6 +715,35 @@ function RatesRegistryPage() {
         : 'Не удалось обновить реестр: ' + err.message)
     } finally {
       setRefreshing(false)
+    }
+  }
+
+  // ── Документ строки и расценки, добавленные вручную (миграция 20261122) ────────────────────────────
+  const showNotice = (text, kind = 'ok') => {
+    setNotice({ text, kind })
+    setTimeout(() => setNotice((n) => (n?.text === text ? null : n)), 8000)
+  }
+  // Ручные строки реестр показывает сразу (они не в материализованном представлении) — перечитать страницу и счётчики.
+  const afterManualChange = (text, fileError) => {
+    setReloadToken(t => t + 1)
+    showNotice(fileError ? `${text}. Файл документа не прикрепился: ${fileError}` : text, fileError ? 'warn' : 'ok')
+  }
+  const openSourceFile = async (row) => {
+    try {
+      const doc = await loadDocument(row.source_doc_id)
+      if (doc) setPreview(doc)
+      else alert('Файл не найден — возможно, его удалили. Реестр обновится при следующем пересчёте.')
+    } catch (err) {
+      alert('Не удалось открыть файл: ' + (err.message || err))
+    }
+  }
+  const deleteManual = async (row) => {
+    if (!window.confirm(`Удалить расценку «${row.item_name}» (${row.counterparty_name || 'подрядчик не указан'}) из реестра?`)) return
+    try {
+      await deleteManualRate(row)
+      afterManualChange('Расценка удалена')
+    } catch (err) {
+      alert(err.message || String(err))
     }
   }
 
@@ -837,6 +900,18 @@ function RatesRegistryPage() {
                   value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
               </div>
             </div>
+            {sourcesEnabled && (
+              <div className={`rr-filter-group ${sourceKind ? 'is-active' : ''}`}>
+                <label className="rr-filter-label">Источник</label>
+                <FilterDropdown
+                  label=""
+                  allLabel="Все источники"
+                  value={sourceKind}
+                  onChange={setSourceKind}
+                  options={SOURCE_FILTER_OPTIONS}
+                />
+              </div>
+            )}
             {hasActiveFilters && (
               <button type="button" className="rr-filter-reset" onClick={resetFilters}
                 title="Сбросить все фильтры">✕ Сбросить</button>
@@ -853,19 +928,36 @@ function RatesRegistryPage() {
             </button>
           </div>
 
-          {/* Sub-tabs — материалы / работы (грузится только активная) */}
-          <div className="rr-sub-tabs" role="tablist">
-            <button type="button" role="tab" aria-selected={kindTab === 'materials'}
-              className={`rr-sub-tab ${kindTab === 'materials' ? 'active' : ''}`}
-              onClick={() => setKindTab('materials')}>
-              Материалы<span className="rr-sub-count">{counts.materials}</span>
-            </button>
-            <button type="button" role="tab" aria-selected={kindTab === 'works'}
-              className={`rr-sub-tab ${kindTab === 'works' ? 'active' : ''}`}
-              onClick={() => setKindTab('works')}>
-              Работы<span className="rr-sub-count">{counts.works}</span>
-            </button>
+          {/* Sub-tabs — материалы / работы (грузится только активная); справа — проверка файла и ручная расценка */}
+          <div className="kpr-subbar">
+            <div className="rr-sub-tabs" role="tablist">
+              <button type="button" role="tab" aria-selected={kindTab === 'materials'}
+                className={`rr-sub-tab ${kindTab === 'materials' ? 'active' : ''}`}
+                onClick={() => setKindTab('materials')}>
+                Материалы<span className="rr-sub-count">{counts.materials}</span>
+              </button>
+              <button type="button" role="tab" aria-selected={kindTab === 'works'}
+                className={`rr-sub-tab ${kindTab === 'works' ? 'active' : ''}`}
+                onClick={() => setKindTab('works')}>
+                Работы<span className="rr-sub-count">{counts.works}</span>
+              </button>
+            </div>
+            {sourcesEnabled && (
+              <div className="kpr-actions">
+                <button type="button" className="kpr-btn" onClick={() => setCheckOpen(true)}
+                  title="Загрузить КП, счёт или ВОР подрядчика и сравнить его цены с реестром">
+                  Проверить по файлу
+                </button>
+                {canEditRegistry && (
+                  <button type="button" className="kpr-btn kpr-btn-primary"
+                    onClick={() => setManualDialog({ manualId: null, defaults: { item_type: kindTab === 'works' ? 'work' : 'material' } })}>
+                    + Добавить расценку
+                  </button>
+                )}
+              </div>
+            )}
           </div>
+          {notice && <div className={`kpr-notice is-${notice.kind}`} role="status">{notice.text}</div>}
 
           {error ? (
             <div className="rr-empty rr-error">
@@ -885,7 +977,7 @@ function RatesRegistryPage() {
             <div className="rr-empty">
               {hasActiveFilters
                 ? 'По заданным фильтрам ничего не найдено.'
-                : 'Расценок ещё нет. Загрузите КП в тендерах — данные подтянутся сюда автоматически.'}
+                : `Расценок ещё нет. Загрузите КП в тендерах — данные подтянутся сюда автоматически${sourcesEnabled && canEditRegistry ? ', — или добавьте расценку вручную' : ''}.`}
             </div>
           ) : (
             <>
@@ -904,6 +996,11 @@ function RatesRegistryPage() {
                       <th className="rr-th-tender rr-th-sortable" onClick={() => toggleSort('tender')}>
                         Описание работ (тендер){sortIndicator('tender')}
                       </th>
+                      {sourcesEnabled && (
+                        <th className="rr-th-doc" title="Откуда взята расценка: файл КП и ВОР, кабинет подрядчика или документ расценки, добавленной вручную">
+                          Документ (ВОР)
+                        </th>
+                      )}
                       <th className="rr-th-unit">Ед. изм.</th>
                       <th className="rr-th-price rr-th-sortable" onClick={() => toggleSort('price')}>
                         {kindTab === 'materials' ? 'Цена за материал, ₽' : 'Цена за работу, ₽'}{sortIndicator('price')}
@@ -934,6 +1031,12 @@ function RatesRegistryPage() {
                             )
                             : <span className="rr-tender-empty">—</span>}
                         </td>
+                        {sourcesEnabled && (
+                          <td className="rr-td-doc">
+                            <KpRateDocCell row={r} canEdit={canEditRegistry} onOpenFile={openSourceFile}
+                              onEdit={(row) => setManualDialog({ manualId: row.manual_id })} onDelete={deleteManual} />
+                          </td>
+                        )}
                         <td className="rr-td-unit">{r.unit || '—'}</td>
                         <td className="rr-td-price">{fmtMoney(r.price)}</td>
                         <td className="rr-td-date">{fmtDate(r.proposal_date)}</td>
@@ -969,6 +1072,27 @@ function RatesRegistryPage() {
             </>
           )}
         </>
+      )}
+
+      {(manualDialog || checkOpen || preview) && (
+        <Suspense fallback={null}>
+          {manualDialog && (
+            <KpManualRateDialog manualId={manualDialog.manualId} defaults={manualDialog.defaults} onClose={() => setManualDialog(null)}
+              onSaved={({ fileError }) => {
+                const edited = !!manualDialog.manualId
+                setManualDialog(null)
+                afterManualChange(edited ? 'Расценка сохранена' : 'Расценка добавлена в реестр', fileError)
+              }} />
+          )}
+          {checkOpen && (
+            <KpRateCheckDialog canAdd={canEditRegistry} onClose={() => setCheckOpen(false)}
+              onAdded={({ count, fileError }) => {
+                setCheckOpen(false)
+                afterManualChange(`Добавлено в реестр расценок: ${count}`, fileError)
+              }} />
+          )}
+          {preview && <S3DocumentPreview doc={preview} onClose={() => setPreview(null)} />}
+        </Suspense>
       )}
     </div>
   )

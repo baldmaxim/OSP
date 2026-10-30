@@ -34,6 +34,7 @@ const GDOC_1 = 'b0000000-0000-4000-8000-000000000001'
 const PSDC_1 = 'd0000000-0000-4000-8000-000000000001'
 const VOR_1 = 'e0000000-0000-4000-8000-000000000001'
 const TPL_1 = 'e1000000-0000-4000-8000-000000000001' // шаблон раздела (section_templates)
+const KPM_1 = 'e2000000-0000-4000-8000-000000000001' // расценка реестра КП, добавленная вручную (kp_manual_rates, 20261122)
 const TDOC_1 = 'a1000000-0000-4000-8000-000000000001' // строка tender_docs (вкладка «Документы» тендера)
 const OBJECT_1 = 'f0000000-0000-4000-8000-000000000001'
 const TASK_1 = 'f1000000-0000-4000-8000-000000000001'
@@ -74,6 +75,7 @@ function supabaseState() {
       psdc: { [PSDC_1]: [U.emp.id] },
       vor_requests: { [VOR_1]: [U.emp.id] },
       section_templates: { [TPL_1]: 'all' },
+      kp_manual_rates: { [KPM_1]: 'all' },
       contracts: { [CONTRACT_MINE]: 'all' },
       objects: { [OBJECT_1]: 'all' },
       tasks: { [TASK_1]: [U.viewer.id] },
@@ -449,12 +451,17 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.match(doc.json().s3_key, new RegExp(`^tenders/${TDOC_1}/`))
     })
 
-    it("'general' — ПСДЦ, заявка на ВОР или шаблон раздела; 'customer' не поддерживается", async () => {
+    it("'general' — ПСДЦ, заявка на ВОР, шаблон раздела или ручная расценка реестра КП; 'customer' не поддерживается", async () => {
       assert.equal((await up(U.emp, 'general', PSDC_1)).statusCode, 200)
       assert.equal((await up(U.emp, 'general', VOR_1)).statusCode, 200)
       // Шаблон раздела виден каждому сотруднику, а прикрепить файл может только администратор.
       assert.equal((await up(U.emp, 'general', TPL_1)).statusCode, 403, 'инженер — не администратор')
       assert.equal((await up(U.admin, 'general', TPL_1)).statusCode, 200)
+      // Документ ручной расценки — право правки «Реестра расценок» (у инженера стенда его нет).
+      assert.equal((await up(U.emp, 'general', KPM_1)).statusCode, 403, 'без правки реестра расценок')
+      assert.equal((await up(U.admin, 'general', KPM_1)).statusCode, 200)
+      const asked = supa.requests.filter((r) => r.path === '/rest/v1/rpc/osp_can').map((r) => JSON.parse(r.body))
+      assert.ok(asked.some((c) => c.p_section === 'rates_registry' && c.p_kind === 'edit'))
       assert.equal((await up(U.emp, 'general', GDOC_1)).statusCode, 404, 'документ раздела — не владелец general')
       assert.deepEqual((await up(U.emp, 'customer', GDOC_1)).json(), { error: 'Unsupported owner_type: customer' })
     })
