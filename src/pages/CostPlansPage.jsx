@@ -238,13 +238,19 @@ function CostPlansPage() {
     if (!linkModal) return
     const { tenderId } = linkModal
     const value = linkModal.value.trim() || null
+    // Ссылка у плана «Не начат» — план уже в работе: статус меняется тем же запросом.
+    // Дальше «В работе» («Ожидание КП», «Завершён», «Не требуется») ссылка статус не трогает.
+    const tender = tenders.find(t => t.id === tenderId)
+    const patch = value && (tender?.cost_plan_status || 'not_started') === 'not_started'
+      ? { cost_plan_link: value, cost_plan_status: 'in_progress' }
+      : { cost_plan_link: value }
     try {
       const { error } = await db
         .from('tenders')
-        .update({ cost_plan_link: value })
+        .update(patch)
         .eq('id', tenderId)
       if (error) throw error
-      setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, cost_plan_link: value } : t))
+      setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, ...patch } : t))
       setLinkModal(null)
     } catch (err) {
       console.error('Ошибка сохранения ссылки на план затрат:', err.message)
