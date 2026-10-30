@@ -32,6 +32,11 @@ import { countVorRdDocs } from '../services/tenderVorRd'
 import { vorResponsibleName } from '../services/stoEmployees'
 import TenderFinalDocBlock from '../components/TenderFinalDocBlock'
 import SupplyPricingPanel from '../components/supply/SupplyPricingPanel'
+// Базовые стили таблиц (.data-table: ширина 100 %, шапка, выравнивание) — из реестра тендеров. Без этого
+// импорта они были только у того, кто сначала открыл реестр: экономист приходит в тендер из «Планов
+// затрат» и «Проверки КП», и таблица участников сжималась до минимальной ширины, справа — пусто
+// (30.10.2026).
+import '../components/Tenders.css'
 import '../components/TenderDetail.css'
 
 // task 410: с какого числа видимых строк включаем виртуализацию <tbody>.
@@ -2600,20 +2605,24 @@ function TenderDetailPage() {
         {activeTab === 'participants' && (
           <div className="participants-section">
             <div className="section-header">
-              <h3>Участники тендера</h3>
-              <div className="section-actions">
+              {/* «Свернуть всё» — сразу за заголовком, у всех ролей на одном месте: справа, у кнопки
+                  «Пригласить», без права правки (экономист, инженер) она висела одна в углу. */}
+              <div className="tc-section-title">
+                <h3>Участники тендера</h3>
                 {tenderCounterparties.length > 0 && (
                   <ParticipantsCollapseToggle collapsed={cpCollapsed} onChange={setCpCollapsed} />
                 )}
-                {canEditTenders && (
+              </div>
+              {canEditTenders && (
+                <div className="section-actions">
                   <button
                     className="btn-primary"
                     onClick={handleOpenAddParticipantModal}
                   >
                     + Пригласить участников
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
             {tenderCounterparties.length === 0 ? (

@@ -3,14 +3,16 @@
    сливается в единую кашу», «текст слишком жирный»):
    • колонки: № · компания (под названием — вид работ и статус) · контакты · КП / документы ·
      примечание;
-   • каждый подрядчик — свой блок: всё по верхнему краю, между подрядчиками — заметная черта,
-     через одного — лёгкая подложка; подсветки по наведению нет (строки высокие, мигало бы);
+   • каждый подрядчик — свой блок: всё по верхнему краю, между подрядчиками — заметная черта;
+     подсветки по наведению нет (строки высокие, мигало бы). Подложка через одного снята 30.10
+     («убери серое выделение, оставь только шапку и рамку серым»);
    • название компании — 14/20, 500 (выделяется размером, а не жирностью), остальное — обычным.
    Ширины — в rem; уже 64rem таблица не сжимается — прокручивается её обёртка. Повтор класса
    .tc-table поднимает специфичность над правилами страниц (Tenders.css, TenderDetail.css,
-   workUi.css). */
+   workUi.css). Ширина 100 % — и здесь: в карточке тендера, открытой не из реестра, правила
+   .data-table из Tenders.css раньше не было, и таблица сжималась до 64rem (30.10.2026). */
 
-.tc-table.tc-table { min-width: 64rem; }
+.tc-table.tc-table { width: 100%; min-width: 64rem; }
 .tc-table .tc-col-company { width: 15rem; }
 .tc-table .tc-col-contacts { width: 15rem; }
 .tc-table .tc-col-files { width: 28rem; }
@@ -25,19 +27,21 @@
 .tc-table.tc-table.tc-table > tbody > tr:last-child > td { border-bottom: 0; }
 .tc-table.tc-table.tc-table > tbody > tr,
 .tc-table.tc-table.tc-table > tbody > tr:hover { background: transparent; }
-.tc-table.tc-table.tc-table > tbody > tr:nth-child(even),
-.tc-table.tc-table.tc-table > tbody > tr:nth-child(even):hover {
-  background: color-mix(in srgb, var(--bg-tertiary) 55%, transparent);
-}
-[data-theme='dark'] .tc-table.tc-table.tc-table > tbody > tr:nth-child(even),
-[data-theme='dark'] .tc-table.tc-table.tc-table > tbody > tr:nth-child(even):hover {
-  background: color-mix(in srgb, var(--bg-tertiary) 40%, transparent);
-}
 /* Победитель (карточка тендера) — зелёная подложка, как раньше. */
 .tc-table.tc-table.tc-table > tbody > tr.is-winner,
 .tc-table.tc-table.tc-table > tbody > tr.is-winner:hover { background: rgba(22, 163, 74, 0.08); }
 /* Ручка перетаскивания и № — у верхнего края, вровень с названием компании. */
 .tc-table.tc-table.tc-table > tbody > tr > td.tc-drag-cell { vertical-align: top; padding-top: 0.5rem !important; }
+
+/* Карточка тендера: «Свернуть всё» — сразу за заголовком «Участники тендера» (у всех ролей на одном
+   месте; кнопка «Пригласить участников» — справа, только с правом правки). */
+.tc-section-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  min-width: 0;
+}
 
 /* Компания: название, вид работ одной строкой (полностью — в подсказке), под ними статус. */
 .tc-company-name {

@@ -9,8 +9,14 @@
 //     реестра «Тендеры — Основное строительство» — дата и время загрузки, кто загрузил, версия, проверка,
 //     имя файла открывает просмотр (отдельной кнопки нет), документы, новая версия КП в окне загрузки,
 //     статус участника плашкой (и без права правки — читаемой), сворачивание КП.
+// 30.10.2026 (замечания пользователя): подписей «КП 1», «КП 2» нет; имя файла — целиком, плашкой, у PDF,
+// Excel и Word без расширения (значок — красный, зелёный, синий); «Скачать» — значком справа по середине строки файла; в сводке — «Файлов: N»; фон
+// раскрытого тендера и строк участников — без серого (серые только шапка и рамка); в карточке, открытой не
+// из реестра, таблица во всю ширину, «Свернуть всё» — за заголовком; без права правки нет пустой колонки.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import { buildFilesTimeline, currentProposals, byUploadTime, groupProposals, reviewSummary } from '../../src/utils/proposalTimeline.js'
@@ -60,6 +66,16 @@ describe('Лента файлов участника: разбор', () => {
     assert.deepEqual(groupProposals([]), [])
   })
 
+  it('карточка тендера сама подключает базовые стили таблиц (Tenders.css) — до своих', () => {
+    // Без этого .data-table { width: 100% }, шапка и выравнивание заголовков были только у того, кто сначала
+    // открыл реестр: экономист приходит в тендер из «Планов затрат» и «Проверки КП» — таблица участников
+    // сжималась до минимальной ширины, справа пусто, заголовки по центру.
+    const src = fs.readFileSync(path.join(REPO, 'src/pages/TenderDetailPage.jsx'), 'utf8')
+    const base = src.indexOf("import '../components/Tenders.css'")
+    assert.ok(base > 0, 'TenderDetailPage импортирует Tenders.css')
+    assert.ok(base < src.indexOf("import '../components/TenderDetail.css'"), 'базовые стили — раньше стилей карточки')
+  })
+
   it('статус участника: пустой — «Запрос отправлен», подписи — из одного списка', () => {
     assert.equal(participantStatusKey(null), 'request_sent')
     assert.equal(participantStatusKey('declined'), 'declined')
@@ -107,7 +123,7 @@ describe('Лента файлов участника: карточка тенд�
   const kpItems = (scope) => scope.locator('section[aria-label="Коммерческие предложения"] .tcpf-item')
   const docItems = (scope) => scope.locator('section[aria-label="Документы"] .tcpf-item')
 
-  it('КП — блоками по версиям: «в1», «в2», дата и время, кто загрузил, метка; дата не обрезана, столбец ровный', async () => {
+  it('КП — блоками по версиям без подписей «КП 1»: «в1», «в2», дата и время, кто загрузил, метка; имя целиком, столбец ровный', async () => {
     const { page, errors, close } = await openCard()
     try {
       const one = row(page, 'Подрядчик 01')
@@ -124,16 +140,17 @@ describe('Лента файлов участника: карточка тенд�
       assert.match(await items.first().getAttribute('class'), /is-replaced/)
       assert.doesNotMatch(await items.nth(1).getAttribute('class'), /is-replaced/)
       assert.deepEqual(await items.locator('.tcpf-uploader').allTextContents(), ['Иванов И. И.', 'Иванов И. И.'])
-      // Сводка: одно КП в двух версиях; подписи блоков «КП 1» у одного КП нет — число версий в сводке.
-      assert.equal((await one.locator('.tcpf-sum-kp').textContent()).replace(/\s+/g, ' ').trim(), 'КП · 1 · 2 версии')
-      assert.equal(await one.locator('.tcpf-kp-head').count(), 0)
-      // Несколько КП — блоки подписаны «КП 1», «КП 2», у одиночных версий меток нет.
+      // Сводка — сколько всего файлов (КП всех версий и документы), плашкой.
+      assert.equal((await one.locator('.tcpf-summary').textContent()).trim(), 'Файлов: 3')
+      // Несколько КП — блоки без подписей «КП 1», «КП 2», у одиночных версий меток нет (полоса слева — состояние проверки, ниже).
       const two = row(page, 'Подрядчик 02')
-      assert.deepEqual(await two.locator('.tcpf-kp-name').allTextContents(), ['КП 1', 'КП 2'])
+      assert.equal(await two.locator('.tcpf-kp').count(), 2)
+      assert.equal((await two.locator('.tcpf-summary').textContent()).trim(), 'Файлов: 6')
+      assert.doesNotMatch(await two.locator('section[aria-label="Коммерческие предложения"]').textContent(), /КП\s*\d/)
       assert.equal(await two.locator('.tcpf-vtag').count(), 0)
 
-      // Имя файла — в одну строку (основа многоточием, расширение видно, полное — в подсказке); дата —
-      // целиком; имена в одном блоке начинаются с одной линии.
+      // Имя файла — целиком (переносится, без многоточия; у PDF, Excel и Word без расширения, полное — в
+      // подсказке); дата — целиком; имена в одном блоке начинаются с одной линии.
       const geometry = await page.evaluate(() => {
         const dates = [...document.querySelectorAll('.participants-section .tcpf-date')]
         const files = [...document.querySelectorAll('.participants-section .tcpf-list')].map((list) =>
@@ -147,19 +164,23 @@ describe('Лента файлов участника: карточка тенд�
       assert.deepEqual(geometry.ragged, [], 'имена файлов в одной ленте начинаются с одной линии')
       const long = kpItems(two).nth(1)
       assert.equal(await long.locator('.tcpf-file-name').textContent(), 'КП Подрядчик 02 — кровля и водосток, корпус 2, секции 1–4')
-      assert.equal(await long.locator('.tcpf-file-ext').textContent(), '.pdf')
+      assert.equal(await page.locator('.participants-section .tcpf-file-ext').count(), 0)
+      assert.equal(await items.first().locator('.tcpf-file-name').textContent(), 'КП Подрядчик 01', 'у Excel — без .xlsx')
       assert.match(await long.locator('.tcpf-file').getAttribute('title'), /^Открыть: КП Подрядчик 02 — кровля и водосток, корпус 2, секции 1–4\.pdf/)
       const shape = await long.locator('.tcpf-file').evaluate((btn) => {
         const name = btn.querySelector('.tcpf-file-name')
-        const ext = btn.querySelector('.tcpf-file-ext').getBoundingClientRect()
+        const box = btn.getBoundingClientRect()
         const cell = btn.closest('td').getBoundingClientRect()
+        const cs = getComputedStyle(btn)
         return {
-          lines: Math.round(name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).lineHeight)),
-          extInside: ext.right <= cell.right + 0.5 && ext.width > 0,
+          whole: name.scrollWidth <= name.clientWidth + 0.5 && getComputedStyle(name).textOverflow !== 'ellipsis',
+          inside: box.right <= cell.right + 0.5,
+          chip: cs.borderTopWidth !== '0px' && cs.backgroundColor !== 'rgba(0, 0, 0, 0)',
         }
       })
-      assert.equal(shape.lines, 1, 'имя — в одну строку')
-      assert.equal(shape.extInside, true, 'расширение видно')
+      assert.equal(shape.whole, true, 'имя — целиком, без многоточия')
+      assert.equal(shape.inside, true, 'длинное имя переносится, а не вылезает из колонки')
+      assert.equal(shape.chip, true, 'имя — плашкой (рамка и фон), как в «Проверке КП»')
       // Тип файла — цветом значка; состояние КП — полосой слева у блока (по текущей версии), без фона и рамки;
       // «ждёт проверки» — серой полосой, как в «Проверке КП».
       assert.equal(await long.locator('.tcpf-ftype.is-pdf').count(), 1)
@@ -190,19 +211,24 @@ describe('Лента файлов участника: карточка тенд�
     }
   })
 
-  it('имя файла открывает просмотр — отдельной кнопки «Просмотр» нет; у файла «Скачать» и «Удалить»', async () => {
+  it('имя файла открывает просмотр — отдельной кнопки «Просмотр» нет; у файла «Скачать» значком справа по середине и «Удалить»', async () => {
     const { page, errors, close } = await openCard()
     try {
       const cell = row(page, 'Подрядчик 01')
       assert.equal(await cell.locator('button[title="Просмотр"]').count(), 0)
       assert.equal(await cell.locator('.tcpf-summary').getAttribute('aria-expanded'), 'true', 'файлы видны сразу')
       const first = kpItems(cell).first()
-      assert.deepEqual(await first.locator('.tcpf-line .tcpf-icon-btn').evaluateAll((els) => els.map((b) => b.getAttribute('aria-label'))),
-        ['Скачать КП Подрядчик 01.xlsx', 'Удалить КП Подрядчик 01.xlsx'])
-      // «Скачать» у текущей версии КП (ВОР подрядчика) — кнопкой с подписью; у прежней версии и документа — значком.
-      assert.equal(await kpItems(cell).nth(1).locator('.tcpf-dl-main').textContent(), 'Скачать')
-      assert.equal(await first.locator('.tcpf-dl-main').count(), 0)
-      assert.equal(await docItems(cell).locator('.tcpf-dl-main').count(), 0)
+      assert.deepEqual(await first.locator('.tcpf-item-actions .tcpf-icon-btn').evaluateAll((els) => els.map((b) => b.getAttribute('aria-label'))),
+        ['Удалить КП Подрядчик 01.xlsx', 'Скачать КП Подрядчик 01.xlsx'])
+      // «Скачать» — значком без подписи у каждого файла: у правого края строки файла, по её середине.
+      const dl = await page.locator('.participants-section .tcpf-item').evaluateAll((lis) => lis.map((li) => {
+        const btn = li.querySelector('.tcpf-dl')
+        const a = btn.getBoundingClientRect()
+        const b = li.getBoundingClientRect()
+        return { text: btn.textContent.trim(), dy: Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2), dx: b.right - a.right }
+      }))
+      assert.ok(dl.length >= 3)
+      assert.deepEqual(dl.filter((d) => d.text || d.dy > 1 || d.dx > 1), [], 'значок без подписи, справа, по середине')
       // «Скачать всё» участника — текстом.
       assert.equal(await cell.locator('.tcpf-zip-btn').textContent(), 'Скачать всё')
       await first.locator('.tcpf-file').click()
@@ -258,14 +284,13 @@ describe('Лента файлов участника: карточка тенд�
       const company = row(page, 'Подрядчик 01').locator('td.tc-company-cell')
       assert.equal(await company.locator('.tc-status-fdrop').count(), 1)
       assert.equal(await company.locator('.tc-company-name').evaluate((el) => getComputedStyle(el).fontWeight), '500')
-      // Подрядчики разделены: всё по верхнему краю, через одного — подложка.
+      // Подрядчики разделены чертой, всё по верхнему краю; подложки через одного нет — серые только шапка и рамка.
       const rows = await page.locator('.participants-section tbody tr').evaluateAll((trs) => trs.map((tr) => ({
         bg: getComputedStyle(tr).backgroundColor,
         top: [...tr.cells].every((td) => getComputedStyle(td).verticalAlign === 'top'),
       })))
       assert.ok(rows.every((r) => r.top), 'ячейки — по верхнему краю')
-      assert.equal(rows[0].bg, 'rgba(0, 0, 0, 0)')
-      assert.notEqual(rows[1].bg, 'rgba(0, 0, 0, 0)', 'у второго подрядчика — подложка')
+      assert.deepEqual([...new Set(rows.map((r) => r.bg))], ['rgba(0, 0, 0, 0)'], 'без подложки через одного')
       const contacts = row(page, 'Подрядчик 01').locator('.tcc-item')
       assert.equal(await contacts.count(), 2)
       assert.equal(await contacts.first().locator('.tcc-name').textContent(), 'Шахмиров Джабраил Алиевич')
@@ -288,6 +313,21 @@ describe('Лента файлов участника: карточка тенд�
       await page.locator('.expanded-cp-table-wrap .tcc-item').first().waitFor({ timeout: 30000 })
       assert.deepEqual(await heads(page, '.expanded-cp-table-wrap'), expected)
       assert.equal(await page.locator('.expanded-cp-table-wrap tbody tr').first().locator('td.tc-company-cell .tc-status-fdrop').count(), 1)
+      // Раскрытый тендер — на белом: серые только шапка таблицы участников и рамка вокруг неё.
+      const look = await page.evaluate(() => {
+        const bg = (el) => getComputedStyle(el).backgroundColor
+        const wrap = document.querySelector('.expanded-cp-table-wrap')
+        return {
+          area: bg(document.querySelector('td.expanded-cp-row')),
+          rows: [...new Set([...wrap.querySelectorAll('tbody > tr')].map(bg))],
+          head: bg(wrap.querySelector('thead th')),
+          frame: getComputedStyle(wrap).borderTopWidth,
+        }
+      })
+      assert.equal(look.area, 'rgb(255, 255, 255)', 'область тендера — без серого')
+      assert.deepEqual(look.rows, ['rgba(0, 0, 0, 0)'])
+      assert.notEqual(look.head, 'rgba(0, 0, 0, 0)', 'шапка — серая')
+      assert.equal(look.frame, '1px', 'рамка на месте')
       assert.deepEqual(errors, [])
     } finally {
       await reg.close()
@@ -299,7 +339,7 @@ describe('Лента файлов участника: карточка тенд�
     try {
       const one = row(page, 'Подрядчик 01')
       assert.equal(await one.locator('.tcpf-section-toggle').getAttribute('aria-expanded'), 'true')
-      assert.deepEqual(await docItems(one).locator('.tcpf-file').allTextContents(), ['Выписка ЕГРЮЛ.pdf'])
+      assert.deepEqual(await docItems(one).locator('.tcpf-file').allTextContents(), ['Выписка ЕГРЮЛ'])
 
       const many = row(page, 'Подрядчик 02')
       const toggle = many.locator('.tcpf-section-toggle')
@@ -311,6 +351,31 @@ describe('Лента файлов участника: карточка тенд�
       assert.equal(await docItems(many).locator('.tcpf-review').count(), 0, 'у документа проверки нет')
 
       assert.equal(await row(page, 'Подрядчик 03').locator('.tcpf-none').textContent(), 'КП не загружено')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('значок типа — цветом: Excel зелёный, PDF красный, Word синий; у всех трёх имя без расширения', async () => {
+    const { page, errors, close } = await openCard()
+    try {
+      await page.evaluate(() => {
+        window.__fakeAfter = { ...(window.__fakeAfter || {}),
+          tender_proposal_files: (op, r) => { if (op === 'insert') r.s3 = window.__fakeDb.s3_documents.find((d) => d.id === r.s3_document_id) } }
+      })
+      const cell = row(page, 'Подрядчик 01')
+      const [chooser] = await Promise.all([page.waitForEvent('filechooser'), cell.locator('.tcpf-quick-actions button', { hasText: '+ Документ' }).click()])
+      await chooser.setFiles({ name: 'Договор подряда.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: Buffer.from('docx') })
+      await docItems(cell).nth(1).waitFor({ timeout: 10000 })
+      const look = async (item) => item.evaluate((li) => ({
+        name: li.querySelector('.tcpf-file-name').textContent,
+        color: getComputedStyle(li.querySelector('.tcpf-ftype')).color,
+      }))
+      assert.deepEqual(await look(kpItems(cell).nth(1)), { name: 'КП Подрядчик 01', color: 'rgb(21, 128, 61)' })
+      assert.deepEqual(await look(docItems(cell).first()), { name: 'Выписка ЕГРЮЛ', color: 'rgb(220, 38, 38)' })
+      assert.deepEqual(await look(docItems(cell).nth(1)), { name: 'Договор подряда', color: 'rgb(37, 99, 235)' })
+      assert.match(await docItems(cell).nth(1).locator('.tcpf-file').getAttribute('title'), /^Открыть: Договор подряда\.docx \(Документ Word/)
       assert.deepEqual(errors, [])
     } finally {
       await close()
@@ -403,11 +468,11 @@ describe('Лента файлов участника: карточка тенд�
       await page.waitForFunction(() => document.querySelectorAll('.participants-section .tcpf-kp').length === 0)
       assert.equal(await page.locator('.participants-section .tcpf-item').count(), 0, 'и документы свёрнуты')
       assert.match(await page.locator('.participants-section table').getAttribute('class'), /is-compact/)
-      // Сводка свёрнутого: КП — в строке со стрелкой, документы и проверка текущих версий — строкой под ней.
+      // Сводка свёрнутого: «Файлов: N» — в строке со стрелкой, проверка текущих версий — строкой под ней.
       const one = row(page, 'Подрядчик 01')
       assert.equal(await one.locator('.tcpf-summary').getAttribute('aria-expanded'), 'false')
-      assert.equal((await one.locator('.tcpf-summary').textContent()).trim(), 'КП · 1 · 2 версии')
-      assert.match(await one.locator('.tcpf-sum-more').textContent(), /Документы · 1.*на проверке 1/)
+      assert.equal((await one.locator('.tcpf-summary').textContent()).trim(), 'Файлов: 3')
+      assert.equal((await one.locator('.tcpf-sum-more').textContent()).trim(), 'на проверке 1')
       assert.match(await row(page, 'Подрядчик 02').locator('.tcpf-sum-more').textContent(), /проверено 1.*замечания 1/)
       // Контакты — первый одной строкой (ФИО и телефон), остальные — «ещё N», все — в подсказке; вида работ нет.
       const contacts = one.locator('.tcc-compact')
@@ -453,6 +518,51 @@ describe('Лента файлов участника: карточка тенд�
       await page.locator('.expanded-cp-table-wrap .tcpf[aria-busy="false"] .tcpf-summary').first().waitFor({ timeout: 30000 })
       assert.equal(await page.locator('.expanded-cp-table-wrap .tcpf-kp').count(), 0)
       assert.match(await page.locator('.expanded-cp-table-wrap table').getAttribute('class'), /is-compact/)
+      assert.deepEqual(errors, [])
+    } finally {
+      await reg.close()
+    }
+  })
+
+  it('без права правки (экономист, инженер): «Свернуть всё» — за заголовком, таблица во всю ширину, справа нет пустой колонки', async () => {
+    for (const query of ['&canEdit=0', '']) {
+      const card = await openCard(query)
+      try {
+        const { page, errors } = card
+        const place = await page.evaluate(() => {
+          const sec = document.querySelector('.participants-section')
+          const title = sec.querySelector('.tc-section-title h3').getBoundingClientRect()
+          const toggle = sec.querySelector('.tc-section-title .tcpf-collapse-toggle').getBoundingClientRect()
+          const wrap = sec.querySelector('.table-container')
+          const pad = parseFloat(getComputedStyle(wrap).paddingLeft) + parseFloat(getComputedStyle(wrap).paddingRight)
+          return {
+            gap: toggle.left - title.right,
+            free: wrap.clientWidth - pad - sec.querySelector('table').getBoundingClientRect().width,
+            invite: sec.querySelectorAll('.section-header .btn-primary').length,
+          }
+        })
+        assert.ok(place.gap >= 0 && place.gap < 24, `галочка сразу за заголовком: ${place.gap}`)
+        assert.ok(Math.abs(place.free) < 1, `таблица во всю ширину: свободно ${place.free}px`)
+        assert.equal(place.invite, query ? 0 : 1)
+        assert.deepEqual(errors, [])
+      } finally {
+        await card.close()
+      }
+    }
+    const reg = await openPage('/tenders/construction', '&canEdit=0')
+    try {
+      const { page, errors } = reg
+      const search = page.locator('input[placeholder^="№, объект"]')
+      await search.waitFor({ timeout: 120000 })
+      await search.fill('200')
+      await page.locator('.expand-toggle').first().click()
+      await page.locator('.expanded-cp-table-wrap .tcpf[aria-busy="false"]').first().waitFor({ timeout: 30000 })
+      const cols = await page.locator('.expanded-cp-table-wrap table').evaluate((t) => ({
+        heads: [...t.tHead.rows[0].cells].map((th) => th.textContent.trim()),
+        cells: t.tBodies[0].rows[0].cells.length,
+      }))
+      assert.equal(cols.heads.at(-1), 'Примечание', cols.heads.join(' | '))
+      assert.equal(cols.cells, cols.heads.length)
       assert.deepEqual(errors, [])
     } finally {
       await reg.close()

@@ -7,7 +7,6 @@ import {
   fetchProposalFiles,
 } from '../services/tenderProposalFiles'
 import { currentProposals, groupProposals, reviewSummary } from '../utils/proposalTimeline'
-import { plural } from '../utils/taskHelpers'
 import { IconDownload, IconTrash } from './icons/ActionIcons'
 import { IconUser } from './icons/ToolbarIcons'
 import S3DocumentPreview from './S3DocumentPreview'
@@ -45,6 +44,13 @@ import '../styles/workUi.css'
 //     прежних версий и документов — значком.
 // «Скачать всё» — все файлы только этого участника одним ZIP; кнопка есть, только когда файлы
 // есть. tender — для имени архива (№ и работы), counterpartyName — название компании.
+//
+// 30.10.2026 (замечания пользователя): подписей «КП 1», «КП 2» нет (полоса слева — по-прежнему
+// состояние проверки текущей версии: в сводной, замечания, ждёт проверки); имя файла — целиком,
+// в несколько строк, плашкой как в «Проверке КП», без расширения у PDF, Excel и Word (тип видно по
+// цвету значка: красный, зелёный, синий; полное имя — в подсказке); «Скачать» — значком без
+// подписи справа, по середине строки файла; в сводке вместо «КП · N» — «Файлов: N» (КП всех
+// версий и документы) плашкой.
 
 // Документов больше — список свёрнут до нажатия на «Документы · N».
 const DOCS_OPEN_MAX = 3
@@ -82,21 +88,20 @@ function fmtDateTime(iso) {
   return d ? `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()}, ${fmtTime(iso)}` : ''
 }
 
-// Имя файла в строке: основа и расширение порознь — длинная основа сокращается многоточием
-// (CSS), расширение остаётся видно (как в «Проверке КП»).
-function splitFileName(name) {
-  const m = /^(.+?)(\.[^.\s]{1,5})$/.exec(name || '')
-  return m ? [m[1], m[2]] : [name || '', '']
+// Имя файла в строке — целиком; у PDF, Excel и Word без расширения: тип и так виден по цвету значка
+// (Excel — зелёный, PDF — красный, Word — синий).
+const HIDDEN_EXT = /\.(pdf|xlsx|xls|xlsm|xlsb|docx|doc|docm)$/i
+function shownFileName(name) {
+  const stem = (name || '').replace(HIDDEN_EXT, '')
+  return stem || name || ''
 }
-
-const versionsWord = (n) => plural(n, 'версия', 'версии', 'версий')
 
 // Тип файла — цветом значка (таблица, PDF, Word, архив, картинка; прочее — серым): при беглом
 // взгляде видно, Excel это или скан, не читая расширение.
 const FILE_KINDS = [
   ['sheet', /^(xlsx?|xlsm|xlsb|csv|ods)$/i, 'Таблица'],
   ['pdf', /^pdf$/i, 'PDF'],
-  ['doc', /^(docx?|odt|rtf)$/i, 'Документ Word'],
+  ['doc', /^(docx?|docm|odt|rtf)$/i, 'Документ Word'],
   ['zip', /^(zip|rar|7z)$/i, 'Архив'],
   ['img', /^(png|jpe?g|gif|webp|bmp|tiff?|heic)$/i, 'Изображение'],
 ]
@@ -216,9 +221,10 @@ function ReviewPart({ file, canReview, onReview, withSteps }) {
   )
 }
 
-// Строка файла: имя в одну строку со значком типа, «Скачать» и «Удалить»; ниже одной строкой
-// дата и время загрузки, кто загрузил, метка версии, у прежней версии — когда заменена, у КП
-// на проверке — проверка; замечания текущей версии — строкой под ней.
+// Строка файла: слева имя плашкой со значком типа (целиком, в несколько строк), под ним одной
+// строкой дата и время загрузки, кто загрузил, метка версии, у прежней версии — когда заменена, у
+// КП на проверке — проверка; замечания текущей версии — строкой под ней. Справа, по середине
+// строки, — «Скачать» значком и (с правом правки) «Удалить».
 // item — элемент proposals из buildFilesTimeline (у документа — { file }); versioned — у КП
 // несколько версий: слева метка «в1», «в2».
 function FileItem({ item, isProposal, versioned, onDownload, onPreview, onDelete, canReview, onReview }) {
@@ -226,83 +232,81 @@ function FileItem({ item, isProposal, versioned, onDownload, onPreview, onDelete
   const s3 = file.s3
   if (!s3) return null
   const fileName = s3.file_name || 'Файл'
-  const [stem, ext] = splitFileName(fileName)
   const [kind, , kindLabel] = fileKind(fileName)
   const replaced = isProposal && !!item.replacedAt
   const size = formatBytes(s3.size_bytes)
   const reviewed = isProposal && file.review_required === true
   const remarks = reviewed && !replaced && file.review_status === 'has_remarks' && file.review_note
-  // Текущая версия КП — то, что скачивают чаще всего: кнопка с подписью.
-  const mainDownload = isProposal && !replaced
   return (
     <li className={`tcpf-item${replaced ? ' is-replaced' : ''}`} data-file={file.id}>
-      <div className="tcpf-line">
-        {versioned && (
-          <span
-            className={`tcpf-vtag${replaced ? '' : ' is-current'}`}
-            title={replaced
-              ? `Версия ${item.version} из ${item.versions}: ${fmtDateTime(item.replacedAt)} загружена следующая`
-              : `Версия ${item.version} из ${item.versions} — текущая`}
-          >в{item.version}</span>
+      <div className="tcpf-item-body">
+        <div className="tcpf-line">
+          {versioned && (
+            <span
+              className={`tcpf-vtag${replaced ? '' : ' is-current'}`}
+              title={replaced
+                ? `Версия ${item.version} из ${item.versions}: ${fmtDateTime(item.replacedAt)} загружена следующая`
+                : `Версия ${item.version} из ${item.versions} — текущая`}
+            >в{item.version}</span>
+          )}
+          <button
+            type="button"
+            className="tcpf-file"
+            title={`Открыть: ${fileName}${size ? ` (${kindLabel}, ${size})` : ` (${kindLabel})`}`}
+            onClick={() => onPreview(s3)}
+          >
+            <span className={`tcpf-ftype is-${kind}`}><IconFileTyped /></span>
+            <span className="tcpf-file-name">{shownFileName(fileName)}</span>
+          </button>
+        </div>
+        <div className="tcpf-meta">
+          <span className="tcpf-when" title={`Загружено ${fmtDateTime(file.created_at)}`}>
+            <span className="tcpf-date">{fmtDate(file.created_at)}</span>
+            <span className="tcpf-time">{fmtTime(file.created_at)}</span>
+          </span>
+          {s3.uploaded_by_name && (
+            <span className="tcpf-uploader">
+              <IconUser size={12} />
+              <PersonName full={s3.uploaded_by_name} titlePrefix="Кто загрузил" />
+            </span>
+          )}
+          {file.version_label && (
+            <span className="tcpf-vlabel" title="Метка версии">«{file.version_label}»</span>
+          )}
+          {replaced && (
+            <span className="tcpf-ver" title={`Заменена ${fmtDateTime(item.replacedAt)}`}>
+              заменена {fmtDate(item.replacedAt)}
+            </span>
+          )}
+          {/* Проверка — только у КП, которые идут через «Проверку КП» (review_required);
+              КП до запуска проверки — без неё. Шаги — только у текущей версии. */}
+          {reviewed && (
+            <ReviewPart file={file} canReview={canReview} onReview={onReview} withSteps={!replaced} />
+          )}
+        </div>
+        {remarks && (
+          <div className="tcpf-remarks" title={file.review_note}>{file.review_note}</div>
         )}
-        <button
-          type="button"
-          className="tcpf-file"
-          title={`Открыть: ${fileName}${size ? ` (${kindLabel}, ${size})` : ` (${kindLabel})`}`}
-          onClick={() => onPreview(s3)}
-        >
-          <span className={`tcpf-ftype is-${kind}`}><IconFileTyped /></span>
-          <span className="tcpf-file-name">{stem}</span>
-          {ext && <span className="tcpf-file-ext">{ext}</span>}
-        </button>
-        <button
-          type="button"
-          className={`tcpf-icon-btn${mainDownload ? ' tcpf-dl-main' : ''}`}
-          title={`Скачать «${s3.file_name}»`}
-          aria-label={`Скачать ${s3.file_name}`}
-          onClick={() => onDownload(s3)}
-        >
-          <IconDownload size={14} />
-          {mainDownload && <span aria-hidden>Скачать</span>}
-        </button>
+      </div>
+      {/* «Удалить» — левее: «Скачать» всегда у правого края, «Удалить» появляется по наведению. */}
+      <div className="tcpf-item-actions">
         {onDelete && (
           <button
             type="button"
             className="tcpf-icon-btn tcpf-icon-del"
             title="Удалить файл"
-            aria-label={`Удалить ${s3.file_name}`}
+            aria-label={`Удалить ${fileName}`}
             onClick={() => onDelete(file)}
           ><IconTrash size={14} /></button>
         )}
+        <button
+          type="button"
+          className="tcpf-icon-btn tcpf-dl"
+          title={`Скачать «${fileName}»`}
+          aria-label={`Скачать ${fileName}`}
+          onClick={() => onDownload(s3)}
+        ><IconDownload size={15} /></button>
       </div>
-      <div className="tcpf-meta">
-        <span className="tcpf-when" title={`Загружено ${fmtDateTime(file.created_at)}`}>
-          <span className="tcpf-date">{fmtDate(file.created_at)}</span>
-          <span className="tcpf-time">{fmtTime(file.created_at)}</span>
-        </span>
-        {s3.uploaded_by_name && (
-          <span className="tcpf-uploader">
-            <IconUser size={12} />
-            <PersonName full={s3.uploaded_by_name} titlePrefix="Кто загрузил" />
-          </span>
-        )}
-        {file.version_label && (
-          <span className="tcpf-vlabel" title="Метка версии">«{file.version_label}»</span>
-        )}
-        {replaced && (
-          <span className="tcpf-ver" title={`Заменена ${fmtDateTime(item.replacedAt)}`}>
-            заменена {fmtDate(item.replacedAt)}
-          </span>
-        )}
-        {/* Проверка — только у КП, которые идут через «Проверку КП» (review_required);
-            КП до запуска проверки — без неё. Шаги — только у текущей версии. */}
-        {reviewed && (
-          <ReviewPart file={file} canReview={canReview} onReview={onReview} withSteps={!replaced} />
-        )}
-      </div>
-      {remarks && (
-        <div className="tcpf-remarks" title={file.review_note}>{file.review_note}</div>
-      )}
     </li>
   )
 }
@@ -465,8 +469,8 @@ export default function TenderCounterpartyFiles({
     canReview,
     onReview: setReviewFile,
   }
-  // Подписи блоков «КП 1», «КП 2» — когда КП несколько; у одного КП число версий уже в сводке.
-  const groupHeads = groups.length > 1
+  // Все файлы участника: КП всех версий и документы.
+  const filesCount = proposals.length + attachments.length
 
   return (
     <div className={`tcpf${open ? '' : ' is-collapsed'}`} aria-busy={loading}>
@@ -474,7 +478,7 @@ export default function TenderCounterpartyFiles({
       <input ref={proposalRef} type="file" style={{ display: 'none' }} onChange={handleProposalFile} />
       <input ref={attachmentRef} type="file" multiple style={{ display: 'none' }} onChange={handleAttachmentFile} />
 
-      {/* Строка-сводка: стрелка и число КП (свёрнуто — ещё документы и проверка), справа
+      {/* Строка-сводка: стрелка и «Файлов: N» плашкой (свёрнуто — ещё проверка), справа
           загрузка и «Скачать всё». «Скачать всё» видит и тот, кто не может загружать:
           скачивание одного файла ему тоже доступно. */}
       <div className="tcpf-head">
@@ -493,16 +497,7 @@ export default function TenderCounterpartyFiles({
             title={open ? 'Свернуть КП и документы участника' : 'Показать КП и документы участника'}
           >
             <span className={`tcpf-chev${open ? ' is-open' : ''}`}><IconChevron /></span>
-            {groups.length > 0 ? (
-              <span className="tcpf-sum-kp">
-                КП · {groups.length}
-                {proposals.length > groups.length && (
-                  <span className="tcpf-sum-sub"> · {proposals.length} {versionsWord(proposals.length)}</span>
-                )}
-              </span>
-            ) : (
-              <span className="tcpf-sum-kp is-none">КП не загружено</span>
-            )}
+            <span className="tcpf-sum-files">Файлов: {filesCount}</span>
           </button>
         )}
         {(canEdit || canDownloadAll) && (
@@ -534,13 +529,10 @@ export default function TenderCounterpartyFiles({
         )}
       </div>
 
-      {/* Свёрнуто — второй строкой во всю ширину: документы и проверка текущих версий КП (рядом с
-          кнопками сводка ужималась в три-четыре строки). */}
-      {ready && !open && !isEmpty && (attachments.length > 0 || groups.some(g => g.current.file.review_required === true)) && (
+      {/* Свёрнуто — второй строкой во всю ширину: проверка текущих версий КП (рядом с кнопками
+          сводка ужималась в три-четыре строки). */}
+      {ready && !open && groups.some(g => g.current.file.review_required === true) && (
         <div className="tcpf-sum-more">
-          {attachments.length > 0 && (
-            <span className="tcpf-sum-docs">Документы · {attachments.length}</span>
-          )}
           <ReviewSummary groups={groups} />
         </div>
       )}
@@ -550,16 +542,8 @@ export default function TenderCounterpartyFiles({
           {groups.length > 0 && (
             <section className="tcpf-section" aria-label="Коммерческие предложения">
               <ol className="tcpf-kps">
-                {groups.map((g, gi) => (
+                {groups.map(g => (
                   <li key={g.groupId} className={`tcpf-kp tcpf-tone-${kpTone(g.current.file)}`} data-group={g.groupId}>
-                    {groupHeads && (
-                      <div className="tcpf-kp-head">
-                        <span className="tcpf-kp-name">КП {gi + 1}</span>
-                        {g.items.length > 1 && (
-                          <span className="tcpf-kp-sub">{g.items.length} {versionsWord(g.items.length)}</span>
-                        )}
-                      </div>
-                    )}
                     <ol className="tcpf-list">
                       {g.items.map(item => (
                         <FileItem key={item.file.id} item={item} isProposal versioned={g.items.length > 1} {...itemProps} />

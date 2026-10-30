@@ -4445,7 +4445,9 @@ ${ATTACHMENT_BLOCK}
                                   <th className="tc-col-contacts">Контакты</th>
                                   <th className="tc-col-files">КП / Документы</th>
                                   {!hideNotes && <th className="tc-col-notes">Примечание</th>}
-                                  <th style={{ width: '48px' }}></th>
+                                  {/* Удалить участника — только с правом правки: без него колонка
+                                      стояла пустой справа (экономист, инженер, 30.10.2026). */}
+                                  {canEditTenders && <th style={{ width: '48px' }}></th>}
                                 </tr>
                               </thead>
                               <tbody>
@@ -4594,8 +4596,8 @@ ${ATTACHMENT_BLOCK}
                                       )}
                                     </td>
                                     )}
-                                    <td style={{ textAlign: 'center' }}>
-                                      {canEditTenders && (
+                                    {canEditTenders && (
+                                      <td style={{ textAlign: 'center' }}>
                                         <button
                                           type="button"
                                           className="btn-icon btn-delete"
@@ -4605,8 +4607,8 @@ ${ATTACHMENT_BLOCK}
                                         >
                                           <IconTrash />
                                         </button>
-                                      )}
-                                    </td>
+                                      </td>
+                                    )}
                                   </tr>
                                 ))}
                               </tbody>
