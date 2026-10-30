@@ -456,6 +456,51 @@ describe('Проверка КП: группы по тендеру, компак�
     }
   })
 
+  it('проверка и отметки не двигают тендер: порядок закреплён до смены вкладки или сортировки', async () => {
+    const { context, page, errors } = await open()
+    const review = async (id) => {
+      await kpRow(page, id).locator('.kprv-btn', { hasText: 'Проверить' }).click()
+      await page.locator('.kprm-modal').waitFor()
+      await page.locator('.kprm-option', { hasText: 'Проверено, замечаний нет' }).click()
+      await page.locator('.kprm-btn-primary').click()
+      await page.locator('.kprm-modal').waitFor({ state: 'detached' })
+    }
+    const groups = async () => (await order(page)).filter((x) => x.startsWith('g:'))
+    try {
+      // «На проверке»: kt-6 первым по самому свежему КП (kp-12). Проверенное kp-12 уходит из
+      // вкладки — раньше kt-6 вставал по kp-13 и уезжал под kt-2.
+      assert.deepEqual(await order(page), ['g:kt-6', 'kp-12', 'kp-13', 'g:kt-2', 'kp-6', 'g:kt-1', 'kp-1', 'kp-4', 'g:kt-5', 'kp-11'])
+      await review('kp-12')
+      await kpRow(page, 'kp-12').waitFor({ state: 'detached' })
+      assert.deepEqual(await order(page), ['g:kt-6', 'kp-13', 'g:kt-2', 'kp-6', 'g:kt-1', 'kp-1', 'kp-4', 'g:kt-5', 'kp-11'])
+      // Смена вкладки сортирует заново.
+      await openStage(page, 'all')
+      await openStage(page, 'pending')
+      assert.deepEqual(await groups(), ['g:kt-2', 'g:kt-6', 'g:kt-1', 'g:kt-5'])
+
+      // «Все» по дате проверки: КП без проверки — внизу; проверенное стало бы самым свежим, и kt-5
+      // прыгнул бы наверх. Отметка «В сводной» — тоже на месте.
+      await openStage(page, 'all')
+      await page.locator('.kprv-sort-btn', { hasText: 'Проверка' }).click()
+      const before = await order(page)
+      assert.equal(before.at(-2), 'g:kt-5')
+      await review('kp-11')
+      await kpRow(page, 'kp-11').locator('.kpb-pill.kpb-approved').waitFor()
+      assert.deepEqual(await order(page), before)
+      await kpRow(page, 'kp-11').locator('.kprv-step-sum input').click({ force: true })
+      await page.waitForFunction(() => window.__fakeDb.tender_proposal_files.find((f) => f.id === 'kp-11').summary_added)
+      await kpRow(page, 'kp-11').locator('.kprv-step-sum input:checked').waitFor()
+      assert.deepEqual(await order(page), before)
+      // Смена сортировки — заново: свежепроверенный kt-5 первым.
+      await page.locator('.kprv-sort-btn', { hasText: 'Проверка' }).click()
+      await page.locator('.kprv-sort-btn', { hasText: 'Проверка' }).click()
+      assert.equal((await groups())[0], 'g:kt-5')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
   it('без прав — состояние шагов без флажков и без кнопки проверки; суперпользователь ставит этап вручную', async () => {
     const viewer = await open({ role: 'viewer' })
     try {

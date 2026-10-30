@@ -355,6 +355,32 @@ function groupByTender(rows, sort) {
     || String(a.key).localeCompare(String(b.key)))
 }
 
+// Закреплённый порядок (pinOrder в KpReviewPage): место каждого тендера и КП на
+// экране в момент действия.
+function rankOf(groups) {
+  const g = new Map()
+  const r = new Map()
+  groups.forEach((x, i) => {
+    g.set(x.key, i)
+    for (const row of x.rows) r.set(row.id, r.size)
+  })
+  return { groups: g, rows: r }
+}
+
+// Свежая сортировка поверх закреплённого порядка: знакомые встают на прежние
+// места относительно друг друга, новые — туда, куда их ставит сортировка.
+function keepRank(items, idOf, rank) {
+  const known = items.filter(x => rank.has(idOf(x)))
+    .sort((a, b) => rank.get(idOf(a)) - rank.get(idOf(b)))
+  let i = 0
+  return items.map(x => (rank.has(idOf(x)) ? known[i++] : x))
+}
+
+function applyPinnedOrder(groups, pin) {
+  return keepRank(groups, g => g.key, pin.groups)
+    .map(g => ({ ...g, rows: keepRank(g.rows, r => r.id, pin.rows) }))
+}
+
 function SortTh({ label, sortKey, sort, onSort, className = '', title }) {
   const active = sort.key === sortKey
   return (
@@ -560,6 +586,20 @@ function KpReviewPage() {
   // Скролл-контейнер таблицы — из него виртуализация берёт положение прокрутки.
   const tableWrapRef = useRef(null)
 
+  // Порядок тендеров и КП не меняется от действий в строках. Проверенное КП
+  // уходит из вкладки, и тендер вставал по следующему своему КП — уезжал вниз
+  // списка (при сортировке по проверке — наверх). Действие (проверка, отметка,
+  // этап) закрепляет порядок, который на экране: знакомые тендеры и КП стоят на
+  // местах, новые встают по сортировке. Смена вкладки, сортировки, поиска или
+  // направлений сортирует заново.
+  const viewKey = [tab, sort.key, sort.dir, search.trim().toLowerCase(), [...depts].sort().join(',')].join('|')
+  const shownOrder = useRef(null) // { view, groups } — что сейчас на экране
+  const pinnedOrder = useRef(null) // { view, groups, rows } — закреплено действием
+  const pinOrder = () => {
+    const shown = shownOrder.current
+    if (shown) pinnedOrder.current = { view: shown.view, ...rankOf(shown.groups) }
+  }
+
   // Закрытие меню этапа по клику вне и по Escape.
   useEffect(() => {
     if (!stagePopoverFor) return
@@ -662,6 +702,7 @@ function KpReviewPage() {
   const handleStep = async (r, kind, next) => {
     const key = `${r.id}:${kind}`
     if (busySteps.has(key)) return
+    pinOrder()
     setBusySteps(prev => new Set(prev).add(key))
     try {
       const updated = kind === 'summary'
@@ -688,6 +729,7 @@ function KpReviewPage() {
   const handleSetStage = async (r, stage) => {
     setStagePopover(null)
     if (stageOf(r) === stage) return
+    pinOrder()
     try {
       await setReviewStage(r.id, stage, { author: actor })
       load({ silent: true })
@@ -804,10 +846,14 @@ function KpReviewPage() {
     return c
   }, [tabRows])
 
-  const groups = useMemo(
-    () => groupByTender(tabRows.filter(inDepts), sort),
-    [tabRows, inDepts, sort],
-  )
+  const groups = useMemo(() => {
+    const fresh = groupByTender(tabRows.filter(inDepts), sort)
+    let pin = pinnedOrder.current
+    if (pin && pin.view !== viewKey) pin = pinnedOrder.current = null
+    const shown = pin ? applyPinnedOrder(fresh, pin) : fresh
+    shownOrder.current = { view: viewKey, groups: shown }
+    return shown
+  }, [tabRows, inDepts, sort, viewKey])
   const shownCount = useMemo(() => groups.reduce((n, g) => n + g.rows.length, 0), [groups])
 
   const renderGroupRow = (g) => {
@@ -1197,7 +1243,10 @@ function KpReviewPage() {
         <KpReviewModal
           file={reviewFile}
           onClose={() => setReviewFile(null)}
-          onSaved={() => load({ silent: true })}
+          onSaved={() => {
+            pinOrder()
+            load({ silent: true })
+          }}
         />
       )}
       {previewDoc && (
