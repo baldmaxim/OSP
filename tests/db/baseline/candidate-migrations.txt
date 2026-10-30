@@ -28,3 +28,4 @@
 20261115_work_types_division.sql
 20261116_cost_plan_calc.sql
 20261117_dc_request_submission_responsible.sql
+20261119_work_types_division_other.sql

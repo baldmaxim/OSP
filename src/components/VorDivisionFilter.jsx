@@ -1,6 +1,7 @@
 import FilterDropdown from './FilterDropdown'
 import { IconFilter, IconClose, IconTag } from './icons/ToolbarIcons'
 import { VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION } from '../utils/vorDivisions'
+import { WORK_TYPE_DIVISIONS, WORK_TYPE_DIVISION_LABEL } from '../utils/workTypeDivisions'
 import './VorDivisionFilter.css'
 
 // Фильтр реестра «Тендеры — Основное строительство» по подразделению ВОР — в
@@ -15,9 +16,16 @@ import './VorDivisionFilter.css'
 // counts — Map(код → число тендеров) по реестру без этого фильтра.
 // subject='dc' — фильтр реестра «Заявка на ДС» по подразделению заявки (те же коды и подписи).
 // subject='contract' — фильтр реестра «Договоры и ДС» по подразделению договора (ДС — по договору).
-// subject='cp' — фильтр реестра контрагентов по подразделениям их видов работ; subject='wt' — справочник видов работ.
-const ITEMS = [...VOR_DIVISIONS, { value: NO_VOR_DIVISION, label: 'Не указано' }]
-const ITEM_LABEL = { ...VOR_DIVISION_LABEL, [NO_VOR_DIVISION]: 'Не указано' }
+// subject='cp' — фильтр реестра контрагентов по подразделениям их видов работ; subject='wt' — справочник видов работ
+// (у этих двух есть ещё «Прочее» — WORK_TYPE_DIVISIONS).
+const VOR_LIST = {
+  items: [...VOR_DIVISIONS, { value: NO_VOR_DIVISION, label: 'Не указано' }],
+  label: { ...VOR_DIVISION_LABEL, [NO_VOR_DIVISION]: 'Не указано' },
+}
+const WORK_LIST = {
+  items: [...WORK_TYPE_DIVISIONS, { value: NO_VOR_DIVISION, label: 'Не указано' }],
+  label: { ...WORK_TYPE_DIVISION_LABEL, [NO_VOR_DIVISION]: 'Не указано' },
+}
 const SUBJECT = {
   vor: { what: 'подразделению ВОР', all: 'тендеры', sr: 'Подразделение ВОР: ' },
   dc: { what: 'подразделению', all: 'заявки', sr: 'Подразделение: ' },
@@ -28,10 +36,11 @@ const SUBJECT = {
 
 export default function VorDivisionFilter({ value, onChange, counts = null, inHeader = false, subject = 'vor' }) {
   const t = SUBJECT[subject] || SUBJECT.vor
+  const list = subject === 'cp' || subject === 'wt' ? WORK_LIST : VOR_LIST
   const active = value.length > 0
-  const names = value.map(v => ITEM_LABEL[v]).filter(Boolean)
+  const names = value.map(v => list.label[v]).filter(Boolean)
   const shown = names.length === 1 ? names[0] : `Подразделений: ${names.length}`
-  const options = ITEMS.map(d => ({
+  const options = list.items.map(d => ({
     value: d.value,
     label: counts ? `${d.label} (${counts.get(d.value) || 0})` : d.label,
   }))

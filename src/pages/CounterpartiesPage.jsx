@@ -22,10 +22,9 @@ import { loadConcludedContractCounts } from '../services/counterpartyContracts'
 import CounterpartyVatSelect from '../components/counterparty/CounterpartyVatSelect'
 import VorDivisionChip from '../components/VorDivisionChip'
 import VorDivisionFilter from '../components/VorDivisionFilter'
-import { VOR_DIVISIONS, VOR_DIVISION_LABEL } from '../utils/vorDivisions'
 import {
-  WORK_TYPE_DIVISION_HINT, divisionByWorkType, divisionCounts, hasDivisionColumn, isMissingWorkTypeDivision,
-  matchesDivisions, splitWorkTypes, workTypesDivisions,
+  WORK_TYPE_DIVISIONS, WORK_TYPE_DIVISION_LABEL, divisionByWorkType, divisionCounts, hasDivisionColumn,
+  matchesDivisions, splitWorkTypes, workTypeDivisionSaveError, workTypesDivisions,
 } from '../utils/workTypeDivisions'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
@@ -247,7 +246,7 @@ function CounterpartiesPage() {
   // нового значения в input.
   const deferredSearchQuery = useDeferredValue(searchQuery)
   const [workTypeFilter, setWorkTypeFilter] = useState('')
-  // Подразделения (коды подразделений ВОР, NO_VOR_DIVISION — «Не указано») — по видам работ контрагента; пусто — все.
+  // Подразделения (коды подразделений ВОР и «Прочее», NO_VOR_DIVISION — «Не указано») — по видам работ контрагента; пусто — все.
   const [filterDivisions, setFilterDivisions] = useState([])
   // task 302: карточки компаний (s3_documents owner_type='counterparty') — map по owner_id, latest first.
   const [cardsByCp, setCardsByCp] = useState(() => new Map())
@@ -495,8 +494,8 @@ function CounterpartiesPage() {
     } catch (err) {
       if (err.code === '23505') {
         alert('Вид работ с таким названием уже существует')
-      } else if (isMissingWorkTypeDivision(err)) {
-        alert(WORK_TYPE_DIVISION_HINT)
+      } else if (workTypeDivisionSaveError(err)) {
+        alert(workTypeDivisionSaveError(err))
       } else {
         alert('Ошибка сохранения вида работ: ' + err.message)
       }
@@ -510,7 +509,7 @@ function CounterpartiesPage() {
       .update({ division, updated_at: new Date().toISOString() })
       .eq('id', wt.id)
     if (error) {
-      alert(isMissingWorkTypeDivision(error) ? WORK_TYPE_DIVISION_HINT : 'Ошибка: ' + error.message)
+      alert(workTypeDivisionSaveError(error) || 'Ошибка: ' + error.message)
       return
     }
     setWorkTypesDirectory(prev => prev.map(x => (x.id === wt.id ? { ...x, division } : x)))
@@ -1210,7 +1209,7 @@ function CounterpartiesPage() {
         cp.name || '',
         cp.department || '',
         cp.work_type || '',
-        ...(divisionsById ? [(divisionsById.get(cp.id) || []).map(d => VOR_DIVISION_LABEL[d]).join(', ')] : []),
+        ...(divisionsById ? [(divisionsById.get(cp.id) || []).map(d => WORK_TYPE_DIVISION_LABEL[d]).join(', ')] : []),
         cp.inn || '',
         cp.kpp || '',
         cp.legal_address || '',
@@ -1841,7 +1840,7 @@ function CounterpartiesPage() {
                   subject="wt"
                   value={wtDirDivisions}
                   onChange={setWtDirDivisions}
-                  counts={divisionCounts(workTypesDirectory, wt => (VOR_DIVISION_LABEL[wt.division] ? [wt.division] : []))}
+                  counts={divisionCounts(workTypesDirectory, wt => (WORK_TYPE_DIVISION_LABEL[wt.division] ? [wt.division] : []))}
                 />
               )}
               {/* task 333: добавление/правка справочника — только при can_edit */}
@@ -1865,7 +1864,7 @@ function CounterpartiesPage() {
               const q = wtDirSearch.trim().toLowerCase()
               const filteredWt = workTypesDirectory.filter(wt =>
                 (!q || (wt.name || '').toLowerCase().includes(q) || (wt.description || '').toLowerCase().includes(q))
-                && (!divisionSupported || matchesDivisions(VOR_DIVISION_LABEL[wt.division] ? [wt.division] : [], wtDirDivisions)))
+                && (!divisionSupported || matchesDivisions(WORK_TYPE_DIVISION_LABEL[wt.division] ? [wt.division] : [], wtDirDivisions)))
               return (
               <div className="table-wrapper">
                 <table className="compact-table work-types-table">
@@ -2620,8 +2619,8 @@ function CounterpartiesPage() {
                                     }}
                                   >
                                     {wt.name}
-                                    {VOR_DIVISION_LABEL[wt.division] && (
-                                      <span className="wt-search-div">{VOR_DIVISION_LABEL[wt.division]}</span>
+                                    {WORK_TYPE_DIVISION_LABEL[wt.division] && (
+                                      <span className="wt-search-div">{WORK_TYPE_DIVISION_LABEL[wt.division]}</span>
                                     )}
                                   </button>
                                 ))
@@ -3070,7 +3069,7 @@ function CounterpartiesPage() {
                       onChange={(e) => setWorkTypeForm({ ...workTypeForm, division: e.target.value })}
                     >
                       <option value="">Не указано</option>
-                      {VOR_DIVISIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                      {WORK_TYPE_DIVISIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
                     </select>
                   </div>
                 )}

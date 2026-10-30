@@ -14,8 +14,8 @@
 // Договоры и сумма — как раньше в «Победителях»: строки «Договоров и ДС» основного строительства, где контрагент —
 //   сторона (contracts.counterparty_id); заключён — статус «Завершено»; сумма по валютам, итог — ≈ в рублях.
 // Подразделения подрядчика — подразделения его видов работ (utils/workTypeDivisions.js, как в реестре контрагентов).
-import { NO_VOR_DIVISION, VOR_DIVISIONS } from './vorDivisions.js'
-import { matchesDivisions, workTypesDivisions } from './workTypeDivisions.js'
+import { NO_VOR_DIVISION } from './vorDivisions.js'
+import { WORK_TYPE_DIVISIONS, WORK_TYPE_DIVISION_LABEL, matchesDivisions, workTypesDivisions } from './workTypeDivisions.js'
 import { counterpartySearchIndex, searchCounterparties } from './counterpartySearch.js'
 import { totalRub } from './reportCurrency.js'
 
@@ -254,7 +254,7 @@ export function summarizeContractors(rows) {
 // Разрез по подразделениям: подрядчик с видами работ разных подразделений считается в каждом, без подразделения —
 // в «Не указано» (последней строкой). Все подразделения — даже пустые, чтобы видеть, где подрядчиков нет.
 export function divisionBreakdown(rows) {
-  const keys = [...VOR_DIVISIONS.map((d) => d.value), NO_VOR_DIVISION]
+  const keys = [...WORK_TYPE_DIVISIONS.map((d) => d.value), NO_VOR_DIVISION]
   const acc = new Map(keys.map((k) => [k, []]))
   for (const r of rows) {
     if (!r.divisions.length) acc.get(NO_VOR_DIVISION).push(r)
@@ -264,7 +264,7 @@ export function divisionBreakdown(rows) {
     const s = summarizeContractors(acc.get(value))
     return {
       value,
-      label: VOR_DIVISIONS.find((d) => d.value === value)?.label || 'Не указано',
+      label: WORK_TYPE_DIVISION_LABEL[value] || 'Не указано',
       contractors: s.contractors, kp: s.kp, wins: s.wins, winners: s.winners,
       signedAmountRub: s.signedAmountRub, anyForeign: s.anyForeign, winRate: s.winRate,
     }

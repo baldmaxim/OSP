@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { db } from '../../api'
 import { fetchAllRowsParallel } from '../../utils/fetchPagesParallel'
-import { NO_VOR_DIVISION, VOR_DIVISIONS } from '../../utils/vorDivisions'
-import { WORK_TYPE_DIVISION_HINT, divisionByWorkType, hasDivisionColumn } from '../../utils/workTypeDivisions'
+import { NO_VOR_DIVISION } from '../../utils/vorDivisions'
+import {
+  WORK_TYPE_DIVISIONS, WORK_TYPE_DIVISION_HINT, divisionByWorkType, hasDivisionColumn,
+} from '../../utils/workTypeDivisions'
 import { CP_LIMITED_LABEL, CP_STATUS_BLACKLIST, CP_STATUS_LIMITED } from '../../utils/counterpartyStatus'
 import {
   AMOUNT_PRESETS, DEFAULT_SORT, SHOW_OPTIONS, buildContractorRows, divisionBreakdown, filterByDivision,
@@ -235,7 +237,7 @@ function ContractorStats({ tenders = [], contracts = [], scopedObjectIds = [] })
             disabled={!hasDivisions}
           >
             <option value="">Все</option>
-            {VOR_DIVISIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+            {WORK_TYPE_DIVISIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
             <option value={NO_VOR_DIVISION}>Не указано</option>
           </select>
         </label>

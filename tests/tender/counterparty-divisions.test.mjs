@@ -7,7 +7,9 @@
 //     в форме контрагента подразделение видно рядом с видом работ; запятая в названии вида не принимается;
 //   • база без колонки — ни плашек, ни фильтров, ни выбора, окно вида работ не шлёт division;
 //   • таблицы миграции и разовой правки согласованы: коды — VOR_DIVISIONS, обе базы — одно распределение,
-//     у дубля и итогового вида — одно подразделение (порядок запуска миграции и правки не важен).
+//     у дубля и итогового вида — одно подразделение (порядок запуска миграции и правки не важен);
+//   • «Прочее» (other, миграция 20261119, решение пользователя 30.10.2026) — только у видов работ: нераспределённым
+//     видам — «Прочее», в выборе, плашках и фильтрах контрагентов есть, у тендеров и договоров — нет.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -16,7 +18,8 @@ import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import { VOR_DIVISIONS, NO_VOR_DIVISION } from '../../src/utils/vorDivisions.js'
 import {
-  divisionByWorkType, divisionCounts, hasDivisionColumn, isMissingWorkTypeDivision, matchesDivisions, workTypesDivisions,
+  WORK_TYPE_DIVISIONS, divisionByWorkType, divisionCounts, hasDivisionColumn, isMissingWorkTypeDivision, matchesDivisions,
+  workTypeDivisionSaveError, workTypesDivisions,
 } from '../../src/utils/workTypeDivisions.js'
 
 const read = (p) => fs.readFileSync(path.join(REPO, p), 'utf8')
@@ -45,6 +48,30 @@ describe('Подразделения видов работ: правила и т
     assert.ok(isMissingWorkTypeDivision({ code: 'PGRST204', message: "Could not find the 'division' column of 'work_types'" }))
     assert.ok(isMissingWorkTypeDivision({ code: '42703', message: 'column work_types.division does not exist' }))
     assert.ok(!isMissingWorkTypeDivision({ code: '23505', message: 'duplicate key division' }))
+  })
+
+  it('«Прочее» — подразделение только видов работ: последним в списке, отказ базы без 20261119 — понятным текстом', () => {
+    assert.deepEqual(WORK_TYPE_DIVISIONS.map((d) => d.value), [...VOR_DIVISIONS.map((d) => d.value), 'other'])
+    assert.equal(WORK_TYPE_DIVISIONS.at(-1).label, 'Прочее')
+    assert.ok(!VOR_DIVISIONS.some((d) => d.value === 'other'), 'у тендеров, договоров и заявок «Прочего» нет')
+    const byName = divisionByWorkType([{ name: 'Клининг', division: 'other' }, { name: 'Кровля', division: 'general' }])
+    assert.deepEqual(workTypesDivisions('Клининг, Кровля', byName), ['general', 'other'])
+    assert.match(workTypeDivisionSaveError({ code: '23514', message: 'new row violates check constraint "work_types_division_check"' }), /20261119/)
+    assert.match(workTypeDivisionSaveError({ code: 'PGRST204', message: "Could not find the 'division' column" }), /20261115/)
+    assert.equal(workTypeDivisionSaveError({ code: '23505', message: 'duplicate' }), null)
+  })
+
+  it('миграция «Прочего»: коды — WORK_TYPE_DIVISIONS, нераспределённым — other, обе базы одинаковы', () => {
+    const sup = read('supabase/migrations/20261119_work_types_division_other.sql')
+    const yan = read('migration/yandex/20261119_work_types_division_other.sql')
+    const check = sup.match(/division IN \(([^)]*)\)/)[1].match(/'([^']+)'/g).map((x) => x.slice(1, -1))
+    assert.deepEqual(check, WORK_TYPE_DIVISIONS.map((d) => d.value))
+    assert.match(sup, /UPDATE public\.work_types SET division = 'other' WHERE division IS NULL;/)
+    const body = (x) => x.slice(x.indexOf('DO $$'), x.lastIndexOf('WHERE division IS NULL;') + 23)
+    assert.equal(body(yan), body(sup), 'тело миграции Яндекса = Supabase')
+    assert.doesNotMatch(yan, /^\s*(BEGIN|COMMIT|ROLLBACK)\s*;/im, 'транзакцию в базе Яндекса задаёт migrate.sh')
+    const schema = read('supabase/schemas/work_types.sql').match(/division IN \(([^)]*)\)/)[1]
+    assert.equal(schema, sup.match(/division IN \(([^)]*)\)/)[1], 'схема = миграция')
   })
 
   it('миграция: коды — VOR_DIVISIONS, обе базы — одно распределение; правка дублей — без запятых и без смены подразделения', () => {
@@ -171,6 +198,37 @@ describe('Реестр контрагентов: подразделения по
       await page.locator('.cp-tab', { hasText: 'Активные' }).click()
       await row(page, 'Подрядчик 05').waitFor()
       assert.deepEqual(await chips(row(page, 'Подрядчик 05').locator('.cp-divs .vdiv')), ['Отделка'])
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('«Прочее»: выбор у вида работ, плашка у контрагента и пункт фильтра; в окне вида — тоже', async () => {
+    const { page, errors, close } = await openPage(BASE)
+    try {
+      await page.locator('.cp-tab-worktypes').click()
+      const wtRow = page.locator('.work-types-table tbody tr', { hasText: 'Клининг' })
+      await wtRow.locator('.wt-col-division .fdrop-trigger').click()
+      const options = await page.locator('.fdrop-panel .fdrop-option-text').allTextContents()
+      assert.deepEqual(options.filter((o) => o !== 'Не указано'), WORK_TYPE_DIVISIONS.map((d) => d.label))
+      await pick(page, 'Прочее')
+      await page.waitForFunction(() => window.__fakeDb.work_types.find((w) => w.name === 'Клининг')?.division === 'other')
+      assert.match(await wtRow.locator('.wt-col-division').innerText(), /Прочее/)
+
+      await page.locator('.work-types-directory-toolbar .btn-add').click()
+      const modal = page.locator('.modal').filter({ hasText: 'Новый вид работ' })
+      assert.ok((await modal.locator('select option').allTextContents()).includes('Прочее'))
+      await modal.locator('.modal-footer .btn-secondary').click()
+
+      await page.locator('.cp-tab', { hasText: 'Активные' }).click()
+      await row(page, 'Подрядчик 05').waitFor()
+      assert.deepEqual(await chips(row(page, 'Подрядчик 05').locator('.cp-divs .vdiv')), ['Прочее'])
+      await page.locator('th.col-worktype .fdrop-trigger').click()
+      const filter = await page.locator('.fdrop-panel .fdrop-option-text').allTextContents()
+      for (const o of ['Прочее (1)', 'Не указано (0)']) assert.ok(filter.includes(o), `${o} — ${filter.join(', ')}`)
+      await pick(page, 'Прочее')
+      await page.keyboard.press('Escape')
+      await page.waitForFunction(() => document.querySelectorAll('table.compact-table tbody tr.table-row').length === 1)
+      assert.deepEqual(await names(page), ['Подрядчик 05'])
       assert.deepEqual(errors, [])
     } finally { await close() }
   })

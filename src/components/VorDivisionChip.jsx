@@ -1,6 +1,7 @@
 import FilterDropdown from './FilterDropdown'
 import { IconTag } from './icons/ToolbarIcons'
 import { VOR_DIVISIONS, VOR_DIVISION_LABEL } from '../utils/vorDivisions'
+import { WORK_TYPE_DIVISIONS, WORK_TYPE_DIVISION_LABEL } from '../utils/workTypeDivisions'
 import './VorDivisionChip.css'
 
 // Подразделение ВОР под описанием работ в строке реестра тендеров — то же поле
@@ -11,7 +12,12 @@ import './VorDivisionChip.css'
 // subject='contract' — подразделение договора (contracts.division, utils/contractDivision.js); у ДС — договора.
 // subject='wt' — подразделение вида работ (work_types.division, utils/workTypeDivisions.js), вкладка «Виды работ».
 // subject='cp' — подразделение контрагента по его виду работ (только показ, в строке реестра контрагентов).
-const OPTIONS = [{ value: '', label: 'Не указано' }, ...VOR_DIVISIONS]
+// У видов работ и контрагентов есть ещё «Прочее» (WORK_TYPE_DIVISIONS), у остальных — только подразделения ВОР.
+const LISTS = {
+  vor: { options: [{ value: '', label: 'Не указано' }, ...VOR_DIVISIONS], label: VOR_DIVISION_LABEL },
+  work: { options: [{ value: '', label: 'Не указано' }, ...WORK_TYPE_DIVISIONS], label: WORK_TYPE_DIVISION_LABEL },
+}
+const listOf = (subject) => (subject === 'wt' || subject === 'cp' ? LISTS.work : LISTS.vor)
 
 const TEXTS = {
   vor: {
@@ -45,7 +51,8 @@ const TEXTS = {
 }
 
 export default function VorDivisionChip({ value, canEdit = false, onChange, subject = 'vor' }) {
-  const label = VOR_DIVISION_LABEL[value] || null
+  const list = listOf(subject)
+  const label = list.label[value] || null
   const t = TEXTS[subject] || TEXTS.vor
 
   if (!canEdit) {
@@ -67,7 +74,7 @@ export default function VorDivisionChip({ value, canEdit = false, onChange, subj
       icon={<IconTag size={11} />}
       value={value || ''}
       onChange={(v) => onChange(v || null)}
-      options={OPTIONS}
+      options={list.options}
       triggerTitle={label ? t.edit(label) : t.empty}
       formatTrigger={() => (label
         ? <><span className="ui-sr-only">{t.sr}</span>{label}</>

@@ -5,7 +5,13 @@
 // подразделения не даёт; контрагент без единого подразделения — «Не указано» (NO_VOR_DIVISION) в фильтре.
 import { VOR_DIVISIONS, NO_VOR_DIVISION } from './vorDivisions.js'
 
-const ORDER = new Map(VOR_DIVISIONS.map((d, i) => [d.value, i]))
+// «Прочее» — только у видов работ (миграция 20261119, решение пользователя 30.10.2026): аренда, охрана, клининг,
+// проектирование и всё, что не относится ни к одному подразделению ВОР. У тендеров, договоров и заявок на ДС его нет.
+export const OTHER_WORK_DIVISION = 'other'
+export const WORK_TYPE_DIVISIONS = [...VOR_DIVISIONS, { value: OTHER_WORK_DIVISION, label: 'Прочее' }]
+export const WORK_TYPE_DIVISION_LABEL = Object.fromEntries(WORK_TYPE_DIVISIONS.map(d => [d.value, d.label]))
+
+const ORDER = new Map(WORK_TYPE_DIVISIONS.map((d, i) => [d.value, i]))
 
 export const splitWorkTypes = (value) => (value || '').split(',').map(wt => wt.trim()).filter(Boolean)
 
@@ -22,7 +28,7 @@ export function divisionByWorkType(directory) {
   return map
 }
 
-// Подразделения по строке видов работ контрагента — без повторов, в порядке VOR_DIVISIONS.
+// Подразделения по строке видов работ контрагента — без повторов, в порядке WORK_TYPE_DIVISIONS.
 export function workTypesDivisions(workType, byName) {
   const set = new Set()
   for (const wt of splitWorkTypes(workType)) {
@@ -56,3 +62,13 @@ export const isMissingWorkTypeDivision = (err) =>
   (err?.code === '42703' || err?.code === 'PGRST204') && /division/.test(String(err?.message || ''))
 
 export const WORK_TYPE_DIVISION_HINT = 'Подразделение вида работ появится после обновления базы (миграция 20261115).'
+
+// Текст отказа при записи подразделения вида работ: нет колонки — 20261115; нарушение CHECK — «Прочее» в базе,
+// где 20261119 ещё не применена.
+export function workTypeDivisionSaveError(err) {
+  if (isMissingWorkTypeDivision(err)) return WORK_TYPE_DIVISION_HINT
+  if (err?.code === '23514' && /division/.test(String(err?.message || ''))) {
+    return '«Прочее» станет доступно после обновления базы (миграция 20261119).'
+  }
+  return null
+}

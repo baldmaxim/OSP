@@ -5,9 +5,9 @@ CREATE TABLE work_types (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name VARCHAR(255) NOT NULL UNIQUE,
   description TEXT,
-  -- Подразделение вида работ (миграция 20261115): коды подразделений ВОР, NULL — не указано.
-  -- Подразделения контрагента — подразделения его видов работ.
-  division TEXT CHECK (division IS NULL OR division IN ('monolith', 'nvf_spk', 'general', 'hvac_water', 'electrical', 'finishing')),
+  -- Подразделение вида работ (миграция 20261115): коды подразделений ВОР и other — «Прочее» (20261119, только у видов
+  -- работ), NULL — не указано. Подразделения контрагента — подразделения его видов работ.
+  division TEXT CHECK (division IS NULL OR division IN ('monolith', 'nvf_spk', 'general', 'hvac_water', 'electrical', 'finishing', 'other')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
