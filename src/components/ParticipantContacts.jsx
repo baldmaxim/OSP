@@ -1,5 +1,6 @@
 import { IconMail, IconPhone } from './icons/ToolbarIcons'
 import SoftBreaks from './SoftBreaks'
+import { copyWithToast } from './CopyToast'
 import { phoneHref } from '../utils/phoneFormat'
 import './ParticipantContacts.css'
 
@@ -8,30 +9,49 @@ import './ParticipantContacts.css'
 // строка реестра тендеров и вкладка «Участники» карточки. Контакт — ФИО, должность, каждый
 // телефон и каждая почта своей строкой со значком; контакты разделены чертой. Несколько
 // телефонов или адресов в одном поле — через «;».
+//
+// 30.10.2026 (по просьбе пользователя): нажатие на телефон или почту копирует их, внизу — плашка
+// «Номер скопирован» / «Email скопирован» (CopyToast); в свёрнутом виде видна и почта.
 const splitList = (value) => String(value || '').split(';').map(s => s.trim()).filter(Boolean)
 
-// compact — галочка «Свернуть всё» над таблицей: первый контакт одной строкой (ФИО и первый телефон, а без
-// телефона — почта), остальные — «ещё N»; все контакты целиком — в подсказке.
+// Телефон или почта: нажатие копирует. Ссылка tel: / mailto: остаётся — с Ctrl, Shift или колёсиком
+// мыши и долгим нажатием на телефоне по-прежнему можно позвонить или написать.
+function CopyLine({ kind, value }) {
+  const phone = kind === 'phone'
+  const handleClick = (e) => {
+    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
+    e.preventDefault()
+    copyWithToast(value, phone ? 'Номер скопирован' : 'Email скопирован')
+  }
+  return (
+    <a
+      className="tcc-line"
+      href={phone ? phoneHref(value) : `mailto:${value}`}
+      title={`Скопировать ${phone ? 'номер' : 'email'}: ${value}`}
+      onClick={handleClick}
+    >
+      {phone ? <IconPhone size={13} /> : <IconMail size={13} />}
+      {phone
+        ? <span className="tcc-phone">{value}</span>
+        // Перенос — после «@» и точек, а не посреди слова.
+        : <span className="tcc-mail"><SoftBreaks text={value} /></span>}
+    </a>
+  )
+}
+
+// compact — галочка «Свернуть всё» над таблицей: первый контакт одной строкой (ФИО, первый телефон и
+// почта; у первого контакта почты нет — первая почта остальных), остальные — «ещё N»; все контакты
+// целиком — в подсказке.
 function CompactContacts({ list }) {
   const first = list[0]
   const phone = splitList(first.phone)[0]
-  const email = phone ? null : splitList(first.email)[0]
+  const email = splitList(first.email)[0] || list.map(c => splitList(c.email)[0]).find(Boolean)
   const full = list.map(c => [c.full_name, c.position, c.phone, c.email].filter(Boolean).join(', ')).join('\n')
   return (
     <div className="tcc tcc-compact" title={full}>
       {first.full_name && <span className="tcc-name">{first.full_name}</span>}
-      {phone && (
-        <a className="tcc-line" href={phoneHref(phone)} title={`Позвонить: ${phone}`}>
-          <IconPhone size={13} />
-          <span className="tcc-phone">{phone}</span>
-        </a>
-      )}
-      {email && (
-        <a className="tcc-line" href={`mailto:${email}`} title={`Написать: ${email}`}>
-          <IconMail size={13} />
-          <span className="tcc-mail"><SoftBreaks text={email} /></span>
-        </a>
-      )}
+      {phone && <CopyLine kind="phone" value={phone} />}
+      {email && <CopyLine kind="email" value={email} />}
       {list.length > 1 && <span className="tcc-more">ещё {list.length - 1}</span>}
     </div>
   )
@@ -47,19 +67,8 @@ export default function ParticipantContacts({ contacts, compact = false }) {
         <li key={c.id || i} className="tcc-item">
           {c.full_name && <div className="tcc-name">{c.full_name}</div>}
           {c.position && <div className="tcc-pos">{c.position}</div>}
-          {splitList(c.phone).map((p, pi) => (
-            <a key={`p${pi}`} className="tcc-line" href={phoneHref(p)} title={`Позвонить: ${p}`}>
-              <IconPhone size={13} />
-              <span className="tcc-phone">{p}</span>
-            </a>
-          ))}
-          {splitList(c.email).map((em, ei) => (
-            <a key={`e${ei}`} className="tcc-line" href={`mailto:${em}`} title={`Написать: ${em}`}>
-              <IconMail size={13} />
-              {/* Перенос — после «@» и точек, а не посреди слова. */}
-              <span className="tcc-mail"><SoftBreaks text={em} /></span>
-            </a>
-          ))}
+          {splitList(c.phone).map((p, pi) => <CopyLine key={`p${pi}`} kind="phone" value={p} />)}
+          {splitList(c.email).map((em, ei) => <CopyLine key={`e${ei}`} kind="email" value={em} />)}
         </li>
       ))}
     </ul>

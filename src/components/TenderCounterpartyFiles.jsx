@@ -51,6 +51,10 @@ import '../styles/workUi.css'
 // цвету значка: красный, зелёный, синий; полное имя — в подсказке); «Скачать» — значком без
 // подписи справа, по середине строки файла; в сводке вместо «КП · N» — «Файлов: N» (КП всех
 // версий и документы) плашкой.
+//
+// 30.10.2026, позже: дата и время загрузки — только при наведении на строку файла (плашкой у правого
+// края, рядом со «Скачать», строки не сдвигаются; на сенсорном экране — в строке сведений, как раньше); метка версии,
+// «заменена», вердикт и шаги проверки — чуть жирнее (500).
 
 // Документов больше — список свёрнут до нажатия на «Документы · N».
 const DOCS_OPEN_MAX = 3
@@ -134,6 +138,14 @@ const IconFileTyped = () => (
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
       fill="currentColor" fillOpacity="0.14" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
     <path d="M14 2v6h6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+  </svg>
+)
+
+const IconClock = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
   </svg>
 )
 
@@ -222,9 +234,10 @@ function ReviewPart({ file, canReview, onReview, withSteps }) {
 }
 
 // Строка файла: слева имя плашкой со значком типа (целиком, в несколько строк), под ним одной
-// строкой дата и время загрузки, кто загрузил, метка версии, у прежней версии — когда заменена, у
-// КП на проверке — проверка; замечания текущей версии — строкой под ней. Справа, по середине
-// строки, — «Скачать» значком и (с правом правки) «Удалить».
+// строкой кто загрузил, метка версии, у прежней версии — когда заменена, у КП на проверке —
+// проверка; замечания текущей версии — строкой под ней. Дата и время загрузки — плашкой у правого
+// края при наведении на строку (CSS, .tcpf-when). Справа, по середине строки, — «Скачать» значком и (с
+// правом правки) «Удалить».
 // item — элемент proposals из buildFilesTimeline (у документа — { file }); versioned — у КП
 // несколько версий: слева метка «в1», «в2».
 function FileItem({ item, isProposal, versioned, onDownload, onPreview, onDelete, canReview, onReview }) {
@@ -261,6 +274,7 @@ function FileItem({ item, isProposal, versioned, onDownload, onPreview, onDelete
         </div>
         <div className="tcpf-meta">
           <span className="tcpf-when" title={`Загружено ${fmtDateTime(file.created_at)}`}>
+            <span className="tcpf-when-ic"><IconClock /></span>
             <span className="tcpf-date">{fmtDate(file.created_at)}</span>
             <span className="tcpf-time">{fmtTime(file.created_at)}</span>
           </span>

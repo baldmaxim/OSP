@@ -13,6 +13,9 @@
 // Excel и Word без расширения (значок — красный, зелёный, синий); «Скачать» — значком справа по середине строки файла; в сводке — «Файлов: N»; фон
 // раскрытого тендера и строк участников — без серого (серые только шапка и рамка); в карточке, открытой не
 // из реестра, таблица во всю ширину, «Свернуть всё» — за заголовком; без права правки нет пустой колонки.
+// 30.10.2026, позже: дата и время загрузки — только при наведении на строку файла (плашкой, строки не
+// сдвигаются); метка версии и другие пометки — 500; телефон и почта контакта копируются нажатием, внизу —
+// плашка «Номер скопирован» / «Email скопирован»; в свёрнутом виде видна и почта.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -211,6 +214,58 @@ describe('Лента файлов участника: карточка тенд�
     }
   })
 
+  it('дата и время загрузки — только при наведении на строку файла, ничего не сдвигается; пометки — 500', async () => {
+    const { page, errors, close } = await openCard()
+    try {
+      const items = kpItems(row(page, 'Подрядчик 01'))
+      const when = items.nth(1).locator('.tcpf-when')
+      const state = () => items.nth(1).evaluate((li) => ({
+        position: getComputedStyle(li.querySelector('.tcpf-when')).position,
+        uploader: Math.round(li.querySelector('.tcpf-uploader').getBoundingClientRect().left),
+        file: Math.round(li.querySelector('.tcpf-file').getBoundingClientRect().left),
+        height: Math.round(li.getBoundingClientRect().height),
+      }))
+      const opacityIs = async (value) => page.waitForFunction(([el, v]) => getComputedStyle(el).opacity === v,
+        [await when.elementHandle(), value], { timeout: 5000 })
+      // Мышь — в стороне: даты не видно, место в строке сведений она не держит (кто загрузил — первым,
+      // вровень с именем файла).
+      await page.mouse.move(5, 5)
+      await opacityIs('0')
+      const idle = await state()
+      assert.equal(idle.position, 'absolute')
+      assert.ok(Math.abs(idle.uploader - idle.file) < 4, `кто загрузил — в начале строки сведений: ${idle.uploader} / ${idle.file}`)
+      // Наведение на строку файла — дата видна плашкой у правого края, рядом со «Скачать»; строка не
+      // сдвинулась и не выросла.
+      await items.nth(1).locator('.tcpf-meta').hover()
+      await opacityIs('1')
+      const hovered = await state()
+      assert.equal(hovered.uploader, idle.uploader, 'ничего не сдвинулось')
+      assert.equal(hovered.height, idle.height, 'высота строки та же')
+      assert.match(await when.textContent(), /21\.10\.26\s*13:00/)
+      const chip = await when.boundingBox()
+      const name = await items.nth(1).locator('.tcpf-file').boundingBox()
+      const uploader = await items.nth(1).locator('.tcpf-uploader').boundingBox()
+      const dl = await items.nth(1).locator('.tcpf-dl').boundingBox()
+      assert.ok(chip.x >= name.x + name.width && chip.x >= uploader.x + uploader.width, 'плашка даты — правее имени и сведений, не закрывает их')
+      assert.ok(chip.x + chip.width <= dl.x && dl.x - (chip.x + chip.width) < 48, 'плашка даты — рядом со «Скачать»')
+      const item = await items.nth(1).boundingBox()
+      assert.ok(chip.y >= item.y && chip.y + chip.height <= item.y + item.height, 'плашка — в своей строке, соседнюю не закрывает')
+      // У соседней строки дата по-прежнему скрыта.
+      assert.equal(await items.first().locator('.tcpf-when').evaluate((el) => getComputedStyle(el).opacity), '0')
+      // Метка версии, «в1», «заменена», вердикт — чуть жирнее (500), имя загрузившего — обычным.
+      const weight = (loc) => loc.evaluate((el) => getComputedStyle(el).fontWeight)
+      assert.equal(await weight(items.first().locator('.tcpf-vlabel')), '500')
+      assert.equal(await weight(items.first().locator('.tcpf-vtag')), '500')
+      assert.equal(await weight(items.first().locator('.tcpf-ver')), '500')
+      assert.equal(await weight(items.first().locator('.tcpf-uploader')), '400')
+      const verdict = kpItems(row(page, 'Подрядчик 02')).first().locator('.kpb-pill')
+      assert.equal(await weight(verdict), '500')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
   it('имя файла открывает просмотр — отдельной кнопки «Просмотр» нет; у файла «Скачать» значком справа по середине и «Удалить»', async () => {
     const { page, errors, close } = await openCard()
     try {
@@ -299,6 +354,28 @@ describe('Лента файлов участника: карточка тенд�
         ['tel:+79637950185', 'tel:+77273000000', 'mailto:shahmirov.dzhabrail@yahoo.com'])
       assert.equal(await contacts.first().locator('.tcc-mail').textContent(), 'shahmirov.dzhabrail@yahoo.com')
       assert.equal(await row(page, 'Подрядчик 03').locator('.tcc-none').textContent(), '—')
+      // Нажатие копирует номер или почту (как написано, без невидимых знаков переноса), внизу — плашка с
+      // галочкой; страница никуда не уходит.
+      await page.evaluate(() => {
+        window.__copied = []
+        Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (t) => { window.__copied.push(t) } } })
+      })
+      const url = page.url()
+      await contacts.first().locator('.tcc-line').first().click()
+      const toast = page.locator('.copy-toast')
+      await toast.waitFor({ timeout: 5000 })
+      assert.equal((await toast.textContent()).trim(), 'Номер скопирован')
+      assert.equal(await toast.locator('.copy-toast-ic svg').count(), 1, 'зелёная галочка')
+      assert.equal(await toast.locator('.copy-toast-ic').evaluate((el) => getComputedStyle(el).backgroundColor), 'rgb(22, 163, 74)')
+      const box = await toast.boundingBox()
+      assert.ok(box.y + box.height > 1000 - 40 && box.height < 40, `маленькая плашка внизу: ${JSON.stringify(box)}`)
+      await contacts.first().locator('.tcc-line').nth(2).click()
+      await page.waitForFunction(() => document.querySelector('.copy-toast')?.textContent.trim() === 'Email скопирован')
+      assert.deepEqual(await page.evaluate(() => window.__copied), ['+7(963)795-01-85', 'shahmirov.dzhabrail@yahoo.com'])
+      assert.match(await contacts.first().locator('.tcc-line').first().getAttribute('title'), /^Скопировать номер: \+7\(963\)795-01-85$/)
+      assert.equal(page.url(), url)
+      // Плашка сама пропадает.
+      await toast.waitFor({ state: 'detached', timeout: 5000 })
       assert.deepEqual(errors, [])
     } finally {
       await card.close()
@@ -474,10 +551,14 @@ describe('Лента файлов участника: карточка тенд�
       assert.equal((await one.locator('.tcpf-summary').textContent()).trim(), 'Файлов: 3')
       assert.equal((await one.locator('.tcpf-sum-more').textContent()).trim(), 'на проверке 1')
       assert.match(await row(page, 'Подрядчик 02').locator('.tcpf-sum-more').textContent(), /проверено 1.*замечания 1/)
-      // Контакты — первый одной строкой (ФИО и телефон), остальные — «ещё N», все — в подсказке; вида работ нет.
+      // Контакты — первый одной строкой (ФИО, телефон и почта), остальные — «ещё N», все — в подсказке; вида работ нет.
       const contacts = one.locator('.tcc-compact')
       assert.equal(await contacts.locator('.tcc-name').textContent(), 'Шахмиров Джабраил Алиевич')
-      assert.deepEqual(await contacts.locator('.tcc-line').evaluateAll((as) => as.map((a) => a.getAttribute('href'))), ['tel:+79637950185'])
+      assert.deepEqual(await contacts.locator('.tcc-line').evaluateAll((as) => as.map((a) => a.getAttribute('href'))),
+        ['tel:+79637950185', 'mailto:shahmirov.dzhabrail@yahoo.com'])
+      // Почты нет — только телефон.
+      const second = row(page, 'Подрядчик 02').locator('.tcc-compact')
+      assert.deepEqual(await second.locator('.tcc-line').evaluateAll((as) => as.map((a) => a.getAttribute('href'))), ['tel:+77015551234'])
       assert.equal(await contacts.locator('.tcc-more').textContent(), 'ещё 1')
       assert.match(await contacts.getAttribute('title'), /Петров Пётр, Сметчик, smeta@example\.invalid/)
       assert.equal(await one.locator('.tc-company-sub').isVisible(), false)
