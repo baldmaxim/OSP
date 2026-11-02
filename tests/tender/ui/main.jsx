@@ -21,6 +21,7 @@
 //             dcSteps=N, dcComments=N — длинный список шагов и переписка у dcr-3; dcBadLink=1 — не адрес вместо письма),
 //             /stand/api-keys («Администрирование» → «Доступ к API»; apiKeys=missing — раздела у сервера нет,
 //             apiKeysMany=N — ещё N ключей),
+//             /stand/add-user («Администрирование» → «Добавить пользователя»; addUserNoGuest=1 — роли «Гость» нет),
 //             /rates-registry (реестр расценок, вкладка КП: ручные расценки, «Документ (ВОР)», проверка по файлу;
 //             kpRegistryLegacy=1 — колонок миграции 20261122 ещё нет);
 //   items   — позиций ВОР (по умолчанию 5000, три документа, разделы),
@@ -67,6 +68,7 @@ const DocCheckRequestsPage = lazy(() => import('../../../src/pages/DocCheckReque
 const CostPlansPage = lazy(() => import('../../../src/pages/CostPlansPage'))
 // «Доступ к API» — так же (AdminPage.css) и со своим «сервером» в памяти (api-keys-stand.jsx).
 const ApiKeysStand = lazy(() => import('./api-keys-stand.jsx'))
+const AddUserStand = lazy(() => import('./add-user-stand.jsx'))
 // Боковое меню — так же (Sidebar.css: .nav-item и др. глобальные), с темой (переключатель темы в меню).
 const SidebarStand = lazy(() => import('./sidebar-stand.jsx'))
 // Карточка объекта — так же (ObjectDetailPage.css): переход по ссылке на подтверждающий ДС из «Расчёта ПЗ».
@@ -101,6 +103,7 @@ const routes = (
     <Route path="/tasks" element={<TasksPage />} />
     <Route path="/stand/dgp" element={<Suspense fallback={null}><DgpStand /></Suspense>} />
     <Route path="/stand/api-keys" element={<Suspense fallback={null}><ApiKeysStand /></Suspense>} />
+    <Route path="/stand/add-user" element={<Suspense fallback={null}><AddUserStand /></Suspense>} />
     <Route path="/public/tenders" element={<PublicTendersPage />} />
     <Route path="/general/counterparties" element={<CounterpartiesPage />} />
     <Route path="/general/objects/:objectId" element={<Suspense fallback={null}><ObjectDetailPage /></Suspense>} />

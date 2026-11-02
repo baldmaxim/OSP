@@ -6,11 +6,15 @@ import { useRole } from '../../contexts/RoleContext'
 // роль (для подрядчика — организация). Сервер создаёт учётку уже подтверждённой и одобренной и выдаёт
 // временный пароль: он показывается один раз, при первом входе человек меняет его на свой.
 
+// Роль новой учётки, пока администратор не выбрал другую. По порядку списка её брать нельзя: первым в справочнике идёт
+// «Администратор». «Гость» — не системная роль, её могут удалить: тогда ничего не подставляем, роль выбирают сами.
+const DEFAULT_ROLE = 'guest'
+
 export function AddUserDrawer({ roleOptions, onClose, onCreated }) {
   const { adminCreateUser } = useRole()
   const [email, setEmail] = useState('')
   const [fullName, setFullName] = useState('')
-  const [role, setRole] = useState(roleOptions[0]?.key || 'engineer')
+  const [role, setRole] = useState(roleOptions.some((r) => r.key === DEFAULT_ROLE) ? DEFAULT_ROLE : '')
   const [query, setQuery] = useState('')
   const [found, setFound] = useState([])
   const [counterparty, setCounterparty] = useState(null)
@@ -65,7 +69,8 @@ export function AddUserDrawer({ roleOptions, onClose, onCreated }) {
           </label>
           <label className="adm-drawer-field">
             <span>Роль</span>
-            <select value={role} onChange={(e) => { setRole(e.target.value); setCounterparty(null) }}>
+            <select value={role} onChange={(e) => { setRole(e.target.value); setCounterparty(null) }} required>
+              {!role && <option value="" disabled>Выберите роль</option>}
               {roleOptions.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
               <option value="contractor">Подрядчик</option>
             </select>

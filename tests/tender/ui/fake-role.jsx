@@ -21,6 +21,11 @@ const ROLE = window.__fakeRole || {
   canView: () => true,
   scopedObjectIds: [],
   userProfile: { full_name: 'Тест' },
+  // Запоминает, что ушло бы на сервер (стенд /stand/add-user).
+  adminCreateUser: async (user) => {
+    window.__createdUsers = [...(window.__createdUsers || []), user]
+    return { user, temporaryPassword: 'temp' }
+  },
   // Названия ролей из таблицы roles (как roleLabels настоящего контекста): заведённые администратором роли.
   roleLabels: { ...ROLE_LABELS, supply: 'Снабжение', smetno: 'Сметно-технический отдел', udorojanie: 'Отдел по удорожанию' },
 }

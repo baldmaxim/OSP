@@ -243,8 +243,11 @@ CSS variables defined for `[data-theme="light"]` and `[data-theme="dark"]` in `i
 «Добавить пользователя» / «Сбросить пароль» в `AdminPage`. Сервер: `server/osp-api/src/lib/auth/*`,
 `src/lib/principal.js`, `src/routes/auth.js`; миграция `migration/yandex/20261019_own_auth.sql`; перенос паролей —
 `migration/accounts/`; порядок — `migration/CUTOVER.md` («Свой вход tender.su10.ru»). Самостоятельной регистрации
-нет (писем нет): учётки и временные пароли выдаёт администратор. Тесты: `tests/osp-api/own-auth*.test.mjs`,
-`client-auth.test.mjs`, `tests/backup/own-auth-accounts.test.mjs`.
+нет (писем нет): учётки и временные пароли выдаёт администратор. Роль в окне нового пользователя по умолчанию — «Гость»
+(`guest`, 02.11: подставлялся первый в справочнике — «Администратор»); «Гостя» в справочнике нет — роль выбирают сами
+([AccountModals](src/components/admin/AccountModals.jsx)). Тесты: `tests/osp-api/own-auth*.test.mjs`,
+`client-auth.test.mjs`, `tests/backup/own-auth-accounts.test.mjs`, `tests/tender/add-user-role.test.mjs` (стенд
+`route=/stand/add-user`, `addUserNoGuest=1`).
 
 ## Supabase Integration
 
