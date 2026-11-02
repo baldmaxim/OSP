@@ -30,12 +30,12 @@ export function registryGroups(rows) {
   }))
 }
 
-const median = (sorted) => {
+export const median = (sorted) => {
   const n = sorted.length
   if (!n) return null
   return n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2
 }
-const round2 = (x) => Math.round(x * 100) / 100
+export const round2 = (x) => Math.round(x * 100) / 100
 
 // Цены аналогов (кандидаты сопоставления: { group: { row }, exact, … }): { n, min, max, median, exact } (exact —
 // сколько с тем же наименованием) или null.

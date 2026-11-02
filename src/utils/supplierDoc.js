@@ -675,11 +675,28 @@ export function pdfRows(lines, first, rules = null) {
 // Строка доставки: «Доставка …» где угодно, «Транспортные услуги», «Услуги по перевозке», «Разгрузка …» — а не
 // товар со словом «транспортная» («Тележка транспортная»).
 const DELIVERY_ROW_RE = /доставк|транспортн\S*\s+(услуг|расход)|услуг\S*\s+(по\s+)?(перевоз|транспорт|экспедир|разгруз|погруз)|^(перевозк|экспедир|разгрузк|погрузк)/
-export function itemsFromRows(rows, columns) {
+// keepBlank — оставить строки с ед. изм. и без цены (незаполненный ВОР: по ним можно показать договорные цены).
+// Две колонки цены или суммы — материалы и работы — у строки есть и parts: { material, work } (сравнение с договорными
+// расценками: у них тоже две цены), цена строки остаётся прежней, первой.
+const PART_RE = { material: /материал|оборудован/, work: /работ|смр|пнр|монтаж|услуг/ }
+export function itemsFromRows(rows, columns, { keepBlank = false } = {}) {
   const pick = (values, cols) => {
     const list = cols.map((c, i) => ({ v: parseNum(values?.[i]), vat: c.vat }))
     return list.find((x) => x.v != null && x.vat === 'gross') || list.find((x) => x.v != null && x.vat !== 'net')
       || list.find((x) => x.v != null) || { v: null, vat: null }
+  }
+  // Колонка одного вида: «Стоимость материалов и работ» — обе сразу, это не разбивка.
+  const ofKind = (list, kind) => list.map((col, i) => ({ col, i })).filter(({ col }) => {
+    const t = norm(col.text || '')
+    return PART_RE[kind].test(t) && !PART_RE[kind === 'work' ? 'material' : 'work'].test(t)
+  })
+  const twoParts = ['material', 'work'].every((kind) => ofKind(columns.prices, kind).length + ofKind(columns.sums, kind).length > 0)
+  const partOf = (c, kind) => {
+    const prices = ofKind(columns.prices, kind)
+    const sums = ofKind(columns.sums, kind)
+    const price = pick(prices.map((x) => c.prices?.[x.i]), prices.map((x) => x.col))
+    const sum = pick(sums.map((x) => c.sums?.[x.i]), sums.map((x) => x.col))
+    return { price: price.v, priceVat: price.vat, sum: sum.v, sumVat: sum.vat }
   }
   const items = []
   for (const r of rows) {
@@ -689,7 +706,7 @@ export function itemsFromRows(rows, columns) {
     const price = pick(c.prices, columns.prices)
     const sum = pick(c.sums, columns.sums)
     const qty = parseNum(c.qty)
-    if (price.v == null && sum.v == null) continue
+    if (price.v == null && sum.v == null && !(keepBlank && cellText(c.unit))) continue
     if ((price.v ?? 0) < 0 || (sum.v ?? 0) < 0) continue
     const rate = parseNum(c.vatRate)
     const del = columns.delivery ? parseNum(c.delivery) : null
@@ -706,6 +723,7 @@ export function itemsFromRows(rows, columns) {
       delivery: DELIVERY_ROW_RE.test(name.toLowerCase()),
       deliveryDoc: del != null && del > 0 ? { value: del, perUnit: !!columns.delivery.perUnit, vat: columns.delivery.vat || null } : null,
       source: r.row ? `строка ${r.row}` : r.page ? `стр. ${r.page}` : null,
+      ...(twoParts ? { parts: { material: partOf(c, 'material'), work: partOf(c, 'work') } } : {}),
     })
   }
   return items

@@ -1,20 +1,19 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import FilterDropdown from '../FilterDropdown'
 import PaperclipIcon from '../icons/PaperclipIcon'
-import { IconUpload } from '../icons/BsmIcons'
 import { IconAlert } from '../icons/ActionIcons'
 import { IconClose } from '../icons/ToolbarIcons'
-import { DEFAULT_VAT_RATE } from '../../utils/supplierDoc'
 import { isPdfFile, isSheetFile } from '../../utils/supplierDocRead'
-import { BID_DOC_ACCEPT, DOC_ERROR_TEXT, readBidPriceDoc } from '../../utils/bidImport'
+import { DOC_ERROR_TEXT, readBidPriceDoc } from '../../utils/bidImport'
 import {
-  CHECK_EXPORT_HEADERS, DEFAULT_TOLERANCE, TOLERANCE_STEPS, VERDICT_TEXT, VISIBLE_ANALOGS,
+  CHECK_EXPORT_HEADERS, DEFAULT_TOLERANCE, VERDICT_TEXT, VISIBLE_ANALOGS,
   checkExportRows, checkLines, checkSummary, lineKind,
 } from '../../utils/kpRateCheck'
 import { moscowToday, tenderLabel } from '../../utils/kpRegistrySources'
 import { fmtMoney, fmtDate, downloadXlsx, todayStamp } from '../../utils/ratesRegistry'
 import { insertManualRates, lookupSimilarRates } from '../../services/kpManualRates'
 import { loadOptionsOnce } from './KpManualRateDialog'
+import { RateFilePicker, ToleranceFieldset, VatFieldset, fmtDev, pct, useFileDrop, useVatChoice } from './RateCheckParts'
 import './KpRates.css'
 
 // Больше — не распознаём (страница подвисла бы на разборе).
@@ -22,10 +21,7 @@ const PARSE_MAX_BYTES = 30 * 1024 * 1024
 // Больше строк за одну проверку не ищем (поиск похожих — ~30 мс на строку в базе).
 const LINES_MAX = 600
 
-const VAT_TEXT = { gross: 'цены с НДС', net: 'цены без НДС — НДС добавится', none: 'НДС не облагается — цены как есть' }
 const KIND_OPTIONS = [['all', 'материалы и работы'], ['material', 'материалы'], ['work', 'работы']]
-const pct = (s) => `${Math.round(s * 100)} %`
-const fmtDev = (d) => (d == null ? '—' : `${d > 0 ? '+' : d < 0 ? '−' : ''}${String(Math.abs(d)).replace('.', ',')} %`)
 
 // Проверка расценок по файлу (реестр КП): файл подрядчика или поставщика (заполненный ВОР, КП, счёт, прайс — Excel,
 // CSV, PDF с текстом) распознаётся, как «Цены из счёта / КП» расценки снабжением; у каждой строки — похожие расценки
@@ -39,17 +35,14 @@ export default function KpRateCheckDialog({ canAdd = false, onClose, onAdded }) 
   const [doc, setDoc] = useState(null) // { kind, items, vat, sheetName | pages }
   const [found, setFound] = useState(null) // Map индекс строки → строки реестра
   const [progress, setProgress] = useState(null)
-  const [vatMode, setVatMode] = useState('auto')
-  const [vatRate, setVatRate] = useState(String(DEFAULT_VAT_RATE))
+  const vatChoice = useVatChoice(doc)
   const [compareKind, setCompareKind] = useState('all')
   const [tolerance, setTolerance] = useState(DEFAULT_TOLERANCE)
   const [filter, setFilter] = useState('all')
   const [checked, setChecked] = useState(() => new Set())
-  const [dragOver, setDragOver] = useState(false)
   const [addError, setAddError] = useState('')
   const [add, setAdd] = useState(() => ({ counterparty_id: '', tender_id: '', object_id: '', rate_date: moscowToday(), kind: 'material', attach: true }))
   const [options, setOptions] = useState(null)
-  const fileRef = useRef(null)
   const abortRef = useRef(null)
   const busy = phase === 'reading' || phase === 'lookup' || phase === 'adding'
 
@@ -96,8 +89,7 @@ export default function KpRateCheckDialog({ canAdd = false, onClose, onAdded }) 
     const items = r.items.slice(0, LINES_MAX)
     const parsed = { ...r, items, cut: r.items.length - items.length }
     setDoc(parsed)
-    setVatMode('auto')
-    setVatRate(String(r.vat?.rate ?? DEFAULT_VAT_RATE))
+    vatChoice.reset(parsed)
     setFilter('all')
     if (items.some((it) => it.kindHint) && items.every((it) => it.kindHint || it.delivery)) setAdd((a) => ({ ...a, kind: 'file' }))
     await runLookup(parsed)
@@ -128,14 +120,10 @@ export default function KpRateCheckDialog({ canAdd = false, onClose, onAdded }) 
     const f = [...(list || [])][0]
     if (f && !busy) readOne(f)
   }
+  const { over, dropProps } = useFileDrop(pickFiles)
 
   // ── Строки проверки ───────────────────────────────────────────────────────────────────────────────
-  const vat = useMemo(() => {
-    if (!doc) return null
-    if (vatMode === 'auto') return doc.vat
-    const rate = Number(String(vatRate).replace(',', '.'))
-    return { mode: vatMode, rate: Number.isFinite(rate) && rate >= 0 && rate < 100 ? rate : DEFAULT_VAT_RATE, force: true }
-  }, [doc, vatMode, vatRate])
+  const { vat } = vatChoice
 
   // «Сравнивать с» — фильтр найденного по виду (строки с видом из файла — всегда со своим).
   const rowsByIdx = useMemo(() => {
@@ -214,8 +202,8 @@ export default function KpRateCheckDialog({ canAdd = false, onClose, onAdded }) 
     ...(options?.objects || []).map((o) => ({ value: o.id, label: o.name }))], [options, add.tender_id])
 
   return (
-    <div className="kpr-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose() }}>
-      <div className={`kpr-modal${inReview ? ' is-wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby="kpr-check-title">
+    <div className="kpr-backdrop" role="presentation" {...dropProps} onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose() }}>
+      <div className={`kpr-modal${inReview ? ' is-wide' : ''}${over ? ' is-over' : ''}`} role="dialog" aria-modal="true" aria-labelledby="kpr-check-title">
         <div className="kpr-modal-head">
           <h3 id="kpr-check-title">Проверка расценок по файлу</h3>
           <button type="button" className="kpr-icon-btn" onClick={onClose} disabled={phase === 'adding'} aria-label="Закрыть"><IconClose size={16} /></button>
@@ -229,16 +217,7 @@ export default function KpRateCheckDialog({ canAdd = false, onClose, onAdded }) 
                 расценки реестра — то же наименование или похожее, с той же ед. изм. Покажем, дороже или дешевле цена файла,
                 чем обычно в реестре.{canAdd ? ' Отмеченные строки можно добавить в реестр расценками подрядчика.' : ''}
               </p>
-              <div className={`kpr-drop${dragOver ? ' is-over' : ''}`}
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={(e) => { e.preventDefault(); setDragOver(false); pickFiles(e.dataTransfer.files) }}>
-                <input ref={fileRef} type="file" accept={BID_DOC_ACCEPT} hidden onChange={(e) => { pickFiles(e.target.files); e.target.value = '' }} />
-                <button type="button" className="kpr-btn kpr-btn-primary" onClick={() => fileRef.current?.click()} disabled={busy}>
-                  <IconUpload size={16} /> Выбрать файл
-                </button>
-                <span className="kpr-muted">или перетащите сюда · Excel (.xlsx, .xls, .csv) или PDF</span>
-              </div>
+              <RateFilePicker disabled={busy} over={over} onFiles={pickFiles} />
               {phase === 'reading' && <p className="kpr-progress" role="status">Распознаём «{file?.name}»…</p>}
               {phase === 'lookup' && progress && (
                 <p className="kpr-progress" role="status">Ищем похожие расценки в реестре: {progress.done} из {progress.total} строк…</p>
@@ -260,20 +239,7 @@ export default function KpRateCheckDialog({ canAdd = false, onClose, onAdded }) 
               </div>
 
               <div className="kpr-settings">
-                <fieldset disabled={busy}>
-                  <legend>НДС цен файла</legend>
-                  <label>
-                    <input type="radio" name="kpr-vat" checked={vatMode === 'auto'} onChange={() => setVatMode('auto')} />
-                    как в документе{doc.vat?.mode ? ` — ${VAT_TEXT[doc.vat.mode]}` : ' — колонки «с НДС» / «без НДС», иначе как есть'}
-                    {doc.vat?.cue && <span className="kpr-muted"> (в документе: «{doc.vat.cue}»)</span>}
-                  </label>
-                  <label><input type="radio" name="kpr-vat" checked={vatMode === 'gross'} onChange={() => setVatMode('gross')} /> цены с НДС — как есть</label>
-                  <label>
-                    <input type="radio" name="kpr-vat" checked={vatMode === 'net'} onChange={() => setVatMode('net')} /> цены без НДС — добавить
-                    <input type="text" inputMode="decimal" className="kpr-rate" value={vatRate} onChange={(e) => setVatRate(e.target.value)}
-                      onFocus={() => setVatMode('net')} aria-label="Ставка НДС, %" /> %
-                  </label>
-                </fieldset>
+                <VatFieldset doc={doc} choice={vatChoice} disabled={busy} />
                 <fieldset disabled={busy}>
                   <legend>Сравнивать с расценками</legend>
                   {KIND_OPTIONS.map(([k, label]) => (
@@ -281,16 +247,7 @@ export default function KpRateCheckDialog({ canAdd = false, onClose, onAdded }) 
                   ))}
                   {fileHasKinds && <span className="kpr-muted">строки листов «Материалы» / «Работы» — со своим видом</span>}
                 </fieldset>
-                <fieldset disabled={busy}>
-                  <legend>Допуск от медианы реестра</legend>
-                  <label>
-                    ±
-                    <select value={tolerance} onChange={(e) => setTolerance(Number(e.target.value))} aria-label="Допуск, %">
-                      {TOLERANCE_STEPS.map((t) => <option key={t} value={t}>{t} %</option>)}
-                    </select>
-                    — «в рынке»
-                  </label>
-                </fieldset>
+                <ToleranceFieldset legend="Допуск от медианы реестра" tolerance={tolerance} onChange={setTolerance} disabled={busy} />
               </div>
 
               <div className="kpr-filters" role="group" aria-label="Показать строки">

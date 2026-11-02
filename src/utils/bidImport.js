@@ -15,8 +15,9 @@ export { SUPPLIER_DOC_ACCEPT as BID_DOC_ACCEPT } from './supplierDocRead.js'
 
 const VAT_TEXT_MAX = 200000
 
-// Заполненный ВОР отдела: строки листов «Материалы» и «Работы» с видом. Нет таких листов или в них нет цен — null.
-export function itemsFromBidWorkbook(XLSX, wb) {
+// Заполненный ВОР отдела: строки листов «Материалы» и «Работы» с видом. Нет таких листов или в них нет цен — null;
+// keepBlank — оставить и строки без цены (незаполненный ВОР).
+export function itemsFromBidWorkbook(XLSX, wb, { keepBlank = false } = {}) {
   const sheets = findBidSheets(wb.SheetNames || [])
   const out = []
   let text = ''
@@ -26,14 +27,14 @@ export function itemsFromBidWorkbook(XLSX, wb) {
     if (text.length < VAT_TEXT_MAX) text += ` ${grid.map((row) => (row || []).map(cellText).filter(Boolean).join(' ')).join(' ')}`
     const header = detectGridHeader(grid)
     if (!header) continue
-    for (const it of itemsFromRows(gridRows(grid, header), header.columns)) out.push({ ...it, kindHint: kind, sheet: name })
+    for (const it of itemsFromRows(gridRows(grid, header), header.columns, { keepBlank })) out.push({ ...it, kindHint: kind, sheet: name })
   }
   if (!out.length) return null
   return { kind: 'excel', items: out, sheetName: [sheets.materials, sheets.works].filter(Boolean).join(' + '), vat: vatFromText(text) }
 }
 
 // Файл → { kind, items, vat, sheetName | pages } | { error } (коды ошибок — как у readSupplierDoc).
-export async function readBidPriceDoc(bytes, fileName) {
+export async function readBidPriceDoc(bytes, fileName, { keepBlank = false } = {}) {
   if (isSheetFile(fileName) && !/\.csv$/i.test(fileName)) {
     const XLSX = await import('xlsx')
     let wb
@@ -43,7 +44,7 @@ export async function readBidPriceDoc(bytes, fileName) {
       return { error: 'broken', message: String(e?.message || e) }
     }
     try {
-      return itemsFromBidWorkbook(XLSX, wb) || parseSupplierWorkbook(XLSX, wb)
+      return itemsFromBidWorkbook(XLSX, wb, { keepBlank }) || parseSupplierWorkbook(XLSX, wb)
     } catch (e) {
       return { error: 'broken', message: String(e?.message || e) }
     }

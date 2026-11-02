@@ -151,6 +151,7 @@
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
 }
 .kpr-modal.is-wide { width: min(1500px, 100%); height: calc(100vh - 24px); }
+.kpr-modal.is-over { outline: 2px dashed #2563eb; outline-offset: -4px; }
 .kpr-modal-head {
   display: flex;
   align-items: center;
@@ -313,6 +314,26 @@
 .kpr-analog-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.125rem 0.625rem; color: var(--text-tertiary); font-size: 0.75rem; }
 .kpr-analog-meta a { color: inherit; }
 .kpr-analog.is-other-unit { opacity: 0.7; }
+/* Договорные расценки: галочка «учитывать» слева */
+.kpr-analog.has-check { grid-template-columns: auto minmax(0, 1fr) auto; }
+.kpr-analog.has-check .kpr-analog-meta { grid-column: 2 / -1; }
+.kpr-analog.has-check input { margin: 0.1875rem 0 0; }
+.kpr-analog.is-off .kpr-analog-name, .kpr-analog.is-off .kpr-analog-price { color: var(--text-tertiary); }
+.kpr-analog.is-off .kpr-analog-price { font-weight: 500; }
+.kpr-analog.is-removed .kpr-analog-price { text-decoration: line-through; }
+/* Настройки одной строкой: варианты внутри блока — в ряд, таблице остаётся место */
+.kpr-settings.is-row { gap: 0.5rem 0.75rem; }
+.kpr-settings.is-row fieldset { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.875rem; padding-top: 0.25rem; padding-bottom: 0.5rem; }
+.kpr-settings.is-row select { max-width: 24rem; }
+.kpr-note { margin: 0; font-size: 0.8125rem; font-weight: 600; }
+.kpr-total { margin: 0; font-size: 0.8125rem; }
+.kpr-total .kpr-more { color: #b91c1c; }
+.kpr-total .kpr-less { color: #1d4ed8; }
+[data-theme='dark'] .kpr-total .kpr-more { color: #fca5a5; }
+[data-theme='dark'] .kpr-total .kpr-less { color: #93c5fd; }
+.kpr-filters-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; }
+.kpr-filters-row .kpr-foot-note { color: var(--text-tertiary); font-size: 0.8125rem; }
+.kpr-more-lines { margin: 0.625rem; }
 .kpr-score { color: var(--text-secondary); }
 .kpr-add {
   display: grid;

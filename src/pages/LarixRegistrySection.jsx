@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
 import { Link } from 'react-router-dom'
 import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
@@ -8,6 +8,10 @@ import {
   fmtMoney, fmtDate, fmtRefreshed, describeRegistryError, PAGE_SIZES, useDebounced,
   applyInFilter, fetchAllRows, downloadXlsx, todayStamp,
 } from '../utils/ratesRegistry'
+import '../components/rates/KpRates.css'
+
+// Окно проверки — по требованию: разбор Excel и PDF и расчёт похожести нужны только в нём.
+const LarixRateCheckDialog = lazy(() => import('../components/rates/LarixRateCheckDialog'))
 
 // Вкладка «Договорные расценки (Larix)» реестра расценок. Источник — Larix.CPM, метод «ВОР по договорам»:
 // osp-api загружает его раз в день (server/osp-api/src/lib/larixSync.js). Строка — позиция договора с ценой
@@ -134,6 +138,7 @@ export default function LarixRegistrySection() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [exporting, setExporting] = useState(false)
+  const [checkOpen, setCheckOpen] = useState(false)
 
   // Журнал загрузок: последняя (любая) и последняя удачная — с ней приходят списки фильтров.
   const [lastRun, setLastRun] = useState(null)
@@ -400,13 +405,24 @@ export default function LarixRegistrySection() {
         </button>
       </div>
 
-      <div className="rr-sub-tabs" role="tablist">
-        {KINDS.map(k => (
-          <button key={k.key} type="button" role="tab" aria-selected={kindTab === k.key}
-            className={`rr-sub-tab ${kindTab === k.key ? 'active' : ''}`} onClick={() => setKindTab(k.key)}>
-            {k.label}<span className="rr-sub-count">{counts[k.key]}</span>
-          </button>
-        ))}
+      {/* Подвкладки; справа — проверка файла по договорным расценкам */}
+      <div className="kpr-subbar">
+        <div className="rr-sub-tabs" role="tablist">
+          {KINDS.map(k => (
+            <button key={k.key} type="button" role="tab" aria-selected={kindTab === k.key}
+              className={`rr-sub-tab ${kindTab === k.key ? 'active' : ''}`} onClick={() => setKindTab(k.key)}>
+              {k.label}<span className="rr-sub-count">{counts[k.key]}</span>
+            </button>
+          ))}
+        </div>
+        {!error && (
+          <div className="kpr-actions">
+            <button type="button" className="kpr-btn" onClick={() => setCheckOpen(true)}
+              title="Загрузить КП, счёт или ВОР и сравнить цены с заключёнными договорами и ДС">
+              Проверить по файлу
+            </button>
+          </div>
+        )}
       </div>
 
       {error ? (
@@ -495,6 +511,12 @@ export default function LarixRegistrySection() {
             </div>
           </div>
         </>
+      )}
+
+      {checkOpen && (
+        <Suspense fallback={null}>
+          <LarixRateCheckDialog canOpenContracts={canOpenContracts} onClose={() => setCheckOpen(false)} />
+        </Suspense>
       )}
     </>
   )
