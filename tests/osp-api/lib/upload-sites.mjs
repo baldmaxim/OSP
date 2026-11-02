@@ -14,7 +14,7 @@ export const UPLOAD_SITES = [
   { file: 'src/services/psdc.js', calls: 1, owner: 'general', table: 'psdc' },
   { file: 'src/services/sectionTemplates.js', calls: 1, owner: 'general', table: 'section_templates' }, // шаблон раздела (миграция 20261107)
   // «Расчёт ПЗ» планов затрат: инструкции (якорь section_templates, 20261116), затем документы объекта по расчёту
-  // (категории — только администратору, osp-api CATEGORY_RULES). Записи одного файла — в порядке вызовов в нём.
+  // (право cost_plan_docs — osp-api CATEGORY_RULES). Записи одного файла — в порядке вызовов в нём.
   { file: 'src/services/costPlanCalc.js', calls: 1, owner: 'general', table: 'section_templates' },
   { file: 'src/services/costPlanCalc.js', calls: 1, owner: 'object', table: 'objects' },
   // Документ расценки реестра КП, добавленной вручную (20261122): у первой строки, если файл один на несколько.

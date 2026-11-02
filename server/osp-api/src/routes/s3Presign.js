@@ -95,13 +95,20 @@ export const WRITE_RULES = {
 }
 // Строки с владельцем вне списка (старые типы) удаляет только администратор.
 const UNKNOWN_OWNER_RULES = [['admin', 'edit']]
-// Категории строже права раздела владельца (doc_category → правила; нужны оба): документы «Расчёта ПЗ» объекта
-// («Прямые затраты», «КП до перекидок» — «Планы затрат» → «Документы» → «Расчёт ПЗ») загружает и удаляет
-// только администратор, хотя прочие файлы объекта — правка «Объектов». Категория известна при подтверждении и у
-// строки — при удалении; ссылка на PUT без строки документа не даёт.
+// Категории со своим правом вместо права раздела владельца (таблица владельца → doc_category → правила): документы
+// «Расчёта ПЗ» объекта («Прямые затраты», «КП до перекидок» — «Планы затрат» → «Документы» → «Расчёт ПЗ») загружает и
+// удаляет обладатель права cost_plan_docs (20261130: администратор и экономист ОСП). Правка «Объектов» для них не
+// нужна и не даёт ничего, а это право не открывает прочие файлы объекта. Категорию присылает клиент (upload, confirm),
+// при удалении она берётся из строки. Кто и когда — журнал cost_plan_calc_file_log, его пишет триггер базы.
 export const CATEGORY_RULES = {
-  cost_plan_direct_costs: [['admin', 'edit']],
-  cost_plan_kp_before_transfers: [['admin', 'edit']],
+  objects: {
+    cost_plan_direct_costs: [['cost_plan_docs', 'edit']],
+    cost_plan_kp_before_transfers: [['cost_plan_docs', 'edit']],
+  },
+}
+const rulesFor = (table, category) => {
+  const own = CATEGORY_RULES[table]
+  return own && Object.hasOwn(own, category || '') ? own[category] : WRITE_RULES[table]
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -232,11 +239,11 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
       }
       return results.some(({ data }) => data === true)
     }
-    // Загрузка и подтверждение: владелец виден и есть право его раздела. Иначе — [код, ответ].
-    const uploadDenied = async (file) => {
+    // Загрузка и подтверждение: владелец виден и есть право его раздела (или категории). Иначе — [код, ответ].
+    const uploadDenied = async (file, category) => {
       const table = await ownerTable(file.owner_type, file.owner_id)
       if (!table) return [404, { error: 'Владелец файла не найден' }]
-      if (!await allowed(WRITE_RULES[table])) return [403, { error: NO_RIGHT }]
+      if (!await allowed(rulesFor(table, category))) return [403, { error: NO_RIGHT }]
       return null
     }
     const findDocument = async (id) => {
@@ -266,8 +273,8 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
         case 'upload': {
           const req = readFile(body)
           if (req.error) return reply.code(400).send({ error: req.error })
-          const { file } = req
-          const denied = await uploadDenied(file)
+          const { file, category } = req
+          const denied = await uploadDenied(file, category)
           if (denied) return reply.code(denied[0]).send(denied[1])
           const existing = await findDocument(file.operation_id)
           if (existing) return sameFile(existing, file) ? { already: true, document: existing } : reply.code(409).send(KEY_REUSE)
@@ -281,11 +288,8 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           const req = readFile(body)
           if (req.error) return reply.code(400).send({ error: req.error })
           const { file, category, notes } = req
-          const denied = await uploadDenied(file)
+          const denied = await uploadDenied(file, category)
           if (denied) return reply.code(denied[0]).send(denied[1])
-          if (category && Object.hasOwn(CATEGORY_RULES, category) && !await allowed(CATEGORY_RULES[category])) {
-            return reply.code(403).send({ error: NO_RIGHT })
-          }
           const existing = await findDocument(file.operation_id)
           if (existing) return sameFile(existing, file) ? { already: true, document: existing } : reply.code(409).send(KEY_REUSE)
 
@@ -363,12 +367,9 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           if (Object.hasOwn(OWNER_TABLES, doc.owner_type)) {
             const table = await ownerTable(doc.owner_type, doc.owner_id)
             // Владельца уже нет — достаточно права любой его таблицы.
-            rules = table ? WRITE_RULES[table] : OWNER_TABLES[doc.owner_type].flatMap((t) => WRITE_RULES[t])
+            rules = table ? rulesFor(table, doc.doc_category) : OWNER_TABLES[doc.owner_type].flatMap((t) => rulesFor(t, doc.doc_category))
           }
           if (!await allowed(rules)) return reply.code(403).send({ error: NO_RIGHT })
-          if (Object.hasOwn(CATEGORY_RULES, doc.doc_category || '') && !await allowed(CATEGORY_RULES[doc.doc_category])) {
-            return reply.code(403).send({ error: NO_RIGHT })
-          }
 
           // Перенос данных: решаем до удаления строки, остаётся ли объект в хранилище. Документ пришёл с
           // данными прежнего портала — объект его, пока тот работает (в репетиции — всегда).

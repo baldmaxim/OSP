@@ -472,7 +472,7 @@ function CostPlansPage() {
       </div>
 
       {showInstruction && <CostPlanInstructionModal onClose={() => setShowInstruction(false)} />}
-      {showDocs && <CostPlanDocsModal canEdit={isAdmin} onClose={() => setShowDocs(false)} />}
+      {showDocs && <CostPlanDocsModal canEdit={isAdmin} canAttach={canEdit('cost_plan_docs')} onClose={() => setShowDocs(false)} />}
 
       <div className="cost-plans-tabs">
         <button

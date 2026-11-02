@@ -198,7 +198,7 @@ describe('src/api/ospFiles.js — загрузка с ключом операц�
     assert.deepEqual(doc, DOC)
     assert.deepEqual(calls.map((c) => c.action), ['upload', 'confirm'])
     assert.ok(calls.every((c) => c.operation_id === 'op-1'))
-    assert.deepEqual(calls[0], { action: 'upload', operation_id: 'op-1', owner_type: 'tender', owner_id: 't', file_name: 'a.pdf', mime_type: 'application/pdf', size_bytes: 5, sha256: 'f'.repeat(64) })
+    assert.deepEqual(calls[0], { action: 'upload', operation_id: 'op-1', owner_type: 'tender', owner_id: 't', file_name: 'a.pdf', mime_type: 'application/pdf', size_bytes: 5, sha256: 'f'.repeat(64), category: 'vor' })
     assert.equal(calls[1].category, 'vor')
     assert.equal(calls[1].notes, 'n')
     assert.equal(puts.length, 1)

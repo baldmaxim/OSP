@@ -11,7 +11,7 @@ import { fetchEconomistObjects } from '../services/costPlanEconomists'
 import {
   COMPENSATION_ITEMS, COMPENSATION_NOTE_MAX, COST_PLAN_CALC_FILES_HINT, COST_PLAN_CALC_SECTIONS,
   COST_PLAN_COMPENSATION_HINT, COST_PLAN_COMPENSATION_LEGACY_HINT, calcObjectCards, compensationForm, formatPercent,
-  objectDocHref, objectDocLabel, objectDocOptions, objectMatches, parseCompensation,
+  objectDocHref, objectDocLabel, objectDocOptions, objectMatches, parseCompensation, ruDateTime,
 } from '../utils/costPlanCalc'
 import { describeSupabaseError } from '../utils/supabaseError'
 import './CostPlanCalcTab.css'
@@ -22,8 +22,10 @@ import './CostPlanCalcTab.css'
 //   • «По объектам» — карточка на объект: слева документы объекта «Прямые затраты» и «КП до перекидок», справа
 //     «Компенсация НДС» и под ней «Инфляция»: да / нет, процент, подтверждающий документ из «Документов» карточки
 //     объекта (ссылка открывает его там) и примечание.
-// Смотрит и скачивает каждый; загружает, удаляет и вносит администратор (canEdit). Объекты — основного строительства
-// и любые со сведениями или документами; без права правки — только те, где что-то внесено.
+// Смотрит и скачивает каждый. Инструкции и сведения вносит администратор (canEdit); документы объектов прикрепляет и
+// открепляет обладатель права cost_plan_docs (canAttach: администратор и экономист ОСП, каждое действие — в «Журнале»).
+// Объекты — основного строительства и любые со сведениями или документами; без права правки — только те, где что-то
+// внесено.
 
 const STATES = [
   { value: '', label: 'Не указано' },
@@ -32,9 +34,6 @@ const STATES = [
 ]
 const SEARCH_FROM = 6 // карточек больше — поиск по объекту
 
-const ruDateTime = (iso) => (iso ? new Date(iso).toLocaleString('ru-RU', {
-  day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-}) : '')
 const ruDate = (iso) => (iso ? new Date(iso).toLocaleDateString('ru-RU') : '')
 
 // Тип файла — цветом значка: таблица, PDF, Word, прочее.
@@ -53,7 +52,7 @@ const FileIcon = ({ name }) => (
   </svg>
 )
 
-// Список файлов ячейки: имя — просмотр, значки — скачать и (администратору) удалить, «+ Документ» — загрузить.
+// Список файлов ячейки: имя — просмотр, значки — скачать и (с правом) удалить, «+ Документ» — загрузить.
 function CalcFiles({ title, label, files, canEdit, emptyText, onUpload, onDelete, onPreview }) {
   const inputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
@@ -244,7 +243,7 @@ function ItemForm({ item, value, objectId, objectName, options, optionsError, do
   )
 }
 
-export default function CostPlanCalcTab({ canEdit = false }) {
+export default function CostPlanCalcTab({ canEdit = false, canAttach = false }) {
   const [state, setState] = useState({
     loading: true, error: null, anchors: new Map(), objects: [], rows: [], compSupported: true, detailed: true,
     instructionFiles: [], objectFiles: [],
@@ -297,7 +296,8 @@ export default function CostPlanCalcTab({ canEdit = false }) {
   }, [linkedIds, rememberDocs])
 
   const cards = useMemo(() => calcObjectCards(state.objects, state.rows, state.objectFiles), [state.objects, state.rows, state.objectFiles])
-  const visibleCards = canEdit ? cards : cards.filter(c => c.filled || c.hasFiles)
+  const canWork = canEdit || canAttach
+  const visibleCards = canWork ? cards : cards.filter(c => c.filled || c.hasFiles)
   const shownCards = visibleCards.filter(c => objectMatches(c.label, query))
   const instructionsBy = useMemo(() => {
     const map = new Map()
@@ -398,7 +398,8 @@ export default function CostPlanCalcTab({ canEdit = false }) {
     <div className="tdm-body cpc">
       <p className="tdm-lead">
         Инструкции — общие для всех объектов. Ниже по каждому объекту: документы расчёта, компенсация НДС и инфляция с
-        подтверждающим документом из карточки объекта. Смотреть и скачивать может каждый, загружает и вносит
+        подтверждающим документом из карточки объекта. Смотреть и скачивать может каждый. Документы объектов прикрепляют
+        и открепляют экономисты ОСП и администратор, каждое действие — во вкладке «Журнал»; инструкции и сведения вносит
         администратор.
       </p>
 
@@ -445,7 +446,7 @@ export default function CostPlanCalcTab({ canEdit = false }) {
 
         {visibleCards.length === 0 ? (
           <p className="tdm-site-empty-state">
-            {canEdit ? 'Объектов основного строительства нет.' : 'Документы и сведения по объектам ещё не внесены.'}
+            {canWork ? 'Объектов основного строительства нет.' : 'Документы и сведения по объектам ещё не внесены.'}
           </p>
         ) : shownCards.length === 0 ? (
           <p className="tdm-site-empty-state">По запросу «{query}» объектов нет.</p>
@@ -477,7 +478,7 @@ export default function CostPlanCalcTab({ canEdit = false }) {
                             title={s.label}
                             label={`${s.label} — ${card.label}`}
                             files={card.files[s.key]}
-                            canEdit={canEdit}
+                            canEdit={canAttach}
                             emptyText="Документа нет"
                             onUpload={(files) => uploadFiles(files, (file) => uploadObjectCalcFile(file, card.id, s.category), 'objectFiles')}
                             onDelete={removeFile}

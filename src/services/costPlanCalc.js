@@ -6,8 +6,9 @@
 //  • cost_plan_compensation — компенсация НДС и инфляции по объекту (одна строка на объект): да / нет, процент,
 //    подтверждающий документ из object_documents объекта, примечание.
 //
-// Права — в базе и osp-api: читает сотрудник; сведения пишет и файлы (инструкции и документы объекта) загружает и
-// удаляет только администратор (osp-api: WRITE_RULES.section_templates, CATEGORY_RULES).
+// Права — в базе и osp-api: читает сотрудник; сведения пишет и инструкции загружает и удаляет только администратор
+// (osp-api: WRITE_RULES.section_templates); документы объекта — обладатель права cost_plan_docs (CATEGORY_RULES).
+// Журнал файлов — cost_plan_calc_file_log (20261130): пишет только триггер базы, отсюда — чтение.
 import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { chunkList } from '../utils/inChunks'
@@ -16,6 +17,8 @@ import { uploadFile } from './s3'
 import { SECTION_TEMPLATES_TABLE, isMissingSectionTemplatesTable } from './sectionTemplates'
 
 export const COST_PLAN_COMPENSATION_TABLE = 'cost_plan_compensation'
+const FILE_LOG_TABLE = 'cost_plan_calc_file_log'
+const FILE_LOG_COLUMNS = 'id, action, file_name, owner_type, owner_id, doc_category, object_name, changed_by_name, changed_at'
 
 // Якоря инструкций: → { supported, ids: Map<code, id> }. supported=false — таблицы шаблонов нет; строки кода нет
 // (миграция расчёта ПЗ не применена) — нет и в Map.
@@ -31,11 +34,12 @@ export async function fetchCalcAnchors(codes) {
 const BASE_COLUMNS = 'id, object_id, vat_note, inflation_note, updated_at'
 const DETAIL_COLUMNS = `${BASE_COLUMNS}, vat_compensated, vat_percent, vat_document_id, inflation_compensated, inflation_percent, inflation_document_id`
 
-export function isMissingCompensationTable(err) {
+const isMissingTable = (err, table) => {
   const msg = String(err?.message || '')
   return err?.code === '42P01' || err?.code === 'PGRST205'
-    || (msg.includes(COST_PLAN_COMPENSATION_TABLE) && (msg.includes('does not exist') || msg.includes('schema cache')))
+    || (msg.includes(table) && (msg.includes('does not exist') || msg.includes('schema cache')))
 }
+export const isMissingCompensationTable = (err) => isMissingTable(err, COST_PLAN_COMPENSATION_TABLE)
 // Колонок 20261121 ещё нет: 42703 (база) / PGRST204 (кэш схемы шлюза).
 function isMissingDetailColumns(err) {
   return err?.code === '42703' || err?.code === 'PGRST204'
@@ -103,6 +107,21 @@ export function uploadInstructionFile(file, anchorId) {
 // category — вид документа (COST_PLAN_CALC_SECTIONS[].category).
 export function uploadObjectCalcFile(file, objectId, category) {
   return uploadFile({ file, ownerType: 'object', ownerId: objectId, category })
+}
+
+// Страница журнала, новые записи первыми. → { rows, supported }: supported=false — таблицы ещё нет (20261130).
+export async function fetchCalcFileLog(from, limit) {
+  const { data, error } = await db
+    .from(FILE_LOG_TABLE)
+    .select(FILE_LOG_COLUMNS)
+    .order('changed_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(from, from + limit - 1)
+  if (error) {
+    if (isMissingTable(error, FILE_LOG_TABLE)) return { rows: [], supported: false }
+    throw error
+  }
+  return { rows: data || [], supported: true }
 }
 
 // ── Документы объектов (подтверждающий ДС) ─────────────────────────────────────────────────────────

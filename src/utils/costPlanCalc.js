@@ -14,9 +14,12 @@ export const COST_PLAN_COMPENSATION_HINT =
   `Компенсацию НДС и инфляцию можно будет указать после обновления базы (миграция ${COST_PLAN_CALC_MIGRATION}).`
 export const COST_PLAN_COMPENSATION_LEGACY_HINT =
   `«Да / нет», процент и подтверждающий документ — после обновления базы (миграция ${COST_PLAN_CALC_OBJECTS_MIGRATION}); пока — только примечание.`
+export const COST_PLAN_CALC_LOG_HINT =
+  'Журнал появится после обновления базы (миграция 20261130_cost_plan_calc_file_log).'
 
 // Виды документов расчёта. code — строка section_templates (якорь общей инструкции, заводит 20261116), category —
-// doc_category документов объекта (s3_documents объекта; загружает только администратор — osp-api CATEGORY_RULES).
+// doc_category документов объекта (s3_documents объекта; загружает обладатель права cost_plan_docs — osp-api
+// CATEGORY_RULES).
 export const COST_PLAN_CALC_SECTIONS = [
   { key: 'direct', code: 'cost_plan_direct_costs', category: 'cost_plan_direct_costs', label: 'Прямые затраты' },
   { key: 'kp', code: 'cost_plan_kp_before_transfers', category: 'cost_plan_kp_before_transfers', label: 'КП до перекидок' },
@@ -160,3 +163,26 @@ export function objectDocOptions(docs = []) {
 // Документ в карточке объекта: вкладка «Документы», строка документа подсвечена (ObjectDetailPage, ?doc=).
 export const objectDocHref = (objectId, docId) =>
   `/general/objects/${objectId}?tab=documents${docId ? `&doc=${encodeURIComponent(docId)}` : ''}`
+
+// Дата и время в часовом поясе браузера.
+export const ruDateTime = (iso) => (iso ? new Date(iso).toLocaleString('ru-RU', {
+  day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+}) : '')
+
+// Запись журнала (cost_plan_calc_file_log) для показа. anchors — Map<code, id> якорей инструкций, по ним — вид
+// инструкции. Название объекта и имя файла — слепок на момент действия; объекта уже нет — «объект удалён».
+export function calcFileLogEntry(row, anchors = new Map()) {
+  const isObject = row.owner_type === 'object'
+  const section = isObject
+    ? COST_PLAN_CALC_SECTIONS.find(s => s.category === row.doc_category)
+    : COST_PLAN_CALC_SECTIONS.find(s => anchors.get(s.code) === row.owner_id)
+  return {
+    id: row.id,
+    when: ruDateTime(row.changed_at),
+    who: row.changed_by_name || null,
+    attached: row.action === 'attach',
+    place: isObject ? (row.object_name ? objectLabel(row.object_name) : 'объект удалён') : 'Инструкции',
+    kind: section?.label || '',
+    fileName: row.file_name,
+  }
+}

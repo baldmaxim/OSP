@@ -6,7 +6,9 @@
 //   • «По объектам» — карточка на объект: слева документы объекта (owner_type 'object', doc_category — вид), справа
 //     «Компенсация НДС» и под ней «Инфляция»: да / нет, процент, подтверждающий документ из «Документов» карточки
 //     объекта (ссылка открывает его там подсвеченным), примечание;
-//   • загружает, удаляет и вносит только администратор; без права правки — только объекты, где что-то внесено;
+//   • инструкции и сведения — только администратор; документы объектов — право cost_plan_docs (экономист ОСП), все
+//     объекты; без права — только объекты, где что-то внесено;
+//   • «Журнал» — кто и когда прикрепил и открепил (его пишет триггер базы, tests/tender/cost-plan-calc-log-db.test.mjs);
 //   • миграций нет — подсказки про обновление базы; нет колонок 20261121 — только примечания.
 // Объекты стенда вымышленные.
 import { describe, it, before, after } from 'node:test'
@@ -17,8 +19,9 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import {
-  COMPENSATION_NOTE_MAX, COST_PLAN_CALC_CATEGORY, COST_PLAN_CALC_SECTIONS, calcObjectCards, compensationForm,
-  formatPercent, objectDocHref, objectDocLabel, objectDocOptions, objectMatches, parseCompensation, parsePercent,
+  COMPENSATION_NOTE_MAX, COST_PLAN_CALC_CATEGORY, COST_PLAN_CALC_SECTIONS, calcFileLogEntry, calcObjectCards,
+  compensationForm, formatPercent, objectDocHref, objectDocLabel, objectDocOptions, objectMatches, parseCompensation,
+  parsePercent,
 } from '../../src/utils/costPlanCalc.js'
 
 const read = (f) => fs.readFileSync(path.join(REPO, f), 'utf8')
@@ -114,7 +117,20 @@ describe('Расчёт ПЗ: правила без базы и миграции'
     assert.equal(objectDocHref('o-2'), '/general/objects/o-2?tab=documents')
   })
 
-  it('обе базы: те же поля, ограничения и триггер; права таблицы прежние; документы объекта — только администратор', () => {
+  it('запись журнала: объект или инструкция, вид документа, слепок названия; нет автора — null', () => {
+    const anchors = new Map(ANCHORS.map(a => [a.code, a.id]))
+    const base = { id: 1, action: 'attach', file_name: 'ПЗ.xlsx', changed_by_name: 'Иванов Иван Иванович', changed_at: '2026-11-02T09:05:00Z' }
+    const onObject = calcFileLogEntry({ ...base, owner_type: 'object', owner_id: 'o-2', doc_category: 'cost_plan_kp_before_transfers', object_name: 'ЖК  Южный' }, anchors)
+    assert.deepEqual([onObject.attached, onObject.who, onObject.place, onObject.kind, onObject.fileName],
+      [true, 'Иванов Иван Иванович', 'ЖК Южный', 'КП до перекидок', 'ПЗ.xlsx'])
+    assert.match(onObject.when, /^\d{2}\.\d{2}\.2026, \d{2}:\d{2}$/)
+    const instruction = calcFileLogEntry({ ...base, action: 'detach', changed_by_name: null, owner_type: 'general', owner_id: 'tpl-direct', doc_category: COST_PLAN_CALC_CATEGORY, object_name: null }, anchors)
+    assert.deepEqual([instruction.attached, instruction.who, instruction.place, instruction.kind], [false, null, 'Инструкции', 'Прямые затраты'])
+    const gone = calcFileLogEntry({ ...base, owner_type: 'object', owner_id: 'o-9', doc_category: 'cost_plan_direct_costs', object_name: null }, anchors)
+    assert.equal(gone.place, 'объект удалён')
+  })
+
+  it('обе базы: те же поля, ограничения и триггер; права таблицы прежние; документы объекта — по праву cost_plan_docs', () => {
     const supa = read('supabase/migrations/20261121_cost_plan_calc_objects.sql')
     const yandex = read('migration/yandex/20261121_cost_plan_calc_objects.sql')
     const body = (sql) => sql.slice(sql.indexOf('ALTER TABLE public.cost_plan_compensation\n'), sql.lastIndexOf('$$;') + 3)
@@ -134,10 +150,13 @@ describe('Расчёт ПЗ: правила без базы и миграции'
     assert.ok(fs.existsSync(path.join(REPO, 'migration/yandex/20261121_cost_plan_calc_objects.check.sql')))
     assert.ok(fs.existsSync(path.join(REPO, 'migration/backup/checks/20261121.sql')))
     assert.ok(fs.existsSync(path.join(REPO, 'migration/rollback/20261121_cost_plan_calc_objects_rollback.sql')))
-    // Документы объекта по расчёту: категории вкладки — те, что сервер файлов отдаёт только администратору.
+    // Документы объекта по расчёту: категории вкладки — те, что сервер файлов отдаёт по праву cost_plan_docs; страница
+    // проверяет то же право, инструкции — только администратор.
     const presign = read('server/osp-api/src/routes/s3Presign.js')
-    for (const s of COST_PLAN_CALC_SECTIONS) assert.match(presign, new RegExp(`${s.category}: \\[\\['admin', 'edit'\\]\\]`), s.category)
+    for (const s of COST_PLAN_CALC_SECTIONS) assert.match(presign, new RegExp(`${s.category}: \\[\\['cost_plan_docs', 'edit'\\]\\]`), s.category)
     assert.match(presign, /section_templates: \[\['admin', 'edit'\]\]/)
+    assert.match(read('src/pages/CostPlansPage.jsx'), /canAttach=\{canEdit\('cost_plan_docs'\)\}/)
+    assert.match(read('src/contexts/roleConstants.js'), /cost_plan_docs: '/)
   })
 })
 
@@ -157,7 +176,7 @@ describe('«Планы затрат» → «Документы» → «Расч�
   })
 
   // Данные стенда дополняются до открытия окна: вкладка читает всё при открытии.
-  const openCalc = async ({ query = '', anchors = ANCHORS, rows = [], files = [], missing = [], missingColumns = null } = {}) => {
+  const openCalc = async ({ query = '', anchors = ANCHORS, rows = [], files = [], log = [], missing = [], missingColumns = null } = {}) => {
     const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 1500, height: 950 } })
     const page = await context.newPage()
     const errors = []
@@ -167,19 +186,20 @@ describe('«Планы затрат» → «Документы» → «Расч�
     page.on('dialog', (d) => { dialogs.push(d.message()); d.accept() })
     await page.goto(`${stand.url}?route=/cost-plans&latency=0${query}`)
     await page.locator('.cost-plans-page .cp-table').first().waitFor({ timeout: 120000 })
-    await page.evaluate(([objects, anchorRows, compRows, fileRows, docs, missingTables, absentColumns]) => {
+    await page.evaluate(([objects, anchorRows, compRows, fileRows, docs, logRows, missingTables, absentColumns]) => {
       const db = window.__fakeDb
       db.objects = [...db.objects.filter(o => !o.id.startsWith('o-')), ...objects]
       db.section_templates = anchorRows
       db.cost_plan_compensation = compRows
       db.object_documents = docs
+      db.cost_plan_calc_file_log = logRows
       db.s3_documents.push(...fileRows)
       for (const t of missingTables) {
         window.__fakeErrors = { ...(window.__fakeErrors || {}), [t]: { code: 'PGRST205', message: `Could not find the table 'public.${t}' in the schema cache` } }
       }
       if (absentColumns) window.__fakeMissingColumns = { cost_plan_compensation: absentColumns }
-      for (const t of ['objects', 'section_templates', 'cost_plan_compensation', 'object_documents', 's3_documents']) window.__fakeTouch(t)
-    }, [OBJECTS, anchors, rows, files, OBJECT_DOCS, missing, missingColumns])
+      for (const t of ['objects', 'section_templates', 'cost_plan_compensation', 'object_documents', 'cost_plan_calc_file_log', 's3_documents']) window.__fakeTouch(t)
+    }, [OBJECTS, anchors, rows, files, OBJECT_DOCS, log, missing, missingColumns])
     await page.getByRole('button', { name: 'Документы' }).click()
     const modal = page.getByRole('dialog', { name: 'Документы раздела' })
     await modal.getByRole('tab', { name: 'Расчёт ПЗ' }).click()
@@ -204,7 +224,7 @@ describe('«Планы затрат» → «Документы» → «Расч�
       rows: [{ id: 'cc-1', object_id: 'o-5', vat_compensated: null, vat_percent: null, vat_document_id: null, vat_note: 'Уточнить у заказчика', inflation_compensated: null, inflation_percent: null, inflation_document_id: null, inflation_note: null }],
     })
     try {
-      assert.deepEqual(await modal.locator('.tdm-tab').allTextContents(), ['Экономисты ОСП', 'Расчёт ПЗ'])
+      assert.deepEqual(await modal.locator('.tdm-tab').allTextContents(), ['Экономисты ОСП', 'Расчёт ПЗ', 'Журнал'])
       // Подвкладок больше нет: инструкции обеих видов рядом, компенсация — только в карточках объектов.
       assert.equal(await modal.locator('.cpc-subtab, .cpc-comp, .cpc-table').count(), 0)
       assert.deepEqual(await modal.locator('.cpc-instr .cpc-cell-title').allTextContents(), ['Прямые затраты', 'КП до перекидок'])
@@ -347,6 +367,101 @@ describe('«Планы затрат» → «Документы» → «Расч�
       assert.equal(await empty.modal.locator('.cpc-card').count(), 0)
     } finally {
       await empty.close()
+    }
+  })
+
+  it('экономист ОСП: все объекты, документы объектов прикрепляет и открепляет; инструкции и сведения — нет', async () => {
+    const files = [
+      file('f-1', 'general', 'tpl-kp', COST_PLAN_CALC_CATEGORY, 'Инструкция КП.pdf'),
+      file('f-2', 'object', 'o-5', 'cost_plan_direct_costs', 'ПЗ Сданный.pdf'),
+    ]
+    const { page, modal, errors, dialogs, close } = await openCalc({ query: '&asRole=economist', files })
+    try {
+      // Пустые объекты видны — иначе прикрепить первый документ было бы некуда.
+      assert.deepEqual(await modal.locator('.cpc-card-title').allTextContents(),
+        ['Бизнес-центр «Нурлы»', 'ЖК «Северный квартал»', 'ЖК Сданный', 'ЖК Северный 33', 'ЖК Южный'])
+      assert.equal(await modal.locator('.cpc-edit').count(), 0, 'компенсацию не меняет')
+      assert.equal(await modal.locator('.cpc-instr .cpc-add, .cpc-instr input[type=file], .cpc-instr .cpc-icon.is-danger').count(), 0, 'инструкции — только администратор')
+      assert.equal(await modal.locator('.cpc-instr[data-section="kp"] .cpc-file-name').textContent(), 'Инструкция КП.pdf', 'но видит их')
+
+      await card(modal, 'o-2').locator('.cpc-area-direct input[type=file]').setInputFiles([pdf('ПЗ Южный.pdf')])
+      await card(modal, 'o-2').locator('.cpc-area-direct .cpc-file-name', { hasText: 'ПЗ Южный.pdf' }).waitFor({ timeout: 10000 })
+      assert.deepEqual((await fakeFiles(page, { objects: COST_PLAN_CALC_SECTIONS.map(s => s.category) })).filter(f => f.owner_id === 'o-2'),
+        [{ owner_type: 'object', owner_id: 'o-2', doc_category: 'cost_plan_direct_costs', file_name: 'ПЗ Южный.pdf' }])
+
+      await card(modal, 'o-2').getByRole('button', { name: 'Удалить: ПЗ Южный.pdf' }).click()
+      await card(modal, 'o-2').locator('.cpc-area-direct .cpc-files-empty').waitFor({ timeout: 10000 })
+      assert.deepEqual(dialogs, ['Удалить файл «ПЗ Южный.pdf»?'])
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('«Журнал»: кто, когда, что сделал, где и с каким файлом; новые сверху, порциями; обновлённой базы нет — подсказка', async () => {
+    const entry = (id, action, who, ownerType, ownerId, category, objectName, name, at) => ({
+      id, action, document_id: `d-${id}`, file_name: name, owner_type: ownerType, owner_id: ownerId, doc_category: category,
+      object_name: objectName, changed_by: who ? `u-${id}` : null, changed_by_name: who, changed_at: at,
+    })
+    const log = [
+      entry(1, 'attach', 'Петрова Анна Сергеевна', 'general', 'tpl-direct', COST_PLAN_CALC_CATEGORY, null, 'Инструкция.pdf', '2026-11-01T07:00:00Z'),
+      entry(2, 'attach', 'Сидоров Павел Олегович', 'object', 'o-2', 'cost_plan_kp_before_transfers', 'ЖК Южный', 'КП до перекидок.xlsx', '2026-11-02T08:00:00Z'),
+      entry(3, 'detach', 'Сидоров Павел Олегович', 'object', 'o-2', 'cost_plan_kp_before_transfers', 'ЖК Южный', 'КП до перекидок.xlsx', '2026-11-02T09:00:00Z'),
+      entry(4, 'detach', null, 'object', 'o-9', 'cost_plan_direct_costs', null, 'ПЗ.xlsx', '2026-11-02T10:00:00Z'),
+    ]
+    const { modal, errors, close } = await openCalc({ query: '&canEdit=0', log })
+    try {
+      await modal.getByRole('tab', { name: 'Журнал' }).click()
+      const rows = modal.locator('.cpc-log tbody tr')
+      await rows.first().waitFor({ timeout: 10000 })
+      const cells = await rows.evaluateAll((trs) => trs.map((tr) => [...tr.cells].slice(2).map((td) => td.textContent)))
+      assert.deepEqual(cells, [
+        ['Откреплён', 'объект удалёнПрямые затраты', 'ПЗ.xlsx'],
+        ['Откреплён', 'ЖК ЮжныйКП до перекидок', 'КП до перекидок.xlsx'],
+        ['Прикреплён', 'ЖК ЮжныйКП до перекидок', 'КП до перекидок.xlsx'],
+        ['Прикреплён', 'ИнструкцииПрямые затраты', 'Инструкция.pdf'],
+      ])
+      assert.equal(await rows.nth(0).locator('td').nth(1).textContent(), 'не записан')
+      assert.match(await rows.nth(1).locator('td').nth(1).textContent(), /Сидоров/)
+      assert.match(await rows.nth(1).locator('td').nth(0).textContent(), /^02\.11\.2026, \d{2}:\d{2}$/)
+      assert.equal(await modal.getByRole('button', { name: 'Показать ещё' }).count(), 0, 'записей меньше порции')
+      // На телефоне — карточками: где и файл видны без прокрутки вбок.
+      await modal.page().setViewportSize({ width: 390, height: 800 })
+      const box = await rows.nth(1).locator('.cpc-log-file').boundingBox()
+      assert.ok(box.x >= 0 && box.x + box.width <= 390, `файл в окне: ${JSON.stringify(box)}`)
+      assert.equal(await modal.locator('.cpc-log-wrap').evaluate((el) => el.scrollWidth <= el.clientWidth), true, 'без прокрутки вбок')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+
+    const many = await openCalc({
+      log: Array.from({ length: 55 }, (_, i) => entry(i + 1, 'attach', 'Петрова Анна Сергеевна', 'object', 'o-2', 'cost_plan_direct_costs', 'ЖК Южный',
+        `Файл ${i + 1}.pdf`, new Date(Date.UTC(2026, 9, 1, 0, i)).toISOString())),
+    })
+    try {
+      await many.modal.getByRole('tab', { name: 'Журнал' }).click()
+      const rows = many.modal.locator('.cpc-log tbody tr')
+      await rows.first().waitFor({ timeout: 10000 })
+      assert.equal(await rows.count(), 50)
+      assert.equal(await rows.first().locator('.cpc-log-file').textContent(), 'Файл 55.pdf')
+      await many.modal.getByRole('button', { name: 'Показать ещё' }).click()
+      await rows.nth(54).waitFor({ timeout: 10000 })
+      assert.equal(await rows.count(), 55)
+      assert.equal(await rows.last().locator('.cpc-log-file').textContent(), 'Файл 1.pdf')
+      assert.equal(await many.modal.getByRole('button', { name: 'Показать ещё' }).count(), 0)
+      assert.deepEqual(many.errors, [])
+    } finally {
+      await many.close()
+    }
+
+    const legacy = await openCalc({ missing: ['cost_plan_calc_file_log'] })
+    try {
+      await legacy.modal.getByRole('tab', { name: 'Журнал' }).click()
+      await legacy.modal.locator('.tdm-note', { hasText: 'миграция 20261130_cost_plan_calc_file_log' }).waitFor({ timeout: 10000 })
+      assert.deepEqual(legacy.errors, [])
+    } finally {
+      await legacy.close()
     }
   })
 

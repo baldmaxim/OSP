@@ -111,7 +111,7 @@ BSMContractorRatesPage, BSMRatesPage, BSMComparisonPage, BSMSelectionPage, Contr
 | tender | E(tenders) / E(tenders\|vors); **пакет тендера (VorDocsModal) — без гейта**: любой сотрудник на странице |
 | contract | E(contracts); **список файлов в карточке договора — без гейта**: любой зритель договоров |
 | object | E(objects) |
-| object, `doc_category` `cost_plan_direct_costs` / `cost_plan_kp_before_transfers` (документы «Расчёта ПЗ» объекта, 20261121) | **isAdmin** (osp-api `CATEGORY_RULES`: при подтверждении загрузки и при удалении — сверх E(objects)) |
+| object, `doc_category` `cost_plan_direct_costs` / `cost_plan_kp_before_transfers` (документы «Расчёта ПЗ» объекта, 20261121) | **E(cost_plan_docs)** — администратор и экономист ОСП, 20261130 (osp-api `CATEGORY_RULES`: при ссылке на загрузку, подтверждении и удалении — вместо E(objects)); журнал `cost_plan_calc_file_log` — читает сотрудник, пишет только триггер |
 | counterparty | E(counterparties) |
 | dc_request | E(dc_requests) |
 | doc_check_request | E(doc_check_requests) |

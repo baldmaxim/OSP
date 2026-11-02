@@ -4068,5 +4068,115 @@
     "to": "empty",
     "why": "новая таблица: шаги заявки на проверку ДП/ДС (на копии пусто — запись не проверяется); читает, кто видит раздел, меняет право правки раздела, отмечает ещё и исполнитель заявки, подрядчику и гостю ничего",
     "candidate": "20261124_doc_check_card.sql"
+  },
+  {
+    "release": "20261130",
+    "class": "admin",
+    "table": "cost_plan_calc_file_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал файлов «Расчёта ПЗ» (кто и когда прикрепил и открепил; на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261130_cost_plan_calc_file_log.sql"
+  },
+  {
+    "release": "20261130",
+    "class": "employee_full",
+    "table": "cost_plan_calc_file_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал файлов «Расчёта ПЗ» (кто и когда прикрепил и открепил; на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261130_cost_plan_calc_file_log.sql"
+  },
+  {
+    "release": "20261130",
+    "class": "employee_none",
+    "table": "cost_plan_calc_file_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал файлов «Расчёта ПЗ» (кто и когда прикрепил и открепил; на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261130_cost_plan_calc_file_log.sql"
+  },
+  {
+    "release": "20261130",
+    "class": "vors_only",
+    "table": "cost_plan_calc_file_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал файлов «Расчёта ПЗ» (кто и когда прикрепил и открепил; на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261130_cost_plan_calc_file_log.sql"
+  },
+  {
+    "release": "20261130",
+    "class": "contractor_own",
+    "table": "cost_plan_calc_file_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал файлов «Расчёта ПЗ» (кто и когда прикрепил и открепил; на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261130_cost_plan_calc_file_log.sql"
+  },
+  {
+    "release": "20261130",
+    "class": "contractor_noorg",
+    "table": "cost_plan_calc_file_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал файлов «Расчёта ПЗ» (кто и когда прикрепил и открепил; на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261130_cost_plan_calc_file_log.sql"
+  },
+  {
+    "release": "20261130",
+    "class": "unapproved",
+    "table": "cost_plan_calc_file_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал файлов «Расчёта ПЗ» (кто и когда прикрепил и открепил; на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261130_cost_plan_calc_file_log.sql"
+  },
+  {
+    "release": "20261130",
+    "class": "blocked",
+    "table": "cost_plan_calc_file_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал файлов «Расчёта ПЗ» (кто и когда прикрепил и открепил; на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261130_cost_plan_calc_file_log.sql"
+  },
+  {
+    "release": "20261130",
+    "class": "no_user_roles",
+    "table": "cost_plan_calc_file_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал файлов «Расчёта ПЗ» (кто и когда прикрепил и открепил; на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261130_cost_plan_calc_file_log.sql"
+  },
+  {
+    "release": "20261130",
+    "class": "anon",
+    "table": "cost_plan_calc_file_log",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: журнал файлов «Расчёта ПЗ» (кто и когда прикрепил и открепил; на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261130_cost_plan_calc_file_log.sql"
+  },
+  {
+    "release": "20261130",
+    "class": "service_role",
+    "table": "cost_plan_calc_file_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал файлов «Расчёта ПЗ» (кто и когда прикрепил и открепил; на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261130_cost_plan_calc_file_log.sql"
   }
 ]

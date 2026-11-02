@@ -279,6 +279,40 @@ textarea.cpc-input { min-height: 3.25rem; resize: vertical; }
 .cpc-hint { margin-right: auto; font-size: 0.75rem; color: var(--text-tertiary); }
 .cpc-hint a { color: var(--ui-link, var(--primary-color)); }
 
+/* Вкладка «Журнал» (CostPlanCalcLogTab). */
+.cpc-log-wrap { overflow-x: auto; }
+.cpc-log {
+  width: 100%;
+  min-width: 50rem;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  color: var(--text-primary);
+}
+.cpc-log th {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border-color-dark);
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+.cpc-log td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: top;
+}
+.cpc-log-col-when { width: 9.5rem; }
+.cpc-log-col-who { width: 10rem; }
+.cpc-log-col-action { width: 7.5rem; }
+.cpc-log-col-place { width: 11rem; }
+.cpc-log-when { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cpc-log-kind { color: var(--text-tertiary); font-size: 0.75rem; line-height: 1rem; }
+.cpc-log-file { overflow-wrap: anywhere; }
+.cpc-log-more { margin-top: 0.75rem; }
+.cpc-badge.is-detached { background: var(--danger-light); color: var(--danger-color); }
+
 @media (max-width: 640px) {
   .cpc-instr-grid { grid-template-columns: minmax(0, 1fr); }
   /* Карточка — в столбик: сначала документы, потом компенсация. */
@@ -295,6 +329,24 @@ textarea.cpc-input { min-height: 3.25rem; resize: vertical; }
   .cpc-icon { width: 2.25rem; height: 2.25rem; }
   .cpc-seg { display: flex; }
   .cpc-seg-btn { flex: 1 1 0; text-align: center; padding: 0.4rem 0.5rem; }
+  /* Журнал — карточками: время и действие в строку, ниже кто, где и файл; без прокрутки вбок. */
+  .cpc-log,
+  .cpc-log tbody { display: block; min-width: 0; width: 100%; }
+  .cpc-log thead,
+  .cpc-log colgroup { display: none; }
+  .cpc-log tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.2rem 0.5rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .cpc-log td { padding: 0; border: none; }
+  .cpc-log-when { order: 1; }
+  .cpc-log-action { order: 2; }
+  .cpc-log-who,
+  .cpc-log-place,
+  .cpc-log-file { order: 3; grid-column: 1 / -1; }
 }
 
 /* Окно «Документы» планов затрат шире окна по содержимому (48rem): карточки объектов в две колонки.

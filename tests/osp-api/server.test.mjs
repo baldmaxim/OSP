@@ -25,6 +25,7 @@ const U = {
   noRole: { token: 'tok-norole', id: '66666666-6666-4666-8666-666666666666' },
   viewer: { token: 'tok-viewer', id: '77777777-7777-4777-8777-777777777777' },
   blocked: { token: 'tok-blocked', id: '88888888-8888-4888-8888-888888888888' },
+  economist: { token: 'tok-economist', id: '99999999-9999-4999-8999-999999999999' },
 }
 const CONTRACT_MINE = 'c0000000-0000-4000-8000-000000000001'
 const CONTRACT_OTHER = 'c0000000-0000-4000-8000-000000000002'
@@ -53,6 +54,7 @@ function supabaseState() {
       [U.contractorNoOrg.id]: { role: 'contractor', counterparty_id: null, is_approved: true },
       [U.viewer.id]: { role: 'viewer', counterparty_id: null, is_approved: true, is_blocked: false, full_name: 'Зритель' },
       [U.blocked.id]: { role: 'engineer', counterparty_id: null, is_approved: true, is_blocked: true },
+      [U.economist.id]: { role: 'economist', counterparty_id: null, is_approved: true, is_blocked: false, full_name: 'Экономист Тестовый' },
     },
     docs: {
       'tenders/t1/a-plan.pdf': { row: { id: 'd1', owner_type: 'tender', owner_id: TENDER_1 }, visibleTo: [U.emp.id, U.admin.id, U.viewer.id] },
@@ -66,6 +68,8 @@ function supabaseState() {
       [U.emp.id]: ['tenders:view', 'tenders:edit', 'contracts:view', 'contracts:edit', 'general_documents:edit', 'objects:edit'],
       [U.admin.id]: 'all',
       [U.viewer.id]: ['tenders:view', 'contracts:view'],
+      // Право на документы «Расчёта ПЗ» — и никаких других: без правки «Объектов» проверка видна точнее.
+      [U.economist.id]: ['cost_plan_docs:edit'],
     },
     myContracts: { [U.contractor.id]: [CONTRACT_MINE] },
     owners: {
@@ -478,31 +482,74 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.ok(calls.some((c) => c.p_section === 'objects' && c.p_kind === 'edit'))
     })
 
-    it('документы «Расчёта ПЗ» объекта — только администратор; прочие файлы объекта — правка «Объектов»', async () => {
-      const put = async (who, op, category) => {
-        const body = fileBody({ owner_type: 'object', owner_id: OBJECT_1, operation_id: OP(op) })
+    describe('документы «Расчёта ПЗ» объекта — право cost_plan_docs вместо правки «Объектов»', () => {
+      const objectFile = (op, category, over = {}) => fileBody({
+        owner_type: 'object', owner_id: OBJECT_1, operation_id: OP(op), ...(category ? { category } : {}), ...over,
+      })
+      // Все шаги, как у страницы: ссылка на PUT, сам PUT, подтверждение. Отказ ссылки — сразу ответ.
+      const put = async (who, body) => {
         const up = await fn('s3-presign', who, { action: 'upload', ...body })
-        assert.equal(up.statusCode, 200, up.body)
+        if (up.statusCode !== 200) return up
         await fetch(up.json().presigned_url, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: 'hello' })
-        return fn('s3-presign', who, { action: 'confirm', ...body, ...(category ? { category } : {}) })
+        return fn('s3-presign', who, { action: 'confirm', ...body })
       }
-      for (const category of ['cost_plan_direct_costs', 'cost_plan_kp_before_transfers']) {
-        const denied = await put(U.emp, 11, category)
-        assert.equal(denied.statusCode, 403, `инженер с правкой «Объектов»: ${category}`)
-        assert.deepEqual(denied.json(), { error: 'Нет права на файлы этого раздела' })
-      }
-      assert.equal(Object.values(state.docs).some((d) => d.row.id === OP(11)), false, 'строки нет')
-      assert.equal((await put(U.emp, 12, 'dgp')).statusCode, 200, 'ДГП объекта — как раньше')
-      const ok = await put(U.admin, 13, 'cost_plan_direct_costs')
-      assert.equal(ok.statusCode, 200, ok.body)
-      const key = ok.json().document.s3_key
-      assert.equal(ok.json().document.doc_category, 'cost_plan_direct_costs')
+      const hasRow = (op) => Object.values(state.docs).some((d) => d.row.id === OP(op))
 
-      const del = (who) => fn('s3-presign', who, { action: 'delete', s3_key: key })
-      assert.equal((await del(U.emp)).statusCode, 403, 'удалить — тоже только администратор')
-      assert.ok(state.docs[key], 'строка на месте')
-      assert.deepEqual((await del(U.admin)).json(), { ok: true })
-      assert.equal(state.docs[key], undefined)
+      it('прикрепляет обладатель права, хотя правки «Объектов» у него нет; строка — с его именем', async () => {
+        for (const [op, category] of [[20, 'cost_plan_direct_costs'], [21, 'cost_plan_kp_before_transfers']]) {
+          const res = await put(U.economist, objectFile(op, category))
+          assert.equal(res.statusCode, 200, res.body)
+          assert.equal(res.json().document.doc_category, category)
+          assert.equal(res.json().document.uploaded_by, U.economist.id)
+          assert.equal(res.json().document.uploaded_by_name, 'Экономист Тестовый')
+        }
+      })
+
+      it('правка «Объектов» этого права не даёт — ни ссылку на PUT, ни строку, ни в обход первого шага', async () => {
+        for (const category of ['cost_plan_direct_costs', 'cost_plan_kp_before_transfers']) {
+          const body = objectFile(22, category)
+          for (const action of ['upload', 'confirm']) {
+            const denied = await fn('s3-presign', U.emp, { action, ...body })
+            assert.equal(denied.statusCode, 403, `инженер с правкой «Объектов»: ${action}, ${category}`)
+            assert.deepEqual(denied.json(), { error: 'Нет права на файлы этого раздела' })
+          }
+        }
+        assert.equal(hasRow(22), false, 'строки нет')
+        assert.equal((await put(U.emp, objectFile(23, 'dgp'))).statusCode, 200, 'ДГП объекта — как раньше')
+        assert.equal((await put(U.admin, objectFile(24, 'cost_plan_direct_costs'))).statusCode, 200, 'администратор — всегда')
+      })
+
+      it('право не открывает другие файлы: без категории, с другой категорией, другого владельца — отказ', async () => {
+        for (const [label, body] of [
+          ['файл объекта без категории', objectFile(25, null)],
+          ['другая категория объекта', objectFile(26, 'dgp')],
+          ['похожее имя категории', objectFile(27, 'cost_plan_direct_costs_x')],
+          ['служебное имя вместо категории', objectFile(28, 'constructor')],
+          ['эта категория у другого владельца', objectFile(29, 'cost_plan_direct_costs', { owner_type: 'general_document', owner_id: GDOC_1 })],
+        ]) {
+          const res = await fn('s3-presign', U.economist, { action: 'upload', ...body })
+          assert.equal(res.statusCode, 403, label)
+        }
+        // Ссылку получил с категорией, а подтверждает без неё — строки нет.
+        const body = objectFile(30, 'cost_plan_direct_costs')
+        assert.equal((await fn('s3-presign', U.economist, { action: 'upload', ...body })).statusCode, 200)
+        const { category: _category, ...withoutCategory } = body
+        assert.equal((await fn('s3-presign', U.economist, { action: 'confirm', ...withoutCategory })).statusCode, 403)
+        assert.equal(hasRow(30), false, 'строки нет')
+      })
+
+      it('открепляет обладатель права; инженер с правкой «Объектов» — нет; чужой файл объекта право не открывает', async () => {
+        const mine = (await put(U.admin, objectFile(31, 'cost_plan_kp_before_transfers'))).json().document.s3_key
+        const del = (who, s3Key) => fn('s3-presign', who, { action: 'delete', s3_key: s3Key })
+        assert.equal((await del(U.emp, mine)).statusCode, 403, 'инженер')
+        assert.ok(state.docs[mine], 'строка на месте')
+        assert.deepEqual((await del(U.economist, mine)).json(), { ok: true })
+        assert.equal(state.docs[mine], undefined)
+
+        const dgp = (await put(U.admin, objectFile(32, 'dgp'))).json().document.s3_key
+        assert.equal((await del(U.economist, dgp)).statusCode, 403, 'ДГП объекта — правка «Объектов»')
+        assert.ok(state.docs[dgp], 'строка на месте')
+      })
     })
 
     it('задача — тому, кому она видна, без права раздела', async () => {

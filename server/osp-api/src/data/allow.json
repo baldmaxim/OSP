@@ -202,6 +202,11 @@
         "update"
       ]
     },
+    "cost_plan_calc_file_log": {
+      "authenticated": [
+        "select"
+      ]
+    },
     "cost_plan_compensation": {
       "authenticated": [
         "delete",

@@ -67,7 +67,8 @@ export function createOspFiles({ call, fetchImpl, digest, newId, sleep = (ms) =>
     }
 
     const already = await withRetries(PUT_ATTEMPTS, async () => {
-      const up = await invoke({ action: 'upload', ...fileFields })
+      // Категория — и при запросе ссылки: у некоторых категорий своё право вместо права раздела владельца.
+      const up = await invoke({ action: 'upload', ...fileFields, ...(category ? { category } : {}) })
       if (up.already) return up.document
       let res
       try {
