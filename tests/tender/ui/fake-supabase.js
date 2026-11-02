@@ -81,6 +81,7 @@ function applyFilters(rows, filters) {
     if (f.op === 'is') return f.val === null ? r[f.col] == null : r[f.col] === f.val
     if (f.op === 'in') return f.val.map(String).includes(String(r[f.col]))
     if (f.op === 'gt') return r[f.col] > f.val
+    if (f.op === 'gte') return r[f.col] >= f.val
     if (f.op === 'or') return f.conds.some((c) => testCond(r, c))
     return true
   }))
@@ -153,6 +154,7 @@ function builder(table) {
     is(col, val) { q.filters.push({ op: 'is', col, val }); return self },
     in(col, val) { q.filters.push({ op: 'in', col, val }); return self },
     gt(col, val) { q.filters.push({ op: 'gt', col, val }); return self },
+    gte(col, val) { q.filters.push({ op: 'gte', col, val }); return self },
     neq() { return self },
     not() { return self },
     // Таймаут запроса (окно «ВОРы и РД») — стенд отвечает сам, отменять нечего.

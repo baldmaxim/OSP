@@ -10,10 +10,18 @@
 //    («гофротруба»), опечатки и разницу в длине наименования, где отдельные слова не совпали;
 //  • артикул — код, который в тендере есть только у одной позиции (91920, 51020R, 221-413, РЗ-ЦХ-10): совпал —
 //    почти наверняка та же позиция, даже если поставщик назвал её по-своему («Клемма WAGO 221-413 3-проводная»).
+//    Артикул из колонки документа (ЭТМ: «Артикул» рядом с «Кодом товара») надёжнее: он находит и позиции разных ВОР,
+//    где тот же артикул записан в разных наименованиях, и обрезанный поставщиком («…-LSZH-U» вместо «…-LSZH-UV»);
+//  • количество — спецификацию поставщик считает по объёму ВОР: совпало (с округлением до упаковки) — чуть выше;
+//  • вид материала — первое слово позиции: нет его в строке документа — не выбирается сама, если остальное совпало
+//    не вполне («Компьютерная розетка … RJ-45, UTP, Cat.5e» — не «Патч-корд …-UTP-RJ45-C5E»).
 // Разные числа (размер, сечение, диаметр) у обоих — уже другой материал: такая пара в список попадает, но сама не
 // выбирается. Одна группа — одной строке документа: сначала точные, затем самые похожие (другая ед. изм. — чуть ниже).
+// Одна строка может закрыть несколько групп: те же артикул или материал под другой записью (also).
+// Цена документа — за его единицу: упаковка штук и бухта метров делятся на единицу позиции (docPack).
 import { normName } from './supplyRateHelpers.js'
-import { nameParts, prepareName, scoreParts, unitsCompatible } from './supplySimilarity.js'
+import { roundMoney } from './money.js'
+import { canonUnit, nameParts, prepareName, sameWord, scoreParts, unitsCompatible } from './supplySimilarity.js'
 import { unitSignature } from './supplyAutoImport.js'
 
 // Сколько кандидатов у строки документа (в окне видно первые несколько, остальные — «ещё»).
@@ -24,6 +32,22 @@ export const LIST_MIN = 0.3
 // Другая ед. изм. — кандидат чуть ниже: штуки и упаковки поставщики пишут как попало, но при равной похожести
 // позиция с той же ед. изм. вернее.
 const UNIT_PENALTY = 0.08
+// Артикул из колонки документа — сильнее похожести; обрезанным считается начало от 12 знаков, без хвоста до 4 знаков.
+const ARTICLE_SCORE = 0.9
+const ARTICLE_PREFIX_MIN = 12
+const ARTICLE_TAIL_MAX = 4
+// Количество как в ВОР: только от 3 единиц («1 шт» совпало бы у всего), поднимает уже похожие.
+const QTY_MIN = 3
+const QTY_NEAR_FROM = 0.9
+const QTY_NEAR_TO = 1.35
+const QTY_BONUS = 0.06
+const QTY_SCORE_MIN = 0.45
+const PACK_QTY_FAR = 3
+// Вид материала: совпало меньше KIND_SURE и первого слова позиции нет в строке — сама не выбирается.
+const KIND_SURE = 0.75
+const KIND_CAP = 0.45
+// Материал под другой записью: все слова и числа более короткого наименования есть в другом, слов — не меньше 3.
+const SAME_MATERIAL_WORDS = 3
 
 // docViews — [{ name, positions }] (позиции списков ВОР). Ответ — группы { key, k, name, unit, units, parts, targets }.
 export function positionGroups(docViews) {
@@ -43,8 +67,93 @@ export function positionGroups(docViews) {
   return [...map.values()]
 }
 
-// Ед. изм. строки документа подходит позиции: та же (шт. = штук, м = м.п.), не указана — подходит.
-export const groupUnitOk = (unit, g) => (g.units ? g.units.some((u) => unitsCompatible(unit, u)) : unitsCompatible(unit, g.unit))
+// Ед. изм. строки документа подходит позиции: та же (шт. = штук, м = м.п., упак = уп, тн = т), не указана — подходит.
+const PACK_UNITS = new Set(['уп', 'набор'])
+const ROLL_UNITS = new Set(['шт', 'бухта', 'катушка', 'рулон', 'барабан', 'моток', ...PACK_UNITS])
+const sameUnit = (a, b) => unitsCompatible(a, b) || canonUnit(a) === canonUnit(b) || (PACK_UNITS.has(canonUnit(a)) && PACK_UNITS.has(canonUnit(b)))
+export const groupUnitOk = (unit, g) => (g.units ? g.units.some((u) => sameUnit(unit, u)) : sameUnit(unit, g.unit))
+
+// Единицы, которые пересчитываются сами: кабель в км, металл в т и кг, крепёж в тысячах и сотнях.
+const UNIT_SCALE = { 'км>м': 1000, 'м>км': 0.001, 'т>кг': 1000, 'кг>т': 0.001, 'тыс шт>шт': 1000 }
+function unitScale(from, to) {
+  const known = UNIT_SCALE[`${from}>${to}`]
+  if (known) return known
+  const m = /^([0-9]+) ?(шт|м|кг|л|т)$/.exec(from)
+  return m && m[2] === to ? Number(m[1]) : null
+}
+const lastLength = (name) => {
+  const metres = [...name.matchAll(/(^|[^0-9.,xх×*-])([0-9]+(?:[.,][0-9]+)?)\s*(?:м|метр[а-я]*)(?![a-zа-я0-9])/g)]
+  if (metres.length) return Number(metres[metres.length - 1][2].replace(',', '.'))
+  const mm = /(?:^|[^a-zа-я])l\s*=?\s*([0-9]{3,5})(?![0-9])|(?:^|[^0-9])([0-9]{4,5})\s*мм/.exec(name)
+  return mm ? Number(mm[1] || mm[2]) / 1000 : null
+}
+const countIn = (name) => {
+  const m = /([0-9]+)\s*(?:шт|штук)/.exec(name)
+  return m ? Number(m[1]) : null
+}
+const textOf = (name) => String(name || '').toLowerCase().replace(/ё/g, 'е')
+// Толщина из наименования, м: «толщ. 50 мм», «толщиной 100мм», «t=2 мм», «δ=20 мм».
+const THICKNESS_RE = /(?:толщ\S*\s*|(?:^|[^a-zа-я])[tδ]\s*=\s*)([0-9]+(?:[.,][0-9]+)?)\s*мм/
+export const thicknessM = (name) => {
+  const m = THICKNESS_RE.exec(textOf(name))
+  return m ? Number(m[1].replace(',', '.')) / 1000 : null
+}
+
+// Сколько единиц позиции в одной единице строки документа; цена делится на это число. Единицы с постоянным пересчётом
+// (км и м, т и кг, тыс. шт) — всегда; остальное — только если написано: упаковка штук («Стяжка 7.6х300 (100 шт.)» или
+// колонка «В упаковке», упак → шт), бухта метров («Витая пара … 305м», шт → м), длина изделия («Лоток L3000», шт → м) и
+// наоборот, по наименованию позиции (groupName): шт → упак («Стяжка СК-300 (100шт.)»), м → шт («Арматура 10мм, 11,7м»); м3 и
+// м2 — через толщину («Утеплитель толщ. 50 мм»: 1 м3 = 20 м2).
+// Иначе null: цену делим только на то, что сказал поставщик. Метры — отдельным числом: «ИК-30м» и «2х0,75 м» — не длина.
+export function docPack(item, unit, groupName = null) {
+  const from = canonUnit(item?.unit)
+  const to = canonUnit(unit)
+  if (!from || !to || sameUnit(from, to)) return null
+  const scale = unitScale(from, to)
+  if (scale) return scale
+  const name = textOf(item.name)
+  let n = null
+  if (to === 'шт' && PACK_UNITS.has(from)) n = item.packQty || countIn(name)
+  else if (to === 'м' && ROLL_UNITS.has(from)) n = lastLength(name) || (from === 'шт' ? null : item.packQty)
+  else if (PACK_UNITS.has(to) && from === 'шт') {
+    const count = countIn(textOf(groupName)) || countIn(name)
+    n = count ? 1 / count : null
+  } else if (to === 'шт' && from === 'м') {
+    const length = lastLength(textOf(groupName))
+    n = length ? 1 / length : null
+  } else if ((to === 'м2' && from === 'м3') || (to === 'м3' && from === 'м2')) {
+    const t = thicknessM(groupName) || thicknessM(name)
+    if (t) n = to === 'м2' ? 1 / t : t
+  }
+  return n != null && Number.isFinite(n) && n > 0 && n !== 1 ? n : null
+}
+
+// Объёмы позиции: в каждом ВОР и во всех вместе.
+function volumesOf(g) {
+  const volumes = []
+  for (const t of g.targets || []) {
+    for (const u of t.position?.units || [t.position]) if (u?.volume > 0) volumes.push(Number(u.volume))
+  }
+  if (volumes.length > 1) volumes.push(volumes.reduce((s, v) => s + v, 0))
+  return volumes
+}
+// Количество строки документа (в единицах позиции) близко к объёму позиции в одном из ВОР или во всех вместе:
+// поставщик округляет только до упаковки.
+function qtyNear(item, g) {
+  if (!(item?.qty > 0)) return false
+  const total = item.qty * (docPack(item, g.unit, g.name) || 1)
+  if (total < QTY_MIN) return false
+  return volumesOf(g).some((v) => total / v >= QTY_NEAR_FROM && total / v <= QTY_NEAR_TO)
+}
+// Цену пересчитали на единицу позиции, а количество после пересчёта совсем не похоже на объём: пересчёт, скорее всего,
+// неверен (или неверна ед. изм. в ВОР) — такую цену сама расценка не ставит.
+export function packQtyFar(item, g, pack) {
+  if (!pack || !(item?.qty > 0)) return false
+  const volumes = volumesOf(g)
+  if (!volumes.length) return false
+  const total = item.qty * pack
+  return volumes.every((v) => total / v > PACK_QTY_FAR || v / total > PACK_QTY_FAR)
+}
 
 // ── Признаки наименования ───────────────────────────────────────────────────────────────────────────
 // Сокращения и другие записи того же — раскрываются до сравнения (только здесь: в базе их нет).
@@ -60,6 +169,7 @@ const EXPAND = [
   [/(^|[^a-zа-яё])dn(?= ?[0-9])/gi, '$1ду '],
   [/(^|[^a-zа-яё])стяжк/gi, '$1хомут стяжк'],
   [/(^|[^a-zа-яё])рукав металлическ/gi, '$1металлорукав '],
+  [/(^|[^a-zа-яё])витая пара/gi, '$1кабель витая пара'],
 ]
 export const expandName = (name) => EXPAND.reduce((s, [re, to]) => s.replace(re, to), String(name ?? ''))
 
@@ -80,27 +190,38 @@ const dice = (shared, a, b) => (a + b ? (2 * shared) / (a + b) : 0)
 // Артикулы и коды наименования: от 4 цифр (91920, 2785193, 221-413) или буквы с цифрами от 4 знаков (51020R,
 // CMAT11-10-100, SK-712/d-2-1,5, РЗ-ЦХ-10, У-136). Не коды: размеры и диапазоны с единицей (2х2х0,75, d20мм,
 // 0,2-4мм2), ГОСТ / ТУ, слова с цифрой («3-проводная» — в коде нет слов длиннее пяти букв). Разделители внутри кода
-// не важны: «221-413» = «221413».
+// не важны: «221-413» = «221413». Всё, что поставщик или смета сами назвали артикулом (после «арт.», колонка «Артикул»
+// — marked), — код, даже если похоже на размер: «арт. PR13.0303».
 const UNIT_TAIL = '(?:мм2|мм|см|м2|м3|м|mm|кг|г|л|мл|шт|вт|квт|ква|в|а|ч|бар|атм)'
-const SIZE_RE = new RegExp(`^(?:[a-zа-я]{1,2}=?)?[0-9]+(?:\\.[0-9]+)?${UNIT_TAIL}?$`)
+const SIZE_RE = new RegExp(`^(?:[a-zа-я]{1,2}=?)?[0-9]+(?:\\.[0-9]{1,3})?${UNIT_TAIL}?$`)
 const UNIT_END_RE = new RegExp(`[0-9]${UNIT_TAIL}$`)
 const WORD_IN_CODE_RE = /[a-zа-я]{6,}/
-export function codeTokens(...texts) {
+const ART_MARK_RE = /^(?:арт|art|артикул)[.:=]*$/
+// Один и тот же код пишут по-разному: кириллицей вместо латиницы (СТR12 = CTR12), Excel съедает ведущие нули (00304 = 304).
+const CODE_LATIN = { а: 'a', в: 'b', е: 'e', к: 'k', м: 'm', н: 'h', о: 'o', р: 'p', с: 'c', т: 't', у: 'y', х: 'x' }
+const sameCodeForm = (t) => t.replace(/[авекмнорстух]/g, (c) => CODE_LATIN[c]).replace(/^0+(?=[0-9]+$)/, '')
+function tokensOf(text, marked) {
   const out = new Set()
-  const s = texts.filter(Boolean).join(' ').toLowerCase().replace(/ё/g, 'е')
+  const s = String(text || '').toLowerCase().replace(/ё/g, 'е')
     .replace(/(^|[^a-zа-я])(гост|ту|сто|снип|сп|din|iso|en) ?(р ?)?[0-9][0-9.–—/-]*/g, '$1 ')
     .replace(/([0-9]),(?=[0-9])/g, '$1.')
     .replace(/([0-9]) ?[xх×*] ?(?=[0-9])/g, '$1 ')
-  for (let raw of s.split(/[\s,;:()«»"'+№#]+/)) {
-    raw = raw.replace(/^[a-zа-я]{1,4}[.=]+/, '').replace(/^[-./=]+|[-./=]+$/g, '')
+  let afterMark = false
+  for (const piece of s.split(/[\s,;:()«»"'+№#]+/)) {
+    if (ART_MARK_RE.test(piece)) { afterMark = true; continue }
+    const isCode = marked || afterMark || /^(?:арт|art)[.=]/.test(piece)
+    afterMark = false
+    const raw = piece.replace(/^[a-zа-я]{1,4}[.=]+/, '').replace(/^[-./=]+|[-./=]+$/g, '')
     if (!/[0-9]/.test(raw) || WORD_IN_CODE_RE.test(raw)) continue
-    if ((SIZE_RE.test(raw) || UNIT_END_RE.test(raw)) && !/^[0-9]{4,}$/.test(raw)) continue
+    if (!isCode && (SIZE_RE.test(raw) || UNIT_END_RE.test(raw)) && !/^[0-9]{4,}$/.test(raw)) continue
     const t = raw.replace(/[-./=]/g, '')
-    const digits = t.replace(/[^0-9]/g, '').length
-    if (/^[0-9]+$/.test(t) ? digits >= 4 : t.length >= 4 && /[a-zа-я]/.test(t)) out.add(t)
+    const digits = t.replace(/^0+/, '').replace(/[^0-9]/g, '').length
+    if (/^[0-9]+$/.test(t) ? digits >= (isCode ? 3 : 4) : t.length >= 4 && /[a-zа-я]/.test(t)) out.add(sameCodeForm(t))
   }
   return out
 }
+export const codeTokens = (...texts) => tokensOf(texts.filter(Boolean).join(' '), false)
+const articleTokens = (code) => tokensOf(code, true)
 
 // Признаки группы считаются один раз (группы снабжения и кабинета подрядчика устроены одинаково, свои поля
 // не нужны).
@@ -109,19 +230,40 @@ function features(g) {
   let f = FEATURES.get(g)
   if (!f) {
     const name = expandName(g.name)
-    f = { parts: nameParts(name), tri: trigrams(name), codes: codeTokens(g.name) }
+    f = { parts: nameParts(name), tri: trigrams(name), codes: codeTokens(g.name), kind: kindWord(name) }
     FEATURES.set(g, f)
   }
   return f
 }
+// Вид материала — первое слово наименования, в том же виде, что слова nameParts.
+function kindWord(name) {
+  for (const chunk of prepareName(name).split(/[^a-zа-я0-9.×/]+/)) {
+    const w = nameParts(chunk).words[0]
+    if (w) return w
+  }
+  return null
+}
 function itemFeatures(item) {
   const names = [item.name, item.code ? `${item.name} ${item.code}` : null].filter(Boolean)
   const name = expandName(item.name)
-  return { names, parts: [nameParts(name), ...(item.code ? [nameParts(`${name} ${item.code}`)] : [])], tri: trigrams(name), codes: codeTokens(item.name, item.code) }
+  const articles = articleTokens(item.code)
+  return {
+    item, names, parts: [nameParts(name), ...(item.code ? [nameParts(`${name} ${item.code}`)] : [])], tri: trigrams(name),
+    articles, codes: new Set([...codeTokens(item.name, item.code2), ...articles]),
+  }
 }
 
-// Похожесть строки документа и группы: { score, words, text, code, sameNums, apart }. score — 0…1 (1 — только
-// точное совпадение наименования, его считает вызывающий); apart — числа у обоих разные (размер, сечение).
+// Группы — один материал под разной записью: более короткое наименование целиком (слова и числа) входит в другое
+// («Герметик огнестойкий FIREFIX, Техстронг» и «…FIREFIX, 310мл, ТЕХСТРОНГ»; другие числа — другой материал).
+export function sameMaterial(g1, g2) {
+  const [a, b] = [features(g1).parts, features(g2).parts].sort((x, y) => x.words.length - y.words.length || x.nums.length - y.nums.length)
+  return a.words.length >= SAME_MATERIAL_WORDS && a.nums.every((n) => b.nums.includes(n))
+    && a.words.every((w) => b.words.some((x) => sameWord(w, x)))
+}
+
+// Похожесть строки документа и группы: { score, words, text, code, qty, sameNums, apart }. score — 0…1 (1 — только
+// точное совпадение наименования, его считает вызывающий); apart — числа у обоих разные (размер, сечение); qty —
+// количество как в ВОР. a.code — совпал артикул, a.article — и он из колонки документа.
 export function pairScore(a, g, shared = null) {
   const b = features(g)
   let base = null
@@ -144,13 +286,23 @@ export function pairScore(a, g, shared = null) {
   const apart = (x, y) => x.length > 0 && y.length > 0 && !x.some((t) => y.includes(t))
   const isSize = (t) => t.includes('×')
   const numsApart = apart(na, nb) || apart(na.filter(isSize), nb.filter(isSize))
-  if (code) score = Math.max(score, 0.8 + 0.15 * Math.max(base.score, text))
+  const qty = !code && !numsApart && !!a.item && qtyNear(a.item, g)
+  if (a.article) score = Math.max(score, ARTICLE_SCORE + 0.09 * Math.max(base.score, text))
+  else if (code) score = Math.max(score, 0.8 + 0.15 * Math.max(base.score, text))
   else if (numsApart) score = Math.min(score, 0.5)
-  return { score: Math.min(0.99, Math.round(score * 1000) / 1000), words: base.words, text: Math.round(text * 1000) / 1000, code, sameNums: base.sameNums, apart: !code && numsApart }
+  else if (qty && score >= QTY_SCORE_MIN) score += QTY_BONUS
+  // Вид материала: нет первого слова позиции в строке — сама не выбирается, если совпало не вполне; есть — позиция
+  // того же вида хотя бы в списке выбора.
+  if (!code && b.kind) {
+    if (a.parts[0].words.some((w) => sameWord(w, b.kind))) score = Math.max(score, LIST_MIN)
+    else if (score < KIND_SURE) score = Math.min(score, KIND_CAP)
+  }
+  return { score: Math.min(0.99, Math.round(score * 1000) / 1000), words: base.words, text: Math.round(text * 1000) / 1000, code, qty, sameNums: base.sameNums, apart: !code && numsApart }
 }
 
-// Указатели по группам: ключ наименования, первые буквы основ слов, сочетания букв, артикулы (только те, что в
-// тендере у одной позиции: «RS485» или «IP55» у нескольких — признак, а не артикул).
+// Указатели по группам: ключ наименования, первые буквы основ слов, сочетания букв, артикулы (codes — только те, что
+// в тендере у одной позиции: «RS485» или «IP55» в наименованиях у нескольких — признак, а не артикул; articles — все,
+// для артикула из колонки документа).
 export function matchIndex(groups) {
   const byKey = new Map()
   const heads = new Map()
@@ -166,17 +318,46 @@ export function matchIndex(groups) {
     for (const c of f.codes) { let s = codeKeys.get(c); if (!s) { s = new Map(); codeKeys.set(c, s) } add(s, g.k, g) }
   }
   const codes = new Map()
-  for (const [c, byK] of codeKeys) if (byK.size === 1) codes.set(c, [...byK.values()][0])
-  return { byKey, heads, tri, codes }
+  const articles = new Map()
+  for (const [c, byK] of codeKeys) {
+    articles.set(c, [...byK.values()].flat())
+    if (byK.size === 1) codes.set(c, [...byK.values()][0])
+  }
+  return { byKey, heads, tri, codes, articles }
+}
+
+// Группы по артикулу из колонки документа: тот же или он же, обрезанный поставщиком (у ЭТМ — до 30 знаков).
+function articleGroups(ix, token) {
+  const same = ix.articles.get(token)
+  if (same) return same
+  if (token.length < ARTICLE_PREFIX_MIN) return []
+  const out = []
+  for (const [t, list] of ix.articles) {
+    if (t.length > token.length && t.length - token.length <= ARTICLE_TAIL_MAX && t.startsWith(token)) out.push(...list)
+  }
+  return out
 }
 
 const rankOf = (c) => (c.exact ? 2 : c.score) - (c.unitOk ? 0 : UNIT_PENALTY)
 const byRank = (a, b) => rankOf(b) - rankOf(a)
 
-// Кандидаты одной строки документа: [{ group, score, exact, unitOk, code, sameNums }] — лучшие первыми, не ниже
-// LIST_MIN.
-export function itemCandidates(item, groups, index = null, limit = MATCH_CANDIDATES) {
+// Кандидаты одной строки документа: [{ group, score, exact, unitOk, pack, code, article, qty, sameNums }] — лучшие
+// первыми, не ниже LIST_MIN. packs — вызывающий пересчитывает цену на единицу позиции: тогда pack — сколько единиц
+// позиции в единице документа (docPack), и такая ед. изм. подходит. Без него (проверка реестра КП, кабинет подрядчика:
+// цена берётся как есть) упаковка штук остаётся другой ед. изм.
+export function itemCandidates(item, groups, index = null, limit = MATCH_CANDIDATES, { packs = false } = {}) {
   const ix = index || matchIndex(groups)
+  // Два наименования у строки («по запросу» и «предлагаемое») — ищем по обоим, лучшая оценка на позицию.
+  if (item.name2) {
+    const best = new Map()
+    for (const it of [{ ...item, name2: null }, { ...item, name: item.name2, name2: null }]) {
+      for (const c of itemCandidates(it, groups, ix, limit, { packs })) {
+        const was = best.get(c.group.key)
+        if (!was || rankOf(c) > rankOf(was)) best.set(c.group.key, c)
+      }
+    }
+    return [...best.values()].sort(byRank).slice(0, limit)
+  }
   const a = itemFeatures(item)
   const out = new Map()
   for (const n of a.names) {
@@ -189,22 +370,31 @@ export function itemCandidates(item, groups, index = null, limit = MATCH_CANDIDA
   for (const [g, n] of shared) if (dice(n, a.tri.size, features(g).tri.size) >= LIST_MIN) pool.add(g)
   for (const p of a.parts) for (const w of p.words) for (const g of ix.heads.get(w.slice(0, 4)) || []) pool.add(g)
   const byCode = new Set()
+  const byArticle = new Set()
+  for (const c of a.articles) for (const g of articleGroups(ix, c)) { byArticle.add(g); byCode.add(g); pool.add(g) }
   for (const c of a.codes) for (const g of ix.codes.get(c) || []) { byCode.add(g); pool.add(g) }
   for (const g of pool) {
-    if (out.has(g.key)) continue
-    const r = pairScore({ ...a, code: byCode.has(g) }, g, shared.get(g) || 0)
-    if (r.score >= LIST_MIN) out.set(g.key, { group: g, ...r, exact: false })
+    const known = out.get(g.key)
+    if (known) { known.article = byArticle.has(g); continue }
+    const article = byArticle.has(g)
+    const r = pairScore({ ...a, code: byCode.has(g), article }, g, shared.get(g) || 0)
+    if (r.score >= LIST_MIN) out.set(g.key, { group: g, ...r, exact: false, article })
   }
-  return [...out.values()].map((c) => ({ ...c, unitOk: groupUnitOk(item.unit, c.group) })).sort(byRank).slice(0, limit)
+  return [...out.values()].map((c) => {
+    const pack = packs && !c.group.units ? docPack(item, c.group.unit, c.group.name) : null
+    return { ...c, pack, unitOk: pack != null || groupUnitOk(item.unit, c.group) }
+  }).sort(byRank).slice(0, limit)
 }
 
 // Сопоставляется сама: точно или не ниже AUTO_MIN.
 export const autoMatch = (c) => !!c && (c.exact || c.score >= AUTO_MIN)
 
-// Все строки документа: { item, match, candidates }. match — выбранная группа (или null), одна группа — одной строке.
-export function matchDocItems(items, groups) {
-  const index = matchIndex(groups)
-  const candidates = items.map((item) => itemCandidates(item, groups, index))
+// Все строки документа: { item, match, also, candidates }. match — выбранная группа (или null), одна группа — одной
+// строке; also — ещё группы той же строки: тот же артикул или тот же материал под другой записью, ед. изм. подходит.
+// packs — см. itemCandidates; index — готовый указатель, если сопоставляем несколько документов с одними позициями.
+export function matchDocItems(items, groups, { packs = false, index: given = null } = {}) {
+  const index = given || matchIndex(groups)
+  const candidates = items.map((item) => itemCandidates(item, groups, index, MATCH_CANDIDATES, { packs }))
   const pairs = []
   candidates.forEach((list, i) => list.forEach((c) => { if (autoMatch(c)) pairs.push({ i, c }) }))
   pairs.sort((a, b) => byRank(a.c, b.c) || a.i - b.i)
@@ -215,13 +405,27 @@ export function matchDocItems(items, groups) {
     chosen[i] = c
     used.add(c.group.key)
   }
-  return items.map((item, i) => ({ item, match: chosen[i], candidates: candidates[i] }))
+  const also = items.map(() => [])
+  chosen.forEach((main, i) => {
+    if (!main) return
+    for (const c of candidates[i]) {
+      if (c.group === main.group || !c.unitOk || used.has(c.group.key)) continue
+      if (!c.article && !sameMaterial(main.group, c.group)) continue
+      also[i].push(c)
+      used.add(c.group.key)
+    }
+  })
+  return items.map((item, i) => ({ item, match: chosen[i], also: also[i], candidates: candidates[i] }))
 }
 
-// Цены документа как похожие цены позиций (документ, добавленный «в похожие цены»): строке — позиция, выбранная
-// в окне (k), иначе лучшие кандидаты не ниже AUTO_MIN (до двух, если вторая почти так же похожа); «не сопоставлять»
-// в окне (skip) — никуда. Позиции могли смениться (новая версия ВОР) — выбранной нет, ищем заново.
-// lines — [{ name, unit, code, k, skip, … }]; ответ — Map ключ группы → [{ line, group, score, exact, picked, unitOk }].
+// Цена строки документа за единицу позиции (упаковка и бухта делятся, docPack).
+export const offerPrice = (o) => roundMoney(o.line.price / (o.pack || 1))
+
+// Цены документа как похожие цены позиций (документ, добавленный «в похожие цены»): строке — позиции, выбранные
+// в окне (k и also), иначе лучшие кандидаты не ниже AUTO_MIN (до двух, если вторая почти так же похожа) и те же артикул
+// или материал под другой записью; «не сопоставлять» в окне (skip) — никуда. Позиции могли смениться (новая версия
+// ВОР) — выбранных нет, ищем заново. lines — [{ name, unit, code, k, also, skip, … }]; ответ — Map ключ группы →
+// [{ line, group, score, exact, picked, unitOk, pack }].
 export function offerMatches(lines, groups, index = null) {
   const ix = index || matchIndex(groups)
   const out = new Map()
@@ -232,17 +436,22 @@ export function offerMatches(lines, groups, index = null) {
   }
   for (const line of lines) {
     if (line.skip) continue
-    const picked = line.k ? ix.byKey.get(line.k) || [] : []
+    const picked = [line.k, ...(line.also || [])].filter(Boolean).flatMap((k) => ix.byKey.get(k) || [])
     if (picked.length) {
-      for (const g of picked) put(g, { line, score: 1, exact: false, picked: true, unitOk: groupUnitOk(line.unit, g) })
+      for (const g of picked) {
+        const pack = g.units ? null : docPack(line, g.unit, g.name)
+        put(g, { line, score: 1, exact: false, picked: true, article: false, pack, unitOk: pack != null || groupUnitOk(line.unit, g) })
+      }
       continue
     }
-    const cands = itemCandidates(line, groups, ix, 3).filter(autoMatch)
-    if (!cands.length) continue
-    const best = rankOf(cands[0])
-    for (const c of cands.slice(0, 2)) {
-      if (c !== cands[0] && (cands[0].exact || best - rankOf(c) > 0.05)) continue
-      put(c.group, { line, score: c.score, exact: c.exact, picked: false, unitOk: c.unitOk })
+    const all = itemCandidates(line, groups, ix, MATCH_CANDIDATES, { packs: true })
+    const first = all.find(autoMatch)
+    if (!first) continue
+    const near = first.exact ? null : all.find((c) => c !== first && autoMatch(c) && rankOf(first) - rankOf(c) <= 0.05)
+    for (const c of all) {
+      if (c === first || c === near || (c.unitOk && (c.article || sameMaterial(first.group, c.group)))) {
+        put(c.group, { line, score: c.score, exact: c.exact, picked: false, article: !!c.article, unitOk: c.unitOk, pack: c.pack })
+      }
     }
   }
   return out

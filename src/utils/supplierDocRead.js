@@ -2,18 +2,19 @@
 // (текст страниц со словами и координатами). Сам разбор таблицы — utils/supplierDoc.js. Обе библиотеки тяжёлые и
 // подгружаются только здесь, по требованию: таблица расценки открывается без них.
 //
-// Ответ readSupplierDoc: { kind: 'excel' | 'pdf', items, vat, sheetName | pages } или { error, message }:
+// Ответ readSupplierDoc: { kind: 'excel' | 'pdf', items, vat, date, currency, total, sheetName | pages } или { error, message }
+// (date — дата документа, currency — цены не в рублях, total — сверка с итогом документа, supplierDoc.totalsCheck):
 //  unsupported — не Excel и не PDF; broken — файл не читается; encrypted — PDF под паролем; scan — в PDF нет текста
 //  (скан, фото): распознать нечем; no_table — не нашли шапку (наименование и цена / сумма); empty — шапка есть, а
 //  строк с ценой нет.
 import {
-  cellText, detectGridHeader, detectLinesHeader, gridRows, itemsFromRows, linesFromWords, pdfRows, rulingsFromOps,
-  vatFromText, wordsFromTextItems,
+  cellText, currencyFromText, detectGridHeader, detectLinesHeader, docDateFromText, gridRows, gridTotals, itemsFromRows, linesFromWords, pdfRows,
+  rulingsFromOps, totalsCheck, vatFromText, wordsFromTextItems,
 } from './supplierDoc.js'
 
-export const SUPPLIER_DOC_ACCEPT = '.xlsx,.xlsm,.xls,.csv,.pdf'
+export const SUPPLIER_DOC_ACCEPT = '.xlsx,.xlsm,.xlsb,.xls,.ods,.csv,.pdf'
 export const isPdfFile = (name) => /\.pdf$/i.test(String(name || ''))
-export const isSheetFile = (name) => /\.(xlsx|xlsm|xls|csv)$/i.test(String(name || ''))
+export const isSheetFile = (name) => /\.(xlsx|xlsm|xlsb|xls|ods|csv)$/i.test(String(name || ''))
 // Больше — не разбираем: столько страниц / листов у счёта не бывает, а разбор подвесил бы страницу.
 export const PDF_MAX_PAGES = 40
 const SHEETS_MAX = 12
@@ -58,28 +59,45 @@ export function readWorkbookBytes(XLSX, bytes, fileName) {
   return XLSX.read(bytes, { type: 'array', cellFormula: false, cellHTML: false, cellStyles: false, bookVBA: false })
 }
 
-// Книга Excel → лучший лист: тот, где распозналось больше строк с ценой.
+// Книга Excel → строки всех видимых листов с таблицей (кабель на одном листе, лотки на другом): лист-копия и сводная —
+// без повторов (то же наименование, ед. изм. и цена). Скрытые листы — черновики, их не читаем (если видимые есть).
 export function parseSupplierWorkbook(XLSX, wb) {
-  let best = null
+  const names = wb.SheetNames || []
+  const hidden = wb.Workbook?.Sheets || []
+  const visible = names.filter((_, i) => !hidden[i]?.Hidden)
+  const sheets = []
   let anyHeader = false
   let text = ''
-  for (const name of (wb.SheetNames || []).slice(0, SHEETS_MAX)) {
+  for (const name of (visible.length ? visible : names).slice(0, SHEETS_MAX)) {
     const grid = gridFromSheet(XLSX, wb.Sheets[name])
     if (text.length < VAT_TEXT_MAX) text += ` ${grid.map((row) => (row || []).map(cellText).filter(Boolean).join(' ')).join(' ')}`
     const header = detectGridHeader(grid)
     if (!header) continue
     anyHeader = true
     const items = itemsFromRows(gridRows(grid, header), header.columns)
-    if (!best || items.length > best.items.length) best = { sheetName: name, items }
+    if (items.length) sheets.push({ name, items, currency: header.columns.currency, total: totalsCheck(items, gridTotals(grid, header)) })
   }
-  if (!best) return { error: 'no_table', sheetNames: wb.SheetNames || [] }
-  if (!best.items.length) return { error: anyHeader ? 'empty' : 'no_table', sheetName: best.sheetName }
-  return { kind: 'excel', items: best.items, sheetName: best.sheetName, vat: vatFromText(text) }
+  if (!sheets.length) return { error: anyHeader ? 'empty' : 'no_table', sheetNames: names }
+  const seen = new Set()
+  const items = []
+  for (const sheet of sheets) {
+    for (const it of sheet.items) {
+      const key = `${it.name}|${it.unit}|${it.price ?? it.sum}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      items.push(sheets.length > 1 ? { ...it, source: `лист «${sheet.name}», ${it.source}` } : it)
+    }
+  }
+  return {
+    kind: 'excel', items, sheetName: sheets.map((s) => s.name).join(', '), vat: vatFromText(text), date: docDateFromText(text.slice(0, 4000)),
+    currency: sheets.find((s) => s.currency)?.currency || currencyFromText(text),
+    total: sheets.map((s) => s.total).find((t) => t && !t.ok) || sheets.map((s) => s.total).find(Boolean) || null,
+  }
 }
 
 // Страницы PDF (текст pdf.js) → строки документа. pages: [{ items, height, rulings }] (rulings — линии рамок таблицы,
-// supplierDoc.rulingsFromOps; нет — разбор по одному тексту). Шапок может быть несколько (таблица на каждой странице,
-// второй документ в файле) — берётся первая, у которой есть строки с ценой.
+// supplierDoc.rulingsFromOps; нет — разбор по одному тексту). Таблиц может быть несколько (разделы со своей шапкой, счёт и
+// спецификация в одном файле): читаем все, повторы (то же наименование, ед. изм. и цена) — один раз.
 export function parseSupplierPdfPages(pages) {
   const words = []
   let text = ''
@@ -91,17 +109,33 @@ export function parseSupplierPdfPages(pages) {
   const lines = linesFromWords(words)
   const rules = pages.map((p) => p.rulings || null)
   let from = 0
-  let header = null
   let found = false
-  for (let guard = 0; guard < 10; guard++) {
-    header = detectLinesHeader(lines, from, rules)
+  let currency = null
+  let total = null
+  const seen = new Set()
+  const items = []
+  for (let guard = 0; guard < 10 && from < lines.length; guard++) {
+    const header = detectLinesHeader(lines, from, rules)
     if (!header) break
     found = true
-    const items = itemsFromRows(pdfRows(lines, header, rules), header.columns)
-    if (items.length) return { kind: 'pdf', items, pages: pages.length, vat: vatFromText(text) }
-    from = header.line + header.span
+    const rows = pdfRows(lines, header, rules)
+    const part = itemsFromRows(rows, header.columns)
+    for (const it of part) {
+      const key = `${it.name}|${it.unit}|${it.price ?? it.sum}`
+      if (!seen.has(key)) { seen.add(key); items.push(it) }
+    }
+    if (part.length) {
+      currency ||= header.columns.currency || null
+      const check = totalsCheck(part, rows.totals)
+      if (check && (!total || !check.ok)) total = check
+    }
+    from = Math.max(rows.end, header.line + header.span)
   }
-  return { error: found ? 'empty' : 'no_table', pages: pages.length }
+  if (!items.length) return { error: found ? 'empty' : 'no_table', pages: pages.length }
+  return {
+    kind: 'pdf', items, pages: pages.length, vat: vatFromText(text), date: docDateFromText(text.slice(0, 4000)),
+    currency: currency || currencyFromText(text), total,
+  }
 }
 
 // Текст страниц PDF и линии рамок таблиц: pdfjs — модуль pdf.js (в браузере — с отдельным потоком разбора, в тестах —
@@ -165,7 +199,8 @@ export async function readSupplierDoc(bytes, fileName) {
       return { error: 'broken', message: String(e?.message || e) }
     }
     try {
-      return parseSupplierPdfPages(pages)
+      const r = parseSupplierPdfPages(pages)
+      return r.error || r.date ? r : { ...r, date: docDateFromText(fileName) }
     } catch (e) {
       return { error: 'broken', message: String(e?.message || e) }
     }
@@ -179,7 +214,8 @@ export async function readSupplierDoc(bytes, fileName) {
       return { error: 'broken', message: String(e?.message || e) }
     }
     try {
-      return parseSupplierWorkbook(XLSX, wb)
+      const r = parseSupplierWorkbook(XLSX, wb)
+      return r.error || r.date ? r : { ...r, date: docDateFromText(fileName) }
     } catch (e) {
       return { error: 'broken', message: String(e?.message || e) }
     }

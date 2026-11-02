@@ -280,6 +280,28 @@
 .sp-doc-drop.has-file { border-style: solid; }
 .sp-modal.is-drop { box-shadow: 0 0 0 3px var(--primary-color), 0 20px 40px rgba(15, 23, 42, 0.25); }
 .sp-doc-chosen { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; overflow-wrap: anywhere; }
+.sp-doc-hint { margin: 0; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.sp-di-attached { margin: 0 0 0.5rem; }
+.sp-di-warn { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.375rem; margin: 0 0 0.5rem; color: var(--warning-color); }
+.sp-di-pack { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--text-primary); }
+/* Окно «Счета и КП тендера»: файлы сверху (своя прокрутка, чтобы не вытесняли таблицу), под ними автовыбор. */
+.sp-td-drop { flex: none; padding: 0.625rem 0.75rem; margin-bottom: 0.5rem; }
+.sp-td-files { flex: none; max-height: 9.5rem; margin-bottom: 0.5rem; }
+.sp-td-files > li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.125rem 0.75rem; }
+.sp-td-files .sp-di-file { display: inline-flex; align-items: center; gap: 0.25rem; min-width: 0; overflow-wrap: anywhere; text-align: left; }
+.sp-td-state { flex: 1 1 16rem; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.125rem 0.5rem; color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.sp-td-state b { color: var(--text-primary); font-weight: var(--ui-semibold); }
+.sp-td-actions { display: inline-flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+.sp-td-rule { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; margin: 0 0 0 auto; padding: 0; border: 0; }
+.sp-td-rule label { display: inline-flex; align-items: center; gap: 0.375rem; cursor: pointer; }
+.sp-td-source .sp-di-file { display: flex; align-items: center; gap: 0.25rem; overflow-wrap: anywhere; }
+.sp-td-source .sp-di-meta { display: block; }
+.sp-td-tags { margin-top: 0.125rem; }
+.sp-td-more { display: block; margin-top: 0.125rem; }
+.sp-td-source .sp-di-choice { margin-top: 0.25rem; }
+.sp-td-none { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 0.25rem 0 0 1.25rem; }
+.sp-td-sum b { font-weight: var(--ui-semibold); }
+.sp-td-volumes { display: block; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .sp-doc-list-title { margin: 0.25rem 0 0; color: var(--text-secondary); font-size: var(--ui-hint); }
 .sp-doc-list { margin: 0; padding: 0; list-style: none; max-height: 14rem; overflow: auto; border: 1px solid var(--border-color); border-radius: var(--ui-radius); }
 .sp-doc-list > li { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0.5rem; border-bottom: 1px solid var(--border-color); }
@@ -669,6 +691,7 @@
   font-size: var(--ui-hint);
   line-height: var(--ui-hint-lh);
 }
+.sp-suggest-note { color: var(--warning-color); }
 .sp-suggest-take { height: 1.75rem; padding: 0 0.75rem; font-size: var(--ui-hint); }
 
 /* ── Цены без позиции ──────────────────────────────────────────────────── */

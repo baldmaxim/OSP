@@ -4,9 +4,12 @@
 // («похожие цены», «цены поставщиков»); «Взять» ставит цену и прикладывает файл документом позиции. Удалили файл —
 // пропали и его цены. Только разбор и запись JSON, без запросов.
 //
-// Строка: n — наименование, u — ед. изм., q — количество, c — артикул, p — цена в расценку за единицу (с НДС и
-// доставкой, как её посчитало окно), d / dv — цена в документе и её НДС ('net' | 'gross' | null), k — позиция,
-// выбранная в окне (ключ наименования normName), x — 1, если в окне выбрали «не сопоставлять».
+// Строка: n — наименование, u — ед. изм., q — количество, c — артикул, p — цена в расценку за единицу документа (с НДС
+// и доставкой, как её посчитало окно), d / dv — цена в документе и её НДС ('net' | 'gross' | null), k — позиция,
+// выбранная в окне (ключ наименования normName), ka — ещё позиции той же строки, x — 1, если в окне выбрали «не
+// сопоставлять», so — 1: цена × количество не сходится с суммой, pq — сколько в упаковке. Файл не распознался — вместо
+// строк причина (failed): его не скачиваем при каждом открытии расценки. При файле: date — дата документа, currency — цены
+// не в рублях, total — сверка с итогом документа { ok, read, doc }.
 import { roundMoney } from './money.js'
 
 export const OFFER_KIND = 'supply_offer'
@@ -23,9 +26,9 @@ const text = (v, max = NAME_MAX) => {
 }
 const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v))
 
-// JSON для notes. lines — [{ name, unit, qty, code, price, docPrice, docVat, k, skip }]; строки без цены не
+// JSON для notes. lines — [{ name, unit, qty, code, price, docPrice, docVat, k, also, skip }]; строки без цены не
 // хранятся. source — 'pdf' | 'sheet'; vat — { mode, rate } (как посчитаны цены); delivery — множитель доставки.
-export function offerNotes({ source = null, vat = null, delivery = 1, lines }) {
+export function offerNotes({ source = null, vat = null, delivery = 1, lines, date = null, currency = null, total = null }) {
   const out = []
   for (const l of lines || []) {
     const p = num(l.price)
@@ -40,6 +43,9 @@ export function offerNotes({ source = null, vat = null, delivery = 1, lines }) {
     if (num(l.docPrice) != null) row.d = roundMoney(num(l.docPrice))
     if (l.docVat === 'net' || l.docVat === 'gross') row.dv = l.docVat
     if (l.k) row.k = String(l.k)
+    if (l.also?.length) row.ka = l.also.map(String)
+    if (l.sumOff) row.so = 1
+    if (num(l.packQty) != null) row.pq = num(l.packQty)
     if (l.skip) row.x = 1
     out.push(row)
     if (out.length >= OFFER_LINES_MAX) break
@@ -48,12 +54,19 @@ export function offerNotes({ source = null, vat = null, delivery = 1, lines }) {
     kind: OFFER_KIND, v: OFFER_VERSION, at: new Date().toISOString(), source,
     vat: vat ? { mode: vat.mode || null, rate: num(vat.rate) } : null,
     delivery: num(delivery) && num(delivery) > 1 ? Math.round(num(delivery) * 10000) / 10000 : 1,
+    ...(date ? { date } : {}), ...(currency ? { currency } : {}), ...(total ? { total } : {}),
     lines: out,
   })
 }
 
-// notes файла → { at, source, vat, delivery, lines: [{ name, unit, qty, code, price, docPrice, docVat, k, skip }] }
-// или null (не документ «в похожие цены», испорченный JSON, другая версия).
+// Файл не распознался: notes с причиной вместо строк (error чтения: scan, no_table, empty, encrypted, broken).
+export const unreadableOfferNotes = (reason) => JSON.stringify({
+  kind: OFFER_KIND, v: OFFER_VERSION, at: new Date().toISOString(), failed: String(reason), lines: [],
+})
+
+// notes файла → { at, source, vat, delivery, failed, date, currency, total, lines: [{ name, unit, qty, code, price, docPrice,
+// docVat, k, also, skip, sumOff, packQty }] } или null (не документ «в похожие цены», испорченный JSON, другая версия).
+// also, sumOff, packQty — только если есть.
 export function readOffer(notes) {
   if (!notes || typeof notes !== 'string' || !notes.includes(OFFER_KIND)) return null
   let o
@@ -71,7 +84,10 @@ export function readOffer(notes) {
     lines.push({
       name, price, unit: text(r.u, 40), qty: num(r.q), code: text(r.c, 80), docPrice: num(r.d),
       docVat: r.dv === 'net' || r.dv === 'gross' ? r.dv : null, k: r.k ? String(r.k) : null, skip: r.x === 1,
+      ...(Array.isArray(r.ka) && r.ka.length ? { also: r.ka.map(String) } : {}),
+      ...(r.so === 1 ? { sumOff: true } : {}),
+      ...(num(r.pq) != null ? { packQty: num(r.pq) } : {}),
     })
   }
-  return { at: o.at || null, source: o.source || null, vat: o.vat || null, delivery: num(o.delivery) || 1, lines }
+  return { at: o.at || null, source: o.source || null, vat: o.vat || null, delivery: num(o.delivery) || 1, failed: o.failed || null, date: o.date || null, currency: o.currency || null, total: o.total || null, lines }
 }

@@ -105,7 +105,7 @@ export function nameParts(name) {
 }
 
 // Слово совпадает: то же, или одно — начало другого (оба не короче 4 букв): сокращение, другое окончание.
-const sameWord = (x, y) => x === y || (x.length >= 4 && y.length >= 4 && (x.startsWith(y) || y.startsWith(x)))
+export const sameWord = (x, y) => x === y || (x.length >= 4 && y.length >= 4 && (x.startsWith(y) || y.startsWith(x)))
 const numWeight = (t) => (t.includes('×') ? 2 : 1)
 const round3 = (num, den) => (den ? Math.round((1000 * num) / den) / 1000 : 0)
 const partsOf = (x) => (typeof x === 'string' ? nameParts(x) : x)
@@ -167,13 +167,34 @@ const UNIT_MAP = {
   'м п': 'мп', 'пог м': 'мп', погм: 'мп', 'п м': 'мп', пм: 'мп', 'м пог': 'мп',
 }
 const UNIT_LATIN = { a: 'а', c: 'с', e: 'е', p: 'р', x: 'х', y: 'у', o: 'о' }
+// Записей ед. изм. немного, а сравниваются они у каждой пары «строка документа — позиция»: уже разобранные — из памяти.
+const UNIT_MEMO = new Map()
+const UNIT_MEMO_MAX = 2000
 export function normUnit(u) {
+  const cached = UNIT_MEMO.get(u)
+  if (cached !== undefined) return cached
   const s = String(u ?? '').toLowerCase().replace(/ё/g, 'е').replace(/²/g, '2').replace(/³/g, '3')
     .replace(/[acepxyo]/g, (c) => UNIT_LATIN[c])
     .replace(/[«»"'`()]/g, '')
     .replace(/[\s.]+/g, ' ')
     .trim()
-  return UNIT_MAP[s] || s
+  const out = UNIT_MAP[s] || s
+  if (UNIT_MEMO.size >= UNIT_MEMO_MAX) UNIT_MEMO.clear()
+  UNIT_MEMO.set(u, out)
+  return out
+}
+
+// Ед. изм. документа поставщика — ещё одна ступень (только в браузере, в базе — normUnit): то, что в ВОР и счетах пишут
+// по-разному, а значит одно и то же: «тн» и «т», «комп» и «компл», «пара» и «пар», «метр» и «м», «упак» и «уп».
+const UNIT_ALIAS = {
+  метр: 'м', метра: 'м', метров: 'м', мп: 'м', тн: 'т', тонна: 'т', тонн: 'т', тонны: 'т', комп: 'компл', кмп: 'компл', кт: 'компл',
+  комплекс: 'компл', пара: 'пар', пары: 'пар', ед: 'шт', единица: 'шт', килограмм: 'кг', литр: 'л', литра: 'л', литров: 'л',
+  упак: 'уп', упаковка: 'уп', упаковки: 'уп', упаковок: 'уп', пач: 'уп', пачка: 'уп', кор: 'уп', короб: 'уп', коробка: 'уп', пакет: 'уп',
+  бух: 'бухта', бухты: 'бухта', кат: 'катушка', рул: 'рулон', 'т шт': 'тыс шт',
+}
+export const canonUnit = (u) => {
+  const n = normUnit(u)
+  return UNIT_ALIAS[n] || n
 }
 
 // Ед. изм. совместимы: одинаковые в едином виде; метр и погонный метр — одно; не указана у одной стороны — не мешает.

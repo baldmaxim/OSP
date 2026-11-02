@@ -1,114 +1,84 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { IconUpload } from '../icons/BsmIcons'
 import { IconAlert, IconCheck } from '../icons/ActionIcons'
 import { IconSearch } from '../icons/ToolbarIcons'
 import PaperclipIcon from '../icons/PaperclipIcon'
 import { formatAmount, roundMoney } from '../../utils/money'
-import { DEFAULT_VAT_RATE, deliveryUnitWithVat, unitPriceWithVat } from '../../utils/supplierDoc'
-import { SUPPLIER_DOC_ACCEPT, isPdfFile, isSheetFile, readSupplierDoc } from '../../utils/supplierDocRead'
-import { deliveryFactor, groupUnitOk, matchDocItems, searchGroups } from '../../utils/supplyDocMatch'
+import { DEFAULT_VAT_RATE, unitPriceWithVat } from '../../utils/supplierDoc'
+import { deliveryFactor, docPack, groupUnitOk, matchDocItems, packQtyFar, searchGroups } from '../../utils/supplyDocMatch'
+import { docPriceOf, docVatOf, linePrice, packPrice } from '../../utils/supplyDocPrice'
+import { priceStatus } from '../../utils/supplyAutoPick'
 import { offerNotes } from '../../utils/supplyOffers'
 
-// Больше — не распознаём (страница подвисла бы на разборе); прикрепить такой файл можно в колонке «Документ».
-const PARSE_MAX_BYTES = 30 * 1024 * 1024
 // Сколько позиций ВОР видно у строки документа сразу (остальные кандидаты — «ещё N», любые — поиском).
 const VISIBLE_OPTIONS = 4
 const SEARCH_LIMIT = 12
-// Сразу несколько файлов — не больше (каждый распознаётся по очереди).
-const BATCH_MAX = 10
-
-const READ_ERROR = {
-  unsupported: () => 'Распознаются только Excel (.xlsx, .xls, .csv) и PDF.',
-  broken: (r, name) => `Файл не читается как ${isPdfFile(name) ? 'PDF' : 'книга Excel'}${r.message ? ` (${r.message})` : ''}. Откройте его и сохраните заново: Excel — как .xlsx, PDF — «Печать в PDF».`,
-  encrypted: () => 'PDF защищён паролем — снимите защиту или попросите у поставщика файл без пароля.',
-  scan: () => 'В PDF нет текста — это скан или фото, распознать цены нечем. Попросите у поставщика Excel или PDF, выгруженный из 1С или Excel. Сам файл можно прикрепить к позициям вручную — в колонке «Документ».',
-  no_table: () => 'Не нашли таблицу с ценами: нужна шапка с колонками «Наименование» (или «Товар») и «Цена» (или «Сумма»).',
-  empty: () => 'Таблица найдена, но строк с ценой в ней нет.',
-  big: () => `Файл больше ${PARSE_MAX_BYTES / 1024 / 1024} МБ — такой не распознаём. Прикрепить его можно в колонке «Документ».`,
-}
 
 const pct = (s) => `${Math.round(s * 100)} %`
 const VAT_TEXT = { gross: 'цены с НДС', net: 'цены без НДС — НДС добавится', none: 'НДС не облагается — цены как есть' }
 const unitText = (g) => g.unit || (g.units || []).join(', ') || '—'
-const docPriceOf = (item) => item.price ?? (item.sum != null && item.qty > 0 ? item.sum / item.qty : null)
-const docVatOf = (item) => (item.price != null ? item.priceVat : item.sumVat) || null
-
-// Файл → распознанный документ { kind, pages | sheetName, items, vat, matches } или { error } (текст для человека).
-async function readFile(f, groups) {
-  if (!isPdfFile(f.name) && !isSheetFile(f.name)) return { error: READ_ERROR.unsupported() }
-  if (f.size > PARSE_MAX_BYTES) return { error: READ_ERROR.big() }
-  try {
-    const r = await readSupplierDoc(new Uint8Array(await f.arrayBuffer()), f.name)
-    if (r.error) return { error: (READ_ERROR[r.error] || READ_ERROR.broken)(r, f.name) }
-    // Доставка — не позиция ВОР: не сопоставляется (и не забирает позицию у строки с материалом).
-    const goodsMatches = matchDocItems(r.items.filter((it) => !it.delivery), groups)
-    let k = 0
-    const matches = r.items.map((item) => (item.delivery ? { item, match: null, candidates: [] } : goodsMatches[k++]))
-    return { ...r, matches }
-  } catch (e) {
-    return { error: READ_ERROR.broken({ message: e.message }, f.name) }
-  }
+const packOf = (item, g) => (g.units ? null : docPack(item, g.unit, g.name))
+const packText = (n) => String(Math.round(n * 1000000) / 1000000).replace('.', ',')
+const positiveNumber = (v) => {
+  const n = Number(String(v ?? '').replace(/\s/g, '').replace(',', '.'))
+  return Number.isFinite(n) && n > 0 ? n : null
 }
 
-// Цена строки документа для расценки: price — цена за единицу с НДС, delivery — доставка за единицу с НДС (колонка
-// доставки строки и доля строки доставки — пропорционально сумме, если её разносить; нет — null), full — цена с
-// доставкой. В базе без колонки доставки (до миграции 20261120) доставка — в самой цене, как раньше.
-function linePrice(item, vat, factor, deliveryOn) {
-  const base = unitPriceWithVat(item, vat)
-  if (base == null || !(base > 0)) return { price: null, delivery: null, full: null }
-  const d = (deliveryUnitWithVat(item, vat) || 0) + base * (factor - 1)
-  if (!deliveryOn) {
-    const price = roundMoney(base + d)
-    return { price, delivery: null, full: price }
-  }
-  const price = roundMoney(base)
-  const delivery = d > 0 ? roundMoney(d) : null
-  return { price, delivery, full: roundMoney(price + (delivery || 0)) }
+// Распознанный документ → с сопоставлениями. Доставка — не позиция ВОР: не сопоставляется (и не забирает позицию у
+// строки с материалом).
+function withMatches(r, groups) {
+  const goodsMatches = matchDocItems(r.items.filter((it) => !it.delivery), groups, { packs: true })
+  let k = 0
+  return { ...r, matches: r.items.map((item) => (item.delivery ? { item, match: null, also: [], candidates: [] } : goodsMatches[k++])) }
 }
-
-// Строки распознанного документа «в похожие цены» как есть — НДС как в документе, доставка — к ценам (сразу
-// несколько файлов, без окна сопоставления): позиции расценка найдёт сама. Цена поставщика — с доставкой.
-function batchNotes(r) {
-  const priceOf = (it) => unitPriceWithVat(it, r.vat)
-  const { factor } = deliveryFactor(r.items, priceOf)
-  const lines = r.items.filter((it) => !it.delivery).map((it) => {
-    const { full } = linePrice(it, r.vat, factor, false)
-    return { name: it.name, unit: it.unit, qty: it.qty, code: it.code, price: full, docPrice: docPriceOf(it), docVat: docVatOf(it) }
+// Выбранные позиции строк: выбор, сохранённый при файле (saved — строки notes), иначе найденная и остальные с тем же
+// материалом. Сохранённый выбор — по наименованию строки.
+function choiceOf(matches, groups, saved) {
+  const byName = new Map((saved || []).filter((l) => l.k || l.skip).map((l) => [l.name, l]))
+  const keysOf = (k) => groups.filter((g) => g.k === k).map((g) => g.key)
+  return matches.map((m) => {
+    const was = byName.get(String(m.item.name).replace(/\s+/g, ' ').trim())
+    if (was?.skip) return []
+    if (was?.k) {
+      const keys = [was.k, ...(was.also || [])].flatMap(keysOf)
+      if (keys.length) return keys
+    }
+    return m.match ? [m.match.group.key, ...m.also.map((c) => c.group.key)] : []
   })
-  return { notes: offerNotes({ source: r.kind, vat: r.vat, delivery: factor, lines }), lines: lines.filter((l) => l.price != null).length }
 }
 
-// Распознавание счёта / КП / УПД поставщика (Excel или PDF): строки документа сопоставляются с позициями ВОР тендера
-// (точно — по наименованию, иначе — по похожести: слова и числа, текст целиком, артикул), человек проверяет — у
-// каждой строки «не сопоставлять» и сразу под ним самые похожие позиции, поиск по всем, — выбирает, считать ли цены с
-// НДС и разносить ли доставку, и либо применяет (цены пишутся в расценку, как ввод руками, файл — документом к
-// позициям, получившим цену), либо добавляет документ «в похожие цены» (цены не пишутся: у позиций — «цены
-// поставщиков», выбирает человек в таблице). Несколько файлов сразу — без проверки, только «в похожие цены».
-// groups — позиции ВОР, сложенные в одинаковые (utils/supplyDocMatch.positionGroups). currentOf(group) — что сейчас
+// Проверка одного файла построчно: строки документа сопоставлены с позициями ВОР тендера (точно — по наименованию,
+// иначе — по артикулу и похожести: слова и числа, текст целиком), человек проверяет — у каждой строки «не сопоставлять» и
+// сразу под ним самые похожие позиции, поиск по всем, отметить можно несколько (тот же материал под разной записью в
+// разных ВОР), — выбирает, считать ли цены с НДС и разносить ли доставку, и либо применяет (цены пишутся в расценку, как
+// ввод руками, файл — документом к позициям, получившим цену), либо оставляет цены в «похожих» (цены не пишутся: выбор
+// сохраняется при файле). Цена за упаковку или бухту делится на единицу позиции (utils/supplyDocMatch.docPack: «(50шт)»,
+// «305м»); не сказано, сколько, — можно указать тут же. Цены в валюте — только с курсом.
+// groups — позиции ВОР, сложенные в одинаковые (utils/supplyDocMatch.positionGroups). preset — файл уже прочитан:
+// { file, doc, read, attached, saved } (doc — строка s3_documents, attached — к скольким позициям только что прикреплён,
+// saved — строки notes). currentOf(group) — что сейчас
 // в расценке: { own: [цены с доставкой], copies, empty }. deliveryOn — в расценке есть колонка «Доставка» (миграция
 // 20261120): доставка документа (колонкой строки или строкой «Доставка», разнесённой пропорционально сумме) пишется в
-// неё за единицу, а не в цену. onApply({ lines: [{ group, price, delivery }], file, attach, notes }, onProgress) —
-// записать; ответ { error } оставляет окно открытым. onAddOffers(file, notes) — загрузить файл «в похожие цены» (ошибка — исключением);
-// onOffersDone({ files, lines }) — все добавлены (панель закрывает окно и пишет, что сделано).
-export default function SupplyDocImportDialog({ groups, currentOf, filesOn, deliveryOn = false, onApply, onAddOffers, onOffersDone, onClose }) {
-  const [phase, setPhase] = useState('pick') // pick | reading | review | applying | batch | adding
-  const [file, setFile] = useState(null)
-  const [readError, setReadError] = useState('')
-  const [result, setResult] = useState(null)
-  const [choice, setChoice] = useState([]) // по строке документа: ключ группы или null
+// неё за единицу, а не в цену. onApply({ lines: [{ group, price, delivery }], file, attach, notes, existing }, onProgress) —
+// записать; ответ { error } оставляет окно открытым. onAddOffers(file, notes, existing) — только строки при файле (ошибка —
+// исключением); onOffersDone({ files, lines }) — сохранено (панель закрывает окно и пишет, что сделано).
+export default function SupplyDocImportDialog({ groups, preset, currentOf, filesOn, deliveryOn = false, onApply, onAddOffers, onOffersDone, onClose }) {
+  const [phase, setPhase] = useState('review') // review | applying | adding
+  const file = preset.file
+  const existing = preset.doc || null
+  const [result] = useState(() => withMatches(preset.read, groups))
+  const [choice, setChoice] = useState(() => choiceOf(result.matches, groups, preset.saved)) // по строке документа: ключи групп
   const [touched, setTouched] = useState(() => new Set()) // строки, где позицию выбрал человек
   const [checked, setChecked] = useState(() => new Set())
   const [vatMode, setVatMode] = useState('auto')
-  const [vatRate, setVatRate] = useState(String(DEFAULT_VAT_RATE))
+  const [vatRate, setVatRate] = useState(String(preset.read.vat?.rate ?? DEFAULT_VAT_RATE))
+  const [fxRate, setFxRate] = useState('') // курс, если цены документа не в рублях
+  const [packEdits, setPackEdits] = useState({}) // «строка:позиция» → сколько единиц позиции в единице документа, указал человек
   const [withDelivery, setWithDelivery] = useState(true)
   const [attach, setAttach] = useState(filesOn)
   const [filter, setFilter] = useState('all')
   const [progress, setProgress] = useState(null)
   const [applyError, setApplyError] = useState('')
-  const [dragOver, setDragOver] = useState(false)
-  const [batch, setBatch] = useState(null) // [{ file, status: reading | ready | error | saving | saved, error, notes, lines, matched }]
-  const fileRef = useRef(null)
-  const busy = phase === 'reading' || phase === 'applying' || phase === 'adding'
+  const busy = phase === 'applying' || phase === 'adding'
   const offersOn = filesOn && !!onAddOffers
 
   useEffect(() => {
@@ -119,103 +89,60 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, deli
 
   const groupByKey = useMemo(() => new Map(groups.map((g) => [g.key, g])), [groups])
 
-  // ── Чтение и сопоставление ────────────────────────────────────────────────────────────────────────
-  const readOne = async (f) => {
-    setFile(f)
-    setReadError('')
-    setResult(null)
-    setPhase('reading')
-    const r = await readFile(f, groups)
-    if (r.error) {
-      setReadError(r.error)
-      setPhase('pick')
-      return
-    }
-    setResult(r)
-    setChoice(r.matches.map((m) => m.match?.group.key || null))
-    setTouched(new Set())
-    setVatMode('auto')
-    setVatRate(String(r.vat?.rate ?? DEFAULT_VAT_RATE))
-    setFilter('all')
-    setPhase('review')
-  }
-
-  // Несколько файлов — по очереди, каждый «в похожие цены» без окна сопоставления.
-  const readMany = async (list) => {
-    const items = list.slice(0, BATCH_MAX).map((f) => ({ file: f, status: 'reading' }))
-    setReadError(list.length > BATCH_MAX ? `За один раз — не больше ${BATCH_MAX} файлов: остальные добавьте следующим заходом.` : '')
-    setBatch(items)
-    setPhase('batch')
-    for (let i = 0; i < items.length; i++) {
-      const r = await readFile(items[i].file, groups)
-      const next = r.error
-        ? { ...items[i], status: 'error', error: r.error }
-        : { ...items[i], status: 'ready', ...batchNotes(r), kind: r.kind, pages: r.pages, sheetName: r.sheetName, vat: r.vat,
-          matched: r.matches.filter((m) => m.match).length, goods: r.items.filter((it) => !it.delivery).length }
-      items[i] = next
-      setBatch([...items])
-    }
-  }
-
-  const pickFiles = (fileList) => {
-    const list = [...(fileList || [])]
-    if (!list.length || busy) return
-    if (list.length === 1 || !offersOn) readOne(list[0])
-    else readMany(list)
-  }
-
-  // ── Цены и состояние строк ────────────────────────────────────────────────────────────────────────
+// ── Цены и состояние строк ────────────────────────────────────────────────────────────────────────
   const vat = useMemo(() => {
-    if (!result) return null
     if (vatMode === 'auto') return result.vat
     const rate = Number(String(vatRate).replace(',', '.'))
     return { mode: vatMode, rate: Number.isFinite(rate) && rate >= 0 && rate < 100 ? rate : DEFAULT_VAT_RATE, force: true }
   }, [result, vatMode, vatRate])
 
   const priceOf = useCallback((item) => unitPriceWithVat(item, vat), [vat])
-  const delivery = useMemo(() => (result ? deliveryFactor(result.items, priceOf) : { factor: 1, delivery: 0, goods: 0 }), [result, priceOf])
+  const delivery = useMemo(() => deliveryFactor(result.items, priceOf), [result, priceOf])
   const factor = withDelivery ? delivery.factor : 1
+  const fx = result.currency ? positiveNumber(fxRate) : 1
 
   const lines = useMemo(() => {
-    if (!result) return []
     return result.matches.map((m, i) => {
-      const group = choice[i] ? groupByKey.get(choice[i]) : null
-      const { price, delivery, full } = linePrice(m.item, vat, factor, deliveryOn)
-      const cand = group ? (m.candidates.find((c) => c.group.key === group.key) || null) : null
-      const unitOk = group ? groupUnitOk(m.item.unit, group) : true
-      // Сейчас в расценке у позиций группы: своя другая цена — «заменит» (отмечает человек); цена из другого тендера —
-      // «заменит цену из другого тендера»; пусто хотя бы где-то — «нет цены»; везде та же — «та же цена».
-      let status = null
-      if (group && price != null) {
-        const cur = currentOf(group)
-        const differ = [...new Set(cur.own.map(roundMoney).filter((p) => p !== full))]
-        status = differ.length ? { kind: 'replace', prices: differ }
-          : cur.copies ? { kind: 'copy' } : cur.empty ? { kind: 'new' } : { kind: 'same' }
-      }
-      return { i, item: m.item, candidates: m.candidates, group, cand, unitOk, price, deliveryUnit: delivery, full, status, delivery: m.item.delivery }
+      // Цена в валюте: без курса цены нет, с курсом — в рублях.
+      const raw = linePrice(m.item, vat, factor, deliveryOn)
+      const base = fx ? packPrice(raw, fx === 1 ? null : 1 / fx) : { price: null, delivery: null, full: null }
+      const picks = (choice[i] || []).map((key) => groupByKey.get(key)).filter(Boolean).map((group) => {
+        const manual = positiveNumber(packEdits[`${i}:${group.key}`])
+        const pack = manual ?? packOf(m.item, group)
+        const priced = packPrice(base, pack === 1 ? null : pack)
+        // Сейчас в расценке у позиций группы: своя другая цена — «заменит» (отмечает человек); цена из другого тендера —
+        // «заменит цену из другого тендера»; пусто хотя бы где-то — «нет цены»; везде та же — «та же цена».
+        const status = priced.price != null ? priceStatus(currentOf(group), priced.full) : null
+        return { group, pack, manual: manual != null, ...priced, status, qtyFar: manual == null && packQtyFar(m.item, group, pack), unitOk: pack != null || groupUnitOk(m.item.unit, group), cand: m.candidates.find((c) => c.group.key === group.key) || null }
+      })
+      const main = picks[0] || null
+      const shown = main || base
+      return { i, item: m.item, candidates: m.candidates, base, raw, picks, group: main?.group || null, cand: main?.cand || null, pack: main?.pack ?? null,
+        unitOk: picks.every((p) => p.unitOk), price: shown.price, deliveryUnit: shown.delivery, full: shown.full, delivery: m.item.delivery }
     })
-  }, [result, choice, groupByKey, vat, factor, deliveryOn, currentOf])
+  }, [result, choice, groupByKey, vat, factor, deliveryOn, currentOf, fx, packEdits])
 
-  // Отметки по умолчанию — когда пришли сопоставления: позиция найдена, ед. изм. та же, цена есть, своя цена позиции
-  // не меняется (замену своей цены человек отмечает сам).
+  // Отметки по умолчанию — когда пришли сопоставления: позиция найдена, ед. изм. та же (или понятно, сколько её в
+  // упаковке), цена есть, своя цена позиции не меняется (замену своей цены человек отмечает сам).
   const defaultsFor = useRef(null)
   useEffect(() => {
-    if (!result || defaultsFor.current === result) return
-    defaultsFor.current = result
-    setChecked(new Set(lines.filter((l) => l.group && l.unitOk && l.price != null && l.status?.kind !== 'replace' && !l.delivery).map((l) => l.i)))
-  }, [result, lines])
+    if (defaultsFor.current === !!fx) return
+    defaultsFor.current = !!fx
+    setChecked(new Set(lines.filter((l) => l.group && l.unitOk && l.price != null && !l.item.sumOff && !l.picks.some((p) => p.status?.kind === 'replace' || p.qtyFar) && !l.delivery).map((l) => l.i)))
+  }, [fx, lines])
 
   const goods = lines.filter((l) => !l.delivery)
   const matched = goods.filter((l) => l.group)
-  const review = matched.filter((l) => !l.cand?.exact)
-  const shown = goods.filter((l) => (filter === 'matched' ? !!l.group : filter === 'unmatched' ? !l.group : filter === 'review' ? l.group && !l.cand?.exact : true))
+  const needsReview = (l) => !l.cand?.exact && !l.cand?.article
+  const review = matched.filter(needsReview)
+  const shown = goods.filter((l) => (filter === 'matched' ? !!l.group : filter === 'unmatched' ? !l.group : filter === 'review' ? l.group && needsReview(l) : true))
   const toApply = goods.filter((l) => checked.has(l.i) && l.group && l.price != null)
-  const targetsCount = toApply.reduce((s, l) => s + l.group.targets.length, 0)
+  const targetsCount = toApply.reduce((s, l) => s + l.picks.reduce((n, p) => n + p.group.targets.length, 0), 0)
   const deliveryLines = lines.filter((l) => l.delivery)
   // Какая строка документа держит позицию: выбрать её у другой строки — забрать (у прежней снимется).
   const takenBy = useMemo(() => {
     const m = new Map()
-    choice.forEach((k, i) => { if (k) m.set(k, i) })
+    choice.forEach((list, i) => { for (const k of list) m.set(k, i) })
     return m
   }, [choice])
 
@@ -224,30 +151,44 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, deli
     if (on) next.add(i); else next.delete(i)
     return next
   }), [])
-  // Позиция — одной строке документа: выбрали занятую — у прежней строки сопоставление снимается.
+  // Позиция — одной строке документа: отметили занятую — у прежней строки она снимается. key = null — снять все.
   const choiceRef = useRef(choice)
   choiceRef.current = choice
-  const pickGroup = useCallback((i, key) => {
-    const at = key ? choiceRef.current.indexOf(key) : -1
-    const freed = at >= 0 && at !== i ? at : null
-    setChoice((prev) => prev.map((k, j) => (j === i ? key : key && k === key ? null : k)))
+  const pickGroup = useCallback((i, key, on = true) => {
+    const next = choiceRef.current.map((list, j) => {
+      if (j !== i) return on ? list.filter((k) => k !== key) : list
+      if (key == null) return []
+      return on ? [...list.filter((k) => k !== key), key] : list.filter((k) => k !== key)
+    })
+    setChoice(next)
     setTouched((prev) => new Set(prev).add(i))
     setChecked((prev) => {
-      const next = new Set(prev)
-      if (key) next.add(i); else next.delete(i)
-      if (freed != null) next.delete(freed)
-      return next
+      const out = new Set(prev)
+      if (key != null && on) out.add(i)
+      next.forEach((list, j) => { if (!list.length) out.delete(j) })
+      return out
     })
   }, [])
 
-  // Строки документа — как их хранит «в похожие цены»: выбранная в окне позиция (k) и «не сопоставлять» руками (x).
+  // Указал человек, сколько единиц позиции в единице документа: цена пересчиталась — строка отмечается.
+  const editPack = useCallback((i, key, value) => {
+    setPackEdits((prev) => ({ ...prev, [`${i}:${key}`]: value }))
+    if (positiveNumber(value)) setChecked((prev) => new Set(prev).add(i))
+  }, [])
+
+  // Строки документа — как их хранит «в похожие цены»: выбранная в окне позиция (k) и «не сопоставлять» руками (x). Цена — за
+  // единицу документа, в рублях (с курсом); без курса строки остаются в валюте и автовыбор их не берёт.
   const reviewNotes = () => offerNotes({
     source: result.kind,
     vat,
     delivery: factor,
+    date: result.date,
+    total: result.total,
+    currency: result.currency && !fx ? result.currency : null,
     lines: goods.map((l) => ({
-      name: l.item.name, unit: l.item.unit, qty: l.item.qty, code: l.item.code, price: l.full,
-      docPrice: docPriceOf(l.item), docVat: docVatOf(l.item), k: l.group?.k || null, skip: !l.group && touched.has(l.i),
+      name: l.item.name, unit: l.item.unit, qty: l.item.qty, code: l.item.code, price: fx ? l.base.full : l.raw.full, sumOff: l.item.sumOff, packQty: l.item.packQty,
+      docPrice: docPriceOf(l.item), docVat: docVatOf(l.item), k: l.group?.k || null, also: l.picks.slice(1).map((p) => p.group.k),
+      skip: !l.group && touched.has(l.i),
     })),
   })
 
@@ -258,7 +199,7 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, deli
     setProgress({ done: 0, total: targetsCount })
     let res
     try {
-      res = await onApply({ lines: toApply.map((l) => ({ group: l.group, price: l.price, delivery: l.deliveryUnit })), file, attach: filesOn && attach, notes: reviewNotes() },
+      res = await onApply({ lines: toApply.flatMap((l) => l.picks.map((p) => ({ group: p.group, price: p.price, delivery: p.delivery }))), file, attach: filesOn && attach, notes: reviewNotes(), existing },
         (done, total) => setProgress({ done, total }))
     } catch (e) {
       res = { error: e.message || 'Цены не записаны' }
@@ -273,7 +214,7 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, deli
     setApplyError('')
     setPhase('adding')
     try {
-      await onAddOffers(file, reviewNotes())
+      await onAddOffers(file, reviewNotes(), existing)
       onOffersDone({ files: [file.name], lines: goods.filter((l) => l.full != null).length })
     } catch (e) {
       setApplyError(`Файл не добавлен в похожие цены: ${e.message || 'ошибка загрузки'}`)
@@ -281,104 +222,32 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, deli
     }
   }
 
-  const addBatch = async () => {
-    const items = [...batch]
-    setPhase('adding')
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].status !== 'ready') continue
-      items[i] = { ...items[i], status: 'saving' }
-      setBatch([...items])
-      try {
-        await onAddOffers(items[i].file, items[i].notes)
-        items[i] = { ...items[i], status: 'saved' }
-      } catch (e) {
-        items[i] = { ...items[i], status: 'ready', error: `не добавлен: ${e.message || 'ошибка загрузки'}` }
-      }
-      setBatch([...items])
-    }
-    const saved = items.filter((b) => b.status === 'saved')
-    if (saved.length && !items.some((b) => b.status === 'ready')) {
-      onOffersDone({ files: saved.map((b) => b.file.name), lines: saved.reduce((s, b) => s + b.lines, 0) })
-      return
-    }
-    setPhase('batch')
-  }
-
-  const reset = () => { setPhase('pick'); setResult(null); setFile(null); setBatch(null); setApplyError(''); setReadError('') }
-
   // ── Отрисовка ─────────────────────────────────────────────────────────────────────────────────────
-  const vatAuto = result?.vat?.mode
-  const vatCue = result?.vat?.cue
-  const inReview = (phase === 'review' || phase === 'applying' || phase === 'adding') && !!result
-  const inBatch = !!batch && (phase === 'batch' || phase === 'adding')
-  const batchReady = (batch || []).filter((b) => b.status === 'ready').length
+  const vatAuto = result.vat?.mode
+  const vatCue = result.vat?.cue
   return (
     <div className="sp-modal-backdrop sp-modal-backdrop-full" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose() }}>
-      <div className={`sp-modal sp-modal-docimport${inReview ? ' is-full' : ''}`} role="dialog" aria-modal="true" aria-labelledby="sp-docimport-title">
+      <div className="sp-modal sp-modal-docimport is-full" role="dialog" aria-modal="true" aria-labelledby="sp-docimport-title">
         <h3 id="sp-docimport-title">Цены из счёта или КП поставщика</h3>
         <div className="sp-modal-body">
-          {!inReview && !inBatch && (
-            <>
-              <p className="sp-muted">
-                Загрузите счёт, КП или УПД поставщика в Excel или PDF: строки с ценами сопоставятся с позициями ВОР тендера.
-                Проверьте сопоставление и примените цены — или добавьте документ «в похожие цены», чтобы выбирать цены у
-                позиций в таблице.{offersOn ? ' Несколько файлов сразу добавляются «в похожие цены» без проверки.' : ''}
-              </p>
-              <div
-                className={`sp-drop${dragOver ? ' is-over' : ''}`}
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={(e) => { e.preventDefault(); setDragOver(false); pickFiles(e.dataTransfer.files) }}
-              >
-                <input ref={fileRef} type="file" accept={SUPPLIER_DOC_ACCEPT} multiple={offersOn} hidden
-                  onChange={(e) => { pickFiles(e.target.files); e.target.value = '' }} />
-                <button type="button" className="btn-primary" onClick={() => fileRef.current?.click()} disabled={busy}>
-                  <IconUpload size={16} /> {offersOn ? 'Выбрать файлы' : 'Выбрать файл'}
-                </button>
-                <span className="sp-muted">или перетащите сюда · Excel (.xlsx, .xls, .csv) или PDF</span>
-              </div>
-              {phase === 'reading' && <p className="sp-drop-status" role="status">Распознаём «{file?.name}»…</p>}
-              {readError && (
-                <p className="sp-error-text sp-drop-status" role="alert"><IconAlert size={16} /> {file ? `«${file.name}»: ` : ''}{readError}</p>
+          <>
+              {preset.attached > 0 && (
+                <p className="sp-muted sp-di-attached" role="status">
+                  Файл прикреплён {preset.attached === 1 ? 'к позиции' : `к позициям: ${preset.attached}`}. Ниже — цены из него: проверьте и примените.
+                </p>
               )}
-            </>
-          )}
-
-          {inBatch && (
-            <>
-              <p className="sp-muted">
-                Файлы добавятся «в похожие цены»: цены в расценку не пишутся, у позиций ВОР появятся «цены поставщиков» —
-                выбирайте в таблице. НДС — как в документе («без НДС» — плюс ставка), доставка — к ценам пропорционально
-                сумме. Проверить сопоставление и применить цены одного файла — загрузите его отдельно.
-              </p>
-              {readError && <p className="sp-error-text" role="alert">{readError}</p>}
-              <ul className="sp-di-batch" aria-label="Файлы">
-                {batch.map((b, i) => (
-                  <li key={i} className={`is-${b.status}`}>
-                    <span className="sp-di-file"><PaperclipIcon size={14} /> {b.file.name}</span>
-                    <span className="sp-di-batch-state" role="status">
-                      {b.status === 'reading' && 'распознаём…'}
-                      {b.status === 'error' && <span className="sp-error-text"><IconAlert size={14} /> {b.error}</span>}
-                      {(b.status === 'ready' || b.status === 'saving' || b.status === 'saved') && (
-                        <>
-                          {b.kind === 'pdf' ? `PDF, страниц: ${b.pages}` : `лист «${b.sheetName}»`}
-                          {' · '}строк с ценой: <b className="ui-num">{b.lines}</b>
-                          {' · '}похожих позиций ВОР: <b className="ui-num">{b.matched}</b>
-                          {b.vat?.mode ? ` · ${VAT_TEXT[b.vat.mode]}` : ''}
-                          {b.status === 'saving' && ' · добавляем…'}
-                          {b.status === 'saved' && <span className="sp-di-saved"> · <IconCheck size={14} /> добавлен</span>}
-                          {b.error && <span className="sp-error-text"> · {b.error}</span>}
-                        </>
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-
-          {inReview && (
-            <>
+              {result.total && !result.total.ok && (
+                <p className="sp-di-warn" role="alert">
+                  <IconAlert size={16} /> Сумма прочитанных строк — {formatAmount(result.total.read)} ₽, а итог в документе — {formatAmount(result.total.doc)} ₽: часть строк могла не прочитаться, или в документе скидка на весь заказ.
+                </p>
+              )}
+              {result.currency && (
+                <p className="sp-di-warn" role="alert">
+                  <IconAlert size={16} /> Цены в документе — в {result.currency}. Курс, ₽ за 1 {result.currency}:{' '}
+                  <input type="text" inputMode="decimal" className="sp-di-rate" value={fxRate} onChange={(e) => setFxRate(e.target.value)} disabled={busy} aria-label={`Курс, ₽ за 1 ${result.currency}`} />
+                  {!fx && ' без курса цены не применить.'}
+                </p>
+              )}
               <div className="sp-di-summary">
                 <span className="sp-di-file"><PaperclipIcon size={14} /> {file.name}</span>
                 <span className="sp-muted">
@@ -386,7 +255,6 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, deli
                   {' · '}строк с ценой: <b className="ui-num">{goods.length}</b>
                   {' · '}сопоставлено с ВОР: <b className="ui-num">{matched.length}</b>
                 </span>
-                <button type="button" className="sp-link-btn" onClick={reset} disabled={busy}>другой файл</button>
               </div>
 
               <div className="sp-di-settings">
@@ -428,7 +296,7 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, deli
                     <button key={k} type="button" className={`sp-filter-btn${filter === k ? ' active' : ''}`} aria-pressed={filter === k} onClick={() => setFilter(k)}>{label}</button>
                   ))}
                 </div>
-                <span className="sp-muted sp-di-filter-hint">«Проверить» — сопоставлены по похожести, а не по тому же наименованию</span>
+                <span className="sp-muted sp-di-filter-hint">«Проверить» — сопоставлены по похожести, а не по тому же наименованию или артикулу</span>
               </div>
 
               <div className="table-container sp-di-wrap">
@@ -449,58 +317,55 @@ export default function SupplyDocImportDialog({ groups, currentOf, filesOn, deli
                   <tbody>
                     {shown.map((l) => (
                       <DocLine key={l.i} line={l} checked={checked.has(l.i)} busy={busy} groups={groups} takenBy={takenBy}
-                        onCheck={toggle} onPick={pickGroup} />
+                        onCheck={toggle} onPick={pickGroup} onPack={editPack} packEdits={packEdits} />
                     ))}
                     {!shown.length && <tr><td colSpan={5} className="no-data">Строк нет</td></tr>}
                   </tbody>
                 </table>
               </div>
-            </>
-          )}
+          </>
           {applyError && <p className="sp-error-text" role="alert">{applyError}</p>}
         </div>
         <div className="sp-modal-actions sp-di-actions">
-          {inReview && filesOn && (
+          {filesOn && (
             <label className="sp-di-attach">
               <input type="checkbox" checked={attach} onChange={(e) => setAttach(e.target.checked)} disabled={busy} />
               Прикрепить файл документом к позициям, получившим цену
             </label>
           )}
-          {inBatch && <span className="sp-di-attach" />}
           {phase === 'applying' && progress && (
             <span className="sp-di-progress" role="status">Сохраняем цены: {progress.done} из {progress.total}…</span>
           )}
-          {inBatch && (
-            <button type="button" className="btn-secondary" onClick={reset} disabled={busy}>Другие файлы</button>
-          )}
           <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>Отмена</button>
-          {inReview && offersOn && (
+          {offersOn && (
             <button type="button" className="btn-secondary" onClick={addOne} disabled={busy || !goods.some((l) => l.price != null)}
               title="Цены не пишутся: у позиций ВОР появятся цены этого документа — выбирать в таблице">
               {phase === 'adding' ? 'Добавляем…' : 'Только в похожие цены'}
             </button>
           )}
-          {inReview && (
-            <button type="button" className="btn-primary" onClick={apply} disabled={busy || !toApply.length}>
-              {phase === 'applying' ? 'Применяем…' : `Применить цены: ${toApply.length}${targetsCount > toApply.length ? ` (позиций ВОР: ${targetsCount})` : ''}`}
-            </button>
-          )}
-          {inBatch && (
-            <button type="button" className="btn-primary" onClick={addBatch}
-              disabled={busy || !batchReady || batch.some((b) => b.status === 'reading')}>
-              {phase === 'adding' ? 'Добавляем…' : `Добавить в похожие цены: ${batchReady}`}
-            </button>
-          )}
+          <button type="button" className="btn-primary" onClick={apply} disabled={busy || !toApply.length}>
+            {phase === 'applying' ? 'Применяем…' : `Применить цены: ${toApply.length}${targetsCount > toApply.length ? ` (позиций ВОР: ${targetsCount})` : ''}`}
+          </button>
         </div>
       </div>
     </div>
   )
 }
 
+// Что сейчас в расценке у выбранных позиций строки: своя другая цена важнее всего.
+function NowCell({ picks }) {
+  if (!picks.some((p) => p.status)) return <span className="sp-muted">—</span>
+  const replaced = [...new Set(picks.flatMap((p) => (p.status?.kind === 'replace' ? p.status.prices : [])))]
+  if (replaced.length) return <span className="sp-di-tag is-warn">заменит {replaced.slice(0, 2).map((p) => formatAmount(p)).join(', ')}</span>
+  if (picks.some((p) => p.status?.kind === 'copy')) return <span>заменит цену из другого тендера</span>
+  if (picks.some((p) => p.status?.kind === 'new')) return <span>нет цены</span>
+  return <span className="sp-muted">та же цена</span>
+}
+
 // Строка документа: отметка, наименование и цена из документа, цена в расценку, позиция ВОР (список выбора), что
 // сейчас в расценке. Отметка в соседней строке её не перерисовывает.
-const DocLine = memo(function DocLine({ line, checked, busy, groups, takenBy, onCheck, onPick }) {
-  const { item, group, full, deliveryUnit, status } = line
+const DocLine = memo(function DocLine({ line, checked, busy, groups, takenBy, onCheck, onPick, onPack, packEdits }) {
+  const { item, group, full, deliveryUnit, pack, picks } = line
   const docPrice = docPriceOf(item)
   const vatTag = docVatOf(item) === 'net' ? 'без НДС' : docVatOf(item) === 'gross' ? 'с НДС' : ''
   return (
@@ -516,54 +381,61 @@ const DocLine = memo(function DocLine({ line, checked, busy, groups, takenBy, on
           {item.qty != null && <span className="ui-num">{String(item.qty).replace('.', ',')} {item.unit || ''}</span>}
           {item.qty == null && item.unit && <span>{item.unit}</span>}
           {docPrice != null && <span className="ui-num">в документе {formatAmount(roundMoney(docPrice))}{vatTag ? ` ${vatTag}` : ''}</span>}
+          {item.per && <span className="ui-num">в документе цена за {item.per}</span>}
           {item.source && <span>{item.source}</span>}
+          {item.sumOff && <span className="sp-di-tag is-warn">цена × кол-во ≠ сумма — проверьте</span>}
         </span>
       </td>
       <td className="ui-money sp-di-price">
         {full != null ? formatAmount(full) : '—'}
+        {pack != null && full != null && <span className="sp-di-meta">за {group.unit}</span>}
         {deliveryUnit != null && <span className="sp-di-meta ui-num">в т. ч. доставка {formatAmount(deliveryUnit)}</span>}
       </td>
       <td className="sp-di-pos">
-        <PositionChoice line={line} groups={groups} takenBy={takenBy} busy={busy} onPick={onPick} />
+        <PositionChoice line={line} groups={groups} takenBy={takenBy} busy={busy} onPick={onPick} onPack={onPack} packEdits={packEdits} />
       </td>
       <td className="sp-di-now">
-        {!group || !status ? <span className="sp-muted">—</span>
-          : status.kind === 'replace' ? <span className="sp-di-tag is-warn">заменит {status.prices.slice(0, 2).map((p) => formatAmount(p)).join(', ')}</span>
-            : status.kind === 'same' ? <span className="sp-muted">та же цена</span>
-              : status.kind === 'copy' ? <span>заменит цену из другого тендера</span>
-                : <span>нет цены</span>}
+        <NowCell picks={picks} />
       </td>
     </tr>
   )
 })
 
-// Позиция ВОР строки документа: «не сопоставлять» и сразу под ним самые похожие позиции (кружки), «ещё N» — остальные
-// кандидаты, поиск — среди всех позиций ВОР. Позиция другой строки — с пометкой: выбрать её здесь — забрать.
-function PositionChoice({ line, groups, takenBy, busy, onPick }) {
+// Позиции ВОР строки документа: «не сопоставлять» и сразу под ним самые похожие позиции, отметить можно несколько (цена
+// встанет всем), «ещё N» — остальные кандидаты, поиск — среди всех позиций ВОР. Позиция другой строки — с пометкой:
+// отметить её здесь — забрать. Цена за упаковку или бухту — подпись с пересчётом на единицу позиции.
+function PositionChoice({ line, groups, takenBy, busy, onPick, onPack, packEdits }) {
   const [more, setMore] = useState(false)
   const [query, setQuery] = useState('')
-  const { item, group, candidates } = line
+  const { item, picks, candidates, base } = line
   const found = useMemo(() => (query.trim() ? searchGroups(query, groups, SEARCH_LIMIT) : null), [query, groups])
   const candOf = (g) => candidates.find((c) => c.group.key === g.key) || null
   let options = found
     ? found.map((g) => candOf(g) || { group: g, score: null, found: true })
     : (more ? candidates : candidates.slice(0, VISIBLE_OPTIONS))
-  if (group && !options.some((c) => c.group.key === group.key)) options = [candOf(group) || { group, score: null, found: true }, ...options]
+  const picked = new Set(picks.map((p) => p.group.key))
+  for (const { group } of [...picks].reverse()) {
+    if (!options.some((c) => c.group.key === group.key)) options = [candOf(group) || { group, score: null, found: true }, ...options]
+  }
   const hidden = found ? 0 : candidates.filter((c) => !options.includes(c)).length
-  const name = `sp-di-pos-${line.i}`
   return (
-    <div className="sp-di-choice" role="radiogroup" aria-label={`Позиция ВОР для «${item.name}»`}>
-      <label className={`sp-di-opt is-none${!group ? ' is-on' : ''}`}>
-        <input type="radio" name={name} checked={!group} disabled={busy} onChange={() => onPick(line.i, null)} />
+    <div className="sp-di-choice" role="group" aria-label={`Позиция ВОР для «${item.name}»`}>
+      <label className={`sp-di-opt is-none${!picks.length ? ' is-on' : ''}`}>
+        <input type="checkbox" checked={!picks.length} disabled={busy || !picks.length} onChange={() => onPick(line.i, null)} />
         <span className="sp-di-opt-name">не сопоставлять</span>
       </label>
       {options.map((c) => {
-        const on = group?.key === c.group.key
+        const on = picked.has(c.group.key)
         const other = takenBy.get(c.group.key)
-        const unitOk = groupUnitOk(item.unit, c.group)
+        const editKey = `${line.i}:${c.group.key}`
+        const manual = positiveNumber(packEdits?.[editKey])
+        const pack = manual ?? packOf(item, c.group)
+        const unitOk = pack != null || groupUnitOk(item.unit, c.group)
+        // Ед. изм. другая, а сколько в единице документа, неизвестно, — можно указать.
+        const askPack = on && item.unit && c.group.unit && (manual != null || !unitOk)
         return (
           <label key={c.group.key} className={`sp-di-opt${on ? ' is-on' : ''}`}>
-            <input type="radio" name={name} checked={on} disabled={busy} onChange={() => onPick(line.i, c.group.key)} />
+            <input type="checkbox" checked={on} disabled={busy} onChange={(e) => onPick(line.i, c.group.key, e.target.checked)} />
             <span className="sp-di-opt-name">{c.group.name}</span>
             <span className="sp-di-opt-meta">
               <span>{unitText(c.group)}</span>
@@ -571,7 +443,20 @@ function PositionChoice({ line, groups, takenBy, busy, onPick }) {
                 : c.code ? <span className="sp-di-tag is-exact">артикул совпал · {pct(c.score)}</span>
                   : c.score != null ? <span className="sp-di-tag">похоже на {pct(c.score)}{c.apart ? ' · числа другие' : ''}</span>
                     : <span className="sp-di-tag">найдено поиском</span>}
+              {pack != null && !manual && base.full != null && (
+                <span className="sp-di-tag">1 {item.unit} = {packText(pack)} {c.group.unit}: {formatAmount(packPrice(base, pack).full)} ₽ за {c.group.unit}</span>
+              )}
               {!unitOk && <span className="sp-di-tag is-warn">ед. изм.: в документе «{item.unit}»</span>}
+              {pack != null && !manual && packQtyFar(item, c.group, pack) && <span className="sp-di-tag is-warn">после пересчёта количество не похоже на объём ВОР</span>}
+              {askPack && (
+                <span className="sp-di-pack" onClick={(e) => e.preventDefault()}>
+                  1 {item.unit} ={' '}
+                  <input type="text" inputMode="decimal" className="sp-di-rate" value={packEdits?.[editKey] ?? ''} disabled={busy}
+                    onChange={(e) => onPack(line.i, c.group.key, e.target.value)} aria-label={`Сколько ${c.group.unit} в 1 ${item.unit}: ${c.group.name}`} />
+                  {' '}{c.group.unit}
+                  {manual != null && base.full != null && <>: {formatAmount(packPrice(base, manual).full)} ₽ за {c.group.unit}</>}
+                </span>
+              )}
               {c.group.targets.length > 1 && <span>в {c.group.targets.length} ВОР</span>}
               {other != null && other !== line.i && <span className="sp-di-taken">сейчас у другой строки документа</span>}
             </span>

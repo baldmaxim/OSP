@@ -13,7 +13,7 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString('ru-RU') : '')
 // Документ (чек, счёт, КП поставщика) одной позиции или нескольким отмеченным сразу: ссылка (адрес или сетевой
 // путь) или файл — загрузить с компьютера или выбрать уже загруженный к этому тендеру (миграция 20261025; без неё —
 // только ссылка). targets — [{ key, name, estimateName, link }]: у кого документ уже есть — он заменяется; у всех
-// один и тот же — подставлен. onSave({ url } | { docId } | { file }); «Убрать» — у тех, у кого документ есть.
+// один и тот же — подставлен. onSave({ url } | { docId, doc } | { file }); «Убрать» — у тех, у кого документ есть.
 // Удалить файл можно здесь же: он пропадёт у всех позиций, где он документ. Файл с компьютера — кнопкой или
 // перетащить в окно (в любое место); initialFile — файл, перетащенный на ячейку «Документ» таблицы: окно открывается
 // сразу с ним. offerLines — id файла → сколько его строк «в похожих ценах» (подпись в списке).
@@ -73,7 +73,7 @@ export default function SupplyLinkDialog({
       return
     }
     if (!picked) { setInvalid('Выберите файл с компьютера или из уже загруженных'); return }
-    onSave({ docId: picked })
+    onSave({ docId: picked, doc: docs?.find((d) => d.id === picked) || null })
   }
 
   const chooseFile = (f) => {
@@ -156,6 +156,7 @@ export default function SupplyLinkDialog({
                     <button type="button" className="sp-link-btn" onClick={() => chooseFile(null)} disabled={busy}>убрать</button></span>
                   : <span className="sp-muted">или перетащите файл сюда · счёт, КП, чек — PDF, Excel, фото; до {fmtSize(SUPPLY_DOC_MAX_BYTES)}</span>}
               </div>
+              <p className="sp-muted sp-doc-hint">Цены из счёта и КП (Excel, PDF с текстом) прочитаем сами — останется проверить и применить.</p>
               <p className="sp-doc-list-title">или уже загруженный к этому тендеру:</p>
               {docs == null && <p className="sp-muted">Загружаем список файлов…</p>}
               {docsError && <p className="sp-error-text">Список файлов не загрузился: {docsError}</p>}

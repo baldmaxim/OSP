@@ -16,6 +16,19 @@
 //
 // Доставка: отдельной строкой («Доставка», «Транспортные услуги» — delivery) или колонкой («Доставка», «Стоимость
 // доставки» — сумма по строке, «Доставка за ед.» — за единицу): deliveryUnitWithVat.
+//
+// Что поставщики пишут по-разному, а цена из-за этого вышла бы неверной (02.11.2026, спецификации ЭТМ и то, что
+// встречается у других):
+//  • две цены — «Цена» и «Цена со скидкой» (берём со скидкой), «РРЦ» / «прайс» и «ваша цена» (берём вашу);
+//  • цена в валюте — columns.currency / currencyFromText: без курса в расценку не идёт;
+//  • цена за 100 или 1000 единиц: в шапке («Цена за 1000 шт», «руб./км») или видно по сумме (цена × количество в 10, 100,
+//    1000 раз больше суммы); цена × количество не сходится с суммой иначе — пометка sumOff, сама не ставится;
+//  • два наименования — «по запросу» и «предлагаемое» (name и name2, ищем по обоим), колонка «Марка» — как артикул;
+//  • колонка «В упаковке» (packQty) вместо «(50шт)» в наименовании;
+//  • таблицы на нескольких листах и несколько таблиц в PDF, «Итого по разделу» посреди таблицы;
+//  • итог документа не сходится с прочитанными строками (totalsCheck) — потерялись строки или скидка на весь заказ.
+
+import { canonUnit } from './supplySimilarity.js'
 
 const SPACE_RE = /[\s\u00a0\u2007\u202f]+/g
 export const cellText = (v) => String(v ?? '').replace(SPACE_RE, ' ').trim()
@@ -51,7 +64,9 @@ export function parseNum(v) {
 export function classifyHeader(text) {
   const t = norm(text)
   if (!t) return null
-  if (/акциз|скидк|страна|декларац|прослеживаем|масса|вес\b|брутто|нетто|склад|наличи|срок|гарант|примечан|комментар/.test(t)) return { field: 'skip' }
+  const discounted = /(со|с\s*уч[её]том|после)\s*скидк/.test(t)
+  if ((!discounted && /скидк/.test(t)) || /акциз|страна|декларац|прослеживаем|масса|вес\b|брутто|нетто|склад|наличи|срок|гарант|примечан|комментар/.test(t)) return { field: 'skip' }
+  if (/в\s*упак|упаковк|фасовк|кратност/.test(t) && !/цена|сумм|стоимост/.test(t)) return { field: 'pack' }
   const gross = /(^|[^а-я])(с|включая|вкл\.?|в т\.? ?ч\.?|в том числе)\s*(ндс|налог)/.test(t)
   const net = /без\s*(ндс|налог)/.test(t)
   const vat = gross ? 'gross' : net ? 'net' : null
@@ -60,35 +75,93 @@ export function classifyHeader(text) {
   if (/доставк|транспортн|перевозк/.test(t) && !/(^|[^а-я])(с|включая|вкл\.?|с\s*уч[её]том|в т\.? ?ч\.?)\s*(стоимост\S*\s*)?(доставк|транспортн|перевозк)/.test(t)) {
     return { field: 'delivery', perUnit: /цена|за\s*(1\s*)?(ед|шт|м\b|кг|т\b)|на\s*(1\s*)?ед/.test(t), vat }
   }
-  if (/цена|расценк|за\s*(1\s*)?ед(\.|иниц|\s|$)|стоимост\S*\s*(за\s*)?(1\s*)?ед/.test(t) && !/всего/.test(t)) return { field: 'price', vat }
+  if (/цена|расценк|за\s*(1\s*)?ед(\.|иниц|\s|$)|стоимост\S*\s*(за\s*)?(1\s*)?ед/.test(t) && !/всего/.test(t)) {
+    return { field: 'price', vat, best: discounted, listPrice: /прайс|ррц|розничн|рекоменд/.test(t), currency: currencyOf(t), per: perOf(t) }
+  }
   if (/сумм|стоимост|всего|итого/.test(t)) {
     if (/ндс|налог/.test(t) && !gross && !net) return { field: 'vat' }
-    return { field: 'sum', vat }
+    return { field: 'sum', vat, best: discounted, currency: currencyOf(t) }
   }
   if (/(^|[^а-я])(ндс|налог)/.test(t)) return { field: 'vat' }
   if (/^(№|n|#|no\.?)(\s|$|\s*п\/?\s?п)|^№|^п\/п|^поз\.?$|^позиция$/.test(t) && !/наимен|товар/.test(t)) return { field: 'num' }
-  // «Код товара / работ, услуг» (УПД) — артикул, а не наименование; «Единица измерения: код» — не нужна.
-  if (/^код(?![а-я])|артикул|каталожн/.test(t)) return /ед\.|единиц|измер|окей/.test(t) ? { field: 'skip' } : { field: 'code' }
+  // «Код товара / работ, услуг» (УПД) — артикул, а не наименование; «Единица измерения: код» — не нужна. Рядом с
+  // «Артикулом» «Код товара» — внутренний код поставщика (ЭТМ): в ВОР его нет, важнее артикул (internal).
+  if (/^код(?![а-я])|артикул|каталожн/.test(t)) {
+    if (/ед\.|единиц|измер|окей/.test(t)) return { field: 'skip' }
+    return { field: 'code', internal: !/артикул|каталожн/.test(t) }
+  }
   if (/(^|[^а-я])код(?![а-я])/.test(t) && /единиц|измер|окей/.test(t)) return { field: 'skip' }
   if (/наименован|товар|номенклатур|продукц|описани|материал|оборудован|услуг|предмет/.test(t)) return { field: 'name' }
   if (/^ед(\.|\s|$)|ед\.?\s*изм|единиц|измерен/.test(t)) return { field: 'unit' }
   if (/кол-?во|количеств|^кол\.?(\s|$)|объ[её]м/.test(t)) return { field: 'qty' }
+  if (/(^|[^а-я])(марка|модель|обозначени)/.test(t)) return { field: 'code', internal: false }
   return null
 }
 
 const NUMERIC_FIELDS = new Set(['num', 'qty', 'price', 'sum', 'vat', 'vatRate', 'delivery'])
 
-// Из колонок шапки — нужные: одна на поле (кроме цен и сумм — с НДС и без бывают обе). Нет наименования или ни цены,
-// ни суммы — не шапка (null).
+// Валюта колонки или фразы: не рубли — код, рубли и не сказано — null.
+const CURRENCY_RE = [['USD', /usd|доллар|\$/], ['EUR', /eur|евро|€/], ['CNY', /cny|юан|¥/], ['у.е.', /(^|[^а-я])у\.?\s?е\.?($|[^а-я])/]]
+export function currencyOf(text) {
+  const t = norm(text)
+  if (/руб|₽|(^|[^a-z])(rub|rur)/.test(t)) return null
+  return CURRENCY_RE.find(([, re]) => re.test(t))?.[0] || null
+}
+// «Цены указаны в долларах США», «цена в евро» — вся таблица в валюте, хотя колонка молчит.
+export function currencyFromText(text) {
+  const m = /цен\S*\s*(указан\S*\s*|даны\s*)?в\s*(долл\S*|евро|юан\S*|usd|eur|cny|у\.?\s?е\.?)/.exec(norm(text))
+  return m ? currencyOf(m[2]) : null
+}
+
+// Цена не за единицу: «Цена за 1000 шт», «руб./100 м», «Цена за км», «руб/т». Ответ: { n, unit } или null («за 1 шт» — обычная).
+const PER_RE = /(?:за|\/)\s*([0-9][0-9 ]*)?\s*(шт|км|кг|тн|тонн\S*|т|м|л|уп\S*)(?![а-яa-z0-9])/
+function perOf(t) {
+  const m = PER_RE.exec(t)
+  if (!m) return null
+  const n = m[1] ? Number(m[1].replace(/ /g, '')) : 1
+  const unit = canonUnit(m[2])
+  return n > 1 || unit === 'км' || unit === 'т' ? { n, unit } : null
+}
+
+// Из колонок шапки — нужные: одна на поле (кроме цен и сумм — с НДС и без бывают обе; артикул и код поставщика —
+// code и code2; два разных наименования — name и name2). Нет наименования или ни цены, ни суммы — не шапка (null).
+// Из нескольких цен — со скидкой, а не прайсовая, и в рублях, а не в валюте (если есть такие).
+const REQUESTED_NAME_RE = /запрос|заказчик|по\s*вор|по\s*проект|требу|спецификац|ваш/
+const preferred = (list) => {
+  let out = list
+  for (const test of [(c) => c.best, (c) => !c.listPrice, (c) => !c.currency]) {
+    const good = out.filter(test)
+    if (good.length) out = good
+  }
+  return out
+}
 export function pickColumns(cols) {
   const out = { prices: [], sums: [] }
+  const codes = []
+  const names = []
   for (const c of cols) {
     if (!c || c.field === 'skip') continue
     if (c.field === 'price') out.prices.push(c)
     else if (c.field === 'sum') out.sums.push(c)
+    else if (c.field === 'code') codes.push(c)
+    else if (c.field === 'name') names.push(c)
     else if (out[c.field] == null) out[c.field] = c
   }
+  if (codes.length) {
+    out.code = codes.find((c) => !c.internal) || codes[0]
+    const other = codes.find((c) => c !== out.code)
+    if (other) out.code2 = other
+  }
+  if (names.length) {
+    const distinct = names.filter((c, i) => names.findIndex((x) => norm(x.text) === norm(c.text)) === i)
+    out.name = distinct.find((c) => !REQUESTED_NAME_RE.test(norm(c.text))) || distinct[0]
+    const other = distinct.find((c) => c !== out.name)
+    if (other) out.name2 = other
+  }
   if (!out.name || (!out.prices.length && !out.sums.length)) return null
+  out.prices = preferred(out.prices)
+  out.sums = preferred(out.sums)
+  out.currency = out.prices[0]?.currency || (out.prices.length ? null : out.sums[0]?.currency) || null
   return out
 }
 
@@ -139,12 +212,65 @@ export function gridRows(grid, header) {
   for (let r = header.headerRow + header.span; r < grid.length; r++) {
     const row = grid[r] || []
     const cells = {}
-    for (const f of ['num', 'name', 'code', 'unit', 'qty', 'vat', 'vatRate', 'delivery']) if (cols[f]) cells[f] = row[cols[f].index]
+    for (const f of ['num', 'name', 'name2', 'code', 'code2', 'unit', 'qty', 'pack', 'vat', 'vatRate', 'delivery']) if (cols[f]) cells[f] = row[cols[f].index]
     cells.prices = cols.prices.map((c) => row[c.index])
     cells.sums = cols.sums.map((c) => row[c.index])
     out.push({ cells, row: r + 1 })
   }
   return out
+}
+
+// Итоговые строки: «Итого», «Всего», «Всего к оплате» — но не «Итого по разделу» и не «В том числе НДС». Ответ — числа.
+const FINAL_TOTAL_RE = /^(итого|итог|всего|к оплате)/
+const SUBTOTAL_RE = /^(итого|всего)\s+(по|за)\s/
+const isFinalTotal = (t) => FINAL_TOTAL_RE.test(t) && !SUBTOTAL_RE.test(t)
+export function gridTotals(grid, header) {
+  const out = []
+  for (let r = header.headerRow + header.span; r < grid.length; r++) {
+    const cells = grid[r] || []
+    const label = cells.map(cellText).find((v) => v && parseNum(v) == null)
+    if (!label || !isFinalTotal(norm(label))) continue
+    for (const v of cells) {
+      const n = parseNum(v)
+      if (n > 0) out.push(n)
+    }
+  }
+  return out
+}
+
+// Сверка строк с итогом документа. Ответ: null — сверять не с чем; { ok, read, doc }: read — сумма прочитанных строк,
+// doc — итог документа. Сходится с любым из итогов (без НДС, с НДС), с точностью до округления или с НДС сверху.
+const VAT_FACTORS = [1, 1.22, 1.2, 1.1, 1.07, 1.05]
+export function totalsCheck(items, totals) {
+  if (!totals?.length) return null
+  const read = items.reduce((s, it) => s + (it.sum ?? (it.price != null && it.qty > 0 ? it.price * it.qty : 0)), 0)
+  if (!(read > 0)) return null
+  const near = (a, b) => Math.abs(a - b) <= Math.max(1, b * 0.002)
+  const ok = totals.some((t) => VAT_FACTORS.some((f) => near(read * f, t)))
+  return { ok, read: Math.round(read * 100) / 100, doc: Math.max(...totals) }
+}
+
+// Дата документа: «от 02.11.2026», «от 02 ноября 2026 г.», «от 27.10.26»; иначе первая дата в тексте. Ответ: 'ГГГГ-ММ-ДД' или null.
+const MONTHS = ['январ', 'феврал', 'март', 'апрел', 'ма', 'июн', 'июл', 'август', 'сентябр', 'октябр', 'ноябр', 'декабр']
+export function docDateFromText(text) {
+  const t = norm(text)
+  const fmt = (d, m, y) => {
+    const year = y < 100 ? 2000 + y : y
+    if (year < 2000 || year > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return null
+    return `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  }
+  const num = /(?:^|[^0-9.])([0-9]{1,2})[.\-/]([0-9]{1,2})[.\-/]([0-9]{4}|[0-9]{2})(?![0-9])/
+  const word = /(?:^|[^0-9.])([0-9]{1,2})\s+(январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр)[а-я]*\s+([0-9]{4})/
+  const parse = (s) => {
+    const a = num.exec(s)
+    const b = word.exec(s)
+    const first = a && (!b || a.index <= b.index) ? a : b
+    if (!first) return null
+    if (first === a) return fmt(Number(a[1]), Number(a[2]), Number(a[3]))
+    return fmt(Number(b[1]), MONTHS.findIndex((m) => b[2].startsWith(m)) + 1, Number(b[3]))
+  }
+  const at = t.search(/(?:^|[^а-я])от\s+[0-9]/)
+  return (at >= 0 ? parse(t.slice(at + 1)) : null) || parse(t)
 }
 
 // ── PDF: слова с координатами ────────────────────────────────────────────────────────────────────────
@@ -583,6 +709,16 @@ export function pdfRows(lines, first, rules = null) {
   let i = first.line + first.span
   let headerPage = lines[first.line]?.page
   const body = []
+  // «Итого по разделу» посреди таблицы — пропустить, если ниже есть ещё строки с ценами; итог всего документа — конец.
+  const moreRowsBelow = (from) => {
+    const numCols = [...first.columns.prices, ...first.columns.sums]
+    for (let k = from + 1; k < Math.min(lines.length, from + 60); k++) {
+      if (FINAL_TOTAL_RE.test(norm(lineText(lines[k])))) return !SUBTOTAL_RE.test(norm(lineText(lines[k]))) && k > from + 1
+      const cells = assignWords(lines[k], first.zones)
+      if (numCols.some((c) => (cells.get(c.index) || []).some((w) => parseNum(w.text) != null))) return true
+    }
+    return false
+  }
   for (; i < lines.length; i++) {
     const line = lines[i]
     const text = norm(lineText(line))
@@ -594,8 +730,21 @@ export function pdfRows(lines, first, rules = null) {
     }
     const cells = assignWords(line, first.zones)
     const nameText = norm((cells.get(first.columns.name.index) || []).map((w) => w.text).join(' '))
-    if (TOTAL_RE.test(text) || TOTAL_RE.test(nameText)) break
+    if (TOTAL_RE.test(text) || TOTAL_RE.test(nameText)) {
+      if ((SUBTOTAL_RE.test(text) || SUBTOTAL_RE.test(nameText)) && moreRowsBelow(i)) continue
+      break
+    }
     body.push({ line })
+  }
+  // Итоги — строки сразу под таблицей (числа: «83 067,54» — два слова, поэтому по тексту строки).
+  const totals = []
+  for (let k = i; k < Math.min(lines.length, i + 8); k++) {
+    const t = norm(lineText(lines[k]))
+    if (!isFinalTotal(t)) continue
+    for (const m of lineText(lines[k]).matchAll(/[0-9]{1,3}(?:[ \u00a0][0-9]{3})+(?:[.,][0-9]{1,2})?|[0-9]+(?:[.,][0-9]{1,2})?/g)) {
+      const n = parseNum(m[0])
+      if (n > 0) totals.push(n)
+    }
   }
   const header = refineZones(first, body)
   const zones = header.zones
@@ -658,32 +807,61 @@ export function pdfRows(lines, first, rules = null) {
   }
   // Текст колонки — строки сверху вниз; перенос по дефису склеивается («Сигмавент-90-» + «НО» → «Сигмавент-90-НО»).
   const text = (row, col) => (col ? joinWrapped(row.words.get(col.index) || []) : undefined)
-  return out.map((row) => ({
+  const result = out.map((row) => ({
     cells: {
-      num: text(row, cols.num), name: text(row, cols.name), code: text(row, cols.code), unit: text(row, cols.unit),
-      qty: text(row, cols.qty), vat: text(row, cols.vat), vatRate: text(row, cols.vatRate), delivery: text(row, cols.delivery),
+      num: text(row, cols.num), name: text(row, cols.name), name2: text(row, cols.name2), code: text(row, cols.code), code2: text(row, cols.code2), unit: text(row, cols.unit),
+      qty: text(row, cols.qty), pack: text(row, cols.pack), vat: text(row, cols.vat), vatRate: text(row, cols.vatRate), delivery: text(row, cols.delivery),
       prices: cols.prices.map((c) => text(row, c)), sums: cols.sums.map((c) => text(row, c)),
     },
     page: row.page + 1,
   }))
+  // Где таблица кончилась (искать следующую) и её итоги.
+  result.end = i
+  result.totals = totals
+  return result
 }
 
 // ── Строки документа → позиции ───────────────────────────────────────────────────────────────────────
-// Ответ: [{ name, code, unit, qty, price, priceVat, sum, sumVat, vatRate, delivery, deliveryDoc, source }]: price /
+// Ответ: [{ name, name2, code, code2, unit, qty, packQty, price, priceVat, sum, sumVat, sumOff, per, vatRate, delivery, deliveryDoc, source }]:
+// name2 — второе наименование строки («по запросу»); code — артикул, code2 — второй код той же строки (внутренний код
+// поставщика, если есть и артикул); packQty — сколько в упаковке (колонка); per — цена в документе была за столько
+// единиц, price уже за одну; sumOff — цена × количество не сходится с суммой; price /
 // sum — как в документе (первая колонка с НДС, иначе первая указанная), priceVat / sumVat — их 'gross' / 'net' /
 // null; delivery — сама строка — доставка; deliveryDoc — колонка доставки строки { value, perUnit, vat } или null.
 // Строка доставки: «Доставка …» где угодно, «Транспортные услуги», «Услуги по перевозке», «Разгрузка …» — а не
 // товар со словом «транспортная» («Тележка транспортная»).
 const DELIVERY_ROW_RE = /доставк|транспортн\S*\s+(услуг|расход)|услуг\S*\s+(по\s+)?(перевоз|транспорт|экспедир|разгруз|погруз)|^(перевозк|экспедир|разгрузк|погрузк)/
 // keepBlank — оставить строки с ед. изм. и без цены (незаполненный ВОР: по ним можно показать договорные цены).
+// Цена не за единицу (шапка) или не сходится с суммой: { per, off, unit }. per — за сколько единиц цена в документе;
+// ед. изм. шапки («Цена за км») важнее пустой колонки. Сравниваем цену × количество с суммой: в пределах 0,7…1,4 — та же
+// цена (колонки бывают с НДС и без); в 10, 100, 1000 раз больше — цена за столько единиц; иначе off. skip — сумма не
+// только за эту цену (материалы и работы, доставка отдельно).
+function priceScale(price, qty, sum, unit, skip) {
+  let per = 1
+  let u = unit
+  if (price.per) {
+    const same = !unit || canonUnit(unit) === price.per.unit
+    if (same && price.per.n > 1) per = price.per.n
+    if (!unit) u = price.per.n > 1 ? price.per.unit : price.per.unit
+    else if (!same && price.per.n === 1) u = price.per.unit
+  }
+  if (skip || !(price.v > 0 && qty > 0 && sum > 0)) return { per, off: false, unit: u }
+  const r = ((price.v / per) * qty) / sum
+  if (r >= 0.7 && r <= 1.4) return { per, off: false, unit: u }
+  if (per === 1) {
+    for (const k of [10, 100, 1000]) if (r / k >= 0.7 && r / k <= 1.4) return { per: k, off: false, unit: u }
+  }
+  return { per, off: true, unit: u }
+}
+
 // Две колонки цены или суммы — материалы и работы — у строки есть и parts: { material, work } (сравнение с договорными
 // расценками: у них тоже две цены), цена строки остаётся прежней, первой.
 const PART_RE = { material: /материал|оборудован/, work: /работ|смр|пнр|монтаж|услуг/ }
 export function itemsFromRows(rows, columns, { keepBlank = false } = {}) {
   const pick = (values, cols) => {
-    const list = cols.map((c, i) => ({ v: parseNum(values?.[i]), vat: c.vat }))
+    const list = cols.map((c, i) => ({ v: parseNum(values?.[i]), vat: c.vat, per: c.per }))
     return list.find((x) => x.v != null && x.vat === 'gross') || list.find((x) => x.v != null && x.vat !== 'net')
-      || list.find((x) => x.v != null) || { v: null, vat: null }
+      || list.find((x) => x.v != null) || { v: null, vat: null, per: null }
   }
   // Колонка одного вида: «Стоимость материалов и работ» — обе сразу, это не разбивка.
   const ofKind = (list, kind) => list.map((col, i) => ({ col, i })).filter(({ col }) => {
@@ -710,15 +888,24 @@ export function itemsFromRows(rows, columns, { keepBlank = false } = {}) {
     if ((price.v ?? 0) < 0 || (sum.v ?? 0) < 0) continue
     const rate = parseNum(c.vatRate)
     const del = columns.delivery ? parseNum(c.delivery) : null
+    const unit = cellText(c.unit) || null
+    const scaled = priceScale(price, qty, sum.v, unit, twoParts || del != null)
+    const packMatch = /[0-9]+(?:[.,][0-9]+)?/.exec(cellText(c.pack))
+    const packQty = packMatch ? parseNum(packMatch[0]) : null
     items.push({
       name,
+      name2: cellText(c.name2) || null,
       code: cellText(c.code) || null,
-      unit: cellText(c.unit) || null,
+      code2: cellText(c.code2) || null,
+      unit: scaled.unit,
       qty: qty != null && qty > 0 ? qty : null,
-      price: price.v,
+      packQty: packQty > 1 ? packQty : null,
+      price: price.v != null && scaled.per > 1 ? price.v / scaled.per : price.v,
       priceVat: price.vat,
+      per: scaled.per > 1 ? scaled.per : null,
       sum: sum.v,
       sumVat: sum.vat,
+      sumOff: scaled.off,
       vatRate: rate != null && rate > 0 && rate < 50 ? rate : null,
       delivery: DELIVERY_ROW_RE.test(name.toLowerCase()),
       deliveryDoc: del != null && del > 0 ? { value: del, perUnit: !!columns.delivery.perUnit, vat: columns.delivery.vat || null } : null,

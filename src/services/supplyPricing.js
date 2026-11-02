@@ -15,7 +15,8 @@ import { isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
 import { deleteDocument, fetchFileBytes, uploadFile } from './s3'
 import { VOR_STATEMENT_CATEGORY, LEGACY_VOR_CATEGORY, isNetworkError } from './tenderVorRd'
 import { isWorkbookFileName } from '../utils/vorFiles'
-import { readOffer } from '../utils/supplyOffers'
+import { readOffer, unreadableOfferNotes } from '../utils/supplyOffers'
+import { isFreshPriceDate } from '../utils/supplyRateHelpers'
 // Библиотека Excel (vorMaterialsSheet → xlsx, 430 КБ) — только по требованию: сервис импортирует и реестр
 // тендеров (прогресс расценки), которому она не нужна.
 
@@ -417,8 +418,39 @@ export async function uploadSupplyDoc(mainId, file, notes = null) {
   return uploadFile({ file, ownerType: 'tender', ownerId: mainId, category: SUPPLY_DOC_CATEGORY, notes })
 }
 
-// Документы поставщиков «в похожие цены» (utils/supplyOffers): файлы тендера с распознанными строками. Ответ —
-// [{ doc, offer }], новые первыми; файлы без строк (просто документ позиции) не входят.
+// Строки распознанного файла сохраняются при нём: notes — offerNotes из utils/supplyOffers. onlyEmpty — только если строк
+// ещё нет (фоновое чтение не затирает выбор человека в окне).
+export async function saveSupplyDocNotes(id, notes, { onlyEmpty = false } = {}) {
+  let q = db.from('s3_documents').update({ notes }).eq('id', id)
+  if (onlyEmpty) q = q.is('notes', null)
+  const { error } = await q
+  if (error) fail(error)
+}
+
+// Файл (байты и имя) → распознанные строки: { read, notes, reason }. read — ответ readSupplierDoc с items или null; notes
+// — что сохранить при файле (не распознан — причина, чтобы не читать его снова; не счёт и не таблица — null). Разбор и
+// библиотеки — только здесь, по требованию: сервис импортирует и реестр тендеров. Сбой чтения — исключением (сеть), не
+// отметкой. Формат файла не тот — reason 'unsupported', строк нет.
+export async function readSupplyDocBytes(bytes, fileName) {
+  const [{ isPdfFile, isSheetFile, readSupplierDoc }, { offerNotesOfDoc }] = await Promise.all([
+    import('../utils/supplierDocRead'),
+    import('../utils/supplyDocPrice'),
+  ])
+  if (!isPdfFile(fileName) && !isSheetFile(fileName)) return { read: null, notes: null, reason: 'unsupported' }
+  const read = await readSupplierDoc(bytes, fileName)
+  if (read.error) return { read: null, notes: unreadableOfferNotes(read.error), reason: read.error }
+  return { read, notes: offerNotesOfDoc(read).notes, reason: null }
+}
+
+// Файл, уже загруженный к тендеру → байты (распознать его, не загружая заново).
+export const fetchSupplyDocBytes = (doc) => fetchFileBytes(doc.s3_key)
+
+// Документы поставщиков тендера (utils/supplyOffers). Ответ: { offers, unread, others }: offers — файлы с распознанными
+// строками [{ doc, offer }], новые первыми; unread — файлы счетов и таблиц, которые ещё не читали (прикреплены колонкой
+// «Документ» до 02.11.2026): их расценка прочтёт сама; others — [{ doc, failed }]: не прочитались, фото и прочее (failed —
+// причина для окна файлов тендера).
+const UNREAD_FILE_RE = /\.(xlsx|xlsm|xls|csv|pdf)$/i
+const UNREAD_MAX_BYTES = 15 * 1024 * 1024
 export async function loadSupplyOffers(mainId) {
   let rows
   try {
@@ -429,11 +461,53 @@ export async function loadSupplyOffers(mainId) {
   } catch (e) {
     fail(e)
   }
-  const out = []
+  const offers = []
+  const unread = []
+  const others = []
   for (const { notes, ...doc } of rows) {
     const offer = readOffer(notes)
-    if (offer?.lines.length) out.push({ doc, offer })
+    if (offer?.lines.length) offers.push({ doc, offer })
+    else if (!notes && UNREAD_FILE_RE.test(doc.file_name || '') && !(doc.size_bytes > UNREAD_MAX_BYTES)) unread.push(doc)
+    else others.push({ doc, failed: offer?.failed || (doc.size_bytes > UNREAD_MAX_BYTES ? 'big' : 'unsupported') })
   }
+  return { offers, unread, others }
+}
+
+// Свежие (не старше 3 месяцев) свои цены других тендеров — для меню похожих: те, что в другой ед. изм. (база их не отбирает,
+// utils/supplyAutoPick.otherUnitPrices). Ответ — [{ id, tender_id, tender_number, object_name, estimate_name, material_key,
+// material_name, unit, price, price_date }], новые первыми. Колонок ещё нет (база раньше миграции 20261023) — []: расценка
+// работает как раньше. Постранично, но не больше OTHER_RATES_PAGES страниц (самые свежие); ответ держится 5 минут: повторное
+// открытие расценки не читает заново.
+const OTHER_RATES_PAGES = 20
+const otherRatesCache = new Map()
+export async function loadOtherTenderRates(mainId) {
+  const hit = otherRatesCache.get(mainId)
+  if (hit && Date.now() - hit.at < SUGGEST_TTL_MS) return hit.rows
+  const since = new Date(Date.now() - 92 * 24 * 3600 * 1000).toISOString().slice(0, 10)
+  const rows = []
+  for (let page = 0; page < OTHER_RATES_PAGES; page++) {
+    const { data, error } = await db.from('tender_vor_supply_rates')
+      .select('id, tender_id, estimate_name, material_key, material_name, unit, supply_price, supply_price_exact, price_date')
+      .is('source_rate_id', null).gte('price_date', since).neq('tender_id', mainId)
+      .order('price_date', { ascending: false }).order('id', { ascending: true })
+      .range(page * 1000, page * 1000 + 999)
+    if (error) return []
+    rows.push(...(data || []).filter((r) => isFreshPriceDate(r.price_date)))
+    if ((data || []).length < 1000) break
+  }
+  const tenders = new Map()
+  for (const chunk of chunkList([...new Set(rows.map((r) => r.tender_id))])) {
+    const { data, error } = await db.from('tenders').select('id, public_tender_number, objects(name)').in('id', chunk).is('deleted_at', null)
+    if (error) return []
+    for (const t of data || []) tenders.set(t.id, t)
+  }
+  const out = []
+  for (const r of rows) {
+    const t = tenders.get(r.tender_id)
+    const price = Number(r.supply_price_exact ?? r.supply_price)
+    if (t && price > 0) out.push({ ...r, price, tender_number: t.public_tender_number, object_name: t.objects?.name || null })
+  }
+  otherRatesCache.set(mainId, { at: Date.now(), rows: out })
   return out
 }
 

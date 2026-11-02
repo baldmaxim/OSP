@@ -210,6 +210,23 @@ window.__fakeDb.s3_documents.push(
   { id: 'doc-vor-p2', owner_type: 'tender', owner_id: 'tender-p', doc_category: 'vor_statement',
     file_name: 'ВОР_ВК.xlsx', s3_key: 'tenders/tender-p/x-ВОР_ВК.xlsx', created_at: '2026-10-12T09:10:00Z', uploaded_by_name: 'Иванов И. И.' },
 )
+// otherUnit=1 — та же позиция в другом тендере (№ 845) с другой ед. изм.: база такие цены не подставляет.
+if (params.get('otherUnit') === '1') {
+  window.__fakeDb.tenders.push({ id: 'tender-845', tender_type: 'main', department: 'warranty', public_tender_number: 845, status: 'Идет тендерная процедура',
+    work_description: 'Другой объект', object_id: 'obj-1', objects: objects[0], deleted_at: null, parent_tender_id: null })
+  window.__fakeDb.tender_vor_supply_rates.push({ id: 'rate-845-1', tender_id: 'tender-845', estimate_name: 'ВОР 845', material_name: 'Хомут монтажный',
+    material_key: normName('Хомут монтажный'), unit: 'тыс. шт', supply_price: 10000, supply_price_exact: null, price_date: new Date().toISOString().slice(0, 10), source_rate_id: null })
+}
+// supplyUnread=1 — файлы документов поставщика, прикреплённые колонкой «Документ» без чтения (до 02.11.2026): счёт,
+// файл, который не читается, и фото; содержимое — window.__fakeFiles из теста.
+if (params.get('supplyUnread') === '1') {
+  const old = { owner_type: 'tender', owner_id: 'tender-p', doc_category: 'supply_doc', created_at: '2026-10-30T09:00:00Z', uploaded_by_name: 'Снабженцев С. С.', size_bytes: 9000, notes: null }
+  window.__fakeDb.s3_documents.push(
+    { ...old, id: 'doc-unread', file_name: 'Счёт старый.xlsx', s3_key: 'tenders/tender-p/unread.xlsx' },
+    { ...old, id: 'doc-unread-bad', file_name: 'Испорченный.xlsx', s3_key: 'tenders/tender-p/unread-bad.xlsx' },
+    { ...old, id: 'doc-photo', file_name: 'Чек.jpg', s3_key: 'tenders/tender-p/photo.jpg' },
+  )
+}
 // brokenFile=1 — третий файл ВОР, который не скачивается (хранилища в стенде нет): автозагрузка покажет причину.
 if (params.get('brokenFile') === '1') {
   window.__fakeDb.s3_documents.push({ id: 'doc-vor-bad', owner_type: 'tender', owner_id: 'tender-p', doc_category: 'vor_statement',

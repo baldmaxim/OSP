@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 import { isWebLink, loadRateSuggestions } from '../../services/supplyPricing'
 import { formatAmount } from '../../utils/money'
+import { offerPrice } from '../../utils/supplyDocMatch'
 import { fmtPriceDate } from '../../utils/supplyRateHelpers'
 
 // Меню похожих цен позиции. Сверху — цены из документов поставщиков этого тендера, добавленных «в похожие цены»
@@ -12,11 +13,13 @@ import { fmtPriceDate } from '../../utils/supplyRateHelpers'
 // наименования важнее слов, затем самые новые; у каждой — тот ли размер и документ исходной позиции). «Взять» —
 // цена за единицу в позицию с отметкой, откуда она; документ исходной позиции прикладывается, если у позиции своего
 // нет. У расценённой позиции others нет — только цены поставщиков (сравнить КП); своя цена отмечена «сейчас в
-// позиции». Без права правки — только просмотр. Поверх страницы (портал): прокрутка таблицы его не обрезает;
+// позиции». Ниже (otherUnit) — те же и похожие позиции других тендеров в другой ед. изм., с пометкой: сами не подставляются,
+// «Взять» — как есть или с пересчётом, если он понятен (utils/supplyAutoPick.otherUnitPrices). Без права правки — только
+// просмотр. Поверх страницы (портал): прокрутка таблицы его не обрезает;
 // прокрутили или кликнули мимо — закрывается. Клавиатура: стрелки — по строкам, Enter — взять, Esc — закрыть.
 export default function SupplySuggestMenu({
-  anchor, mainId, row, editable, currentSourceId = null, others = true, offers = null, currentPrice = null,
-  onPick, onPickOffer, onClose, onOpenFile,
+  anchor, mainId, row, editable, currentSourceId = null, others = true, offers = null, currentPrice = null, otherUnit = null,
+  onPick, onPickOffer, onPickOtherUnit, onClose, onOpenFile,
 }) {
   const [state, setState] = useState({ loading: others, rows: [], error: '' })
   const [pos, setPos] = useState(null)
@@ -104,7 +107,7 @@ export default function SupplySuggestMenu({
           </div>
           <ul className="sp-suggest-list" aria-label="Цены поставщиков">
             {offerList.map((o, i) => (
-              <OfferItem key={`${o.line.doc.id}:${i}`} o={o} unit={unit} editable={editable} current={currentPrice != null && o.line.price === currentPrice}
+              <OfferItem key={`${o.line.doc.id}:${i}`} o={o} unit={unit} editable={editable} current={currentPrice != null && offerPrice(o) === currentPrice}
                 onPick={onPickOffer} onOpenFile={onOpenFile} />
             ))}
           </ul>
@@ -119,7 +122,7 @@ export default function SupplySuggestMenu({
       {state.loading && <p className="sp-suggest-empty">Ищем похожие цены…</p>}
       {state.error && <p className="sp-suggest-empty sp-error-text" role="alert">{state.error}</p>}
       {!state.loading && !state.error && !state.rows.length && (
-        <p className="sp-suggest-empty">Похожих цен не старше 3 месяцев нет.</p>
+        <p className="sp-suggest-empty">{otherUnit?.length ? 'В этой ед. изм. похожих цен не старше 3 месяцев нет.' : 'Похожих цен не старше 3 месяцев нет.'}</p>
       )}
       {state.rows.length > 0 && (
         <ul className="sp-suggest-list">
@@ -170,6 +173,17 @@ export default function SupplySuggestMenu({
       )}
       </>
       )}
+      {otherUnit?.length > 0 && (
+        <>
+          <div className="sp-suggest-head">
+            <span className="sp-suggest-title">В другой ед. изм.</span>
+            <span className="sp-muted">сами не подставляются: проверьте единицу, прежде чем взять цену</span>
+          </div>
+          <ul className="sp-suggest-list" aria-label="Цены в другой ед. изм.">
+            {otherUnit.map((o) => <OtherUnitItem key={o.rate.id} o={o} unit={unit} editable={editable} onPick={onPickOtherUnit} />)}
+          </ul>
+        </>
+      )}
       </div>
     </div>,
     document.body,
@@ -177,11 +191,50 @@ export default function SupplySuggestMenu({
 }
 
 const fmtDay = (iso) => (iso ? new Date(iso).toLocaleDateString('ru-RU') : '')
+const fmtNum = (v) => String(Math.round(Number(v) * 1000) / 1000).replace('.', ',')
+
+// Цена другого тендера в другой ед. изм.: пометка единицы, что с ней делать (пересчёт, ошибка в ВОР), «Взять».
+function OtherUnitItem({ o, unit, editable, onPick }) {
+  const { rate, sameName, spelled, cubic, converted } = o
+  return (
+    <li data-item="" tabIndex={-1} className="is-offer"
+      aria-label={`${rate.material_name}, ${formatAmount(rate.price)} ₽ за ${rate.unit}, другая ед. изм.`}>
+      <div className="sp-suggest-info">
+        <span className="sp-suggest-name">
+          {rate.material_name}
+          {sameName && <span className="sp-suggest-tag">то же наименование</span>}
+          <span className={`sp-suggest-tag${spelled ? '' : ' is-warn'}`}>{spelled ? `та же ед. изм., записана иначе: «${rate.unit}»` : `другая ед. изм.: цена за ${rate.unit}, здесь ${unit}`}</span>
+        </span>
+        <span className="sp-suggest-meta">
+          <span>{rate.tender_number != null ? `тендер № ${rate.tender_number}` : 'тендер без номера'}</span>
+          {rate.object_name && <span>{rate.object_name}</span>}
+          <span>ВОР «{rate.estimate_name}»</span>
+          <span className="ui-num">{fmtPriceDate(rate.price_date)}</span>
+        </span>
+        {cubic && <span className="sp-suggest-meta sp-suggest-note">Объём позиции похож на м3 ({fmtNum(cubic.area)} м2 × {fmtNum(cubic.thickness)} м): вероятно, в ВОР ошибка в ед. изм., цена за м3 подойдёт как есть.</span>}
+        {converted && <span className="sp-suggest-meta sp-suggest-note">Пересчёт: 1 {rate.unit} = {fmtNum(converted.pack)} {unit} — {formatAmount(converted.price)} ₽ за {unit}.</span>}
+      </div>
+      <div className="sp-suggest-side">
+        <span className="sp-suggest-price ui-num">{formatAmount(rate.price)} ₽<span className="sp-muted"> за {rate.unit}</span></span>
+        {editable && converted && (
+          <button type="button" className="btn-secondary sp-suggest-take" onClick={() => onPick(o, true)}
+            aria-label={`Взять цену ${formatAmount(converted.price)} ₽ за ${unit}: ${rate.material_name}`}>Взять {formatAmount(converted.price)}</button>
+        )}
+        {editable && (
+          <button type="button" className="btn-secondary sp-suggest-take" onClick={() => onPick(o, false)}
+            aria-label={`Взять цену ${formatAmount(rate.price)} ₽ как есть: ${rate.material_name}`}>{spelled || cubic ? 'Взять' : 'Как есть'}</button>
+        )}
+      </div>
+    </li>
+  )
+}
 
 // Цена поставщика: строка документа (и почему она здесь), файл, когда и кем загружен, цена в документе; справа —
 // цена в расценку и «Взять».
 function OfferItem({ o, unit, editable, current, onPick, onOpenFile }) {
   const { line } = o
+  const price = offerPrice(o)
+  const priceUnit = o.pack ? unit || 'ед.' : line.unit || unit || 'ед.'
   const take = () => { if (editable && !current) onPick(o) }
   const docVat = line.docVat === 'net' ? ' без НДС' : line.docVat === 'gross' ? ' с НДС' : ''
   return (
@@ -190,7 +243,7 @@ function OfferItem({ o, unit, editable, current, onPick, onOpenFile }) {
       tabIndex={-1}
       className={`is-offer${current ? ' is-current' : ''}`}
       onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) { e.preventDefault(); take() } }}
-      aria-label={`${line.name}, ${formatAmount(line.price)} ₽ за ${line.unit || unit || 'ед.'}, «${line.doc.file_name}»`}
+      aria-label={`${line.name}, ${formatAmount(price)} ₽ за ${priceUnit}, «${line.doc.file_name}»`}
     >
       <div className="sp-suggest-info">
         <span className="sp-suggest-name">
@@ -199,6 +252,7 @@ function OfferItem({ o, unit, editable, current, onPick, onOpenFile }) {
             : o.exact ? <span className="sp-suggest-tag">то же наименование</span>
               : <span className="sp-suggest-tag is-score">похоже на {Math.round(o.score * 100)} %</span>}
           {!o.unitOk && <span className="sp-suggest-tag is-warn">в документе — «{line.unit}»</span>}
+          {o.pack != null && <span className="sp-suggest-tag">1 {line.unit} = {String(o.pack).replace('.', ',')} {unit}: {formatAmount(line.price)} ₽ за {line.unit}</span>}
           {current && <span className="sp-suggest-tag is-current">сейчас в позиции</span>}
         </span>
         <span className="sp-suggest-meta">
@@ -211,10 +265,10 @@ function OfferItem({ o, unit, editable, current, onPick, onOpenFile }) {
         </span>
       </div>
       <div className="sp-suggest-side">
-        <span className="sp-suggest-price ui-num">{formatAmount(line.price)} ₽<span className="sp-muted"> за {line.unit || unit || 'ед.'}</span></span>
+        <span className="sp-suggest-price ui-num">{formatAmount(price)} ₽<span className="sp-muted"> за {priceUnit}</span></span>
         {editable && !current && (
           <button type="button" className="btn-secondary sp-suggest-take" onClick={take}
-            aria-label={`Взять цену ${formatAmount(line.price)} ₽ из «${line.doc.file_name}»: ${line.name}`}>Взять</button>
+            aria-label={`Взять цену ${formatAmount(price)} ₽ из «${line.doc.file_name}»: ${line.name}`}>Взять</button>
         )}
       </div>
     </li>
