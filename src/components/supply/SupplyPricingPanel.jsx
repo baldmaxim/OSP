@@ -1754,6 +1754,14 @@ export default function SupplyPricingPanel({
       return false
     }
   }
+  // Новое имя файла (окно просмотра) — везде, где файл показан. Привязка к ВОР и цены идут по id файла и не меняются.
+  const fileRenamed = (doc) => {
+    const rename = (d) => (d.id === doc.id ? { ...d, file_name: doc.file_name } : d)
+    const renameIn = (x) => (x.doc.id === doc.id ? { ...x, doc: rename(x.doc) } : x)
+    setLinkDocs((prev) => (prev.has(doc.id) ? new Map(prev).set(doc.id, rename(prev.get(doc.id))) : prev))
+    setOfferDocs((prev) => (prev ? prev.map(renameIn) : prev))
+    setOtherDocs((prev) => prev.map(renameIn))
+  }
   const removeLink = async () => {
     const { targets } = linkDialog
     const ids = targets.map((t) => t.link?.id).filter(Boolean)
@@ -1985,7 +1993,7 @@ export default function SupplyPricingPanel({
           </div>
           <div className="sp-section-meta">
             {s.source === 'vor_file'
-              ? <>файл «{s.file_name || 'удалён'}», лист «{s.sheet_name || 'Материалы'}»{s.column_map?.mode === 'code' ? ', строки с кодом «мат.»' : ''}</>
+              ? <>файл «{files.find((f) => f.id === s.s3_document_id)?.file_name || s.file_name || 'удалён'}», лист «{s.sheet_name || 'Материалы'}»{s.column_map?.mode === 'code' ? ', строки с кодом «мат.»' : ''}</>
               : <>вкладка «ВОР» карточки тендера</>}
             {s.displayOnly
               ? <span> · в расценку не загружался — позиции показаны по вкладке</span>
@@ -2394,7 +2402,7 @@ export default function SupplyPricingPanel({
       )}
       {preview && (
         <Suspense fallback={null}>
-          <S3DocumentPreview doc={preview} onClose={() => setPreview(null)} />
+          <S3DocumentPreview doc={preview} onClose={() => setPreview(null)} onRenamed={editable ? fileRenamed : undefined} />
         </Suspense>
       )}
       {adoptAsk && (

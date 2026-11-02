@@ -1693,6 +1693,17 @@ function DcRequestsPage() {
     }
   }
 
+  const handleDocRenamed = (doc) => {
+    docsEpochRef.current += 1
+    setDocsByReq(prev => {
+      const arr = prev.get(doc.owner_id)
+      if (!arr) return prev
+      const next = new Map(prev)
+      next.set(doc.owner_id, arr.map(d => (d.id === doc.id ? { ...d, file_name: doc.file_name } : d)))
+      return next
+    })
+  }
+
   const isDeletedTab = activeTab === 'deleted'
   // Столбцы «Статус ОКС» и «Комментарий» — когда в базе есть их колонки (миграция 20261108).
   const submissionEnabled = hasSubmissionColumns(requests)
@@ -3460,7 +3471,7 @@ function DcRequestsPage() {
       })()}
 
       {previewDoc && (
-        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} onRenamed={canEditDc ? handleDocRenamed : undefined} />
       )}
 
       {showSectionDocs && (

@@ -532,7 +532,7 @@ const EMPTY_TEXT = {
 
 function KpReviewPage() {
   useBodyClass('ui-work-portal')
-  const { isAdmin, isSuperAdmin, role, scopedObjectIds, userProfile, user } = useRole()
+  const { isAdmin, isSuperAdmin, role, scopedObjectIds, userProfile, user, canEdit } = useRole()
   // Аналитик-экономист (или админ) проставляет вердикт/замечания.
   // isSuperAdmin — доступ по e-mail (RoleContext): суперпользователь проверяет КП
   // всегда, даже когда переключился на другую роль для проверки интерфейса.
@@ -699,6 +699,12 @@ function KpReviewPage() {
   // подрядчику» (параллельно занесению, только в подветке с отправкой). Ответ базы
   // сразу подставляется в строку, затем список перечитывается целиком — так
   // подтягиваются и чужие правки.
+  // Новое имя файла КП (окно просмотра): порядок строк, как и после проверки, не меняется.
+  const handleFileRenamed = (doc) => {
+    pinOrder()
+    setRows(prev => prev.map(x => (x.s3?.id === doc.id ? { ...x, s3: { ...x.s3, file_name: doc.file_name } } : x)))
+  }
+
   const handleStep = async (r, kind, next) => {
     const key = `${r.id}:${kind}`
     if (busySteps.has(key)) return
@@ -1250,7 +1256,8 @@ function KpReviewPage() {
         />
       )}
       {previewDoc && (
-        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)}
+          onRenamed={canReview || canEdit('tenders') ? handleFileRenamed : undefined} />
       )}
     </div>
   )

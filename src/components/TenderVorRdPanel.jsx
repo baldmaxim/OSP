@@ -334,7 +334,7 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
         </section>
       )}
 
-      {previewDoc && <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />}
+      {previewDoc && <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} onRenamed={canEdit ? () => reload() : undefined} />}
     </div>
   )
 }

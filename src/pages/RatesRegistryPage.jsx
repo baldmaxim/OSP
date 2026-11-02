@@ -1091,7 +1091,10 @@ function RatesRegistryPage() {
                 afterManualChange(`Добавлено в реестр расценок: ${count}`, fileError)
               }} />
           )}
-          {preview && <S3DocumentPreview doc={preview} onClose={() => setPreview(null)} />}
+          {/* Имя в строках КП приходит из материализованного представления: на экране — сразу, в базе — при пересчёте. */}
+          {preview && <S3DocumentPreview doc={preview} onClose={() => setPreview(null)} onRenamed={canEditRegistry
+            ? (doc) => setRows(prev => prev.map(r => (r.source_doc_id === doc.id ? { ...r, source_doc_name: doc.file_name } : r)))
+            : undefined} />}
         </Suspense>
       )}
     </div>

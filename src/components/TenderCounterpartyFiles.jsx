@@ -382,9 +382,10 @@ export default function TenderCounterpartyFiles({
   const open = openOverride.for === collapsed && openOverride.open != null ? openOverride.open : !collapsed
   const setOpen = (value) => setOpenOverride({ for: collapsed, open: value })
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async ({ silent = false } = {}) => {
     if (!tenderId || !counterpartyId) return
-    setLoading(true)
+    // Тихо — без «Загрузка…» вместо списка: новое имя файла при открытом окне просмотра.
+    if (!silent) setLoading(true)
     setError(null)
     try {
       setData(await fetchProposalFiles(tenderId, counterpartyId))
@@ -594,7 +595,7 @@ export default function TenderCounterpartyFiles({
       )}
 
       {previewDoc && (
-        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} onRenamed={canEdit ? () => reload({ silent: true }) : undefined} />
       )}
 
       {/* task 431: окно проверки КП */}

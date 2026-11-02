@@ -10,9 +10,11 @@
 //   download { s3_key, file_name?, download? }      → { presigned_url, expires_in }
 //   delete   { s3_key }                             → { ok: true } — сначала строка, затем объект;
 //            строки уже нет (повтор) — { ok: true, already: true }
+//   rename   { s3_key, file_name }                  → { document } — новое имя в строке s3_documents (право — как у
+//            удаления), расширение прежнее (shared/fileRename.js); объект в хранилище и его ключ не меняются
 //
 // Перенос данных (шлюз включён, src/app.js):
-//   • барьер записи — upload, confirm и delete отвечают 503 OSP_READONLY, скачивание работает;
+//   • барьер записи — upload, confirm, delete и rename отвечают 503 OSP_READONLY, скачивание работает;
 //   • репетиция (копия за шлюзом не рабочая, src/lib/loadStatus.js) — хранилище у неё общее с рабочим
 //     порталом: delete убирает строку, а объект — только если документ создан уже в репетиции. Объект,
 //     который был до загрузки копии, принадлежит рабочим данным и остаётся: { ok, object_deleted: false };
@@ -31,6 +33,7 @@
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { sanitizeFileName } from '../lib/files.js'
+import { fileNameProblem } from '../shared/fileRename.js'
 import { z } from 'zod'
 import { access } from '../lib/access.js'
 import { isFinalLoad, createdAfterLoad } from '../lib/loadStatus.js'
@@ -188,7 +191,7 @@ export const PRESIGN_BODY = z.object({
   download: any,
 })
 
-const WRITE_ACTIONS = new Set(['upload', 'confirm', 'delete'])
+const WRITE_ACTIONS = new Set(['upload', 'confirm', 'delete', 'rename'])
 
 export function registerS3Presign(app, { config, getS3, gatewayOn = false, isReadOnly = () => false, loadStatus = null }) {
   app.route({ method: 'POST', url: '/api/fn/s3-presign', config: {
@@ -241,6 +244,13 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
         if (error) throw MISSING_FUNCTION.has(error.code) ? new RightsUnavailable() : error
       }
       return results.some(({ data }) => data === true)
+    }
+    // Право на существующий файл (удаление, переименование): по таблице владельца и категории. Владельца уже нет —
+    // достаточно права любой его таблицы.
+    const rulesForDoc = async (doc) => {
+      if (!Object.hasOwn(OWNER_TABLES, doc.owner_type)) return UNKNOWN_OWNER_RULES
+      const table = await ownerTable(doc.owner_type, doc.owner_id)
+      return table ? rulesFor(table, doc.doc_category) : OWNER_TABLES[doc.owner_type].flatMap((t) => rulesFor(t, doc.doc_category))
     }
     // Загрузка и подтверждение: владелец виден и есть право его раздела (или категории). Иначе — [код, ответ].
     const uploadDenied = async (file, category) => {
@@ -368,13 +378,7 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           if (error) throw error
           // Строки нет (или не видна): повтор удаления — уже сделано; объект без строки не трогаем.
           if (!doc) return { ok: true, already: true }
-          let rules = UNKNOWN_OWNER_RULES
-          if (Object.hasOwn(OWNER_TABLES, doc.owner_type)) {
-            const table = await ownerTable(doc.owner_type, doc.owner_id)
-            // Владельца уже нет — достаточно права любой его таблицы.
-            rules = table ? rulesFor(table, doc.doc_category) : OWNER_TABLES[doc.owner_type].flatMap((t) => rulesFor(t, doc.doc_category))
-          }
-          if (!await allowed(rules)) return reply.code(403).send({ error: NO_RIGHT })
+          if (!await allowed(await rulesForDoc(doc))) return reply.code(403).send({ error: NO_RIGHT })
 
           // Перенос данных: решаем до удаления строки, остаётся ли объект в хранилище. Документ пришёл с
           // данными прежнего портала — объект его, пока тот работает (в репетиции — всегда).
@@ -413,6 +417,34 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
             return { ok: true, object_deleted: false }
           }
           return { ok: true }
+        }
+
+        case 'rename': {
+          const s3Key = String(body.s3_key || '')
+          if (!s3Key) return reply.code(400).send({ error: 'Missing s3_key' })
+          const { data: doc, error } = await supabase
+            .from('s3_documents')
+            .select('id, owner_type, owner_id, doc_category, file_name')
+            .eq('s3_key', s3Key)
+            .maybeSingle()
+          if (error) throw error
+          if (!doc) return reply.code(404).send({ error: 'Файл не найден' })
+          if (!await allowed(await rulesForDoc(doc))) return reply.code(403).send({ error: NO_RIGHT })
+          const fileName = String(body.file_name ?? '')
+          const problem = fileNameProblem(fileName, doc.file_name)
+          if (problem) return reply.code(400).send({ error: problem })
+          const { data: saved, error: updateError } = await supabase
+            .from('s3_documents')
+            .update({ file_name: fileName })
+            .eq('id', doc.id)
+            .select('*')
+          if (updateError) {
+            if (updateError.code === '42501') return reply.code(403).send({ error: NO_RIGHT })
+            throw updateError
+          }
+          // Правка, не задевшая строку (правило базы, файл только что удалили), — ошибка, а не молчание.
+          if (!saved?.length) return reply.code(404).send({ error: 'Файл не найден' })
+          return { document: saved[0] }
         }
 
         default:

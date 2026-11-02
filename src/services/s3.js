@@ -143,6 +143,20 @@ export async function deleteDocument(doc) {
   if (error) throw error
 }
 
+// Новое имя файла (окно просмотра): только подпись в строке, объект в хранилище и его ключ прежние. Ответ — строка
+// s3_documents. Через osp-api право — как у удаления; иначе (прежний портал) — правило сотрудника по строкам.
+export async function renameDocument(doc, fileName) {
+  if (filesViaOspApi()) return ospFiles.rename(doc.s3_key, fileName)
+  const { data, error } = await db
+    .from('s3_documents')
+    .update({ file_name: fileName })
+    .eq('s3_key', doc.s3_key)
+    .select('*')
+  if (error) throw error
+  if (!data?.length) throw new Error('Файл не переименован: нет права или его уже удалили')
+  return data[0]
+}
+
 // Список документов по владельцу.
 // `category` (необязательно) — фильтр по `doc_category` (например 'vor').
 export async function fetchDocuments(ownerType, ownerId, category = null) {

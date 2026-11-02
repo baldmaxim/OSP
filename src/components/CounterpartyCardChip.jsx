@@ -208,7 +208,8 @@ export default function CounterpartyCardChip({ counterparty, card, canEdit, onCh
       ) : null}
 
       {previewOpen && card && (
-        <S3DocumentPreview doc={card} onClose={() => setPreviewOpen(false)} />
+        <S3DocumentPreview doc={card} onClose={() => setPreviewOpen(false)}
+          onRenamed={canEdit ? (doc) => onChange?.({ ...card, file_name: doc.file_name }) : undefined} />
       )}
     </div>
   )

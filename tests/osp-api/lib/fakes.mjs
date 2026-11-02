@@ -32,7 +32,7 @@ function pick(row, select) {
 //   roles       { <userId>: { role, counterparty_id, is_approved, is_blocked, full_name } } — user_roles
 //               (RLS: только своя строка)
 //   docs        { <s3_key>: { row: {id, owner_type, owner_id, …}, visibleTo: 'all' | [userId] } } —
-//               s3_documents: чтение по s3_key / id, вставка (дубль id или s3_key — 23505), удаление с
+//               s3_documents: чтение по s3_key / id, вставка (дубль id или s3_key — 23505), правка и удаление с
 //               возвратом строк; onInsert(row) — вызывается перед вставкой (гонка повторов)
 //   can         { <userId>: 'all' | ['раздел:view', 'раздел:edit', …] } — rpc osp_can; noOspCan — функции
 //               нет (PGRST202, Р2a не применена)
@@ -103,6 +103,11 @@ export async function startFakeSupabase(state) {
       if (req.method === 'DELETE') {
         for (const f of found) delete state.docs[f.key]
         return reply(found.map((f) => pick(f.row, select)))
+      }
+      if (req.method === 'PATCH') {
+        const patch = JSON.parse(body || '{}')
+        for (const f of found) Object.assign(state.docs[f.key].row, patch)
+        return reply(found.map((f) => pick({ ...f.row, ...patch }, select)))
       }
     }
     if (url.pathname === '/rest/v1/rpc/osp_can') {

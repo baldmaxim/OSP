@@ -63,7 +63,7 @@ function supabaseState() {
       'tenders/t2/shared.pdf': { row: { id: 'd4', owner_type: 'tender', owner_id: TENDER_HIDDEN }, visibleTo: 'all' },
       'tenders/t3/vor.xlsx': { row: { id: 'd6', owner_type: 'tender', owner_id: TENDER_HIDDEN, doc_category: 'vor_statement' }, visibleTo: 'all' },
       'tenders/t3/hidden-vor.xlsx': { row: { id: 'd7', owner_type: 'tender', owner_id: TENDER_HIDDEN, doc_category: 'vor_statement' }, visibleTo: [U.emp.id] },
-      [`general-documents/${GDOC_1}/g.pdf`]: { row: { id: 'd5', owner_type: 'general_document', owner_id: GDOC_1 }, visibleTo: 'all' },
+      [`general-documents/${GDOC_1}/g.pdf`]: { row: { id: 'd5', owner_type: 'general_document', owner_id: GDOC_1, file_name: 'g.pdf' }, visibleTo: 'all' },
     },
     // Права разделов (osp_can): инженер — тендеры, договоры, документы, объекты; зритель — только чтение.
     can: {
@@ -430,6 +430,62 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.deepEqual(res.json(), { error: 'Нет права на файлы этого раздела' })
       assert.ok(state.docs[KEY])
       assert.equal(s3.requests.length, 0)
+    })
+  })
+
+  describe('переименование: только подпись файла, право как у удаления', () => {
+    const rename = (who, key, name) => fn('s3-presign', who, { action: 'rename', s3_key: key, file_name: name })
+    const KEY = `general-documents/${GDOC_1}/g.pdf`
+
+    it('меняет file_name в строке; объект и ключ в хранилище не трогает; повтор безопасен', async () => {
+      const res = await rename(U.emp, KEY, 'Новое имя (ред. 2).pdf')
+      assert.equal(res.statusCode, 200, res.body)
+      assert.equal(res.json().document.file_name, 'Новое имя (ред. 2).pdf')
+      assert.equal(res.json().document.s3_key, KEY)
+      assert.equal(state.docs[KEY].row.file_name, 'Новое имя (ред. 2).pdf')
+      assert.equal(s3.requests.length, 0, 'к хранилищу не обращались')
+      assert.equal((await rename(U.emp, KEY, 'Новое имя (ред. 2).pdf')).statusCode, 200)
+    })
+
+    it('без права раздела — 403, имя прежнее; подрядчику — 403 до чтения строки', async () => {
+      const before = state.docs[KEY].row.file_name
+      const denied = await rename(U.viewer, KEY, 'Чужое.pdf')
+      assert.equal(denied.statusCode, 403)
+      assert.deepEqual(denied.json(), { error: 'Нет права на файлы этого раздела' })
+      assert.equal((await rename(U.contractor, KEY, 'Чужое.pdf')).statusCode, 403)
+      assert.equal(state.docs[KEY].row.file_name, before)
+    })
+
+    it('другое расширение, пустое имя, запрещённые и невидимые знаки — 400, имя прежнее', async () => {
+      const before = state.docs[KEY].row.file_name
+      for (const [name, text] of [
+        ['Смета.xlsx', /Расширение/],
+        ['Смета', /Расширение/],
+        ['', /Укажите имя/],
+        ['.pdf', /Укажите имя/],
+        ['../../secret.pdf', /нельзя использовать/],
+        ['a‮fdp.pdf', /нельзя использовать/],
+        [`${'я'.repeat(252)}.pdf`, /длиннее/],
+      ]) {
+        const res = await rename(U.emp, KEY, name)
+        assert.equal(res.statusCode, 400, name)
+        assert.match(res.json().error, text, name)
+      }
+      assert.equal(state.docs[KEY].row.file_name, before)
+    })
+
+    it('ключ без строки — 404; расширение в другом регистре — можно', async () => {
+      assert.equal((await rename(U.emp, 'tenders/t9/guess.pdf', 'x.pdf')).statusCode, 404)
+      assert.equal((await rename(U.emp, KEY, 'Смета.PDF')).statusCode, 200)
+    })
+
+    it('нет osp_can — 503: без проверки прав не пишем', async () => {
+      state.noOspCan = true
+      const before = state.docs[KEY].row.file_name
+      const res = await rename(U.emp, KEY, 'x.pdf')
+      assert.equal(res.statusCode, 503)
+      assert.equal(res.json().code, 'OSP_RIGHTS_UNAVAILABLE')
+      assert.equal(state.docs[KEY].row.file_name, before)
     })
   })
 

@@ -333,6 +333,11 @@ export default function CostPlanCalcTab({ canEdit = false, canAttach = false }) 
     }
   }
 
+  const fileRenamed = (doc) => {
+    const rename = (list) => list.map(d => (d.id === doc.id ? { ...d, file_name: doc.file_name } : d))
+    setState(prev => ({ ...prev, instructionFiles: rename(prev.instructionFiles), objectFiles: rename(prev.objectFiles) }))
+  }
+
   const startEdit = (card) => {
     setFormError(null)
     setEditing({ objectId: card.id, label: card.label, form: compensationForm(card), options: state.detailed ? null : [], optionsError: null })
@@ -525,7 +530,11 @@ export default function CostPlanCalcTab({ canEdit = false, canAttach = false }) 
         )}
       </section>
 
-      {previewDoc && <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />}
+      {previewDoc && (
+        // Право — как у удаления: документы объекта — canAttach, инструкции — canEdit.
+        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)}
+          onRenamed={(previewDoc.owner_type === 'object' ? canAttach : canEdit) ? fileRenamed : undefined} />
+      )}
     </div>
   )
 }

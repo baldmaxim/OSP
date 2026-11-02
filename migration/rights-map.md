@@ -121,6 +121,9 @@ BSMContractorRatesPage, BSMRatesPage, BSMComparisonPage, BSMSelectionPage, Contr
 | general (шаблон раздела, `section_templates`, 20261107) | **isAdmin** (osp-api: `osp_can('admin', …)`); строки шаблонов читает сотрудник, писать некому |
 | general (расценка реестра КП, добавленная вручную, `kp_manual_rates`, `doc_category='kp_manual_rate'`, 20261122) | E(rates_registry) |
 
+Переименование файла (окно просмотра, только `file_name`, расширение прежнее): право — как у удаления, по той же таблице;
+osp-api, действие `rename`. Кнопку показывает страница, которая передала `onRenamed` (подрядчику — нет).
+
 ## Кабинет подрядчика (организация — `user_roles.counterparty_id`)
 - **Читает:** свою строку `user_roles`, `roles`, `contract_clauses`, `tender_estimate_items` приглашённого тендера,
   `s3_documents` тендера (пакет, РД, ВОР) и договора, свои `tender_counterparty_proposals`, свои

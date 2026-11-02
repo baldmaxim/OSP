@@ -1,4 +1,4 @@
-// Общий код страницы расценки и службы osp-api: разбор файла ВОР и план автозагрузки позиций.
+// Общий код страницы и службы osp-api: разбор файла ВОР, план автозагрузки позиций, правила имени файла.
 //
 // Образ osp-api собирается только из server/osp-api (deploy/docker/api.Dockerfile), поэтому служба держит копии
 // модулей src/utils в server/osp-api/src/shared. Правят оригиналы, затем:
@@ -10,7 +10,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-export const SHARED_FILES = ['vorMaterialsSheet.js', 'vorMaterials.js', 'supplyAutoImport.js', 'supplyRateHelpers.js', 'vorFiles.js']
+export const SHARED_FILES = ['vorMaterialsSheet.js', 'vorMaterials.js', 'supplyAutoImport.js', 'supplyRateHelpers.js', 'vorFiles.js', 'fileRename.js']
 export const SRC_DIR = path.join(ROOT, 'src', 'utils')
 export const DEST_DIR = path.join(ROOT, 'server', 'osp-api', 'src', 'shared')
 

@@ -109,6 +109,11 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
     }
   }
 
+  const handleRenamed = (doc) => {
+    setDocuments(prev => prev.map(d => (d.id === doc.id ? { ...d, file_name: doc.file_name } : d)))
+    onChange?.()
+  }
+
   return (
     <div className="s3-doc-list">
       <div className="s3-doc-toolbar">
@@ -179,7 +184,7 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
       )}
 
       {previewDoc && (
-        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} onRenamed={canEdit ? handleRenamed : undefined} />
       )}
     </div>
   )

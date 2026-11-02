@@ -3,12 +3,14 @@
 // второго объекта в бакете не бывает (server/osp-api/src/routes/s3Presign.js).
 //   загрузка — upload → PUT в хранилище (до 3 попыток, каждая с новой ссылкой на тот же ключ) →
 //              confirm (до 3 попыток) → строка s3_documents;
-//   удаление — delete: сервер удаляет сначала строку, затем объект; повтор безопасен (до 3 попыток).
+//   удаление — delete: сервер удаляет сначала строку, затем объект; повтор безопасен (до 3 попыток);
+//   переименование — rename: новое имя в строке, объект не меняется; повтор безопасен (до 3 попыток).
 // Модуль чистый: вызов сервера, fetch, хэш, ключ и паузы передаются извне (tests/osp-api/client.test.mjs).
 
 const PUT_ATTEMPTS = 3
 const CONFIRM_ATTEMPTS = 3
 const DELETE_ATTEMPTS = 3
+const RENAME_ATTEMPTS = 3
 // Крупнее — без sha256: SubtleCrypto читает файл в память целиком. Повтор узнаётся и без него — по
 // владельцу, имени, типу и размеру.
 export const HASH_MAX_BYTES = 256 * 1024 * 1024
@@ -103,5 +105,11 @@ export function createOspFiles({ call, fetchImpl, digest, newId, sleep = (ms) =>
     return withRetries(DELETE_ATTEMPTS, () => invoke({ action: 'delete', s3_key: s3Key }), retryable)
   }
 
-  return { upload, downloadUrl, remove }
+  async function rename(s3Key, fileName) {
+    const renamed = await withRetries(RENAME_ATTEMPTS,
+      () => invoke({ action: 'rename', s3_key: s3Key, file_name: fileName }), retryable)
+    return renamed.document
+  }
+
+  return { upload, downloadUrl, remove, rename }
 }

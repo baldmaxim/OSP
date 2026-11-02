@@ -1052,6 +1052,10 @@ function ObjectDetailPage() {
 
   // Открытие/скачивание/превью S3-файла из ячейки таблицы.
   const handlePreviewFile = (s3doc) => setPreviewDoc(s3doc)
+  const handleFileRenamed = (s3doc) => {
+    const rename = (file) => (file?.id === s3doc.id ? { ...file, file_name: s3doc.file_name } : file)
+    setDocuments(prev => prev.map(d => ({ ...d, signed: rename(d.signed), editable: rename(d.editable) })))
+  }
   const handleDownloadFile = async (s3doc) => {
     try {
       await downloadS3File(s3doc.s3_key, s3doc.file_name)
@@ -2677,7 +2681,7 @@ function ObjectDetailPage() {
 
       {/* Превью S3-файла */}
       {previewDoc && (
-        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} onRenamed={canEditObj ? handleFileRenamed : undefined} />
       )}
 
       {/* Модальное окно НДС при импорте сметы */}

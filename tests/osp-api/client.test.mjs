@@ -259,6 +259,16 @@ describe('src/api/ospFiles.js — загрузка с ключом операц�
     assert.equal(denied.calls.length, 1)
   })
 
+  it('переименование: ответ — строка документа; сбой сервера — повтор; отказ по правам — сразу', async () => {
+    const row = { id: 'd1', file_name: 'Новое.pdf' }
+    const flaky = setup({ rename: [httpError(502, { error: 'Bad gateway' }), { data: { document: row }, error: null }] })
+    assert.deepEqual(await flaky.files.rename('k', 'Новое.pdf'), row)
+    assert.deepEqual(flaky.calls[1], { action: 'rename', s3_key: 'k', file_name: 'Новое.pdf' })
+    const denied = setup({ rename: [httpError(403, { error: 'Нет права на файлы этого раздела' })] })
+    await assert.rejects(denied.files.rename('k', 'Новое.pdf'), /Нет права/)
+    assert.equal(denied.calls.length, 1)
+  })
+
   it('скачивание — ссылка как у функции: download и file_name только когда заданы', async () => {
     const { files, calls } = setup({ download: [{ data: { presigned_url: 'https://s3.test/get', expires_in: 3600 }, error: null }] })
     await files.downloadUrl('k')

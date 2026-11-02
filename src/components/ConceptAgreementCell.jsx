@@ -110,7 +110,7 @@ export default function ConceptAgreementCell({ files = [], contractId, canEdit =
       )}
 
       {previewDoc && (
-        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} onRenamed={canEdit ? () => onChanged?.() : undefined} />
       )}
     </div>
   )
