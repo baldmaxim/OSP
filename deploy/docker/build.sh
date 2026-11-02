@@ -42,7 +42,7 @@ done
 for bin in docker git sha256sum gzip; do command -v "$bin" >/dev/null || { echo "Нужен $bin" >&2; exit 1; }; done
 
 # Пути, из которых собираются образы и берутся файлы установки.
-BUILD_PATHS=(src public server/osp-api index.html vite.config.js release.json package.json package-lock.json deploy/publish.sh deploy/docker .dockerignore)
+BUILD_PATHS=(src public vendor server/osp-api index.html vite.config.js release.json package.json package-lock.json deploy/publish.sh deploy/docker .dockerignore)
 COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
 # Источник сборки. Обычно — выгрузка коммита; OSP_BUILD_DIRTY=1 (только для тестов) — рабочий каталог.
 if [ -n "${OSP_BUILD_DIRTY:-}" ]; then

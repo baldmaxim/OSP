@@ -234,14 +234,20 @@ export function RoleProvider({ children }) {
     if (error) throw error
     if (!data) return { row: null, counterparty: null }
     if (!data.counterparty_id) return { row: data, counterparty: null }
-    const { data: cp } = await db
-      .from('counterparties')
-      .select('id, name')
-      .eq('id', data.counterparty_id)
-      .maybeSingle()
+    // Название — функцией (миграция 20261201); функции ещё нет — чтением карточки, как раньше.
+    const { data: orgName } = await db.rpc('contractor_org_name')
+    let name = orgName
+    if (!name) {
+      const { data: cp } = await db
+        .from('counterparties')
+        .select('name')
+        .eq('id', data.counterparty_id)
+        .maybeSingle()
+      name = cp?.name
+    }
     return {
       row: data,
-      counterparty: cp ? { id: cp.id, name: cp.name } : { id: data.counterparty_id, name: 'Организация' },
+      counterparty: { id: data.counterparty_id, name: name || 'Организация' },
     }
   }, [])
 

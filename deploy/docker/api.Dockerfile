@@ -7,6 +7,7 @@
 FROM node:24-alpine AS deps
 WORKDIR /app
 COPY server/osp-api/package.json server/osp-api/package-lock.json ./
+COPY server/osp-api/vendor ./vendor
 RUN npm ci --omit=dev --no-audit --no-fund
 
 FROM node:24-alpine

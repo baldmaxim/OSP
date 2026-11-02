@@ -139,18 +139,23 @@ export function registerDbGateway(app, ctx) {
   // Барьер записи — общий с маршрутом файлов (src/lib/writeBarrier.js).
   const isReadOnly = ctx.isReadOnly || (() => false)
 
-  const handler = async (request, reply) => {
-    const send = (status, body) => reply.code(status).type('application/json; charset=utf-8').send(body)
+  const send = (reply, status, body) => reply.code(status).type('application/json; charset=utf-8').send(body)
+
+  // Всё, что решается без тела, — до его чтения: запрос, которому нельзя, не занимает память службы (тело до 50 МБ).
+  const admit = async (request, reply) => {
     // Шлюз не настроен (данные ещё в Supabase): маршрут есть, но закрыт.
-    if (!ctx.gatewayOn) return send(503, pgError('OSP_GATEWAY_OFF', 'Шлюз данных не настроен'))
+    if (!ctx.gatewayOn) return send(reply, 503, pgError('OSP_GATEWAY_OFF', 'Шлюз данных не настроен'))
     const [rawPath, rawQuery = ''] = request.raw.url.split('?', 2)
+    // Адрес шлюз и PostgREST должны читать одинаково: для PostgREST «;» — тоже разделитель параметров, для
+    // URLSearchParams — нет. Построитель запросов портала кодирует его как %3B.
+    if (rawQuery.includes(';')) return send(reply, 400, pgError('PGRST100', 'Недопустимый символ «;» в параметрах запроса'))
     const parts = rawPath.slice('/api/db/'.length).split('/')
     const kind = parts.length === 2 && parts[0] === 'rpc' ? 'rpc' : parts.length === 1 ? 'table' : null
     const name = kind === 'rpc' ? parts[1] : parts[0]
-    if (!kind || !IDENT.test(name || '')) return send(404, pgError('PGRST125', 'Invalid path specified in request URL'))
+    if (!kind || !IDENT.test(name || '')) return send(reply, 404, pgError('PGRST125', 'Invalid path specified in request URL'))
     const method = request.method
     if (kind === 'rpc' && method !== 'POST' && method !== 'GET' && method !== 'HEAD') {
-      return send(405, pgError('PGRST101', 'Only GET and POST verbs are allowed for rpc'))
+      return send(reply, 405, pgError('PGRST101', 'Only GET and POST verbs are allowed for rpc'))
     }
 
     // 1. Кто это.
@@ -159,38 +164,48 @@ export function registerDbGateway(app, ctx) {
       const p = await ctx.principal.resolve(request)
       if (p.kind === 'error') {
         if (p.clear) clearSessionCookies(reply)
-        return send(p.status, pgError(p.code, p.message))
+        return send(reply, p.status, pgError(p.code, p.message))
       }
       if (p.kind === 'user') {
         if (p.source === 'own') {
-          if (p.session.mustChange) return send(403, pgError('OSP_PASSWORD_CHANGE_REQUIRED', 'Смените временный пароль'))
+          if (p.session.mustChange) return send(reply, 403, pgError('OSP_PASSWORD_CHANGE_REQUIRED', 'Смените временный пароль'))
           const bad = csrfProblem(request, p, ctx.config.auth?.publicOrigin)
-          if (bad) return send(403, pgError('OSP_CSRF', bad))
+          if (bad) return send(reply, 403, pgError('OSP_CSRF', bad))
         }
         who = { role: 'authenticated', user: p.user }
       }
     } else if (request.headers.authorization) {
       const token = bearerToken(request.headers.authorization)
       const user = token ? await verifyUserToken(token) : null
-      if (!user) return send(401, pgError('PGRST301', 'JWT expired or invalid'))
+      if (!user) return send(reply, 401, pgError('PGRST301', 'JWT expired or invalid'))
       who = { role: 'authenticated', user }
+    }
+    // Без входа — лимит по адресу: вошедшие из одного офиса под него не попадают.
+    if (who.role === 'anon' && ctx.limiters?.dbAnon && !ctx.limiters.dbAnon.take(request.ip)) {
+      return send(reply.header('retry-after', '60'), 429, pgError('OSP_RATE_LIMIT', 'Слишком много запросов — повторите через минуту'))
     }
 
     // 2. Что можно.
     const params = new URLSearchParams(rawQuery)
     const prefer = String(request.headers.prefer || '')
     const denied = decide(allow, who.role, method, kind, name, { select: params.get('select') || '', prefer })
-    if (denied) return send(denied.status, denied.body)
+    if (denied) return send(reply, denied.status, denied.body)
 
     // 4. Барьер записи: читать можно, менять — нет (вызов функции — тоже возможное изменение).
     if (isReadOnly() && (kind === 'rpc' ? method === 'POST' : method !== 'GET' && method !== 'HEAD')) {
-      return send(503, pgError(READONLY_CODE, READONLY_TEXT))
+      return send(reply, 503, pgError(READONLY_CODE, READONLY_TEXT))
     }
+    request.dbCall = { kind, name, rawQuery, who }
+  }
+
+  const handler = async (request, reply) => {
+    const { kind, name, rawQuery, who } = request.dbCall
+    const method = request.method
 
     // Действия, которым нужно что-то сверх базы (учётки во входе Supabase) — до запроса.
     if (ctx.beforeGateway) {
       const stop = await ctx.beforeGateway({ kind, name, who, request })
-      if (stop) return send(stop.status, stop.body)
+      if (stop) return send(reply, stop.status, stop.body)
     }
 
     // 3. Запрос в PostgREST — со своим токеном.
@@ -204,7 +219,7 @@ export function registerDbGateway(app, ctx) {
       })
     } catch (err) {
       request.log.error({ route: GATEWAY_URL, msg: String(err?.cause?.code || err?.name || err).slice(0, 80) }, 'db gateway upstream')
-      return send(503, pgError('PGRST000', 'Сервис данных временно недоступен, повторите запрос'))
+      return send(reply, 503, pgError('PGRST000', 'Сервис данных временно недоступен, повторите запрос'))
     }
     reply.code(res.status)
     for (const h of RESPONSE_HEADERS) {
@@ -218,11 +233,13 @@ export function registerDbGateway(app, ctx) {
   app.register(async (scope) => {
     scope.removeAllContentTypeParsers()
     scope.addContentTypeParser('*', { parseAs: 'buffer', bodyLimit: GATEWAY_BODY_LIMIT }, (req, body, done) => done(null, body))
+    scope.decorateRequest('dbCall', null)
     scope.route({
       method: GATEWAY_METHODS,
       url: GATEWAY_URL,
       bodyLimit: GATEWAY_BODY_LIMIT,
       config: { access: access.open(GATEWAY_REASON) },
+      onRequest: admit,
       handler,
     })
   })

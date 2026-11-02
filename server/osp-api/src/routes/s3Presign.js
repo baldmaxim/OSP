@@ -25,8 +25,8 @@
 // Тот же operation_id с другим файлом (владелец, имя, тип, размер, sha256) — 409 OSP_KEY_REUSE.
 //
 // Доступ: токен пользователя Supabase; строки читаются и пишутся ПОД ЕГО токеном — действует RLS.
-// Одобренный и не заблокированный; подрядчику — только скачивание файлов своих договоров
-// (is_my_contract). Загрузка и удаление — если владелец существует и виден пользователю и есть право
+// Одобренный и не заблокированный; подрядчику — только скачивание: файлы своих договоров (is_my_contract) и
+// пакет, ВОР и РД тендера, которые ему показывает правило s3_documents. Загрузка и удаление — если владелец существует и виден пользователю и есть право
 // раздела (osp_can из Р2a, WRITE_RULES). Функции osp_can нет — 503: без проверки прав не пишем.
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
@@ -118,6 +118,9 @@ const CATEGORY_RE = /^[a-z0-9_]{1,64}$/
 const FINGERPRINT = ['owner_type', 'owner_id', 'file_name', 'mime_type', 'size_bytes', 'sha256']
 // Ошибки PostgREST «функции нет»: osp_can появляется с миграцией Р2a.
 const MISSING_FUNCTION = new Set(['PGRST202', '42883'])
+
+// Файлы тендера, которые подрядчику открывает правило s3_documents (портал: свой тендер или заявка не отклонена).
+const CONTRACTOR_TENDER_CATEGORIES = new Set(['tender_package', 'vor', 'rd', 'vor_statement'])
 
 const NO_RIGHT = 'Нет права на файлы этого раздела'
 const KEY_REUSE = { error: 'Этот ключ операции уже использован для другого файла', code: 'OSP_KEY_REUSE' }
@@ -255,12 +258,14 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
     const assertKeyAllowed = async (s3Key) => {
       const { data, error } = await supabase
         .from('s3_documents')
-        .select('id, owner_type, owner_id')
+        .select('id, owner_type, owner_id, doc_category')
         .eq('s3_key', s3Key)
         .maybeSingle()
       if (error) throw error
       if (!data) return false
       if (!isContractor) return true
+      // Подрядчик: строку файла тендера правила базы уже показали только ему; категории — вторым замком.
+      if (data.owner_type === 'tender') return CONTRACTOR_TENDER_CATEGORIES.has(data.doc_category)
       if (data.owner_type !== 'contract') return false
       const { data: mine, error: rpcError } = await supabase
         .rpc('is_my_contract', { contract_uuid: data.owner_id })

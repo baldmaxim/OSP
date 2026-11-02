@@ -425,6 +425,14 @@
         "update"
       ]
     },
+    "kp_manual_rates": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
     "kp_rates_registry": {
       "authenticated": [
         "select"
@@ -971,14 +979,6 @@
       "authenticated": [
         "select"
       ]
-    },
-    "kp_manual_rates": {
-      "authenticated": [
-        "delete",
-        "insert",
-        "select",
-        "update"
-      ]
     }
   },
   "rpc": {
@@ -1018,6 +1018,18 @@
     "can_see_task": [
       "authenticated"
     ],
+    "contractor_contracts": [
+      "authenticated"
+    ],
+    "contractor_kp_item_open": [
+      "authenticated"
+    ],
+    "contractor_org_name": [
+      "authenticated"
+    ],
+    "contractor_set_participation": [
+      "authenticated"
+    ],
     "current_counterparty_id": [
       "authenticated"
     ],
@@ -1046,6 +1058,9 @@
       "authenticated"
     ],
     "kp_norm_unit": [
+      "authenticated"
+    ],
+    "kp_rates_lookup": [
       "authenticated"
     ],
     "list_sto_employees": [
@@ -1232,9 +1247,6 @@
       "authenticated"
     ],
     "vor_requests_can_access": [
-      "authenticated"
-    ],
-    "kp_rates_lookup": [
       "authenticated"
     ]
   }

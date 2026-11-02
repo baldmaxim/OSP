@@ -225,6 +225,17 @@ CSS variables defined for `[data-theme="light"]` and `[data-theme="dark"]` in `i
   колонка «НДС» в сводке администратора. Поле НДС не удалить и не скрыть.
 - **Особые условия** «Главного листа» файла ВОР (блок «Особые условия, которые…»: ГУ, гарантия, шаблон договора) —
   подрядчику над вкладками расценки (`readMainConditions`, строки под заголовком до пустой строки или анкеты).
+- **Что база отдаёт подрядчику** (миграция 20261201, обе базы): сведения о тендерах, договорах и своей организации — только
+  функциями с перечнем полей (`bid_contractor_tenders`, `contractor_contracts`, `contractor_org_name`), отметка участия
+  («КП загружено», «Отказ», пока идёт приём) — `contractor_set_participation`. Правил подрядчика на `tenders`, `objects`,
+  `contracts`, `contract_counterparties`, `counterparties`, `tender_counterparties` нет и возвращать их нельзя: какие поля
+  видит подрядчик, задаёт только перечень в функции. Смета, свои КП, файлы и
+  согласование договора — правилами, как раньше; свои КП (`tender_counterparty_proposals`) он загружает и заменяет, пока идёт
+  приём (`bid_tender_open`), только на позиции этого тендера; потом КП меняет сотрудник. Файлы: пакет, ВОР и РД тендера osp-api
+  отдаёт подрядчику, если строку `s3_documents` показало правило, и файлы своих договоров. Нет функции (база раньше миграции)
+  или просмотр от имени роли — чтение таблиц, как прежде. База Яндекса — `migration/yandex/20261201_contractor_access.sql`;
+  проверка — `migration/backup/checks/20261201.sql`, откат — `migration/rollback/20261201_contractor_access_rollback.sql`,
+  тест — `tests/tender/contractor-access-db.test.mjs` (слепок и копия под одной учёткой).
 - **Права** (обе базы): заявки читают сотрудник и организация; цены и анкету — `is_admin()` и организация; поля анкеты —
   сотрудник и подрядчик с организацией, правит администратор; прямой записи нет; гостю — ничего. Закрытый тендер — только
   чтение. База Яндекса — `migration/yandex/20261102_contractor_bids.sql`; проверка — `migration/backup/checks/20261102.sql`,
@@ -1026,6 +1037,9 @@ curl -H "X-API-Key: <ключ>" \
 
 ## Excel Import/Export (xlsx)
 
+SheetJS — файлом `vendor/xlsx-0.20.3.tgz` (и `server/osp-api/vendor/`): на npm версий с исправлениями нет, а сборка на
+сервере не должна зависеть от CDN SheetJS. Обновление — новый файл из `cdn.sheetjs.com` и правка `package.json` в обоих местах.
+
 Used in `TenderDetailPage.jsx`, `ContractorProposalsPage.jsx`, and BSM pages:
 
 ```javascript
@@ -1085,7 +1099,6 @@ Tables support fullscreen toggle with Escape key listener. See TenderDetailPage 
 
 Collapsible sections with expand state initialized from current route path.
 
-### Props-Based Filtering
 **Свёрнутое меню** (29.10.2026, решение пользователя): на компьютере кнопка-шеврон без подписи в правом верхнем углу
 шапки сворачивает меню до колонки иконок (52px вместо 200px — рабочая область шире). Анимация ширины 180 мс, иконки
 стоят на тех же местах, подписи гаснут (название — в подсказке), логотип уходит по высоте плавно (grid 1fr → 0fr),
@@ -1099,6 +1112,7 @@ Collapsible sections with expand state initialized from current route path.
 процентах. Правило — «Ширина» в docs/UI_GUIDELINES.md.
 Тест — `tests/tender/sidebar-collapse.test.mjs` (стенд `shell=1&sidebar=1`).
 
+### Props-Based Filtering
 
 `TendersPage` uses `department` prop ('construction' | 'warranty') for filtering by object status. The component maps this to `objectStatus`:
 - `'construction'` → `'main_construction'`

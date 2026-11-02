@@ -47,6 +47,8 @@ export const DEFAULT_LIMITS = {
   // перебор одной учётки останавливает счётчик по почте в базе); действия администратора с учётками.
   loginPerIp: { max: 60, windowMs: 10 * 60_000 },
   authAdminPerUser: { max: 30, windowMs: 60_000 },
+  // Шлюз данных без входа: публичной странице хватает пары запросов на просмотр.
+  dbAnonPerIp: { max: 300, windowMs: 60_000 },
   aiPerUser: { max: 6, windowMs: 60_000 }, // платный ИИ: 6 запросов в минуту на пользователя
   aiConcurrentPerUser: 1,
   aiConcurrentTotal: 4,

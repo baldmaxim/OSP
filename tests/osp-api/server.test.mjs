@@ -61,6 +61,8 @@ function supabaseState() {
       [`contracts/${CONTRACT_MINE}/x.docx`]: { row: { id: 'd2', owner_type: 'contract', owner_id: CONTRACT_MINE }, visibleTo: 'all' },
       [`contracts/${CONTRACT_OTHER}/y.docx`]: { row: { id: 'd3', owner_type: 'contract', owner_id: CONTRACT_OTHER }, visibleTo: 'all' },
       'tenders/t2/shared.pdf': { row: { id: 'd4', owner_type: 'tender', owner_id: TENDER_HIDDEN }, visibleTo: 'all' },
+      'tenders/t3/vor.xlsx': { row: { id: 'd6', owner_type: 'tender', owner_id: TENDER_HIDDEN, doc_category: 'vor_statement' }, visibleTo: 'all' },
+      'tenders/t3/hidden-vor.xlsx': { row: { id: 'd7', owner_type: 'tender', owner_id: TENDER_HIDDEN, doc_category: 'vor_statement' }, visibleTo: [U.emp.id] },
       [`general-documents/${GDOC_1}/g.pdf`]: { row: { id: 'd5', owner_type: 'general_document', owner_id: GDOC_1 }, visibleTo: 'all' },
     },
     // Права разделов (osp_can): инженер — тендеры, договоры, документы, объекты; зритель — только чтение.
@@ -228,6 +230,13 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       const res = await fn('s3-presign', U.emp, { action: 'download', s3_key: 'tenders/t1/a-plan.pdf', file_name: 'План работ.pdf', download: true })
       const cd = new URL(res.json().presigned_url).searchParams.get('response-content-disposition')
       assert.equal(cd, `attachment; filename="Plan_rabot.pdf"; filename*=UTF-8''${encodeURIComponent('План работ.pdf')}`)
+    })
+
+    it('подрядчик: файл ВОР тендера — если строку показали правила базы; прочие категории и скрытые строки — нет', async () => {
+      const get = (s3_key) => fn('s3-presign', U.contractor, { action: 'download', s3_key })
+      assert.equal((await get('tenders/t3/vor.xlsx')).statusCode, 200, 'пакет, ВОР и РД')
+      assert.equal((await get('tenders/t3/hidden-vor.xlsx')).statusCode, 404, 'строка не видна правилам базы')
+      assert.equal((await get('tenders/t2/shared.pdf')).statusCode, 404, 'другая категория файла тендера')
     })
 
     it('подрядчик: только скачивание и только файлов своих договоров', async () => {

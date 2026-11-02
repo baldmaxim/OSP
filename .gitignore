@@ -61,6 +61,9 @@ web_modules/
 
 # Output of 'npm pack'
 *.tgz
+# SheetJS поставляется файлом (на npm версий с исправлениями нет): сборка на сервере не зависит от его CDN.
+!vendor/xlsx-*.tgz
+!server/osp-api/vendor/xlsx-*.tgz
 
 # Yarn Integrity file
 .yarn-integrity

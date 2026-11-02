@@ -421,6 +421,7 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   const limiters = {
     loginIp: createRateLimit(limits.loginPerIp || DEFAULT_LIMITS.loginPerIp),
     authAdmin: createRateLimit(limits.authAdminPerUser || DEFAULT_LIMITS.authAdminPerUser),
+    dbAnon: createRateLimit(limits.dbAnonPerIp || DEFAULT_LIMITS.dbAnonPerIp),
     aiRate: createRateLimit(limits.aiPerUser),
     aiUser: createConcurrency(limits.aiConcurrentPerUser),
     aiTotal: createConcurrency(limits.aiConcurrentTotal),

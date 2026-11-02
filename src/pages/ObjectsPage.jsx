@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
 import { loadObjectsExportData } from '../services/objectsExport'
 import { buildObjectsExportSheets, buildObjectsWorkbook } from '../utils/objectsExport'
+import { loadYandexMaps } from '../utils/yandexMaps'
 import '../components/GeneralInfo.css'
 
 // Глобальная переменная для хранения экземпляра карты
@@ -273,16 +274,23 @@ function ObjectsPage() {
 
   useEffect(() => {
     if (showMapModal && objects.length > 0) {
+      let closed = false
       const timer = setTimeout(() => {
-        if (window.ymaps) {
-          console.log('Инициализация/обновление карты...')
-          window.ymaps.ready(() => {
-            initMap()
+        loadYandexMaps()
+          .then((ymaps) => {
+            if (closed || !ymaps) return
+            console.log('Инициализация/обновление карты...')
+            ymaps.ready(() => {
+              initMap()
+            })
           })
-        }
+          .catch((err) => console.error(err.message))
       }, 100)
 
-      return () => clearTimeout(timer)
+      return () => {
+        closed = true
+        clearTimeout(timer)
+      }
     }
 
     return () => {

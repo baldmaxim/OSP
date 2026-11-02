@@ -12,6 +12,7 @@
 FROM node:24-alpine AS build
 WORKDIR /src
 COPY package.json package-lock.json ./
+COPY vendor ./vendor
 RUN npm ci --no-audit --no-fund
 COPY index.html vite.config.js release.json ./
 COPY public ./public
@@ -37,6 +38,7 @@ COPY deploy/publish.sh /opt/osp/publish.sh
 COPY deploy/docker/web/entrypoint.sh /opt/osp/entrypoint.sh
 COPY deploy/docker/web/nginx.conf /etc/nginx/nginx.conf
 COPY deploy/docker/web/site.conf /etc/nginx/conf.d/site.conf
+COPY deploy/docker/web/security-headers.conf deploy/docker/web/csp.conf /etc/nginx/osp/
 USER nginx
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

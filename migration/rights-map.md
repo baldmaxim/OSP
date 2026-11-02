@@ -122,16 +122,15 @@ BSMContractorRatesPage, BSMRatesPage, BSMComparisonPage, BSMSelectionPage, Contr
 | general (расценка реестра КП, добавленная вручную, `kp_manual_rates`, `doc_category='kp_manual_rate'`, 20261122) | E(rates_registry) |
 
 ## Кабинет подрядчика (организация — `user_roles.counterparty_id`)
-- **Читает:** свою строку `user_roles`, свою `counterparties`, `roles`, свои `tender_counterparties` (+ тендеры
-  и объекты), свои `contracts` и через `contract_counterparties`, `contract_clauses`, `tender_estimate_items`
-  приглашённого тендера, `s3_documents` тендера (пакет, РД, ВОР) и договора, свои
-  `tender_counterparty_proposals`, свои `contract_clause_disputes` и комментарии к ним.
-- **Пишет:** свои предложения (удалить и вставить), `tender_counterparties.status` (`proposal_provided` /
-  `declined`), разногласия (вставка, только `counterparty_text`), комментарии, свою строку `user_roles` при
-  первом входе.
+- **Читает:** свою строку `user_roles`, `roles`, `contract_clauses`, `tender_estimate_items` приглашённого тендера,
+  `s3_documents` тендера (пакет, РД, ВОР) и договора, свои `tender_counterparty_proposals`, свои
+  `contract_clause_disputes` и комментарии к ним. Тендеры, договоры и название организации — функциями
+  `bid_contractor_tenders`, `contractor_contracts`, `contractor_org_name` (20261201): только перечисленные поля.
+- **Пишет:** свои предложения (удалить и вставить, пока идёт приём), отметку участия функцией
+  `contractor_set_participation` (`proposal_provided` / `declined`, пока идёт приём), разногласия (вставка, только
+  `counterparty_text`), комментарии, свою строку `user_roles` при первом входе.
 - **Опирается только на подрядческие политики** — широкие ему не нужны.
-- `s3-presign` сейчас отдаёт подрядчику только файлы договоров: документы тендера из кабинета не
-  скачиваются (Р2f).
+- `s3-presign` отдаёт подрядчику файлы договоров и пакет, РД и ВОР тендера, если строку показало правило `s3_documents`.
 
 ## Витрина (`PublicTendersPage`, аноним)
 `tenders`: id, public_tender_number, work_description, даты, status, tender_package_link, tender_type,

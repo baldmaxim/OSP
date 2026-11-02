@@ -358,7 +358,23 @@ networks:
     assert.equal(JSON.parse(https('/version.json').stdout).buildId, buildId)
     assert.equal(JSON.parse(https('/config.json').stdout).marker, 'osp-docker-test', 'флаги — файл на сервере, вне образа')
     assert.match(https('/tenders/construction').stdout, /<div id="root">/, 'адреса страниц отдают сайт')
-    const asset = docker(['compose', '-p', PROJECT, 'exec', '-T', 'osp-web', 'sh', '-c', 'ls /var/www/osp/assets | head -n 1']).stdout.trim()
+    // Заголовки защиты браузера: на страницах, файлах сборки и /api; политика содержимого — на страницах.
+    const pageHeaders = https('/tenders/construction', ['-D', '-', '-o', '/dev/null']).stdout
+    const healthHeaders = https('/api/health', ['-D', '-', '-o', '/dev/null']).stdout
+    for (const headers of [pageHeaders, healthHeaders]) {
+      assert.match(headers, /strict-transport-security: max-age=31536000\s/i)
+      assert.match(headers, /x-content-type-options: nosniff/i)
+      assert.match(headers, /x-frame-options: SAMEORIGIN/i)
+      assert.match(headers, /referrer-policy: strict-origin-when-cross-origin/i)
+    }
+    const csp = /content-security-policy: (.*)/i.exec(pageHeaders)?.[1] || ''
+    const scriptSrc = /script-src ([^;]*)/.exec(csp)?.[1] || ''
+    assert.match(scriptSrc, /'self'/)
+    assert.ok(!scriptSrc.includes("'unsafe-inline'"), 'встроенные скрипты и javascript: не выполняются')
+    assert.match(csp, /object-src 'none'/)
+    assert.match(csp, /base-uri 'self'/)
+    assert.match(csp, /frame-ancestors 'self'/)
+    const asset =docker(['compose', '-p', PROJECT, 'exec', '-T', 'osp-web', 'sh', '-c', 'ls /var/www/osp/assets | head -n 1']).stdout.trim()
     assert.match(https(`/assets/${asset}`, ['-D', '-', '-o', '/dev/null']).stdout, /cache-control: public, immutable/i)
     assert.equal(code(`https://osp.root.sx:${p443}/assets/no-such-file.js`), '404')
     // Самоудаление service worker прежнего сайта (public/sw.js): скрипт, без кэша — браузер должен получить его.

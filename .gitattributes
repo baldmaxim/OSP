@@ -8,6 +8,7 @@
 
 # Двоичные файлы — без преобразований.
 *.png binary
+*.tgz binary
 *.jpg binary
 *.jpeg binary
 *.gif binary

@@ -26,6 +26,10 @@ it('служба импортирует общий код только из св
     }
   }
   const pkg = JSON.parse(fs.readFileSync(path.join(DEST_DIR, '..', '..', 'package.json'), 'utf8'))
-  const root = JSON.parse(fs.readFileSync(path.join(DEST_DIR, '..', '..', '..', '..', 'node_modules', 'xlsx', 'package.json'), 'utf8'))
-  assert.equal(pkg.dependencies.xlsx, root.version, 'та же версия библиотеки Excel, что у сайта')
+  const repo = path.join(DEST_DIR, '..', '..', '..', '..')
+  const rootPkg = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8'))
+  assert.equal(pkg.dependencies.xlsx, rootPkg.dependencies.xlsx, 'та же версия библиотеки Excel, что у сайта')
+  // Библиотека поставляется файлом (vendor/): у сайта и службы он один и тот же, побайтно.
+  const file = pkg.dependencies.xlsx.replace(/^file:/, '')
+  assert.ok(fs.readFileSync(path.join(repo, file)).equals(fs.readFileSync(path.join(repo, 'server', 'osp-api', file))), 'файл библиотеки Excel у сайта и службы')
 })

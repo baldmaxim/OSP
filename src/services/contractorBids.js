@@ -41,6 +41,30 @@ export async function requestParticipation(tenderId) {
   return unwrap(await db.rpc('bid_request', { p_tender: tenderId }))
 }
 
+// Договоры кабинета (миграция 20261201) или null: функции ещё нет либо просмотр от имени роли (запросы идут под
+// администратором, у него нет организации) — тогда страница читает таблицу, как раньше.
+export async function loadCabinetContracts() {
+  const { data, error } = await db.rpc('contractor_contracts')
+  if (error) {
+    if (isMissingBids(error) || error.code === '42501') return null
+    throw error
+  }
+  return (data || []).map(({ object_name: objectName, ...c }) => ({ ...c, objects: { name: objectName } }))
+}
+
+// Отметка участия: 'proposal_provided' | 'declined'. Функции ещё нет — прямая запись, как раньше.
+export async function setParticipationStatus(tenderId, counterpartyId, status) {
+  const { error } = await db.rpc('contractor_set_participation', { p_tender: tenderId, p_status: status })
+  if (!error) return
+  if (!isMissingBids(error)) throw error
+  const direct = await db
+    .from('tender_counterparties')
+    .update({ status })
+    .eq('tender_id', tenderId)
+    .eq('counterparty_id', counterpartyId)
+  if (direct.error) throw direct.error
+}
+
 export const BID_DOC_CATEGORIES = ['tender_package', 'vor', 'rd', 'vor_statement']
 export const VOR_CATEGORIES = ['vor_statement', 'vor']
 

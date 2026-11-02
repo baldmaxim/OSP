@@ -11,10 +11,12 @@
 !release.json
 !src/
 !public/
+!vendor/
 !deploy/publish.sh
 !deploy/docker/web/
 
 # Свой API
 !server/osp-api/package.json
 !server/osp-api/package-lock.json
+!server/osp-api/vendor/
 !server/osp-api/src/

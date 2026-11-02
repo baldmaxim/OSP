@@ -177,6 +177,28 @@ describe('Кабинет подрядчика: расценка на сайте'
       await page.locator('.cab-chip', { hasText: 'Приём предложений закрыт' }).waitFor({ timeout: 60000 })
       assert.equal(await page.getByRole('button', { name: 'Участвовать и расценить' }).count(), 0)
       await page.locator('.bid-save', { hasText: 'Только просмотр' }).waitFor()
+      assert.equal(await page.getByRole('button', { name: 'Отказаться от участия' }).count(), 0, 'приём закрыт — отметку участия не менять')
+      assert.equal(await page.getByText('Загрузить КП').count(), 0, 'приём закрыт — КП не загрузить')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('отметка участия и договоры — функциями кабинета, без прямых обращений к таблицам организации, тендеров и договоров', async () => {
+    const { page, errors, close } = await open()
+    try {
+      await page.locator('.cab-card', { hasText: 'Тендер № 905' }).click()
+      await page.getByRole('button', { name: 'Отказаться от участия' }).click()
+      await page.waitForFunction(() => window.__bidCalls.some((c) => c.fn === 'contractor_set_participation'))
+      assert.deepEqual(await calls(page, 'contractor_set_participation'), [{ fn: 'contractor_set_participation', p_tender: 't-inv', p_status: 'declined' }])
+      await page.locator('.cab-tab', { hasText: 'Договоры' }).click()
+      await page.locator('.cab-card', { hasText: 'Договор № ДП-15' }).waitFor({ timeout: 60000 })
+      await page.locator('.cab-card', { hasText: 'ЖК Primavera к14' }).waitFor()
+      const direct = await page.evaluate(() => window.__supabaseStats.requests.map((r) => r.table))
+      for (const table of ['tenders', 'objects', 'contracts', 'contract_counterparties', 'counterparties', 'tender_counterparties']) {
+        assert.ok(!direct.includes(table), `прямое обращение к ${table}`)
+      }
       assert.deepEqual(errors, [])
     } finally {
       await close()

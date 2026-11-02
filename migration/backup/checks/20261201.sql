@@ -1,0 +1,38 @@
+-- Проверка после 20261201_contractor_access.sql. Каждая строка — «OK …» или «FAIL …».
+-- Только чтение. Выполняется на копии (rehearse.sh) и на проде в SQL Editor после миграции.
+-- До миграции отвечает FAIL, а не падает: объекты ищутся через to_regprocedure и каталоги.
+with
+closed(tbl) as (values ('tenders'), ('objects'), ('contracts'), ('contract_counterparties'), ('counterparties'), ('tender_counterparties')),
+pol as (
+  select tablename, policyname, cmd, coalesce(qual, '') as qual, coalesce(with_check, '') as chk from pg_policies
+  where schemaname = 'public'
+),
+fn(sig) as (values ('public.contractor_org_name()'), ('public.contractor_contracts()'),
+  ('public.contractor_set_participation(uuid,text)'), ('public.contractor_kp_item_open(uuid,uuid)')),
+checks(n, ok, what) as (
+  select 1, not exists (select 1 from pol where tablename in (select tbl from closed) and policyname in ('portal_contractor_select', 'portal_contractor_update')),
+         'прямых правил подрядчика на тендеры, объекты, договоры, организацию и строку участия нет'
+  union all
+  select 2, (select count(*) from fn join pg_proc p on p.oid = to_regprocedure(fn.sig) where p.prosecdef) = 4,
+         'функции кабинета на месте, с правами владельца'
+  union all
+  select 3, (select count(*) from fn where to_regprocedure(fn.sig) is not null
+               and has_function_privilege('authenticated', to_regprocedure(fn.sig), 'EXECUTE')
+               and not has_function_privilege('anon', to_regprocedure(fn.sig), 'EXECUTE')) = 4,
+         'функции вызывает вошедший, гость — нет'
+  union all
+  select 4, exists (select 1 from pol where tablename = 'tender_counterparty_proposals' and policyname = 'portal_contractor_insert' and cmd = 'INSERT'
+                      and chk like '%contractor_kp_item_open(tender_id, estimate_item_id)%' and chk like '%is_my_tender(tender_id)%')
+            and exists (select 1 from pol where tablename = 'tender_counterparty_proposals' and policyname = 'portal_contractor_delete' and cmd = 'DELETE'
+                          and qual like '%bid_tender_open(tender_id)%' and qual like '%current_counterparty_id()%'),
+         'свои КП подрядчик меняет, только пока идёт приём'
+  union all
+  select 5, (select count(*) from pol where policyname = 'portal_contractor_select'
+               and tablename in ('tender_counterparty_proposals', 'tender_estimate_items', 's3_documents')) = 3,
+         'смета, файлы и свои КП подрядчику видны, как раньше'
+  union all
+  select 6, (select count(*) from pol where policyname = 'portal_employee_all'
+               and tablename in ('tenders', 'contracts', 'contract_counterparties', 'tender_counterparties', 'tender_counterparty_proposals')) = 5,
+         'правила сотрудников на месте'
+)
+select case when ok then 'OK' else 'FAIL' end || ' ' || what from checks order by n;

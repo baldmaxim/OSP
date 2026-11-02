@@ -86,6 +86,9 @@ const TENDERS = [
   { id: 't-mine', public_tender_number: 704, work_description: 'Слаботочные системы', tender_status: 'Подведение итогов', is_open: false,
     object_name: 'ЖК Примавера', object_address: 'Москва', responsible_name: 'Петров П. П.', responsible_phone: null,
     tender_start_date: null, tender_end_date: '2026-10-01', start_date: null, end_date: null, tender_package_link: null, invite: 'proposal_provided' },
+  { id: 't-inv', public_tender_number: 905, work_description: 'Фасадные работы', tender_status: 'Идет тендерная процедура', is_open: true,
+    object_name: 'ЖК Примавера', object_address: 'Москва', responsible_name: 'Петров П. П.', responsible_phone: null,
+    tender_start_date: null, tender_end_date: '2026-12-01', start_date: null, end_date: null, tender_package_link: null, invite: 'request_sent' },
 ]
 
 const keyOf = (r) => `${r.kind}|${r.item_key}|${r.unit_key || ''}`
@@ -93,6 +96,15 @@ const ok = (data) => ({ data, error: null })
 
 window.__bidCalls = []
 window.__fakeRpc = {
+  contractor_contracts: () => ok([{
+    id: 'c-1', display_id: 15, contract_number: 'ДП-15', contract_date: '2026-09-01', work_name: 'Монолит паркинга',
+    status: 'signed', contract_amount: 1000000, currency: 'RUB', object_name: 'ЖК Primavera к14',
+  }]),
+  contractor_set_participation: ({ p_tender, p_status }) => {
+    window.__bidCalls.push({ fn: 'contractor_set_participation', p_tender, p_status })
+    TENDERS.find((t) => t.id === p_tender).invite = p_status
+    return ok(null)
+  },
   bid_contractor_tenders: () => ok(TENDERS.map((t) => {
     const req = db.tender_bid_requests.find((r) => r.tender_id === t.id && r.counterparty_id === CP.id)
     const rates = db.tender_bid_rates.filter((r) => r.tender_id === t.id && r.price != null)

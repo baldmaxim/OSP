@@ -7,7 +7,7 @@ import { fetchAllRows } from '../utils/fetchAllRows'
 import { downloadS3File } from '../components/FileDownload'
 import { buildProposalWorkbook, matchProposalRows } from '../utils/contractorProposal'
 import S3DocumentPreview from '../components/S3DocumentPreview'
-import { loadCabinetTenders, requestParticipation } from '../services/contractorBids'
+import { loadCabinetTenders, loadCabinetContracts, requestParticipation, setParticipationStatus } from '../services/contractorBids'
 import { phoneHref } from '../utils/siteContacts'
 import './ContractorCabinetPage.css'
 
@@ -23,7 +23,8 @@ const BidWorkspace = lazy(() => import('../components/contractor/BidWorkspace'))
 //
 // Организация берётся из user_roles.counterparty_id (RoleContext), а не из
 // выбора на форме входа. Доступ к данным ограничен политиками БД (миграции
-// 20260913/20260914) — интерфейс не «прячет чужое», его просто не отдают.
+// 20260913/20260914) — интерфейс не «прячет чужое», его просто не отдают. Сведения о тендерах, договорах и
+// организации — функциями с перечнем полей (миграция 20261201): правило по строкам колонки не ограничивает.
 
 const PARTICIPATION_LABEL = {
   request_sent: 'Приглашение отправлено',
@@ -146,14 +147,35 @@ function ContractorCabinetPage() {
     }
     const { data, error } = await db
       .from('tender_counterparties')
-      .select('tender_id, status, notes, tenders(id, public_tender_number, work_description, status, tender_start_date, tender_end_date, objects(name, address))')
+      .select('tender_id, status, tenders(id, public_tender_number, work_description, status, tender_start_date, tender_end_date, objects(name, address))')
       .eq('counterparty_id', cpId)
     if (error) throw error
     const list = (data || [])
       .filter(p => p.tenders)
-      .map(p => ({ ...p.tenders, participationStatus: p.status, participationNote: p.notes, access: 'invited' }))
+      .map(p => ({ ...p.tenders, participationStatus: p.status, access: 'invited' }))
       .sort((a, b) => (b.tender_end_date || '').localeCompare(a.tender_end_date || ''))
     return { list, bids: false }
+  }, [cpId])
+
+  // Договоры организации: функцией (миграция 20261201). Функции нет или просмотр от имени роли — чтением таблиц:
+  // основная сторона + многосторонние (в contract_counterparties).
+  const loadContractList = useCallback(async () => {
+    const rows = await loadCabinetContracts()
+    if (rows) return rows
+    const columns = 'id, display_id, contract_number, contract_date, work_name, status, contract_amount, currency, objects(name), deleted_at'
+    const [ownContracts, partyRows] = await Promise.all([
+      db.from('contracts').select(columns).eq('counterparty_id', cpId).is('deleted_at', null),
+      db.from('contract_counterparties').select('contract_id').eq('counterparty_id', cpId),
+    ])
+    const extraIds = [...new Set((partyRows.data || []).map(r => r.contract_id))]
+    const known = new Set((ownContracts.data || []).map(c => c.id))
+    const missing = extraIds.filter(id => !known.has(id))
+    let extra = []
+    if (missing.length > 0) {
+      const { data } = await db.from('contracts').select(columns).in('id', missing).is('deleted_at', null)
+      extra = data || []
+    }
+    return [...(ownContracts.data || []), ...extra]
   }, [cpId])
 
   // ── Загрузка: тендеры и договоры организации ──────────────────────────────
@@ -162,37 +184,13 @@ function ContractorCabinetPage() {
     setLoading(true)
     setLoadError('')
     try {
-      const [tenderList, ownContracts, partyRows] = await Promise.all([
-        loadTenderList(),
-        db
-          .from('contracts')
-          .select('id, display_id, contract_number, contract_date, work_name, status, contract_amount, currency, objects(name), deleted_at')
-          .eq('counterparty_id', cpId)
-          .is('deleted_at', null),
-        db
-          .from('contract_counterparties')
-          .select('contract_id')
-          .eq('counterparty_id', cpId),
-      ])
+      const [tenderList, contractList] = await Promise.all([loadTenderList(), loadContractList()])
       const invites = tenderList.list
       setBidsEnabled(tenderList.bids)
       setInvitations(invites)
       setActiveTenderId(prev => (prev && invites.some(t => t.id === prev) ? prev : (invites.find(t => t.access) || invites[0])?.id || null))
 
-      // Договоры: основная сторона + многосторонние (в contract_counterparties).
-      const extraIds = [...new Set((partyRows.data || []).map(r => r.contract_id))]
-      const known = new Set((ownContracts.data || []).map(c => c.id))
-      const missing = extraIds.filter(id => !known.has(id))
-      let extra = []
-      if (missing.length > 0) {
-        const { data } = await db
-          .from('contracts')
-          .select('id, display_id, contract_number, contract_date, work_name, status, contract_amount, currency, objects(name), deleted_at')
-          .in('id', missing)
-          .is('deleted_at', null)
-        extra = data || []
-      }
-      const allContracts = [...(ownContracts.data || []), ...extra]
+      const allContracts = [...contractList]
         .sort((a, b) => (b.contract_date || '').localeCompare(a.contract_date || ''))
       setContracts(allContracts)
       setActiveContractId(prev => prev || allContracts[0]?.id || null)
@@ -211,7 +209,7 @@ function ContractorCabinetPage() {
     } finally {
       setLoading(false)
     }
-  }, [cpId, loadTenderList])
+  }, [cpId, loadTenderList, loadContractList])
 
   useEffect(() => { loadAll() }, [loadAll])
 
@@ -334,12 +332,8 @@ function ContractorCabinetPage() {
       if (error) throw error
 
       // Статус участия — значение ENUM tender_counterparty_status.
-      const { error: statusError } = await db
-        .from('tender_counterparties')
-        .update({ status: 'proposal_provided' })
-        .eq('tender_id', activeTender.id)
-        .eq('counterparty_id', cpId)
-      if (statusError) console.error('Статус участия:', statusError.message)
+      await setParticipationStatus(activeTender.id, cpId, 'proposal_provided')
+        .catch((statusError) => console.error('Статус участия:', statusError.message))
 
       setUploadNote({
         kind: skippedAmbiguous > 0 ? 'warn' : 'ok',
@@ -351,7 +345,12 @@ function ContractorCabinetPage() {
       await loadTenderDetails()
     } catch (err) {
       console.error('Загрузка КП:', err)
-      setUploadNote({ kind: 'warn', text: 'Не удалось загрузить КП: ' + (err.message || err) })
+      setUploadNote({
+        kind: 'warn',
+        text: err?.code === '42501'
+          ? 'Не удалось загрузить КП: приём предложений по этому тендеру закрыт.'
+          : 'Не удалось загрузить КП: ' + (err.message || err),
+      })
     } finally {
       setUploading(false)
     }
@@ -361,12 +360,7 @@ function ContractorCabinetPage() {
     if (!activeTender || !cpId) return
     if (!window.confirm('Отказаться от участия в этом тендере? Отметку увидит отдел сопровождения подрядчиков.')) return
     try {
-      const { error } = await db
-        .from('tender_counterparties')
-        .update({ status: 'declined' })
-        .eq('tender_id', activeTender.id)
-        .eq('counterparty_id', cpId)
-      if (error) throw error
+      await setParticipationStatus(activeTender.id, cpId, 'declined')
       await loadAll()
     } catch (err) {
       alert('Не удалось изменить статус: ' + (err.message || err))
@@ -637,7 +631,7 @@ function ContractorCabinetPage() {
                   )}
 
                   {/* Подача КП по шаблону — прежний путь: смета во вкладке «ВОР» карточки (в новых тендерах её нет) */}
-                  {(!bidsEnabled || pricedItems.length > 0) && activeTender.access === 'invited' && (
+                  {(!bidsEnabled || pricedItems.length > 0) && activeTender.access === 'invited' && activeTender.isOpen !== false && (
                   <section className="cab-section">
                     <h3>Коммерческое предложение</h3>
                     {pricedItems.length === 0 ? (
@@ -702,7 +696,7 @@ function ContractorCabinetPage() {
                     </section>
                   )}
 
-                  {activeTender.access === 'invited' && activeTender.participationStatus && activeTender.participationStatus !== 'declined' && (
+                  {activeTender.access === 'invited' && activeTender.isOpen !== false && activeTender.participationStatus && activeTender.participationStatus !== 'declined' && (
                     <div className="cab-decline">
                       <button type="button" className="cab-btn cab-btn-ghost" onClick={handleDecline}>
                         Отказаться от участия

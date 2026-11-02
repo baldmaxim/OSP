@@ -125,11 +125,11 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
     dbGateway: { upstream: upstream.url, secret: GATEWAY_SECRET, dbRole: 'portal_owner', readOnlyFile: path.join(tmp, 'db-readonly') },
     ...over,
   })
-  async function makeApp(over = {}) {
+  async function makeApp(over = {}, limits = undefined) {
     await app?.close()
     logs = []
     const { defaultDeps } = await import(path.join(SERVER, 'src', 'app.js'))
-    app = buildApp({ config: config(over), logger: { level: 'info', stream: { write: (l) => logs.push(l) } },
+    app = buildApp({ config: config(over), logger: { level: 'info', stream: { write: (l) => logs.push(l) } }, ...(limits ? { limits } : {}),
       deps: { ...defaultDeps, allow: ALLOW, createLoadStatus: () => ({ current: async () => loadState }), createAuthAdmin: () => ({
         deleteUser: async (id) => { authAdminCalls.push(['deleteUser', id, seen.length]); if (authAdminFails) throw new Error('auth 500') },
         confirmEmail: async (id) => { authAdminCalls.push(['confirmEmail', id, seen.length]); if (authAdminFails) throw new Error('auth 500') },
@@ -278,6 +278,42 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
       assert.ok(res.json().code && 'message' in res.json(), 'отказ в виде, который портал уже умеет показывать')
     }
     assert.equal(tableRequests().length, 0)
+  })
+
+  it('адрес шлюз и PostgREST читают одинаково: «;» в параметрах — отказ, закодированный %3B — значение', async () => {
+    for (const url of ['/api/db/tenders?limit=1;select=id,secret_table(id)', '/api/db/tenders?select=id;limit=1']) {
+      const res = await call('GET', url, { token: user() })
+      assert.equal(res.statusCode, 400, url)
+      assert.equal(res.json().code, 'PGRST100', url)
+    }
+    assert.equal(tableRequests().length, 0, 'до PostgREST не доходит')
+    const ok = await call('GET', '/api/db/tenders?select=id&work_description=ilike.*a%3Bb*', { token: user() })
+    assert.equal(ok.statusCode, 200)
+    assert.equal(seen[0].url, '/tenders?select=id&work_description=ilike.*a%3Bb*', 'значение — как есть')
+  })
+
+  it('права проверяются до чтения тела: тело больше предела без права получает отказ, а не «слишком большой»', async () => {
+    const big = Buffer.alloc(51 * 1024 * 1024, 0x20)
+    const anon = await call('POST', '/api/db/tenders', { body: big })
+    assert.equal(anon.statusCode, 401)
+    const noRight = await call('POST', '/api/db/psdc_rows', { token: user(), body: big })
+    assert.equal(noRight.statusCode, 403)
+    const allowed = await call('POST', '/api/db/tenders', { token: user(), body: big })
+    assert.equal(allowed.statusCode, 413, 'предел тела действует для того, кому можно')
+    assert.equal(tableRequests().length, 0)
+  })
+
+  it('без входа — лимит по адресу; вошедших он не касается', async () => {
+    const { DEFAULT_LIMITS } = await import(path.join(SERVER, 'src', 'lib', 'limits.js'))
+    await makeApp({}, { ...DEFAULT_LIMITS, dbAnonPerIp: { max: 2, windowMs: 60_000 } })
+    const anon = () => call('GET', '/api/db/tenders?select=id')
+    assert.equal((await anon()).statusCode, 200)
+    assert.equal((await anon()).statusCode, 200)
+    const over = await anon()
+    assert.equal(over.statusCode, 429)
+    assert.equal(over.json().code, 'OSP_RATE_LIMIT')
+    assert.equal(over.headers['retry-after'], '60')
+    for (let i = 0; i < 5; i++) assert.equal((await call('GET', '/api/db/tenders?select=id', { token: user() })).statusCode, 200)
   })
 
   it('тело запроса и ответ PostgREST передаются как есть: байт в байт, с кодами и ошибками', async () => {
