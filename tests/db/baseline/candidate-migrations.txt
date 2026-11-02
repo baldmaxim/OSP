@@ -34,3 +34,4 @@
 20261121_cost_plan_calc_objects.sql
 20261122_kp_registry_manual_sources.sql
 20261120_supply_rate_delivery.sql
+20261124_doc_check_card.sql

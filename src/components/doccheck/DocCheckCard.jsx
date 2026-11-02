@@ -2,6 +2,7 @@ import PaperclipIcon from '../icons/PaperclipIcon'
 import { IconTag } from '../icons/ToolbarIcons'
 import { IconCalendar, IconCheck, IconFlag, IconMore } from '../icons/ActionIcons'
 import DocCheckAvatars from './DocCheckAvatars'
+import DocCheckCardCounts from './DocCheckCardCounts'
 import {
   CLOSED_DOC_CHECK_STATUSES,
   DOC_CHECK_PRIORITY_LABEL,
@@ -22,8 +23,8 @@ const DUE_TITLE = {
 
 // Карточка заявки на проверку ДП/ДС на доске — по образцу прежней доски отдела:
 // кружок «завершить», заголовок «Контрагент / ДС № 1» с примечанием, внизу
-// объект и метки, срок, приоритет, файлы и кружки исполнителей; цвет карточки —
-// заливкой. Остальное — в карточке заявки по щелчку.
+// объект и метки, срок, приоритет, файлы, шаги, сообщения, письмо и кружки
+// исполнителей; цвет карточки — заливкой. Остальное — в карточке заявки по щелчку.
 function DocCheckCard({
   request, employees, canEdit, showStatus, onOpen, onToggleDone, onMenu,
   onDragStart, onDragEnd, isDragging,
@@ -102,8 +103,9 @@ function DocCheckCard({
           {request.docsCount > 0 && (
             <span className="dc-count" title="Файлы заявки"><PaperclipIcon size={12} />{request.docsCount}</span>
           )}
+          <DocCheckCardCounts request={request} />
         </div>
-        <DocCheckAvatars ids={request.assignee_ids} employees={employees} />
+        <DocCheckAvatars ids={request.assignee_ids} manual={request.manual_assignees} employees={employees} />
       </div>
     </article>
   )

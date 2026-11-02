@@ -1199,7 +1199,7 @@ if (params.get('docCheck') === '1') {
     id, object_id: 'obj-1', counterparty_id: 'cp-1', doc_type: 'ds', doc_number: null, doc_date: null, status: 'new',
     notes: null, sort_order: 1, deleted_at: null, created_at: '2026-10-20T09:00:00Z', updated_at: '2026-10-20T09:00:00Z',
     created_by_name: 'Стендов С. С.', assignee_ids: [], due_date: null, priority: null, color: null, labels: [],
-    archived_at: null, ...o,
+    archived_at: null, email_link: null, manual_assignees: [], ...o,
   })
   fdb.doc_check_requests = [
     req('dcr-1', { doc_number: '1', assignee_ids: ['user-1'] }),
@@ -1207,7 +1207,8 @@ if (params.get('docCheck') === '1') {
       notes: 'нет ред. формата договора, запросили у юриста', due_date: day(-2), priority: 'high', color: 'red',
       labels: ['Переподписание'], assignee_ids: ['user-2', 'user-3'] }),
     req('dcr-3', { status: 'in_progress', counterparty_id: 'cp-3', doc_number: '3', sort_order: 2, due_date: day(5),
-      labels: ['В бумажном виде'] }),
+      labels: ['В бумажном виде'], email_link: 'https://mail.example.invalid/letter/3',
+      assignee_ids: ['user-3'], manual_assignees: ['Сидорова Анна Павловна'] }),
     req('dcr-4', { status: 'done', doc_type: 'dp', doc_number: 'СУ2-004' }),
     req('dcr-5', { status: 'done', counterparty_id: 'cp-2', object_id: 'obj-2', doc_number: '5', sort_order: 2 }),
     req('dcr-6', { status: 'awaiting_scan', doc_type: 'dp', counterparty_id: 'cp-3', object_id: 'obj-2', doc_number: 'СУ2-006' }),
@@ -1219,13 +1220,57 @@ if (params.get('docCheck') === '1') {
   fdb.doc_check_request_audit_log = []
   fdb.s3_documents.push({ id: 'dcr-file-1', owner_type: 'doc_check_request', owner_id: 'dcr-2', file_name: 'ДП СУ2-001.pdf',
     s3_key: 'doc-check-requests/dcr-2/dp.pdf', size_bytes: 1024, created_at: '2026-10-21T09:00:00Z' })
+  // Карточка заявки (миграция 20261124): шаги и обсуждение у dcr-3; у двух шагов один номер — порядок по времени.
+  const step = (id, title, is_done, sort_order, created_at) => ({ id, request_id: 'dcr-3', title, is_done, sort_order, created_at })
+  fdb.doc_check_request_steps = [
+    step('st-1', 'Сверить реквизиты', true, 0, '2026-10-20T10:00:00Z'),
+    step('st-2', 'Проверить суммы', false, 10, '2026-10-20T10:01:00Z'),
+    step('st-3', 'Отправить на подпись', false, 10, '2026-10-20T10:02:00Z'),
+  ]
+  // dcSteps=N — ещё шаги у dcr-3: список длиннее окна; потолок строк — ?maxRows.
+  for (let n = 4; n <= 3 + Number(params.get('dcSteps') || 0); n++) {
+    fdb.doc_check_request_steps.push(step(`st-${n}`, `Шаг ${n}`, false, n * 10, `2026-10-20T11:${String(n % 60).padStart(2, '0')}:00Z`))
+  }
+  fdb.doc_check_request_comments = [
+    { id: 'cm-1', request_id: 'dcr-3', author_user_id: 'user-3', author_name: 'Юристова Мария Андреевна',
+      body: 'Договор ушёл на подпись\nждём оригинал', created_at: '2026-10-21T09:30:00Z' },
+    { id: 'cm-2', request_id: 'dcr-3', author_user_id: 'user-1', author_name: 'Стендов Стенд Стендович',
+      body: 'Принято', created_at: '2026-10-21T10:05:00Z' },
+  ]
+  // dcComments=N — ещё сообщения у dcr-3 (карточки доски считаются постранично — ?maxRows).
+  for (let n = 3; n <= 2 + Number(params.get('dcComments') || 0); n++) {
+    fdb.doc_check_request_comments.push({ id: `cm-${n}`, request_id: 'dcr-3', author_user_id: 'user-3', author_name: 'Юристова Мария Андреевна',
+      body: `Сообщение ${n}`, created_at: `2026-10-22T09:${String(n % 60).padStart(2, '0')}:00Z` })
+  }
   // Встраивание objects(...) / counterparties(...) после записи — как PostgREST (стенд встраивания не разбирает).
-  window.__fakeTriggers = { ...(window.__fakeTriggers || {}), doc_check_requests: (row) => embed(row) }
+  window.__fakeTriggers = { ...(window.__fakeTriggers || {}), doc_check_requests: (row) => embed(row),
+    // Автора и время сообщения ставит база (триггер doc_check_request_comments_stamp): что прислал клиент — не важно.
+    doc_check_request_comments: (row) => {
+      row.author_user_id = params.get('asUser') || 'user-1'
+      row.author_name = 'Тест'
+    },
+    // Значение колонки по умолчанию: стенд их не знает.
+    doc_check_request_steps: (row) => { row.is_done ??= false } }
+  // dcBadLink=1 — в базе не адрес (правка мимо страницы): ссылкой стать не должно.
+  if (params.get('dcBadLink') === '1') fdb.doc_check_requests.find((r) => r.id === 'dcr-3').email_link = 'javascript:alert(1)'
+  const card = ['email_link', 'manual_assignees']
+  const noCardTables = () => {
+    window.__fakeErrors = { ...(window.__fakeErrors || {}),
+      doc_check_request_comments: { code: 'PGRST205', message: "Could not find the table 'public.doc_check_request_comments' in the schema cache" },
+      doc_check_request_steps: { code: 'PGRST205', message: "Could not find the table 'public.doc_check_request_steps' in the schema cache" } }
+  }
+  // ?docCheckNoCard=1 — миграции 20261124 ещё нет, 20261113 есть.
+  if (params.get('docCheckNoCard') === '1') {
+    for (const r of fdb.doc_check_requests) for (const k of card) delete r[k]
+    window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}), doc_check_requests: card }
+    noCardTables()
+  }
   if (params.get('docCheckLegacy') === '1') {
     const board = ['assignee_ids', 'due_date', 'priority', 'color', 'labels', 'archived_at']
-    for (const r of fdb.doc_check_requests) for (const k of board) delete r[k]
+    for (const r of fdb.doc_check_requests) for (const k of [...board, ...card]) delete r[k]
     fdb.doc_check_requests = fdb.doc_check_requests.filter((r) => r.status !== 'tax_clause')
-    window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}), doc_check_requests: board }
+    window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}), doc_check_requests: [...board, ...card] }
+    noCardTables()
   }
 }
 

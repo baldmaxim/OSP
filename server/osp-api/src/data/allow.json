@@ -335,6 +335,20 @@
         "update"
       ]
     },
+    "doc_check_request_comments": {
+      "authenticated": [
+        "insert",
+        "select"
+      ]
+    },
+    "doc_check_request_steps": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
     "doc_check_requests": {
       "anon": [
         "select"

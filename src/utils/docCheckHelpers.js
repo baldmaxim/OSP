@@ -1,7 +1,7 @@
 // Общие константы раздела «Заявки на проверку ДП/ДС».
 // Держим здесь всё, что нужно и доске, и реестру, и карточке — чтобы статусы,
 // подписи и цвета не разъезжались между тремя видами (как в taskHelpers.js).
-import { daysUntilDate } from './taskHelpers.js'
+import { daysUntilDate, splitChecklistLines } from './taskHelpers.js'
 
 // Порядок в массиве = порядок колонок канбана (как на доске, где отдел вёл
 // проверку до сайта). «Ожидаем скан» стоит ПОСЛЕ «Завершено» намеренно: по
@@ -127,36 +127,96 @@ export function dueShort(dateStr) {
   return m[1] === String(new Date().getFullYear()) ? `${m[3]}.${m[2]}` : `${m[3]}.${m[2]}.${m[1].slice(2)}`
 }
 
-// Метки: без лишних пробелов, без повторов (без учёта регистра), не длиннее 60
-// знаков, не больше 12 — как ограничение в базе.
-export const MAX_LABELS = 12
-export function normalizeLabels(list) {
+// Список текстов: без лишних пробелов, без повторов (без учёта регистра), с пределом длины и числа.
+function uniqueTexts(list, limit, maxLength) {
   const out = []
   const seen = new Set()
   for (const raw of list || []) {
-    const label = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, 60)
-    const key = label.toLowerCase()
-    if (!label || seen.has(key)) continue
+    const text = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, maxLength)
+    const key = text.toLowerCase()
+    if (!text || seen.has(key)) continue
     seen.add(key)
-    out.push(label)
-    if (out.length >= MAX_LABELS) break
+    out.push(text)
+    if (out.length >= limit) break
   }
   return out
 }
 
-// Метки, которыми уже пользуются, — подсказки при вводе: частые первыми.
-export function labelSuggestions(requests) {
+// Метки: не длиннее 60 знаков, не больше 12 — как ограничение в базе.
+export const MAX_LABELS = 12
+export function normalizeLabels(list) {
+  return uniqueTexts(list, MAX_LABELS, 60)
+}
+
+// Исполнители без учётной записи (миграция 20261124): имена текстом, рядом с assignee_ids. Не больше 20 — как в базе.
+export const MAX_MANUAL_ASSIGNEES = 20
+export function normalizeManualAssignees(list) {
+  return uniqueTexts(list, MAX_MANUAL_ASSIGNEES, 120)
+}
+
+// Подсказки при вводе — то, чем уже пользуются: частые первыми.
+function frequentTexts(lists) {
   const counts = new Map()
-  for (const r of requests || []) {
-    for (const l of r.labels || []) {
-      const key = l.toLowerCase()
+  for (const list of lists) {
+    for (const text of list || []) {
+      const key = text.toLowerCase()
       const cur = counts.get(key)
-      counts.set(key, { label: cur?.label || l, n: (cur?.n || 0) + 1 })
+      counts.set(key, { text: cur?.text || text, n: (cur?.n || 0) + 1 })
     }
   }
   return [...counts.values()]
-    .sort((a, b) => b.n - a.n || a.label.localeCompare(b.label, 'ru'))
-    .map(x => x.label)
+    .sort((a, b) => b.n - a.n || a.text.localeCompare(b.text, 'ru'))
+    .map(x => x.text)
+}
+export const labelSuggestions = (requests) => frequentTexts((requests || []).map(r => r.labels))
+export const manualAssigneeSuggestions = (requests) => frequentTexts((requests || []).map(r => r.manual_assignees))
+
+// Все исполнители заявки подписями: nameOf(id) — имя сотрудника из справочника.
+export function assigneeNames(request, nameOf) {
+  return [...(request?.assignee_ids || []).map(id => nameOf(id)), ...(request?.manual_assignees || [])]
+}
+
+// Фильтр «Исполнитель»: сотрудник — по id, вписанный руками — по имени, без учёта регистра. «Без исполнителя» — когда
+// нет ни тех, ни других: заявка с вписанным именем исполнителя имеет.
+export const NO_ASSIGNEE = '__none'
+export const manualAssigneeKey = (name) => `manual:${String(name).toLowerCase()}`
+export function matchesAssignees(request, selected) {
+  if (!selected?.length) return true
+  const ids = request?.assignee_ids || []
+  const names = (request?.manual_assignees || []).map(manualAssigneeKey)
+  return selected.some(a => (a === NO_ASSIGNEE
+    ? ids.length === 0 && names.length === 0
+    : ids.includes(a) || names.includes(a)))
+}
+
+// Обсуждение и шаги заявки (миграция 20261124). Пределы — как ограничения в базе.
+export const MAX_COMMENT_LENGTH = 4000
+export const MAX_STEP_TITLE = 500
+// Поле «Добавить шаг» → шаги: каждая строка — отдельный шаг, как в чек-листе задачи.
+export function stepTitles(text) {
+  return splitChecklistLines(text).map(title => title.slice(0, MAX_STEP_TITLE))
+}
+export function compareSteps(a, b) {
+  return (a.sort_order - b.sort_order)
+    || String(a.created_at).localeCompare(String(b.created_at))
+    || String(a.id).localeCompare(String(b.id))
+}
+
+// Счётчики на карточке доски: заявка → шагов всего, сделано, сообщений.
+export const NO_CARD_COUNTS = { stepsTotal: 0, stepsDone: 0, commentsCount: 0 }
+export function cardCountsById(steps, comments) {
+  const map = new Map()
+  const entry = (id) => {
+    if (!map.has(id)) map.set(id, { ...NO_CARD_COUNTS })
+    return map.get(id)
+  }
+  for (const s of steps || []) {
+    const e = entry(s.request_id)
+    e.stepsTotal += 1
+    if (s.is_done) e.stepsDone += 1
+  }
+  for (const c of comments || []) entry(c.request_id).commentsCount += 1
+  return map
 }
 
 // Инициалы для кружка исполнителя: «Иванова Роза Петровна» → «ИР», почта → две буквы.
@@ -235,17 +295,23 @@ const BASE_SELECT = `
 const EMBED = `,
   objects(id, name, status),
   counterparties(id, name)`
-export const DOC_CHECK_SELECT = `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}${EMBED}`
-export const DOC_CHECK_SELECT_LEGACY = `${BASE_SELECT}${EMBED}`
+// Поля карточки (миграция 20261124): та же миграция заводит обсуждение и шаги, поэтому их колонки — признак всего набора.
+export const CARD_FIELDS = ['email_link', 'manual_assignees']
+// Что читать — от полного набора к прежнему: первая выборка, на которую база ответила без 42703.
+export const DOC_CHECK_SELECTS = [
+  { board: true, card: true, select: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}, ${CARD_FIELDS.join(', ')}${EMBED}` },
+  { board: true, card: false, select: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}${EMBED}` },
+  { board: false, card: false, select: `${BASE_SELECT}${EMBED}` },
+]
 
-// Колонок 20261113 ещё нет: PostgREST отвечает 42703 (или PGRST204 на записи).
+// Колонок ещё нет: PostgREST отвечает 42703 (или PGRST204 на записи).
 export function isMissingBoardColumn(err) {
   return ['42703', 'PGRST204'].includes(String(err?.code || ''))
 }
 
 // Строка из базы — к виду доски: массивы вместо NULL (прежняя база их не отдаёт).
 export function normalizeRequest(r) {
-  return { ...r, assignee_ids: r.assignee_ids || [], labels: r.labels || [] }
+  return { ...r, assignee_ids: r.assignee_ids || [], labels: r.labels || [], manual_assignees: r.manual_assignees || [] }
 }
 
 // События истории для правки из формы: только изменившиеся поля.
@@ -269,6 +335,8 @@ export const FIELD_LABEL = {
   doc_date: 'Дата документа',
   notes: 'Примечание',
   assignee_ids: 'Исполнители',
+  manual_assignees: 'Исполнители без учётной записи',
+  email_link: 'Ссылка на письмо',
   due_date: 'Срок',
   priority: 'Приоритет',
   color: 'Цвет',

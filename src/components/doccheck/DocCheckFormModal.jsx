@@ -2,12 +2,15 @@ import { useState } from 'react'
 import FilterDropdown from '../FilterDropdown'
 import DocCheckLabelsInput from './DocCheckLabelsInput'
 import { IconObject, IconUser } from '../icons/ToolbarIcons'
+import { safeHttpUrl } from '../../utils/publicTenders'
 import {
   DOC_CHECK_COLORS,
   DOC_CHECK_PRIORITIES,
   DOC_CHECK_STATUS_LABEL,
   DOC_TYPES,
+  MAX_MANUAL_ASSIGNEES,
   normalizeLabels,
+  normalizeManualAssignees,
 } from '../../utils/docCheckHelpers'
 
 // Форма заявки на проверку ДП/ДС.
@@ -20,15 +23,17 @@ import {
 // Статуса в форме нет: новая заявка встаёт в колонку, где нажали «+ Добавить
 // заявку» (по кнопке в шапке — в «Новые заявки»), дальше её двигают по доске.
 // Исполнители, срок, приоритет, цвет и метки — только при колонках 20261113
-// (hasBoardFields); без них форма прежняя.
+// (hasBoardFields); без них форма прежняя. Исполнители без учётной записи и ссылка
+// на письмо — только при колонках 20261124 (hasCardFields).
 
 const EMPTY = {
   object_id: '', counterparty_id: '', doc_type: 'ds', doc_number: '', doc_date: '', notes: '',
-  assignee_ids: [], due_date: '', priority: '', color: '', labels: [],
+  assignee_ids: [], due_date: '', priority: '', color: '', labels: [], manual_assignees: [], email_link: '',
 }
 
 export default function DocCheckFormModal({
-  request, status, objects, counterparties, employees, labelSuggestions, hasBoardFields, onSave, onClose,
+  request, status, objects, counterparties, employees, labelSuggestions, manualSuggestions,
+  hasBoardFields, hasCardFields, onSave, onClose,
 }) {
   const [form, setForm] = useState(() => (request
     ? {
@@ -43,6 +48,8 @@ export default function DocCheckFormModal({
       priority: request.priority || '',
       color: request.color || '',
       labels: request.labels || [],
+      manual_assignees: request.manual_assignees || [],
+      email_link: request.email_link || '',
     }
     : EMPTY))
   const [saving, setSaving] = useState(false)
@@ -53,6 +60,11 @@ export default function DocCheckFormModal({
     e.preventDefault()
     if (!form.counterparty_id && !form.notes.trim()) {
       setError('Укажите контрагента или опишите заявку в примечании')
+      return
+    }
+    const emailLink = form.email_link.trim()
+    if (hasCardFields && emailLink && !safeHttpUrl(emailLink)) {
+      setError('Ссылка на письмо — адрес вида https://…')
       return
     }
     setSaving(true)
@@ -72,6 +84,12 @@ export default function DocCheckFormModal({
           priority: form.priority || null,
           color: form.color || null,
           labels: normalizeLabels(form.labels),
+        })
+      }
+      if (hasCardFields) {
+        Object.assign(payload, {
+          manual_assignees: normalizeManualAssignees(form.manual_assignees),
+          email_link: emailLink || null,
         })
       }
       await onSave(payload)
@@ -176,6 +194,20 @@ export default function DocCheckFormModal({
             />
           </div>
 
+          {hasCardFields && (
+            <div className="dc-form-row">
+              <label htmlFor="dc-email-link">Ссылка на письмо</label>
+              <input
+                id="dc-email-link"
+                type="text"
+                inputMode="url"
+                value={form.email_link}
+                onChange={(e) => set({ email_link: e.target.value })}
+                placeholder="https://…"
+              />
+            </div>
+          )}
+
           {hasBoardFields && (
             <>
               <div className="dc-form-grid">
@@ -204,6 +236,24 @@ export default function DocCheckFormModal({
                   />
                 </div>
               </div>
+
+              {hasCardFields && (
+                <div className="dc-form-row">
+                  <span className="dc-form-label">Исполнители без учётной записи</span>
+                  <DocCheckLabelsInput
+                    value={form.manual_assignees}
+                    onChange={(manual_assignees) => set({ manual_assignees })}
+                    suggestions={manualSuggestions}
+                    normalize={normalizeManualAssignees}
+                    max={MAX_MANUAL_ASSIGNEES}
+                    className="dc-names-input"
+                    inputLabel="Исполнитель без учётной записи"
+                    placeholder="Имя: Enter — добавить"
+                    fullText={`Не больше ${MAX_MANUAL_ASSIGNEES} имён`}
+                    removeLabel={(name) => `Убрать исполнителя «${name}»`}
+                  />
+                </div>
+              )}
 
               <div className="dc-form-grid dc-form-grid--wide">
                 <div className="dc-form-row">

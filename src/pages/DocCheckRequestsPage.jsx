@@ -5,6 +5,7 @@ import DocCheckBoard from '../components/doccheck/DocCheckBoard'
 import DocCheckFormModal from '../components/doccheck/DocCheckFormModal'
 import DocCheckDetailModal from '../components/doccheck/DocCheckDetailModal'
 import DocCheckAvatars from '../components/doccheck/DocCheckAvatars'
+import DocCheckCardCounts from '../components/doccheck/DocCheckCardCounts'
 import FilterDropdown from '../components/FilterDropdown'
 import IconTile from '../components/IconTile'
 import { IconObject, IconSearch, IconTag, IconUser } from '../components/icons/ToolbarIcons'
@@ -12,17 +13,20 @@ import { IconArchive, IconCalendar, IconFlag, IconRestore, IconTrash } from '../
 import { IconDocCheck } from '../components/icons/NavIcons'
 import { fetchAllRows, fetchAllActiveCounterparties } from '../utils/fetchAllRows'
 import { employeeName, employeesById, fetchEmployees } from '../services/employees'
+import { fetchCardCounts as readCardCounts } from '../services/docCheckCard'
 import useBodyClass from '../hooks/useBodyClass'
 import {
   DEADLINE_FILTERS,
   DOC_CHECK_PRIORITIES,
-  DOC_CHECK_SELECT,
-  DOC_CHECK_SELECT_LEGACY,
+  DOC_CHECK_SELECTS,
   DOC_CHECK_STATUS_CLASS,
   DOC_CHECK_STATUS_LABEL,
   DOC_CHECK_STATUSES,
   DOC_TYPES,
   CLOSED_DOC_CHECK_STATUSES,
+  NO_ASSIGNEE,
+  NO_CARD_COUNTS,
+  assigneeNames,
   cardTitle,
   compareForBoard,
   dueState,
@@ -30,6 +34,9 @@ import {
   fmtDocDate,
   isMissingBoardColumn,
   labelSuggestions,
+  manualAssigneeKey,
+  manualAssigneeSuggestions,
+  matchesAssignees,
   matchesDeadline,
   nextSortOrder,
   normalizeRequest,
@@ -55,11 +62,12 @@ import './DocCheckRequestsPage.css'
 //
 // Без колонок миграции 20261113 (прежняя база) страница читает прежний набор
 // полей и работает как раньше: без исполнителей, сроков, меток, цвета и архива.
+// Без миграции 20261124 — без обсуждения, шагов, ссылки на письмо и исполнителей
+// без учётной записи.
 
 const SUMMARY_KEY = 'docCheckSummary'
 const VIEW_KEY = 'docCheckView'
 const QUIET_RELOAD_MS = 30000
-const NO_ASSIGNEE = '__none'
 
 function readStored(key, fallback) {
   try {
@@ -82,7 +90,9 @@ export default function DocCheckRequestsPage() {
   const [counterparties, setCounterparties] = useState([])
   const [employees, setEmployees] = useState(() => new Map())
   const [docCounts, setDocCounts] = useState(() => new Map())
+  const [cardCounts, setCardCounts] = useState(() => new Map())
   const [hasBoardFields, setHasBoardFields] = useState(true)
+  const [hasCardFields, setHasCardFields] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -101,6 +111,7 @@ export default function DocCheckRequestsPage() {
 
   const [formFor, setFormFor] = useState(null)   // { request, status } | null
   const [detailId, setDetailId] = useState(null)
+  const [detailRefresh, setDetailRefresh] = useState(0)
 
   useEffect(() => { writeStored(VIEW_KEY, view) }, [view])
   const changeSummary = (next) => { setSummary(next); writeStored(SUMMARY_KEY, next) }
@@ -110,6 +121,8 @@ export default function DocCheckRequestsPage() {
   // ── Загрузка ──────────────────────────────────────────────────────────────
   const loadSeq = useRef(0)
   const lastLoad = useRef(0)
+  // Какая выборка подошла базе: при тихих перечитываниях заведомо неподходящие не повторяем.
+  const selectAt = useRef(0)
   const fetchRequests = useCallback(async ({ quiet = false } = {}) => {
     const seq = ++loadSeq.current
     if (!quiet) setLoading(true)
@@ -122,17 +135,19 @@ export default function DocCheckRequestsPage() {
       .range(from, to))
     try {
       let rows
-      let board = true
-      try {
-        rows = await read(DOC_CHECK_SELECT)
-      } catch (err) {
-        if (!isMissingBoardColumn(err)) throw err
-        board = false
-        rows = await read(DOC_CHECK_SELECT_LEGACY)
+      for (;;) {
+        try {
+          rows = await read(DOC_CHECK_SELECTS[selectAt.current].select)
+          break
+        } catch (err) {
+          if (!isMissingBoardColumn(err) || selectAt.current === DOC_CHECK_SELECTS.length - 1) throw err
+          selectAt.current += 1
+        }
       }
       if (seq !== loadSeq.current) return
       lastLoad.current = Date.now()
-      setHasBoardFields(board)
+      setHasBoardFields(DOC_CHECK_SELECTS[selectAt.current].board)
+      setHasCardFields(DOC_CHECK_SELECTS[selectAt.current].card)
       setRequests(rows.map(normalizeRequest))
       setError(null)
     } catch (err) {
@@ -161,6 +176,33 @@ export default function DocCheckRequestsPage() {
     }
   }, [])
 
+  // Сколько шагов сделано и сколько сообщений — на карточке. Числа, которые открытая карточка заявки сообщила, пока шло
+  // чтение, новее прочитанного — их не трогаем.
+  const countsChanged = useRef(new Set())
+  const fetchCardCounts = useCallback(async () => {
+    countsChanged.current = new Set()
+    try {
+      const map = await readCardCounts()
+      setCardCounts(prev => {
+        for (const id of countsChanged.current) map.set(id, prev.get(id) || NO_CARD_COUNTS)
+        return map
+      })
+    } catch (err) {
+      console.warn('Не удалось посчитать шаги и сообщения заявок:', err.message)
+    }
+  }, [])
+  const handleCardCounts = useCallback((id, counts) => {
+    countsChanged.current.add(id)
+    setCardCounts(prev => {
+      const cur = prev.get(id) || NO_CARD_COUNTS
+      if (cur.stepsTotal === counts.stepsTotal && cur.stepsDone === counts.stepsDone
+        && cur.commentsCount === counts.commentsCount) return prev
+      return new Map(prev).set(id, counts)
+    })
+  }, [])
+  // Таблиц обсуждения и шагов нет, пока нет колонок той же миграции — до этого не обращаемся.
+  useEffect(() => { if (hasCardFields) fetchCardCounts() }, [hasCardFields, fetchCardCounts])
+
   useEffect(() => {
     fetchRequests()
     fetchDocCounts()
@@ -182,6 +224,8 @@ export default function DocCheckRequestsPage() {
       if (document.visibilityState !== 'visible' || Date.now() - lastLoad.current < QUIET_RELOAD_MS) return
       fetchRequests({ quiet: true })
       fetchDocCounts()
+      if (hasCardFields) fetchCardCounts()
+      setDetailRefresh(n => n + 1)
     }
     document.addEventListener('visibilitychange', onBack)
     window.addEventListener('focus', onBack)
@@ -189,7 +233,7 @@ export default function DocCheckRequestsPage() {
       document.removeEventListener('visibilitychange', onBack)
       window.removeEventListener('focus', onBack)
     }
-  }, [fetchRequests, fetchDocCounts])
+  }, [fetchRequests, fetchDocCounts, fetchCardCounts, hasCardFields])
 
   // ── История ───────────────────────────────────────────────────────────────
   const logEvent = useCallback(async (requestId, entry) => {
@@ -346,8 +390,8 @@ export default function DocCheckRequestsPage() {
 
   // ── Фильтрация ────────────────────────────────────────────────────────────
   const withCounts = useMemo(
-    () => requests.map(r => ({ ...r, docsCount: docCounts.get(r.id) || 0 })),
-    [requests, docCounts],
+    () => requests.map(r => ({ ...r, docsCount: docCounts.get(r.id) || 0, ...(cardCounts.get(r.id) || NO_CARD_COUNTS) })),
+    [requests, docCounts, cardCounts],
   )
   const inMode = useMemo(() => withCounts.filter(r => {
     if (mode === 'deleted') return !!r.deleted_at
@@ -362,15 +406,14 @@ export default function DocCheckRequestsPage() {
       if (filterCounterpartyIds.length && !filterCounterpartyIds.includes(r.counterparty_id)) return false
       if (filterTypes.length && !filterTypes.includes(r.doc_type)) return false
       if (onlyMine && !(myId && r.assignee_ids.includes(myId))) return false
-      if (filterAssignees.length && !filterAssignees.some(a => (a === NO_ASSIGNEE
-        ? r.assignee_ids.length === 0 : r.assignee_ids.includes(a)))) return false
+      if (!matchesAssignees(r, filterAssignees)) return false
       if (filterPriorities.length && !filterPriorities.includes(r.priority)) return false
       if (filterLabels.length && !filterLabels.some(l => r.labels.includes(l))) return false
       if (!matchesDeadline(r, filterDeadline)) return false
       if (!q) return true
       return [
         r.doc_number, r.notes, r.objects?.name, r.counterparties?.name, cardTitle(r), ...r.labels,
-        ...r.assignee_ids.map(id => employeeName(employees, id, '')),
+        ...assigneeNames(r, id => employeeName(employees, id, '')),
       ].some(v => (v || '').toLowerCase().includes(q))
     })
   }, [inMode, search, filterObjectIds, filterCounterpartyIds, filterTypes, onlyMine, myId, filterAssignees,
@@ -384,6 +427,7 @@ export default function DocCheckRequestsPage() {
 
   const live = useMemo(() => requests.filter(r => !r.deleted_at && !r.archived_at), [requests])
   const allLabels = useMemo(() => labelSuggestions(requests.filter(r => !r.deleted_at)), [requests])
+  const allManualAssignees = useMemo(() => manualAssigneeSuggestions(requests.filter(r => !r.deleted_at)), [requests])
 
   // Объекты на доске — плашки быстрого отбора над доской, частые первыми.
   const objectChips = useMemo(() => {
@@ -397,11 +441,17 @@ export default function DocCheckRequestsPage() {
 
   const assigneeOptions = useMemo(() => {
     const ids = new Set()
-    for (const r of requests) for (const id of r.assignee_ids) ids.add(id)
+    const manual = new Map()
+    for (const r of requests) {
+      for (const id of r.assignee_ids) ids.add(id)
+      for (const name of r.manual_assignees) if (!manual.has(manualAssigneeKey(name))) manual.set(manualAssigneeKey(name), name)
+    }
     return [
       { value: NO_ASSIGNEE, label: 'Без исполнителя' },
-      ...[...ids].map(id => ({ value: id, label: employeeName(employees, id) }))
-        .sort((a, b) => a.label.localeCompare(b.label, 'ru')),
+      ...[
+        ...[...ids].map(id => ({ value: id, label: employeeName(employees, id) })),
+        ...[...manual].map(([value, name]) => ({ value, label: `${name} (нет в справочнике)` })),
+      ].sort((a, b) => a.label.localeCompare(b.label, 'ru')),
     ]
   }, [requests, employees])
 
@@ -459,6 +509,12 @@ export default function DocCheckRequestsPage() {
         <div className="dc-note">
           Исполнители, сроки, приоритет, метки, цвет карточек, архив и колонка «Проверка документов» появятся после
           миграции <code>20261113_doc_check_board</code>. До неё доска работает как раньше.
+        </div>
+      )}
+      {!error && hasBoardFields && !hasCardFields && isAdmin && (
+        <div className="dc-note">
+          Обсуждение, шаги, ссылка на письмо и исполнители без учётной записи появятся после
+          миграции <code>20261124_doc_check_card</code>.
         </div>
       )}
 
@@ -620,14 +676,15 @@ export default function DocCheckRequestsPage() {
                   <td>
                     <div className="dc-row-title">{cardTitle(r)}</div>
                     {r.notes && <div className="dc-row-notes">{r.notes}</div>}
+                    <div className="dc-row-counts"><DocCheckCardCounts request={r} /></div>
                   </td>
                   <td>{r.objects?.name || '—'}</td>
                   {hasBoardFields && (
                     <td>
-                      {r.assignee_ids.length ? (
+                      {r.assignee_ids.length || r.manual_assignees.length ? (
                         <span className="dc-row-people">
-                          <DocCheckAvatars ids={r.assignee_ids} employees={employees} />
-                          <span>{r.assignee_ids.map(id => employeeName(employees, id)).join(', ')}</span>
+                          <DocCheckAvatars ids={r.assignee_ids} manual={r.manual_assignees} employees={employees} />
+                          <span>{assigneeNames(r, id => employeeName(employees, id)).join(', ')}</span>
                         </span>
                       ) : '—'}
                     </td>
@@ -677,7 +734,9 @@ export default function DocCheckRequestsPage() {
           counterparties={counterparties}
           employees={employees}
           labelSuggestions={allLabels}
+          manualSuggestions={allManualAssignees}
           hasBoardFields={hasBoardFields}
+          hasCardFields={hasCardFields}
           onSave={handleSave}
           onClose={() => setFormFor(null)}
         />
@@ -691,6 +750,10 @@ export default function DocCheckRequestsPage() {
           counterparties={counterparties}
           canEdit={canEditSection}
           hasBoardFields={hasBoardFields}
+          hasCardFields={hasCardFields}
+          currentUserId={myId}
+          refreshKey={detailRefresh}
+          onCardCounts={handleCardCounts}
           onStatusChange={(r, status) => moveTo(r, status)}
           onEdit={(r) => { setDetailId(null); setFormFor({ request: r }) }}
           onDelete={handleDelete}

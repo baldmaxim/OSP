@@ -1,8 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { db } from '../../api'
 import S3DocumentList from '../S3DocumentList'
 import DocCheckAvatars from './DocCheckAvatars'
+import DocCheckDiscussion from './DocCheckDiscussion'
+import DocCheckSteps from './DocCheckSteps'
+import { IconLink } from '../icons/ActionIcons'
 import { employeeName } from '../../services/employees'
+import { fetchCardDetails } from '../../services/docCheckCard'
+import { safeHttpUrl } from '../../utils/publicTenders'
 import {
   DOC_CHECK_COLOR_LABEL,
   DOC_CHECK_PRIORITY_LABEL,
@@ -11,17 +16,21 @@ import {
   DOC_TYPE_LABEL,
   DOC_TYPE_TITLE,
   FIELD_LABEL,
+  assigneeNames,
   availableStatuses,
   cardTitle,
   dueState,
   fmtDocDate,
 } from '../../utils/docCheckHelpers'
 
-// Карточка заявки: данные, файлы, история.
+// Карточка заявки: данные, шаги, обсуждение, файлы, история.
 //
 // Статус здесь тоже переключается — на телефоне доску не потаскаешь, а работать
 // с заявкой надо. Список колонок один и тот же (availableStatuses), поэтому
 // доска и карточка не разойдутся.
+//
+// Закрывается только «×» и «Закрыть», как карточка задачи: щелчок мимо окна (или
+// выделение текста, отпущенное за его краем) уносил бы недописанное сообщение.
 
 const fmtDateTime = (v) => (v ? new Date(v).toLocaleString('ru-RU', {
   day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -41,7 +50,7 @@ const EVENT_LABEL = {
 function historyValue(field, value, ctx) {
   if (value == null || value === '' || (Array.isArray(value) && !value.length)) return '—'
   if (field === 'assignee_ids') return value.map(id => employeeName(ctx.employees, id)).join(', ')
-  if (field === 'labels') return value.join(', ')
+  if (field === 'labels' || field === 'manual_assignees') return value.join(', ')
   if (field === 'priority') return DOC_CHECK_PRIORITY_LABEL[value] || value
   if (field === 'color') return DOC_CHECK_COLOR_LABEL[value] || value
   if (field === 'doc_type') return DOC_TYPE_LABEL[value] || value
@@ -52,12 +61,47 @@ function historyValue(field, value, ctx) {
 }
 
 export default function DocCheckDetailModal({
-  request, employees, objects, counterparties, canEdit, hasBoardFields,
-  onStatusChange, onEdit, onDelete, onClose,
+  request, employees, objects, counterparties, canEdit, hasBoardFields, hasCardFields, currentUserId, refreshKey,
+  onStatusChange, onEdit, onDelete, onClose, onCardCounts,
 }) {
   const [tab, setTab] = useState('info')
   const [history, setHistory] = useState([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
+  const [steps, setSteps] = useState([])
+  const [comments, setComments] = useState([])
+  const [cardState, setCardState] = useState('loading') // loading | ready | error
+
+  // Шаги и сообщения нужны сразу: их число — на вкладках. Перечитываются и при возврате на вкладку браузера (refreshKey):
+  // правки коллег. Ответ, прочитанный до своей правки, отбрасывается — иначе вернул бы прежний список.
+  const loadSeq = useRef(0)
+  const loadCard = useCallback(async () => {
+    const seq = ++loadSeq.current
+    try {
+      const details = await fetchCardDetails(request.id)
+      if (seq !== loadSeq.current) return
+      setSteps(details.steps)
+      setComments(details.comments)
+      setCardState('ready')
+    } catch (err) {
+      if (seq !== loadSeq.current) return
+      console.warn('Не удалось загрузить шаги и обсуждение заявки:', err.message)
+      setCardState(prev => (prev === 'ready' ? prev : 'error'))
+    }
+  }, [request.id])
+  useEffect(() => { if (hasCardFields) loadCard() }, [hasCardFields, loadCard, refreshKey])
+
+  const changeSteps = useCallback((update) => { loadSeq.current += 1; setSteps(update) }, [])
+  const changeComments = useCallback((update) => { loadSeq.current += 1; setComments(update) }, [])
+
+  // Счётчики на карточке доски — сразу, без перечитывания всей доски.
+  useEffect(() => {
+    if (cardState !== 'ready') return
+    onCardCounts(request.id, {
+      stepsTotal: steps.length,
+      stepsDone: steps.filter(s => s.is_done).length,
+      commentsCount: comments.length,
+    })
+  }, [cardState, steps, comments, request.id, onCardCounts])
 
   // История нужна редко — грузим только при открытии своей вкладки.
   useEffect(() => {
@@ -89,10 +133,34 @@ export default function DocCheckDetailModal({
     counterparties: new Map(counterparties.map(c => [c.id, c.name])),
   }
   const due = dueState(request)
+  const people = assigneeNames(request, id => employeeName(employees, id))
+  const mail = safeHttpUrl(request.email_link)
+  const isDeleted = !!request.deleted_at
+  const isAssignee = !!currentUserId && (request.assignee_ids || []).includes(currentUserId)
+  const stepsDone = steps.filter(s => s.is_done).length
+
+  const tabs = [
+    { key: 'info', label: 'Заявка' },
+    ...(hasCardFields ? [
+      { key: 'steps', label: 'Шаги', count: steps.length > 0 ? `${stepsDone}/${steps.length}` : null },
+      { key: 'discussion', label: 'Обсуждение', count: comments.length > 0 ? comments.length : null },
+    ] : []),
+    { key: 'docs', label: 'Документы' },
+    { key: 'history', label: 'История' },
+  ]
+
+  const cardUnavailable = cardState === 'loading'
+    ? <p className="dc-muted">Загрузка…</p>
+    : (
+      <p className="dc-muted">
+        Не удалось загрузить.{' '}
+        <button type="button" className="dc-retry" onClick={loadCard}>Повторить</button>
+      </p>
+    )
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal dc-detail-modal" role="dialog" aria-modal="true" aria-label={cardTitle(request)} onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay">
+      <div className="modal dc-detail-modal" role="dialog" aria-modal="true" aria-label={cardTitle(request)}>
         <div className="modal-header">
           <div>
             <h3>{cardTitle(request)}</h3>
@@ -105,11 +173,7 @@ export default function DocCheckDetailModal({
         </div>
 
         <div className="dc-detail-tabs" role="tablist">
-          {[
-            { key: 'info', label: 'Заявка' },
-            { key: 'docs', label: 'Документы' },
-            { key: 'history', label: 'История' },
-          ].map(t => (
+          {tabs.map(t => (
             <button
               key={t.key}
               type="button"
@@ -117,7 +181,10 @@ export default function DocCheckDetailModal({
               aria-selected={tab === t.key}
               className={`dc-detail-tab${tab === t.key ? ' is-active' : ''}`}
               onClick={() => setTab(t.key)}
-            >{t.label}</button>
+            >
+              {t.label}
+              {t.count != null && <span className="dc-tab-count">{t.count}</span>}
+            </button>
           ))}
         </div>
 
@@ -129,15 +196,27 @@ export default function DocCheckDetailModal({
                 <div><dt>Контрагент</dt><dd>{request.counterparties?.name || '—'}</dd></div>
                 <div><dt>Номер</dt><dd>{request.doc_number || '—'}</dd></div>
                 <div><dt>Дата документа</dt><dd>{fmtDocDate(request.doc_date) || '—'}</dd></div>
+                {hasCardFields && (
+                  <div className="dc-detail-wide">
+                    <dt>Письмо</dt>
+                    <dd>
+                      {mail ? (
+                        <a className="dc-detail-mail" href={mail} target="_blank" rel="noopener noreferrer" title={request.email_link}>
+                          <IconLink size={14} />Открыть письмо
+                        </a>
+                      ) : '—'}
+                    </dd>
+                  </div>
+                )}
                 {hasBoardFields && (
                   <>
                     <div className="dc-detail-wide">
                       <dt>Исполнители</dt>
                       <dd className="dc-detail-people">
-                        {request.assignee_ids?.length ? (
+                        {people.length ? (
                           <>
-                            <DocCheckAvatars ids={request.assignee_ids} employees={employees} max={6} />
-                            <span>{request.assignee_ids.map(id => employeeName(employees, id)).join(', ')}</span>
+                            <DocCheckAvatars ids={request.assignee_ids} manual={request.manual_assignees} employees={employees} max={6} />
+                            <span>{people.join(', ')}</span>
                           </>
                         ) : 'Не назначены'}
                       </dd>
@@ -187,6 +266,27 @@ export default function DocCheckDetailModal({
               </div>
             </>
           )}
+
+          {tab === 'steps' && (cardState !== 'ready' ? cardUnavailable : (
+            <DocCheckSteps
+              requestId={request.id}
+              steps={steps}
+              onStepsChange={changeSteps}
+              onReload={loadCard}
+              canArrange={canEdit && !isDeleted}
+              canTick={(canEdit || isAssignee) && !isDeleted}
+            />
+          ))}
+
+          {tab === 'discussion' && (cardState !== 'ready' ? cardUnavailable : (
+            <DocCheckDiscussion
+              requestId={request.id}
+              comments={comments}
+              onCommentsChange={changeComments}
+              currentUserId={currentUserId}
+              canWrite={!isDeleted}
+            />
+          ))}
 
           {tab === 'docs' && (
             <S3DocumentList

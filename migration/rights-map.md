@@ -96,6 +96,8 @@ BSMContractorRatesPage, BSMRatesPage, BSMComparisonPage, BSMSelectionPage, Contr
 |---|---|---|
 | dc_requests, dc_request_tasks, dc_request_audit_log | DcRequestsPage | E(dc_requests); выход из «проверки по договору» — admin/суперадмин/lawyer; **окончательное удаление — isAdmin только в интерфейсе** |
 | doc_check_requests, doc_check_request_audit_log | DocCheckRequestsPage | E(doc_check_requests) |
+| doc_check_request_comments (20261124) | DocCheckDetailModal → «Обсуждение» | **в базе:** читает и пишет `osp_can('doc_check_requests', 'view')`; автор и время — триггер; правки и удаления нет (ни правила, ни выдачи) |
+| doc_check_request_steps (20261124) | DocCheckDetailModal → «Шаги» | **в базе:** читает V(doc_check_requests); добавляет, удаляет E(doc_check_requests); меняет E или исполнитель заявки (`assignee_ids`) — ему триггер оставляет только отметку `is_done` |
 | kp_/supply_rates_registry и фильтры | — (чтение) | раздел rates_registry; `refresh_rates_registry` — **любой зритель реестра** |
 | kp_manual_rates (20261122) | RatesRegistryPage → «Добавить расценку» (KpManualRateDialog), «Проверить по файлу» → «Добавить в реестр» (KpRateCheckDialog), изменить / удалить в колонке «Документ (ВОР)» | **в базе:** E(rates_registry) = `osp_can('rates_registry', 'edit')`; читает читатель реестра (`osp_registry_reader`); кто и когда — триггер; в реестре — сразу (представление kp_rates_registry) |
 | kp_rates_lookup (20261122) | KpRateCheckDialog (похожие расценки для строк файла) | функция с правами вызывающего: строки — представление реестра (читатель реестра); проверять по файлу может любой зритель реестра |
