@@ -57,6 +57,7 @@ import TasksPage from '../../../src/pages/TasksPage'
 // Блок ДГП — только по требованию: стили карточки объекта (ObjectDetailPage.css) не должны задеть другие стенды.
 const DgpStand = lazy(() => import('./dgp-stand.jsx'))
 // Реестр договоров — так же: его стили (ContractRegistry*.css, MobileCards.css) глобальные.
+const ObjectsPage = lazy(() => import('../../../src/pages/ObjectsPage'))
 const ContractsPage = lazy(() => import('../../../src/pages/ContractsPage'))
 // «Проверка КП» — так же: стили страницы и рабочего слоя (workUi.css) не должны задеть другие стенды.
 const KpReviewPage = lazy(() => import('../../../src/pages/KpReviewPage'))
@@ -106,6 +107,7 @@ const routes = (
     <Route path="/stand/add-user" element={<Suspense fallback={null}><AddUserStand /></Suspense>} />
     <Route path="/public/tenders" element={<PublicTendersPage />} />
     <Route path="/general/counterparties" element={<CounterpartiesPage />} />
+    <Route path="/general/objects" element={<Suspense fallback={null}><ObjectsPage /></Suspense>} />
     <Route path="/general/objects/:objectId" element={<Suspense fallback={null}><ObjectDetailPage /></Suspense>} />
     <Route path="/contracts" element={<Suspense fallback={null}><ContractsPage /></Suspense>} />
     <Route path="/kp-review" element={<Suspense fallback={null}><KpReviewPage /></Suspense>} />

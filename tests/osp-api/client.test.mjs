@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { callOspFunction, OSP_API_BASE } from '../../src/api/ospApi.js'
 import { nextFeatures, parseFeatures, resolveFeature } from '../../src/config/features.js'
 import { createOspFiles, HASH_MAX_BYTES, sha256Hex } from '../../src/api/ospFiles.js'
-import { functionPath, filesPath, coversPath, coverUrl, DATA_BOUND_FUNCTIONS, OSP_API_FLAG, OSP_FILES_FLAG } from '../../src/api/serverPath.js'
+import { functionPath, filesPath, coversPath, coverThumbUrl, coverUrl, DATA_BOUND_FUNCTIONS, OSP_API_FLAG, OSP_FILES_FLAG } from '../../src/api/serverPath.js'
 import { createOspCovers } from '../../src/api/ospCovers.js'
 import { uuidv7 } from '../../src/utils/uuid.js'
 import crypto from 'node:crypto'
@@ -315,6 +315,16 @@ describe('src/api/ospCovers.js и files.js — обложки объектов',
     error.context = new Response(JSON.stringify(body), { status })
     return { data: null, error }
   }
+
+  it('миниатюра — только у обложек своего API; адрес бакета Supabase и пустой не меняются', () => {
+    assert.equal(coverThumbUrl(coverUrl(NAME)), `/api/covers/${NAME}/thumb`)
+    const supabase = `https://x.supabase.co/storage/v1/object/public/object-photos/${NAME}`
+    assert.equal(coverThumbUrl(supabase), supabase)
+    assert.equal(coverThumbUrl(''), '')
+    assert.equal(coverThumbUrl(null), null)
+    assert.equal(coverThumbUrl('/api/covers/'), '/api/covers/')
+    assert.equal(coverThumbUrl(`/api/covers/${NAME}/thumb`), `/api/covers/${NAME}/thumb`, 'дважды не дописывается')
+  })
 
   it('данные в базе Яндекса — обложки через свой API, адрес /api/covers/<имя>; в Supabase — прежний бакет', () => {
     assert.equal(coversPath({ ownDb: true }), 'osp')

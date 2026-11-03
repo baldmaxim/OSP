@@ -140,6 +140,14 @@
     "body": null
   },
   {
+    "method": "GET",
+    "url": "/api/covers/:name/thumb",
+    "kind": "open",
+    "require": null,
+    "reason": "Миниатюра обложки объекта для <img> без токена: та же картинка, что на открытом адресе обложки, только меньше; только имя «UUID.расширение», новых данных не открывает",
+    "body": null
+  },
+  {
     "method": "DELETE",
     "url": "/api/db/*",
     "kind": "open",

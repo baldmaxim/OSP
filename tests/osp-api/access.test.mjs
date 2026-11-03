@@ -184,6 +184,10 @@ describe('osp-api: права объявлены на маршруте, закр
       'без токена': await code('GET', '/api/covers/0f0e0d0c-0b0a-4908-8706-050403020100.jpg'),
       'имя не по шаблону': await code('GET', '/api/covers/..%2Fcontracts%2Fx.docx'),
     }
+    measured['GET /api/covers/:name/thumb'] = {
+      'без токена': await code('GET', '/api/covers/0f0e0d0c-0b0a-4908-8706-050403020100.jpg/thumb'),
+      'имя не по шаблону': await code('GET', '/api/covers/..%2Fcontracts%2Fx.docx/thumb'),
+    }
     measured['OPTIONS /api/rates/*'] = { 'без ключа': await code('OPTIONS', '/api/rates/kp') }
     measured['OPTIONS /api/rates'] = { 'без ключа': await code('OPTIONS', '/api/rates') }
     compareWithBaseline('access.json', measured)
@@ -209,6 +213,7 @@ describe('osp-api: права объявлены на маршруте, закр
     assert.equal(measured['POST /api/fn/ai-assist clause_suggest'].contractor, 403)
     assert.equal(measured['POST /api/fn/cover-upload'].contractor, 403, 'обложку загружает только сотрудник')
     assert.equal(measured['GET /api/covers/:name']['имя не по шаблону'], 404)
+    assert.equal(measured['GET /api/covers/:name/thumb']['имя не по шаблону'], 404)
     for (const action of ['upload', 'confirm', 'delete']) {
       assert.equal(measured[`POST /api/fn/s3-presign ${action}`].contractor, 403, action)
       // Роль подрядчика без организации — тот же подрядчик, а не сотрудник.

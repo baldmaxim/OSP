@@ -7,6 +7,8 @@
 //                                «UUID.расширение» и только в каталоге covers/; ответ — переадресация на
 //                                подписанную ссылку на 10 минут. Знать адрес — значит знать имя файла,
 //                                как и раньше.
+//   GET  /api/covers/<имя>/thumb — миниатюра той же обложки для карточки (src/lib/coverThumbs.js): постоянный адрес,
+//                                браузер запоминает ответ. Не вышло или не успели — переадресация на оригинал, как выше.
 //   POST /api/fn/cover-upload  { name, mime_type, size_bytes } → { presigned_url, expires_in, url } —
 //                                ссылка на загрузку новой обложки: сотруднику с правом правки объектов
 //                                (osp_can('objects', 'edit') — то же правило, что у документов объекта).
@@ -17,20 +19,43 @@ import { GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { z } from 'zod'
 import { access } from '../lib/access.js'
-import { COVER_NAME_RE, COVER_URL_PREFIX, coverKey } from '../lib/covers.js'
+import { COVER_NAME_RE, COVER_THUMB_TYPE, COVER_URL_PREFIX, coverKey } from '../lib/covers.js'
+import { createCoverThumbs } from '../lib/coverThumbs.js'
 import { READONLY_CODE, READONLY_TEXT } from '../lib/writeBarrier.js'
 
 export const COVER_VIEW_TTL_SEC = 10 * 60
+// Имя обложки — UUID, файл не перезаписывается (409 при загрузке): новая обложка — новый адрес.
+export const COVER_THUMB_CACHE = 'public, max-age=31536000, immutable'
+// Сколько ждать миниатюру, которой ещё нет (первый показ после загрузки или выкладки). Дольше — оригинал, а миниатюра
+// доделывается в фоне: при первом открытии страницы очередь на разбор не должна держать картинку без предела.
+export const COVER_THUMB_WAIT_MS = 5_000
 export const COVER_UPLOAD_TTL_SEC = 15 * 60
 export const COVER_MAX_BYTES = 20 * 1024 * 1024
 const IMAGE_MIME_RE = /^image\/[a-z0-9.+-]{1,64}$/
 const MISSING_FUNCTION = new Set(['PGRST202', '42883'])
 export const COVERS_OPEN_REASON = 'Обложки объектов: картинку показывает <img> без токена, как раньше из общедоступного бакета Supabase; только имя «UUID.расширение» в каталоге covers/, ответ — подписанная ссылка на 10 минут'
+export const COVER_THUMBS_OPEN_REASON = 'Миниатюра обложки объекта для <img> без токена: та же картинка, что на открытом адресе обложки, только меньше; только имя «UUID.расширение», новых данных не открывает'
 
 const any = z.unknown().optional()
 export const COVER_UPLOAD_BODY = z.object({ name: any, mime_type: any, size_bytes: any })
 
-export function registerCovers(app, { config, getS3, isReadOnly = () => false }) {
+export function registerCovers(app, { config, getS3, isReadOnly = () => false, coverThumbs = null, coverThumbWaitMs = COVER_THUMB_WAIT_MS }) {
+  const thumbs = coverThumbs || createCoverThumbs({ getS3, bucket: config.s3?.bucket, isReadOnly, log: app.log })
+
+  const s3ForView = (request, reply) => {
+    try {
+      return getS3()
+    } catch (e) {
+      request.log.error({ msg: e.message }, 's3 config')
+      reply.code(503).send({ error: 'Хранилище файлов не настроено' })
+      return null
+    }
+  }
+  const redirectToOriginal = async (s3, name, reply) => {
+    const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: config.s3.bucket, Key: coverKey(name) }), { expiresIn: COVER_VIEW_TTL_SEC })
+    return reply.redirect(url, 302)
+  }
+
   app.route({
     method: 'GET',
     url: '/api/covers/:name',
@@ -38,15 +63,27 @@ export function registerCovers(app, { config, getS3, isReadOnly = () => false })
     handler: async (request, reply) => {
       const name = String(request.params.name || '')
       if (!COVER_NAME_RE.test(name)) return reply.code(404).send({ error: 'Not found' })
-      let s3
-      try {
-        s3 = getS3()
-      } catch (e) {
-        request.log.error({ msg: e.message }, 's3 config')
-        return reply.code(503).send({ error: 'Хранилище файлов не настроено' })
-      }
-      const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: config.s3.bucket, Key: coverKey(name) }), { expiresIn: COVER_VIEW_TTL_SEC })
-      return reply.redirect(url, 302)
+      const s3 = s3ForView(request, reply)
+      if (!s3) return reply
+      return redirectToOriginal(s3, name, reply)
+    },
+  })
+
+  app.route({
+    method: 'GET',
+    url: '/api/covers/:name/thumb',
+    config: { access: access.open(COVER_THUMBS_OPEN_REASON) },
+    handler: async (request, reply) => {
+      const name = String(request.params.name || '')
+      if (!COVER_NAME_RE.test(name)) return reply.code(404).send({ error: 'Not found' })
+      const s3 = s3ForView(request, reply)
+      if (!s3) return reply
+      let timer
+      const waited = new Promise((resolve) => { timer = setTimeout(() => resolve({ status: 'original', reason: 'wait' }), coverThumbWaitMs) })
+      const out = await Promise.race([thumbs.get(name), waited]).finally(() => clearTimeout(timer))
+      if (out.status === 'missing') return reply.code(404).send({ error: 'Not found' })
+      if (out.status !== 'ok') return redirectToOriginal(s3, name, reply)
+      return reply.header('Content-Type', COVER_THUMB_TYPE).header('Cache-Control', COVER_THUMB_CACHE).send(out.bytes)
     },
   })
 

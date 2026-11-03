@@ -88,7 +88,7 @@ src/
     ├── index.js          # db, auth, objectPhotos, invokeFunction, subscribeTable
     ├── db.js             # таблицы и RPC: db.from(...), db.rpc(...) — построитель как у supabase-js
     ├── auth.js           # вход (фаза A — Supabase Auth): только RoleContext и сервисы
-    ├── files.js          # обложки объектов: бакет Supabase или (ospDb) cloud.ru через osp-api, адрес /api/covers/<имя>
+    ├── files.js          # обложки объектов: бакет Supabase или (ospDb) cloud.ru через osp-api, адрес /api/covers/<имя>, для показа — thumbUrl
     ├── ospCovers.js      # загрузка обложки через osp-api: ссылка cover-upload → PUT в cloud.ru (тип файла подписан)
     ├── functions.js      # invokeFunction(name, options) — Edge Functions или osp-api (флаг ospApiAi); файлы — ospFiles (флаг ospApiFilesV2)
     ├── serverPath.js     # правило выбора пути файлов и ИИ: при данных в базе Яндекса (ospDb) файлы — только через osp-api, функция файлов Supabase не вызывается
@@ -395,6 +395,7 @@ Task 277. Универсальное хранение файлов в S3-сов�
   (`osp_can`). Фронт — [src/api/ospFiles.js](src/api/ospFiles.js); `services/s3.js` выбирает путь в начале
   операции, вызовы страниц не меняются.
 - Frontend сервис [src/services/s3.js](src/services/s3.js): `uploadFile`, `fetchDocuments`, `requestDownloadUrl`, `deleteDocument`, `deleteS3Object`.
+- **Обложки объектов — миниатюрой** (03.11.2026: «долгая прогрузка фото»; миграции нет): `/general/objects` показывал оригиналы (до 3,3 МБ на карточку в 300 px), и каждая обложка шла переадресацией на новую подпись cloud.ru — браузеру нечего было запомнить; замер: 0,3 с переадресация + 2,1–2,4 с файл, при каждом открытии. Теперь `objectPhotos.thumbUrl(url)` → `/api/covers/<имя>/thumb` (только у адресов своего API; бакет Supabase — как есть), сервер — [coverThumbs.js](server/osp-api/src/lib/coverThumbs.js), подробности — `server/osp-api/README.md`. Показывать обложку — [ObjectCover в ObjectsPage](src/pages/ObjectsPage.jsx): не отдалась — оригинал. Кэш разрешён только маршруту миниатюры и только в `location ^~ /api/covers/` — остальной `/api/` остаётся `no-store`, подписанные ссылки не запоминать. Тесты — `tests/osp-api/covers.test.mjs`, `minio.test.mjs`, `tests/tender/objects-covers.test.mjs` (стенд `__navigate('/general/objects')`), через настоящий nginx — `tests/deploy/docker.test.mjs`.
 - **Скачивание файла — только `downloadS3File(s3Key, fileName)`** ([FileDownload.jsx](src/components/FileDownload.jsx), 29.10.2026:
   «чтобы визуально не обновлялась страница при нажатии скачки в любом месте сайта»): байты — fetch по подписанной ссылке,
   сохранение — blob (file-saver) под нужным именем; ни новой вкладки, ни перехода. Ссылку на файл в `target=_blank`,

@@ -26,6 +26,21 @@ function nameWithFirst(full) {
   return `${parts[0]} ${parts[1]}`
 }
 
+// Обложка — миниатюрой: оригинал бывает в 3 МБ при карточке в 300 px. Не отдалась (сайт выложен раньше API, сбой) —
+// показываем оригинал, как раньше. Вызывать с key = адрес: у новой обложки попытка миниатюры начинается заново.
+function ObjectCover({ url, alt }) {
+  const [useOriginal, setUseOriginal] = useState(false)
+  return (
+    <img
+      src={useOriginal ? url : objectPhotos.thumbUrl(url)}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      onError={() => setUseOriginal(true)}
+    />
+  )
+}
+
 function ObjectsPage() {
   const { scopedObjectIds, canEdit } = useRole()
   // task 333: гейт add/edit/delete объектов
@@ -236,18 +251,21 @@ function ObjectsPage() {
         .select('*')
         .order('name', { ascending: true })
       if (scopedObjectIds.length > 0) query = query.in('id', scopedObjectIds)
-      const { data, error } = await query
+      // Ответственные по объектам — одним запросом на весь список, а не по
+      // запросу на карточку. Best-effort: до применения миграции 20260831
+      // таблицы нет, и сетка объектов не должна из-за этого падать.
+      // Оба запроса сразу: карточки, а с ними и обложки, не ждут запросы по очереди.
+      const [{ data, error }, staffRes] = await Promise.all([
+        query,
+        db
+          .from('object_staff')
+          .select('object_id, staff_role, sort_order, contacts(id, full_name)')
+          .order('sort_order', { ascending: true }),
+      ])
 
       if (error) throw error
       setObjects(data || [])
 
-      // Ответственные по объектам — одним запросом на весь список, а не по
-      // запросу на карточку. Best-effort: до применения миграции 20260831
-      // таблицы нет, и сетка объектов не должна из-за этого падать.
-      const staffRes = await db
-        .from('object_staff')
-        .select('object_id, staff_role, sort_order, contacts(id, full_name)')
-        .order('sort_order', { ascending: true })
       if (staffRes.error) {
         console.warn('Ответственные по объектам недоступны (миграция 20260831?):', staffRes.error.message)
         setStaffByObject(new Map())
@@ -653,7 +671,7 @@ function ObjectsPage() {
 
                     {object.cover_image_url ? (
                       <div className="object-card-cover">
-                        <img src={object.cover_image_url} alt={object.name} loading="lazy" />
+                        <ObjectCover key={object.cover_image_url} url={object.cover_image_url} alt={object.name} />
                       </div>
                     ) : (
                       <div className="object-card-cover-placeholder">🏢</div>
@@ -762,7 +780,7 @@ function ObjectsPage() {
                   <div className="object-photo-upload">
                     {objectFormData.cover_image_url ? (
                       <div className="object-photo-preview">
-                        <img src={objectFormData.cover_image_url} alt="Превью" />
+                        <ObjectCover key={objectFormData.cover_image_url} url={objectFormData.cover_image_url} alt="Превью" />
                         <button
                           type="button"
                           className="object-photo-preview-remove"

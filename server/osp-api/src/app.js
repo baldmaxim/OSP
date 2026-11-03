@@ -448,9 +448,10 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
 
   app.setNotFoundHandler((request, reply) => reply.code(404).send({ error: 'Not found' }))
 
-  // В ответах — подписанные ссылки и данные реестра: ни браузер, ни прокси их не кешируют.
+  // В ответах — подписанные ссылки и данные реестра: ни браузер, ни прокси их не кешируют. Своё правило может
+  // поставить только сам маршрут и только на удачный ответ — сейчас это одна миниатюра обложки (routes/covers.js).
   app.addHook('onSend', async (request, reply, payload) => {
-    reply.header('Cache-Control', 'no-store')
+    if (!reply.hasHeader('Cache-Control')) reply.header('Cache-Control', 'no-store')
     return payload
   })
 
@@ -538,7 +539,7 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
 
   const ctx = { config, getS3, getAnthropic, getServiceClient, limiters, db, refreshRegistry,
     verifyUserToken, allow: deps.allow || ALLOW, mint, beforeGateway, gatewayOn, isReadOnly, loadStatus,
-    principal, authService, sessions, isSuperadmin, apiKeys }
+    principal, authService, sessions, isSuperadmin, apiKeys, coverThumbs: deps.coverThumbs, coverThumbWaitMs: deps.coverThumbWaitMs }
   registerAuth(app, ctx)
   registerDbGateway(app, ctx)
   registerS3Presign(app, ctx)

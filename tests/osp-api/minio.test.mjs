@@ -166,6 +166,27 @@ describe('osp-api s3-presign против MinIO (настоящая подпис
     assert.ok(Buffer.from(await got.arrayBuffer()).equals(content))
   })
 
+  it('миниатюра обложки: настоящая картинка — сделана и сохранена; настоящий ответ «нет файла» — 404, а не сбой', async () => {
+    const sharp = createRequire(path.join(SERVER, 'package.json'))('sharp')
+    const name = '0f0e0d0c-0b0a-4908-8706-050403020101.jpg'
+    const content = await sharp({ create: { width: 1600, height: 900, channels: 3, background: '#789' } }).jpeg().toBuffer()
+    const res = await app.inject({
+      method: 'POST', url: '/api/fn/cover-upload',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${USER.token}` },
+      payload: JSON.stringify({ name, mime_type: 'image/jpeg', size_bytes: content.length }),
+    })
+    assert.equal(res.statusCode, 200, res.body)
+    const put = await fetch(res.json().presigned_url, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: content })
+    assert.equal(put.status, 200, await put.text())
+    const thumb = await app.inject({ method: 'GET', url: `/api/covers/${name}/thumb` })
+    assert.equal(thumb.statusCode, 200, thumb.body)
+    assert.equal(thumb.headers['content-type'], 'image/webp')
+    assert.equal((await sharp(thumb.rawPayload).metadata()).width, 800)
+    assert.ok((await listKeys('covers/')).includes(`covers/thumbs/800/${name}.webp`))
+    const missing = await app.inject({ method: 'GET', url: '/api/covers/0f0e0d0c-0b0a-4908-8706-05040302dead.jpg/thumb' })
+    assert.equal(missing.statusCode, 404)
+  })
+
   it('копирование обложек из хранилища Supabase: сверка обратным скачиванием, повтор без загрузки', async () => {
     const { copyCovers } = await import(path.join(SERVER, 'src', 'lib', 'covers.js'))
     const { defaultDeps } = await import(path.join(SERVER, 'src', 'app.js'))

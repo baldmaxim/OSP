@@ -7,7 +7,7 @@ import { createOspCovers } from './ospCovers'
 import { auth } from './auth'
 import { sessionFetch } from './sessionClient'
 import { ownDbEnabled } from './db'
-import { coversPath, coverUrl } from './serverPath'
+import { coversPath, coverThumbUrl, coverUrl } from './serverPath'
 
 const OBJECT_PHOTOS = 'object-photos'
 
@@ -33,4 +33,6 @@ export const objectPhotos = {
     const where = uploadedTo.get(path) || coversPath({ ownDb: ownDbEnabled() })
     return where === 'osp' ? coverUrl(path) : supabase.storage.from(OBJECT_PHOTOS).getPublicUrl(path).data.publicUrl
   },
+  // Адрес для показа по записанному адресу обложки (objects.cover_image_url).
+  thumbUrl: coverThumbUrl,
 }

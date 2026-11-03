@@ -10,11 +10,19 @@ export const COVER_NAME_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[
 export const COVER_PREFIX = 'covers/'
 export const COVER_URL_PREFIX = '/api/covers/'
 export const coverKey = (name) => COVER_PREFIX + name
+// Миниатюры (src/lib/coverThumbs.js). Рамка — вдвое больше карточки «Объектов» (300–400 px, чётко и на экране
+// с двойной плотностью); другой размер — другой каталог, чтобы не смешивать с уже сделанными.
+export const COVER_THUMB_BOX = { width: 800, height: 450 }
+export const COVER_THUMB_QUALITY = 72
+// Защита от файла-бомбы; у обложек прода — до 25 Мп.
+export const COVER_THUMB_MAX_PIXELS = 100_000_000
+export const COVER_THUMB_TYPE = 'image/webp'
+export const coverThumbKey = (name) => `${COVER_PREFIX}thumbs/${COVER_THUMB_BOX.width}/${name}.webp`
 // Общедоступный адрес файла бакета object-photos — так его записывала страница объектов.
 export const sourceBaseOf = (supabaseUrl) => `${String(supabaseUrl).replace(/\/+$/, '')}/storage/v1/object/public/object-photos/`
 
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex')
-const notFound = (e) => e?.name === 'NoSuchKey' || e?.name === 'NotFound' || e?.$metadata?.httpStatusCode === 404
+export const isNotFound = (e) => e?.name === 'NoSuchKey' || e?.name === 'NotFound' || e?.$metadata?.httpStatusCode === 404
 const LIST_HEADER = 'name,size,mimetype,created_at,updated_at'
 
 // Список обложек копии прода (migration/backup/extras.sql): имя, размер, тип.
@@ -29,7 +37,7 @@ export function parseCoverList(text) {
 
 class Failure extends Error {}
 
-async function bytesOf(body) {
+export async function bytesOf(body) {
   return Buffer.from(await body.transformToByteArray())
 }
 
@@ -54,7 +62,7 @@ export async function copyCovers({ listBytes, sourceBase, s3, bucket, fetchImpl 
       try {
         stored = await bytesOf((await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))).Body)
       } catch (e) {
-        if (!notFound(e)) throw e
+        if (!isNotFound(e)) throw e
       }
       let uploaded = false
       if (stored) {

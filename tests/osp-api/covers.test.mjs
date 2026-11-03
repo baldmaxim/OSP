@@ -5,15 +5,19 @@
 //     размера, занятое имя не перезаписывается;
 //   • копирование из хранилища Supabase: каждый файл сверен обратным скачиванием, повтор ничего не
 //     загружает, лежащий в cloud.ru другой файл не перезаписывается, сбои попадают в журнал; журнал
-//     принимает загрузка в базу Яндекса (migration/target/lib/extras.mjs).
+//     принимает загрузка в базу Яндекса (migration/target/lib/extras.mjs);
+//   • миниатюры: настоящая картинка — WebP не больше рамки, постоянный адрес с кэшем на год; делается один раз;
+//     всё, что не вышло, — оригинал, без кэша.
 // Нужны зависимости сервера: npm ci --prefix server/osp-api — без них набор пропускается.
 import { describe, it, before, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { startFakeSupabase, startFakeS3 } from './lib/fakes.mjs'
 import { coverMovesSql, COVER_NAME_RE as LOAD_NAME_RE, COVER_URL_PREFIX as LOAD_URL_PREFIX } from '../../migration/target/lib/extras.mjs'
 import { COVER_URL_PREFIX as SITE_URL_PREFIX } from '../../src/api/serverPath.js'
@@ -225,5 +229,294 @@ describe('Обложки объектов: показ, загрузка, коп�
     assert.equal(s3.requests.filter((r) => r.method === 'PUT').length, 0)
     const { summary } = coverMovesSql(JSON.stringify(res), list.toString('utf8'))
     assert.deepEqual(summary, { listed: 4, verified: 0, failed: 4 })
+  })
+})
+
+describe('Миниатюры обложек: GET /api/covers/<имя>/thumb', { skip }, () => {
+  const YEAR_CACHE = 'public, max-age=31536000, immutable'
+  const originalKey = `/osp/covers/${NAME}`
+  const thumbKey = `/osp/covers/thumbs/800/${NAME}.webp`
+  let buildApp
+  let defaultDeps
+  let createCoverThumbs
+  let renderInChild
+  let sharp
+  let supa
+  let s3
+  let apps = []
+
+  const s3Config = () => ({ endpoint: s3.url, region: 'ru-central-1', bucket: 'osp', accessKeyId: 'AKIDTEST', secretAccessKey: 'secret-test' })
+  async function start(deps = {}) {
+    const app = buildApp({
+      config: { host: '127.0.0.1', port: 0, supabaseUrl: supa.url, supabaseAnonKey: 'anon-test-key', supabaseServiceKey: 'service-test-key', s3: s3Config() },
+      deps: { ...defaultDeps, ...deps },
+      logger: false,
+    })
+    apps.push(app)
+    await app.ready()
+    return app
+  }
+  const view = (app, name = NAME) => app.inject({ method: 'GET', url: `/api/covers/${name}/thumb` })
+  const putOriginal = (bytes, key = originalKey) => { s3.objects.set(key, bytes.length); s3.bodies.set(key, bytes) }
+  const gets = (key) => s3.requests.filter((r) => r.method === 'GET' && r.path === key).length
+  const noisy = (width, height) => sharp({ create: { width, height, channels: 3, background: '#7a8', noise: { type: 'gaussian', mean: 128, sigma: 30 } } })
+  const photo = (width, height) => noisy(width, height).jpeg({ quality: 85 }).toBuffer()
+
+  // Хранилище в памяти и разбор-подделка: для правил очереди настоящая картинка не нужна.
+  function memoryS3(files = {}, { failGet = () => false } = {}) {
+    const fake = {
+      files: new Map(Object.entries(files)),
+      calls: [],
+      async send(cmd) {
+        const { Key, Body } = cmd.input
+        fake.calls.push(`${cmd.constructor.name} ${Key}`)
+        if (cmd.constructor.name === 'PutObjectCommand') { fake.files.set(Key, Body); return {} }
+        if (failGet(Key)) throw new Error('хранилище недоступно')
+        const bytes = fake.files.get(Key)
+        if (!bytes) throw Object.assign(new Error('нет'), { name: 'NoSuchKey' })
+        return { ContentLength: bytes.length, Body: { transformToByteArray: async () => bytes } }
+      },
+    }
+    return fake
+  }
+  const cover = (i) => `aaaaaaaa-0000-4000-8000-00000000000${i}.jpg`
+  const renderOk = async () => ({ bytes: Buffer.from('thumb') })
+
+  before(async () => {
+    ;({ buildApp, defaultDeps } = await import(path.join(SERVER, 'src', 'app.js')))
+    ;({ createCoverThumbs, renderInChild } = await import(path.join(SERVER, 'src', 'lib', 'coverThumbs.js')))
+    sharp = createRequire(path.join(SERVER, 'package.json'))('sharp')
+    supa = await startFakeSupabase(supabaseState())
+    s3 = await startFakeS3()
+  })
+  after(async () => {
+    await supa?.close()
+    await s3?.close()
+  })
+  beforeEach(async () => {
+    await Promise.all(apps.map((a) => a.close()))
+    apps = []
+    s3.requests.length = 0
+    s3.objects.clear()
+    s3.bodies.clear()
+  })
+
+  it('фото: WebP не больше рамки, сильно легче оригинала, кэш браузера на год; лежит в covers/thumbs/', async () => {
+    const original = await photo(3000, 2000)
+    putOriginal(original)
+    const res = await view(await start())
+    assert.equal(res.statusCode, 200, res.body)
+    assert.equal(res.headers['content-type'], 'image/webp')
+    assert.equal(res.headers['cache-control'], YEAR_CACHE)
+    const meta = await sharp(res.rawPayload).metadata()
+    assert.equal(meta.format, 'webp')
+    assert.deepEqual([meta.width, meta.height], [800, 533])
+    assert.ok(res.rawPayload.length < original.length / 5, `${res.rawPayload.length} из ${original.length}`)
+    assert.ok(s3.bodies.get(thumbKey)?.equals(res.rawPayload), 'миниатюра лежит в хранилище')
+    assert.ok(s3.bodies.get(originalKey).equals(original), 'оригинал не тронут')
+    assert.equal(s3.requests.find((r) => r.method === 'PUT').contentType, 'image/webp')
+  })
+
+  it('делается один раз: повтор — из памяти, после перезапуска — из хранилища, без оригинала', async () => {
+    putOriginal(await photo(1600, 900))
+    const app = await start()
+    const first = await view(app)
+    assert.equal(first.statusCode, 200)
+    const requests = s3.requests.length
+    const again = await view(app)
+    assert.ok(again.rawPayload.equals(first.rawPayload))
+    assert.equal(s3.requests.length, requests, 'повтор не ходит в хранилище')
+
+    s3.objects.delete(originalKey)
+    s3.bodies.delete(originalKey)
+    s3.requests.length = 0
+    const restarted = await view(await start())
+    assert.equal(restarted.statusCode, 200)
+    assert.equal(restarted.headers['cache-control'], YEAR_CACHE)
+    assert.ok(restarted.rawPayload.equals(first.rawPayload))
+    assert.equal(gets(originalKey), 0, 'оригинал не нужен')
+    assert.equal(s3.requests.filter((r) => r.method === 'PUT').length, 0, 'заново не записывается')
+  })
+
+  it('снимок с отметкой поворота не ложится набок', async () => {
+    const original = await noisy(1600, 800).jpeg().withMetadata({ orientation: 6 }).toBuffer()
+    assert.equal((await sharp(original).metadata()).orientation, 6, 'в файле есть отметка поворота')
+    putOriginal(original)
+    const meta = await sharp((await view(await start())).rawPayload).metadata()
+    assert.ok(meta.height > meta.width, `${meta.width}×${meta.height}`)
+    assert.equal(meta.exif, undefined, 'метаданные снимка в миниатюру не попадают')
+  })
+
+  it('панорама закрывает рамку карточки по высоте; маленькая картинка не растягивается; PNG с прозрачностью её сохраняет', async () => {
+    putOriginal(await photo(4000, 500))
+    let meta = await sharp((await view(await start())).rawPayload).metadata()
+    assert.equal(meta.height, 450)
+    assert.equal(meta.width, 3600)
+
+    const small = 'aaaaaaaa-0000-4000-8000-00000000000a.jpg'
+    putOriginal(await photo(300, 200), `/osp/covers/${small}`)
+    meta = await sharp((await view(await start(), small)).rawPayload).metadata()
+    assert.deepEqual([meta.width, meta.height], [300, 200])
+
+    const png = 'aaaaaaaa-0000-4000-8000-00000000000b.png'
+    putOriginal(await sharp({ create: { width: 1000, height: 600, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0.5 } } }).png().toBuffer(), `/osp/covers/${png}`)
+    assert.equal((await sharp((await view(await start(), png)).rawPayload).metadata()).hasAlpha, true)
+  })
+
+  it('имя не по шаблону — 404 без обращения к хранилищу; нет такой обложки — 404 без кэша', async () => {
+    const app = await start()
+    for (const bad of ['x.jpg', '..%2Fcontracts%2Fx.docx', `${NAME}%00.png`, `${NAME}%2F..%2Fx.jpg`]) {
+      assert.equal((await view(app, bad)).statusCode, 404, bad)
+    }
+    assert.equal(s3.requests.length, 0)
+    const missing = await view(app)
+    assert.equal(missing.statusCode, 404)
+    assert.equal(missing.headers['cache-control'], 'no-store')
+    assert.equal(s3.requests.filter((r) => r.method === 'PUT').length, 0)
+  })
+
+  it('не картинка — ссылка на оригинал без кэша; повторно не разбирается и ничего не записывает', async () => {
+    putOriginal(Buffer.from('это не картинка'))
+    const app = await start()
+    const res = await view(app)
+    assert.equal(res.statusCode, 302)
+    assert.equal(res.headers['cache-control'], 'no-store', 'подпись запоминать нельзя')
+    const location = new URL(res.headers.location)
+    assert.equal(location.origin + location.pathname, `${s3.url}/osp/covers/${NAME}`)
+    assert.ok(location.searchParams.get('X-Amz-Signature'))
+    const reads = gets(originalKey)
+    assert.equal((await view(app)).statusCode, 302)
+    assert.equal(gets(originalKey), reads, 'второй раз файл не скачивается')
+    assert.equal(s3.requests.filter((r) => r.method === 'PUT').length, 0)
+  })
+
+  it('прежний адрес оригинала и остальные ответы по-прежнему без кэша', async () => {
+    const app = await start()
+    const original = await app.inject({ method: 'GET', url: `/api/covers/${NAME}` })
+    assert.equal(original.statusCode, 302)
+    assert.equal(original.headers['cache-control'], 'no-store')
+    assert.equal((await app.inject({ method: 'GET', url: '/api/health' })).headers['cache-control'], 'no-store')
+  })
+
+  it('не успели за срок ожидания — оригинал, а миниатюра доделывается в фоне и следующий показ её получает', async () => {
+    const original = await photo(1000, 600)
+    putOriginal(original)
+    let release
+    const gate = new Promise((r) => { release = r })
+    const made = sharp(original).webp().toBuffer()
+    const getS3 = () => defaultDeps.createS3(s3Config())
+    const coverThumbs = createCoverThumbs({ getS3, bucket: 'osp', render: async () => { await gate; return { bytes: await made } } })
+    const app = await start({ coverThumbs, coverThumbWaitMs: 30 })
+    assert.equal((await view(app)).statusCode, 302)
+    release()
+    for (let i = 0; i < 100 && !s3.bodies.has(thumbKey); i++) await sleep(20)
+    const next = await view(app)
+    assert.equal(next.statusCode, 200)
+    assert.equal(next.headers['cache-control'], YEAR_CACHE)
+  })
+
+  it('одновременные показы одной обложки — один разбор; разных — строго по одному', async () => {
+    const storage = memoryS3({ [`covers/${cover(1)}`]: Buffer.from('a'), [`covers/${cover(2)}`]: Buffer.from('b'), [`covers/${cover(3)}`]: Buffer.from('c') })
+    let active = 0
+    let peak = 0
+    let renders = 0
+    const render = async () => {
+      renders++
+      active++
+      peak = Math.max(peak, active)
+      await sleep(5)
+      active--
+      return { bytes: Buffer.from('thumb') }
+    }
+    const thumbs = createCoverThumbs({ getS3: () => storage, bucket: 'osp', render })
+    const same = await Promise.all(Array.from({ length: 5 }, () => thumbs.get(cover(1))))
+    assert.ok(same.every((r) => r.status === 'ok'))
+    assert.equal(renders, 1)
+    await Promise.all([thumbs.get(cover(2)), thumbs.get(cover(3))])
+    assert.equal(renders, 3)
+    assert.equal(peak, 1, 'оригинал и процесс разбора в памяти службы — один')
+  })
+
+  it('поток запросов на адрес без обложки: сверх предела — сразу оригинал, без обращения к хранилищу', async () => {
+    const storage = memoryS3()
+    const send = storage.send
+    let open = () => {}
+    const gate = new Promise((r) => { open = r })
+    storage.send = async (cmd) => { await gate; return send(cmd) }
+    const thumbs = createCoverThumbs({ getS3: () => storage, bucket: 'osp', render: renderOk, maxPending: 2 })
+    const pending = [thumbs.get(cover(1)), thumbs.get(cover(2))]
+    assert.deepEqual(await thumbs.get(cover(3)), { status: 'original', reason: 'busy' })
+    open()
+    assert.deepEqual((await Promise.all(pending)).map((r) => r.status), ['missing', 'missing'])
+    assert.ok(!storage.calls.some((c) => c.includes(cover(3))))
+    assert.equal((await thumbs.get(cover(3))).status, 'missing', 'очередь разошлась — снова обычный путь')
+  })
+
+  it('барьер записи: миниатюра показывается, в хранилище не кладётся', async () => {
+    const storage = memoryS3({ [`covers/${cover(1)}`]: Buffer.from('a') })
+    const thumbs = createCoverThumbs({ getS3: () => storage, bucket: 'osp', isReadOnly: () => true, render: renderOk })
+    assert.equal((await thumbs.get(cover(1))).status, 'ok')
+    assert.ok(!storage.calls.some((c) => c.startsWith('PutObjectCommand')))
+  })
+
+  it('запись миниатюры не удалась — показ не страдает', async () => {
+    const storage = memoryS3({ [`covers/${cover(1)}`]: Buffer.from('a') })
+    const send = storage.send
+    storage.send = async (cmd) => { if (cmd.constructor.name === 'PutObjectCommand') throw new Error('нет места'); return send(cmd) }
+    const thumbs = createCoverThumbs({ getS3: () => storage, bucket: 'osp', render: renderOk })
+    assert.equal((await thumbs.get(cover(1))).status, 'ok')
+  })
+
+  it('сбой связи с хранилищем не запоминается; файл, который не разобрался, — запоминается, но не навсегда', async () => {
+    let down = true
+    const storage = memoryS3({ [`covers/${cover(1)}`]: Buffer.from('a') }, { failGet: () => down })
+    const thumbs = createCoverThumbs({ getS3: () => storage, bucket: 'osp', render: renderOk })
+    assert.deepEqual(await thumbs.get(cover(1)), { status: 'original', reason: 'storage' })
+    down = false
+    assert.equal((await thumbs.get(cover(1))).status, 'ok')
+
+    let renders = 0
+    const broken = createCoverThumbs({
+      getS3: () => memoryS3({ [`covers/${cover(2)}`]: Buffer.from('b') }), bucket: 'osp', failureTtlMs: 20,
+      render: async () => { renders++; return { error: 'broken', message: 'не картинка' } },
+    })
+    assert.equal((await broken.get(cover(2))).reason, 'broken')
+    assert.equal((await broken.get(cover(2))).reason, 'failed_before')
+    assert.equal(renders, 1)
+    await sleep(30)
+    assert.equal((await broken.get(cover(2))).reason, 'broken', 'срок прошёл — снова попытка')
+    assert.equal(renders, 2)
+  })
+
+  it('оригинал больше предела не скачивается в память и не разбирается', async () => {
+    let renders = 0
+    let destroyed = false
+    const storage = { send: async (cmd) => {
+      if (cmd.input.Key.includes('thumbs/')) throw Object.assign(new Error('нет'), { name: 'NoSuchKey' })
+      return { ContentLength: 99, Body: { destroy: () => { destroyed = true }, transformToByteArray: async () => assert.fail('тело читать нельзя') } }
+    } }
+    const thumbs = createCoverThumbs({ getS3: () => storage, bucket: 'osp', maxInputBytes: 10, render: async () => { renders++; return {} } })
+    assert.deepEqual(await thumbs.get(cover(1)), { status: 'original', reason: 'too_large' })
+    assert.equal(renders, 0)
+    assert.ok(destroyed)
+  })
+
+  it('память ограничена: давно не показанная миниатюра вытесняется и читается снова из хранилища', async () => {
+    const storage = memoryS3({ [`covers/thumbs/800/${cover(1)}.webp`]: Buffer.alloc(6), [`covers/thumbs/800/${cover(2)}.webp`]: Buffer.alloc(6) })
+    const thumbs = createCoverThumbs({ getS3: () => storage, bucket: 'osp', render: renderOk, memoryBytes: 10 })
+    await thumbs.get(cover(1))
+    await thumbs.get(cover(2))
+    const reads = storage.calls.length
+    await thumbs.get(cover(2))
+    assert.equal(storage.calls.length, reads, 'свежая — из памяти')
+    await thumbs.get(cover(1))
+    assert.equal(storage.calls.length, reads + 1, 'вытесненная — из хранилища')
+  })
+
+  it('отдельный процесс: мусор и нехватка времени — причина, а не падение', async () => {
+    assert.equal((await renderInChild(Buffer.from('мусор'))).error, 'broken')
+    assert.equal((await renderInChild(await photo(1000, 600), { timeoutMs: 1 })).error, 'timeout')
+    const out = await renderInChild(await photo(1000, 600))
+    assert.equal((await sharp(out.bytes).metadata()).format, 'webp')
   })
 })

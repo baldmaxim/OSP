@@ -443,7 +443,7 @@ networks:
   // (20 зап/с на весь портал). Поэтому без жетона лимит по адресу не действует, с жетоном — действует.
   // Отдельный контейнер сайта без API: запрос, прошедший лимит, ждёт API (нет ответа), сверх лимита — 429.
   it('лимит /api/ по адресу: без жетона выключен (а не один на всех), с жетоном — действует', () => {
-    const flood = (env) => {
+    const flood = (env, url = '/api/health') => {
       const name = `${PROJECT}-limit-${env.length}`
       ok(docker(['run', '-d', '--name', name, ...env, `osp-web:${tag}`]), 'сайт без API')
       try {
@@ -454,7 +454,7 @@ networks:
         }
         assert.ok(up, 'сайт не поднялся')
         const res = docker(['exec', name, 'sh', '-c',
-          'for i in $(seq 80); do (wget -S -q -T 3 -O /dev/null http://127.0.0.1:8080/api/health 2>&1 | grep -q " 429" && echo 429 || echo pass) & done; wait'])
+          `for i in $(seq 80); do (wget -S -q -T 3 -O /dev/null http://127.0.0.1:8080${url} 2>&1 | grep -q " 429" && echo 429 || echo pass) & done; wait`])
         return { limited: res.stdout.split('\n').filter((l) => l === '429').length, log: docker(['logs', name]) }
       } finally {
         docker(['rm', '-f', name])
@@ -465,6 +465,9 @@ networks:
     assert.match(without.log.stderr + without.log.stdout, /OSP_EDGE_TOKEN не задан/, 'в журнале — предупреждение')
     const withToken = flood(['-e', `OSP_EDGE_TOKEN=${EDGE_TOKEN}`])
     assert.ok(withToken.limited > 0, 'с жетоном всплеск с одного адреса получает 429')
+    // Обложки — свой счётчик: страница «Объекты» запрашивает их десятками разом, а весь офис — один адрес.
+    const covers = flood(['-e', `OSP_EDGE_TOKEN=${EDGE_TOKEN}`], '/api/covers/aaaaaaaa-0000-4000-8000-000000000001.jpg/thumb')
+    assert.equal(covers.limited, 0, 'такой же всплеск обложек не получает 429')
   })
 
   // Имя службы Docker делает именем в каждой сети, куда она подключена. У соседа в общей сети имена
@@ -591,6 +594,36 @@ networks:
     assert.match(partial.stderr, /FAIL aaaaaaaa-0000-4000-8000-00000000dead\.jpg: хранилище Supabase ответило 404/)
     assert.match(partial.stdout, /^Журнал: /m)
     assert.equal(deploy(['covers-copy', path.join(tmp, 'web-build.env')]).status, 1, 'не список обложек — отказ')
+  })
+
+  // Через настоящий nginx: в /api/ он сам ставит no-store, и кэш миниатюры без своего блока не заработал бы. Библиотека
+  // изображений — в настоящем образе (alpine, файловая система только на чтение, потолок памяти).
+  it('миниатюра обложки: настоящий файл, кэш браузера через nginx; оригинал и отказы — без кэша', () => {
+    const name = 'bbbbbbbb-0000-4000-8000-000000000001.png'
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+    ok(docker(['exec', S3STUB, 'node', '-e',
+      `fetch('http://127.0.0.1:9000/osp/covers/${name}', { method: 'PUT', body: Buffer.from('${png}', 'base64') }).then((r) => process.exit(r.ok ? 0 : 1))`]), 'обложка в хранилище')
+    const caching = (headers) => headers.match(/^cache-control:.*$/gim) || []
+
+    const thumb = https(`/api/covers/${name}/thumb`, ['-D', '-', '-o', '/dev/null']).stdout
+    assert.match(thumb, /^HTTP\/\S+ 200/m, thumb)
+    assert.match(thumb, /content-type: image\/webp/i)
+    assert.equal(caching(thumb).length, 1, thumb)
+    assert.match(caching(thumb)[0], /public, max-age=31536000, immutable/i)
+    assert.match(thumb, /strict-transport-security: max-age=31536000\s/i)
+    assert.match(thumb, /x-content-type-options: nosniff/i)
+    assert.ok(docker(['logs', S3STUB]).stdout.split('\n').includes(`PUT /osp/covers/thumbs/800/${name}.webp`), 'миниатюра сохранена в хранилище')
+
+    const original = https(`/api/covers/${name}`, ['-D', '-', '-o', '/dev/null']).stdout
+    assert.match(original, /^HTTP\/\S+ 302/m)
+    assert.deepEqual(caching(original).map((h) => h.trim().toLowerCase()), ['cache-control: no-store'], 'подписанная ссылка не запоминается')
+
+    for (const missing of ['/api/covers/x.jpg/thumb', '/api/covers/bbbbbbbb-0000-4000-8000-00000000dead.png/thumb']) {
+      const refused = https(missing, ['-D', '-', '-o', '/dev/null']).stdout
+      assert.match(refused, /^HTTP\/\S+ 404/m, missing)
+      assert.deepEqual(caching(refused).map((h) => h.trim().toLowerCase()), ['cache-control: no-store'], missing)
+    }
+    assert.equal(code(`http://osp.root.sx:${p80}/api/covers/${name}/thumb`), '403', 'по HTTP /api закрыт и здесь')
   })
 
   it('испорченный при переносе выпуск не устанавливается', () => {

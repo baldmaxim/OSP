@@ -45,3 +45,12 @@ export function coversPath({ ownDb }) {
 }
 
 export const coverUrl = (name) => COVER_URL_PREFIX + encodeURIComponent(name)
+
+// Миниатюра для карточки — только у обложек своего API. Адрес из бакета Supabase остаётся как есть: миниатюр у
+// него нет, а отдаётся он с постоянного адреса и браузером запоминается.
+export function coverThumbUrl(url) {
+  const value = String(url || '')
+  if (!value.startsWith(COVER_URL_PREFIX)) return url
+  const name = value.slice(COVER_URL_PREFIX.length)
+  return name && !name.includes('/') ? `${value}/thumb` : url
+}
