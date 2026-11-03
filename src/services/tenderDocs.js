@@ -18,7 +18,7 @@ async function attachFiles(docs) {
   if (!ids.length) return docs.map((d) => ({ ...d, links: sortLinks(d), files: [] }))
   const { data: files, error } = await db
     .from('s3_documents')
-    .select('id, owner_id, s3_key, file_name, size_bytes, created_at, uploaded_by_name')
+    .select('id, owner_id, s3_key, file_name, size_bytes, created_at, uploaded_by_name, doc_category')
     .eq('owner_type', OWNER_TYPE)
     .in('owner_id', ids)
     .order('created_at', { ascending: true })

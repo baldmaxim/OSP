@@ -53,3 +53,29 @@ export function fileNameFromDisposition(header) {
   const base = name.split(/[\\/]/).pop()
   return [...base].filter(ch => ch.charCodeAt(0) >= 32 && !'<>:"|?*'.includes(ch)).join('').trim()
 }
+
+// Запрос файла по адресу из directDownloadUrl → { res, name }. Без куки и адреса страницы: документ должен быть открыт по
+// ссылке. Закрытый документ (Google уводит на вход) и сервер, не разрешающий чтение со страницы, — исключение с причиной.
+export async function openLinkDocument(url, signal) {
+  let res
+  try {
+    res = await fetch(url, { signal, credentials: 'omit', referrerPolicy: 'no-referrer' })
+  } catch (e) {
+    if (signal?.aborted) throw e
+    throw new Error('документ не отдаётся по ссылке — проверьте, что доступ открыт всем, у кого есть ссылка')
+  }
+  if (!res.ok) throw new Error(res.status === 404 ? 'документа по ссылке нет' : `сервер документа ответил ${res.status}`)
+  if (/text\/html/i.test(res.headers.get('content-type') || '')) {
+    throw new Error('по ссылке открывается страница, а не файл')
+  }
+  return { res, name: fileNameFromDisposition(res.headers.get('content-disposition')) }
+}
+
+// Документ по ссылке как файл — чтобы положить копию в хранилище портала (шаблон понятийного соглашения в тендере).
+export async function fetchLinkAsFile(link, fallbackName) {
+  const url = directDownloadUrl(link)
+  if (!url) throw new Error('это не ссылка на документ')
+  const { res, name } = await openLinkDocument(url)
+  const blob = await res.blob()
+  return new File([blob], name || fallbackName, { type: blob.type || 'application/octet-stream' })
+}

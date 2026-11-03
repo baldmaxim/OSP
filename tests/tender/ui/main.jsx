@@ -83,7 +83,7 @@ const route = params.get('route') || '/tenders/tender-1'
 
 if (params.get('callReminder') !== '1') {
   try {
-    for (const d of ['construction', 'all']) localStorage.setItem(`tenderCallReminder:${d}`, weekKey(new Date()))
+    for (const d of ['construction', 'other', 'all']) localStorage.setItem(`tenderCallReminder:${d}`, weekKey(new Date()))
   } catch { /* приватный режим */ }
 }
 

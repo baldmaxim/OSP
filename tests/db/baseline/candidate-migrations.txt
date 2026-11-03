@@ -38,3 +38,4 @@
 20261130_cost_plan_calc_file_log.sql
 20261201_contractor_access.sql
 20261202_object_documents_md.sql
+20261210_tender_concept_agreement.sql

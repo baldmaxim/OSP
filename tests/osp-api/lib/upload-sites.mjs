@@ -8,6 +8,7 @@
 export const UPLOAD_SITES = [
   { file: 'src/components/TenderDocumentsTab.jsx', calls: 1, owner: 'tender', table: 'tender_docs' }, // id из вставки tender_docs
   { file: 'src/components/TenderFinalDocBlock.jsx', calls: 1, owner: 'tender', table: 'tender_docs' }, // ensureTenderFinalDoc → tender_docs
+  { file: 'src/services/tenderConceptAgreement.js', calls: 1, owner: 'tender', table: 'tender_docs' }, // шаблон и подписанное понятийное соглашение (20261210)
   { file: 'src/services/tenderProposalFiles.js', calls: 2, owner: 'tender', table: 'tenders' }, // КП и файл замечаний
   { file: 'src/services/tenderVorRd.js', calls: 1, owner: 'tender', table: 'tenders' },
   { file: 'src/services/supplyPricing.js', calls: 1, owner: 'tender', table: 'tenders' }, // счёт / КП поставщика к позициям расценки (основной тендер)

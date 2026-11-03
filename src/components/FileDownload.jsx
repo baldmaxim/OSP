@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { saveAs } from 'file-saver'
 import { requestDownloadUrl } from '../services/s3'
-import { directDownloadUrl, fileNameFromDisposition } from '../utils/linkDownload'
+import { directDownloadUrl, openLinkDocument } from '../utils/linkDownload'
 import { IconDownload } from './icons/ActionIcons'
 import './FileDownload.css'
 
@@ -118,18 +118,8 @@ export function downloadLinkFile(link, fallbackName = 'документ') {
   const url = directDownloadUrl(link)
   if (!url) return Promise.reject(new Error('это не ссылка на документ'))
   return once(`link:${url}`, () => transfer(fallbackName, async (signal) => {
-    let res
-    try {
-      res = await fetch(url, { signal, credentials: 'omit', referrerPolicy: 'no-referrer' })
-    } catch (e) {
-      if (signal.aborted) throw e
-      throw new Error('документ не отдаётся по ссылке — проверьте, что доступ открыт всем, у кого есть ссылка')
-    }
-    if (!res.ok) throw new Error(res.status === 404 ? 'документа по ссылке нет' : `сервер документа ответил ${res.status}`)
-    if (/text\/html/i.test(res.headers.get('content-type') || '')) {
-      throw new Error('по ссылке открывается страница, а не файл')
-    }
-    return { res, name: fileNameFromDisposition(res.headers.get('content-disposition')) || fallbackName }
+    const { res, name } = await openLinkDocument(url, signal)
+    return { res, name: name || fallbackName }
   }))
 }
 

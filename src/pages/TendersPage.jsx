@@ -27,6 +27,10 @@ import { CONTRACTS_DP_TEMPLATE } from '../utils/sectionTemplateItems'
 import { TENDERS_STRUCTURE } from '../utils/docStorageStructures'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import ParticipantStatusSelect from '../components/ParticipantStatusSelect'
+import ConceptAgreementStep from '../components/ConceptAgreementStep'
+import WinnerFromBase from '../components/WinnerFromBase'
+import { hasSignedConceptAgreement } from '../services/tenderConceptAgreement'
+import { COMPLETED_STATUS, completionBlockers, completionNeedsConcept } from '../utils/tenderConceptAgreement'
 import ParticipantContacts from '../components/ParticipantContacts'
 import ParticipantsCollapseToggle, { useParticipantsCollapsed } from '../components/ParticipantsCollapseToggle'
 import '../components/ParticipantsTable.css'
@@ -282,6 +286,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [selectedCounterpartyIds, setSelectedCounterpartyIds] = useState([])
   const [showWinnerModal, setShowWinnerModal] = useState(false)
   const [tenderForWinnerSelection, setTenderForWinnerSelection] = useState(null)
+  const [conceptSignedCount, setConceptSignedCount] = useState(0)
   // task 215: несколько победителей — массив { counterparty_id, scope_note }
   const [selectedWinners, setSelectedWinners] = useState([])
   const [showLetterModal, setShowLetterModal] = useState(false)
@@ -1759,10 +1764,15 @@ ${ATTACHMENT_BLOCK}
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    // «Завершен», выбранный в форме у тендера ОС, — не запись статуса, а окно завершения: победитель и понятийное соглашение.
+    // Остальное из формы сохраняется, статус остаётся прежним, пока окно не завершит тендер.
+    const completeInModal = !isMaterialsView && !!editingTender && formData.status === COMPLETED_STATUS
+      && completionNeedsConcept(editingTender)
     try {
       if (editingTender) {
         // Update existing tender — отправляем все поля
         const updatePayload = { ...normalizePayload(formData), ...(resolveCustomObject() || {}) }
+        if (completeInModal) updatePayload.status = editingTender.status
         const { error } = await db
           .from('tenders')
           .update(updatePayload)
@@ -1811,7 +1821,7 @@ ${ATTACHMENT_BLOCK}
           }
         }
         // Если статус изменился через форму — отдельно
-        if ((editingTender.status || null) !== (formData.status || null)) {
+        if (!completeInModal && (editingTender.status || null) !== (formData.status || null)) {
           await logTenderEvent(editingTender.id, 'status_changed', {
             oldValue: editingTender.status || null,
             newValue: formData.status,
@@ -2037,6 +2047,7 @@ ${ATTACHMENT_BLOCK}
         notes: '',
       })
       fetchTenders()
+      if (completeInModal) await handleStatusChange(editingTender.id, COMPLETED_STATUS)
     } catch (error) {
       console.error('Ошибка сохранения тендера:', error.message)
       alert('Ошибка: ' + error.message)
@@ -2081,11 +2092,12 @@ ${ATTACHMENT_BLOCK}
   }, [editFromCardId, loading])
 
   useEffect(() => {
-    if (showModal || !returnToCardRef.current) return
+    // Открыто окно завершения тендера (статус «Завершен» выбрали в этой форме) — в карточку после него.
+    if (showModal || tenderForWinnerSelection || !returnToCardRef.current) return
     const id = returnToCardRef.current
     returnToCardRef.current = null
     navigate(`/tenders/${id}`)
-  }, [showModal, navigate])
+  }, [showModal, tenderForWinnerSelection, navigate])
 
   const handleEditTender = (tender) => {
     setEditingTender(tender)
@@ -2223,7 +2235,8 @@ ${ATTACHMENT_BLOCK}
     // Для тендеров на материалы выбор победителя не требуется — статус ставится напрямую.
     // Для основных тендеров при переходе в «Завершен» открываем модал выбора победителя.
     if (!isMaterialsView && newStatus === 'Завершен') {
-      const tender = tenders.find(t => t.id === tenderId)
+      // Форма, открытая из карточки, правит и тендер не из списка раздела.
+      const tender = tenders.find(t => t.id === tenderId) || (editingTender?.id === tenderId ? editingTender : null)
       setTenderForWinnerSelection(tender)
 
       // Загружаем контрагентов тендера если еще не загружены
@@ -2233,13 +2246,15 @@ ${ATTACHMENT_BLOCK}
 
       const existingWinners = (tender?.tender_winners || []).map(w => ({
         counterparty_id: w.counterparty_id,
-        scope_note: w.scope_note || ''
+        scope_note: w.scope_note || '',
+        name: w.counterparties?.name || null
       }))
       // подстраховка, если миграция tender_winners ещё не применена
       if (existingWinners.length === 0 && tender?.winner_counterparty_id) {
-        existingWinners.push({ counterparty_id: tender.winner_counterparty_id, scope_note: '' })
+        existingWinners.push({ counterparty_id: tender.winner_counterparty_id, scope_note: '', name: tender.winner?.name || null })
       }
       setSelectedWinners(existingWinners)
+      setConceptSignedCount(0)
       setShowWinnerModal(true)
       return
     }
@@ -2302,6 +2317,17 @@ ${ATTACHMENT_BLOCK}
     if (!tenderForWinnerSelection) return
 
     try {
+      if (completionNeedsConcept(tenderForWinnerSelection)) {
+        const blockers = completionBlockers({
+          winnersCount: selectedWinners.length,
+          signedCount: await hasSignedConceptAgreement(tenderForWinnerSelection.id) ? 1 : 0,
+        })
+        if (blockers.length) {
+          alert(`Тендер не завершён: ${blockers.join(', ')}.`)
+          return
+        }
+      }
+
       const prevStatus = tenderForWinnerSelection.status || null
       // основной победитель (первый выбранный) — для обратной совместимости
       const primaryWinnerId = selectedWinners[0]?.counterparty_id || null
@@ -2350,7 +2376,7 @@ ${ATTACHMENT_BLOCK}
         const nameOf = (cpId) => tcList.find(tc => tc.counterparties?.id === cpId)?.counterparties?.name || null
         const winnerNames = selectedWinners
           .map(w => {
-            const nm = nameOf(w.counterparty_id) || '—'
+            const nm = nameOf(w.counterparty_id) || w.name || '—'
             return w.scope_note?.trim() ? `${nm} (${w.scope_note.trim()})` : nm
           })
           .join(', ')
@@ -5535,12 +5561,17 @@ ${ATTACHMENT_BLOCK}
       {/* Модальное окно выбора победителя */}
       {showWinnerModal && tenderForWinnerSelection && (() => {
         const tenderCps = tenderCounterparties[tenderForWinnerSelection.id] || []
+        // Основное строительство: победитель и подписанное понятийное соглашение обязательны (см. utils/tenderConceptAgreement.js).
+        const conceptStep = completionNeedsConcept(tenderForWinnerSelection)
+        const blockers = conceptStep
+          ? completionBlockers({ winnersCount: selectedWinners.length, signedCount: conceptSignedCount })
+          : []
 
         return (
           <div className="modal-overlay">
             <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
               <div className="modal-header">
-                <h3>Выбор победителей тендера</h3>
+                <h3>{conceptStep ? 'Завершение тендера' : 'Выбор победителей тендера'}</h3>
                 <button
                   className="modal-close"
                   onClick={() => {
@@ -5572,7 +5603,9 @@ ${ATTACHMENT_BLOCK}
                     borderRadius: '8px'
                   }}>
                     <p style={{ marginBottom: '1rem' }}>К этому тендеру не добавлены контрагенты.</p>
-                    <p>Вы можете завершить тендер без победителя или сначала добавить контрагентов.</p>
+                    <p>{conceptStep
+                      ? 'Выберите победителя из базы контрагентов или добавьте его вручную.'
+                      : 'Вы можете завершить тендер без победителя или сначала добавить контрагентов.'}</p>
                   </div>
                 ) : (
                   <>
@@ -5678,11 +5711,31 @@ ${ATTACHMENT_BLOCK}
                         )
                       })}
                     </div>
-                    {selectedWinners.length > 0 && (
+                    {selectedWinners.length > 0 && !conceptStep && (
                       <p style={{ marginTop: '0.75rem', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
                         Выбрано победителей: <strong>{selectedWinners.length}</strong>. На каждого будет создан проект договора.
                       </p>
                     )}
+                  </>
+                )}
+
+                {conceptStep && (
+                  <>
+                    <WinnerFromBase
+                      selected={selectedWinners}
+                      participantIds={new Set(tenderCps.map(tc => tc.counterparty_id))}
+                      tenderLabel={tenderForWinnerSelection.public_tender_number ? `№ ${tenderForWinnerSelection.public_tender_number}` : ''}
+                      onAdd={(winner) => setSelectedWinners(prev => (
+                        prev.some(w => w.counterparty_id === winner.counterparty_id) ? prev : [...prev, winner]
+                      ))}
+                      onRemove={toggleWinner}
+                      onScope={setWinnerScope}
+                    />
+                    {selectedWinners.length > 1 && (
+                      <p className="wfb-hint">Победителей: {selectedWinners.length}. Загрузите соглашение с каждым из них.</p>
+                    )}
+                    <ConceptAgreementStep tenderId={tenderForWinnerSelection.id} onSignedChange={setConceptSignedCount} />
+                    {blockers.length > 0 && <p className="cas-blockers">Чтобы завершить тендер: {blockers.join(', ')}.</p>}
                   </>
                 )}
 
@@ -5707,8 +5760,11 @@ ${ATTACHMENT_BLOCK}
                   <button
                     className="btn-primary"
                     onClick={handleConfirmWinner}
+                    disabled={blockers.length > 0}
                   >
-                    {selectedWinners.length > 0 ? 'Завершить с победителями' : 'Завершить без победителя'}
+                    {conceptStep
+                      ? 'Завершить тендер'
+                      : selectedWinners.length > 0 ? 'Завершить с победителями' : 'Завершить без победителя'}
                   </button>
                 </div>
               </div>

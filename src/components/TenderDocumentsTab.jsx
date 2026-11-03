@@ -4,6 +4,7 @@ import { useRole } from '../contexts/RoleContext'
 import { uploadFile, deleteDocument } from '../services/s3'
 import { downloadS3File } from './FileDownload'
 import { fetchTenderDocs, deleteTenderDoc } from '../services/tenderDocs'
+import { CONCEPT_SIGNED_CATEGORY, CONCEPT_TEMPLATE_CATEGORY, isConceptCard, isConceptTitle } from '../utils/tenderConceptAgreement'
 import AutoGrowTextarea from './AutoGrowTextarea'
 import '../pages/GeneralDocumentsPage.css'
 import './TenderDocumentsTab.css'
@@ -231,9 +232,11 @@ export default function TenderDocumentsTab({ tenderId, canEdit = false, version 
         }
       }
 
+      // Файл в карточке понятийного соглашения — подписанное соглашение: его ждёт завершение тендера ОС. Шаблон сюда кладёт окно завершения.
+      const category = isConceptTitle(title) || (editing && isConceptCard(editing)) ? CONCEPT_SIGNED_CATEGORY : null
       for (const file of form.newFiles) {
         try {
-          await uploadFile({ file, ownerType: 'tender', ownerId: docId })
+          await uploadFile({ file, ownerType: 'tender', ownerId: docId, category })
         } catch (upErr) {
           console.error('Файл не загружен:', file.name, upErr?.message)
           problems.push(`${file.name} — не удалось загрузить`)
@@ -285,10 +288,13 @@ export default function TenderDocumentsTab({ tenderId, canEdit = false, version 
         </a>
       )
     }
+    const conceptMark = m.s3.doc_category === CONCEPT_SIGNED_CATEGORY ? 'подписанное'
+      : m.s3.doc_category === CONCEPT_TEMPLATE_CATEGORY ? 'шаблон' : null
     return (
       <button key={m.id} className="gd-material gd-material-file" onClick={() => handleDownload(m.s3)} title={`Скачать ${m.s3.file_name}`}>
         <span className="gd-mat-icon" aria-hidden>📎</span>
         <span className="gd-mat-text">{m.s3.file_name}</span>
+        {conceptMark && <span className="tdoc-concept-mark">{conceptMark}</span>}
         {m.s3.size_bytes != null && <span className="gd-mat-size">{formatSize(m.s3.size_bytes)}</span>}
       </button>
     )

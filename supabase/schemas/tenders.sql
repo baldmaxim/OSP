@@ -145,3 +145,6 @@ COMMENT ON COLUMN tenders.materials_proposal_link IS 'Ссылка на КП н�
 COMMENT ON COLUMN tenders.public_tender_number IS 'Сквозной публичный номер тендера, присваивается при создании';
 COMMENT ON COLUMN tenders.created_at IS 'Дата и время создания записи';
 COMMENT ON COLUMN tenders.updated_at IS 'Дата и время последнего обновления записи';
+
+-- Триггер tenders_concept_agreement_guard (миграция 20261210): тендер основного строительства нельзя перевести в «Завершен»
+-- без победителя и файла concept_agreement_signed в карточке tender_docs. Тело — в миграции.

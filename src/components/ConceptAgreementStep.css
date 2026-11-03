@@ -1,0 +1,143 @@
+/* Окно завершения тендера основного строительства: шаг «Понятийное соглашение» и выбор победителя не из участников. */
+.cas-step {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+.cas-step.is-drag { border-color: var(--primary-color); border-style: dashed; }
+.cas-question { margin: 0 0 0.25rem; font-size: 1rem; line-height: 1.5rem; font-weight: 600; }
+.cas-muted { margin: 0; font-size: 0.8125rem; line-height: 1.125rem; color: var(--text-secondary); }
+.cas-path { overflow-wrap: anywhere; }
+.cas-row { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: 0.5rem; margin-top: 0.875rem; }
+.cas-label { font-size: 0.8125rem; line-height: 1.75rem; color: var(--text-secondary); }
+.cas-value { min-width: 0; }
+
+.cas-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0.25rem 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  text-align: left;
+  color: var(--primary-color);
+  cursor: pointer;
+}
+.cas-file span { overflow-wrap: anywhere; }
+.cas-file:hover span { text-decoration: underline; }
+.cas-file svg { flex-shrink: 0; }
+
+.cas-signed { display: flex; align-items: center; gap: 0.375rem; }
+.cas-signed > svg { flex-shrink: 0; color: var(--success-color); }
+.cas-remove {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0.25rem;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.cas-remove:hover:not(:disabled) { color: var(--danger-color); background: var(--danger-light); }
+.cas-missing {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+  margin: 0.25rem 0 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  color: var(--warning-color);
+}
+.cas-missing svg { flex-shrink: 0; margin-top: 0.125rem; }
+.cas-upload { display: inline-flex; align-items: center; gap: 0.375rem; margin-top: 0.25rem; }
+.cas-error { margin: 0.75rem 0 0; font-size: 0.8125rem; line-height: 1.125rem; color: var(--danger-color); overflow-wrap: anywhere; }
+.cas-blockers { margin: 1rem 0 0; font-size: 0.8125rem; line-height: 1.125rem; color: var(--warning-color); }
+
+/* Победитель не из участников */
+.wfb { margin-top: 1rem; }
+.wfb-title { margin: 0 0 0.5rem; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; color: var(--text-secondary); }
+.wfb-chosen {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+  color: var(--text-primary);
+}
+.wfb-chosen-name { flex: 1 1 40%; min-width: 0; font-size: 0.875rem; line-height: 1.25rem; font-weight: 600; overflow-wrap: anywhere; }
+.wfb-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.wfb-chosen .wfb-input { flex: 1 1 50%; min-width: 0; padding: 0.25rem 0.5rem; font-size: 0.8125rem; }
+.wfb-results {
+  max-height: 14rem;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  list-style: none;
+}
+.wfb-result {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-bottom: 1px solid var(--border-color);
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.wfb-results li:last-child .wfb-result { border-bottom: 0; }
+.wfb-result:hover:not(:disabled) { background: var(--hover-bg); }
+.wfb-result:disabled { cursor: default; opacity: 0.6; }
+.wfb-result-name { display: block; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; overflow-wrap: anywhere; }
+.wfb-result-meta { display: block; font-size: 0.75rem; line-height: 1rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+.wfb-result-meta .is-warning { color: var(--danger-color); font-weight: 500; }
+.wfb-hint { margin: 0.375rem 0 0; font-size: 0.8125rem; line-height: 1.125rem; color: var(--text-secondary); }
+.wfb-add {
+  margin-top: 0.375rem;
+  padding: 0.25rem 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  color: var(--primary-color);
+  cursor: pointer;
+}
+.wfb-add:hover { text-decoration: underline; }
+.wfb-form { display: grid; gap: 0.5rem; margin-top: 0.5rem; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 8px; }
+.wfb-form label { display: grid; gap: 0.25rem; font-size: 0.8125rem; line-height: 1.125rem; color: var(--text-secondary); }
+.wfb-form-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+@media (max-width: 640px) {
+  .cas-row { grid-template-columns: minmax(0, 1fr); gap: 0.125rem; }
+  .cas-label { line-height: 1.25rem; }
+  .wfb-chosen { flex-wrap: wrap; }
+  .wfb-chosen .wfb-input { flex-basis: 100%; }
+}
