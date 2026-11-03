@@ -280,3 +280,15 @@
   display: block;
   margin-top: 0.3rem;
 }
+
+/* Тендер договора — ссылка под работами, рядом с подразделением. */
+.contracts-table td.cell-work .ctender {
+  display: inline-block;
+  margin-top: 0.1875rem;
+  margin-right: 0.5rem;
+  font-size: var(--ui-hint, 0.75rem);
+  line-height: var(--ui-hint-lh, 1rem);
+  color: var(--ui-link, var(--primary-color));
+  white-space: nowrap;
+}
+.contracts-table td.cell-work .ctender:hover { text-decoration: underline; }

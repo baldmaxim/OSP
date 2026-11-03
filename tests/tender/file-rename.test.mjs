@@ -2,6 +2,8 @@
 // карандашом на цветном фоне рядом с именем файла). Меняется только s3_documents.file_name: ключ в хранилище прежний,
 // просмотр не перезагружается, расширение менять нельзя. Кнопка — только там, где родитель разрешил (право — как у
 // удаления файла этого списка); подрядчику её нет. Сервер — tests/osp-api/server.test.mjs («переименование»).
+// В «Заявках на ДС» кнопки нет (03.11, имя правится в строке файла): tests/tender/dc-request-doc-chip.test.mjs. Окно
+// проверяется на списке файлов S3DocumentList (стенд /stand/file-list).
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -76,8 +78,11 @@ describe('Окно просмотра: переименование', { skip: !l
     const errors = []
     page.on('pageerror', (e) => errors.push(e.message))
     await page.addInitScript((f) => { Object.assign(window, f) }, flags)
-    await page.goto(`${stand.url}?route=${encodeURIComponent(`/dc-requests?file=${fileId}`)}&dcStats=1&shell=1&latency=10${query}`)
-    await page.locator('.s3-doc-preview').waitFor({ timeout: 120000 })
+    await page.goto(`${stand.url}?route=/stand/file-list&dcStats=1&latency=10${query}`)
+    await page.locator('.s3-doc-table').waitFor({ timeout: 120000 })
+    const name = await page.evaluate((x) => window.__fakeDb.s3_documents.find((r) => r.id === x).file_name, fileId)
+    await page.locator('.s3-doc-table tbody tr', { hasText: name }).getByRole('button', { name: 'Просмотр' }).click()
+    await page.locator('.s3-doc-preview').waitFor({ timeout: 5000 })
     return { context, page, errors, close: () => context.close() }
   }
   const row = (page, id) => page.evaluate((x) => {
@@ -133,7 +138,7 @@ describe('Окно просмотра: переименование', { skip: !l
 
       await page.locator('.s3-doc-modal-close').click()
       await page.locator('.s3-doc-preview').waitFor({ state: 'detached' })
-      await page.getByText('Отчёт по документам, ред. 2.pdf').first().waitFor()
+      await page.locator('.s3-doc-name', { hasText: 'Отчёт по документам, ред. 2.pdf' }).waitFor()
       assert.deepEqual(errors, [])
     } finally { await close() }
   })

@@ -68,8 +68,14 @@
   outline-offset: 1px;
 }
 
+/* Крестик красный (03.11, решение пользователя): файла нет — это видно издалека, «.md» рядом остаётся серым. */
 .doc-md-cross {
   flex-shrink: 0;
+  color: #dc2626;
+}
+
+[data-theme='dark'] .doc-md-cross {
+  color: #f87171;
 }
 
 .doc-md-busy {

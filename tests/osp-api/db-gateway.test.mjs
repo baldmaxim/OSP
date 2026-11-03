@@ -493,7 +493,7 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
     s3.objects.set(objectPath, 5)
     reply = filesUpstream(doc(BEFORE_LOAD))
     const file = { operation_id: '0190a000-0000-7000-8000-000000000001', owner_type: 'tender', owner_id: TENDER, file_name: 'a.pdf', mime_type: 'application/pdf', size_bytes: 5 }
-    for (const body of [{ action: 'upload', ...file }, { action: 'confirm', ...file }, { action: 'delete', s3_key: DOC_KEY }, { action: 'rename', s3_key: DOC_KEY, file_name: 'b.pdf' }]) {
+    for (const body of [{ action: 'upload', ...file }, { action: 'confirm', ...file }, { action: 'delete', s3_key: DOC_KEY }, { action: 'rename', s3_key: DOC_KEY, file_name: 'b.pdf' }, { action: 'describe', s3_key: DOC_KEY, notes: 'КП' }]) {
       const res = await files(body)
       assert.deepEqual([res.statusCode, res.json().code], [503, 'OSP_READONLY'], body.action)
       assert.match(res.json().error, /Идёт перенос данных/)

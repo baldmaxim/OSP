@@ -1050,6 +1050,23 @@ if (CONTRACTS > 0) {
       )
     }
   }
+  // &contractsDept=1 — договоры по объекту ГО (каждый четвёртый, с его ДС), у ctr-2 — тендер: его ДС ctr-3 берёт тот же;
+  // «наш» только ctr-4; статусы разных вкладок. Отдел — по objects.status строки, как встраивание у настоящего запроса.
+  if (params.get('contractsDept') === '1') {
+    const go = { id: 'obj-go', name: 'ЖК «Гарантийный»', status: 'warranty_service', address: 'г. Алматы' }
+    objects.push(go)
+    contracts.forEach((c, i) => {
+      const parent = contracts.find((p) => p.id === c.parent_contract_id)
+      if (parent ? parent.object_id === go.id : i % 4 === 0) { c.object_id = go.id; c.objects = { name: go.name, status: go.status } }
+      c.handled_by_us = c.id === 'ctr-4'
+    })
+    const statusOf = { 'ctr-2': 'new_request', 'ctr-3': 'completed', 'ctr-4': 'awaiting_paper_sign', 'ctr-5': 'paused', 'ctr-7': 'completed' }
+    for (const c of contracts) if (statusOf[c.id]) c.status = statusOf[c.id]
+    const linked = contracts.find((c) => c.id === 'ctr-2')
+    const tender = window.__fakeDb.tenders.find((t) => t.parent_tender_id == null && t.object_id === linked.object_id)
+    linked.tender_id = tender.id
+    linked.tenders = { work_description: tender.work_description, public_tender_number: tender.public_tender_number }
+  }
   window.__fakeDb.contracts = contracts
   window.__fakeDb.contract_appendices = []
   window.__fakeDb.s3_documents.push(...contracts.filter((_, i) => i % 7 === 0).map((c) => ({

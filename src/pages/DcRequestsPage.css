@@ -1000,6 +1000,87 @@
   color: #dc2626;
 }
 
+/* Правка надписи файла прямо в строке (DcRequestDocChip): поле на всю ширину, кнопки под ним. */
+.dcr-doc-chip.is-editing {
+  display: block;
+  width: 100%;
+  border-color: var(--primary-color);
+}
+
+.dcr-doc-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+}
+
+.dcr-doc-edit-field {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.dcr-doc-edit-input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  padding: 0.125rem 0.375rem;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.dcr-doc-edit-input[aria-invalid='true'] {
+  border-color: #dc2626;
+}
+
+.dcr-doc-edit-ext {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.dcr-doc-edit-btn {
+  padding: 0.0625rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dcr-doc-edit-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+}
+
+.dcr-doc-edit-btn.is-primary {
+  color: #fff;
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.dcr-doc-edit-btn.is-primary:hover:not(:disabled) {
+  background: var(--primary-color);
+  filter: brightness(0.92);
+}
+
+.dcr-doc-edit-error {
+  flex: 1 0 100%;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: #dc2626;
+  overflow-wrap: anywhere;
+}
+
 .dcr-doc-add {
   align-self: flex-start;
   display: inline-flex;

@@ -251,6 +251,87 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
     } finally { await close() }
   })
 
+  // Страницы — ленивые куски со своими стилями, поэтому на сайте стили других разделов есть, только если их открывали:
+  // по ссылке или после F5 их нет (окно вставало снизу, под доской, без фона), открыли раздел после доски — они позже её
+  // стилей (окно сужалось). Стенд загружает их все заранее и этого не видит: здесь они убираются или переносятся в конец.
+  const FOREIGN_STYLE_MODES = ['раньше страницы', 'нет', 'позже страницы']
+  const setForeignStyles = (page, mode) => page.evaluate((mode) => {
+    let touched = 0
+    for (const s of [...document.querySelectorAll('style[data-vite-dev-id]')]) {
+      if (/\/(DocCheckRequestsPage|workUi|mobile)\.css$/.test(s.dataset.viteDevId) || !/\.modal\b/.test(s.textContent)) continue
+      touched += 1
+      if (mode === 'нет') s.remove()
+      if (mode === 'позже страницы') document.head.appendChild(s)
+    }
+    return touched
+  }, mode)
+  const measureWindow = (page, selector) => page.evaluate((selector) => {
+    const modal = document.querySelector(selector)
+    const overlay = modal.closest('.modal-overlay')
+    const box = (el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round) }
+    const style = getComputedStyle(modal)
+    const shade = getComputedStyle(overlay)
+    const form = modal.querySelector('form')
+    return {
+      overlay: box(overlay),
+      position: shade.position,
+      zIndex: shade.zIndex,
+      shade: shade.backgroundColor,
+      window: box(modal),
+      background: style.backgroundColor,
+      border: style.borderTopWidth,
+      radius: style.borderTopLeftRadius,
+      overflowY: style.overflowY,
+      head: box(modal.querySelector('.modal-header')),
+      close: box(modal.querySelector('.modal-close')),
+      formPadding: form ? getComputedStyle(form).padding : null,
+    }
+  }, selector)
+
+  for (const viewport of [{ width: 1700, height: 950 }, { width: 390, height: 780 }]) {
+    const phone = viewport.width < 640
+    it(`окно заявки и форма — всегда отдельным окном, откуда бы ни пришли на страницу (${viewport.width}px)`, async () => {
+      const seen = {}
+      for (const mode of FOREIGN_STYLE_MODES) {
+        const { page, errors, close } = await openPage('', viewport)
+        try {
+          assert.ok(await setForeignStyles(page, mode) >= 3, 'стенд загрузил стили других разделов — есть что убирать')
+          const detail = await openCard(page, 'dcr-3')
+          const detailBox = await measureWindow(page, '.dc-detail-modal')
+          await detail.locator('.modal-close').click()
+          await detail.waitFor({ state: 'detached' })
+          await page.getByRole('button', { name: /Новая заявка/ }).first().click()
+          await page.locator('.dc-form-modal').waitFor()
+          const formBox = await measureWindow(page, '.dc-form-modal')
+
+          for (const [name, m] of [['заявка', detailBox], ['форма', formBox]]) {
+            const where = `${name}, стили других разделов: ${mode}`
+            assert.equal(m.position, 'fixed', `${where}: окно поверх страницы, а не в её потоке`)
+            assert.deepEqual(m.overlay, [0, 0, viewport.width, viewport.height], `${where}: затемнение на весь экран`)
+            assert.equal(m.shade, 'rgba(0, 0, 0, 0.5)', `${where}: страница затемнена`)
+            assert.notEqual(m.background, 'rgba(0, 0, 0, 0)', `${where}: у окна свой фон`)
+            assert.equal(m.zIndex, phone ? '1260' : '1000', `${where}: окно выше страницы (на телефоне — и выше полосы меню)`)
+            const rightGap = m.window[0] + m.window[2] - (m.close[0] + m.close[2])
+            assert.ok(rightGap >= 0 && rightGap < 40, `${where}: «×» у правого края окна: ${rightGap}`)
+            assert.ok(m.close[1] < m.head[1] + m.head[3], `${where}: «×» в шапке, а не под ней`)
+          }
+          if (phone) {
+            assert.deepEqual(detailBox.window, [0, 0, 390, 780], `стили других разделов: ${mode}: заявка на весь экран телефона`)
+          } else {
+            assert.deepEqual(detailBox.window, [370, 107, 960, 736], `стили других разделов: ${mode}: заявка по центру, 60 × 46 rem`)
+            assert.equal(formBox.window[2], 640, `стили других разделов: ${mode}: форма шириной 40 rem`)
+            const centre = formBox.window[0] + formBox.window[2] / 2
+            assert.equal(centre, viewport.width / 2, `стили других разделов: ${mode}: форма по центру`)
+          }
+          seen[mode] = { detailBox, formBox }
+          assert.deepEqual(errors, [])
+        } finally { await close() }
+      }
+      assert.deepEqual(seen['нет'], seen['раньше страницы'], 'сразу на страницу — то же окно, что после другого раздела')
+      assert.deepEqual(seen['позже страницы'], seen['раньше страницы'], 'другой раздел после доски окно не меняет')
+    })
+  }
+
   it('телефон: окно на весь экран, разделы столбцом', async () => {
     const { page, errors, close } = await openPage('', { width: 390, height: 780 })
     try {

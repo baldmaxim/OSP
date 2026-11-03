@@ -111,5 +111,12 @@ export function createOspFiles({ call, fetchImpl, digest, newId, sleep = (ms) =>
     return renamed.document
   }
 
-  return { upload, downloadUrl, remove, rename }
+  // Описание файла заявки на ДС: то же, что переименование, но меняется notes. Пустое — снять.
+  async function describe(s3Key, notes) {
+    const described = await withRetries(RENAME_ATTEMPTS,
+      () => invoke({ action: 'describe', s3_key: s3Key, notes }), retryable)
+    return described.document
+  }
+
+  return { upload, downloadUrl, remove, rename, describe }
 }

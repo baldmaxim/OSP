@@ -596,9 +596,60 @@
 }
 .dc-table .dc-col-who { white-space: nowrap; }
 
+/* ── Основа окон раздела ────────────────────────────────────────────────── */
+/* Свои правила, не из стилей других разделов. Те есть, только если раздел открывали раньше: по ссылке или после F5 окно
+   заявки вставало снизу, под доской, без фона; открытые после доски — сужали его (они позже, вес тот же). Поэтому вес здесь
+   выше, а имена окон ниже — с .doc-check-page: `.modal form` других разделов важнее одного класса. */
+.doc-check-page .modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  overflow: hidden;
+}
+.doc-check-page .modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  contain: paint;
+}
+.doc-check-page .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 1.5rem 2rem;
+  border: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.doc-check-page .modal-header h3 { margin: 0; color: var(--text-primary); }
+.doc-check-page .modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.doc-check-page .modal-close:hover { color: var(--text-secondary); }
+.doc-check-page :is(.btn-primary, .btn-secondary) { cursor: pointer; transition: all 0.2s; }
+
 /* ── Форма ──────────────────────────────────────────────────────────────── */
-.dc-form-modal { width: min(40rem, calc(100vw - 2rem)); max-height: calc(100vh - 3rem); display: flex; flex-direction: column; }
-.dc-form { padding: 1rem 1.25rem 1.25rem; overflow-y: auto; }
+.doc-check-page .dc-form-modal { width: min(40rem, calc(100vw - 2rem)); max-width: none; max-height: calc(100vh - 3rem); display: flex; flex-direction: column; }
+.doc-check-page .dc-form { padding: 2rem; overflow-y: auto; }
 .dc-form-row { margin-bottom: 0.875rem; min-width: 0; }
 .dc-form-row > label, .dc-form-label {
   display: block;
@@ -685,7 +736,7 @@
 
 /* ── Карточка заявки ────────────────────────────────────────────────────── */
 /* Постоянная высота: вкладки разной длины не дёргают окно. Фон тела чуть темнее разделов — так они читаются блоками. */
-.dc-detail-modal {
+.doc-check-page .dc-detail-modal {
   width: min(60rem, calc(100vw - 2rem));
   max-width: none;
   height: min(46rem, calc(100vh - 3rem));
@@ -1069,6 +1120,8 @@
 /* Полоса меню телефона (1250) лежит поверх окна (1000) и закрывала бы шапку с «×»; выпадающие списки (1300) — выше окна. */
 @media (max-width: 768px) {
   .doc-check-page .modal-overlay { z-index: 1260; }
+  .doc-check-page .dc-form-modal { border-radius: 0; }
+  .doc-check-page .dc-form { padding: 1.5rem; }
 }
 
 @media (max-width: 640px) {
@@ -1086,7 +1139,7 @@
   .dc-form-row input[type='date'],
   .dc-form-row textarea { font-size: 16px; }
   /* Окно — на весь экран, разделы — столбцом. */
-  .dc-detail-modal { width: 100%; height: 100%; border-radius: 0; }
+  .doc-check-page .dc-detail-modal { width: 100%; height: 100%; border-radius: 0; }
   .doc-check-page .modal-overlay:has(.dc-detail-modal) { padding: 0; }
   .dc-detail-modal .dc-detail-head { padding: 0.75rem; }
   .dc-detail-body { padding: 0.75rem; }

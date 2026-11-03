@@ -608,41 +608,7 @@
 .admin-table code { font-size: 0.8125rem; color: var(--text-secondary); }
 .admin-empty { text-align: center; color: var(--text-tertiary); padding: 2rem !important; }
 
-.roles-pane, .permissions-pane { display: flex; flex-direction: column; gap: 1.25rem; }
-.roles-add-form { padding: 1rem; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 10px; }
-.form-row { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
-.form-col { display: flex; flex-direction: column; gap: 0.375rem; flex: 1 1 200px; }
-.form-col label { font-size: 0.75rem; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.02em; }
-.form-col input {
-  height: 40px;
-  padding: 0 0.75rem;
-  font-family: inherit;
-  font-size: 0.9375rem;
-  color: var(--text-primary);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 9px;
-}
-.form-col input:focus { outline: none; border-color: var(--primary-color); }
-.form-col small { font-size: 0.75rem; color: var(--text-tertiary); }
-.form-col small code, .form-col code { font-size: 0.75rem; }
-.form-col-action { display: flex; align-items: flex-end; }
-
-.role-rename-input {
-  width: 100%;
-  max-width: 260px;
-  height: 34px;
-  padding: 0 0.5rem;
-  font-family: inherit;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 7px;
-}
-.role-rename-input:hover:not(:disabled) { border-color: var(--border-color); background: var(--bg-secondary); }
-.role-rename-input:focus { outline: none; border-color: var(--primary-color); background: var(--bg-secondary); }
-.role-rename-input:disabled { color: var(--text-secondary); }
+.permissions-pane { display: flex; flex-direction: column; gap: 1rem; }
 
 .tag-neutral, .tag-info {
   display: inline-block;
@@ -654,10 +620,11 @@
 .tag-neutral { color: var(--text-secondary); background: var(--bg-tertiary); border: 1px solid var(--border-color); }
 .tag-info { color: #0e7490; background: rgba(8, 145, 178, 0.12); }
 
-.perm-role-picker { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-.perm-role-picker label { font-size: 0.875rem; font-weight: 600; color: var(--text-secondary); }
-.perm-role-picker select {
+.perm-bar { display: flex; align-items: center; gap: 0.5rem 0.625rem; flex-wrap: wrap; }
+.perm-bar label { font-size: 0.875rem; font-weight: 600; color: var(--text-secondary); }
+.perm-bar select {
   height: 40px;
+  min-width: 15rem;
   padding: 0 0.75rem;
   font-family: inherit;
   font-size: 0.875rem;
@@ -666,6 +633,65 @@
   border: 1px solid var(--border-color);
   border-radius: 9px;
 }
+.perm-bar .btn-soft { height: 40px; white-space: nowrap; }
+.perm-bar-end { margin-left: auto; }
+.perm-bar-end.is-active { border-color: var(--primary-color); color: var(--text-primary); }
+
+/* Строка под выбором роли: название новой роли или новое название. */
+.perm-editor {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem 0.625rem;
+  flex-wrap: wrap;
+  padding: 0.75rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+.perm-editor label { font-size: 0.875rem; font-weight: 600; color: var(--text-secondary); }
+.perm-editor input {
+  flex: 1 1 16rem;
+  max-width: 26rem;
+  height: 36px;
+  padding: 0 0.75rem;
+  font-family: inherit;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+}
+.perm-editor input:focus { outline: none; border-color: var(--primary-color); }
+
+/* Просмотр от имени роли. */
+.perm-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.75rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+.perm-preview-fields { display: flex; align-items: flex-end; gap: 0.625rem; flex-wrap: wrap; }
+.perm-preview-field { display: flex; flex-direction: column; gap: 0.25rem; min-width: 18rem; }
+.perm-preview-label { font-size: 0.8125rem; font-weight: 600; color: var(--text-secondary); }
+.perm-preview-note { margin: 0; font-size: 0.8125rem; line-height: 1.45; color: var(--text-secondary); }
+.perm-preview-error { font-size: 0.8125rem; color: var(--danger-color, #b91c1c); }
+.perm-preview-active {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  background: color-mix(in srgb, #d97706 10%, transparent);
+  border: 1px solid color-mix(in srgb, #d97706 28%, transparent);
+  border-radius: 10px;
+}
+
 .perm-feedback { font-size: 0.8125rem; font-weight: 600; }
 .perm-feedback.ok { color: var(--success-color, #16a34a); }
 .perm-feedback.err { color: var(--danger-color, #dc2626); }
@@ -717,48 +743,6 @@
 [data-theme='dark'] .adm-ava-d { color: #86efac; }
 [data-theme='dark'] .adm-ava-e { color: #fcd34d; }
 [data-theme='dark'] .adm-ava-f { color: #cbd5e1; }
-
-/* ===== Просмотр от имени роли ===== */
-.rp-pane { display: flex; flex-direction: column; gap: 1rem; max-width: 640px; }
-.rp-intro { margin: 0; color: var(--text-secondary); font-size: 0.875rem; line-height: 1.5; }
-.rp-warning {
-  padding: 0.7rem 0.85rem;
-  border-radius: 8px;
-  background: color-mix(in srgb, #d97706 10%, transparent);
-  border: 1px solid color-mix(in srgb, #d97706 28%, transparent);
-  color: #b45309;
-  font-size: 0.8125rem;
-  line-height: 1.45;
-}
-[data-theme='dark'] .rp-warning { color: #fcd34d; }
-
-.rp-form { display: flex; flex-direction: column; gap: 0.9rem; }
-.rp-field { display: flex; flex-direction: column; gap: 0.35rem; }
-.rp-field label { font-size: 0.8125rem; font-weight: 600; color: var(--text-secondary); }
-.rp-field select {
-  padding: 0.5rem 0.6rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-size: 0.875rem;
-}
-.rp-field small { color: var(--text-tertiary); font-size: 0.75rem; line-height: 1.4; }
-.rp-error { color: #b91c1c; font-size: 0.8125rem; }
-
-.rp-active {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  align-items: flex-start;
-  padding: 0.9rem;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-secondary);
-}
-.rp-active-title { font-size: 0.9375rem; }
-.rp-active-list { margin: 0; padding-left: 1.1rem; color: var(--text-secondary); font-size: 0.8125rem; }
-.rp-pane .btn-primary { align-self: flex-start; }
 
 /* Организация, указанная подрядчиком при саморегистрации (только чтение). */
 .adm-drawer-requested {

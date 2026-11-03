@@ -1,5 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { db } from '../api'
 import { useRole, SECTIONS } from '../contexts/RoleContext'
 import FilterDropdown from '../components/FilterDropdown'
@@ -10,6 +9,7 @@ import UserActionsMenu from '../components/admin/UserActionsMenu'
 import { AddUserDrawer, TemporaryPasswordDialog } from '../components/admin/AccountModals'
 import UserEditDrawer from '../components/admin/UserEditDrawer'
 import ApiKeysTab from '../components/admin/ApiKeysTab'
+import AccessRightsTab from '../components/admin/AccessRightsTab'
 import ContractorSignupsTab from '../components/admin/ContractorSignupsTab'
 import { fetchAllActiveCounterparties } from '../utils/fetchAllRows'
 import './AdminPage.css'
@@ -29,10 +29,8 @@ function formatDateTime(ts) {
 }
 
 function AdminPage() {
-  const navigate = useNavigate()
   const {
-    isAdmin, isSuperAdmin, availableRoles, roleLabels, refreshAvailableRoles,
-    canPreviewRoles, previewActive, previewInfo, startRolePreview, stopRolePreview,
+    isAdmin, isSuperAdmin, availableRoles, roleLabels,
     userProfile, ownAuth, adminResetPassword,
   } = useRole()
   // Свой вход (tender.su10.ru): учётки и временные пароли выдаёт администратор.
@@ -62,40 +60,14 @@ function AdminPage() {
   const [pageSize, setPageSize] = useState(25)
   const [selected, setSelected] = useState(() => new Set())
 
-  // --- Permissions ---
-  const [permissions, setPermissions] = useState([])
-  const [loadingPerms, setLoadingPerms] = useState(true)
-  const [selectedPermRole, setSelectedPermRole] = useState('engineer')
-  const [permFeedback, setPermFeedback] = useState(null)
-
-  // --- Roles ---
-  // --- Просмотр от имени роли ---
-  const [previewForm, setPreviewForm] = useState({ role: 'engineer', objectIds: [], counterpartyId: '' })
-  const [previewError, setPreviewError] = useState('')
-  const [previewBusy, setPreviewBusy] = useState(false)
-
-  const [newRoleKey, setNewRoleKey] = useState('')
-  const [newRoleLabel, setNewRoleLabel] = useState('')
-  const [roleFeedback, setRoleFeedback] = useState(null)
-
   // Справочники грузим по одному разу за визит на страницу, а не при каждом
   // переключении вкладок: раньше возврат на «Пользователей» заново тянул всех
   // пользователей, объекты и несколько тысяч контрагентов (постранично, по очереди).
   const loadedRef = useRef({ users: false, objects: false, counterparties: false })
   useEffect(() => {
-    if (activeTab === 'users' || activeTab === 'preview') {
-      if (!loadedRef.current.users) fetchUsers()
-      if (!loadedRef.current.objects) fetchObjectsList()
-    }
-    // Контрагенты нужны только для привязки логина к кабинету подрядчика —
-    // в окне пользователя и в «Просмотре от имени роли».
-    if (activeTab === 'preview') ensureCounterparties()
-    if (activeTab === 'permissions') fetchPermissions()
+    if (activeTab === 'users' && !loadedRef.current.users) fetchUsers()
+    if ((activeTab === 'users' || activeTab === 'permissions') && !loadedRef.current.objects) fetchObjectsList()
   }, [activeTab])
-
-  useEffect(() => {
-    if (editUser) ensureCounterparties()
-  }, [editUser])
 
   // Debounce поиска (данные пользователей клиентские, но набор не дёргается на каждый символ).
   useEffect(() => {
@@ -122,9 +94,9 @@ function AdminPage() {
     }
   }
 
-  // Контрагенты для привязки логина к кабинету подрядчика (Фаза 4 согласования).
+  // Контрагенты — для привязки логина к кабинету подрядчика (окно пользователя) и просмотра от имени подрядчика.
   // Грузятся один раз и только когда понадобились.
-  const ensureCounterparties = async () => {
+  const ensureCounterparties = useCallback(async () => {
     if (loadedRef.current.counterparties) return
     loadedRef.current.counterparties = true
     try {
@@ -134,7 +106,11 @@ function AdminPage() {
       loadedRef.current.counterparties = false // дать повторить при следующем открытии
       console.warn('Не удалось загрузить список контрагентов:', err.message)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (editUser) ensureCounterparties()
+  }, [editUser, ensureCounterparties])
 
   // silent — обновить после действия (блокировка, сохранение) без скелетона:
   // раньше таблица на каждое действие пропадала и рисовалась заново.
@@ -209,19 +185,6 @@ function AdminPage() {
       setUsersError(true)
     } finally {
       if (requestId === usersRequestRef.current) setLoadingUsers(false)
-    }
-  }
-
-  const fetchPermissions = async () => {
-    setLoadingPerms(true)
-    try {
-      const { data, error } = await db.from('role_permissions').select('*').order('role')
-      if (error) throw error
-      setPermissions(data || [])
-    } catch (err) {
-      console.error('Ошибка загрузки прав:', err.message)
-    } finally {
-      setLoadingPerms(false)
     }
   }
 
@@ -362,99 +325,7 @@ function AdminPage() {
     }
   }
 
-  // ── Роли (справочник) ───────────────────────────────────────────────────
-  const showRoleFeedback = (kind, text) => { setRoleFeedback({ kind, text }); setTimeout(() => setRoleFeedback(null), kind === 'ok' ? 1800 : 5000) }
-  const handleAddRole = async (e) => {
-    e.preventDefault()
-    const key = newRoleKey.trim().toLowerCase()
-    const label = newRoleLabel.trim()
-    if (!key || !label) { showRoleFeedback('err', 'Заполните машинный ключ и название роли'); return }
-    if (!/^[a-z][a-z0-9_]*$/.test(key)) { showRoleFeedback('err', 'Ключ должен начинаться с латинской буквы и содержать только латиницу, цифры и нижнее подчёркивание'); return }
-    try {
-      const { error } = await db.from('roles').insert([{ key, label, is_system: false }])
-      if (error) throw error
-      setNewRoleKey(''); setNewRoleLabel('')
-      await refreshAvailableRoles()
-      showRoleFeedback('ok', 'Роль добавлена')
-    } catch (err) {
-      if (err.code === '23505') showRoleFeedback('err', 'Роль с таким ключом уже существует')
-      else if (/relation .* does not exist/i.test(err.message)) showRoleFeedback('err', 'Таблица roles не создана. Примените миграцию 20260507_roles_table.sql.')
-      else showRoleFeedback('err', 'Ошибка: ' + err.message)
-    }
-  }
-  const handleRenameRole = async (key, newLabel) => {
-    const label = (newLabel || '').trim()
-    if (!label) return
-    try {
-      const { error } = await db.from('roles').update({ label }).eq('key', key)
-      if (error) throw error
-      await refreshAvailableRoles()
-      showRoleFeedback('ok', 'Сохранено')
-    } catch (err) { showRoleFeedback('err', 'Ошибка: ' + err.message) }
-  }
-  const handleDeleteRole = async (key, label) => {
-    if (!window.confirm(`Удалить роль «${label}»? Пользователи с этой ролью потеряют её, права в role_permissions останутся как сироты.`)) return
-    try {
-      await db.from('role_permissions').delete().eq('role', key)
-      await db.from('user_roles').update({ role: 'engineer' }).eq('role', key)
-      const { error } = await db.from('roles').delete().eq('key', key).eq('is_system', false)
-      if (error) throw error
-      await refreshAvailableRoles()
-      showRoleFeedback('ok', 'Роль удалена')
-    } catch (err) { showRoleFeedback('err', 'Ошибка: ' + err.message) }
-  }
-
-  // ── Права доступа ───────────────────────────────────────────────────────
-  const showPermFeedback = (kind, text) => { setPermFeedback({ kind, text }); setTimeout(() => setPermFeedback(null), kind === 'ok' ? 1800 : 5000) }
-  const handlePermissionToggle = async (role, section, field) => {
-    const existing = permissions.find(p => p.role === role && p.section === section)
-    const currentView = existing?.can_view ?? false
-    const currentEdit = existing?.can_edit ?? false
-    const next = { can_view: currentView, can_edit: currentEdit }
-    if (field === 'can_view') { next.can_view = !currentView; if (!next.can_view) next.can_edit = false }
-    else { next.can_edit = !currentEdit; if (next.can_edit) next.can_view = true }
-    try {
-      if (existing) {
-        const { error } = await db.from('role_permissions').update(next).eq('id', existing.id)
-        if (error) throw error
-        setPermissions(prev => prev.map(p => p.id === existing.id ? { ...p, ...next } : p))
-      } else {
-        const { data, error } = await db.from('role_permissions').insert([{ role, section, ...next }]).select().single()
-        if (error) throw error
-        if (data) setPermissions(prev => [...prev, data])
-      }
-      showPermFeedback('ok', 'Сохранено')
-    } catch (err) {
-      if (/valid_perm_role|check constraint/i.test(err.message)) showPermFeedback('err', `Ошибка: роль «${roleLabels[role] || role}» отсутствует в CHECK-constraint таблицы role_permissions. Примените миграцию для этой роли.`)
-      else showPermFeedback('err', 'Ошибка: ' + err.message)
-    }
-  }
-
-  // ── Производные данные (статистика, опции фильтров, фильтрация) ──────────
-  // Включение режима: подрядчику обязательно нужна организация — без неё кабинет
-  // подрядчика показывать нечего.
-  const handleStartPreview = async () => {
-    setPreviewError('')
-    if (previewForm.role === 'contractor' && !previewForm.counterpartyId) {
-      setPreviewError('Для подрядчика выберите организацию: кабинет фильтруется по ней.')
-      return
-    }
-    setPreviewBusy(true)
-    try {
-      const cp = counterpartiesList.find(c => c.id === previewForm.counterpartyId)
-      await startRolePreview(previewForm.role, {
-        objectIds: previewForm.objectIds,
-        counterparty: cp ? { id: cp.id, name: cp.name } : null,
-      })
-      navigate(previewForm.role === 'contractor' ? '/contractor/proposals' : '/general')
-    } catch (err) {
-      setPreviewError(err.message || String(err))
-    } finally {
-      setPreviewBusy(false)
-    }
-  }
-
-  const sectionKeys = Object.keys(SECTIONS)
+  const sectionsCount = Object.keys(SECTIONS).length
   // Имена привязанных объектов пользователя (несколько). Пустой массив = офис.
   const objectNamesFor = useMemo(() => {
     const m = new Map(objectsList.map(o => [o.id, o.name]))
@@ -571,7 +442,7 @@ function AdminPage() {
           icon={<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" strokeWidth="2" />} extra={<polyline points="22 4 12 14.01 9 11.01" strokeWidth="2" />} />
         <StatCard tone="violet" value={employeeRoleKeys.length} title="Ролей" hint="Настроено в системе"
           icon={<path d="M20 21v-2a4 4 0 0 0-3-3.87M4 21v-2a4 4 0 0 1 3-3.87" strokeWidth="2" />} extra={<circle cx="12" cy="7" r="4" strokeWidth="2" />} />
-        <StatCard tone="cyan" value={sectionKeys.length} title="Групп доступа" hint="Разделов с настройкой прав"
+        <StatCard tone="cyan" value={sectionsCount} title="Групп доступа" hint="Разделов с настройкой прав"
           icon={<rect x="3" y="3" width="7" height="7" rx="1" strokeWidth="2" />} extra={<rect x="14" y="14" width="7" height="7" rx="1" strokeWidth="2" />} />
         <StatCard tone="amber" value={stats.admins} title="Администраторов" hint="С полным доступом"
           icon={<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" strokeWidth="2" />} />
@@ -581,11 +452,7 @@ function AdminPage() {
       <div className="admin-panel">
         <div className="admin-tabs">
           <button className={`admin-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>Пользователи</button>
-          <button className={`admin-tab ${activeTab === 'roles' ? 'active' : ''}`} onClick={() => setActiveTab('roles')}>Роли</button>
           <button className={`admin-tab ${activeTab === 'permissions' ? 'active' : ''}`} onClick={() => setActiveTab('permissions')}>Права доступа</button>
-          {canPreviewRoles && (
-            <button className={`admin-tab ${activeTab === 'preview' ? 'active' : ''}`} onClick={() => setActiveTab('preview')}>Просмотр от имени роли</button>
-          )}
           {/* Ключи выдаёт только администратор — так же проверяет сервер (server/osp-api/src/routes/apiKeys.js). */}
           {(isAdmin || isSuperAdmin) && (
             <button className={`admin-tab ${activeTab === 'api' ? 'active' : ''}`} onClick={() => setActiveTab('api')}>Доступ к API</button>
@@ -771,195 +638,10 @@ function AdminPage() {
           </div>
         )}
 
-        {/* ===== Роли ===== */}
-        {activeTab === 'roles' && (
-          <div className="admin-tabpane">
-            <div className="roles-pane">
-              <form className="roles-add-form" onSubmit={handleAddRole}>
-                <div className="form-row">
-                  <div className="form-col">
-                    <label>Машинный ключ</label>
-                    <input type="text" value={newRoleKey} onChange={(e) => setNewRoleKey(e.target.value)} placeholder="site_manager" />
-                    <small>Латиница, цифры, _ — например <code>site_manager</code></small>
-                  </div>
-                  <div className="form-col">
-                    <label>Название</label>
-                    <input type="text" value={newRoleLabel} onChange={(e) => setNewRoleLabel(e.target.value)} placeholder="Прораб" />
-                    <small>Отображается в селектах</small>
-                  </div>
-                  <div className="form-col-action">
-                    <button type="submit" className="btn-primary">Добавить роль</button>
-                  </div>
-                </div>
-                {roleFeedback && <div className={`perm-feedback ${roleFeedback.kind}`} style={{ marginTop: '0.5rem' }}>{roleFeedback.text}</div>}
-              </form>
-
-              <table className="admin-table roles-table">
-                <thead><tr><th>Ключ</th><th>Название</th><th>Тип</th><th style={{ width: '60px' }}></th></tr></thead>
-                <tbody>
-                  {availableRoles.length === 0 ? (
-                    <tr><td colSpan="4" className="admin-empty">Ролей пока нет. Примените миграцию <code>20260507_roles_table.sql</code>.</td></tr>
-                  ) : availableRoles.map(r => (
-                    <tr key={r.key}>
-                      <td><code>{r.key}</code></td>
-                      <td>
-                        <input type="text" defaultValue={r.label} disabled={r.is_system} className="role-rename-input"
-                          onBlur={(e) => { if (!r.is_system && e.target.value !== r.label) handleRenameRole(r.key, e.target.value) }} />
-                      </td>
-                      <td>{r.is_system ? <span className="tag-neutral">Системная</span> : <span className="tag-info">Пользовательская</span>}</td>
-                      <td>
-                        {!r.is_system && (
-                          <button className="adm-iconbtn adm-iconbtn-danger" onClick={() => handleDeleteRole(r.key, r.label)} title="Удалить роль" aria-label="Удалить роль">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="permissions-legend">
-                <span>Системные роли изменять и удалять нельзя</span>
-                <span>Удаление пользовательской роли переводит её носителей в «Инженер ОСП»</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ===== Права доступа ===== */}
+        {/* ===== Права доступа: роли, права по разделам, просмотр от имени роли ===== */}
         {activeTab === 'permissions' && (
           <div className="admin-tabpane">
-            {loadingPerms ? (
-              <div className="admin-loading">Загрузка...</div>
-            ) : (
-              <div className="permissions-pane">
-                <div className="perm-role-picker">
-                  <label htmlFor="perm-role-select">Роль:</label>
-                  <select id="perm-role-select" value={selectedPermRole} onChange={(e) => setSelectedPermRole(e.target.value)}>
-                    {employeeRoleKeys.map(r => <option key={r} value={r}>{roleLabels[r]}</option>)}
-                  </select>
-                  {permFeedback && <span className={`perm-feedback ${permFeedback.kind}`}>{permFeedback.text}</span>}
-                </div>
-
-                {selectedPermRole === 'admin' ? (
-                  <div className="perm-admin-notice">Права администратора изменять нельзя — у роли «Администратор» полный доступ ко всем разделам.</div>
-                ) : (
-                  <table className="admin-table permissions-list-table">
-                    <thead><tr><th className="section-header">Раздел</th><th className="perm-col">Просмотр</th><th className="perm-col">Редактирование</th></tr></thead>
-                    <tbody>
-                      {sectionKeys.map(section => {
-                        const perm = permissions.find(p => p.role === selectedPermRole && p.section === section)
-                        return (
-                          <tr key={section}>
-                            <td className="section-name">{SECTIONS[section]}</td>
-                            <td className="perm-cell"><input type="checkbox" checked={perm?.can_view ?? false} onChange={() => handlePermissionToggle(selectedPermRole, section, 'can_view')} /></td>
-                            <td className="perm-cell"><input type="checkbox" checked={perm?.can_edit ?? false} onChange={() => handlePermissionToggle(selectedPermRole, section, 'can_edit')} /></td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                )}
-                <div className="permissions-legend">
-                  <span>Просмотр — открывать раздел</span>
-                  <span>Редактирование — менять данные</span>
-                  <span>Изменения сохраняются автоматически</span>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ===== Просмотр от имени роли ===== */}
-        {activeTab === 'preview' && canPreviewRoles && (
-          <div className="admin-tabpane">
-            <div className="rp-pane">
-              <p className="rp-intro">
-                Режим показывает приложение так, как его видит выбранная роль: меню, доступные
-                разделы, кнопки создания и редактирования. Заводить отдельные учётные записи для
-                проверки не нужно.
-              </p>
-              <div className="rp-warning">
-                Это предпросмотр <strong>интерфейса</strong>. Запросы в базу по-прежнему идут под
-                вашей учётной записью, поэтому ограничения самой базы остаются
-                администраторскими — роль может увидеть строки, которых под своим логином не
-                получила бы. Любые изменения тоже сохранятся от вашего имени.
-              </div>
-
-              {previewActive ? (
-                <div className="rp-active">
-                  <div className="rp-active-title">
-                    Сейчас включён просмотр: <strong>{roleLabels[previewInfo.role] || previewInfo.role}</strong>
-                  </div>
-                  <ul className="rp-active-list">
-                    {previewInfo.counterparty?.name && <li>Организация: {previewInfo.counterparty.name}</li>}
-                    <li>
-                      Объекты: {previewInfo.objectIds?.length
-                        ? objectsList.filter(o => previewInfo.objectIds.includes(o.id)).map(o => o.name).join(', ')
-                        : 'все (привязки нет)'}
-                    </li>
-                  </ul>
-                  <button type="button" className="btn-primary" onClick={stopRolePreview}>
-                    Вернуться к своей роли
-                  </button>
-                </div>
-              ) : (
-                <div className="rp-form">
-                  <div className="rp-field">
-                    <label htmlFor="rp-role">Роль</label>
-                    <select
-                      id="rp-role"
-                      value={previewForm.role}
-                      onChange={(e) => setPreviewForm(prev => ({ ...prev, role: e.target.value }))}
-                    >
-                      {availableRoles.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
-                    </select>
-                  </div>
-
-                  {previewForm.role === 'contractor' ? (
-                    <div className="rp-field">
-                      <label htmlFor="rp-cp">Организация подрядчика *</label>
-                      <select
-                        id="rp-cp"
-                        value={previewForm.counterpartyId}
-                        onChange={(e) => setPreviewForm(prev => ({ ...prev, counterpartyId: e.target.value }))}
-                      >
-                        <option value="">— Выберите организацию —</option>
-                        {counterpartiesList.map(cp => <option key={cp.id} value={cp.id}>{cp.name}</option>)}
-                      </select>
-                      <small>Кабинет подрядчика показывает тендеры и договоры только этой организации.</small>
-                    </div>
-                  ) : (
-                    <div className="rp-field">
-                      <label>Привязка к объектам</label>
-                      <FilterDropdown
-                        label=""
-                        multiple
-                        searchable
-                        searchPlaceholder="Поиск объекта…"
-                        allLabel="Все объекты (офисный сотрудник)"
-                        value={previewForm.objectIds}
-                        onChange={(next) => setPreviewForm(prev => ({ ...prev, objectIds: next }))}
-                        options={objectsList.map(o => ({ value: o.id, label: o.name }))}
-                      />
-                      <small>
-                        Пусто — сотрудник видит все объекты. Выбор объектов моделирует
-                        руководителя строительства, привязанного к ним.
-                      </small>
-                    </div>
-                  )}
-
-                  {previewError && <div className="rp-error">{previewError}</div>}
-
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={handleStartPreview}
-                    disabled={previewBusy}
-                  >{previewBusy ? 'Включение…' : 'Включить просмотр'}</button>
-                </div>
-              )}
-            </div>
+            <AccessRightsTab objects={objectsList} counterparties={counterpartiesList} onNeedCounterparties={ensureCounterparties} />
           </div>
         )}
       </div>

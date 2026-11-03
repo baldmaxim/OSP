@@ -32,6 +32,7 @@ const CONTRACT_OTHER = 'c0000000-0000-4000-8000-000000000002'
 const TENDER_1 = 'a0000000-0000-4000-8000-000000000001'
 const TENDER_HIDDEN = 'a0000000-0000-4000-8000-000000000002'
 const GDOC_1 = 'b0000000-0000-4000-8000-000000000001'
+const DC_REQUEST_1 = 'b0000000-0000-4000-8000-0000000000dc'
 const PSDC_1 = 'd0000000-0000-4000-8000-000000000001'
 const VOR_1 = 'e0000000-0000-4000-8000-000000000001'
 const TPL_1 = 'e1000000-0000-4000-8000-000000000001' // шаблон раздела (section_templates)
@@ -64,10 +65,11 @@ function supabaseState() {
       'tenders/t3/vor.xlsx': { row: { id: 'd6', owner_type: 'tender', owner_id: TENDER_HIDDEN, doc_category: 'vor_statement' }, visibleTo: 'all' },
       'tenders/t3/hidden-vor.xlsx': { row: { id: 'd7', owner_type: 'tender', owner_id: TENDER_HIDDEN, doc_category: 'vor_statement' }, visibleTo: [U.emp.id] },
       [`general-documents/${GDOC_1}/g.pdf`]: { row: { id: 'd5', owner_type: 'general_document', owner_id: GDOC_1, file_name: 'g.pdf' }, visibleTo: 'all' },
+      [`dc-requests/${DC_REQUEST_1}/n.pdf`]: { row: { id: 'd8', owner_type: 'dc_request', owner_id: DC_REQUEST_1, file_name: 'n.pdf', notes: 'КП' }, visibleTo: 'all' },
     },
     // Права разделов (osp_can): инженер — тендеры, договоры, документы, объекты; зритель — только чтение.
     can: {
-      [U.emp.id]: ['tenders:view', 'tenders:edit', 'contracts:view', 'contracts:edit', 'general_documents:edit', 'objects:edit'],
+      [U.emp.id]: ['tenders:view', 'tenders:edit', 'contracts:view', 'contracts:edit', 'general_documents:edit', 'objects:edit', 'dc_requests:edit'],
       [U.admin.id]: 'all',
       [U.viewer.id]: ['tenders:view', 'contracts:view'],
       // Право на документы «Расчёта ПЗ» — и никаких других: без правки «Объектов» проверка видна точнее.
@@ -78,6 +80,7 @@ function supabaseState() {
       tenders: { [TENDER_1]: [U.emp.id, U.admin.id, U.viewer.id], [TENDER_HIDDEN]: [U.admin.id] },
       tender_docs: { [TDOC_1]: 'all' },
       general_documents: { [GDOC_1]: 'all' },
+      dc_requests: { [DC_REQUEST_1]: 'all' },
       psdc: { [PSDC_1]: [U.emp.id] },
       vor_requests: { [VOR_1]: [U.emp.id] },
       section_templates: { [TPL_1]: 'all' },
@@ -486,6 +489,45 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.equal(res.statusCode, 503)
       assert.equal(res.json().code, 'OSP_RIGHTS_UNAVAILABLE')
       assert.equal(state.docs[KEY].row.file_name, before)
+    })
+  })
+
+  describe('описание файла заявки: только notes, право как у удаления, только файлы заявок', () => {
+    const describeFile = (who, key, notes) => fn('s3-presign', who, { action: 'describe', s3_key: key, notes })
+    const KEY = `dc-requests/${DC_REQUEST_1}/n.pdf`
+
+    it('меняет notes; имя файла и хранилище не трогает; пустое снимает описание', async () => {
+      const res = await describeFile(U.emp, KEY, '  КП от подрядчика ')
+      assert.equal(res.statusCode, 200, res.body)
+      assert.equal(res.json().document.notes, 'КП от подрядчика')
+      assert.equal(state.docs[KEY].row.notes, 'КП от подрядчика')
+      assert.equal(state.docs[KEY].row.file_name, 'n.pdf')
+      assert.equal(s3.requests.length, 0, 'к хранилищу не обращались')
+      assert.equal((await describeFile(U.emp, KEY, '')).json().document.notes, null)
+      assert.equal(state.docs[KEY].row.notes, null)
+    })
+
+    it('без права раздела — 403; подрядчику — 403; длиннее 500 знаков — 400; описание прежнее', async () => {
+      state.docs[KEY].row.notes = 'КП'
+      const denied = await describeFile(U.viewer, KEY, 'Чужое')
+      assert.equal(denied.statusCode, 403)
+      assert.deepEqual(denied.json(), { error: 'Нет права на файлы этого раздела' })
+      assert.equal((await describeFile(U.contractor, KEY, 'Чужое')).statusCode, 403)
+      const long = await describeFile(U.emp, KEY, 'я'.repeat(501))
+      assert.equal(long.statusCode, 400)
+      assert.match(long.json().error, /длиннее 500/)
+      assert.equal(state.docs[KEY].row.notes, 'КП')
+      assert.equal((await describeFile(U.emp, KEY, 'я'.repeat(500))).statusCode, 200)
+    })
+
+    it('файл не заявки — 400: там в notes служебные данные; ключ без строки — 404', async () => {
+      const other = `general-documents/${GDOC_1}/g.pdf`
+      const before = state.docs[other].row.notes
+      const res = await describeFile(U.emp, other, 'Описание')
+      assert.equal(res.statusCode, 400)
+      assert.deepEqual(res.json(), { error: 'У этого файла нет описания' })
+      assert.equal(state.docs[other].row.notes, before)
+      assert.equal((await describeFile(U.emp, 'dc-requests/x/guess.pdf', 'x')).statusCode, 404)
     })
   })
 

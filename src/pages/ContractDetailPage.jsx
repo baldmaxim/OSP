@@ -26,6 +26,7 @@ import FolderPathCell from '../components/FolderPathCell'
 import SignalLinkCell from '../components/SignalLinkCell'
 import LarixLinkCell from '../components/LarixLinkCell'
 import { LARIX_LINK_LABEL, LARIX_NAME, isInLarix, larixLink } from '../utils/contractLarix'
+import { docTender, tenderTitle } from '../utils/contractTender'
 import '../components/ContractRegistry.css'
 
 // Держать в согласии со STATUS_OPTIONS в ContractsPage.jsx.
@@ -120,7 +121,7 @@ function ContractDetailPage() {
     try {
       const { data, error } = await db
         .from('contracts')
-        .select('*, objects(name), counterparties(id, name, inn, kpp, legal_address, actual_address, website, work_type), contract_counterparties(sort_order, counterparties(id, name, inn, kpp, legal_address, actual_address, website, work_type)), tenders(work_description), responsible:contacts!responsible_contact_id(id, full_name, position)')
+        .select('*, objects(name), counterparties(id, name, inn, kpp, legal_address, actual_address, website, work_type), contract_counterparties(sort_order, counterparties(id, name, inn, kpp, legal_address, actual_address, website, work_type)), tenders(work_description, public_tender_number), responsible:contacts!responsible_contact_id(id, full_name, position)')
         .eq('id', contractId)
         .single()
       if (error) throw error
@@ -157,7 +158,7 @@ function ContractDetailPage() {
     try {
       const { data, error } = await db
         .from('contracts')
-        .select('id, display_id, record_type, parent_contract_id, root_contract_id, status, deleted_at, contract_number, contract_date, contract_amount, psdc_total, gp_amount, currency, vat_rate, amount_includes_vat, bsm, work_name, work_start_date, work_end_date, warranty_retention_percent, warranty_retention_period, warranty_period, gen_director_name, phone, email, comments, changed_fields')
+        .select('id, display_id, record_type, parent_contract_id, root_contract_id, status, deleted_at, contract_number, contract_date, contract_amount, psdc_total, gp_amount, currency, vat_rate, amount_includes_vat, bsm, work_name, work_start_date, work_end_date, warranty_retention_percent, warranty_retention_period, warranty_period, gen_director_name, phone, email, comments, changed_fields, tender_id, tenders(work_description, public_tender_number)')
         .or(`id.eq.${rootId},root_contract_id.eq.${rootId}`)
         .is('deleted_at', null)
       if (error) throw error
@@ -173,6 +174,8 @@ function ContractDetailPage() {
   const docIndex = useMemo(() => buildDocIndex(family), [family])
   const rootDoc = rootId ? docIndex.byId.get(rootId) : null
   const parentDoc = contract?.parent_contract_id ? docIndex.byId.get(contract.parent_contract_id) : null
+  // Тендер документа; у ДС без своего — тендер договора.
+  const tender = contract ? docTender(contract, docIndex.byId) : null
   // Плоское дерево от корня: договор → его ДС → их изменения.
   const familyTree = useMemo(
     () => (rootDoc ? flattenTree(rootDoc, docIndex) : []),
@@ -430,6 +433,12 @@ function ContractDetailPage() {
               <InfoRow label={isAmendment(contract) ? '№ ДС' : '№ договора'} value={contract.contract_number} />
               <InfoRow label="Дата" value={formatDate(contract.contract_date)} />
               <InfoRow label="Объект" value={contract.objects?.name} />
+              <InfoRow
+                label="Тендер"
+                value={tender
+                  ? <Link to={`/tenders/${tender.id}`} title={tender.description}>{tenderTitle(tender)}{tender.inherited ? ' (договора)' : ''}</Link>
+                  : 'не привязан'}
+              />
               <InfoRow label={isAmendment(contract) ? 'Предмет ДС' : 'Описание работ'} value={withSource('work_name', shown.work_name || contract.tenders?.work_description)} />
               <InfoRow
                 label={familyTree.length > 0 && !isAmendment(contract) ? 'Исходная сумма' : 'Сумма'}

@@ -157,6 +157,20 @@ export async function renameDocument(doc, fileName) {
   return data[0]
 }
 
+// Описание файла заявки на ДС (надпись в строке файла): только notes в строке. Пустое — снять, в строке снова имя файла.
+// Право — как у renameDocument. Ответ — строка s3_documents.
+export async function describeDocument(doc, notes) {
+  if (filesViaOspApi()) return ospFiles.describe(doc.s3_key, notes)
+  const { data, error } = await db
+    .from('s3_documents')
+    .update({ notes: notes || null })
+    .eq('s3_key', doc.s3_key)
+    .select('*')
+  if (error) throw error
+  if (!data?.length) throw new Error('Описание не сохранено: нет права или файл уже удалили')
+  return data[0]
+}
+
 // Список документов по владельцу.
 // `category` (необязательно) — фильтр по `doc_category` (например 'vor').
 export async function fetchDocuments(ownerType, ownerId, category = null) {

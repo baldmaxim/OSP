@@ -7,6 +7,7 @@ import { useRole } from '../contexts/RoleContext'
 import { deleteDocument, uploadFile } from '../services/s3'
 import { downloadS3File } from '../components/FileDownload'
 import S3DocumentPreview from '../components/S3DocumentPreview'
+import DcRequestDocChip from '../components/DcRequestDocChip'
 import DcRequestDocsModal from '../components/DcRequestDocsModal'
 import FilterDropdown from '../components/FilterDropdown'
 import VorDivisionChip from '../components/VorDivisionChip'
@@ -1693,13 +1694,13 @@ function DcRequestsPage() {
     }
   }
 
-  const handleDocRenamed = (doc) => {
+  const handleDocChanged = (doc) => {
     docsEpochRef.current += 1
     setDocsByReq(prev => {
       const arr = prev.get(doc.owner_id)
       if (!arr) return prev
       const next = new Map(prev)
-      next.set(doc.owner_id, arr.map(d => (d.id === doc.id ? { ...d, file_name: doc.file_name } : d)))
+      next.set(doc.owner_id, arr.map(d => (d.id === doc.id ? { ...d, file_name: doc.file_name, notes: doc.notes } : d)))
       return next
     })
   }
@@ -1977,78 +1978,18 @@ function DcRequestsPage() {
 
   // task 370: единый рендер чипа документа — используется и в «рабочих»,
   // и в «итоговых» документах.
-  const renderDocChip = (doc) => {
-    const tooltip = [
-      doc.file_name,
-      doc.notes,
-      [formatBytes(doc.size_bytes), doc.uploaded_by_name].filter(Boolean).join(' · '),
-    ].filter(Boolean).join('\n')
-    const mime = (doc.mime_type || '').toLowerCase()
-    const previewable = mime === 'application/pdf' || mime.startsWith('image/')
-    return (
-      <div key={doc.id} className="dcr-doc-chip">
-        <button
-          type="button"
-          className="dcr-doc-chip-main"
-          onClick={() => previewable ? setPreviewDoc(doc) : handleDocDownload(doc)}
-          title={tooltip}
-        >
-          <svg
-            className="dcr-doc-chip-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-          </svg>
-          {doc.notes
-            ? <span className="dcr-doc-chip-desc">{doc.notes}</span>
-            : <span className="dcr-doc-chip-desc dcr-doc-chip-desc-empty" title={doc.file_name}>{doc.file_name}</span>}
-        </button>
-        {previewable && (
-          <button
-            type="button"
-            className="dcr-doc-chip-action"
-            onClick={() => setPreviewDoc(doc)}
-            title="Просмотр"
-            aria-label="Просмотр"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-          </button>
-        )}
-        <button
-          type="button"
-          className="dcr-doc-chip-action"
-          onClick={() => handleDocDownload(doc)}
-          title="Скачать"
-          aria-label="Скачать"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-        </button>
-        {canEditDc && (
-          <button
-            type="button"
-            className="dcr-doc-chip-del"
-            onClick={() => handleDocDelete(doc)}
-            title="Удалить"
-            aria-label="Удалить"
-          >×</button>
-        )}
-      </div>
-    )
-  }
+  const renderDocChip = (doc) => (
+    <DcRequestDocChip
+      key={doc.id}
+      doc={doc}
+      details={[formatBytes(doc.size_bytes), doc.uploaded_by_name].filter(Boolean).join(' · ')}
+      canEdit={canEditDc}
+      onPreview={setPreviewDoc}
+      onDownload={handleDocDownload}
+      onDelete={handleDocDelete}
+      onChanged={handleDocChanged}
+    />
+  )
 
   return (
     // dcr-dense — плотный вариант реестра (DcRequestsPage.css, конец файла);
@@ -3471,7 +3412,7 @@ function DcRequestsPage() {
       })()}
 
       {previewDoc && (
-        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} onRenamed={canEditDc ? handleDocRenamed : undefined} />
+        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
       )}
 
       {showSectionDocs && (

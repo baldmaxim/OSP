@@ -1,5 +1,5 @@
 // «Договоры и ДС» (/contracts): счётчики вкладок и охвата при выборе «Документ».
-//   • «Договоры и ДС» — договоры и ДС вместе (раньше — одни договоры, то же число, что «Договоры»);
+//   • «Договоры и ДС» — договоры и ДС вместе (раньше — одни договоры); отдельного вида «Договоры» с 03.11 нет — те же строки;
 //   • на вкладке статуса видны и ДС этого статуса: договор в другом статусе — строкой «показан ради ДС»,
 //     раскрыт сразу (ДС — в правой области под строкой). Правила — utils/contractRegistryTabs
 //     (tests/contracts/registry-tabs.test.mjs); раскрытый договор — tests/tender/contracts-expanded.test.mjs.
@@ -48,14 +48,11 @@ describe('Договоры и ДС: счётчики вида «Документ
       }
 
       const both = await pick('Договоры и ДС')
-      const contracts = await pick('Договоры')
       const amendments = await pick('ДС')
-      assert.deepEqual(
-        [contracts.tabs['Общий реестр'], amendments.tabs['Общий реестр'], both.tabs['Общий реестр']], [20, 10, 30])
-      assert.deepEqual([contracts.tabs['В работе'], amendments.tabs['В работе'], both.tabs['В работе']], [15, 10, 25])
+      assert.deepEqual([amendments.tabs['Общий реестр'], both.tabs['Общий реестр']], [10, 30])
+      assert.deepEqual([amendments.tabs['В работе'], both.tabs['В работе']], [10, 25])
       assert.equal(both.tabs['Завершено'], 5)
       assert.equal(both.scopes['Все договоры'], 30)
-      for (const k of Object.keys(both.tabs)) assert.equal(both.tabs[k], contracts.tabs[k] + amendments.tabs[k], k)
 
       await pick('Договоры и ДС')
       await page.locator('.status-tab', { hasText: 'В работе' }).click()

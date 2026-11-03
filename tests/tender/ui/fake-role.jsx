@@ -30,9 +30,27 @@ const ROLE = window.__fakeRole || {
   },
   // Названия ролей из таблицы roles (как roleLabels настоящего контекста): заведённые администратором роли.
   roleLabels: { ...ROLE_LABELS, supply: 'Снабжение', smetno: 'Сметно-технический отдел', udorojanie: 'Отдел по удорожанию' },
+  // Стенд /stand/access-rights: справочник — из window.__fakeDb.roles, просмотр от имени роли запоминается.
+  availableRoles: [],
+  refreshAvailableRoles: async () => { syncRoles() },
+  canPreviewRoles: true,
+  previewActive: false,
+  previewInfo: null,
+  startRolePreview: async (role, options) => {
+    if (role === 'fails') throw new Error('Не удалось загрузить права роли')
+    window.__rolePreview = { role, ...options }
+  },
+  stopRolePreview: () => {},
+}
+
+function syncRoles() {
+  const rows = window.__fakeDb?.roles || []
+  ROLE.availableRoles = rows
+  ROLE.roleLabels = { ...ROLE.roleLabels, ...Object.fromEntries(rows.map(r => [r.key, r.label])) }
 }
 
 export function useRole() {
+  if (window.__fakeDb?.roles && !ROLE.availableRoles.length) syncRoles()
   return ROLE
 }
 

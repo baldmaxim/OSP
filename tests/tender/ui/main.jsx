@@ -22,6 +22,8 @@
 //             /stand/api-keys («Администрирование» → «Доступ к API»; apiKeys=missing — раздела у сервера нет,
 //             apiKeysMany=N — ещё N ключей),
 //             /stand/add-user («Администрирование» → «Добавить пользователя»; addUserNoGuest=1 — роли «Гость» нет),
+//             /stand/access-rights («Администрирование» → «Права доступа»: роли, права, просмотр от имени роли),
+//             /stand/file-list&dcStats=1 (список файлов с окном просмотра: переименование; canEdit=0 — без права правки),
 //             /rates-registry (реестр расценок, вкладка КП: ручные расценки, «Документ (ВОР)», проверка по файлу;
 //             kpRegistryLegacy=1 — колонок миграции 20261122 ещё нет);
 //   items   — позиций ВОР (по умолчанию 5000, три документа, разделы),
@@ -70,6 +72,8 @@ const CostPlansPage = lazy(() => import('../../../src/pages/CostPlansPage'))
 // «Доступ к API» — так же (AdminPage.css) и со своим «сервером» в памяти (api-keys-stand.jsx).
 const ApiKeysStand = lazy(() => import('./api-keys-stand.jsx'))
 const AddUserStand = lazy(() => import('./add-user-stand.jsx'))
+const AccessRightsStand = lazy(() => import('./access-rights-stand.jsx'))
+const FileListStand = lazy(() => import('./file-list-stand.jsx'))
 // Боковое меню — так же (Sidebar.css: .nav-item и др. глобальные), с темой (переключатель темы в меню).
 const SidebarStand = lazy(() => import('./sidebar-stand.jsx'))
 // Карточка объекта — так же (ObjectDetailPage.css): переход по ссылке на подтверждающий ДС из «Расчёта ПЗ».
@@ -105,6 +109,8 @@ const routes = (
     <Route path="/stand/dgp" element={<Suspense fallback={null}><DgpStand /></Suspense>} />
     <Route path="/stand/api-keys" element={<Suspense fallback={null}><ApiKeysStand /></Suspense>} />
     <Route path="/stand/add-user" element={<Suspense fallback={null}><AddUserStand /></Suspense>} />
+    <Route path="/stand/access-rights" element={<Suspense fallback={null}><AccessRightsStand /></Suspense>} />
+    <Route path="/stand/file-list" element={<Suspense fallback={null}><FileListStand /></Suspense>} />
     <Route path="/public/tenders" element={<PublicTendersPage />} />
     <Route path="/general/counterparties" element={<CounterpartiesPage />} />
     <Route path="/general/objects" element={<Suspense fallback={null}><ObjectsPage /></Suspense>} />

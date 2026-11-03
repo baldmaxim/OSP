@@ -12,9 +12,11 @@
 //            строки уже нет (повтор) — { ok: true, already: true }
 //   rename   { s3_key, file_name }                  → { document } — новое имя в строке s3_documents (право — как у
 //            удаления), расширение прежнее (shared/fileRename.js); объект в хранилище и его ключ не меняются
+//   describe { s3_key, notes }                      → { document } — описание файла заявки на ДС (право — как у удаления);
+//            пустое снимает описание. У других файлов notes — служебные данные (строки счёта, паспорт ДГП): 400
 //
 // Перенос данных (шлюз включён, src/app.js):
-//   • барьер записи — upload, confirm, delete и rename отвечают 503 OSP_READONLY, скачивание работает;
+//   • барьер записи — upload, confirm, delete, rename и describe отвечают 503 OSP_READONLY, скачивание работает;
 //   • репетиция (копия за шлюзом не рабочая, src/lib/loadStatus.js) — хранилище у неё общее с рабочим
 //     порталом: delete убирает строку, а объект — только если документ создан уже в репетиции. Объект,
 //     который был до загрузки копии, принадлежит рабочим данным и остаётся: { ok, object_deleted: false };
@@ -191,7 +193,8 @@ export const PRESIGN_BODY = z.object({
   download: any,
 })
 
-const WRITE_ACTIONS = new Set(['upload', 'confirm', 'delete', 'rename'])
+const WRITE_ACTIONS = new Set(['upload', 'confirm', 'delete', 'rename', 'describe'])
+const DOC_NOTE_MAX = 500
 
 export function registerS3Presign(app, { config, getS3, gatewayOn = false, isReadOnly = () => false, loadStatus = null }) {
   app.route({ method: 'POST', url: '/api/fn/s3-presign', config: {
@@ -419,7 +422,8 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           return { ok: true }
         }
 
-        case 'rename': {
+        case 'rename':
+        case 'describe': {
           const s3Key = String(body.s3_key || '')
           if (!s3Key) return reply.code(400).send({ error: 'Missing s3_key' })
           const { data: doc, error } = await supabase
@@ -430,12 +434,21 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           if (error) throw error
           if (!doc) return reply.code(404).send({ error: 'Файл не найден' })
           if (!await allowed(await rulesForDoc(doc))) return reply.code(403).send({ error: NO_RIGHT })
-          const fileName = String(body.file_name ?? '')
-          const problem = fileNameProblem(fileName, doc.file_name)
-          if (problem) return reply.code(400).send({ error: problem })
+          let patch
+          if (body.action === 'rename') {
+            const fileName = String(body.file_name ?? '')
+            const problem = fileNameProblem(fileName, doc.file_name)
+            if (problem) return reply.code(400).send({ error: problem })
+            patch = { file_name: fileName }
+          } else {
+            if (doc.owner_type !== 'dc_request') return reply.code(400).send({ error: 'У этого файла нет описания' })
+            const notes = String(body.notes ?? '').trim()
+            if (notes.length > DOC_NOTE_MAX) return reply.code(400).send({ error: `Описание длиннее ${DOC_NOTE_MAX} знаков` })
+            patch = { notes: notes || null }
+          }
           const { data: saved, error: updateError } = await supabase
             .from('s3_documents')
-            .update({ file_name: fileName })
+            .update(patch)
             .eq('id', doc.id)
             .select('*')
           if (updateError) {
