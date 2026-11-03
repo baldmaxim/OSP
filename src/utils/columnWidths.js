@@ -43,19 +43,33 @@ export function writeColumnWidths(key, widths, storage = localStore()) {
   } catch { /* хранилище переполнено или закрыто — ширины просто не запомнятся */ }
 }
 
-// Новая ширина столбца (в тех же единицах, что base и sum), при которой на экране он будет target.
-// base — ширина столбца, sum — сумма всех столбцов, container — ширина места под таблицу. Пока сумма не больше
-// места, таблица растянута: столбец на экране = base × container / sum, и растёт он за счёт остальных,
-// пропорционально; шире места — таблица прокручивается, столбец на экране равен своей ширине.
-export function resizedWidth({ base, sum, container, target }) {
-  if (target < container) {
-    const delta = (target * sum - base * container) / (container - target)
-    if (sum + delta <= container) return base + delta
+// Ширины столбцов, при которых граница справа от столбца index сдвинулась на экране на delta — ровно за мышью.
+// Считается от ширин на начало перетаскивания: где мышь, там и граница, в какую сторону ни веди.
+//   widths, mins — ширины и минимумы столбцов по порядку; container — место под таблицу; delta, scrollLeft — в rem экрана.
+//
+// Столбцы левее границы не меняются: если бы они сужались вместе с остальными (сумма больше — растянутая таблица ужимает
+// все столбцы), граница уезжала бы от мыши тем сильнее, чем правее столбец: у «Документов» — 22 px из 120, у «Статуса
+// ОКС» — 3 из 60. Поэтому место берётся только у соседа справа, сумма не меняется, и остальные столбцы стоят:
+//   • шире — сосед уже, до своего минимума; дальше таблица становится шире места и прокручивается. Растянутая таблица в
+//     этот момент переходит на ширины как на экране, иначе скачком сузились бы все столбцы;
+//   • уже — сосед шире. Таблица, которая и так шире места, сначала сужается сама, но лишь пока прокрутка не упрётся в
+//     новый край: дальше браузер сдвинул бы всю таблицу вправо, и граница осталась бы на месте;
+//   • таблица и так шире места и столбец растёт — он просто раздвигает таблицу, сосед не меняется.
+export function dragWidths({ widths, mins, index, delta, container, scrollLeft = 0 }) {
+  const sum = widths.reduce((total, w) => total + w, 0)
+  const scale = sum < container ? container / sum : 1 // во сколько раз столбцы на экране шире своих ширин
+  const neighbor = index + 1 < widths.length ? index + 1 : -1
+  const width = Math.min(COLUMN_WIDTH_MAX, Math.max(mins[index], widths[index] + delta / scale))
+  const moved = width - widths[index]
+  const next = [...widths]
+  next[index] = width
+  if (moved < 0) {
+    const tableShrinks = Math.min(-moved, Math.max(0, sum - container - scrollLeft))
+    if (neighbor >= 0) next[neighbor] += -moved - tableShrinks
+  } else if (moved > 0 && sum <= container) {
+    const given = neighbor >= 0 ? Math.min(moved, Math.max(0, widths[neighbor] - mins[neighbor])) : 0
+    if (neighbor >= 0) next[neighbor] -= given
+    if (moved > given && scale > 1) return next.map(w => round(w * scale))
   }
-  return target
-}
-
-// Как столбец выглядит сейчас: ширина на экране при данной сумме и месте (таблица не уже места).
-export function shownWidth({ base, sum, container }) {
-  return sum < container ? base * container / sum : base
+  return next.map(round)
 }

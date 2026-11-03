@@ -1,13 +1,15 @@
 // «Заявки на ДС»: ширины столбцов меняются перетаскиванием границ в заголовке и переживают обновление страницы
 // (localStorage, hooks/useColumnWidths.js); окно шире суммы — растут все столбцы пропорционально; шире окна —
 // прокрутка, а не обрезка. Название «Статус ОКС» — кнопка фильтра, граница рядом его не открывает.
+// Граница идёт за мышью (03.11: «лагает» — граница «Документов» проходила 22 px из 120 мыши, «Статуса ОКС» — 3 из 60):
+// место отдаёт сосед справа, остальные столбцы стоят.
 // Расчёт — utils/columnWidths.js; реестр — в Chromium, стенд tests/tender/ui (route=/dc-requests&dcStats=1&shell=1).
 // Длинный реестр (30.10: «автомасштабирование столбцов очень сильно лагает»): пока тянут границу, строки вне экрана
 // скрыты, верхняя видимая строка не сдвигается; отпустили — строки показываются фоном (dcMany=N).
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
-import { readColumnWidths, resizedWidth, shownWidth, writeColumnWidths } from '../../src/utils/columnWidths.js'
+import { dragWidths, readColumnWidths, writeColumnWidths } from '../../src/utils/columnWidths.js'
 import { startStand, browserLaunchOptions, REPO as ROOT } from './lib/stand.mjs'
 
 const launch = browserLaunchOptions()
@@ -24,27 +26,62 @@ function memoryStore(init = {}) {
 }
 
 describe('Ширины столбцов: расчёт и хранение', () => {
-  it('растянутая таблица: столбец на экране следует за мышью, сумма остаётся не больше места', () => {
-    const sum = 100
-    const container = 125
-    const base = 10
-    assert.equal(shownWidth({ base, sum, container }), 12.5)
-    // Хотим на экране 20 (было 12.5): новая ширина и пересчёт обратно дают ровно 20.
-    const next = resizedWidth({ base, sum, container, target: 20 })
-    const nextSum = sum - base + next
-    assert.ok(nextSum <= container)
-    assert.ok(Math.abs(shownWidth({ base: next, sum: nextSum, container }) - 20) < 1e-9)
-    // Сужение — так же.
-    const narrow = resizedWidth({ base, sum, container, target: 6 })
-    assert.ok(Math.abs(shownWidth({ base: narrow, sum: sum - base + narrow, container }) - 6) < 1e-9)
+  // Где окажется граница справа от столбца на экране: при сумме меньше места браузер растягивает столбцы пропорционально.
+  const edge = (widths, index, container) => {
+    const sum = widths.reduce((t, w) => t + w, 0)
+    const k = sum < container ? container / sum : 1
+    return widths.slice(0, index + 1).reduce((t, w) => t + w, 0) * k
+  }
+  const same = (a, b, what) => assert.ok(Math.abs(a - b) < 0.01, `${what}: ${a} и ${b}`)
+  const mins = [2, 2, 2, 2]
+  const drag = (over) => dragWidths({ widths: [10, 20, 30, 40], mins, index: 1, delta: 0, container: 125, ...over })
+
+  it('растянутая таблица: граница — ровно за мышью в обе стороны, у любого столбца; сумма и остальные столбцы те же', () => {
+    const widths = [10, 20, 30, 40]
+    for (const index of [0, 1, 2]) {
+      for (const delta of [-5, 5, 12]) {
+        const next = dragWidths({ widths, mins, index, delta, container: 125 })
+        same(edge(next, index, 125), edge(widths, index, 125) + delta, `столбец ${index}, сдвиг ${delta}`)
+        same(next.reduce((t, w) => t + w, 0), 100, 'сумма')
+        next.forEach((w, j) => { if (j !== index && j !== index + 1) assert.equal(w, widths[j], `столбец ${j} не меняется`) })
+      }
+    }
   })
 
-  it('шире места — таблица прокручивается, столбец на экране равен своей ширине', () => {
-    assert.equal(shownWidth({ base: 10, sum: 130, container: 125 }), 10)
-    assert.equal(resizedWidth({ base: 10, sum: 130, container: 125, target: 18 }), 18)
-    // Растянутая, но столбец тянут дальше, чем помещается: дальше — как есть, без скачка на границе.
-    const atEdge = resizedWidth({ base: 10, sum: 100, container: 125, target: 35 })
-    assert.equal(atEdge, 35)
+  it('сосед упёрся в минимум: граница идёт дальше, таблица шире места, столбцы на экране без скачка', () => {
+    const justFits = drag({ index: 0, delta: 22.5 }) // сосед 20 → 2: всего он отдаёт 18 × 1.25 = 22.5 на экране
+    same(justFits[1], 2, 'сосед на минимуме')
+    same(justFits.reduce((t, w) => t + w, 0), 100, 'сумма пока та же')
+    const over = drag({ index: 0, delta: 24 })
+    const sum = over.reduce((t, w) => t + w, 0)
+    assert.ok(sum > 125, `таблица шире места: ${sum}`)
+    same(edge(over, 0, 125), edge([10, 20, 30, 40], 0, 125) + 24, 'граница')
+    same(over[1], 2.5, 'сосед — как был на экране')
+    same(over[2], 37.5, 'столбец правее — как был на экране')
+    same(over[3], 50, 'и следующий')
+  })
+
+  it('свой минимум: граница дальше не идёт, сосед получает только то, что столбец отдал', () => {
+    const next = drag({ delta: -100 })
+    assert.deepEqual(next, [10, 2, 48, 40])
+  })
+
+  it('таблица шире места: столбец растёт сам, сосед не меняется', () => {
+    assert.deepEqual(drag({ container: 90, delta: 8 }), [10, 28, 30, 40])
+  })
+
+  it('таблица шире места, столбец уже: сама сужается до места, дальше — сосед; прокрутка не упирается в край', () => {
+    assert.deepEqual(drag({ container: 90, delta: -6 }), [10, 14, 30, 40])
+    assert.deepEqual(drag({ container: 90, delta: -15 }), [10, 5, 35, 40], 'лишнее — 10, остальное соседу')
+    // Прокручено до края: сузиться таблице значит сдвинуть её вправо — граница не пошла бы за мышью.
+    assert.deepEqual(drag({ container: 90, delta: -6, scrollLeft: 10 }), [10, 14, 36, 40])
+    assert.deepEqual(drag({ container: 90, delta: -6, scrollLeft: 7 }), [10, 14, 33, 40], 'до края — 3')
+  })
+
+  it('последний столбец без соседа: шире — таблица раздвигается, уже — сосед не появляется', () => {
+    const args = { widths: [10, 20], mins: [2, 2], index: 1, container: 30 }
+    assert.deepEqual(dragWidths({ ...args, delta: 5 }), [10, 25])
+    assert.deepEqual(dragWidths({ ...args, delta: -5 }), [10, 15])
   })
 
   it('хранилище: только разумные числа; пусто — запись удаляется; закрытое хранилище не роняет', () => {
@@ -117,7 +154,7 @@ describe('Реестр заявок на ДС: ширины столбцов', {
     } finally { await close() }
   })
 
-  it('растянутая таблица: столбец растёт за мышью, остальные уступают пропорционально; ширина переживает обновление', async () => {
+  it('растянутая таблица: граница каждого столбца идёт за мышью, отдаёт сосед, остальные стоят; ширины переживают обновление', async () => {
     const { page, errors, close } = await open()
     try {
       const before = await widths(page)
@@ -126,13 +163,13 @@ describe('Реестр заявок на ДС: ширины столбцов', {
       await drag(page, 4, 120) // «Описание ДС»
       const after = await widths(page)
       assert.ok(Math.abs(after[4] - before[4] - 120) <= 2, `описание: ${before[4]} → ${after[4]}`)
-      // Таблица по-прежнему во всё место, без прокрутки; остальные столбцы сузились в одной пропорции.
+      assert.ok(Math.abs(after[5] - before[5] + 120) <= 2, `сумма уступила: ${before[5]} → ${after[5]}`)
+      // Таблица по-прежнему во всё место, без прокрутки; остальные столбцы не сдвинулись.
       const lay1 = await layout(page)
       assert.ok(Math.abs(lay1.table - lay0.table) <= 1 && lay1.fit && lay1.scroll <= lay1.client + 1, JSON.stringify(lay1))
-      const k = (lay0.table - after[4]) / (lay0.table - before[4])
-      before.forEach((w, i) => { if (i !== 4) assert.ok(Math.abs(after[i] - w * k) <= 1.5, `столбец ${i}: ${w} → ${after[i]} (k ${k})`) })
+      before.forEach((w, i) => { if (i !== 4 && i !== 5) assert.ok(Math.abs(after[i] - w) <= 1, `столбец ${i}: ${w} → ${after[i]}`) })
       const saved = await stored(page)
-      assert.deepEqual(Object.keys(saved), ['desc'])
+      assert.deepEqual(Object.keys(saved), ['desc', 'amount'])
       assert.ok(saved.desc > 9.75)
 
       await page.reload()
@@ -159,16 +196,20 @@ describe('Реестр заявок на ДС: ширины столбцов', {
       const before = await widths(page)
       await drag(page, 1, 80) // «Объект»
       assert.ok((await stored(page)).object > 11)
+      // Двойной щелчок по границе возвращает оба столбца, которые она делит: сосед тоже менялся.
       await page.locator('.dcr-table thead th').nth(1).locator('.col-resize').dblclick()
       await frames(page)
       assert.equal(await stored(page), null)
       assert.ok(Math.abs((await widths(page))[1] - before[1]) <= 1)
 
       const handle = page.locator('.dcr-table thead th').nth(2).locator('.col-resize') // «Контрагент», 13rem
+      const edge = () => handle.evaluate(el => el.parentElement.getBoundingClientRect().right)
+      const e0 = await edge()
       await handle.focus()
       await page.keyboard.press('ArrowRight')
       await page.keyboard.press('Shift+ArrowRight')
-      assert.deepEqual(await stored(page), { cp: 15.5 })
+      assert.ok(Math.abs(await edge() - e0 - 40) <= 1, 'стрелка двигает границу на свой шаг: 0.5rem + 2rem')
+      assert.deepEqual(Object.keys(await stored(page)), ['cp', 'contract'])
       await page.keyboard.press('Delete')
       assert.equal(await stored(page), null)
       assert.deepEqual(errors, [])
@@ -189,6 +230,72 @@ describe('Реестр заявок на ДС: ширины столбцов', {
     } finally { await close() }
   })
 
+  it('граница идёт за мышью у всех столбцов: то, что отставало, и в обе стороны', async () => {
+    const { page, errors, close } = await open()
+    try {
+      const reset = page.locator('.dcr-widths-reset')
+      for (const [i, dx] of [[1, 80], [2, -80], [3, -60], [4, -80], [6, -80], [7, -120], [7, 120], [8, -60], [8, 60]]) {
+        if (await reset.count()) { await reset.click(); await frames(page) }
+        const edges = () => page.locator('.dcr-table thead th').evaluateAll(ths => ths.map(th => th.getBoundingClientRect().right))
+        const e0 = await edges()
+        await drag(page, i, dx)
+        const e1 = await edges()
+        assert.ok(Math.abs(e1[i] - e0[i] - dx) <= 2, `граница ${i}, мышь ${dx}: сдвинулась на ${e1[i] - e0[i]}`)
+        // «Статус ОКС» шире: «Действия» уже не сжимаются, поэтому таблица раздвигается — только правый край уезжает.
+        const pushesTable = i === 8 && dx > 0
+        e0.forEach((x, j) => {
+          if (j === i || (pushesTable && j === 9)) return
+          assert.ok(Math.abs(e1[j] - x) <= 2, `граница ${j} стоит (тянули ${i}): ${x} → ${e1[j]}`)
+        })
+      }
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('таблица шире окна, прокручена до края: граница идёт за мышью, таблица не прыгает', async () => {
+    const { page, errors, close } = await open('', { width: 1400, height: 900 })
+    try {
+      const box = () => page.evaluate(() => {
+        const c = document.querySelector('.dcr-table').closest('.table-container')
+        return { left: c.scrollLeft, max: c.scrollWidth - c.clientWidth }
+      })
+      await page.evaluate(() => { const c = document.querySelector('.dcr-table').closest('.table-container'); c.scrollLeft = c.scrollWidth })
+      await frames(page)
+      const s0 = await box()
+      assert.ok(s0.max > 100 && Math.abs(s0.left - s0.max) <= 1, `прокручено до края: ${JSON.stringify(s0)}`)
+      const edges = () => page.locator('.dcr-table thead th').evaluateAll(ths => ths.map(th => th.getBoundingClientRect().right))
+      const e0 = await edges()
+      await drag(page, 7, -80) // левая граница «Статуса ОКС»
+      const e1 = await edges()
+      assert.ok(Math.abs(e1[7] - e0[7] + 80) <= 2, `граница за мышью: ${e1[7] - e0[7]}`)
+      assert.ok(Math.abs(e1[6] - e0[6]) <= 2, `столбец левее стоит: ${e1[6] - e0[6]}`)
+      assert.ok(Math.abs((await box()).left - s0.left) <= 1, 'прокрутка на месте')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('таблица вплотную к рамке раздела, хотя стили карточки тендера (padding у .table-container) уже загружены', async () => {
+    const { page, errors, close } = await open()
+    try {
+      const pos = await page.evaluate(() => {
+        const t = document.querySelector('.dcr-table')
+        const c = t.closest('.table-container')
+        const th = t.querySelector('thead th').getBoundingClientRect()
+        const b = c.getBoundingClientRect()
+        const cs = getComputedStyle(c)
+        const css = [...document.styleSheets].some((sheet) => {
+          try { return [...sheet.cssRules].some(r => r.selectorText === '.table-container' && r.style.paddingLeft === '1rem') } catch { return false }
+        })
+        return { thLeft: th.left - b.left, tableRight: b.right - t.getBoundingClientRect().right, padding: cs.paddingLeft, css }
+      })
+      assert.equal(pos.css, true, 'чужое правило на месте — иначе проверка ничего не значит')
+      assert.equal(pos.padding, '0px')
+      assert.ok(Math.abs(pos.thLeft) < 0.5, `слева: ${pos.thLeft}`)
+      assert.ok(Math.abs(pos.tableRight) < 0.5, `справа: ${pos.tableRight}`)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
   it('граница «Статуса ОКС» не открывает фильтр, название — открывает; фильтр работает и после смены ширины', async () => {
     const { page, errors, close } = await open()
     try {
@@ -201,6 +308,26 @@ describe('Реестр заявок на ДС: ширины столбцов', {
       await page.locator('.fdrop-panel .fdrop-option', { hasText: 'Удорожаев' }).click()
       await page.keyboard.press('Escape')
       assert.equal(await page.locator('.dcr-table tbody tr').count(), 1)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('длинный реестр: щелчок по границе без движения — ширины те же, ничего не запомнено, все строки снова на месте', async () => {
+    const { page, errors, close } = await open('&dcMany=150')
+    try {
+      const before = await widths(page)
+      const handle = page.locator('.dcr-table thead th').nth(4).locator('.col-resize')
+      await handle.click()
+      await page.waitForFunction(() => !document.querySelector('.dcr-table [data-col-frozen]'), null, { timeout: 30000 })
+      await frames(page)
+      const state = await page.evaluate(() => ({
+        hidden: [...document.querySelectorAll('.dcr-table tbody tr')].filter(r => getComputedStyle(r).display === 'none').length,
+        veils: document.querySelectorAll('.col-resize-veil').length,
+        resizing: document.body.classList.contains('is-col-resizing'),
+      }))
+      assert.deepEqual(state, { hidden: 0, veils: 0, resizing: false })
+      assert.deepEqual(await widths(page), before)
+      assert.equal(await stored(page), null)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
@@ -239,6 +366,12 @@ describe('Реестр заявок на ДС: ширины столбцов', {
       const y = b.y + b.height / 2
       await page.mouse.move(x, y)
       await page.mouse.down()
+      await frames(page)
+      // Скрытие — самая дорогая часть, поэтому при нажатии, пока граница стоит, а не рывком на первом движении.
+      const pressed = await state()
+      assert.ok(pressed.hidden > 100, `скрыты уже при нажатии: ${JSON.stringify(pressed)}`)
+      const a00 = await anchor()
+      assert.ok(a00.no === a0.no && Math.abs(a00.top - a0.top) <= 1, 'на экране при нажатии ничего не сдвинулось')
       for (let s = 1; s <= 6; s++) { await page.mouse.move(x + s * 30, y); await frames(page) }
       const during = await state()
       assert.ok(during.hidden > 100, `во время перетаскивания скрыты строки вне экрана: ${JSON.stringify(during)}`)

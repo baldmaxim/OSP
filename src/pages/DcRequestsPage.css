@@ -2573,7 +2573,10 @@
    столбцы (так было после «Договора» и «Статуса ОКС»: 124.75rem при пороге
    под 98.75rem — «Комментарий» и «Действия» уходили за край без прокрутки). */
 .dc-requests-page.ui-work .dcr-table { table-layout: fixed; width: 100%; }
-.dc-requests-page.ui-work .table-container { overflow-x: auto; }
+/* margin и padding: таблица — вплотную к рамке раздела. Чужой .table-container из
+   TenderDetail.css (padding: 0 1rem 1rem) действует, только если перед этим
+   открывали карточку тендера: слева и справа появлялись пустые 16px. */
+.dc-requests-page.ui-work .table-container { overflow-x: auto; margin: 0; padding: 0; }
 .dc-requests-page.ui-work .dcr-col-num { width: 2.75rem; }
 .dc-requests-page.ui-work .dcr-col-object { width: 11rem; }      /* значок + «Ориентировочный срок:» в строку */
 .dc-requests-page.ui-work .dcr-col-cp { width: 12.25rem; }       /* «Доп. работы вне договора» в селекторе */

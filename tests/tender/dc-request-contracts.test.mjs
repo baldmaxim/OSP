@@ -244,7 +244,7 @@ describe('Договоры в заявках на ДС и у контраген�
   // связанное — в одном столбце (99.5rem, как до этих столбцов), а clip — только там, где таблица помещается.
   it('реестр помещается в окно: № ДС — под договором, ответственный — под статусом, комментарий — под статусом ОКС', async () => {
     // Обвязка приложения и полоса 217px слева: сайдбар 200px + полоса прокрутки 17px (у безголового Chromium её нет).
-    for (const width of [1880, 1920, 2000, 2400]) {
+    for (const width of [1840, 1880, 1920, 2000, 2400]) {
       const { page, errors, close } = await openPage(`${DC}&dcContracts=1&dcSubmission=1&shell=1`, '.dcr-table tbody tr', { width, height: 1000 })
       try {
         await page.addStyleTag({ content: '.layout { display: flex; } .layout::before { content: ""; flex: 0 0 217px; }' })
@@ -264,10 +264,10 @@ describe('Договоры в заявках на ДС и у контраген�
         assert.deepEqual(m.headers, ['№', 'Объект', 'Контрагент', 'Договор и № ДС', 'Описание ДС', 'Сумма, руб. с НДС 22%',
           'Статус и ответственный', 'Документы', 'Статус ОКС', 'Действия'])
         // Срезать без прокрутки нельзя: когда горизонтальной прокрутки нет (hidden — с 28.10, когда таблица
-        // прокручивается в своём блоке под закреплённой шапкой; раньше clip), «Действия» целиком внутри; от 1920 окна
-        // таблица помещается вся.
-        if (['clip', 'hidden'].includes(m.overflow) || width >= 1920) assert.ok(m.lastRight <= m.boxRight + 0.5, `${width}: ${JSON.stringify(m)}`)
-        if (width === 1880) assert.equal(m.overflow, 'auto', 'не помещается — прокрутка, а не обрезка')
+        // прокручивается в своём блоке под закреплённой шапкой; раньше clip), «Действия» целиком внутри; от 1880 окна
+        // таблица помещается вся (03.11: у блока таблицы нет чужих полей по 16px — раньше было от 1920).
+        if (['clip', 'hidden'].includes(m.overflow) || width >= 1880) assert.ok(m.lastRight <= m.boxRight + 0.5, `${width}: ${JSON.stringify(m)}`)
+        if (width === 1840) assert.equal(m.overflow, 'auto', 'не помещается — прокрутка, а не обрезка')
         if (width === 1920) {
           assert.match(await row(page, 12).locator('.dcr-resp-line').innerText(), /Юристов Ю\.\s*Ю\./)
           assert.match(await row(page, 14).locator('.dcr-resp-line').innerText(), /Не назначен/)

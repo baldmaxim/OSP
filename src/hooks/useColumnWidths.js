@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  COLUMN_WIDTH_MIN, clampWidth, readColumnWidths, resizedWidth, shownWidth, writeColumnWidths,
-} from '../utils/columnWidths'
+import { COLUMN_WIDTH_MIN, dragWidths, readColumnWidths, writeColumnWidths } from '../utils/columnWidths'
 
 // Ширины столбцов таблицы, которые человек меняет сам (utils/columnWidths.js — расчёт и хранение).
 // columns — видимые столбцы по порядку: [{ key, rem, min? }], rem — ширина по умолчанию.
@@ -10,12 +8,15 @@ import {
 //   tableStyle / colStyle(key) — min-width таблицы и ширины <col data-col={key}>;
 //   fits — таблица помещается в своё место (горизонтальная прокрутка не нужна);
 //   subscribe / isCustomized / resetAll — для ColumnWidthsReset: есть ли свои ширины и сброс всех;
-//   handle(key) — для ColumnResizeHandle: ширина, начало перетаскивания, шаг клавишами, сброс столбца.
+//   handle(key) — для ColumnResizeHandle: ширина, начало перетаскивания, шаг клавишами, сброс границы.
+//
+// Граница идёт за мышью, место отдаёт или получает сосед справа, остальные столбцы стоят (dragWidths: 03.11, «лагает»
+// было и оттого, что граница отставала от мыши: при каждом шаге менялись все столбцы).
 //
 // Скорость (30.10: «автомасштабирование столбцов очень сильно лагает»). Ширина любого столбца меняет перенос текста
 // во всех строках, и браузер заново раскладывает таблицу целиком: в «Заявках на ДС» на 400 заявок — 0,13 с раскладки
 // на каждое движение мыши, с отрисовкой — 0,3 с (стенд). Поэтому:
-//   • пока тянут границу, строки вне экрана скрыты (createRowFreezer): раскладка — 4 мс на шаг вместо 133;
+//   • с нажатия на границу строки вне экрана скрыты (createRowFreezer): раскладка — 4 мс на шаг вместо 133;
 //     отпустили — остальные строки показываются порциями, без заминки. Сворачивание меню так не ускорить:
 //     анимация — несколько кадров, а скрыть и показать строки стоит дороже, чем они;
 //   • ширина при перетаскивании меняется не чаще раза в кадр;
@@ -278,56 +279,71 @@ export default function useColumnWidths(storageKey, columns) {
     for (const fn of listeners.current) fn()
   }, [storageKey, widthOf, totalOf, checkFits])
 
-  const setWidth = useCallback((key, rem) => {
+  // Ширины видимых столбцов по порядку — в запись: равные ширине по умолчанию в ней не хранятся.
+  const saveWidths = useCallback((widths) => {
     const next = { ...custom.current }
-    const def = live.current.defaults.get(key)?.rem
-    if (rem == null || (def != null && Math.abs(rem - def) < 0.01)) delete next[key]
-    else next[key] = rem
+    live.current.columns.forEach((c, j) => {
+      if (Math.abs(widths[j] - c.rem) < 0.01) delete next[c.key]
+      else next[c.key] = widths[j]
+    })
     commit(next)
   }, [commit])
 
   const resetAll = useCallback(() => commit({}), [commit])
 
+  // Что будет, если сдвинуть границу справа от столбца: те же правила для мыши и для стрелок.
+  const dragger = useCallback((key) => {
+    const box = tableEl.current?.parentElement
+    const { columns } = live.current
+    const index = columns.findIndex(c => c.key === key)
+    if (!box || index < 0) return null
+    const widths = columns.map(c => widthOf(c.key))
+    const mins = columns.map(c => minOf(c.key))
+    const container = placeRem(box)
+    const scrollLeft = box.scrollLeft / rootFontPx()
+    return { widths, to: (delta) => dragWidths({ widths, mins, index, delta, container, scrollLeft }) }
+  }, [widthOf, minOf])
+
+  const stepBoundary = useCallback((key, delta) => {
+    const drag = dragger(key)
+    if (drag) saveWidths(drag.to(delta))
+  }, [dragger, saveWidths])
+
+  // Граница — по умолчанию: оба столбца, которые она делит (при перетаскивании менялись оба).
+  const resetBoundary = useCallback((key) => {
+    const { columns } = live.current
+    const index = columns.findIndex(c => c.key === key)
+    const next = { ...custom.current }
+    delete next[key]
+    if (columns[index + 1]) delete next[columns[index + 1].key]
+    commit(next)
+  }, [commit])
+
   const startResize = useCallback((key, e) => {
     if (e.button !== 0) return
     const table = tableEl.current
-    const col = table?.querySelector(`col[data-col="${key}"]`)
-    if (!table || !col) return
+    const drag = table && dragger(key)
+    if (!drag) return
     e.preventDefault()
     e.stopPropagation()
     const handleEl = e.currentTarget
-    const sum = totalOf()
     const rootPx = rootFontPx()
-    const container = placeRem(table.parentElement)
-    const base = widthOf(key)
-    const min = minOf(key)
-    const startShown = shownWidth({ base, sum, container })
+    const cols = live.current.columns.map(c => table.querySelector(`col[data-col="${c.key}"]`))
     const startX = e.clientX
     let x = startX
-    let next = base
+    let next = drag.widths
+    let shown = drag.widths
     let frame = 0
     let done = false
-    // С первым движением строки вне экрана скрываются, а месту под таблицу разрешается прокрутка (класс на body:
-    // сменить прокрутку — разложить таблицу заново, поэтому — после скрытия строк). Щелчок и двойной щелчок — без этого.
-    let moved = false
     let rows = null
-    const apply = (rem) => {
-      col.style.width = `${rem}rem`
-      table.style.minWidth = `${round(sum - base + rem)}rem`
+    const apply = (widths) => {
+      widths.forEach((w, j) => { if (w !== shown[j] && cols[j]) cols[j].style.width = `${w}rem` })
+      shown = widths
+      table.style.minWidth = `${round(widths.reduce((total, w) => total + w, 0))}rem`
     }
     const step = () => {
       frame = 0
-      if (!moved) {
-        moved = true
-        if (!freezer.current || freezer.current.done || freezer.current.table !== table) {
-          freezer.current = createRowFreezer(table)
-        }
-        rows = freezer.current
-        rows?.hold()
-        document.body.classList.add('is-col-resizing')
-      }
-      const target = startShown + (x - startX) / rootPx
-      next = clampWidth(resizedWidth({ base, sum, container, target }), min)
+      next = drag.to((x - startX) / rootPx)
       if (rows) rows.update(() => apply(next))
       else apply(next)
     }
@@ -351,12 +367,12 @@ export default function useColumnWidths(storageKey, columns) {
       handleEl.removeAttribute('data-dragging')
       veil.remove()
       rows?.release()
-      if (commitIt && next !== base) {
-        setWidth(key, next)
+      if (commitIt && next !== drag.widths) {
+        saveWidths(next)
       } else if (rows) {
-        rows.update(() => apply(base))
+        rows.update(() => apply(drag.widths))
       } else {
-        apply(base)
+        apply(drag.widths)
       }
     }
     const onUp = () => finish(true)
@@ -366,18 +382,28 @@ export default function useColumnWidths(storageKey, columns) {
     const veil = document.createElement('div')
     veil.className = 'col-resize-veil'
     document.body.append(veil)
+    // Строки вне экрана скрываются сразу при нажатии, пока граница стоит: это самая дорогая часть (400 заявок на стенде,
+    // процессор замедлен в 4 раза, — 0,6 с против 5–10 мс на шаг), на первом движении она была бы рывком. На экране
+    // ничего не меняется, поэтому простой щелчок ничем не мешает.
+    // Затем месту под таблицу разрешается прокрутка (класс на body): сменить прокрутку — разложить таблицу заново.
+    if (!freezer.current || freezer.current.done || freezer.current.table !== table) {
+      freezer.current = createRowFreezer(table)
+    }
+    rows = freezer.current
+    rows?.hold()
+    document.body.classList.add('is-col-resizing')
     handleEl.addEventListener('pointermove', onMove)
     handleEl.addEventListener('pointerup', onUp)
     handleEl.addEventListener('pointercancel', onCancel)
     handleEl.addEventListener('lostpointercapture', onCancel)
-  }, [totalOf, widthOf, minOf, setWidth])
+  }, [dragger, saveWidths])
 
   const handle = (key) => ({
     subscribe,
     getWidth: () => widthOf(key),
     onStart: (e) => startResize(key, e),
-    onStep: (deltaRem) => setWidth(key, clampWidth(widthOf(key) + deltaRem, minOf(key))),
-    onReset: () => setWidth(key, null),
+    onStep: (deltaRem) => stepBoundary(key, deltaRem),
+    onReset: () => resetBoundary(key),
   })
 
   return {
