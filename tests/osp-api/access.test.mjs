@@ -141,6 +141,17 @@ describe('osp-api: права объявлены на маршруте, закр
       'POST /api/auth/password': { method: 'POST', url: '/api/auth/password', payload: {} },
       'POST /api/auth/admin/users': { method: 'POST', url: '/api/auth/admin/users', payload: {} },
       'POST /api/auth/admin/reset-password': { method: 'POST', url: '/api/auth/admin/reset-password', payload: {} },
+      // Регистрация подрядчика — здесь режим supabase, она закрыта: адрес отвечает 404, а тело не по схеме — 400 раньше
+      // обработчика. Работа и права на настоящей базе — tests/osp-api/contractor-signup.test.mjs.
+      'GET /api/auth/register/challenge': { method: 'GET', url: '/api/auth/register/challenge' },
+      'POST /api/auth/register': { method: 'POST', url: '/api/auth/register', payload: {} },
+      'POST /api/auth/register/preview': { method: 'POST', url: '/api/auth/register/preview', payload: { token: 'a'.repeat(43), kind: 'confirm' } },
+      'POST /api/auth/register/confirm': { method: 'POST', url: '/api/auth/register/confirm', payload: { token: 'a'.repeat(43), password: 'x' } },
+      'POST /api/auth/register/claim': { method: 'POST', url: '/api/auth/register/claim', payload: { token: 'a'.repeat(43), decision: 'approve' } },
+      'POST /api/auth/password/forgot': { method: 'POST', url: '/api/auth/password/forgot', payload: {} },
+      'POST /api/auth/password/reset': { method: 'POST', url: '/api/auth/password/reset', payload: { token: 'a'.repeat(43), newPassword: 'x' } },
+      'GET /api/admin/contractor-signups': { method: 'GET', url: '/api/admin/contractor-signups' },
+      'POST /api/admin/contractor-signups/:id/decision': { method: 'POST', url: '/api/admin/contractor-signups/0f0e0d0c-0b0a-4908-8706-050403020100/decision', payload: { decision: 'approve' } },
       // Ключи API — только администратор. Здесь своей базы нет: пропущенный правами получает 503 (ключи хранятся в
       // ней) или 400 (тело не по схеме). Работа на настоящей базе — tests/osp-api/api-keys.test.mjs.
       'GET /api/admin/api-keys': { method: 'GET', url: '/api/admin/api-keys' },
@@ -203,9 +214,9 @@ describe('osp-api: права объявлены на маршруте, закр
       assert.equal(row['неверный токен'], 401, title)
       for (const denied of ['unapproved', 'blocked', 'no_user_roles']) assert.equal(row[denied], 403, `${title}: ${denied}`)
     }
-    // Ключи API: кроме администратора — никто, ни сотрудник, ни подрядчик.
+    // Ключи API и заявки на регистрацию: кроме администратора — никто, ни сотрудник, ни подрядчик.
     for (const [title, row] of Object.entries(measured)) {
-      if (!title.includes('/api/admin/api-keys')) continue
+      if (!title.includes('/api/admin/api-keys') && !title.includes('/api/admin/contractor-signups')) continue
       assert.equal(row['без токена'], 401, title)
       for (const denied of ['employee', 'unapproved', 'contractor', 'contractor_noorg', 'no_user_roles', 'blocked']) assert.equal(row[denied], 403, `${title}: ${denied}`)
       assert.ok(row.admin !== 401 && row.admin !== 403, `${title}: администратор`)

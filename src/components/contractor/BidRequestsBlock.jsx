@@ -32,6 +32,9 @@ export default function BidRequestsBlock({ tenderId, canEdit, onDecided }) {
   const decide = async (r, accept) => {
     const name = r.counterparties?.name || 'организацию'
     if (!accept && !window.confirm(`Отклонить заявку «${name}»? Подрядчик больше не сможет менять цены этого тендера.`)) return
+    // Компанию создала регистрация на сайте: ИНН проверен только контрольной суммой, её цены после этого попадут в реестр расценок.
+    if (accept && r.counterparties?.registered_via === 'self'
+      && !window.confirm(`«${name}» зарегистрировалась на сайте, отдел её не проверял. Сверьте компанию по ИНН ${r.counterparties.inn || ''}: участником становится именно она, и её цены попадут в реестр расценок. Сделать участником?`)) return
     setBusy(r.id)
     setError('')
     try {
@@ -60,6 +63,11 @@ export default function BidRequestsBlock({ tenderId, canEdit, onDecided }) {
             <div className="bidreq-org">
               <b>{r.counterparties?.name || 'Организация'}</b>
               {r.counterparties?.inn && <span> · ИНН {r.counterparties.inn}</span>}
+              {r.counterparties?.registered_via === 'self' && (
+                <span className="bidreq-self" title="Компанию создала регистрация на сайте: ИНН проверен только по контрольной сумме. Её цены попадут в реестр расценок, только если сделать её участником.">
+                  Регистрация с сайта, не проверена
+                </span>
+              )}
               <span className="bidreq-meta">
                 {r.requested_by_name ? `${r.requested_by_name}, ` : ''}{fmt(r.requested_at)}
                 {r.status === 'rejected' && ` · отклонена${r.decided_by_name ? ` (${r.decided_by_name})` : ''}`}

@@ -65,7 +65,7 @@ describe('osp-api: статус учётки — кэш не дольше мин
         if (db.gate) await db.gate
         if (db.fail) throw db.fail
         return fn({ query: async (text, values) => {
-          assert.match(text, /from public\.user_roles where user_id = \$1/)
+          assert.match(text, /from public\.user_roles r where r\.user_id = \$1/)
           return { rows: rows[values[0]] ?? [] }
         } })
       },

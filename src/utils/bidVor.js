@@ -252,7 +252,10 @@ export function readBidWorkbook(wb) {
 export function readBidFileBytes(bytes) {
   let names
   try {
-    names = XLSX.read(bytes, { type: 'array', bookSheets: true }).SheetNames || []
+    const book = XLSX.read(bytes, { type: 'array', bookSheets: true })
+    // Скрытые листы не читаем: подрядчику — только то, что отдел показывает.
+    const hidden = new Set((book.Workbook?.Sheets || []).filter((s) => s.Hidden).map((s) => s.name))
+    names = (book.SheetNames || []).filter((n) => !hidden.has(n))
   } catch (e) {
     return { error: 'broken', message: String(e?.message || e) }
   }

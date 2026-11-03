@@ -11,14 +11,15 @@ const OWN_LOGIN_FLAG = 'ownLogin'
 // Своему входу нужны и остальные пути через свой сервер: токена Supabase у браузера нет.
 export const OWN_AUTH_FEATURES = ['ospDb', 'ospApiFilesV2', 'ospApiAi']
 
-const state = { mode: 'supabase', ownLogin: false }
+const state = { mode: 'supabase', ownLogin: false, signup: false }
 let flagCheck = () => false
 
 // Ответ сервера → { mode, ownLogin } или null (ответ не про режим входа: 404, HTML, чужой JSON).
 export function parseAuthConfig(status, contentType, body) {
   if (status !== 200 || !/json/i.test(contentType || '')) return null
   if (!body || typeof body !== 'object' || !AUTH_MODES.includes(body.mode)) return null
-  return { mode: body.mode, ownLogin: body.ownLogin === true }
+  // signup — открыта ли регистрация подрядчиков (только когда сервер прямо это говорит).
+  return { mode: body.mode, ownLogin: body.ownLogin === true, ...(body.signup === true ? { signup: true } : {}) }
 }
 
 export async function loadAuthMode({ fetchImpl, attempts = 6, delayMs = 2500, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
@@ -41,9 +42,10 @@ export async function loadAuthMode({ fetchImpl, attempts = 6, delayMs = 2500, sl
   throw last || new Error('сервер не отвечает')
 }
 
-export function setAuthMode({ mode, ownLogin }, isFeatureEnabled) {
+export function setAuthMode({ mode, ownLogin, signup }, isFeatureEnabled) {
   state.mode = AUTH_MODES.includes(mode) ? mode : 'supabase'
   state.ownLogin = ownLogin === true
+  state.signup = signup === true
   if (typeof isFeatureEnabled === 'function') flagCheck = isFeatureEnabled
 }
 

@@ -185,6 +185,16 @@ export function loadConfig(env = process.env) {
       idleDays: parseDays(env.OSP_SESSION_IDLE_DAYS, 14, 'OSP_SESSION_IDLE_DAYS'),
       absoluteDays: parseDays(env.OSP_SESSION_MAX_DAYS, 30, 'OSP_SESSION_MAX_DAYS'),
     },
+    // Регистрация подрядчика на сайте (src/lib/auth/signup.js): откроется, только если AUTH_MODE=own, задан
+    // OSP_CONTRACTOR_SIGNUP=1 и настроена почта. OSP_SMTP_URL — секрет: smtps://логин:пароль@сервер:465 (или smtp://…:587, STARTTLS обязателен).
+    signup: {
+      enabled: env.OSP_CONTRACTOR_SIGNUP === '1',
+      smtpUrl: env.OSP_SMTP_URL || '',
+      mailFrom: env.OSP_MAIL_FROM || '',
+      replyTo: env.OSP_MAIL_REPLY_TO || 'tender.osp@su10.ru',
+      notifyEmail: env.OSP_SIGNUP_NOTIFY_EMAIL || '',
+      dailyTotal: Number(env.OSP_SIGNUP_DAILY_CAP) || undefined,
+    },
     trustProxy: parseTrustProxy(env.OSP_TRUST_PROXY),
     required: parseRequired(env.OSP_API_REQUIRE, parseAuthMode(env.AUTH_MODE)),
   }

@@ -1,0 +1,29 @@
+/* Кабинет подрядчика: «Моя компания». */
+.cab-company { max-width: 46rem; margin: 0 auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.cab-company-list { margin: 0; display: flex; flex-direction: column; }
+.cab-company-row {
+  display: grid;
+  grid-template-columns: 13rem minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.cab-company-row:last-child { border-bottom: 0; }
+.cab-company-row dt { color: var(--text-tertiary); }
+.cab-company-row dd { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.cab-company-password { display: flex; flex-direction: column; gap: 0.6rem; max-width: 26rem; }
+.cab-company-field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; }
+.cab-company-field input {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+}
+@media (max-width: 640px) {
+  .cab-company { padding: 0.5rem; }
+  .cab-company-row { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
+}

@@ -11,8 +11,10 @@
 export const STATUS_TTL_MAX_MS = 60_000
 export const STATUS_DEFAULTS = { ttlMs: 30_000, maxEntries: 2000 }
 
-const QUERY = `select role, counterparty_id, is_approved, is_blocked, full_name
-  from public.user_roles where user_id = $1 limit 2`
+// self_registered — через to_jsonb: до миграции 20261203 колонки нет, а без этого запроса не вошёл бы никто.
+const QUERY = `select r.role, r.counterparty_id, r.is_approved, r.is_blocked, r.full_name,
+    coalesce((to_jsonb(r)->>'self_registered')::boolean, false) as self_registered
+  from public.user_roles r where r.user_id = $1 limit 2`
 
 export function createUserStatus({ db, ttlMs = STATUS_DEFAULTS.ttlMs, maxEntries = STATUS_DEFAULTS.maxEntries, now = Date.now }) {
   if (!db) throw new Error('osp-api: статус учётки читается из базы — подключение не задано')

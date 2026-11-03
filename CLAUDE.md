@@ -257,6 +257,27 @@ CSS variables defined for `[data-theme="light"]` and `[data-theme="dark"]` in `i
   (разбор, суммы, сопоставление), `contractor-bids-db.test.mjs` (база на слепке), `contractor-cabinet.test.mjs` (стенд
   `tests/tender/ui/cabinet.html`: кабинет, импорт, анкета, реестр тендеров с заявкой, вкладка реестра расценок).
 
+## Регистрация подрядчика на сайте (миграции 20261203, 20261204; только база Яндекса)
+
+Решения пользователя 03.11.2026: без одобрения администратора; компанию из реестра подтверждают с её почты; сведения, уже открытые на
+`/public/tenders` (ссылка на пакет, ответственный), в кабинете остаются; ЕГРЮЛ — позже. Закрыта, пока не заданы `AUTH_MODE=own`,
+`OSP_CONTRACTOR_SIGNUP=1`, `OSP_SMTP_URL`, `OSP_MAIL_FROM`. Устройство — `server/osp-api/README.md`, включение — `deploy/docker/README.md`.
+
+- **Пароль задаёт хозяин почты** на странице по ссылке из письма, видя компанию и ИНН; в заявке пароля нет и быть не должно: иначе чужой человек указал бы чужую почту и свой пароль.
+- **Страницы** — [ContractorSignupPage](src/pages/ContractorSignupPage.jsx) (`/partner/register|confirm|claim|forgot|reset`), правила полей —
+  [contractorSignupRules.js](src/utils/contractorSignupRules.js) (общие со службой, `SHARED_FILES`), запросы — [contractorSignupClient.js](src/api/contractorSignupClient.js).
+- **Сервер** — [signup.js](server/osp-api/src/lib/auth/signup.js), [routes/signup.js](server/osp-api/src/routes/signup.js), письма — [mailOutbox.js](server/osp-api/src/lib/auth/mailOutbox.js).
+- **Учётка с регистрации** (`user_roles.self_registered`) — только подрядчик (ограничение базы), только короткий список шлюза
+  [allow-self-contractor.json](server/osp-api/src/data/allow-self-contractor.json): кабинет — тендеры, расценка, анкета, «Моя компания»
+  ([ContractorCompanyTab](src/components/contractor/ContractorCompanyTab.jsx), `contractor_org_card`). Договоров, файлов, сметы, загрузки КП нет. **Новая таблица или функция для
+  кабинета — строка в этом списке, это решение о том, что видит подрядчик.** Что страница запрашивает, сверяет `tests/tender/contractor-signup-ui.test.mjs`. У неё и у запросов без входа ограничена форма запроса
+  (`restrictedQueryProblem` в dbGateway.js): только простые сравнения и имена колонок. Новому экрану кабинета или публичной страницы нужен поиск — функция базы, а не фильтр.
+- **Позиции ВОР — с сервера** (`bid_positions`, разбор — [bidPositions.js](server/osp-api/src/lib/bidPositions.js)): `BidWorkspace` с `serverPositions`. Подрядчик от администратора — по-прежнему из файла.
+- **Сотрудникам:** заявки, которые нельзя решить автоматически, — «Администрирование» → «Регистрации подрядчиков»
+  ([ContractorSignupsTab](src/components/admin/ContractorSignupsTab.jsx)); компания с регистрации — пометка «с сайта» в реестре контрагентов и в «Заявках с сайта»; её цены попадают в реестр расценок, только если сделать её участником.
+- **Тесты:** `tests/osp-api/contractor-signup.test.mjs`, `signup-rules.test.mjs`, `tests/tender/contractor-signup-ui.test.mjs` (стенд `cabinet.html`: `selfReg=1`, `page=signup&view=…`, `page=signups`),
+  `tests/tender/contractor-self-access-db.test.mjs` (копия прода: полный обход таблиц от имени такой учётки).
+
 ## Свой вход tender.su10.ru (AUTH_MODE)
 
 Новый портал входит без Supabase Auth: учётки — `auth.users` базы Яндекса (те же id), пароли — закрытая схема
@@ -267,8 +288,8 @@ CSS variables defined for `[data-theme="light"]` and `[data-theme="dark"]` in `i
 `authMode.js`; `RoleContext` (временный пароль, окно повторного входа), `ChangePasswordForm`, `ReloginModal`,
 «Добавить пользователя» / «Сбросить пароль» в `AdminPage`. Сервер: `server/osp-api/src/lib/auth/*`,
 `src/lib/principal.js`, `src/routes/auth.js`; миграция `migration/yandex/20261019_own_auth.sql`; перенос паролей —
-`migration/accounts/`; порядок — `migration/CUTOVER.md` («Свой вход tender.su10.ru»). Самостоятельной регистрации
-нет (писем нет): учётки и временные пароли выдаёт администратор. Роль в окне нового пользователя по умолчанию — «Гость»
+`migration/accounts/`; порядок — `migration/CUTOVER.md` («Свой вход tender.su10.ru»). Сотрудникам учётки и временные
+пароли выдаёт администратор; подрядчик может зарегистрироваться сам — см. «Регистрация подрядчика на сайте». Роль в окне нового пользователя по умолчанию — «Гость»
 (`guest`, 02.11: подставлялся первый в справочнике — «Администратор»); «Гостя» в справочнике нет — роль выбирают сами
 ([AccountModals](src/components/admin/AccountModals.jsx)). Тесты: `tests/osp-api/own-auth*.test.mjs`,
 `client-auth.test.mjs`, `tests/backup/own-auth-accounts.test.mjs`, `tests/tender/add-user-role.test.mjs` (стенд

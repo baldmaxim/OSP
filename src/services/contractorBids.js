@@ -65,6 +65,35 @@ export async function setParticipationStatus(tenderId, counterpartyId, status) {
   if (direct.error) throw direct.error
 }
 
+// Сведения о своей компании (миграция 20261204). null — функции ещё нет.
+export async function loadOrgCard() {
+  const { data, error } = await db.rpc('contractor_org_card')
+  if (error) {
+    if (isMissingBids(error) || /contractor_org_card/.test(String(error.message || ''))) return null
+    throw error
+  }
+  return (Array.isArray(data) ? data[0] : data) || null
+}
+
+// Позиции ВОР, разобранные сервером (миграция 20261204): подрядчику с регистрации файлы не отдаются.
+// → [{ id, file_name, parsed: { status, result?, error? } }], в том же виде, что разбор файла в браузере.
+export async function loadServerPositions(tenderId) {
+  const { data, error } = await db.rpc('bid_positions', { p_tender: tenderId })
+  if (error) throw error
+  return (data || []).map((row) => {
+    const positions = row.positions || []
+    const parsed = row.status === 'ok'
+      ? { status: 'ok', result: {
+        materials: positions.filter((p) => p.kind === 'material'),
+        works: positions.filter((p) => p.kind === 'work'),
+        structure: row.structure || [],
+        conditions: row.conditions || [],
+      } }
+      : row.status === 'pending' ? { status: 'pending' } : { status: 'error', error: row.error || 'broken' }
+    return { id: row.file_id, file_name: row.title, parsed }
+  })
+}
+
 export const BID_DOC_CATEGORIES = ['tender_package', 'vor', 'rd', 'vor_statement']
 export const VOR_CATEGORIES = ['vor_statement', 'vor']
 
@@ -152,6 +181,9 @@ export async function saveForm(tenderId, answers) {
 
 // ── Инженер: заявки с сайта ──────────────────────────────────────────────────────────────────────────
 const REQUEST_COLUMNS = 'id, tender_id, counterparty_id, status, requested_by_name, requested_at, decided_by_name, decided_at, counterparties(id, name, inn)'
+// С пометкой «регистрация с сайта» (миграция 20261203). Колонки ещё нет (база раньше миграции) — без неё.
+const REQUEST_COLUMNS_SELF = REQUEST_COLUMNS.replace('counterparties(id, name, inn)', 'counterparties(id, name, inn, registered_via)')
+let requestColumns = REQUEST_COLUMNS_SELF
 
 // Заявки тендеров (порциями id). null — таблицы ещё нет.
 export async function loadBidRequests(tenderIds, { status = null } = {}) {
@@ -160,9 +192,16 @@ export async function loadBidRequests(tenderIds, { status = null } = {}) {
   const out = []
   for (let i = 0; i < ids.length; i += 60) {
     const chunk = ids.slice(i, i + 60)
-    let q = db.from('tender_bid_requests').select(REQUEST_COLUMNS).in('tender_id', chunk)
-    if (status) q = q.eq('status', status)
-    const { data, error } = await q.order('requested_at', { ascending: true })
+    const read = () => {
+      let q = db.from('tender_bid_requests').select(requestColumns).in('tender_id', chunk)
+      if (status) q = q.eq('status', status)
+      return q.order('requested_at', { ascending: true })
+    }
+    let { data, error } = await read()
+    if (error?.code === '42703' && requestColumns !== REQUEST_COLUMNS) {
+      requestColumns = REQUEST_COLUMNS
+      ;({ data, error } = await read())
+    }
     if (error) {
       if (isMissingBids(error)) return null
       throw error

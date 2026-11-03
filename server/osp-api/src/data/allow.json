@@ -1248,6 +1248,12 @@
     ],
     "vor_requests_can_access": [
       "authenticated"
+    ],
+    "bid_positions": [
+      "authenticated"
+    ],
+    "contractor_org_card": [
+      "authenticated"
     ]
   }
 }

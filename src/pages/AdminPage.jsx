@@ -10,6 +10,7 @@ import UserActionsMenu from '../components/admin/UserActionsMenu'
 import { AddUserDrawer, TemporaryPasswordDialog } from '../components/admin/AccountModals'
 import UserEditDrawer from '../components/admin/UserEditDrawer'
 import ApiKeysTab from '../components/admin/ApiKeysTab'
+import ContractorSignupsTab from '../components/admin/ContractorSignupsTab'
 import { fetchAllActiveCounterparties } from '../utils/fetchAllRows'
 import './AdminPage.css'
 
@@ -589,12 +590,22 @@ function AdminPage() {
           {(isAdmin || isSuperAdmin) && (
             <button className={`admin-tab ${activeTab === 'api' ? 'active' : ''}`} onClick={() => setActiveTab('api')}>Доступ к API</button>
           )}
+          {(isAdmin || isSuperAdmin) && (
+            <button className={`admin-tab ${activeTab === 'signups' ? 'active' : ''}`} onClick={() => setActiveTab('signups')}>Регистрации подрядчиков</button>
+          )}
         </div>
 
         {/* ===== Доступ к API ===== */}
         {activeTab === 'api' && (isAdmin || isSuperAdmin) && (
           <div className="admin-tabpane">
             <ApiKeysTab notify={notify} />
+          </div>
+        )}
+
+        {/* ===== Регистрации подрядчиков ===== */}
+        {activeTab === 'signups' && (isAdmin || isSuperAdmin) && (
+          <div className="admin-tabpane">
+            <ContractorSignupsTab notify={notify} />
           </div>
         )}
 

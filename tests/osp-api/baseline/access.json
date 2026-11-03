@@ -153,6 +153,105 @@
     "no_user_roles": 403,
     "blocked": 403
   },
+  "GET /api/auth/register/challenge": {
+    "без токена": 404,
+    "неверный токен": 404,
+    "employee": 404,
+    "admin": 404,
+    "unapproved": 404,
+    "contractor": 404,
+    "contractor_noorg": 404,
+    "no_user_roles": 404,
+    "blocked": 404
+  },
+  "POST /api/auth/register": {
+    "без токена": 400,
+    "неверный токен": 400,
+    "employee": 400,
+    "admin": 400,
+    "unapproved": 400,
+    "contractor": 400,
+    "contractor_noorg": 400,
+    "no_user_roles": 400,
+    "blocked": 400
+  },
+  "POST /api/auth/register/preview": {
+    "без токена": 404,
+    "неверный токен": 404,
+    "employee": 404,
+    "admin": 404,
+    "unapproved": 404,
+    "contractor": 404,
+    "contractor_noorg": 404,
+    "no_user_roles": 404,
+    "blocked": 404
+  },
+  "POST /api/auth/register/confirm": {
+    "без токена": 404,
+    "неверный токен": 404,
+    "employee": 404,
+    "admin": 404,
+    "unapproved": 404,
+    "contractor": 404,
+    "contractor_noorg": 404,
+    "no_user_roles": 404,
+    "blocked": 404
+  },
+  "POST /api/auth/register/claim": {
+    "без токена": 404,
+    "неверный токен": 404,
+    "employee": 404,
+    "admin": 404,
+    "unapproved": 404,
+    "contractor": 404,
+    "contractor_noorg": 404,
+    "no_user_roles": 404,
+    "blocked": 404
+  },
+  "POST /api/auth/password/forgot": {
+    "без токена": 400,
+    "неверный токен": 400,
+    "employee": 400,
+    "admin": 400,
+    "unapproved": 400,
+    "contractor": 400,
+    "contractor_noorg": 400,
+    "no_user_roles": 400,
+    "blocked": 400
+  },
+  "POST /api/auth/password/reset": {
+    "без токена": 404,
+    "неверный токен": 404,
+    "employee": 404,
+    "admin": 404,
+    "unapproved": 404,
+    "contractor": 404,
+    "contractor_noorg": 404,
+    "no_user_roles": 404,
+    "blocked": 404
+  },
+  "GET /api/admin/contractor-signups": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "POST /api/admin/contractor-signups/:id/decision": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
   "GET /api/admin/api-keys": {
     "без токена": 401,
     "неверный токен": 401,

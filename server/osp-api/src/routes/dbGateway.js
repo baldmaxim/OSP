@@ -16,8 +16,16 @@
 //   4. Режим «только чтение» (файл-переключатель) — барьер записи на время переноса данных.
 // Строки делит база: правила по строкам действуют и на владельца (migration/target/sql/load-single-owner.sql).
 //
+// Учётка с регистрации на сайте (user_roles.self_registered) проходит ещё и свой короткий список
+// (src/data/allow-self-contractor.json): всё остальное для неё не существует, даже если правило базы ошибочно разрешило бы.
+// Список закрыт по умолчанию, новая таблица или функция сама в него не попадает.
+//
+// Без входа и у учётки с регистрации ограничена и форма запроса (restrictedQueryProblem): этим страницам нужны только простые
+// условия, всё остальное — отказ; число одновременных запросов тоже ограничено.
+//
 // Отказы шлюза имеют тот же вид и коды, что отказы PostgREST: портал уже умеет их показывать.
 import { createHash } from 'node:crypto'
+import fs from 'node:fs'
 import { SignJWT } from 'jose'
 import { access } from '../lib/access.js'
 import { bearerToken } from '../lib/keys.js'
@@ -40,6 +48,10 @@ const REQUEST_HEADERS = ['accept', 'content-type', 'prefer', 'range', 'range-uni
 const RESPONSE_HEADERS = ['content-type', 'content-range', 'preference-applied', 'location', 'range-unit']
 
 const pgError = (code, message) => ({ code, details: null, hint: null, message })
+
+// Список учётки с регистрации. Кабинету большие тела не нужны: сохранение цен — порциями до 500 строк.
+export const SELF_REGISTERED_ALLOW = JSON.parse(fs.readFileSync(new URL('../data/allow-self-contractor.json', import.meta.url), 'utf8'))
+export const SELF_REGISTERED_BODY_LIMIT = 2 * 1024 * 1024
 
 // Имена связанных таблиц в параметре select: «*, objects(name), winner:counterparties!fk(id, name)».
 // Связь — имя перед открывающей скобкой (без псевдонима «alias:», подсказок «!…» и «...» разворота).
@@ -68,6 +80,23 @@ export function embeddedRelations(select) {
     }
   }
   return [...names]
+}
+
+// Форма запроса для тех, кому не верим: без входа и учётка с регистрации. → null или текст отказа.
+const RESTRICTED_FILTER = /^(?:not\.)?(?:eq|neq|gt|gte|lt|lte|in|is)\./
+const RESTRICTED_ORDER = /^[A-Za-z_][A-Za-z0-9_]*(?:\.(?:asc|desc))?(?:\.nulls(?:first|last))?(?:,[A-Za-z_][A-Za-z0-9_]*(?:\.(?:asc|desc))?(?:\.nulls(?:first|last))?)*$/
+const RESTRICTED_SELECT = /^[A-Za-z0-9_,*\s]*$/
+const RESTRICTED_VALUE_MAX = 4000
+export function restrictedQueryProblem(params) {
+  for (const [key, value] of params) {
+    if (value.length > RESTRICTED_VALUE_MAX) return `слишком длинное значение ${key}`
+    if (key === 'select') { if (!RESTRICTED_SELECT.test(value)) return 'select — только имена колонок'; continue }
+    if (key === 'order') { if (!RESTRICTED_ORDER.test(value)) return 'order — только имена колонок'; continue }
+    if (key === 'limit' || key === 'offset') { if (!/^\d{1,9}$/.test(value)) return `${key} — только число`; continue }
+    // Остальное — условие на колонку: только простые сравнения. or, and, like, match, fts и связанные таблицы — нет.
+    if (!IDENT.test(key) || key === 'or' || key === 'and' || key === 'not' || !RESTRICTED_FILTER.test(value)) return `условие ${key} не поддерживается`
+  }
+  return null
 }
 
 // Решение по списку: null — можно; иначе { status, body } отказа в виде PostgREST.
@@ -172,7 +201,7 @@ export function registerDbGateway(app, ctx) {
           const bad = csrfProblem(request, p, ctx.config.auth?.publicOrigin)
           if (bad) return send(reply, 403, pgError('OSP_CSRF', bad))
         }
-        who = { role: 'authenticated', user: p.user }
+        who = { role: 'authenticated', user: p.user, selfRegistered: p.roleRow?.self_registered === true }
       }
     } else if (request.headers.authorization) {
       const token = bearerToken(request.headers.authorization)
@@ -189,13 +218,41 @@ export function registerDbGateway(app, ctx) {
     const params = new URLSearchParams(rawQuery)
     const prefer = String(request.headers.prefer || '')
     const denied = decide(allow, who.role, method, kind, name, { select: params.get('select') || '', prefer })
+      // Учётка с регистрации: тот же разбор (и связанных таблиц в select), но по её короткому списку.
+      || (who.selfRegistered ? decide(SELF_REGISTERED_ALLOW, who.role, method, kind, name, { select: params.get('select') || '', prefer }) : null)
     if (denied) return send(reply, denied.status, denied.body)
+    const restricted = who.role === 'anon' || who.selfRegistered
+    if (restricted) {
+      const problem = restrictedQueryProblem(params)
+      if (problem) return send(reply, 400, pgError('PGRST100', problem))
+    }
+    if (who.selfRegistered) {
+      if (ctx.limiters?.dbSelf && !ctx.limiters.dbSelf.take(who.user.id)) {
+        return send(reply.header('retry-after', '60'), 429, pgError('OSP_RATE_LIMIT', 'Слишком много запросов — повторите через минуту'))
+      }
+      // Тело только с объявленной длиной и не больше предела: потоковое тело на 50 МБ этой учётке ни к чему.
+      const length = request.headers['content-length']
+      if (request.headers['transfer-encoding'] || (length !== undefined && !(Number(length) <= SELF_REGISTERED_BODY_LIMIT))) {
+        return send(reply, 413, pgError('PGRST413', 'Слишком большой запрос'))
+      }
+    }
 
     // 4. Барьер записи: читать можно, менять — нет (вызов функции — тоже возможное изменение).
     if (isReadOnly() && (kind === 'rpc' ? method === 'POST' : method !== 'GET' && method !== 'HEAD')) {
       return send(reply, 503, pgError(READONLY_CODE, READONLY_TEXT))
     }
-    request.dbCall = { kind, name, rawQuery, who }
+    // Одновременные запросы — последней проверкой: отказу выше место занимать незачем. Освобождает onResponse.
+    let release = null
+    if (restricted && ctx.limiters?.dbRestrictedKey) {
+      const own = ctx.limiters.dbRestrictedKey.acquire(who.user?.id || request.ip)
+      const all = own && ctx.limiters.dbRestrictedTotal.acquire('all')
+      if (!all) {
+        own?.()
+        return send(reply.header('retry-after', '5'), 429, pgError('OSP_RATE_LIMIT', 'Слишком много одновременных запросов — повторите через несколько секунд'))
+      }
+      release = () => { all(); own() }
+    }
+    request.dbCall = { kind, name, rawQuery, who, release }
   }
 
   const handler = async (request, reply) => {
@@ -240,6 +297,7 @@ export function registerDbGateway(app, ctx) {
       bodyLimit: GATEWAY_BODY_LIMIT,
       config: { access: access.open(GATEWAY_REASON) },
       onRequest: admit,
+      onResponse: async (request) => { request.dbCall?.release?.() },
       handler,
     })
   })

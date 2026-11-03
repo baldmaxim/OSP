@@ -71,6 +71,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage'))
 // Прежние адреса (/contractor/proposals, /contractor/negotiations) остаются
 // рабочими: по ним приходят ссылки из писем и закладки подрядчиков.
 const ContractorCabinetPage = lazy(() => import('./pages/ContractorCabinetPage'))
+const ContractorSignupPage = lazy(() => import('./pages/ContractorSignupPage'))
 const BSMPage = lazy(() => import('./pages/BSMPage'))
 const GeneralInfoPage = lazy(() => import('./pages/GeneralInfoPage'))
 const GeneralDocumentsPage = lazy(() => import('./pages/GeneralDocumentsPage'))
@@ -213,6 +214,15 @@ function AuthRoutes() {
               : <LoginPage variant="contractor" />
           }
         />
+        {/* Регистрация подрядчика на сайте: страницы без входа, сервер решает, открыта ли она */}
+        <Route
+          path="/partner/register"
+          element={isLoggedIn ? <Navigate to={isEmployee ? "/general" : "/contractor"} replace /> : <ContractorSignupPage view="register" />}
+        />
+        <Route path="/partner/confirm" element={<ContractorSignupPage view="confirm" />} />
+        <Route path="/partner/claim" element={<ContractorSignupPage view="claim" />} />
+        <Route path="/partner/forgot" element={<ContractorSignupPage view="forgot" />} />
+        <Route path="/partner/reset" element={<ContractorSignupPage view="reset" />} />
         <Route
           path="/contractor"
           element={isContractor ? <ContractorCabinetPage /> : <Navigate to="/partner" replace />}

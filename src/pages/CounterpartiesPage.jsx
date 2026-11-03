@@ -15,6 +15,9 @@ import { shortPersonName } from '../utils/personName'
 import { buildRelationGroups, groupMatesOf, planRemoveFromGroup } from '../utils/counterpartyGroups'
 import { VAT_NONE, vatFromSelect, vatSelectValue, vatText } from '../utils/counterpartyVat'
 import { CP_LIMITED_HINT, CP_LIMITED_LABEL, LIMITED_MISSING_TEXT, cpStatusFromText, isLimitedStatusMissing } from '../utils/counterpartyStatus'
+
+// Компанию создала регистрация подрядчика на сайте (миграция 20261203).
+const SELF_REGISTERED_HINT = 'Компанию создала регистрация на сайте: ИНН проверен только по контрольной сумме, отдел её ещё не проверял. Цены попадут в реестр расценок, только если сделать её участником тендера.'
 import { docTitle } from '../utils/counterpartyDocs'
 import { counterpartySearchIndex, searchCounterparties } from '../utils/counterpartySearch'
 import CounterpartyGeneralTab from '../components/counterparty/CounterpartyGeneralTab'
@@ -1969,6 +1972,7 @@ function CounterpartiesPage() {
                       </button>
                       {isBl && <span className="cp-mrow-bl" title="Чёрный список">ЧС</span>}
                       {isLimited && <span className="cp-mrow-limited" title={CP_LIMITED_HINT}>{CP_LIMITED_LABEL}</span>}
+                      {cp.registered_via === 'self' && <span className="cp-self-registered" title={SELF_REGISTERED_HINT}>с сайта</span>}
                       {contractCounts instanceof Map && <ContractMark count={contractCounts.get(cp.id)} />}
                       <CounterpartyDocBadges summary={docSummaryByCp.get(cp.id)} />
                     </div>
@@ -2059,6 +2063,7 @@ function CounterpartiesPage() {
                         </td>
                         <td className="col-name">
                           <span className="company-name">{counterparty.name}</span>
+                          {counterparty.registered_via === 'self' && <span className="cp-self-registered" title={SELF_REGISTERED_HINT}>с сайта</span>}
                           <CounterpartyCardChip
                             counterparty={counterparty}
                             card={cardsByCp.get(counterparty.id) || null}

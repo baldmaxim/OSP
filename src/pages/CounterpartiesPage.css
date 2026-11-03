@@ -1858,3 +1858,18 @@
   /* Поиск и вид работ делят строку поровну, кнопка «С договором» — по своей ширине. */
   .counterparties-toolbar .toolbar-center > .cp-contract-filter { flex: none !important; height: 40px; padding: 0 0.5rem; }
 }
+
+/* Компанию создала регистрация на сайте (миграция 20261203). */
+.cp-self-registered {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0 0.35rem;
+  border-radius: 4px;
+  background: rgba(220, 38, 38, 0.1);
+  color: #b91c1c;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+[data-theme='dark'] .cp-self-registered { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }

@@ -51,6 +51,11 @@ import { createSessions, SESSION_DEFAULTS } from './lib/auth/sessions.js'
 import { createAuthService } from './lib/auth/service.js'
 import { createPrincipalResolver, csrfProblem, clearSessionCookies } from './lib/principal.js'
 import { registerAuth } from './routes/auth.js'
+import { createSignup } from './lib/auth/signup.js'
+import { createProofOfWork } from './lib/auth/proofOfWork.js'
+import { createMailOutbox, createSmtpTransport } from './lib/auth/mailOutbox.js'
+import { registerSignup } from './routes/signup.js'
+import { createBidPositions } from './lib/bidPositions.js'
 
 // Список разрешённого шлюзу данных — выдача прав прода как есть (scripts/build-db-allow.mjs).
 const ALLOW = JSON.parse(fs.readFileSync(new URL('./data/allow.json', import.meta.url), 'utf8'))
@@ -202,10 +207,13 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     idleMs: (config.auth.idleDays ?? 14) * DAY_MS, absoluteMs: (config.auth.absoluteDays ?? 30) * DAY_MS,
     cacheMs: config.auth.sessionCacheMs ?? SESSION_DEFAULTS.cacheMs,
   }) : null
+  const authBox = ownAuth ? createSecretBox(config.auth.keys) : null
+  const passwordVerifier = ownAuth ? (deps.createPasswordVerifier ? deps.createPasswordVerifier() : createPasswordVerifier()) : null
+  const passwordBlocklist = ownAuth ? (deps.blocklist || loadBlocklist()) : null
   const authService = ownAuth ? createAuthService({
-    db, sessions, box: createSecretBox(config.auth.keys),
-    verifier: deps.createPasswordVerifier ? deps.createPasswordVerifier() : createPasswordVerifier(),
-    blocklist: deps.blocklist || loadBlocklist(), mode: authMode, pilotIds: config.auth.pilotIds || [], logger: app.log,
+    db, sessions, box: authBox,
+    verifier: passwordVerifier,
+    blocklist: passwordBlocklist, mode: authMode, pilotIds: config.auth.pilotIds || [], logger: app.log,
   }) : null
   // Суперадминистратор (таблица superadmins) — с памятью на полминуты: спрашивается на каждом запросе своей сессии
   // только у тех, кто не одобрен, и у маршрутов администратора.
@@ -422,6 +430,14 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     loginIp: createRateLimit(limits.loginPerIp || DEFAULT_LIMITS.loginPerIp),
     authAdmin: createRateLimit(limits.authAdminPerUser || DEFAULT_LIMITS.authAdminPerUser),
     dbAnon: createRateLimit(limits.dbAnonPerIp || DEFAULT_LIMITS.dbAnonPerIp),
+    authPassword: createRateLimit(limits.authPasswordPerUser || DEFAULT_LIMITS.authPasswordPerUser),
+    dbSelf: createRateLimit(limits.dbSelfRegisteredPerUser || DEFAULT_LIMITS.dbSelfRegisteredPerUser),
+    dbRestrictedKey: createConcurrency(limits.dbRestrictedConcurrentPerKey || DEFAULT_LIMITS.dbRestrictedConcurrentPerKey),
+    dbRestrictedTotal: createConcurrency(limits.dbRestrictedConcurrentTotal || DEFAULT_LIMITS.dbRestrictedConcurrentTotal),
+    signupIp: createRateLimit(limits.signupPerIp || DEFAULT_LIMITS.signupPerIp),
+    signupTotal: createRateLimit(limits.signupTotal || DEFAULT_LIMITS.signupTotal),
+    signupChallenge: createRateLimit(limits.signupChallengePerIp || DEFAULT_LIMITS.signupChallengePerIp),
+    signupToken: createRateLimit(limits.signupTokenPerIp || DEFAULT_LIMITS.signupTokenPerIp),
     aiRate: createRateLimit(limits.aiPerUser),
     aiUser: createConcurrency(limits.aiConcurrentPerUser),
     aiTotal: createConcurrency(limits.aiConcurrentTotal),
@@ -537,10 +553,64 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     app.addHook('onClose', async () => clearInterval(timer))
   }
 
-  const ctx = { config, getS3, getAnthropic, getServiceClient, limiters, db, refreshRegistry,
+  // Регистрация подрядчика на сайте. Открыта, только если всё на месте: свой вход, флаг и почта. Чего-то нет — маршруты
+  // отвечают 404, страница формы не показывает; портал работает как раньше. Заявки администратору видны и при закрытой:
+  // они могли остаться. Письма — очередью отдельным тактом (src/lib/auth/mailOutbox.js).
+  const signupConfig = config.signup || {}
+  const signupOptions = signupConfig.dailyTotal ? { dailyTotal: signupConfig.dailyTotal, ...deps.signupOptions } : deps.signupOptions
+  const signupMailReady = Boolean(signupConfig.mailFrom && (signupConfig.smtpUrl || deps.createMailTransport))
+  const signupWanted = Boolean(signupConfig.enabled)
+  const signupUsable = signupWanted && authMode === 'own' && Boolean(db) && signupMailReady
+  if (signupWanted && !signupUsable) {
+    app.log.error({ authMode, mail: signupMailReady, db: Boolean(db) }, 'signup: регистрация подрядчиков закрыта — нужны AUTH_MODE=own, OSP_DB_URL, OSP_SMTP_URL и OSP_MAIL_FROM')
+  }
+  let mailOutbox = null
+  let pow = null
+  if (signupUsable) {
+    // Транспорт создаётся при первой отправке: nodemailer не нужен службе, пока регистрация закрыта.
+    let transport = null
+    const lazyTransport = { sendMail: async (message) => {
+      transport ??= await (deps.createMailTransport ? deps.createMailTransport(signupConfig) : createSmtpTransport(signupConfig.smtpUrl))
+      return transport.sendMail(message)
+    } }
+    mailOutbox = createMailOutbox({
+      db, box: authBox, transport: lazyTransport, from: signupConfig.mailFrom, replyTo: signupConfig.replyTo, log: app.log, isReadOnly, options: deps.outboxOptions,
+    })
+    pow = deps.proofOfWork || createProofOfWork()
+    const stopOutbox = mailOutbox.start()
+    app.addHook('onClose', async () => stopOutbox())
+  }
+  const signupAdmin = ownAuth && db ? createSignup({
+    db, box: authBox, verifier: passwordVerifier, blocklist: passwordBlocklist, sessions,
+    // Без почты письма не ставятся: заявки решаются, а уведомлять нечем (при закрытой регистрации новых заявок нет).
+    mail: mailOutbox || { enqueue: async () => {} },
+    publicOrigin: config.auth.publicOrigin, notifyEmail: signupConfig.notifyEmail,
+    domainAcceptsMail: deps.domainAcceptsMail, log: app.log, options: signupOptions,
+  }) : null
+  const signup = signupUsable ? signupAdmin : null
+  if (signup && config.authCleanup !== false) {
+    const timer = setInterval(() => {
+      signup.cleanup()
+        .then((n) => { if (n && (n.expired || n.registrations || n.resets)) app.log.info({ ...n }, 'signup cleanup') })
+        .catch((err) => { if (err?.code !== '42P01') app.log.warn({ code: err?.code, msg: String(err?.message || err).slice(0, 120) }, 'signup cleanup') })
+    }, AUTH_CLEANUP_MS)
+    timer.unref()
+    app.addHook('onClose', async () => clearInterval(timer))
+  }
+  // Позиции ВОР для кабинета подрядчика — заранее, на сервере: учётке с регистрации файл ВОР не отдаётся (src/lib/bidPositions.js).
+  if (signupUsable && configuredParts(config).s3 && !deps.noBidPositions) {
+    const bidPositions = createBidPositions({ db, s3: getS3(), bucket: config.s3.bucket, log: app.log, ...deps.bidPositions })
+    const stopBidPositions = bidPositions.start({ isReadOnly })
+    app.addHook('onClose', async () => stopBidPositions())
+    app.decorate('bidPositions', bidPositions)
+  }
+  if (mailOutbox) app.decorate('mailOutbox', mailOutbox)
+
+  const ctx = { signup, signupAdmin, pow, config, getS3, getAnthropic, getServiceClient, limiters, db, refreshRegistry,
     verifyUserToken, allow: deps.allow || ALLOW, mint, beforeGateway, gatewayOn, isReadOnly, loadStatus,
     principal, authService, sessions, isSuperadmin, apiKeys, coverThumbs: deps.coverThumbs, coverThumbWaitMs: deps.coverThumbWaitMs }
   registerAuth(app, ctx)
+  registerSignup(app, ctx)
   registerDbGateway(app, ctx)
   registerS3Presign(app, ctx)
   registerAiAssist(app, ctx)

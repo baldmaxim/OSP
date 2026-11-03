@@ -1,0 +1,20 @@
+{
+  "tables": {
+    "bid_form_fields": { "authenticated": ["select"] },
+    "tender_bid_forms": { "authenticated": ["select"] },
+    "tender_bid_rates": { "authenticated": ["select"] },
+    "user_roles": { "authenticated": ["select"] }
+  },
+  "rpc": {
+    "bid_contractor_tenders": ["authenticated"],
+    "bid_form_save": ["authenticated"],
+    "bid_positions": ["authenticated"],
+    "bid_rates_save": ["authenticated"],
+    "bid_request": ["authenticated"],
+    "contractor_org_card": ["authenticated"],
+    "contractor_org_name": ["authenticated"],
+    "report_client_error": ["authenticated"],
+    "report_client_version": ["authenticated"],
+    "touch_last_login": ["authenticated"]
+  }
+}

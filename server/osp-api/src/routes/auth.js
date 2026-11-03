@@ -8,7 +8,7 @@
 //   GET  /api/auth/me                    — кто вошёл;
 //   POST /api/auth/admin/users           — администратор заводит учётку, временный пароль — один раз;
 //   POST /api/auth/admin/reset-password  — администратор выдаёт временный пароль.
-// Самостоятельной регистрации нет (решение владельца портала 15.10: писем нет — учётки заводит администратор).
+// Сотрудникам учётки заводит администратор. Регистрация подрядчика на сайте — отдельно: src/routes/signup.js.
 // В режиме supabase маршруты, кроме config и me, отвечают 404: вход и учётки — в Supabase Auth.
 // Тела запросов в журнал не попадают (app.js пишет только метод, шаблон маршрута, код и время).
 import { z } from 'zod'
@@ -51,7 +51,8 @@ export function registerAuth(app, ctx) {
   app.route({
     method: 'GET', url: '/api/auth/config',
     config: { access: access.open(AUTH_CONFIG_REASON) },
-    handler: async () => ({ mode, ownLogin: mode === 'own' }),
+    // signup — только когда регистрация подрядчиков действительно открыта (src/routes/signup.js).
+    handler: async () => ({ mode, ownLogin: mode === 'own', ...(ctx.signup && ctx.pow ? { signup: true } : {}) }),
   })
 
   app.route({
@@ -94,7 +95,8 @@ export function registerAuth(app, ctx) {
 
   app.route({
     method: 'POST', url: '/api/auth/password',
-    config: { access: access.user({ require: 'signedIn', deny: 'Нет доступа', allowMustChange: true }), body: PASSWORD_BODY },
+    // Лимит: расчёт отпечатка дорогой, а учётку с регистрации заводит кто угодно. Заодно нет перебора при украденной сессии.
+    config: { access: access.user({ require: 'signedIn', deny: 'Нет доступа', allowMustChange: true, rate: { limiter: 'authPassword', deny: 'Слишком много попыток смены пароля — повторите позже' } }), body: PASSWORD_BODY },
     handler: async (request, reply) => {
       if (!own) return notFound(reply)
       const { session } = request.auth

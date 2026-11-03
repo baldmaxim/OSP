@@ -2,12 +2,14 @@
 // заявка, запись цен и анкеты, сводка администратора, решение инженера. Файл ВОР собирается здесь же (xlsx) и
 // лежит в «хранилище» стенда (window.__fakeFiles) — кабинет скачивает и разбирает его как настоящий.
 //   ?page=cabinet (по умолчанию) — кабинет подрядчика «ООО Альфа»; ?page=admin — реестр расценок, вкладка
-//   «Расценки подрядчиков (актуальные тендеры)».
+//   «Расценки подрядчиков (актуальные тендеры)»; ?selfReg=1 — подрядчик, зарегистрировавшийся на сайте (позиции с сервера, файлов нет).
 import * as XLSX from 'xlsx'
+import { readBidFileBytes } from '../../../src/utils/bidVor'
 
 const params = new URLSearchParams(window.location.search)
 const PAGE = params.get('page') || 'cabinet'
-const CP = { id: 'cp-alpha', name: 'ООО Альфа' }
+const SELF_REGISTERED = params.get('selfReg') === '1'
+const CP = { id: 'cp-alpha', name: 'ООО Альфа', ...(SELF_REGISTERED ? { selfRegistered: true } : {}) }
 
 window.__fakeRole = PAGE === 'admin'
   ? {
@@ -96,6 +98,21 @@ const ok = (data) => ({ data, error: null })
 
 window.__bidCalls = []
 window.__fakeRpc = {
+  // Как функция базы: позиции — только при доступе к тендеру; файл, который служба ещё не разобрала, — pending.
+  bid_positions: ({ p_tender }) => {
+    window.__bidCalls.push({ fn: 'bid_positions', p_tender })
+    const t = TENDERS.find((x) => x.id === p_tender)
+    const access = t?.invite ? 'invited' : db.tender_bid_requests.find((r) => r.tender_id === p_tender)?.status
+    if (!access) return { data: null, error: { code: '42501', message: 'Сначала подайте заявку на участие в этом тендере' } }
+    if (p_tender === 't-inv') return ok([{ file_id: 'doc-wait', title: 'ВОР фасада', status: 'pending', error: null, positions: [], structure: [], conditions: [] }])
+    if (p_tender !== 't-open') return ok([])
+    const bytes = Uint8Array.from(atob(window.__fakeFiles['tenders/t-open/vor.xlsx'].split(',')[1]), (c) => c.charCodeAt(0))
+    const parsed = readBidFileBytes(bytes)
+    return ok([{ file_id: 'doc-vor', title: 'ВОР паркинга', status: 'ok', error: null,
+      positions: [...parsed.materials, ...parsed.works], structure: parsed.structure, conditions: parsed.conditions }])
+  },
+  contractor_org_card: () => ok([{ name: 'ООО Альфа', inn: '7707083893', kpp: '770701001', legal_address: 'Москва, ул. Строителей, 1', actual_address: null,
+    website: null, work_type: 'Монолитные работы', contact_name: 'Альфин А. А.', contact_phone: '+79161234567', contact_email: 'alfin@alpha.ru' }]),
   contractor_contracts: () => ok([{
     id: 'c-1', display_id: 15, contract_number: 'ДП-15', contract_date: '2026-09-01', work_name: 'Монолит паркинга',
     status: 'signed', contract_amount: 1000000, currency: 'RUB', object_name: 'ЖК Primavera к14',

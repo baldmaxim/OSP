@@ -21,8 +21,9 @@ export function isEmployeeRole(row) {
 // Требования к учётке вошедшего. Имя требования попадает в снимок прав (tests/osp-api/baseline).
 // Второй аргумент — { auth, isSuperadmin(userId) }: требование может быть асинхронным.
 export const REQUIREMENTS = {
-  // Есть строка ролей, не отклонён и не заблокирован: сотрудник или подрядчик.
-  approved: (row) => !!row && row.is_approved !== false && row.is_blocked !== true,
+  // Есть строка ролей, не отклонён и не заблокирован: сотрудник или подрядчик от администратора. Учётке с регистрации
+  // таких маршрутов нет (сейчас это файлы): она работает только через шлюз, по своему короткому списку.
+  approved: (row) => !!row && row.is_approved !== false && row.is_blocked !== true && row.self_registered !== true,
   employee: isEmployeeRole,
   // Вошёл и не заблокирован (заявки может ещё не быть): кто я, смена своего пароля. Одобрение своей сессии
   // проверяет src/lib/principal.js.

@@ -13,6 +13,7 @@ import './ContractorCabinetPage.css'
 
 const ContractClausesTab = lazy(() => import('../components/ContractClausesTab'))
 const BidWorkspace = lazy(() => import('../components/contractor/BidWorkspace'))
+const ContractorCompanyTab = lazy(() => import('../components/contractor/ContractorCompanyTab'))
 
 // Кабинет подрядчика: тендеры (пакет документов, расценка ВОР на сайте, анкета, загрузка КП) и договоры
 // (документы + согласование условий).
@@ -25,6 +26,9 @@ const BidWorkspace = lazy(() => import('../components/contractor/BidWorkspace'))
 // выбора на форме входа. Доступ к данным ограничен политиками БД (миграции
 // 20260913/20260914) — интерфейс не «прячет чужое», его просто не отдают. Сведения о тендерах, договорах и
 // организации — функциями с перечнем полей (миграция 20261201): правило по строкам колонки не ограничивает.
+//
+// Подрядчик, зарегистрировавшийся на сайте (contractorInfo.selfRegistered, миграции 20261203 и 20261204): только тендеры, расценка
+// и своя компания. Договоров, файлов, сметы и загрузки КП нет — сервер их не отдаёт, интерфейс их и не запрашивает.
 
 const PARTICIPATION_LABEL = {
   request_sent: 'Приглашение отправлено',
@@ -109,7 +113,9 @@ function ContractorCabinetPage() {
   const { contractorInfo, isContractor, userProfile, logout } = useRole()
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const tab = searchParams.get('tab') === 'contracts' ? 'contracts' : 'tenders'
+  const selfRegistered = contractorInfo?.selfRegistered === true
+  const wantedTab = searchParams.get('tab')
+  const tab = wantedTab === 'company' ? 'company' : wantedTab === 'contracts' && !selfRegistered ? 'contracts' : 'tenders'
   const setTab = (next) => setSearchParams(next === 'tenders' ? {} : { tab: next }, { replace: true })
 
   const [loading, setLoading] = useState(true)
@@ -143,7 +149,7 @@ function ContractorCabinetPage() {
       const rows = await loadCabinetTenders()
       if (rows) return { list: rows.map(fromCabinetRow), bids: true }
     } catch (err) {
-      if (err?.code !== '42501') throw err
+      if (err?.code !== '42501' || selfRegistered) throw err
     }
     const { data, error } = await db
       .from('tender_counterparties')
@@ -155,7 +161,7 @@ function ContractorCabinetPage() {
       .map(p => ({ ...p.tenders, participationStatus: p.status, access: 'invited' }))
       .sort((a, b) => (b.tender_end_date || '').localeCompare(a.tender_end_date || ''))
     return { list, bids: false }
-  }, [cpId])
+  }, [cpId, selfRegistered])
 
   // Договоры организации: функцией (миграция 20261201). Функции нет или просмотр от имени роли — чтением таблиц:
   // основная сторона + многосторонние (в contract_counterparties).
@@ -184,7 +190,7 @@ function ContractorCabinetPage() {
     setLoading(true)
     setLoadError('')
     try {
-      const [tenderList, contractList] = await Promise.all([loadTenderList(), loadContractList()])
+      const [tenderList, contractList] = await Promise.all([loadTenderList(), selfRegistered ? [] : loadContractList()])
       const invites = tenderList.list
       setBidsEnabled(tenderList.bids)
       setInvitations(invites)
@@ -209,7 +215,7 @@ function ContractorCabinetPage() {
     } finally {
       setLoading(false)
     }
-  }, [cpId, loadTenderList, loadContractList])
+  }, [cpId, selfRegistered, loadTenderList, loadContractList])
 
   useEffect(() => { loadAll() }, [loadAll])
 
@@ -221,7 +227,7 @@ function ContractorCabinetPage() {
   // Файлы и смета — только тендера, к которому у организации есть доступ (участник или заявка).
   const activeAccess = activeTender?.access || null
   const loadTenderDetails = useCallback(async () => {
-    if (!activeTenderId || !cpId || !activeAccess || activeAccess === 'rejected') { setEstimateItems([]); setTenderDocs([]); return }
+    if (selfRegistered || !activeTenderId || !cpId || !activeAccess || activeAccess === 'rejected') { setEstimateItems([]); setTenderDocs([]); return }
     setTenderBusy(true)
     try {
       const [items, docs, lastProposal] = await Promise.all([
@@ -258,7 +264,7 @@ function ContractorCabinetPage() {
     } finally {
       setTenderBusy(false)
     }
-  }, [activeTenderId, cpId, activeAccess])
+  }, [activeTenderId, cpId, activeAccess, selfRegistered])
 
   useEffect(() => { loadTenderDetails() }, [loadTenderDetails])
 
@@ -440,15 +446,26 @@ function ContractorCabinetPage() {
           Тендеры
           {invitations.length > 0 && <span className="cab-tab-count">{invitations.length}</span>}
         </button>
+        {!selfRegistered && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'contracts'}
+            className={`cab-tab${tab === 'contracts' ? ' is-active' : ''}`}
+            onClick={() => setTab('contracts')}
+          >
+            Договоры
+            {contracts.length > 0 && <span className="cab-tab-count">{contracts.length}</span>}
+          </button>
+        )}
         <button
           type="button"
           role="tab"
-          aria-selected={tab === 'contracts'}
-          className={`cab-tab${tab === 'contracts' ? ' is-active' : ''}`}
-          onClick={() => setTab('contracts')}
+          aria-selected={tab === 'company'}
+          className={`cab-tab${tab === 'company' ? ' is-active' : ''}`}
+          onClick={() => setTab('company')}
         >
-          Договоры
-          {contracts.length > 0 && <span className="cab-tab-count">{contracts.length}</span>}
+          Моя компания
         </button>
       </nav>
 
@@ -456,6 +473,10 @@ function ContractorCabinetPage() {
         <div className="cab-state">Загрузка…</div>
       ) : loadError ? (
         <div className="cab-state cab-state-error">{loadError}</div>
+      ) : tab === 'company' ? (
+        <Suspense fallback={<div className="cab-state">Загрузка…</div>}>
+          <ContractorCompanyTab />
+        </Suspense>
       ) : tab === 'tenders' ? (
         invitations.length === 0 ? (
           <div className="cab-state">
@@ -554,7 +575,7 @@ function ContractorCabinetPage() {
                       <div className="cab-step-text">
                         <b>Хотите участвовать?</b>
                         <span>
-                          Откроются файлы ВОР и расценка на сайте. Отдел увидит вашу организацию и решит, включить ли
+                          {selfRegistered ? 'Откроется расценка на сайте.' : 'Откроются файлы ВОР и расценка на сайте.'} Отдел увидит вашу организацию и решит, включить ли
                           её в участники тендера.
                         </span>
                       </div>
@@ -580,7 +601,7 @@ function ContractorCabinetPage() {
                   )}
 
                   {/* Документы тендера: пакет и ВОР/РД */}
-                  {activeTender.access && activeTender.access !== 'rejected' && (
+                  {!selfRegistered && activeTender.access && activeTender.access !== 'rejected' && (
                   <section className="cab-section">
                     <h3>Документы тендера</h3>
                     {tenderBusy && tenderDocs.length === 0 ? (
@@ -625,6 +646,7 @@ function ContractorCabinetPage() {
                           counterpartyName={contractorInfo?.name || ''}
                           tenderNumbers={tenderNumbers}
                           onSummary={handleBidSummary}
+                          serverPositions={selfRegistered}
                         />
                       </Suspense>
                     </section>
@@ -696,7 +718,7 @@ function ContractorCabinetPage() {
                     </section>
                   )}
 
-                  {activeTender.access === 'invited' && activeTender.isOpen !== false && activeTender.participationStatus && activeTender.participationStatus !== 'declined' && (
+                  {!selfRegistered && activeTender.access === 'invited' && activeTender.isOpen !== false && activeTender.participationStatus && activeTender.participationStatus !== 'declined' && (
                     <div className="cab-decline">
                       <button type="button" className="cab-btn cab-btn-ghost" onClick={handleDecline}>
                         Отказаться от участия

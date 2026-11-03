@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react'
 import {
-  loadTenderFiles, downloadFileBytes, loadMyRates, loadMyRateHistory, saveRates, loadFormFields, loadMyForm, VOR_CATEGORIES,
+  loadTenderFiles, downloadFileBytes, loadServerPositions, loadMyRates, loadMyRateHistory, saveRates, loadFormFields, loadMyForm, VOR_CATEGORIES,
 } from '../../services/contractorBids'
 import { vatFromAnswers, vatField, vatIncluded, vatLabel } from '../../utils/bidForm'
 import { readBidFileBytes, mergeBidFiles, rateKey, BID_KIND_LABEL } from '../../utils/bidVor'
@@ -18,6 +18,9 @@ const BidImportDialog = lazy(() => import('./BidImportDialog'))
 // SAVE_DELAY_MS после ввода, порцией). Отдел видит цены сразу — отправлять ничего не нужно (решение пользователя).
 //
 // canEdit — тендер открыт и у организации есть доступ (участник или заявка не отклонена): иначе только просмотр.
+//
+// serverPositions — подрядчик, зарегистрировавшийся на сайте (миграция 20261204): файлы ему не отдаются, позиции, структуру и
+// особые условия присылает сервер (bid_positions), дальше всё то же самое.
 
 const SAVE_DELAY_MS = 600
 
@@ -40,9 +43,16 @@ const fileTitle = (name) => String(name || '').replace(/\.(xlsx|xlsm|xls)$/i, ''
 const PARSE_ERROR = {
   broken: 'файл не открылся',
   no_positions: 'не нашли листы «Материалы» / «Работы» или таблицу ВОР с колонкой «КОД»',
+  // Разбор на сервере (serverPositions).
+  too_large: 'файл слишком большой',
+  too_many: 'слишком много позиций',
+  timeout: 'разбор занял слишком много времени',
+  memory: 'разбор занял слишком много времени',
+  parser: 'файл не открылся',
+  missing: 'файла нет в хранилище',
 }
 
-export default function BidWorkspace({ tender, canEdit, counterpartyName, tenderNumbers, onSummary }) {
+export default function BidWorkspace({ tender, canEdit, counterpartyName, tenderNumbers, onSummary, serverPositions = false }) {
   const tenderId = tender.id
   const [files, setFiles] = useState(null) // null — загрузка списка
   const [filesError, setFilesError] = useState('')
@@ -65,6 +75,16 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
     setFiles(null)
     setParsed({})
     setFilesError('')
+    if (serverPositions) {
+      loadServerPositions(tenderId)
+        .then((list) => {
+          if (cancelled) return
+          setFiles(list.map(({ id, file_name: fileName }) => ({ id, file_name: fileName })))
+          setParsed(Object.fromEntries(list.map((f) => [f.id, f.parsed])))
+        })
+        .catch((e) => { if (!cancelled) { setFiles([]); setFilesError(e.message || String(e)) } })
+      return () => { cancelled = true }
+    }
     loadTenderFiles(tenderId)
       .then((all) => {
         if (cancelled) return
@@ -73,10 +93,10 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
       })
       .catch((e) => { if (!cancelled) { setFiles([]); setFilesError(e.message || String(e)) } })
     return () => { cancelled = true }
-  }, [tenderId])
+  }, [tenderId, serverPositions])
 
   useEffect(() => {
-    if (!files?.length) return undefined
+    if (serverPositions || !files?.length) return undefined
     let cancelled = false
     ;(async () => {
       // По одному: разбор книги нагружает страницу, параллельно — подвисания.
@@ -93,7 +113,7 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
       }
     })()
     return () => { cancelled = true }
-  }, [files])
+  }, [files, serverPositions])
 
   const okFiles = useMemo(() => (files || [])
     .filter((f) => parsed[f.id]?.status === 'ok')
@@ -101,6 +121,7 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
   const positions = useMemo(() => mergeBidFiles(okFiles), [okFiles])
   const allPositions = useMemo(() => [...positions.materials, ...positions.works], [positions])
   const parsing = (files || []).some((f) => !parsed[f.id] || parsed[f.id].status === 'loading')
+  const preparing = (files || []).some((f) => parsed[f.id]?.status === 'pending')
 
   useEffect(() => {
     let cancelled = false
@@ -238,10 +259,10 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
     return s
   }, [allPositions, rates])
   const orphanRates = useMemo(() => {
-    if (parsing || !okFiles.length) return []
+    if (parsing || preparing || !okFiles.length) return []
     const keys = new Set(allPositions.map((p) => p.key))
     return [...rates.entries()].filter(([k, r]) => !keys.has(k) && r.price != null)
-  }, [rates, allPositions, parsing, okFiles.length])
+  }, [rates, allPositions, parsing, preparing, okFiles.length])
 
   useEffect(() => {
     onSummary?.({ priced: summary.material.priced + summary.work.priced, total: summary.material.total + summary.work.total })
@@ -266,7 +287,7 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
   const conditions = useMemo(() => [...new Set(okFiles.flatMap((f) => f.parsed.conditions || []))], [okFiles])
 
   // ── Отрисовка ──────────────────────────────────────────────────────────────────────────────────────
-  if (files === null) return <div className="bid-state">Загрузка файлов ВОР…</div>
+  if (files === null) return <div className="bid-state">{serverPositions ? 'Загрузка позиций ВОР…' : 'Загрузка файлов ВОР…'}</div>
 
   const fileProblems = (files || []).filter((f) => parsed[f.id]?.status === 'error')
   const tabs = [
@@ -319,13 +340,14 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
 
       <SaveLine save={save} canEdit={canEdit} ratesState={ratesState} onRetry={() => flushRef.current()} onReload={loadRates} />
 
-      {filesError && <div className="bid-note is-warn">Файлы тендера не загрузились: {filesError}</div>}
+      {filesError && <div className="bid-note is-warn">{serverPositions ? 'Позиции ВОР не загрузились' : 'Файлы тендера не загрузились'}: {filesError}</div>}
       {files.length === 0 && !filesError && (
         <div className="bid-note">
-          Файлы ВОР ещё не опубликованы — расценка появится, когда отдел загрузит ВОР в Excel.
+          {serverPositions ? 'ВОР ещё не опубликован — расценка появится, когда отдел его загрузит.' : 'Файлы ВОР ещё не опубликованы — расценка появится, когда отдел загрузит ВОР в Excel.'}
         </div>
       )}
       {parsing && files.length > 0 && <div className="bid-note">Читаем файлы ВОР…</div>}
+      {preparing && <div className="bid-note">Готовим позиции ВОР: обычно это занимает до 10 минут. Обновите страницу чуть позже.</div>}
       {fileProblems.length > 0 && (
         <div className="bid-note is-warn">
           Не удалось разобрать: {fileProblems.map((f) => `«${fileTitle(f.file_name)}» — ${PARSE_ERROR[parsed[f.id].error] || 'файл не скачался'}`).join('; ')}.

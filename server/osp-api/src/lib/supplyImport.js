@@ -52,9 +52,9 @@ const isNotFound = (e) => e?.name === 'NoSuchKey' || e?.name === 'NotFound' || e
 const CHILD = fileURLToPath(new URL('./supplyParseChild.js', import.meta.url))
 
 // Один файл — один процесс-разборщик. Ответ — как parseVorFileBytes; свои причины: timeout, memory, parser.
-export function parseInChild(bytes, saved, { timeoutMs = SUPPLY_IMPORT_DEFAULTS.parseTimeoutMs, heapMb = SUPPLY_IMPORT_DEFAULTS.parseHeapMb } = {}) {
+export function parseInChild(bytes, saved, { timeoutMs = SUPPLY_IMPORT_DEFAULTS.parseTimeoutMs, heapMb = SUPPLY_IMPORT_DEFAULTS.parseHeapMb, childFile = CHILD } = {}) {
   return new Promise((resolve) => {
-    const child = fork(CHILD, [], {
+    const child = fork(childFile, [], {
       execArgv: [`--max-old-space-size=${heapMb}`],
       serialization: 'advanced',
       stdio: ['ignore', 'ignore', 'pipe', 'ipc'],

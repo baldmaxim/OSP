@@ -60,6 +60,24 @@
     "body": null
   },
   {
+    "method": "GET",
+    "url": "/api/admin/contractor-signups",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "POST",
+    "url": "/api/admin/contractor-signups/:id/decision",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "decision"
+    ]
+  },
+  {
     "method": "POST",
     "url": "/api/auth/admin/reset-password",
     "kind": "user",
@@ -129,6 +147,90 @@
     "body": [
       "currentPassword",
       "newPassword"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/auth/password/forgot",
+    "kind": "open",
+    "require": null,
+    "reason": "Письмо для нового пароля: ответ один для любой почты, только учётки с регистрации, задача на вычисление, лимиты",
+    "body": [
+      "answer",
+      "challenge",
+      "email",
+      "website"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/auth/password/reset",
+    "kind": "open",
+    "require": null,
+    "reason": "Новый пароль по одноразовой ссылке из письма: сессии нет, вход не выдаётся, остальные входы завершаются",
+    "body": [
+      "newPassword",
+      "token"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/auth/register",
+    "kind": "open",
+    "require": null,
+    "reason": "Заявка подрядчика на регистрацию: до входа сессии нет; только с портала, задача на вычисление, лимиты; учётка появляется только после подтверждения почты",
+    "body": [
+      "answer",
+      "challenge",
+      "companyName",
+      "consent",
+      "contactName",
+      "email",
+      "inn",
+      "kpp",
+      "phone",
+      "website"
+    ]
+  },
+  {
+    "method": "GET",
+    "url": "/api/auth/register/challenge",
+    "kind": "open",
+    "require": null,
+    "reason": "Задача на вычисление перед заявкой на регистрацию: данных не отдаёт, лимит по адресу",
+    "body": null
+  },
+  {
+    "method": "POST",
+    "url": "/api/auth/register/claim",
+    "kind": "open",
+    "require": null,
+    "reason": "Подтверждение представителя компании по одноразовой ссылке, отправленной на почту из её карточки: учётки ещё нет",
+    "body": [
+      "decision",
+      "token"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/auth/register/confirm",
+    "kind": "open",
+    "require": null,
+    "reason": "Подтверждение почты и пароль по одноразовой ссылке из письма: учётки ещё нет, вход не выдаётся",
+    "body": [
+      "password",
+      "token"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/auth/register/preview",
+    "kind": "open",
+    "require": null,
+    "reason": "Что подтверждается: только по одноразовой ссылке из письма, сведения самой заявки и организации из её карточки",
+    "body": [
+      "kind",
+      "token"
     ]
   },
   {

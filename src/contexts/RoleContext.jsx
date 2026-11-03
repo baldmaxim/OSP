@@ -247,7 +247,8 @@ export function RoleProvider({ children }) {
     }
     return {
       row: data,
-      counterparty: { id: data.counterparty_id, name: name || 'Организация' },
+      // selfRegistered — учётка заведена регистрацией на сайте: кабинет без файлов и договоров. Подсказка интерфейсу, решает сервер.
+      counterparty: { id: data.counterparty_id, name: name || 'Организация', selfRegistered: data.self_registered === true },
     }
   }, [])
 

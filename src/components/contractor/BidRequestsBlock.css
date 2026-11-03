@@ -29,3 +29,15 @@
   color: #b45309;
 }
 [data-theme='dark'] .tenders-page .kp-counter.kp-counter-requests { color: #fcd34d; }
+
+.bidreq-self {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0 0.4rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, #dc2626 12%, transparent);
+  color: #b91c1c;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+[data-theme='dark'] .bidreq-self { color: #fca5a5; }

@@ -191,3 +191,19 @@
 }
 .login-resend-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--primary-color, #0891b2) 10%, transparent); }
 .login-resend-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* Регистрация подрядчика (ContractorSignupPage). */
+.login-field-hint { color: var(--text-tertiary); font-size: 0.75rem; }
+.login-field-error { color: #dc2626; font-size: 0.75rem; line-height: 1rem; }
+.form-field input[aria-invalid='true'] { border-color: #dc2626; }
+.login-trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.login-consent { display: flex; align-items: flex-start; gap: 0.5rem; color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.125rem; cursor: pointer; }
+.login-consent input { flex: none; margin-top: 0.15rem; }
+.login-actions { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.75rem; }
+.login-button-ghost { background: transparent; color: var(--text-primary); border: 1px solid var(--border-color); }
+.login-button-ghost:hover:not(:disabled) { background: var(--bg-tertiary); }
+
+.login-facts { margin: 0 0 0.75rem; display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.875rem; }
+.login-facts div { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 0.5rem; }
+.login-facts dt { color: var(--text-tertiary); }
+.login-facts dd { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
