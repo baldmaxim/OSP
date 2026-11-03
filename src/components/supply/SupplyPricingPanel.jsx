@@ -2704,10 +2704,15 @@ function PriceDateCell({ rate, showAuthor, nameOf, origin }) {
 
 // Откуда цена: скопирована из другого тендера сама (то же наименование) или выбрана из похожих. День расценки —
 // исходной цены; старше 3 месяцев — пометка (такая цена больше никуда сама не подставится). Документ исходной
-// позиции — адрес или файл (миграция 20261025).
+// позиции — адрес или файл (миграция 20261025). Выбранная из похожих — строкой «Похожая цена: наименование; №тендера;
+// день.» (решение пользователя 03.11), объект и ВОР — в подсказке.
 function OriginHint({ rate, origin, onOpenFile }) {
   const [copied, setCopied] = useState(false)
   const date = rate.price_date
+  const pick = rate.source_kind === 'pick'
+  const sep = pick ? '; ' : ' · '
+  const pickLine = [origin?.material_name, origin?.tender_number != null && `№${origin.tender_number}`, date && fmtPriceDate(date)]
+    .filter(Boolean).join('; ')
   const tender = origin?.tender_number != null ? `тендера № ${origin.tender_number}` : 'другого тендера'
   const title = [origin?.material_name && `«${origin.material_name}»`, origin?.object_name, origin?.estimate_name && `ВОР «${origin.estimate_name}»`,
     date && `день расценки ${fmtPriceDate(date)}`].filter(Boolean).join(' · ')
@@ -2720,26 +2725,31 @@ function OriginHint({ rate, origin, onOpenFile }) {
   }
   return (
     <span className="sp-hint sp-origin" title={title || undefined}>
-      {rate.source_kind === 'pick'
-        ? <>цена похожей позиции{origin?.material_name ? <> «{origin.material_name}»</> : null} из {tender}</>
-        : <>цена из {tender}</>}
-      {origin?.object_name && <> · {origin.object_name}</>}
-      {date && <> · от <span className="ui-num">{fmtPriceDate(date)}</span></>}
-      {date && !isFreshPriceDate(date) && <span className="sp-origin-stale"> · старше 3 месяцев</span>}
+      {pick ? (
+        <>Похожая цена{pickLine && `: ${pickLine}`}</>
+      ) : (
+        <>
+          цена из {tender}
+          {origin?.object_name && <> · {origin.object_name}</>}
+          {date && <> · от <span className="ui-num">{fmtPriceDate(date)}</span></>}
+        </>
+      )}
+      {date && !isFreshPriceDate(date) && <span className="sp-origin-stale">{sep}старше 3 месяцев</span>}
       {origin?.doc_key ? (
         <>
-          {' · документ: '}
+          {`${sep}документ: `}
           <button type="button" className="link sp-doc-copy" title={origin.doc_name || 'файл'}
             onClick={() => onOpenFile({ id: origin.doc_id, file_name: origin.doc_name, s3_key: origin.doc_key })}>файл</button>
         </>
       ) : origin?.url && (
         <>
-          {' · документ: '}
+          {`${sep}документ: `}
           {isWebLink(origin.url)
             ? <a href={origin.url} target="_blank" rel="noopener noreferrer" className="link" title={origin.url}>Открыть</a>
             : <button type="button" className="link sp-doc-copy" onClick={copy} title={`${origin.url} — сетевой путь, нажмите, чтобы скопировать`}>{copied ? 'Скопировано' : 'Скопировать'}</button>}
         </>
       )}
+      {pick && '.'}
     </span>
   )
 }

@@ -566,7 +566,10 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.equal(r.source_rate_id, 'o-truba-2')
       assert.equal(Number(r.supply_price), 1100)
       assert.equal(r.price_input, 'unit')
-      await truba.getByText('цена похожей позиции «Труба медная Ø15,9» из тендера № 445', { exact: false }).waitFor()
+      const trubaOrigin = truba.locator('.sp-origin', { hasText: 'Похожая цена: Труба медная Ø15,9; №445; ' })
+      await trubaOrigin.waitFor()
+      assert.match((await trubaOrigin.innerText()).trim(), /^Похожая цена: Труба медная Ø15,9; №445; \d\d\.\d\d\.\d{4}; документ: Открыть\.$/)
+      assert.match(await trubaOrigin.getAttribute('title'), /ЖК Север · ВОР «ОВ-2»/, 'объект и ВОР — в подсказке')
       // Документ исходной позиции — к позиции (своего не было); та же труба в ВК — с той же отметкой.
       await page.waitForFunction(() => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Труба медная Ø12,7' && l.url === 'https://disk.example.ru/d/chek-17'))
       await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((x) => x.estimate_name === 'ВК' && x.source_rate_id === 'o-truba-2'))
