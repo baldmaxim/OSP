@@ -1,12 +1,9 @@
-import { useCallback, useState } from 'react'
-import DocCheckCard from './DocCheckCard'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import DocCheckCardMenu from './DocCheckCardMenu'
-import FilterDropdown from '../FilterDropdown'
-import { IconArchive, IconSliders } from '../icons/ActionIcons'
+import DocCheckColumn, { SLOT_AT_END } from './DocCheckColumn'
+import { dragCard, panByDrag, pressedScrollbar } from './boardGestures'
 import {
-  CLOSED_DOC_CHECK_STATUSES,
   DOC_CHECK_STATUSES,
-  DOC_TYPES,
   SUMMARY_COLUMN,
   availableStatuses,
   boardColumns,
@@ -16,155 +13,166 @@ import {
 
 // Канбан-доска заявок на проверку ДП/ДС — по образцу доски, на которой отдел
 // вёл проверку до сайта: колонки статусов с цветной полосой сверху и счётчиком,
-// «+ Добавить заявку» в каждой, карточки с цветом, метками и исполнителями.
+// «+» в каждой, карточки с цветом, метками и исполнителями.
 //
 // «Сводка по ДП» — колонка-выборка: те же заявки из других колонок по отбору
 // (тип документа, статусы), с подписью статуса на карточке. Бросить в неё
 // нельзя — это не статус; вытащить карточку из неё в колонку можно.
 //
-// Механика перетаскивания — как у доски задач ([TaskBoard.jsx](src/components/tasks/TaskBoard.jsx)):
-// нативный HTML5 draggable без библиотек, бросок на карточку вставляет ПЕРЕД
-// ней, бросок на пустое место колонки — в конец.
+// Мышью (жесты — boardGestures.js, решение пользователя 03.11.2026): карточку тащат за любое место — за указателем едет
+// её копия, заглушка показывает, куда она встанет, у края окна доска и колонка едут сами, Escape отменяет. Нажать и вести
+// по любому другому месту — прокрутка влево-вправо; так же и по карточке у того, кому менять заявки нельзя.
+
+// Нажатие сюда — действие этого элемента, а не жест. Заголовок карточки — кнопка для клавиатуры, а ссылка на письмо по
+// щелчку открывается, но потянуть карточку за них можно: щелчок от сдвига отличает порог.
+const CONTROLS = 'button:not(.dc-card-title), input, select, textarea, label, .fdrop'
+const SCROLL_KEY = 'docCheckBoardScroll'
+const EMPTY = []
+
+const findRequest = (byColumn, id) => {
+  for (const list of byColumn.values()) {
+    const found = list.find(r => r.id === id)
+    if (found) return found
+  }
+  return null
+}
+
+// Откуда взяли: следующая карточка в колонке её статуса. Бросок сюда же — ничего не меняет.
+const placeOf = (byColumn, status, id) => {
+  const list = byColumn.get(status) || []
+  const at = list.findIndex(r => r.id === id)
+  return { column: status, beforeId: at >= 0 ? (list[at + 1]?.id ?? null) : null }
+}
 
 function DocCheckBoard({
   requests, employees, canEdit, hasBoardFields, summary, onSummaryChange,
   onOpen, onMove, onAdd, onToggleDone, onCardAction, onArchiveDone,
 }) {
-  const [dragged, setDragged] = useState(null)       // перетаскиваемая заявка
-  const [overColumn, setOverColumn] = useState(null) // подсветка колонки-приёмника
+  // { id, origin: { column, beforeId }, target: { column, beforeId } | null }
+  const [drag, setDrag] = useState(null)
   const [menu, setMenu] = useState(null)             // { request, anchor }
-  const [summaryOpen, setSummaryOpen] = useState(false)
   const closeMenu = useCallback(() => setMenu(null), [])
+  const openMenu = useCallback((r, anchor) => setMenu({ request: r, anchor }), [])
+  const boardRef = useRef(null)
+  const stopGesture = useRef(null)
 
-  const columns = boardColumns(hasBoardFields)
   const statuses = availableStatuses(hasBoardFields)
-
-  const byColumn = new Map(columns.map(c => [c.value, []]))
-  for (const r of requests) {
-    // Статус вне справочника (например, после ручной правки в БД) не должен
-    // прятать заявку — заводим для него колонку на лету.
-    if (!byColumn.has(r.status)) byColumn.set(r.status, [])
-    byColumn.get(r.status).push(r)
-    if (matchesSummary(r, summary)) byColumn.get(SUMMARY_COLUMN).push(r)
-  }
-  for (const list of byColumn.values()) list.sort(compareForBoard)
-  const extra = [...byColumn.keys()].filter(k => !columns.some(c => c.value === k))
-  const allColumns = [...columns, ...extra.map(value => ({ value, label: value, className: '', kind: 'status' }))]
-
-  const handleDragStart = (e, request) => {
-    if (!canEdit) { e.preventDefault(); return }
-    setDragged(request)
-    e.dataTransfer.effectAllowed = 'move'
-    // Без setData Firefox не начинает перетаскивание.
-    try { e.dataTransfer.setData('text/plain', request.id) } catch { /* noop */ }
-  }
-
-  const handleDrop = (columnKey, beforeId) => {
-    setOverColumn(null)
-    const request = dragged
-    setDragged(null)
-    if (!request || columnKey === SUMMARY_COLUMN) return
-    const list = (byColumn.get(columnKey) || []).filter(r => r.id !== request.id)
-    const idx = beforeId ? list.findIndex(r => r.id === beforeId) : -1
-    const orderedIds = list.map(r => r.id)
-    orderedIds.splice(idx >= 0 ? idx : orderedIds.length, 0, request.id)
-    onMove(request, columnKey, orderedIds)
-  }
-
-  const statusOptions = DOC_CHECK_STATUSES
+  const statusOptions = useMemo(() => DOC_CHECK_STATUSES
     .filter(s => hasBoardFields || !s.board)
-    .map(s => ({ value: s.value, label: s.label }))
+    .map(s => ({ value: s.value, label: s.label })), [hasBoardFields])
+
+  // Раскладка считается заново только при новых заявках: перетаскивание меняет лишь подсветку.
+  const { byColumn, allColumns } = useMemo(() => {
+    const columns = boardColumns(hasBoardFields)
+    const map = new Map(columns.map(c => [c.value, []]))
+    for (const r of requests) {
+      // Статус вне справочника (например, после ручной правки в БД) не должен
+      // прятать заявку — заводим для него колонку на лету.
+      if (!map.has(r.status)) map.set(r.status, [])
+      map.get(r.status).push(r)
+      if (matchesSummary(r, summary)) map.get(SUMMARY_COLUMN).push(r)
+    }
+    for (const list of map.values()) list.sort(compareForBoard)
+    const extra = [...map.keys()].filter(k => !columns.some(c => c.value === k))
+    return {
+      byColumn: map,
+      allColumns: [...columns, ...extra.map(value => ({ value, label: value, className: '', kind: 'status' }))],
+    }
+  }, [requests, summary, hasBoardFields])
+
+  // Пока несут карточку, заявки могли перечитаться: бросок решается по свежим данным.
+  const latest = useRef(null)
+  latest.current = { byColumn, onMove }
+
+  const handlePointerDown = useCallback((e) => {
+    if (e.button !== 0 || e.pointerType !== 'mouse' || stopGesture.current || e.target.closest(CONTROLS)) return
+    const box = boardRef.current
+    const onEnd = () => { stopGesture.current = null }
+    const card = canEdit ? e.target.closest('.dc-card') : null
+    if (!card) {
+      if (!pressedScrollbar(e)) stopGesture.current = panByDrag(e, box, onEnd)
+      return
+    }
+    const id = card.dataset.id
+    const request = findRequest(latest.current.byColumn, id)
+    if (!request) return
+    stopGesture.current = dragCard(e, {
+      box,
+      card,
+      draggedId: id,
+      onStart: () => setDrag({ id, origin: placeOf(latest.current.byColumn, request.status, id), target: null }),
+      onTarget: (target) => setDrag(prev => (prev ? { ...prev, target } : prev)),
+      onDrop: (target) => {
+        setDrag(null)
+        const { byColumn: columns, onMove: move } = latest.current
+        const fresh = findRequest(columns, id)
+        if (!target || !fresh) return
+        const place = placeOf(columns, fresh.status, id)
+        if (target.column === place.column && target.beforeId === place.beforeId) return
+        move(fresh, target.column, target.beforeId)
+      },
+      onCancel: () => setDrag(null),
+      onEnd,
+    })
+  }, [canEdit])
+
+  // Страницу закрыли посреди жеста.
+  useEffect(() => () => stopGesture.current?.(), [])
+
+  // Положение доски переживает переход в реестр, архив и обратно и обновление страницы.
+  useLayoutEffect(() => {
+    const box = boardRef.current
+    try {
+      const left = Number(sessionStorage.getItem(SCROLL_KEY))
+      if (left > 0) box.scrollLeft = left
+    } catch { /* приватный режим */ }
+    let timer = null
+    const save = () => {
+      timer = null
+      try { sessionStorage.setItem(SCROLL_KEY, String(Math.round(box.scrollLeft))) } catch { /* приватный режим */ }
+    }
+    const onScroll = () => { if (!timer) timer = setTimeout(save, 150) }
+    box.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      box.removeEventListener('scroll', onScroll)
+      if (timer) { clearTimeout(timer); save() }
+    }
+  }, [])
+
+  const slot = drag ? (drag.target || drag.origin) : null
 
   return (
-    <div className="dc-board" aria-label="Доска заявок">
+    <div
+      ref={boardRef}
+      className={`dc-board${drag ? ' is-dragging' : ''}`}
+      aria-label="Доска заявок"
+      onPointerDown={handlePointerDown}
+      onDragStart={(e) => e.preventDefault()}
+    >
       {allColumns.map(col => {
-        const list = byColumn.get(col.value) || []
-        const isSummary = col.kind === 'summary'
-        const droppable = !isSummary
+        const hasSlot = slot?.column === col.value
         return (
-          <section
+          <DocCheckColumn
             key={col.value}
-            className={`dc-column ${col.className || ''}${isSummary ? ' dc-column--summary' : ''}${overColumn === col.value ? ' is-over' : ''}`}
-            data-status={col.value}
-            onDragOver={(e) => { if (dragged && droppable) { e.preventDefault(); setOverColumn(col.value) } }}
-            onDragLeave={(e) => {
-              // Игнорируем переходы между дочерними элементами внутри колонки.
-              if (!e.currentTarget.contains(e.relatedTarget)) setOverColumn(null)
-            }}
-            onDrop={(e) => { e.preventDefault(); handleDrop(col.value) }}
-          >
-            <header className="dc-column-head">
-              {isSummary && <div className="dc-column-kind">Сводка</div>}
-              <div className="dc-column-top">
-                <h3 className="dc-column-title" title={col.label}>{col.label}</h3>
-                <span className="dc-column-count">{list.length}</span>
-                {isSummary && (
-                  <button
-                    type="button"
-                    className={`dc-icon-btn${summaryOpen ? ' is-active' : ''}`}
-                    aria-label="Настроить сводку"
-                    aria-expanded={summaryOpen}
-                    title="Что показывать в сводке"
-                    onClick={() => setSummaryOpen(v => !v)}
-                  ><IconSliders size={15} /></button>
-                )}
-                {CLOSED_DOC_CHECK_STATUSES.has(col.value) && canEdit && hasBoardFields && list.length > 0 && (
-                  <button
-                    type="button"
-                    className="dc-icon-btn"
-                    aria-label="Отправить завершённые в архив"
-                    title="Отправить завершённые в архив"
-                    onClick={() => onArchiveDone(list)}
-                  ><IconArchive size={15} /></button>
-                )}
-              </div>
-              {isSummary && summaryOpen && (
-                <div className="dc-summary-settings">
-                  <FilterDropdown
-                    label="" multiple allLabel="ДП и ДС"
-                    value={summary.types}
-                    onChange={(types) => onSummaryChange({ ...summary, types })}
-                    options={DOC_TYPES.map(t => ({ value: t.value, label: `${t.label} — ${t.title}` }))}
-                  />
-                  <FilterDropdown
-                    label="" multiple allLabel="Все статусы"
-                    value={summary.statuses}
-                    onChange={(st) => onSummaryChange({ ...summary, statuses: st })}
-                    options={statusOptions}
-                  />
-                </div>
-              )}
-              {!isSummary && canEdit && statuses.some(s => s.value === col.value) && (
-                <button type="button" className="dc-column-add" onClick={() => onAdd(col.value)}>
-                  + Добавить заявку
-                </button>
-              )}
-            </header>
-
-            <div className="dc-column-body">
-              {list.map(request => (
-                <div
-                  key={request.id}
-                  onDragOver={(e) => { if (dragged && droppable) e.preventDefault() }}
-                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDrop(col.value, request.id) }}
-                >
-                  <DocCheckCard
-                    request={request}
-                    employees={employees}
-                    canEdit={canEdit}
-                    showStatus={isSummary}
-                    onOpen={onOpen}
-                    onToggleDone={onToggleDone}
-                    onMenu={(r, anchor) => setMenu({ request: r, anchor })}
-                    onDragStart={handleDragStart}
-                    onDragEnd={() => { setDragged(null); setOverColumn(null) }}
-                    isDragging={dragged?.id === request.id}
-                  />
-                </div>
-              ))}
-              {list.length === 0 && <p className="dc-column-empty">{isSummary ? 'Нет заявок по отбору' : 'Пусто'}</p>}
-            </div>
-          </section>
+            col={col}
+            list={byColumn.get(col.value) || EMPTY}
+            employees={employees}
+            canEdit={canEdit}
+            hasBoardFields={hasBoardFields}
+            statusOptions={statusOptions}
+            summary={col.kind === 'summary' ? summary : null}
+            canAdd={col.kind !== 'summary' && canEdit && statuses.some(s => s.value === col.value)}
+            isOver={drag?.target?.column === col.value}
+            slotBefore={hasSlot ? (slot.beforeId ?? SLOT_AT_END) : null}
+            liftedId={drag?.origin.column === col.value ? drag.id : null}
+            sourceId={drag && col.kind === 'summary' ? drag.id : null}
+            onSummaryChange={onSummaryChange}
+            onOpen={onOpen}
+            onAdd={onAdd}
+            onToggleDone={onToggleDone}
+            onMenu={openMenu}
+            onArchiveDone={onArchiveDone}
+          />
         )
       })}
 
@@ -182,4 +190,5 @@ function DocCheckBoard({
   )
 }
 
-export default DocCheckBoard
+// memo: окно заявки открывается состоянием страницы — доска при этом не перерисовывается.
+export default memo(DocCheckBoard)

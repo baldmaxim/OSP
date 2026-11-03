@@ -244,6 +244,10 @@ export function fmtDocDate(value) {
   return d.toLocaleDateString('ru-RU')
 }
 
+export const fmtDocDateTime = (value) => (value ? new Date(value).toLocaleString('ru-RU', {
+  day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+}) : '')
+
 // «ДП № 12 от 01.03.2026» — одна строка-подпись документа для карточки и списка.
 export function docTitle(req) {
   const parts = [DOC_TYPE_LABEL[req?.doc_type] || 'Документ']
@@ -266,17 +270,36 @@ export function compareForBoard(a, b) {
   return new Date(a.created_at) - new Date(b.created_at)
 }
 
-// Новый порядок колонки после броска: номера 1…N, но в базу — только те строки,
-// чей номер сменился (в «Завершено» сотня карточек: раньше каждый бросок
-// переписывал их все).
-export function reorderUpdates(rows, orderedIds) {
-  const byId = new Map((rows || []).map(r => [r.id, r]))
-  const out = []
-  orderedIds.forEach((id, i) => {
-    const r = byId.get(id)
-    if (!r || r.sort_order !== i + 1) out.push({ id, sort_order: i + 1 })
-  })
-  return out
+// Место карточки в колонке: её номер и какие соседи сдвигаются. rows — вся колонка в порядке доски, без самой карточки,
+// вместе с теми, кого сейчас скрывает фильтр (иначе новые номера совпали бы с номерами скрытых, и порядок рассыпался бы);
+// beforeId — перед какой встать, null — в конец. Соседей трогаем, только если между ними нет места, и с той стороны, где
+// сдвигать меньше: бросок к верху «Завершено» (сотни карточек) — несколько записей, а не сотни. Номера могут быть
+// отрицательными и повторяться (при равных порядок задаёт дата создания).
+export function placeInColumn(rows, beforeId) {
+  const found = beforeId ? rows.findIndex(r => r.id === beforeId) : -1
+  const at = found >= 0 ? found : rows.length
+  const prev = rows[at - 1]
+  const next = rows[at]
+  if (!prev && !next) return { sortOrder: 1, shifted: [] }
+  if (!next) return { sortOrder: prev.sort_order + 1, shifted: [] }
+  if (!prev) return { sortOrder: next.sort_order - 1, shifted: [] }
+  if (next.sort_order - prev.sort_order > 1) return { sortOrder: prev.sort_order + 1, shifted: [] }
+
+  const down = []
+  let cur = prev.sort_order + 1
+  for (let i = at; i < rows.length && rows[i].sort_order <= cur; i++) {
+    cur += 1
+    down.push({ id: rows[i].id, sort_order: cur })
+  }
+  const up = []
+  cur = next.sort_order - 1
+  for (let i = at - 1; i >= 0 && rows[i].sort_order >= cur; i--) {
+    cur -= 1
+    up.push({ id: rows[i].id, sort_order: cur })
+  }
+  return down.length <= up.length
+    ? { sortOrder: prev.sort_order + 1, shifted: down }
+    : { sortOrder: next.sort_order - 1, shifted: up }
 }
 
 // Конец колонки: номер для карточки, которую ставят последней.
@@ -312,6 +335,21 @@ export function isMissingBoardColumn(err) {
 // Строка из базы — к виду доски: массивы вместо NULL (прежняя база их не отдаёт).
 export function normalizeRequest(r) {
   return { ...r, assignee_ids: r.assignee_ids || [], labels: r.labels || [], manual_assignees: r.manual_assignees || [] }
+}
+
+// Заявки с числом файлов, шагов и сообщений. Заявка, у которой числа прежние, остаётся тем же объектом (cache — WeakMap
+// на время жизни страницы): карточка доски сравнивает его и не перерисовывается. На доске сотни карточек, а меняется одна.
+export function mergeRequestCounts(requests, docCounts, cardCounts, cache) {
+  return requests.map((r) => {
+    const docsCount = docCounts.get(r.id) || 0
+    const counts = cardCounts.get(r.id) || NO_CARD_COUNTS
+    const hit = cache.get(r)
+    if (hit && hit.docsCount === docsCount && hit.stepsTotal === counts.stepsTotal
+      && hit.stepsDone === counts.stepsDone && hit.commentsCount === counts.commentsCount) return hit
+    const row = { ...r, docsCount, ...counts }
+    cache.set(r, row)
+    return row
+  })
 }
 
 // События истории для правки из формы: только изменившиеся поля.

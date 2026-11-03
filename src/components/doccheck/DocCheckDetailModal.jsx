@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { db } from '../../api'
 import S3DocumentList from '../S3DocumentList'
-import DocCheckAvatars from './DocCheckAvatars'
 import DocCheckDiscussion from './DocCheckDiscussion'
 import DocCheckSteps from './DocCheckSteps'
-import { IconLink } from '../icons/ActionIcons'
+import { IconCheck, IconLink } from '../icons/ActionIcons'
 import { employeeName } from '../../services/employees'
 import { fetchCardDetails } from '../../services/docCheckCard'
 import { safeHttpUrl } from '../../utils/publicTenders'
@@ -16,14 +15,20 @@ import {
   DOC_TYPE_LABEL,
   DOC_TYPE_TITLE,
   FIELD_LABEL,
-  assigneeNames,
   availableStatuses,
+  avatarTone,
   cardTitle,
   dueState,
   fmtDocDate,
+  fmtDocDateTime as fmtDateTime,
+  initials,
 } from '../../utils/docCheckHelpers'
 
 // Карточка заявки: данные, шаги, обсуждение, файлы, история.
+//
+// Вкладка «Заявка» (03.11, решение пользователя: «более красивым и понятным, визуальное разделение, читаемый текст») —
+// две колонки: слева примечание и документ, справа то, что меняется в работе (статус, исполнители, срок). Окно постоянной
+// высоты: вкладки разной длины его не дёргают.
 //
 // Статус здесь тоже переключается — на телефоне доску не потаскаешь, а работать
 // с заявкой надо. Список колонок один и тот же (availableStatuses), поэтому
@@ -31,10 +36,6 @@ import {
 //
 // Закрывается только «×» и «Закрыть», как карточка задачи: щелчок мимо окна (или
 // выделение текста, отпущенное за его краем) уносил бы недописанное сообщение.
-
-const fmtDateTime = (v) => (v ? new Date(v).toLocaleString('ru-RU', {
-  day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-}) : '')
 
 const EVENT_LABEL = {
   created: 'Заявка создана',
@@ -44,6 +45,7 @@ const EVENT_LABEL = {
   restored: 'Заявка восстановлена',
   archived: 'Заявка в архиве',
   unarchived: 'Заявка возвращена из архива',
+  data_fix: 'Исправление данных',
 }
 
 // Значение поля в истории — словами, а не кодом базы.
@@ -60,11 +62,35 @@ function historyValue(field, value, ctx) {
   return String(value)
 }
 
+// Раздел окна: заголовок полосой и содержимое. Разделы отделены друг от друга рамкой.
+function Box({ title, aside, children }) {
+  return (
+    <section className="dc-box">
+      <h4 className="dc-box-head">{title}{aside != null && <span className="dc-box-aside">{aside}</span>}</h4>
+      {children}
+    </section>
+  )
+}
+
+// Строка «подпись — значение».
+function Row({ label, className, children }) {
+  return (
+    <div className="dc-row-kv">
+      <dt>{label}</dt>
+      <dd className={className}>{children}</dd>
+    </div>
+  )
+}
+
 export default function DocCheckDetailModal({
-  request, employees, objects, counterparties, canEdit, hasBoardFields, hasCardFields, currentUserId, refreshKey,
+  request, employees, objects, counterparties, canEdit, hasBoardFields, hasCardFields, currentUserId, deletion, refreshKey,
   onStatusChange, onEdit, onDelete, onClose, onCardCounts,
 }) {
   const [tab, setTab] = useState('info')
+  // Открывали файлы — после закрытия окна перечитать, сколько их у заявки.
+  const docsOpened = useRef(false)
+  if (tab === 'docs') docsOpened.current = true
+  const close = () => onClose(docsOpened.current)
   const [history, setHistory] = useState([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [steps, setSteps] = useState([])
@@ -127,13 +153,18 @@ export default function DocCheckDetailModal({
     return () => { cancelled = true }
   }, [tab, historyLoaded, request.id])
 
-  const ctx = {
+  // Контрагентов — тысячи: собираем только для вкладки истории, и один раз.
+  const ctx = useMemo(() => (tab !== 'history' ? null : {
     employees,
     objects: new Map(objects.map(o => [o.id, o.name])),
     counterparties: new Map(counterparties.map(c => [c.id, c.name])),
-  }
+  }), [tab, employees, objects, counterparties])
   const due = dueState(request)
-  const people = assigneeNames(request, id => employeeName(employees, id))
+  const people = [
+    ...(request.assignee_ids || []).map(id => ({ key: id, name: employeeName(employees, id), tone: avatarTone(id) })),
+    ...(request.manual_assignees || []).map(name => ({ key: `manual:${name}`, name, manual: true })),
+  ]
+  const statuses = availableStatuses(hasBoardFields)
   const mail = safeHttpUrl(request.email_link)
   const isDeleted = !!request.deleted_at
   const isAssignee = !!currentUserId && (request.assignee_ids || []).includes(currentUserId)
@@ -161,15 +192,19 @@ export default function DocCheckDetailModal({
   return (
     <div className="modal-overlay">
       <div className="modal dc-detail-modal" role="dialog" aria-modal="true" aria-label={cardTitle(request)}>
-        <div className="modal-header">
-          <div>
+        <div className="modal-header dc-detail-head">
+          <div className="dc-detail-heading">
             <h3>{cardTitle(request)}</h3>
             <p className="dc-detail-sub">
-              {DOC_TYPE_TITLE[request.doc_type]}
-              {request.archived_at ? ' · в архиве' : ''}
+              <span className={`dc-status-chip ${DOC_CHECK_STATUS_CLASS[request.status] || ''}`}>
+                {DOC_CHECK_STATUS_LABEL[request.status] || request.status}
+              </span>
+              <span>{DOC_TYPE_TITLE[request.doc_type]}</span>
+              {request.archived_at && <span className="dc-detail-flag">в архиве</span>}
+              {isDeleted && <span className="dc-detail-flag is-deleted">удалена</span>}
             </p>
           </div>
-          <button className="modal-close" onClick={onClose} aria-label="Закрыть">×</button>
+          <button className="modal-close" onClick={close} aria-label="Закрыть">×</button>
         </div>
 
         <div className="dc-detail-tabs" role="tablist">
@@ -190,81 +225,97 @@ export default function DocCheckDetailModal({
 
         <div className="dc-detail-body">
           {tab === 'info' && (
-            <>
-              <dl className="dc-detail-grid">
-                <div><dt>Объект</dt><dd>{request.objects?.name || '—'}</dd></div>
-                <div><dt>Контрагент</dt><dd>{request.counterparties?.name || '—'}</dd></div>
-                <div><dt>Номер</dt><dd>{request.doc_number || '—'}</dd></div>
-                <div><dt>Дата документа</dt><dd>{fmtDocDate(request.doc_date) || '—'}</dd></div>
-                {hasCardFields && (
-                  <div className="dc-detail-wide">
-                    <dt>Письмо</dt>
-                    <dd>
-                      {mail ? (
-                        <a className="dc-detail-mail" href={mail} target="_blank" rel="noopener noreferrer" title={request.email_link}>
-                          <IconLink size={14} />Открыть письмо
-                        </a>
-                      ) : '—'}
-                    </dd>
-                  </div>
+            <div className="dc-info">
+              <div className="dc-info-col">
+                {request.notes && (
+                  <Box title="Примечание">
+                    <p className="dc-box-text">{request.notes}</p>
+                  </Box>
                 )}
-                {hasBoardFields && (
-                  <>
-                    <div className="dc-detail-wide">
-                      <dt>Исполнители</dt>
-                      <dd className="dc-detail-people">
-                        {people.length ? (
-                          <>
-                            <DocCheckAvatars ids={request.assignee_ids} manual={request.manual_assignees} employees={employees} max={6} />
-                            <span>{people.join(', ')}</span>
-                          </>
-                        ) : 'Не назначены'}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Срок</dt>
-                      <dd className={request.due_date ? `dc-due-text is-${due}` : ''}>
-                        {fmtDocDate(request.due_date) || '—'}{due === 'overdue' ? ' · срок прошёл' : ''}
-                      </dd>
-                    </div>
-                    <div><dt>Приоритет</dt><dd>{DOC_CHECK_PRIORITY_LABEL[request.priority] || '—'}</dd></div>
-                    {request.labels?.length > 0 && (
-                      <div className="dc-detail-wide">
-                        <dt>Метки</dt>
-                        <dd className="dc-card-chips">
-                          {request.labels.map(l => <span key={l} className="dc-chip dc-chip--label">{l}</span>)}
-                        </dd>
-                      </div>
+
+                <Box title="Документ">
+                  <dl className="dc-kv">
+                    <Row label="Объект">{request.objects?.name || '—'}</Row>
+                    <Row label="Контрагент">{request.counterparties?.name || '—'}</Row>
+                    <Row label="Номер">{request.doc_number || '—'}</Row>
+                    <Row label="Дата документа" className="ui-num">{fmtDocDate(request.doc_date) || '—'}</Row>
+                    {hasCardFields && (
+                      <Row label="Письмо">
+                        {mail ? (
+                          <a className="dc-detail-mail" href={mail} target="_blank" rel="noopener noreferrer" title={request.email_link}>
+                            <IconLink size={14} />Открыть письмо
+                          </a>
+                        ) : '—'}
+                      </Row>
                     )}
-                  </>
+                  </dl>
+                </Box>
+
+                {hasBoardFields && (
+                  <Box title="Срок и приоритет">
+                    <dl className="dc-kv">
+                      <Row label="Срок" className={request.due_date ? `ui-num dc-due-text is-${due}` : 'ui-num'}>
+                        {fmtDocDate(request.due_date) || '—'}{due === 'overdue' ? ' · срок прошёл' : ''}
+                      </Row>
+                      <Row label="Приоритет">{DOC_CHECK_PRIORITY_LABEL[request.priority] || '—'}</Row>
+                      {request.labels?.length > 0 && (
+                        <Row label="Метки" className="dc-card-chips">
+                          {request.labels.map(l => <span key={l} className="dc-chip dc-chip--label">{l}</span>)}
+                        </Row>
+                      )}
+                    </dl>
+                  </Box>
                 )}
-                <div><dt>Заявку создал</dt><dd>{request.created_by_name || '—'}</dd></div>
-                <div><dt>Создана</dt><dd>{fmtDateTime(request.created_at)}</dd></div>
-              </dl>
 
-              {request.notes && (
-                <div className="dc-detail-notes">
-                  <h4>Примечание</h4>
-                  <p>{request.notes}</p>
-                </div>
-              )}
-
-              <div className="dc-detail-status">
-                <h4>Статус</h4>
-                <div className="dc-status-list">
-                  {availableStatuses(hasBoardFields).map(s => (
-                    <button
-                      key={s.value}
-                      type="button"
-                      aria-pressed={request.status === s.value}
-                      className={`dc-status-opt ${DOC_CHECK_STATUS_CLASS[s.value]}${request.status === s.value ? ' is-current' : ''}`}
-                      onClick={() => canEdit && request.status !== s.value && onStatusChange(request, s.value)}
-                      disabled={!canEdit}
-                    >{s.label}</button>
-                  ))}
-                </div>
+                <Box title={isDeleted ? 'Создание и удаление' : 'Создание'}>
+                  <dl className="dc-kv">
+                    <Row label="Заявку создал">{request.created_by_name || '—'}</Row>
+                    <Row label="Создана" className="ui-num">{fmtDateTime(request.created_at)}</Row>
+                    {isDeleted && <Row label="Удалил">{deletion?.name || 'не записано'}</Row>}
+                    {isDeleted && <Row label="Удалена" className="ui-num">{fmtDateTime(request.deleted_at)}</Row>}
+                  </dl>
+                </Box>
               </div>
-            </>
+
+              <div className="dc-info-col">
+                <Box title="Статус">
+                  <div className="dc-status-list">
+                    {statuses.map(s => {
+                      const current = request.status === s.value
+                      return (
+                        <button
+                          key={s.value}
+                          type="button"
+                          aria-pressed={current}
+                          className={`dc-status-opt ${DOC_CHECK_STATUS_CLASS[s.value]}${current ? ' is-current' : ''}`}
+                          onClick={() => canEdit && !current && onStatusChange(request, s.value)}
+                          disabled={!canEdit || isDeleted}
+                        >
+                          <span className="dc-status-dot" aria-hidden="true">{current && <IconCheck size={11} />}</span>
+                          <span>{s.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </Box>
+
+                {hasBoardFields && (
+                  <Box title="Исполнители" aside={people.length > 0 ? people.length : null}>
+                    {people.length ? (
+                      <ul className="dc-detail-people">
+                        {people.map(p => (
+                          <li key={p.key}>
+                            <span className={`dc-avatar ${p.manual ? 'dc-avatar--manual' : `dc-avatar--t${p.tone}`}`} aria-hidden="true">{initials(p.name)}</span>
+                            <span className="dc-person-name">{p.name}</span>
+                            {p.manual && <span className="dc-person-note" title="Вписан вручную: учётной записи на портале нет">нет учётной записи</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : <p className="dc-box-text dc-box-empty">Не назначены</p>}
+                  </Box>
+                )}
+              </div>
+            </div>
           )}
 
           {tab === 'steps' && (cardState !== 'ready' ? cardUnavailable : (
@@ -314,13 +365,13 @@ export default function DocCheckDetailModal({
                         </div>
                         {h.event_type === 'status_changed' ? (
                           <div className="dc-history-text">
-                            {DOC_CHECK_STATUS_LABEL[h.old_value] || h.old_value || '—'}
+                            <span className="dc-history-old">{DOC_CHECK_STATUS_LABEL[h.old_value] || h.old_value || '—'}</span>
                             {' → '}
                             {DOC_CHECK_STATUS_LABEL[h.new_value] || h.new_value || '—'}
                           </div>
                         ) : h.event_type === 'field_updated' ? (
                           <div className="dc-history-text">
-                            {historyValue(h.field_name, h.old_value, ctx)}
+                            <span className="dc-history-old">{historyValue(h.field_name, h.old_value, ctx)}</span>
                             {' → '}
                             {historyValue(h.field_name, h.new_value, ctx)}
                           </div>
@@ -337,9 +388,10 @@ export default function DocCheckDetailModal({
 
         {canEdit && (
           <div className="dc-detail-actions">
-            <button type="button" className="btn-danger-soft" onClick={() => onDelete(request)}>Удалить</button>
-            <button type="button" className="btn-secondary" onClick={() => onEdit(request)}>Изменить</button>
-            <button type="button" className="btn-primary" onClick={onClose}>Закрыть</button>
+            {/* Удалённую не правят и не удаляют снова: вторая запись истории подменила бы, кто её удалил. Вернуть — «Восстановить» в списке. */}
+            {!isDeleted && <button type="button" className="btn-danger-soft" onClick={() => onDelete(request)}>Удалить</button>}
+            {!isDeleted && <button type="button" className="btn-secondary" onClick={() => onEdit(request)}>Изменить</button>}
+            <button type="button" className="btn-primary" onClick={close}>Закрыть</button>
           </div>
         )}
       </div>

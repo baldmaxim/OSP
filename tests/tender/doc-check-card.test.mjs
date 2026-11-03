@@ -17,7 +17,7 @@ import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import {
   NO_ASSIGNEE, assigneeNames, cardCountsById, compareSteps, fieldEvents, manualAssigneeKey, manualAssigneeSuggestions,
-  matchesAssignees, normalizeManualAssignees, normalizeRequest, stepTitles, MAX_STEP_TITLE, MAX_MANUAL_ASSIGNEES,
+  matchesAssignees, mergeRequestCounts, normalizeManualAssignees, normalizeRequest, stepTitles, MAX_STEP_TITLE, MAX_MANUAL_ASSIGNEES,
 } from '../../src/utils/docCheckHelpers.js'
 import { safeHttpUrl } from '../../src/utils/publicTenders.js'
 
@@ -29,6 +29,21 @@ describe('Карточка заявки: правила без браузера'
       'https://a b', '\\\\server\\share\\письмо.msg', '', null, undefined, `https://x/${'я'.repeat(2000)}`]) {
       assert.equal(safeHttpUrl(bad), null, String(bad))
     }
+  })
+
+  it('заявка с прежними числами — тот же объект: её карточка не перерисовывается', () => {
+    const a = { id: 'a' }
+    const b = { id: 'b' }
+    const cache = new WeakMap()
+    const first = mergeRequestCounts([a, b], new Map([['a', 2]]), new Map(), cache)
+    assert.deepEqual(first[0], { id: 'a', docsCount: 2, stepsTotal: 0, stepsDone: 0, commentsCount: 0 })
+    const same = mergeRequestCounts([a, b], new Map([['a', 2]]), new Map(), cache)
+    assert.equal(same[0], first[0])
+    assert.equal(same[1], first[1])
+    const changed = mergeRequestCounts([a, b], new Map([['a', 2]]), new Map([['b', { stepsTotal: 3, stepsDone: 1, commentsCount: 0 }]]), cache)
+    assert.equal(changed[0], first[0], 'соседняя заявка не меняется')
+    assert.notEqual(changed[1], first[1])
+    assert.equal(changed[1].stepsTotal, 3)
   })
 
   it('«Без исполнителя» — когда нет ни сотрудника, ни вписанного имени', () => {
@@ -130,6 +145,124 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
     .filter((s) => s.request_id === 'dcr-3')
     .sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))
     .map((s) => s.title))
+
+  // Сколько карточек доски заново отрисовал React: тем же способом, что React DevTools (флаг PerformedWork, обход только
+  // изменившихся поддеревьев). Хук ставится до загрузки React.
+  const watchCardRenders = (page) => page.addInitScript(() => {
+    window.__cardRenders = 0
+    const walk = (fiber, prev) => {
+      if (fiber.type?.name === 'DocCheckCard' && (fiber.flags & 1)) window.__cardRenders++
+      if (fiber.child !== prev?.child) {
+        for (let c = fiber.child; c; c = c.sibling) walk(c, c.alternate)
+      }
+    }
+    window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+      isDisabled: false,
+      supportsFiber: true,
+      renderers: new Map(),
+      inject: () => 1,
+      onCommitFiberUnmount: () => {},
+      onPostCommitFiberRoot: () => {},
+      onCommitFiberRoot: (_, root) => walk(root.current, root.current.alternate),
+    }
+  })
+
+  it('окно заявки не перерисовывает доску: ни открытие, ни вкладки, ни закрытие (на сайте 844 заявки)', async () => {
+    const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 1700, height: 950 } })
+    const page = await context.newPage()
+    await watchCardRenders(page)
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    try {
+      await page.goto(`${stand.url}?route=/doc-check-requests&docCheck=1&latency=0&docCheckMany=120`)
+      await page.locator('.dc-board').waitFor({ timeout: 120000 })
+      await page.waitForFunction(() => document.querySelectorAll('.dc-card').length > 120)
+      await page.waitForTimeout(500) // догрузка счётчиков и справочников
+      const rendered = await page.evaluate(() => window.__cardRenders)
+      assert.ok(rendered > 100, `счётчик работает: при загрузке отрисовано ${rendered}`)
+
+      await page.evaluate(() => { window.__cardRenders = 0 })
+      const modal = await openCard(page, 'dcr-3')
+      await modal.getByRole('tab', { name: /^Шаги/ }).click()
+      await modal.locator('.dc-steps li').nth(2).waitFor()
+      await modal.getByRole('tab', { name: /^Обсуждение/ }).click()
+      await modal.locator('.dc-talk-msg').first().waitFor()
+      await modal.locator('.modal-close').click()
+      await modal.waitFor({ state: 'detached' })
+      await page.waitForTimeout(300)
+      assert.equal(await page.evaluate(() => window.__cardRenders), 0, 'карточки доски не перерисованы')
+
+      // Что-то изменилось в заявке — перерисована только её карточка (в колонке статуса и, возможно, в «Сводке»).
+      const again = await openCard(page, 'dcr-3', 'Обсуждение')
+      await again.locator('.dc-talk-add textarea').fill('Новое сообщение')
+      await again.getByRole('button', { name: 'Отправить' }).click()
+      await again.locator('.dc-talk-msg').nth(2).waitFor()
+      await page.waitForTimeout(200)
+      const after = await page.evaluate(() => window.__cardRenders)
+      assert.ok(after >= 1 && after <= 2, `перерисовано карточек: ${after}`)
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close().catch(() => {})
+    }
+  })
+
+  it('число файлов перечитывается, только если открывали вкладку «Документы»', async () => {
+    const { page, errors, close } = await openPage()
+    try {
+      const reads = () => page.evaluate(() => window.__supabaseStats.requests.filter((q) => q.table === 's3_documents').length)
+      await page.waitForTimeout(300)
+      const start = await reads()
+      let modal = await openCard(page, 'dcr-2')
+      await modal.locator('.modal-close').click()
+      await modal.waitFor({ state: 'detached' })
+      await page.waitForTimeout(200)
+      assert.equal(await reads(), start, 'окно открыли и закрыли — лишнего запроса нет')
+      modal = await openCard(page, 'dcr-2', 'Документы')
+      await modal.getByText('ДП СУ2-001.pdf').waitFor()
+      const inTab = await reads()
+      await modal.locator('.modal-close').click()
+      await page.waitForFunction((n) => window.__supabaseStats.requests.filter((q) => q.table === 's3_documents').length > n, inTab)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('вид окна: разделы с заголовками, две колонки, постоянная высота; подписи контрастные', async () => {
+    const { page, errors, close } = await openPage()
+    try {
+      const modal = await openCard(page, 'dcr-2')
+      assert.deepEqual(await modal.locator('.dc-box-head').evaluateAll((els) => els.map((e) => e.firstChild.textContent)),
+        ['Примечание', 'Документ', 'Срок и приоритет', 'Создание', 'Статус', 'Исполнители'])
+      const cols = await modal.locator('.dc-info-col').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)))
+      assert.equal(cols.length, 2)
+      assert.ok(cols[1] > cols[0] + 200, `колонки рядом: ${cols}`)
+      assert.match(await modal.locator('.dc-detail-sub .dc-status-chip').innerText(), /В работе/)
+      assert.match(await modal.locator('.dc-detail-sub').innerText(), /Договор подряда/)
+      assert.equal(await modal.locator('.dc-status-opt.is-current').count(), 1)
+      assert.equal(await modal.locator('.dc-status-opt').count(), 8, 'каждая колонка доски — отдельной строкой')
+
+      const height = (await modal.boundingBox()).height
+      for (const tab of ['Шаги', 'Обсуждение', 'Документы', 'История', 'Заявка']) {
+        await modal.getByRole('tab', { name: new RegExp(`^${tab}`) }).click()
+        assert.equal((await modal.boundingBox()).height, height, `вкладка «${tab}» не меняет высоту окна`)
+      }
+      const size = await modal.locator('.dc-row-kv dd').first().evaluate((e) => parseFloat(getComputedStyle(e).fontSize))
+      assert.ok(size >= 14, `текст значений не мельче 14px: ${size}`)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('телефон: окно на весь экран, разделы столбцом', async () => {
+    const { page, errors, close } = await openPage('', { width: 390, height: 780 })
+    try {
+      const modal = await openCard(page, 'dcr-3')
+      const box = await modal.boundingBox()
+      assert.deepEqual([box.x, box.y, box.width, box.height], [0, 0, 390, 780])
+      const widths = await modal.locator('.dc-box').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)))
+      assert.equal(new Set(widths).size, 1, `один столбец: ${widths}`)
+      assert.equal(await modal.locator('.dc-detail-body').evaluate((b) => b.scrollWidth <= b.clientWidth), true, 'без горизонтальной прокрутки')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
 
   it('доска: шаги, сообщения, письмо и вписанный исполнитель на карточке; у остальных лишнего нет', async () => {
     const { page, errors, close } = await openPage()

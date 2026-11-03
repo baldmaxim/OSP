@@ -6,6 +6,8 @@
 //   • кружок «завершить», меню карточки (цвет, перенос в колонку, архив), «+ Добавить заявку» в колонке,
 //     «В архив» у «Завершено» и «Архив» с возвратом, перетаскивание; в базу — только сменившийся порядок;
 //   • быстрый отбор: объекты над доской, «Мои заявки»;
+//   • жесты мышью (boardGestures.js): предпросмотр и заглушка места, автопрокрутка, Escape; касание карточки не двигает её;
+//     прокрутка удержанием; шапка в две низкие строки, доска на всё окно; «Удалённые»: кто удалил;
 //   • колонок 20261113 ещё нет — доска как раньше, без ошибок; без права правки — только просмотр.
 // Люди стенда вымышленные.
 import { describe, it, before, after } from 'node:test'
@@ -14,7 +16,7 @@ import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import {
   DEFAULT_SUMMARY, avatarTone, boardColumns, dueState, fieldEvents, initials, labelSuggestions, matchesDeadline,
-  matchesSummary, nextSortOrder, normalizeLabels, normalizeSummary, reorderUpdates, AVATAR_TONES, cardTitle,
+  matchesSummary, nextSortOrder, normalizeLabels, normalizeSummary, placeInColumn, AVATAR_TONES, cardTitle,
 } from '../../src/utils/docCheckHelpers.js'
 
 const day = (n) => {
@@ -83,10 +85,24 @@ describe('Заявки на проверку ДП/ДС: правила без б
     assert.ok(t >= 0 && t < AVATAR_TONES)
   })
 
-  it('порядок: в базу — только сменившиеся номера; конец колонки — без архива и удалённых', () => {
-    const rows = [{ id: 'a', sort_order: 1 }, { id: 'b', sort_order: 2 }, { id: 'c', sort_order: 3 }]
-    assert.deepEqual(reorderUpdates(rows, ['a', 'b', 'c', 'x']), [{ id: 'x', sort_order: 4 }])
-    assert.deepEqual(reorderUpdates(rows, ['b', 'a', 'c']), [{ id: 'b', sort_order: 1 }, { id: 'a', sort_order: 2 }])
+  it('порядок: соседей сдвигаем, только если нет места, и с той стороны, где меньше; конец колонки — без архива и удалённых', () => {
+    const rows = [{ id: 'a', sort_order: 1 }, { id: 'b', sort_order: 2 }, { id: 'c', sort_order: 3 }, { id: 'd', sort_order: 4 }]
+    // Края и пустая колонка — ни одного соседа.
+    assert.deepEqual(placeInColumn([], null), { sortOrder: 1, shifted: [] })
+    assert.deepEqual(placeInColumn(rows, null), { sortOrder: 5, shifted: [] })
+    assert.deepEqual(placeInColumn(rows, 'a'), { sortOrder: 0, shifted: [] })
+    assert.deepEqual(placeInColumn(rows, 'нет такой'), { sortOrder: 5, shifted: [] }, 'карточка, перед которой бросили, пропала — в конец')
+    // Между соседями есть номер — только сама карточка.
+    assert.deepEqual(placeInColumn([{ id: 'a', sort_order: 1 }, { id: 'b', sort_order: 5 }], 'b'), { sortOrder: 2, shifted: [] })
+    // Места нет: ближе к верху сдвигаются верхние, ближе к низу — нижние.
+    assert.deepEqual(placeInColumn(rows, 'b'), { sortOrder: 1, shifted: [{ id: 'a', sort_order: 0 }] })
+    assert.deepEqual(placeInColumn(rows, 'd'), { sortOrder: 4, shifted: [{ id: 'd', sort_order: 5 }] })
+    // Одинаковые номера (прежние данные): порядок после вставки — строгий рядом с местом вставки.
+    const same = [{ id: 'a', sort_order: 1 }, { id: 'b', sort_order: 1 }, { id: 'c', sort_order: 1 }]
+    const placed = placeInColumn(same, 'b')
+    const after = new Map(same.map(r => [r.id, r.sort_order]))
+    for (const u of placed.shifted) after.set(u.id, u.sort_order)
+    assert.ok(after.get('a') < placed.sortOrder && placed.sortOrder < after.get('b'))
     assert.equal(nextSortOrder([
       { status: 'done', sort_order: 3 }, { status: 'done', sort_order: 9, archived_at: '2026-10-01' },
       { status: 'done', sort_order: 7, deleted_at: '2026-10-01' }, { status: 'new', sort_order: 5 },
@@ -290,25 +306,450 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
     }
   })
 
+  const writes = (page) => page.evaluate(() => window.__supabaseStats.requests.filter((r) => r.table === 'doc_check_requests' && r.op === 'update').length)
+  // Нажать на карточку (за верх: там заголовок) и повести; остальное — по шагам в самом тесте.
+  const press = async (page, status, id) => {
+    const b = await column(page, status).locator(`.dc-card[data-id="${id}"]`).boundingBox()
+    await page.mouse.move(b.x + 60, b.y + 10)
+    await page.mouse.down()
+    return b
+  }
+  const boardLeft = (page) => page.locator('.dc-board').evaluate((el) => el.scrollLeft)
+
   it('перетаскивание: в другую колонку и на место перед карточкой; в «Сводку» не бросить', async () => {
     const { page, errors, close } = await openPage()
     try {
-      const writes = () => page.evaluate(() => window.__supabaseStats.requests.filter((r) => r.table === 'doc_check_requests' && r.op === 'update').length)
       await column(page, 'new').locator('.dc-card[data-id="dcr-1"]').dragTo(column(page, 'signal').locator('.dc-column-body'))
       await column(page, 'signal').locator('.dc-card[data-id="dcr-1"]').waitFor()
       await page.waitForFunction(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-1').status === 'signal')
-      // Перед первой карточкой «В работе»: переписаны только сдвинутые.
-      const before = await writes()
+      // На верхнюю половину первой карточки «В работе» — встаёт перед ней; соседей двигать незачем: одна запись.
+      const before = await writes(page)
       await column(page, 'in_progress').locator('.dc-card[data-id="dcr-3"]')
-        .dragTo(column(page, 'in_progress').locator('.dc-card[data-id="dcr-2"]'))
-      await page.waitForFunction(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-2').sort_order === 2)
-      assert.equal((await row(page, 'dcr-3')).sort_order, 1)
+        .dragTo(column(page, 'in_progress').locator('.dc-card[data-id="dcr-2"]'), { targetPosition: { x: 40, y: 3 } })
+      await page.waitForFunction(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-3').sort_order === 0)
+      assert.equal((await row(page, 'dcr-2')).sort_order, 1)
       assert.deepEqual(await cardsIn(page, 'in_progress'), ['dcr-3', 'dcr-2'])
-      assert.equal(await writes() - before, 2)
+      assert.equal(await writes(page) - before, 1)
       // В «Сводку» — ничего не меняется.
       await column(page, 'in_progress').locator('.dc-card[data-id="dcr-3"]').dragTo(column(page, 'summary').locator('.dc-column-body'))
       await page.waitForTimeout(150)
       assert.equal((await row(page, 'dcr-3')).status, 'in_progress')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('задел карточку: она не улетает вниз. Дрогнула рука — это щелчок; бросил на себя или в промежуток — порядок прежний, записей нет', async () => {
+    const { page, errors, close } = await openPage()
+    try {
+      const order = ['dcr-2', 'dcr-3']
+      assert.deepEqual(await cardsIn(page, 'in_progress'), order)
+      const start = await writes(page)
+
+      // Сдвиг меньше порога: щелчок открывает заявку.
+      const a = await press(page, 'in_progress', 'dcr-2')
+      await page.mouse.move(a.x + 63, a.y + 11)
+      await page.mouse.up()
+      const modal = page.locator('.dc-detail-modal')
+      await modal.waitFor()
+      await modal.getByRole('button', { name: 'Закрыть', exact: true }).last().click()
+      await modal.waitFor({ state: 'detached' })
+
+      // Сдвиг больше порога, отпустили на самой себе.
+      const b = await press(page, 'in_progress', 'dcr-2')
+      await page.mouse.move(b.x + 72, b.y + 16, { steps: 3 })
+      await page.mouse.up()
+      // В промежуток между карточками: раньше — конец колонки.
+      const gapBox = await column(page, 'in_progress').locator('.dc-card[data-id="dcr-3"]').boundingBox()
+      const c = await press(page, 'in_progress', 'dcr-2')
+      await page.mouse.move(c.x + 60, gapBox.y - 2, { steps: 4 })
+      await page.mouse.up()
+      await page.waitForTimeout(100)
+      assert.equal(await modal.count(), 0, 'отпускание после жеста заявку не открывает')
+      // Escape над самой карточкой: кнопка отпущена уже над ней, но это не щелчок.
+      const d = await press(page, 'in_progress', 'dcr-2')
+      await page.mouse.move(d.x + 72, d.y + 16, { steps: 3 })
+      await page.keyboard.press('Escape')
+      await page.mouse.up()
+      await page.waitForTimeout(100)
+
+      assert.deepEqual(await cardsIn(page, 'in_progress'), order)
+      assert.equal(await writes(page), start)
+      assert.equal(await modal.count(), 0, 'отпускание после жеста заявку не открывает')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('предпросмотр: копия карточки едет за указателем, заглушка — там, куда встанет; Escape отменяет', async () => {
+    const { page, errors, close } = await openPage()
+    try {
+      const start = await writes(page)
+      const b = await press(page, 'in_progress', 'dcr-2')
+      const edo = await column(page, 'edo').locator('.dc-column-body').boundingBox()
+      await page.mouse.move(edo.x + 100, edo.y + 150, { steps: 8 })
+      await page.waitForTimeout(50)
+
+      const ghost = page.locator('.dc-board > .dc-drag-ghost')
+      assert.equal(await ghost.count(), 1)
+      assert.equal(await ghost.locator('.dc-card-name').textContent(), 'Подрядчик 02 / ДП № СУ2-001')
+      const g = await ghost.boundingBox()
+      assert.ok(Math.abs(g.x - (edo.x + 100 - 60)) < 12 && Math.abs(g.y - (edo.y + 150 - 10)) < 12, `копия у указателя: ${g.x}, ${g.y}`)
+      assert.ok(Math.abs(g.width - b.width) < 12, 'копия размером с карточку')
+      const slot = column(page, 'edo').locator('.dc-card-slot')
+      assert.equal(await slot.count(), 1)
+      assert.equal(Math.round((await slot.boundingBox()).height), Math.round(b.height), 'заглушка — высотой с карточку')
+      assert.match(await column(page, 'edo').getAttribute('class'), /\bis-over\b/)
+      assert.equal(await column(page, 'edo').locator('.dc-column-empty').count(), 0, '«Пусто» заглушке не мешает')
+      assert.equal(await column(page, 'in_progress').locator('.dc-card[data-id="dcr-2"]').isVisible(), false, 'оригинал поднят')
+
+      // Над «Сводкой» бросить нельзя: заглушка на прежнем месте, отпускание ничего не изменит.
+      await column(page, 'summary').scrollIntoViewIfNeeded()
+      const sum = await column(page, 'summary').boundingBox()
+      await page.mouse.move(sum.x + 100, sum.y + 200, { steps: 3 })
+      await page.waitForTimeout(50)
+      assert.equal(await column(page, 'summary').locator('.dc-card-slot').count(), 0)
+      assert.equal(await column(page, 'in_progress').locator('.dc-card-slot').count(), 1)
+
+      await page.keyboard.press('Escape')
+      assert.equal(await page.locator('.dc-drag-ghost, .dc-card-slot, .dc-gesture-veil').count(), 0)
+      await page.mouse.up()
+      await page.waitForTimeout(100)
+      assert.equal(await writes(page), start, 'отмена ничего не пишет')
+      assert.equal(await page.locator('.dc-detail-modal').count(), 0, 'отпускание после отмены заявку не открывает')
+      assert.deepEqual(await cardsIn(page, 'in_progress'), ['dcr-2', 'dcr-3'])
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('заглушка показывает место точно: верхняя половина карточки — перед ней, нижняя — после; бросок туда и встаёт', async () => {
+    const { page, errors, close } = await openPage()
+    try {
+      const slotAt = () => column(page, 'in_progress').locator('.dc-column-body > *').evaluateAll((els) => els
+        .map((el) => (el.classList.contains('dc-card-slot') ? 'место' : el.hidden ? null : el.dataset.card)).filter(Boolean))
+      const third = await column(page, 'in_progress').locator('.dc-card[data-id="dcr-3"]').boundingBox()
+      await press(page, 'new', 'dcr-1')
+      await page.mouse.move(third.x + 40, third.y + 4, { steps: 4 })
+      await page.waitForTimeout(50)
+      assert.deepEqual(await slotAt(), ['dcr-2', 'место', 'dcr-3'])
+      // Заглушка сдвинула карточку вниз: ведём к её нижней половине там, где она теперь.
+      const moved = await column(page, 'in_progress').locator('.dc-card[data-id="dcr-3"]').boundingBox()
+      await page.mouse.move(moved.x + 40, moved.y + moved.height - 3, { steps: 3 })
+      await page.waitForTimeout(50)
+      assert.deepEqual(await slotAt(), ['dcr-2', 'dcr-3', 'место'])
+      await page.mouse.up()
+      await column(page, 'in_progress').locator('.dc-card[data-id="dcr-1"]').waitFor()
+      assert.deepEqual(await cardsIn(page, 'in_progress'), ['dcr-2', 'dcr-3', 'dcr-1'])
+      await page.waitForFunction(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-1').status === 'in_progress')
+      assert.equal((await row(page, 'dcr-1')).sort_order, 3)
+      const log = await page.evaluate(() => window.__fakeDb.doc_check_request_audit_log.map((l) => [l.request_id, l.event_type, l.new_value]))
+      assert.deepEqual(log, [['dcr-1', 'status_changed', 'in_progress']])
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('колонка за краем экрана: доска едет сама, карточка долетает до последней колонки', async () => {
+    const { page, errors, close } = await openPage()
+    try {
+      assert.equal(await boardLeft(page), 0)
+      await press(page, 'new', 'dcr-1')
+      await page.mouse.move(1697, 400, { steps: 6 })
+      await page.waitForFunction(() => {
+        const el = document.querySelector('.dc-board')
+        return el.scrollLeft >= el.scrollWidth - el.clientWidth - 1
+      }, null, { timeout: 8000 })
+      assert.match(await column(page, 'tax_clause').getAttribute('class'), /\bis-over\b/)
+      await page.mouse.up()
+      await page.waitForFunction(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-1').status === 'tax_clause')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('прокрутка удержанием: тянуть за пустое место и шапку колонки; щелчок не срабатывает; положение переживает реестр', async () => {
+    const { page, errors, close } = await openPage()
+    try {
+      const edo = await column(page, 'edo').locator('.dc-column-body').boundingBox()
+      await page.mouse.move(edo.x + 200, edo.y + 300)
+      await page.mouse.down()
+      await page.mouse.move(edo.x + 100, edo.y + 300, { steps: 3 })
+      assert.equal(await boardLeft(page), 100)
+      assert.equal(await page.locator('.dc-board.is-panning').count(), 1)
+      assert.equal(await page.locator('.dc-gesture-veil').evaluate((el) => getComputedStyle(el).cursor), 'grabbing')
+      await page.mouse.up()
+      assert.equal(await page.locator('.dc-gesture-veil').count(), 0)
+      assert.equal(await boardLeft(page), 100)
+
+      const head = await column(page, 'signal').locator('.dc-column-title').boundingBox()
+      await page.mouse.move(head.x + 150, head.y + 5)
+      await page.mouse.down()
+      await page.mouse.move(head.x + 200, head.y + 5, { steps: 2 })
+      await page.mouse.up()
+      assert.equal(await boardLeft(page), 50, 'вправо — обратно')
+
+      // Вертикальный сдвиг и нажатие на кнопку — не прокрутка.
+      await page.mouse.move(edo.x + 100, edo.y + 300)
+      await page.mouse.down()
+      await page.mouse.move(edo.x + 100, edo.y + 500, { steps: 2 })
+      await page.mouse.up()
+      assert.equal(await boardLeft(page), 50)
+      const add = column(page, 'signal').locator('.dc-column-add')
+      const a = await add.boundingBox()
+      await page.mouse.move(a.x + 3, a.y + 3)
+      await page.mouse.down()
+      await page.mouse.move(a.x - 80, a.y + 3, { steps: 2 })
+      await page.mouse.up()
+      assert.equal(await boardLeft(page), 50)
+      assert.equal(await page.locator('.dc-form-modal').count(), 0)
+
+      await page.waitForTimeout(200)
+      await page.getByRole('tab', { name: 'Реестр' }).click()
+      await page.getByRole('tab', { name: 'Доска' }).click()
+      await page.locator('.dc-board').waitFor()
+      assert.equal(await boardLeft(page), 50)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('без права правки карточка не двигается: за неё тоже можно тянуть доску, щелчок открывает заявку', async () => {
+    const { page, errors, close } = await openPage('&canEdit=0')
+    try {
+      const start = await writes(page)
+      const b = await column(page, 'in_progress').locator('.dc-card[data-id="dcr-2"]').boundingBox()
+      await page.mouse.move(b.x + 60, b.y + 10)
+      await page.mouse.down()
+      await page.mouse.move(b.x - 20, b.y + 10, { steps: 3 })
+      assert.equal(await page.locator('.dc-drag-ghost').count(), 0)
+      assert.equal(await boardLeft(page), 80)
+      await page.mouse.up()
+      assert.equal(await page.locator('.dc-detail-modal').count(), 0, 'отпускание после прокрутки заявку не открывает')
+      assert.equal(await writes(page), start)
+      await column(page, 'in_progress').locator('.dc-card[data-id="dcr-2"]').click()
+      await page.locator('.dc-detail-modal').waitFor()
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('при фильтре порядок скрытых карточек не страдает: номера считаются по всей колонке', async () => {
+    const { page, errors, close } = await openPage('&docCheckMany=10')
+    try {
+      assert.deepEqual(await cardsIn(page, 'in_progress'), ['dcr-2', 'dcr-3', 'dcr-many-5', 'dcr-many-10'])
+      await page.locator('.dc-quick-chip', { hasText: 'Бизнес-центр' }).click()
+      assert.deepEqual(await cardsIn(page, 'in_progress'), ['dcr-2', 'dcr-many-10'])
+
+      // Между видимыми стоят скрытые. Из другой колонки — перед второй видимой: встаёт рядом с ней. По одним видимым соседям
+      // номер вышел бы сразу за первой видимой: карточка встала бы среди скрытых и совпала бы номером с одной из них.
+      const start = await writes(page)
+      const second = await column(page, 'in_progress').locator('.dc-card[data-id="dcr-many-10"]').boundingBox()
+      await press(page, 'done', 'dcr-5')
+      await page.mouse.move(second.x + 40, second.y + 3, { steps: 4 })
+      await page.mouse.up()
+      await page.waitForFunction(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-5').status === 'in_progress')
+      assert.equal(await writes(page) - start, 1)
+      await page.locator('.dc-reset').click()
+      assert.deepEqual(await cardsIn(page, 'in_progress'), ['dcr-2', 'dcr-3', 'dcr-many-5', 'dcr-5', 'dcr-many-10'])
+
+      // Видимую — в конец видимых: скрытые остаются на своих местах (раньше видимым раздавались номера 1, 2, 3).
+      await page.locator('.dc-quick-chip', { hasText: 'Бизнес-центр' }).click()
+      const last = await column(page, 'in_progress').locator('.dc-card[data-id="dcr-many-10"]').boundingBox()
+      await press(page, 'in_progress', 'dcr-2')
+      await page.mouse.move(last.x + 40, last.y + last.height - 3, { steps: 4 })
+      await page.mouse.up()
+      await page.waitForFunction(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-2').sort_order === 11)
+      await page.locator('.dc-reset').click()
+      assert.deepEqual(await cardsIn(page, 'in_progress'), ['dcr-3', 'dcr-many-5', 'dcr-5', 'dcr-many-10', 'dcr-2'])
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('перечитывание, начатое до переноса, не возвращает карточку обратно', async () => {
+    const { page, errors, close } = await openPage()
+    try {
+      // Вернулись на вкладку браузера (перечитывание не чаще раза в 30 с) и сразу перенесли карточку.
+      await page.evaluate(() => {
+        const real = Date.now.bind(Date)
+        Date.now = () => real() + 120000
+        window.__fakeHold = ({ table, op }) => (table === 'doc_check_requests' && op === 'select' ? { delay: 500, stale: true } : {})
+        window.dispatchEvent(new Event('focus'))
+      })
+      await column(page, 'new').locator('.dc-card[data-id="dcr-1"]').dragTo(column(page, 'signal').locator('.dc-column-body'))
+      await page.waitForFunction(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-1').status === 'signal')
+      await page.waitForTimeout(800)
+      assert.deepEqual(await cardsIn(page, 'signal'), ['dcr-1'])
+      assert.deepEqual(await cardsIn(page, 'new'), [])
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('перенос не перерисовывает доску: пока несут — ни одной карточки, после броска — только сдвинутые', async () => {
+    const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 1700, height: 950 } })
+    const page = await context.newPage()
+    try {
+      await page.addInitScript(() => {
+        window.__cardRenders = 0
+        // Как React DevTools: флаг PerformedWork, обход только изменившихся поддеревьев.
+        const walk = (fiber, prev) => {
+          if (fiber.type?.name === 'DocCheckCard' && (fiber.flags & 1)) window.__cardRenders++
+          if (fiber.child !== prev?.child) {
+            for (let c = fiber.child; c; c = c.sibling) walk(c, c.alternate)
+          }
+        }
+        window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+          isDisabled: false,
+          supportsFiber: true,
+          renderers: new Map(),
+          inject: () => 1,
+          onCommitFiberUnmount: () => {},
+          onPostCommitFiberRoot: () => {},
+          onCommitFiberRoot: (_, root) => walk(root.current, root.current.alternate),
+        }
+      })
+      await page.goto(`${stand.url}?route=/doc-check-requests&docCheck=1&latency=0&docCheckMany=200`)
+      await page.locator('.dc-board').waitFor({ timeout: 120000 })
+      await page.waitForFunction(() => window.__supabaseStats.active === 0)
+      await page.waitForTimeout(300)
+      await press(page, 'new', 'dcr-1')
+      await page.evaluate(() => { window.__cardRenders = 0 })
+      for (const status of ['in_progress', 'edo', 'signal', 'accounting']) {
+        const body = await column(page, status).locator('.dc-column-body').boundingBox()
+        await page.mouse.move(body.x + 60, body.y + 80, { steps: 3 })
+        await page.waitForTimeout(40)
+      }
+      assert.equal(await page.evaluate(() => window.__cardRenders), 0, 'пока несут — карточки не перерисованы')
+      await page.mouse.up()
+      await column(page, 'accounting').locator('.dc-card[data-id="dcr-1"]').waitFor()
+      assert.ok(await page.evaluate(() => window.__cardRenders) <= 2, 'после броска — только перенесённая')
+    } finally {
+      await context.close().catch(() => {})
+    }
+  })
+
+  it('шапка низкая, доска — на всё окно, вплотную к меню; своей прокрутки у страницы нет, в реестре поля те же', async () => {
+    const { page, errors, close } = await openPage('&shell=1&docCheckMany=120')
+    try {
+      const geo = await page.evaluate(() => {
+        const main = document.querySelector('.main-content')
+        const board = document.querySelector('.dc-board').getBoundingClientRect()
+        const col = document.querySelector('.dc-column').getBoundingClientRect()
+        return {
+          scroll: main.scrollHeight - main.clientHeight,
+          top: board.top,
+          bottom: board.bottom,
+          gap: col.left - main.getBoundingClientRect().left,
+          columnBottom: col.bottom,
+          innerHeight: window.innerHeight,
+          page: document.documentElement.scrollHeight - window.innerHeight,
+        }
+      })
+      assert.equal(geo.scroll, 0, 'страница не прокручивается: полоса доски всегда на экране')
+      assert.equal(geo.page, 0)
+      assert.ok(geo.top <= 100, `шапка над доской: ${geo.top} px (было 233)`)
+      assert.equal(geo.bottom, geo.innerHeight, 'доска — до низа окна')
+      assert.ok(geo.gap <= 10, `пустое место слева: ${geo.gap} px (было 52)`)
+      assert.ok(geo.columnBottom >= geo.innerHeight - 16, 'колонка на всю высоту: бросить можно в любое её место')
+      // В колонке со списком длиннее окна прокручивается она сама.
+      const done = column(page, 'done').locator('.dc-column-body')
+      assert.ok(await done.evaluate((el) => el.scrollHeight > el.clientHeight))
+      // Длинное название колонки — в одну строку и целиком в подсказке.
+      const heads = await page.locator('.dc-column-head').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height)))
+      assert.equal(new Set(heads).size, 1, `шапки колонок вровень: ${heads}`)
+      assert.equal(await column(page, 'tax_clause').locator('.dc-column-title').getAttribute('title'),
+        'Проверка документов (исключение налоговой оговорки)')
+
+      await page.getByRole('tab', { name: 'Реестр' }).click()
+      await page.locator('.dc-table').waitFor()
+      assert.ok(await page.locator('.dc-table-wrap').evaluate((el) => el.getBoundingClientRect().left - document.querySelector('.main-content').getBoundingClientRect().left) <= 12)
+      assert.ok(await page.locator('.main-content').evaluate((el) => el.scrollHeight > el.clientHeight), 'длинный реестр прокручивается')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('телефон: поля под полосой меню остаются, страница не шире экрана, касание открывает заявку, а не берёт карточку', async () => {
+    const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${stand.url}?route=/doc-check-requests&docCheck=1&latency=0&shell=1`)
+      await page.locator('.dc-board').waitFor({ timeout: 120000 })
+      const geo = await page.evaluate(() => ({
+        top: document.querySelector('.page-header').getBoundingClientRect().top,
+        wide: document.documentElement.scrollWidth - window.innerWidth,
+      }))
+      assert.ok(geo.top >= 52, `шапка не под полосой меню: ${geo.top}`)
+      assert.equal(geo.wide, 0)
+      await column(page, 'in_progress').locator('.dc-card[data-id="dcr-2"]').tap()
+      await page.locator('.dc-detail-modal').waitFor()
+      assert.equal(await page.locator('.dc-drag-ghost').count(), 0)
+    } finally {
+      await context.close().catch(() => {})
+    }
+  })
+
+  it('«Удалённые»: кто и когда удалил, последние сверху; нет записи в истории — так и сказано; в окне заявки — то же, без «Удалить»', async () => {
+    const { page, errors, close } = await openPage()
+    try {
+      // Удалить с доски: кто вошёл, тот и записан. Раньше её уже удаляли и восстанавливали: важна последняя запись.
+      await column(page, 'new').locator('.dc-card[data-id="dcr-1"] .dc-card-more').click()
+      await page.locator('.dc-menu .dc-menu-item.is-danger').click()
+      await page.waitForFunction(() => window.__fakeDb.doc_check_request_audit_log.some((l) => l.request_id === 'dcr-1' && l.event_type === 'soft_deleted'))
+      await page.evaluate(() => {
+        // Время записи ставит база (значение колонки по умолчанию), стенд их не знает.
+        window.__fakeDb.doc_check_request_audit_log.find((l) => l.request_id === 'dcr-1').changed_at = new Date().toISOString()
+        window.__fakeDb.doc_check_request_audit_log.push(
+          { id: 'l-1', request_id: 'dcr-1', event_type: 'soft_deleted', changed_by_name: 'Прежний Удаливший', changed_at: '2026-01-01T10:00:00Z' },
+          { id: 'l-2', request_id: 'dcr-1', event_type: 'restored', changed_by_name: 'Вернувший', changed_at: '2026-01-02T10:00:00Z' },
+        )
+      })
+
+      await page.locator('.dc-mode-toggle--deleted').click()
+      const rows = page.locator('.dc-table tbody tr')
+      await rows.first().locator('.dc-col-deleted').getByText('Тест').waitFor()
+      assert.deepEqual(await page.locator('.dc-table thead th').allTextContents(),
+        ['Документ', 'Объект', 'Исполнители', 'Срок', 'Статус', 'Метки', 'Создал', 'Удалил', ''])
+      // Последние удалённые — сверху; у dcr-9 в истории записи нет.
+      assert.deepEqual(await rows.locator('.dc-row-title').allTextContents(), ['Подрядчик 01 / ДС № 1', 'Подрядчик 01 / ДС № 9'])
+      assert.match(await rows.nth(0).locator('.dc-col-deleted').textContent(), /^Тест\d{2}\.\d{2}\.\d{4}, \d{2}:\d{2}$/)
+      assert.match(await rows.nth(1).locator('.dc-col-deleted').textContent(), /^не записано26\.10\.2026, \d{2}:\d{2}$/)
+
+      // Окно заявки: то же; удалённую не правят и не удаляют снова — вторая запись подменила бы, кто её удалил.
+      await rows.nth(0).click()
+      const modal = page.locator('.dc-detail-modal')
+      await modal.waitFor()
+      assert.equal(await modal.locator('.dc-row-kv', { hasText: 'Удалил' }).locator('dd').textContent(), 'Тест')
+      assert.equal(await modal.getByRole('button', { name: 'Удалить' }).count(), 0)
+      assert.equal(await modal.getByRole('button', { name: 'Изменить' }).count(), 0)
+      assert.equal(await modal.locator('.dc-status-opt:not([disabled])').count(), 0)
+      await modal.getByRole('button', { name: 'Закрыть' }).last().click()
+      await modal.waitFor({ state: 'detached' })
+
+      await rows.nth(0).getByRole('button', { name: 'Восстановить' }).click()
+      await page.waitForFunction(() => !window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-1').deleted_at)
+      assert.equal(await rows.count(), 1)
+
+      // Отбор виден и здесь: спрятанный, он молча скрывал бы заявки; пусто из-за него — так и сказано (у dcr-9 исполнителя нет).
+      await page.locator('.dc-quick-chip', { hasText: 'Мои заявки' }).click()
+      assert.match(await page.locator('.dc-empty').textContent(), /Ничего не найдено/)
+      await page.locator('.dc-quick-chip', { hasText: 'Мои заявки' }).click()
+
+      // В «Архиве» столбца нет.
+      await page.locator('.dc-mode-toggle', { hasText: 'Архив' }).click()
+      assert.ok(!(await page.locator('.dc-table thead th').allTextContents()).includes('Удалил'))
       assert.deepEqual(errors, [])
     } finally {
       await close()
@@ -347,11 +788,11 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
     try {
       assert.equal(await page.locator('.dc-column-add, .dc-card-more, button.dc-card-check').count(), 0)
       assert.equal(await page.getByRole('button', { name: '+ Новая заявка' }).count(), 0)
-      assert.equal(await page.locator('.dc-card[draggable="true"]').count(), 0)
+      assert.equal(await page.locator('.dc-card.is-movable').count(), 0)
       await column(page, 'in_progress').locator('.dc-card[data-id="dcr-2"]').click()
       await page.locator('.dc-detail-modal').waitFor()
       assert.equal(await page.locator('.dc-detail-modal .dc-status-opt:not([disabled])').count(), 0)
-      assert.match(await page.locator('.dc-detail-modal .dc-detail-people').textContent(), /Петров П\. П\., Юристова Мария Андреевна/)
+      assert.deepEqual(await page.locator('.dc-detail-modal .dc-detail-people .dc-person-name').allTextContents(), ['Петров П. П.', 'Юристова Мария Андреевна'])
       assert.deepEqual(errors, [])
     } finally {
       await close()

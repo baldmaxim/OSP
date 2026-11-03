@@ -11,9 +11,11 @@ import IconTile from '../components/IconTile'
 import { IconObject, IconSearch, IconTag, IconUser } from '../components/icons/ToolbarIcons'
 import { IconArchive, IconCalendar, IconFlag, IconRestore, IconTrash } from '../components/icons/ActionIcons'
 import { IconDocCheck } from '../components/icons/NavIcons'
+import { panByDrag } from '../components/doccheck/boardGestures'
 import { fetchAllRows, fetchAllActiveCounterparties } from '../utils/fetchAllRows'
+import { chunkList } from '../utils/inChunks'
 import { employeeName, employeesById, fetchEmployees } from '../services/employees'
-import { fetchCardCounts as readCardCounts } from '../services/docCheckCard'
+import { fetchCardCounts as readCardCounts, fetchDeletions } from '../services/docCheckCard'
 import useBodyClass from '../hooks/useBodyClass'
 import {
   DEADLINE_FILTERS,
@@ -32,16 +34,18 @@ import {
   dueState,
   fieldEvents,
   fmtDocDate,
+  fmtDocDateTime,
   isMissingBoardColumn,
   labelSuggestions,
   manualAssigneeKey,
   manualAssigneeSuggestions,
   matchesAssignees,
   matchesDeadline,
+  mergeRequestCounts,
   nextSortOrder,
   normalizeRequest,
   normalizeSummary,
-  reorderUpdates,
+  placeInColumn,
 } from '../utils/docCheckHelpers'
 import '../styles/workUi.css'
 import '../components/MobileCards.css'
@@ -77,6 +81,14 @@ function readStored(key, fallback) {
 }
 function writeStored(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* приватный режим */ }
+}
+
+const sameCounts = (a, b) => a.size === b.size && [...b].every(([id, n]) => a.get(id) === n)
+
+// Плашки объектов: не помещаются в строку — тянуть мышью, как доску (нажатие без сдвига остаётся щелчком по плашке).
+const panQuickChips = (e) => {
+  const box = e.currentTarget
+  if (e.button === 0 && e.pointerType === 'mouse' && box.scrollWidth > box.clientWidth) panByDrag(e, box, () => {})
 }
 
 export default function DocCheckRequestsPage() {
@@ -116,15 +128,20 @@ export default function DocCheckRequestsPage() {
   useEffect(() => { writeStored(VIEW_KEY, view) }, [view])
   const changeSummary = (next) => { setSummary(next); writeStored(SUMMARY_KEY, next) }
 
-  const author = userProfile?.full_name || 'Пользователь'
+  // Имя в истории — и «кто удалил» в «Удалённых»: без ФИО в профиле — почта, а не безликое «Пользователь».
+  const author = userProfile?.full_name || user?.email || 'Пользователь'
 
   // ── Загрузка ──────────────────────────────────────────────────────────────
   const loadSeq = useRef(0)
   const lastLoad = useRef(0)
   // Какая выборка подошла базе: при тихих перечитываниях заведомо неподходящие не повторяем.
   const selectAt = useRef(0)
+  // Своя запись началась или закончилась. Чтение, которое шло в это время, вернуло бы то, что было до неё, и перенесённая
+  // карточка уехала бы обратно — такой ответ не применяем.
+  const writeEpoch = useRef(0)
   const fetchRequests = useCallback(async ({ quiet = false } = {}) => {
     const seq = ++loadSeq.current
+    const epoch = writeEpoch.current
     if (!quiet) setLoading(true)
     const read = (select) => fetchAllRows((from, to) => db
       .from('doc_check_requests')
@@ -144,7 +161,7 @@ export default function DocCheckRequestsPage() {
           selectAt.current += 1
         }
       }
-      if (seq !== loadSeq.current) return
+      if (seq !== loadSeq.current || epoch !== writeEpoch.current) return
       lastLoad.current = Date.now()
       setHasBoardFields(DOC_CHECK_SELECTS[selectAt.current].board)
       setHasCardFields(DOC_CHECK_SELECTS[selectAt.current].card)
@@ -170,7 +187,7 @@ export default function DocCheckRequestsPage() {
         .range(from, to))
       const map = new Map()
       for (const r of rows) map.set(r.owner_id, (map.get(r.owner_id) || 0) + 1)
-      setDocCounts(map)
+      setDocCounts(prev => (sameCounts(prev, map) ? prev : map))
     } catch (err) {
       console.warn('Не удалось посчитать файлы заявок:', err.message)
     }
@@ -202,6 +219,18 @@ export default function DocCheckRequestsPage() {
   }, [])
   // Таблиц обсуждения и шагов нет, пока нет колонок той же миграции — до этого не обращаемся.
   useEffect(() => { if (hasCardFields) fetchCardCounts() }, [hasCardFields, fetchCardCounts])
+
+  // Кто удалил — только когда открыты «Удалённые». null — ещё не прочитано или не удалось: имени просто нет.
+  const [deletions, setDeletions] = useState(null)
+  const deletedIds = useMemo(() => requests.filter(r => r.deleted_at).map(r => r.id).join(','), [requests])
+  useEffect(() => {
+    if (mode !== 'deleted' || !deletedIds) return undefined
+    let cancelled = false
+    fetchDeletions(deletedIds.split(','))
+      .then(map => { if (!cancelled) setDeletions(map) })
+      .catch(err => console.warn('Не удалось прочитать, кто удалил заявки:', err.message))
+    return () => { cancelled = true }
+  }, [mode, deletedIds])
 
   useEffect(() => {
     fetchRequests()
@@ -254,8 +283,10 @@ export default function DocCheckRequestsPage() {
   // ── Действия ──────────────────────────────────────────────────────────────
   // Правка одной заявки: сразу на экране, затем в базу; отказ — вернуть как в базе.
   const patchRequest = useCallback(async (request, patch, events = []) => {
+    writeEpoch.current += 1
     setRequests(prev => prev.map(r => (r.id === request.id ? { ...r, ...patch } : r)))
     const { error: e } = await db.from('doc_check_requests').update(patch).eq('id', request.id)
+    writeEpoch.current += 1
     if (e) {
       alert('Не удалось сохранить заявку: ' + (e.message || e))
       fetchRequests({ quiet: true })
@@ -304,33 +335,36 @@ export default function DocCheckRequestsPage() {
     moveTo(request, CLOSED_DOC_CHECK_STATUSES.has(request.status) ? 'in_progress' : 'done')
   }
 
-  // Перетаскивание на доске: смена колонки + новый порядок внутри неё. В базу —
-  // только карточки, у которых номер сменился.
-  const handleMove = async (request, status, orderedIds) => {
+  // Перетаскивание на доске: смена колонки и место перед карточкой beforeId (null — в конец). Порядок считается по всей
+  // колонке, а не по тому, что оставил фильтр. В базу — карточка и только те соседи, которых пришлось сдвинуть.
+  const handleMove = async (request, status, beforeId) => {
     const statusChanged = request.status !== status
-    const column = requests.filter(r => r.status === status && r.id !== request.id)
-    const updates = reorderUpdates(column, orderedIds)
-    const movedOrder = orderedIds.indexOf(request.id) + 1
+    const column = requests
+      .filter(r => r.status === status && r.id !== request.id && !r.deleted_at && !r.archived_at)
+      .sort(compareForBoard)
+    const { sortOrder, shifted } = placeInColumn(column, beforeId)
     // Оптимистично двигаем карточку: ждать круга к серверу на каждый бросок —
     // заметно и раздражает.
-    const orderOf = new Map(updates.map(u => [u.id, u.sort_order]))
+    const orderOf = new Map(shifted.map(u => [u.id, u.sort_order]))
+    writeEpoch.current += 1
     setRequests(prev => prev.map(r => {
-      if (r.id === request.id) return { ...r, status, sort_order: movedOrder }
+      if (r.id === request.id) return { ...r, status, sort_order: sortOrder }
       return orderOf.has(r.id) ? { ...r, sort_order: orderOf.get(r.id) } : r
     }))
     try {
-      if (statusChanged || request.sort_order !== movedOrder) {
-        const { error: e } = await db
-          .from('doc_check_requests').update({ status, sort_order: movedOrder }).eq('id', request.id)
-        if (e) throw e
-        if (statusChanged) await logEvent(request.id, statusEvent(request, status))
+      const { error: e } = await db
+        .from('doc_check_requests').update({ status, sort_order: sortOrder }).eq('id', request.id)
+      if (e) throw e
+      if (statusChanged) await logEvent(request.id, statusEvent(request, status))
+      for (const part of chunkList(shifted, 10)) {
+        const results = await Promise.all(part.map(u => db
+          .from('doc_check_requests').update({ sort_order: u.sort_order }).eq('id', u.id)))
+        const failed = results.find(r => r.error)
+        if (failed) throw failed.error
       }
-      const others = updates.filter(u => u.id !== request.id)
-      const results = await Promise.all(others.map(u => db
-        .from('doc_check_requests').update({ sort_order: u.sort_order }).eq('id', u.id)))
-      const failed = results.find(r => r.error)
-      if (failed) throw failed.error
+      writeEpoch.current += 1
     } catch (err) {
+      writeEpoch.current += 1
       alert('Не удалось переместить заявку: ' + (err.message || err))
       await fetchRequests({ quiet: true })
     }
@@ -357,10 +391,10 @@ export default function DocCheckRequestsPage() {
     if (!confirm(`Отправить в архив завершённые заявки (${list.length})? Их можно вернуть из «Архива».`)) return
     const at = new Date().toISOString()
     const ids = new Set(list.map(r => r.id))
+    writeEpoch.current += 1
     setRequests(prev => prev.map(r => (ids.has(r.id) ? { ...r, archived_at: at } : r)))
     let failed = 0
-    for (let i = 0; i < list.length; i += 10) {
-      const part = list.slice(i, i + 10)
+    for (const part of chunkList(list, 10)) {
       const results = await Promise.all(part.map(r => db
         .from('doc_check_requests').update({ archived_at: at }).eq('id', r.id)))
       results.forEach((res, k) => {
@@ -368,6 +402,7 @@ export default function DocCheckRequestsPage() {
         else logEvent(part[k].id, { event_type: 'archived', description: 'Заявка отправлена в архив' })
       })
     }
+    writeEpoch.current += 1
     if (failed) {
       alert(`Не удалось отправить в архив: ${failed} из ${list.length}`)
       fetchRequests({ quiet: true })
@@ -386,11 +421,36 @@ export default function DocCheckRequestsPage() {
     else if (type === 'delete') handleDelete(request)
   }
 
-  const closeDetail = () => { setDetailId(null); fetchDocCounts() }
+  // Файлы могли поменяться, только если открывали их вкладку: иначе перечитывать число файлов всех заявок незачем.
+  const closeDetail = (docsOpened) => {
+    setDetailId(null)
+    if (docsOpened) fetchDocCounts()
+  }
+
+  // Доска и реестр получают одни и те же функции всё время жизни страницы: окно заявки, фильтры и ввод в них не должны
+  // перерисовывать сотни карточек (03.11: окно открывалось с задержкой — заново рисовалось 850 карточек; 0,57 с при
+  // процессоре в 4 раза медленнее, закрытие — 1,1 с). Функции внутри читают свежее состояние через ref.
+  const actionsRef = useRef(null)
+  actionsRef.current = {
+    onMove: handleMove,
+    onAdd: (status) => setFormFor({ request: null, status }),
+    onToggleDone: handleToggleDone,
+    onCardAction: handleCardAction,
+    onArchiveDone: handleArchiveDone,
+    onSummaryChange: changeSummary,
+    onRestore: handleRestore,
+    onUnarchive: unarchive,
+  }
+  const actions = useMemo(() => {
+    const call = (name) => (...args) => actionsRef.current[name](...args)
+    return Object.fromEntries(Object.keys(actionsRef.current).map(name => [name, call(name)]))
+  }, [])
 
   // ── Фильтрация ────────────────────────────────────────────────────────────
+  // Заявка, у которой ничего не изменилось, остаётся тем же объектом: её карточка не перерисовывается.
+  const mergedRows = useRef(new WeakMap())
   const withCounts = useMemo(
-    () => requests.map(r => ({ ...r, docsCount: docCounts.get(r.id) || 0, ...(cardCounts.get(r.id) || NO_CARD_COUNTS) })),
+    () => mergeRequestCounts(requests, docCounts, cardCounts, mergedRows.current),
     [requests, docCounts, cardCounts],
   )
   const inMode = useMemo(() => withCounts.filter(r => {
@@ -419,25 +479,30 @@ export default function DocCheckRequestsPage() {
   }, [inMode, search, filterObjectIds, filterCounterpartyIds, filterTypes, onlyMine, myId, filterAssignees,
     filterPriorities, filterLabels, filterDeadline, employees])
 
-  // Реестр — в порядке колонок доски, внутри колонки — как на доске.
+  // Реестр — в порядке колонок доски, внутри колонки — как на доске; удалённые — сначала последние.
   const listRows = useMemo(() => {
+    if (mode === 'deleted') return [...visible].sort((a, b) => new Date(b.deleted_at) - new Date(a.deleted_at))
     const at = new Map(DOC_CHECK_STATUSES.map((st, i) => [st.value, i]))
     return [...visible].sort((a, b) => ((at.get(a.status) ?? 99) - (at.get(b.status) ?? 99)) || compareForBoard(a, b))
-  }, [visible])
+  }, [visible, mode])
 
-  const live = useMemo(() => requests.filter(r => !r.deleted_at && !r.archived_at), [requests])
   const allLabels = useMemo(() => labelSuggestions(requests.filter(r => !r.deleted_at)), [requests])
   const allManualAssignees = useMemo(() => manualAssigneeSuggestions(requests.filter(r => !r.deleted_at)), [requests])
 
-  // Объекты на доске — плашки быстрого отбора над доской, частые первыми.
+  // Объекты открытого списка — плашки быстрого отбора, частые первыми. Видны и в «Архиве», и в «Удалённых»: выбранный отбор
+  // действует и там, и спрятанный он молча скрывал бы заявки.
   const objectChips = useMemo(() => {
     const counts = new Map()
-    for (const r of live) if (r.object_id) counts.set(r.object_id, (counts.get(r.object_id) || 0) + 1)
-    return [...counts.entries()]
-      .map(([id, n]) => ({ id, n, name: live.find(r => r.object_id === id)?.objects?.name || 'Объект' }))
+    for (const r of inMode) {
+      if (!r.object_id) continue
+      const cur = counts.get(r.object_id)
+      if (cur) cur.n += 1
+      else counts.set(r.object_id, { id: r.object_id, n: 1, name: r.objects?.name || 'Объект' })
+    }
+    return [...counts.values()]
       .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name, 'ru'))
       .slice(0, 14)
-  }, [live])
+  }, [inMode])
 
   const assigneeOptions = useMemo(() => {
     const ids = new Set()
@@ -455,6 +520,9 @@ export default function DocCheckRequestsPage() {
     ]
   }, [requests, employees])
 
+  const objectOptions = useMemo(() => objects.map(o => ({ value: o.id, label: o.name })), [objects])
+  const counterpartyOptions = useMemo(() => counterparties.map(c => ({ value: c.id, label: c.name })), [counterparties])
+
   const detail = detailId ? withCounts.find(r => r.id === detailId) : null
   const hasFilters = filterObjectIds.length > 0 || filterCounterpartyIds.length > 0 || filterTypes.length > 0
     || filterAssignees.length > 0 || filterPriorities.length > 0 || filterLabels.length > 0
@@ -468,29 +536,135 @@ export default function DocCheckRequestsPage() {
   const archivedCount = requests.filter(r => !r.deleted_at && r.archived_at).length
   const showBoard = view === 'board' && mode === 'active'
 
+  // Реестр — тем же значением, пока не изменились его данные: окно заявки сотни строк не перерисовывает.
+  const listTable = useMemo(() => (
+      <div className="table-container dc-table-wrap">
+        <table className="data-table dc-table">
+          <thead>
+            <tr>
+              <th>Документ</th>
+              <th>Объект</th>
+              {hasBoardFields && <th>Исполнители</th>}
+              {hasBoardFields && <th>Срок</th>}
+              <th>Статус</th>
+              {hasBoardFields && <th>Метки</th>}
+              <th>Создал</th>
+              {mode === 'deleted' && <th>Удалил</th>}
+              {mode !== 'active' && canEditSection && <th aria-label="Действия" />}
+            </tr>
+          </thead>
+          <tbody>
+            {listRows.map(r => (
+              <tr key={r.id} onClick={() => setDetailId(r.id)} className={`dc-row${r.color ? ` has-color dc-c-${r.color}` : ''}`}>
+                <td>
+                  <div className="dc-row-title">{cardTitle(r)}</div>
+                  {r.notes && <div className="dc-row-notes">{r.notes}</div>}
+                  <div className="dc-row-counts"><DocCheckCardCounts request={r} /></div>
+                </td>
+                <td>{r.objects?.name || '—'}</td>
+                {hasBoardFields && (
+                  <td>
+                    {r.assignee_ids.length || r.manual_assignees.length ? (
+                      <span className="dc-row-people">
+                        <DocCheckAvatars ids={r.assignee_ids} manual={r.manual_assignees} employees={employees} />
+                        <span>{assigneeNames(r, id => employeeName(employees, id)).join(', ')}</span>
+                      </span>
+                    ) : '—'}
+                  </td>
+                )}
+                {hasBoardFields && (
+                  <td className="ui-num">
+                    <span className={r.due_date ? `dc-due-text is-${dueState(r)}` : ''}>{fmtDocDate(r.due_date) || '—'}</span>
+                  </td>
+                )}
+                <td>
+                  <span className={`dc-status-chip ${DOC_CHECK_STATUS_CLASS[r.status] || ''}`}>
+                    {DOC_CHECK_STATUS_LABEL[r.status] || r.status}
+                  </span>
+                </td>
+                {hasBoardFields && (
+                  <td>
+                    <span className="dc-card-chips">
+                      {r.labels.map(l => <span key={l} className="dc-chip dc-chip--label">{l}</span>)}
+                    </span>
+                  </td>
+                )}
+                <td className="dc-col-who">
+                  <div>{r.created_by_name || '—'}</div>
+                  <div className="dc-row-notes ui-num">{fmtDocDate(r.created_at)}</div>
+                </td>
+                {mode === 'deleted' && (
+                  <td className="dc-col-who dc-col-deleted">
+                    <div>{deletions ? (deletions.get(r.id)?.name || 'не записано') : '…'}</div>
+                    <div className="dc-row-notes ui-num">{fmtDocDateTime(r.deleted_at)}</div>
+                  </td>
+                )}
+                {mode !== 'active' && canEditSection && (
+                  <td className="dc-row-action">
+                    <button
+                      type="button"
+                      className="dc-restore"
+                      onClick={(e) => { e.stopPropagation(); if (mode === 'deleted') actions.onRestore(r); else actions.onUnarchive(r) }}
+                    ><IconRestore size={14} />{mode === 'deleted' ? 'Восстановить' : 'Вернуть'}</button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+  ), [listRows, employees, hasBoardFields, mode, canEditSection, actions, deletions])
+
   if (loading) return <div className="loading">Загрузка...</div>
 
   return (
     <div className={`doc-check-page ui-work${showBoard ? ' is-board' : ''}`}>
-      <div className="page-header">
+      {/* Шапка — две низкие строки (решение пользователя 03.11.2026: больше заявок на экране): название, вид, поиск и
+          действия; под ними фильтры и быстрый отбор. */}
+      <div className="page-header dc-head">
         <h2>
           {/* Тон тот же, что у пункта меню, — раздел узнаётся по цвету. */}
           <IconTile tone="violet" className="page-icon-tile"><IconDocCheck /></IconTile>
           Заявки на проверку ДП/ДС
         </h2>
+        <div className="dc-view-switch" role="tablist" aria-label="Вид">
+          {[{ key: 'board', label: 'Доска' }, { key: 'list', label: 'Реестр' }].map(v => (
+            <button
+              key={v.key}
+              type="button"
+              role="tab"
+              aria-selected={view === v.key}
+              className={`dc-view-btn${view === v.key ? ' is-active' : ''}`}
+              onClick={() => setView(v.key)}
+            >{v.label}</button>
+          ))}
+        </div>
+        <div className="dc-search-wrap">
+          <IconSearch size={15} />
+          <input
+            type="search"
+            className="dc-search"
+            aria-label="Поиск заявок: контрагент, номер, объект, метка, примечание, исполнитель"
+            placeholder="Поиск: контрагент, номер, объект…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
         <div className="dc-header-actions">
-          <div className="dc-view-switch" role="tablist" aria-label="Вид">
-            {[{ key: 'board', label: 'Доска' }, { key: 'list', label: 'Реестр' }].map(v => (
-              <button
-                key={v.key}
-                type="button"
-                role="tab"
-                aria-selected={view === v.key}
-                className={`dc-view-btn${view === v.key ? ' is-active' : ''}`}
-                onClick={() => setView(v.key)}
-              >{v.label}</button>
-            ))}
-          </div>
+          {hasBoardFields && (
+            <button
+              type="button"
+              className={`dc-mode-toggle${mode === 'archive' ? ' is-active' : ''}`}
+              aria-pressed={mode === 'archive'}
+              onClick={() => setMode(m => (m === 'archive' ? 'active' : 'archive'))}
+            ><IconArchive size={15} />Архив{archivedCount > 0 ? ` (${archivedCount})` : ''}</button>
+          )}
+          <button
+            type="button"
+            className={`dc-mode-toggle dc-mode-toggle--deleted${mode === 'deleted' ? ' is-active' : ''}`}
+            aria-pressed={mode === 'deleted'}
+            onClick={() => setMode(m => (m === 'deleted' ? 'active' : 'deleted'))}
+          ><IconTrash size={15} />Удалённые{deletedCount > 0 ? ` (${deletedCount})` : ''}</button>
           {canEditSection && (
             <button className="btn-primary" onClick={() => setFormFor({ request: null, status: 'new' })}>
               + Новая заявка
@@ -519,17 +693,6 @@ export default function DocCheckRequestsPage() {
       )}
 
       <div className="dc-toolbar">
-        <div className="dc-search-wrap">
-          <IconSearch size={15} />
-          <input
-            type="search"
-            className="dc-search"
-            aria-label="Поиск заявок"
-            placeholder="Поиск: контрагент, номер, объект, метка, примечание…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
         {hasBoardFields && (
           <>
             <FilterDropdown
@@ -564,17 +727,17 @@ export default function DocCheckRequestsPage() {
         )}
         <FilterDropdown
           label="" multiple searchable
-          searchPlaceholder="Поиск объекта…" allLabel="Все объекты"
+          searchPlaceholder="Поиск объекта…" allLabel="Объект"
           icon={<IconObject size={15} />}
           value={filterObjectIds} onChange={setFilterObjectIds}
-          options={objects.map(o => ({ value: o.id, label: o.name }))}
+          options={objectOptions}
         />
         <FilterDropdown
           label="" multiple searchable
-          searchPlaceholder="Поиск контрагента…" allLabel="Все контрагенты"
+          searchPlaceholder="Поиск контрагента…" allLabel="Контрагент"
           icon={<IconUser size={15} />}
           value={filterCounterpartyIds} onChange={setFilterCounterpartyIds}
-          options={counterparties.map(c => ({ value: c.id, label: c.name }))}
+          options={counterpartyOptions}
         />
         <FilterDropdown
           label="" multiple allLabel="ДП и ДС"
@@ -584,46 +747,29 @@ export default function DocCheckRequestsPage() {
         {hasFilters && (
           <button type="button" className="dc-reset" onClick={resetFilters}>Сбросить</button>
         )}
-        <div className="dc-toolbar-end">
-          {hasBoardFields && (
-            <button
-              type="button"
-              className={`dc-mode-toggle${mode === 'archive' ? ' is-active' : ''}`}
-              aria-pressed={mode === 'archive'}
-              onClick={() => setMode(m => (m === 'archive' ? 'active' : 'archive'))}
-            ><IconArchive size={15} />Архив{archivedCount > 0 ? ` (${archivedCount})` : ''}</button>
-          )}
-          <button
-            type="button"
-            className={`dc-mode-toggle dc-mode-toggle--deleted${mode === 'deleted' ? ' is-active' : ''}`}
-            aria-pressed={mode === 'deleted'}
-            onClick={() => setMode(m => (m === 'deleted' ? 'active' : 'deleted'))}
-          ><IconTrash size={15} />Удалённые{deletedCount > 0 ? ` (${deletedCount})` : ''}</button>
-        </div>
+        {(objectChips.length > 0 || (hasBoardFields && myId)) && (
+          <div className="dc-quick" aria-label="Быстрый отбор" onPointerDown={panQuickChips}>
+            {hasBoardFields && myId && (
+              <button
+                type="button"
+                className={`dc-quick-chip dc-quick-chip--mine${onlyMine ? ' is-active' : ''}`}
+                aria-pressed={onlyMine}
+                onClick={() => setOnlyMine(v => !v)}
+              ><IconUser size={13} />Мои заявки</button>
+            )}
+            {objectChips.map(o => (
+              <button
+                key={o.id}
+                type="button"
+                className={`dc-quick-chip${filterObjectIds.includes(o.id) ? ' is-active' : ''}`}
+                aria-pressed={filterObjectIds.includes(o.id)}
+                onClick={() => toggleObject(o.id)}
+                title={`${o.name}: ${o.n}`}
+              >{o.name}<span className="dc-quick-n">{o.n}</span></button>
+            ))}
+          </div>
+        )}
       </div>
-
-      {(objectChips.length > 0 || (hasBoardFields && myId)) && mode === 'active' && (
-        <div className="dc-quick" aria-label="Быстрый отбор">
-          {hasBoardFields && myId && (
-            <button
-              type="button"
-              className={`dc-quick-chip dc-quick-chip--mine${onlyMine ? ' is-active' : ''}`}
-              aria-pressed={onlyMine}
-              onClick={() => setOnlyMine(v => !v)}
-            ><IconUser size={13} />Мои заявки</button>
-          )}
-          {objectChips.map(o => (
-            <button
-              key={o.id}
-              type="button"
-              className={`dc-quick-chip${filterObjectIds.includes(o.id) ? ' is-active' : ''}`}
-              aria-pressed={filterObjectIds.includes(o.id)}
-              onClick={() => toggleObject(o.id)}
-              title={`${o.name}: ${o.n}`}
-            >{o.name}<span className="dc-quick-n">{o.n}</span></button>
-          ))}
-        </div>
-      )}
 
       {mode !== 'active' && (
         <div className="dc-mode-banner">
@@ -640,90 +786,23 @@ export default function DocCheckRequestsPage() {
           canEdit={canEditSection}
           hasBoardFields={hasBoardFields}
           summary={summary}
-          onSummaryChange={changeSummary}
+          onSummaryChange={actions.onSummaryChange}
           onOpen={setDetailId}
-          onMove={handleMove}
-          onAdd={(status) => setFormFor({ request: null, status })}
-          onToggleDone={handleToggleDone}
-          onCardAction={handleCardAction}
-          onArchiveDone={handleArchiveDone}
+          onMove={actions.onMove}
+          onAdd={actions.onAdd}
+          onToggleDone={actions.onToggleDone}
+          onCardAction={actions.onCardAction}
+          onArchiveDone={actions.onArchiveDone}
         />
       ) : visible.length === 0 ? (
         <div className="dc-empty">
-          {mode === 'deleted' ? 'Удалённых заявок нет'
-            : mode === 'archive' ? 'В архиве пусто'
-              : hasFilters ? 'Ничего не найдено — попробуйте изменить фильтры'
+          {hasFilters && inMode.length > 0 ? 'Ничего не найдено — попробуйте изменить фильтры'
+            : mode === 'deleted' ? 'Удалённых заявок нет'
+              : mode === 'archive' ? 'В архиве пусто'
                 : 'Заявок пока нет. Создайте первую — она попадёт в колонку «Новые заявки».'}
         </div>
       ) : (
-        <div className="table-container dc-table-wrap">
-          <table className="data-table dc-table">
-            <thead>
-              <tr>
-                <th>Документ</th>
-                <th>Объект</th>
-                {hasBoardFields && <th>Исполнители</th>}
-                {hasBoardFields && <th>Срок</th>}
-                <th>Статус</th>
-                {hasBoardFields && <th>Метки</th>}
-                <th>Создал</th>
-                {mode !== 'active' && canEditSection && <th aria-label="Действия" />}
-              </tr>
-            </thead>
-            <tbody>
-              {listRows.map(r => (
-                <tr key={r.id} onClick={() => setDetailId(r.id)} className={`dc-row${r.color ? ` has-color dc-c-${r.color}` : ''}`}>
-                  <td>
-                    <div className="dc-row-title">{cardTitle(r)}</div>
-                    {r.notes && <div className="dc-row-notes">{r.notes}</div>}
-                    <div className="dc-row-counts"><DocCheckCardCounts request={r} /></div>
-                  </td>
-                  <td>{r.objects?.name || '—'}</td>
-                  {hasBoardFields && (
-                    <td>
-                      {r.assignee_ids.length || r.manual_assignees.length ? (
-                        <span className="dc-row-people">
-                          <DocCheckAvatars ids={r.assignee_ids} manual={r.manual_assignees} employees={employees} />
-                          <span>{assigneeNames(r, id => employeeName(employees, id)).join(', ')}</span>
-                        </span>
-                      ) : '—'}
-                    </td>
-                  )}
-                  {hasBoardFields && (
-                    <td className="ui-num">
-                      <span className={r.due_date ? `dc-due-text is-${dueState(r)}` : ''}>{fmtDocDate(r.due_date) || '—'}</span>
-                    </td>
-                  )}
-                  <td>
-                    <span className={`dc-status-chip ${DOC_CHECK_STATUS_CLASS[r.status] || ''}`}>
-                      {DOC_CHECK_STATUS_LABEL[r.status] || r.status}
-                    </span>
-                  </td>
-                  {hasBoardFields && (
-                    <td>
-                      <span className="dc-card-chips">
-                        {r.labels.map(l => <span key={l} className="dc-chip dc-chip--label">{l}</span>)}
-                      </span>
-                    </td>
-                  )}
-                  <td className="dc-col-who">
-                    <div>{r.created_by_name || '—'}</div>
-                    <div className="dc-row-notes ui-num">{fmtDocDate(r.created_at)}</div>
-                  </td>
-                  {mode !== 'active' && canEditSection && (
-                    <td className="dc-row-action">
-                      <button
-                        type="button"
-                        className="dc-restore"
-                        onClick={(e) => { e.stopPropagation(); if (mode === 'deleted') handleRestore(r); else unarchive(r) }}
-                      ><IconRestore size={14} />{mode === 'deleted' ? 'Восстановить' : 'Вернуть'}</button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        listTable
       )}
 
       {formFor && (
@@ -752,6 +831,7 @@ export default function DocCheckRequestsPage() {
           hasBoardFields={hasBoardFields}
           hasCardFields={hasCardFields}
           currentUserId={myId}
+          deletion={deletions?.get(detail.id) || null}
           refreshKey={detailRefresh}
           onCardCounts={handleCardCounts}
           onStatusChange={(r, status) => moveTo(r, status)}

@@ -28,7 +28,18 @@
 .dc-c-violet { --dcc: #8b5cf6; }
 .dc-c-pink { --dcc: #ec4899; }
 
-.dc-header-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.dc-header-actions { display: flex; align-items: center; gap: 0.375rem; flex-wrap: wrap; }
+
+/* Шапка — две низкие строки (03.11.2026: 233 px над доской → около 80): чем ниже шапка, тем больше заявок на экране. */
+.doc-check-page .dc-head, .doc-check-page .dc-toolbar { --ui-control-h: 1.875rem; }
+.doc-check-page.ui-work.ui-work .dc-head { justify-content: flex-start; gap: 0.25rem 0.5rem; padding: 0.3125rem 0.625rem; }
+.doc-check-page.ui-work.ui-work .dc-head h2 {
+  gap: 0.5rem;
+  font-size: var(--ui-block);
+  line-height: var(--ui-block-lh);
+  white-space: nowrap;
+}
+.doc-check-page.ui-work.ui-work .dc-head h2 .ic-tile { width: 24px; height: 24px; }
 
 /* Переключатель «Доска / Реестр» */
 .dc-view-switch {
@@ -59,8 +70,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 0.625rem;
-  padding: 0.625rem 1.25rem;
+  gap: 0.25rem 0.375rem;
+  padding: 0.25rem 0.625rem;
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-secondary);
 }
@@ -68,9 +79,9 @@
   position: relative;
   display: flex;
   align-items: center;
-  flex: 1 1 16rem;
-  min-width: 14rem;
-  max-width: 24rem;
+  flex: 1 1 10rem;
+  min-width: 10rem;
+  max-width: 22rem;
 }
 .dc-search-wrap > svg { position: absolute; left: 0.625rem; color: var(--text-tertiary); pointer-events: none; }
 .dc-search {
@@ -92,25 +103,26 @@
 .dc-toolbar .fdrop-trigger {
   height: var(--ui-control-h);
   min-height: var(--ui-control-h);
-  max-width: 15rem;
-  padding: 0 0.625rem;
+  max-width: 12rem;
+  padding: 0 0.5rem;
   border-radius: var(--ui-radius);
-  font-size: var(--ui-text);
+  font-size: var(--ui-th);
+  font-weight: var(--ui-medium);
 }
+.dc-toolbar .fdrop-value { font-weight: var(--ui-medium); }
 .dc-toolbar .fdrop.is-active .fdrop-value { color: var(--text-primary); }
-.dc-toolbar-end { display: flex; gap: 0.5rem; margin-left: auto; }
 
 .dc-reset, .dc-mode-toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
   height: var(--ui-control-h);
-  padding: 0 0.75rem;
+  padding: 0 0.625rem;
   border: 1px solid var(--border-color);
   border-radius: var(--ui-radius);
   background: none;
   color: var(--text-secondary);
-  font-size: var(--ui-text);
+  font-size: var(--ui-th);
   font-weight: var(--ui-medium);
   cursor: pointer;
   white-space: nowrap;
@@ -129,21 +141,26 @@
   color: var(--danger-color);
 }
 
-/* Быстрый отбор над доской: «Мои заявки» и объекты (частые первыми) — как плашки объектов на прежней доске. */
+/* Быстрый отбор: «Мои заявки» и объекты (частые первыми) — как плашки объектов на прежней доске. Одной строкой, остаток
+   панели: что не поместилось, прокручивается (мышью — тянуть), а строка не растёт. */
 .dc-quick {
+  flex: 1 1 12rem;
+  min-width: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-  padding: 0.5rem 1.25rem;
-  border-bottom: 1px solid var(--border-color);
-  background: var(--bg-secondary);
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: 0.25rem;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.dc-quick::-webkit-scrollbar { display: none; }
 .dc-quick-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  height: 1.75rem;
-  padding: 0 0.625rem;
+  flex: none;
+  height: 1.5rem;
+  padding: 0 0.5rem;
   border: 1px solid var(--border-color);
   border-radius: 999px;
   background: var(--bg-primary);
@@ -162,8 +179,8 @@
 .dc-quick-n { color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 
 .dc-empty, .dc-error, .dc-note, .dc-mode-banner {
-  margin: 1rem 1.25rem 0;
-  padding: 0.875rem 1rem;
+  margin: 0.5rem 0.625rem 0;
+  padding: 0.5rem 0.75rem;
   border: 1px dashed var(--border-color);
   border-radius: 8px;
   background: var(--bg-secondary);
@@ -178,16 +195,24 @@
 
 /* ── Доска ──────────────────────────────────────────────────────────────── */
 /* Девять колонок в ряд на экран не влезают — прокручиваем по горизонтали, а не сжимаем карточки до
-   нечитаемого состояния. Колонка прокручивается сама, шапка колонки стоит. */
+   нечитаемого состояния (мышью — тянуть за любое место, boardGestures.js; полоса внизу остаётся тонкой и показывает, где
+   доска). Колонка прокручивается сама, шапка колонки стоит. На компьютере страница не выше окна: см. конец раздела. */
 .dc-board {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
+  gap: 0.5rem;
   overflow-x: auto;
-  padding: 0.875rem 1.25rem 1rem;
+  padding: 0.375rem 0.5rem 0.25rem;
+  scrollbar-width: thin;
 }
+@media (pointer: fine) {
+  .dc-board { cursor: grab; user-select: none; }
+  .dc-board.is-panning { scroll-snap-type: none; }
+}
+/* Шторка на время жеста: курсор и никаких :hover под указателем. */
+.dc-board > .dc-gesture-veil, .dc-gesture-veil { position: fixed; inset: 0; z-index: 1390; max-width: none; cursor: grabbing; }
 .dc-column {
-  flex: 0 0 17.5rem;
+  flex: 0 0 16rem;
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 15rem);
@@ -206,29 +231,23 @@
 /* «Сводка» — выборка, не статус: рамка пунктиром. */
 .dc-column--summary { border-style: dashed; border-top-style: solid; }
 
-.dc-column-head { padding: 0.5rem 0.625rem 0.375rem; }
-.dc-column-kind {
-  font-size: 0.6875rem;
-  line-height: 1rem;
-  font-weight: var(--ui-semibold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-.dc-column-top { display: flex; align-items: flex-start; gap: 0.375rem; }
+.dc-column-head { padding: 0.1875rem 0.375rem 0.1875rem 0.5rem; }
+/* Название — одной строкой, все карточки начинаются вровень; длинное — целиком в подсказке. */
+.dc-column-top { display: flex; align-items: center; gap: 0.25rem; }
 .dc-column-title {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: var(--ui-text);
-  line-height: var(--ui-text-lh);
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
   font-weight: var(--ui-semibold);
   color: var(--text-primary);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .dc-column-count {
   flex-shrink: 0;
-  margin-top: 0.125rem;
   font-size: var(--ui-hint);
   line-height: var(--ui-hint-lh);
   font-weight: var(--ui-medium);
@@ -240,9 +259,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.625rem;
-  height: 1.625rem;
-  margin: -0.125rem -0.25rem 0 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
   border: 1px solid transparent;
   border-radius: 6px;
   background: none;
@@ -250,19 +269,7 @@
   cursor: pointer;
 }
 .dc-icon-btn:hover, .dc-icon-btn.is-active { border-color: var(--border-color); background: var(--bg-secondary); color: var(--text-primary); }
-.dc-column-add {
-  display: block;
-  margin: 0.125rem 0 0;
-  padding: 0.125rem 0;
-  border: 0;
-  background: none;
-  color: var(--ui-link);
-  font-size: var(--ui-hint);
-  line-height: var(--ui-hint-lh);
-  font-weight: var(--ui-medium);
-  cursor: pointer;
-}
-.dc-column-add:hover { text-decoration: underline; }
+.dc-column-add { color: var(--ui-link); font-size: 1.125rem; line-height: 1; font-weight: var(--ui-medium); }
 .dc-summary-settings { display: flex; flex-wrap: wrap; gap: 0.375rem; margin-top: 0.375rem; }
 .dc-summary-settings .fdrop-trigger { height: 1.875rem; min-height: 1.875rem; max-width: 100%; font-size: var(--ui-hint); }
 
@@ -270,10 +277,11 @@
   flex: 1;
   min-height: 3rem;
   overflow-y: auto;
-  padding: 0.25rem 0.5rem 0.5rem;
+  padding: 0.125rem 0.375rem 0.375rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.3125rem;
+  scrollbar-width: thin;
 }
 .dc-column-empty {
   margin: 0;
@@ -286,16 +294,41 @@
 /* ── Карточка ───────────────────────────────────────────────────────────── */
 .dc-card {
   position: relative;
-  padding: 0.5rem 0.5rem 0.5rem 0.5rem;
+  padding: 0.3125rem 0.5rem 0.375rem;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--bg-secondary);
   cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.dc-card[draggable='true'] { cursor: grab; }
+/* Карточки вне экрана браузер не раскладывает и не рисует: в «Завершено» их сотни. Свойство — у самой карточки: рамку
+   просрочки и тень (box-shadow снаружи) обёртка с ним обрезала бы. */
+.dc-card { content-visibility: auto; contain-intrinsic-size: auto 4rem; }
+@media (pointer: fine) { .dc-card.is-movable { cursor: grab; } }
 .dc-card:hover { border-color: var(--border-color-dark); box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1); }
-.dc-card.is-dragging { opacity: 0.45; cursor: grabbing; }
+/* Перетаскивание: за указателем едет копия карточки, заглушка той же высоты показывает, куда она встанет. Копия — в доске
+   (там действуют переменные раздела), fixed не обрезается её прокруткой. */
+.dc-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1400;
+  margin: 0;
+  pointer-events: none;
+  content-visibility: visible;
+  will-change: transform;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.32);
+}
+.dc-card-slot {
+  flex: none;
+  height: var(--dc-slot-h, 4rem);
+  box-sizing: border-box;
+  border: 1.5px dashed var(--primary-color);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+}
+/* Та же карточка в «Сводке», пока её несут. */
+.dc-card-wrap.is-source .dc-card { opacity: 0.4; }
 /* Цвет карточки — заливкой, как на прежней доске; текст остаётся основного цвета (контраст ≥ 4,5:1). */
 .dc-card.has-color {
   border-color: color-mix(in srgb, var(--dcc) 55%, var(--border-color));
@@ -336,9 +369,9 @@
   text-align: left;
   cursor: inherit;
   overflow-wrap: anywhere;
-  /* Заголовок с примечанием — до четырёх строк, остальное в карточке заявки. */
+  /* Заголовок с примечанием — до трёх строк, остальное в карточке заявки. */
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -368,7 +401,10 @@
   color: var(--text-secondary);
 }
 
-.dc-card-foot { display: flex; align-items: flex-end; gap: 0.375rem; margin-top: 0.5rem; }
+.dc-card-foot { display: flex; align-items: flex-end; gap: 0.25rem; margin-top: 0.25rem; }
+/* Объект — короче, чтобы срок и счётчики встали с ним в одну строку; полное название — в подсказке. */
+.dc-card .dc-chip--object { display: inline-block; max-width: 9rem; }
+.dc-card .dc-avatar { width: 1.375rem; height: 1.375rem; font-size: 0.5625rem; }
 .dc-card-chips { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
 .dc-chip {
   display: inline-flex;
@@ -513,7 +549,7 @@
 .dc-swatch.is-current { box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 4px var(--text-primary); }
 
 /* ── Реестр ─────────────────────────────────────────────────────────────── */
-.dc-table-wrap { margin: 1rem 1.25rem 0; border: 1px solid var(--border-color); border-radius: 8px; }
+.doc-check-page .dc-table-wrap { margin: 0.5rem 0.625rem 0; padding: 0; border: 1px solid var(--border-color); border-radius: 8px; }
 .dc-table { width: 100%; min-width: 62rem; }
 .dc-row { cursor: pointer; }
 .dc-row.has-color > td:first-child { box-shadow: inset 4px 0 0 var(--dcc); }
@@ -648,13 +684,55 @@
 }
 
 /* ── Карточка заявки ────────────────────────────────────────────────────── */
+/* Постоянная высота: вкладки разной длины не дёргают окно. Фон тела чуть темнее разделов — так они читаются блоками. */
 .dc-detail-modal {
-  width: min(44rem, calc(100vw - 2rem));
-  max-height: calc(100vh - 4rem);
+  width: min(60rem, calc(100vw - 2rem));
+  max-width: none;
+  height: min(46rem, calc(100vh - 3rem));
+  max-height: none;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  border-radius: 12px;
 }
-.dc-detail-sub { margin: 0.15rem 0 0; font-size: var(--ui-hint); color: var(--text-secondary); }
+.dc-detail-modal .dc-detail-head {
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 0.875rem 1.25rem 0.75rem;
+  border: 0;
+}
+.dc-detail-heading { min-width: 0; }
+.dc-detail-modal .dc-detail-head h3 {
+  margin: 0;
+  font-size: var(--ui-block);
+  line-height: var(--ui-block-lh);
+  font-weight: var(--ui-semibold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.dc-detail-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.625rem;
+  margin: 0.25rem 0 0;
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+  color: var(--text-secondary);
+}
+.dc-detail-flag {
+  padding: 0 0.375rem;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+.dc-detail-flag.is-deleted {
+  background: color-mix(in srgb, var(--danger-color) 12%, transparent);
+  color: var(--danger-color);
+}
 
 /* flex-shrink: иначе при длинной переписке и прокрутке вкладок (телефон) ряд сжимается по высоте. */
 .dc-detail-tabs { flex-shrink: 0; display: flex; gap: 0.25rem; padding: 0 1.25rem; border-bottom: 1px solid var(--border-color); }
@@ -662,13 +740,16 @@
   padding: 0.5rem 0.75rem;
   border: none;
   border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
   background: none;
   color: var(--text-secondary);
   font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
   font-weight: var(--ui-medium);
   cursor: pointer;
 }
-.dc-detail-tab.is-active { border-bottom-color: var(--primary-color); color: var(--text-primary); }
+.dc-detail-tab:hover { color: var(--text-primary); }
+.dc-detail-tab.is-active { border-bottom-color: var(--primary-color); color: var(--text-primary); font-weight: var(--ui-semibold); }
 .dc-tab-count {
   margin-left: 0.375rem;
   padding: 0 0.375rem;
@@ -679,57 +760,120 @@
   font-variant-numeric: tabular-nums;
 }
 
-.dc-detail-body { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem 1.25rem; }
+.dc-detail-body { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem 1.25rem; background: var(--bg-primary); }
 
-.dc-detail-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: 0.75rem;
+/* Вкладка «Заявка»: слева документ, справа то, что меняется в работе. */
+.dc-info { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 0.875rem; align-items: start; }
+.dc-info-col { display: flex; flex-direction: column; gap: 0.875rem; min-width: 0; }
+
+/* Раздел окна: рамка и заголовок полосой. */
+.dc-box { border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-secondary); overflow: hidden; }
+.dc-box-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   margin: 0;
+  padding: 0.375rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+  font-weight: var(--ui-semibold);
+  color: var(--text-primary);
 }
-.dc-detail-wide { grid-column: 1 / -1; }
-.dc-detail-grid dt { font-size: var(--ui-hint); color: var(--text-tertiary); }
-.dc-detail-grid dd { margin: 0.15rem 0 0; font-size: var(--ui-text); color: var(--text-primary); }
-.dc-detail-people { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.dc-box-aside { font-weight: var(--ui-regular); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.dc-box-text {
+  margin: 0;
+  padding: 0.625rem 0.75rem;
+  font-size: var(--ui-text);
+  line-height: 1.375rem;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dc-box-empty { color: var(--text-secondary); }
+
+/* Строки «подпись — значение», разделены линиями. */
+.dc-kv { margin: 0; }
+.dc-row-kv {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.4375rem 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+.dc-row-kv:first-child { border-top: 0; }
+.dc-row-kv dt { font-size: var(--ui-th); line-height: var(--ui-text-lh); color: var(--text-secondary); }
+.dc-row-kv dd { margin: 0; font-size: var(--ui-text); line-height: var(--ui-text-lh); color: var(--text-primary); overflow-wrap: anywhere; }
 .dc-detail-mail { display: inline-flex; align-items: center; gap: 0.375rem; color: var(--ui-link); }
 
-.dc-detail-notes { margin-top: 1rem; }
-.dc-detail-notes h4, .dc-detail-status h4 {
-  margin: 0 0 0.4rem;
-  font-size: var(--ui-hint);
-  font-weight: var(--ui-semibold);
-  color: var(--text-tertiary);
+/* Исполнители — по человеку на строку. */
+.dc-detail-people { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.dc-detail-people li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border-top: 1px solid var(--border-color);
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  color: var(--text-primary);
 }
-.dc-detail-notes p { margin: 0; font-size: var(--ui-text); line-height: 1.5; white-space: pre-wrap; }
-.dc-detail-status { margin-top: 1rem; }
+.dc-detail-people li:first-child { border-top: 0; }
+.dc-detail-people .dc-avatar { flex: 0 0 auto; margin-left: 0; }
+.dc-person-name { min-width: 0; overflow-wrap: anywhere; }
+.dc-person-note { font-size: var(--ui-hint); line-height: var(--ui-hint-lh); color: var(--text-secondary); }
 
-.dc-status-list { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+/* Статус — столбцом: длинные названия колонок читаются целиком, текущий виден сразу. */
+.dc-status-list { display: flex; flex-direction: column; padding: 0.25rem; }
 .dc-status-opt {
-  padding: 0.3rem 0.6rem;
-  border: 1px solid var(--border-color);
-  border-left: 3px solid var(--dcs, var(--text-tertiary));
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.3125rem 0.5rem;
+  border: 0;
   border-radius: 6px;
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  font-size: var(--ui-hint);
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+  text-align: left;
   cursor: pointer;
 }
-.dc-status-opt:hover:not(:disabled) { background: var(--hover-bg); color: var(--text-primary); }
+.dc-status-dot {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.0625rem;
+  border: 2px solid var(--dcs, var(--text-tertiary));
+  border-radius: 50%;
+  color: #fff;
+  box-sizing: border-box;
+}
+.dc-status-opt:hover:not(:disabled) { background: var(--hover-bg); }
 .dc-status-opt.is-current {
   background: color-mix(in srgb, var(--dcs, var(--primary-color)) 14%, var(--bg-secondary));
-  color: var(--text-primary);
   font-weight: var(--ui-semibold);
 }
-.dc-status-opt:disabled { cursor: default; opacity: 0.75; }
+.dc-status-opt.is-current .dc-status-dot { background: var(--dcs, var(--primary-color)); }
+.dc-status-opt:disabled { cursor: default; color: var(--text-secondary); }
+.dc-status-opt.is-current:disabled { color: var(--text-primary); }
 
-.dc-history { margin: 0; padding: 0; list-style: none; }
-.dc-history li { padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); }
-.dc-history li:last-child { border-bottom: none; }
-.dc-history-head { display: flex; justify-content: space-between; gap: 0.5rem; }
-.dc-history-event { font-size: var(--ui-th); font-weight: var(--ui-semibold); color: var(--text-primary); }
-.dc-history-date { font-size: var(--ui-hint); color: var(--text-tertiary); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.dc-history-text { margin-top: 0.2rem; font-size: var(--ui-th); color: var(--text-secondary); }
-.dc-history-who { margin-top: 0.15rem; font-size: var(--ui-hint); color: var(--text-tertiary); }
+.dc-history { margin: 0; padding: 0; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-secondary); list-style: none; overflow: hidden; }
+.dc-history li { padding: 0.5625rem 0.75rem; border-top: 1px solid var(--border-color); }
+.dc-history li:first-child { border-top: 0; }
+.dc-history-head { display: flex; justify-content: space-between; gap: 0.75rem; }
+.dc-history-event { font-size: var(--ui-text); line-height: var(--ui-text-lh); font-weight: var(--ui-semibold); color: var(--text-primary); }
+.dc-history-date { font-size: var(--ui-th); line-height: var(--ui-text-lh); color: var(--text-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dc-history-text { margin-top: 0.125rem; font-size: var(--ui-text); line-height: var(--ui-text-lh); color: var(--text-primary); overflow-wrap: anywhere; }
+.dc-history-old { color: var(--text-secondary); }
+.dc-history-who { margin-top: 0.125rem; font-size: var(--ui-th); line-height: var(--ui-th-lh); color: var(--text-secondary); }
 
 .dc-retry {
   padding: 0;
@@ -774,17 +918,19 @@
 }
 .dc-steps-progress { flex: 1; height: 4px; border-radius: 999px; background: var(--bg-tertiary); overflow: hidden; }
 .dc-steps-progress span { display: block; height: 100%; background: var(--success-color); }
-.dc-steps { display: flex; flex-direction: column; gap: 0.125rem; margin: 0 0 0.75rem; padding: 0; list-style: none; }
+.dc-steps { display: flex; flex-direction: column; margin: 0 0 0.75rem; padding: 0; list-style: none; }
+.dc-steps:not(:empty) { border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-secondary); overflow: hidden; }
 .dc-steps li {
   display: flex;
   align-items: flex-start;
   gap: 0.375rem;
-  padding: 0.125rem 0;
-  border-radius: 6px;
+  padding: 0.4375rem 0.625rem;
+  border-top: 1px solid var(--border-color);
   font-size: var(--ui-text);
   line-height: var(--ui-text-lh);
   color: var(--text-primary);
 }
+.dc-steps li:first-child { border-top: 0; }
 .dc-steps li.is-dragging { opacity: 0.5; }
 .dc-steps li.drop-before { box-shadow: inset 0 2px 0 var(--primary-color); }
 .dc-steps li.drop-after { box-shadow: inset 0 -2px 0 var(--primary-color); }
@@ -793,7 +939,7 @@
 .dc-step-label input { flex: 0 0 auto; margin-top: 0.1875rem; }
 .dc-step-label input:disabled { cursor: default; }
 .dc-step-label span { min-width: 0; overflow-wrap: anywhere; }
-.dc-steps li.is-done .dc-step-label span { text-decoration: line-through; color: var(--text-tertiary); }
+.dc-steps li.is-done .dc-step-label span { text-decoration: line-through; color: var(--text-secondary); }
 /* Ручка порядка: тянуть мышью или пальцем, стрелки ↑ ↓ с клавиатуры.
    touch-action: none — иначе на телефоне палец прокручивает окно вместо перетаскивания. */
 .dc-step-handle {
@@ -847,15 +993,15 @@
 .dc-step-edit:focus { outline: none; }
 
 /* Обсуждение: свои сообщения прижаты вправо — переписку видно с одного взгляда. */
-.dc-talk { display: flex; flex-direction: column; gap: 0.5rem; }
+.dc-talk { display: flex; flex-direction: column; gap: 0.625rem; min-height: 100%; }
 .dc-talk-msg {
   align-self: flex-start;
-  max-width: 92%;
-  padding: 0.5rem 0.625rem;
+  max-width: 85%;
+  padding: 0.5rem 0.75rem;
   border: 1px solid var(--border-color);
   border-radius: 10px;
   border-top-left-radius: 3px;
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
 }
 .dc-talk-msg.is-mine {
   align-self: flex-end;
@@ -864,15 +1010,15 @@
   border-top-right-radius: 3px;
   background: color-mix(in srgb, var(--primary-color) 8%, var(--bg-secondary));
 }
-.dc-talk-head { display: flex; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.125rem; font-size: var(--ui-hint); color: var(--text-primary); }
-.dc-talk-time { flex-shrink: 0; color: var(--text-tertiary); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.dc-talk-body { margin: 0; font-size: var(--ui-th); line-height: var(--ui-th-lh); color: var(--text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.dc-talk-head { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: 0.1875rem; font-size: var(--ui-th); line-height: var(--ui-th-lh); color: var(--text-primary); }
+.dc-talk-time { flex-shrink: 0; color: var(--text-secondary); font-size: var(--ui-hint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dc-talk-body { margin: 0; font-size: var(--ui-text); line-height: 1.375rem; color: var(--text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Поле ввода — у нижнего края окна, даже когда переписка длинная. */
 .dc-talk-add {
   position: sticky;
   bottom: -1rem;
-  margin: 0.25rem -1.25rem -1rem;
-  padding: 0.625rem 1.25rem 1rem;
+  margin: auto -1.25rem -1rem;
+  padding: 0.625rem 1.25rem 0.75rem;
   border-top: 1px solid var(--border-color);
   background: var(--bg-secondary);
 }
@@ -903,16 +1049,34 @@
   color: var(--danger-color);
 }
 
+/* На компьютере раздел вплотную к меню, без полей вокруг (раньше 2rem + 1,25rem слева), а доска — на всю высоту окна: своей
+   прокрутки у страницы нет, полоса доски всегда на экране, бросить можно в любое место колонки, а не только на карточку.
+   На телефоне .main-content оставляет место под полосой меню, и страница прокручивается целиком. */
+@media (min-width: 769px) {
+  .main-content:has(> .doc-check-page) { padding: 0; }
+  .doc-check-page.is-board {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    padding: 0;
+  }
+  .main-content > .doc-check-page.is-board { height: 100%; }
+  .doc-check-page.is-board > * { flex: none; }
+  .doc-check-page.is-board > .dc-board { flex: 1 1 0; min-height: 0; align-items: stretch; }
+  .doc-check-page.is-board .dc-column { min-height: 0; max-height: none; }
+}
+
 /* Полоса меню телефона (1250) лежит поверх окна (1000) и закрывала бы шапку с «×»; выпадающие списки (1300) — выше окна. */
 @media (max-width: 768px) {
   .doc-check-page .modal-overlay { z-index: 1260; }
 }
 
 @media (max-width: 640px) {
-  .dc-toolbar, .dc-quick { padding-left: 0.75rem; padding-right: 0.75rem; }
-  .dc-search-wrap { flex-basis: 100%; max-width: none; }
-  .dc-toolbar-end { margin-left: 0; }
-  .dc-quick { flex-wrap: nowrap; overflow-x: auto; }
+  .dc-toolbar { padding-left: 0.75rem; padding-right: 0.75rem; }
+  .dc-search-wrap { flex-basis: 100%; order: 3; max-width: none; }
+  .dc-quick { flex-basis: 100%; margin-left: 0; }
+  .dc-quick-chip { height: 1.875rem; }
+  .doc-check-page.ui-work.ui-work .dc-head > :last-child:not(h2) { margin-left: 0; justify-content: flex-start; }
   .dc-board { padding: 0.75rem; scroll-snap-type: x mandatory; }
   .dc-column { flex-basis: 85vw; max-height: none; scroll-snap-align: start; }
   .dc-table-wrap, .dc-empty, .dc-error, .dc-note, .dc-mode-banner { margin-left: 0.75rem; margin-right: 0.75rem; }
@@ -921,6 +1085,16 @@
   .dc-form-row input[type='text'],
   .dc-form-row input[type='date'],
   .dc-form-row textarea { font-size: 16px; }
+  /* Окно — на весь экран, разделы — столбцом. */
+  .dc-detail-modal { width: 100%; height: 100%; border-radius: 0; }
+  .doc-check-page .modal-overlay:has(.dc-detail-modal) { padding: 0; }
+  .dc-detail-modal .dc-detail-head { padding: 0.75rem; }
+  .dc-detail-body { padding: 0.75rem; }
+  .dc-info { grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
+  .dc-info-col { display: contents; }
+  .dc-row-kv { grid-template-columns: 7rem minmax(0, 1fr); }
+  .dc-talk-add { margin-left: -0.75rem; margin-right: -0.75rem; bottom: -0.75rem; margin-bottom: -0.75rem; padding-left: 0.75rem; padding-right: 0.75rem; }
+  .dc-detail-actions { padding: 0.625rem 0.75rem; }
   /* Пять вкладок в ряд не помещаются — прокрутка, без переноса в несколько рядов. */
   .dc-detail-tabs { flex-wrap: nowrap; overflow-x: auto; padding: 0 0.75rem; scrollbar-width: none; }
   .dc-detail-tabs::-webkit-scrollbar { display: none; }

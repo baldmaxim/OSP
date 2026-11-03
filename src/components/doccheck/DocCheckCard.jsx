@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import PaperclipIcon from '../icons/PaperclipIcon'
 import { IconTag } from '../icons/ToolbarIcons'
 import { IconCalendar, IconCheck, IconFlag, IconMore } from '../icons/ActionIcons'
@@ -25,27 +26,21 @@ const DUE_TITLE = {
 // кружок «завершить», заголовок «Контрагент / ДС № 1» с примечанием, внизу
 // объект и метки, срок, приоритет, файлы, шаги, сообщения, письмо и кружки
 // исполнителей; цвет карточки — заливкой. Остальное — в карточке заявки по щелчку.
-function DocCheckCard({
-  request, employees, canEdit, showStatus, onOpen, onToggleDone, onMenu,
-  onDragStart, onDragEnd, isDragging,
-}) {
+function DocCheckCard({ request, employees, canEdit, showStatus, onOpen, onToggleDone, onMenu }) {
   const done = CLOSED_DOC_CHECK_STATUSES.has(request.status)
   const due = dueState(request)
   const classes = [
     'dc-card',
+    canEdit ? 'is-movable' : '',
     request.color ? `has-color dc-c-${request.color}` : '',
     done ? 'is-done' : '',
     due === 'overdue' ? 'is-overdue' : '',
-    isDragging ? 'is-dragging' : '',
   ].filter(Boolean).join(' ')
 
   return (
     <article
       className={classes}
       data-id={request.id}
-      draggable={canEdit}
-      onDragStart={(e) => onDragStart(e, request)}
-      onDragEnd={onDragEnd}
       onClick={() => onOpen(request.id)}
     >
       <div className="dc-card-main">
@@ -111,4 +106,5 @@ function DocCheckCard({
   )
 }
 
-export default DocCheckCard
+// memo: на доске сотни карточек, перерисовывается только та, у которой изменились данные (см. mergeRequestCounts).
+export default memo(DocCheckCard)

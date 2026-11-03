@@ -1263,6 +1263,15 @@ if (params.get('docCheck') === '1') {
     fdb.doc_check_request_comments.push({ id: `cm-${n}`, request_id: 'dcr-3', author_user_id: 'user-3', author_name: 'Юристова Мария Андреевна',
       body: `Сообщение ${n}`, created_at: `2026-10-22T09:${String(n % 60).padStart(2, '0')}:00Z` })
   }
+  // docCheckMany=N — ещё N заявок, большая часть в «Завершено», с примечанием и исполнителем: окно заявки не должно
+  // перерисовывать всю доску (03.11: на сайте 844 заявки, окно открывалось с задержкой).
+  for (let n = 1; n <= Number(params.get('docCheckMany') || 0); n++) {
+    const status = n % 8 === 0 ? 'tax_clause' : n % 5 === 0 ? 'in_progress' : 'done'
+    fdb.doc_check_requests.push(req(`dcr-many-${n}`, { status, sort_order: n, doc_number: String(n),
+      counterparty_id: `cp-${(n % 3) + 1}`, object_id: n % 2 ? 'obj-1' : 'obj-2', notes: `ООО Подрядчик ${n % 40} / ДС № ${n}`,
+      assignee_ids: n % 3 ? ['user-2'] : ['user-3'], manual_assignees: n % 4 ? [] : ['Сидорова Анна Павловна'],
+      labels: n % 6 ? [] : ['Переподписание'], due_date: n % 7 ? null : day(n % 30) }))
+  }
   // Встраивание objects(...) / counterparties(...) после записи — как PostgREST (стенд встраивания не разбирает).
   window.__fakeTriggers = { ...(window.__fakeTriggers || {}), doc_check_requests: (row) => embed(row),
     // Автора и время сообщения ставит база (триггер doc_check_request_comments_stamp): что прислал клиент — не важно.

@@ -1,5 +1,6 @@
 import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
+import { chunkList } from '../utils/inChunks'
 import { cardCountsById } from '../utils/docCheckHelpers'
 
 // Запросы карточки заявки на проверку ДП/ДС: обсуждение и шаги (миграция 20261124).
@@ -25,6 +26,23 @@ export async function fetchCardCounts() {
       .order('request_id', { ascending: true }).order('id', { ascending: true }).range(from, to)),
   ])
   return cardCountsById(steps, comments)
+}
+
+// Кто и когда удалил заявку: id → { name, at }. Берём из истории (событие soft_deleted) — так видно и уже удалённые, колонка
+// в таблице не нужна. Заявку могли удалить, восстановить и удалить снова: важна последняя запись.
+export async function fetchDeletions(ids) {
+  const out = new Map()
+  for (const part of chunkList(ids)) {
+    const rows = await fetchAllRows((from, to) => db.from('doc_check_request_audit_log')
+      .select('id, request_id, changed_by_name, changed_at')
+      .eq('event_type', 'soft_deleted')
+      .in('request_id', part)
+      .order('changed_at', { ascending: false }).order('id', { ascending: true }).range(from, to))
+    for (const r of rows) {
+      if (!out.has(r.request_id)) out.set(r.request_id, { name: r.changed_by_name, at: r.changed_at })
+    }
+  }
+  return out
 }
 
 export async function fetchCardDetails(requestId) {
