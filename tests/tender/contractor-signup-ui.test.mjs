@@ -56,6 +56,7 @@ describe('Регистрация подрядчика на сайте: стра�
     const { page, errors, close } = await open('&selfReg=1')
     try {
       await page.locator('.cab-list-title', { hasText: 'Мои тендеры' }).waitFor({ timeout: 120000 })
+      assert.equal(await page.locator('.cab-card', { hasText: 'Тендер № 704' }).count(), 0, 'завершённых тендеров нет')
       const tabs = await page.locator('.cab-tab').allTextContents()
       assert.ok(tabs.some((t) => t.startsWith('Тендеры')) && tabs.includes('Моя компания'), tabs.join())
       assert.ok(!tabs.some((t) => t.startsWith('Договоры')), 'договоров нет')
@@ -83,8 +84,10 @@ describe('Регистрация подрядчика на сайте: стра�
       assert.equal(await page.locator('.cab-decline').count(), 0, 'отказа от участия у учётки с регистрации нет')
 
       await page.locator('.cab-tab', { hasText: 'Моя компания' }).click()
-      const company = page.locator('.cab-company')
+      const company = page.locator('.cab-org')
       await company.getByText('7707083893').waitFor()
+      // Название компании в шапке кабинета — свой класс: стили вкладки его не задевают.
+      assert.equal(await page.locator('.cab-header .cab-company').evaluate((el) => getComputedStyle(el).display), 'block')
       for (const text of ['ООО Альфа', '770701001', 'Москва, ул. Строителей, 1', 'Монолитные работы', 'Альфин А. А.', '+79161234567', 'alfin@alpha.ru']) {
         assert.ok(await company.getByText(text, { exact: true }).count(), text)
       }

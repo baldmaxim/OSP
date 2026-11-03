@@ -25,9 +25,9 @@ const CONTACT = [
 
 function Rows({ card, rows }) {
   return (
-    <dl className="cab-company-list">
+    <dl className="cab-org-list">
       {rows.map(([key, label]) => (
-        <div key={key} className="cab-company-row">
+        <div key={key} className="cab-org-row">
           <dt>{label}</dt>
           <dd>{card[key] || '—'}</dd>
         </div>
@@ -56,7 +56,7 @@ export default function ContractorCompanyTab() {
 
   const shown = card || { name: contractorInfo?.name }
   return (
-    <div className="cab-company">
+    <div className="cab-org">
       <section className="cab-section">
         <h3>Компания</h3>
         <Rows card={shown} rows={ROWS} />
@@ -72,9 +72,9 @@ export default function ContractorCompanyTab() {
           {passwordDone && <div className="cab-note is-ok">Пароль изменён, остальные входы завершены.</div>}
           {passwordOpen ? (
             <ChangePasswordForm
-              className="cab-company-password"
+              className="cab-org-password"
               buttonClassName="cab-btn cab-btn-primary"
-              fieldClassName="cab-company-field"
+              fieldClassName="cab-org-field"
               errorClassName="cab-note is-warn"
               onDone={() => { setPasswordOpen(false); setPasswordDone(true) }}
             />

@@ -143,9 +143,11 @@ export default function ContractorSignupsTab({ notify = () => {} }) {
                     )}
                   </td>
                   {canDecide && (
-                    <td className="css-actions">
-                      <button type="button" className="btn-primary" disabled={busy === r.id} onClick={() => decide(r, 'approve')}>Открыть доступ</button>
-                      <button type="button" className="btn-secondary" disabled={busy === r.id} onClick={() => decide(r, 'refuse')}>Отказать</button>
+                    <td>
+                      <div className="css-actions">
+                        <button type="button" className="btn-primary" disabled={busy === r.id} onClick={() => decide(r, 'approve')}>Открыть доступ</button>
+                        <button type="button" className="btn-secondary" disabled={busy === r.id} onClick={() => decide(r, 'refuse')}>Отказать</button>
+                      </div>
                     </td>
                   )}
                 </tr>

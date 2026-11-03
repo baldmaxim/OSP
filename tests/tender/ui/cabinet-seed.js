@@ -122,7 +122,8 @@ window.__fakeRpc = {
     TENDERS.find((t) => t.id === p_tender).invite = p_status
     return ok(null)
   },
-  bid_contractor_tenders: () => ok(TENDERS.map((t) => {
+  // Как функция базы: учётке с регистрации — только идущие тендеры.
+  bid_contractor_tenders: () => ok(TENDERS.filter((t) => !SELF_REGISTERED || t.is_open).map((t) => {
     const req = db.tender_bid_requests.find((r) => r.tender_id === t.id && r.counterparty_id === CP.id)
     const rates = db.tender_bid_rates.filter((r) => r.tender_id === t.id && r.price != null)
     return {
