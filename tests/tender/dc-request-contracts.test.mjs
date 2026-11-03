@@ -14,7 +14,7 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import {
-  amendmentLabel, amendmentsOf, autoContractFor, contractChoicesFor, contractLabel, dsNumberKey, groupDcRequestsByContract,
+  amendmentLabel, amendmentsOf, autoContractFor, contractChoicesFor, contractLabel, dsNumberKey,
   matchAmendment, normalizeDocNumber, summarizeDcRequests,
 } from '../../src/utils/dcRequestContracts.js'
 import { concludedContractsByCounterparty, isConcludedContract } from '../../src/utils/counterpartyDocs.js'
@@ -69,14 +69,11 @@ describe('Заявка на ДС ↔ договор: правила', () => {
     assert.equal(amendmentLabel({ contract_number: '4' }), 'ДС № 4')
   })
 
-  it('карточка контрагента: группы по договору (без договора — в конце), отработано и в ДС — отдельно', () => {
-    const docs = new Map([['a', K('a', { contract_date: '2025-01-01' })], ['b', K('b', { contract_date: '2026-01-01' })]])
+  it('карточка контрагента: отработано и в ДС считаются отдельно', () => {
     const reqs = [
       { id: 1, contract_id: 'a', status: 'completed', amendment_id: 'a1' }, { id: 2, contract_id: null, status: 'in_work' },
       { id: 3, contract_id: 'b', status: 'completed', amendment_id: null }, { id: 4, contract_id: 'gone', status: 'contract_check' },
     ]
-    const groups = groupDcRequestsByContract(reqs, docs)
-    assert.deepEqual(groups.map(g => [g.contract?.id || null, g.requests.map(r => r.id)]), [['b', [3]], ['a', [1]], [null, [2, 4]]])
     assert.deepEqual(summarizeDcRequests(reqs), { total: 4, done: 2, inDs: 1 })
   })
 
@@ -131,8 +128,8 @@ describe('Договоры в заявках на ДС и у контраген�
     await stand?.server.close()
   })
 
-  const openPage = async (query, ready, viewport = { width: 1800, height: 1000 }) => {
-    const context = await browser.newContext({ locale: 'ru-RU', viewport })
+  const openPage = async (query, ready, viewport = { width: 1800, height: 1000 }, extra = {}) => {
+    const context = await browser.newContext({ locale: 'ru-RU', viewport, ...extra })
     const page = await context.newPage()
     const errors = []
     page.on('pageerror', (e) => errors.push(e.message))
@@ -304,20 +301,155 @@ describe('Договоры в заявках на ДС и у контраген�
     } finally { await close() }
   })
 
-  it('карточка контрагента: заявки на ДС по договорам — отработанные и занесённые в ДС', async () => {
-    const { page, errors, close } = await openPage(`${CP}&dcStats=1&dcNumbers=1&dcContracts=1`, 'table.compact-table tbody tr.table-row')
+  const CARD = `${CP}&dcStats=1&dcNumbers=1&dcContracts=1`
+  const openCard = async (page) => {
+    await page.locator('table.compact-table tbody tr.table-row', { hasText: 'Подрядчик 01' }).locator('.company-name').click()
+    const table = page.locator('.cpg-contracts table.cpg-contracts-table')
+    await table.waitFor({ timeout: 10000 })
+    return table
+  }
+
+  it('карточка контрагента: объект → договор → ДС и заявки на ДС, заявка без договора — в своём объекте', async () => {
+    const { page, errors, close } = await openPage(CARD, 'table.compact-table tbody tr.table-row')
     try {
-      await page.locator('table.compact-table tbody tr.table-row', { hasText: 'Подрядчик 01' }).locator('.company-name').click()
-      const section = page.locator('.cpg-dcr')
-      await section.locator('.cpg-dcr-table').waitFor({ timeout: 10000 })
-      assert.match(await section.locator('.cpg-dcr-count').innerText(), /Заявок на ДС: 5 · отработано: 2 · занесено в ДС: 1/)
-      const groups = await section.locator('tr.cpg-dcr-group').allInnerTexts()
-      assert.match(groups[0], /Договор № П-15\/26 от 02\.03\.2026.*заявок: 2 · отработано: 1 · в ДС: 1/s)
-      assert.match(groups.at(-1), /Договор не указан/)
-      const d4 = section.locator('tbody tr', { hasText: '№ 15' })
+      const table = await openCard(page)
+      assert.match(await page.locator('.cpg-contracts-count').innerText(), /Заявок на ДС: 5 · отработано: 2 · занесено в ДС: 1/)
+      const alfa = table.locator('tbody', { has: page.locator('.cpg-object-name', { hasText: 'ЖК Альфа' }) })
+      assert.match(await alfa.locator('.cpg-object-meta').innerText(), /1 договор · 1 ДС · 4 заявки/)
+      const contract = alfa.locator('tr.is-contract', { hasText: 'П-15/26' })
+      assert.match(await contract.locator('.cpg-group-meta').innerText(), /заявок: 2 · отработано: 1 · в ДС: 1/)
+      assert.match(await alfa.locator('tr.is-ds').innerText(), /ДС №3/)
+      assert.match(await alfa.locator('tr.cpg-nocontract-row').innerText(), /Договор не указан/)
+      const d4 = alfa.locator('tr.is-req', { hasText: 'Заявка № 15' })
       assert.match(await d4.innerText(), /Отработана/)
+      assert.match(await d4.innerText(), /утверждено/)
       assert.equal(await d4.getByRole('link', { name: 'ДС №3 от 10.05.2026' }).getAttribute('href'), '/contracts/kd-1-ds3')
-      assert.equal(await section.getByRole('link', { name: 'Открыть в реестре заявок' }).getAttribute('href'), '/dc-requests?counterparty=cp-1')
+      assert.match(await alfa.locator('tr.is-req', { hasText: 'Заявка № 12' }).innerText(), /не занесена в ДС/)
+      // Заявка без договора — в объекте заявки; договор без объекта — в конце.
+      const beta = table.locator('tbody', { has: page.locator('.cpg-object-name', { hasText: 'ЖК Бета' }) })
+      assert.equal(await beta.locator('tr.is-req', { hasText: 'Заявка № 14' }).count(), 1)
+      assert.equal(await table.locator('.cpg-object-name').last().innerText(), 'Объект не указан')
+      assert.equal(await page.locator('.cpg-contracts').getByRole('link', { name: 'Открыть в реестре заявок' }).getAttribute('href'), '/dc-requests?counterparty=cp-1')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('карточка контрагента: выбор в столбце — ДС или заявки на ДС, запоминается; договоры остаются', async () => {
+    const { page, errors, close } = await openPage(CARD, 'table.compact-table tbody tr.table-row')
+    try {
+      const table = await openCard(page)
+      const select = table.locator('thead select.cpg-child-view')
+      assert.equal(await select.inputValue(), 'all')
+      assert.deepEqual(await select.locator('option').allTextContents(), ['ДС и заявки на ДС', 'ДС (3)', 'Заявки на ДС (5)'])
+      const contracts = await table.locator('tr.is-contract').count()
+      assert.equal(await table.locator('tr.is-ds').count(), 3)
+      assert.equal(await table.locator('tr.is-req').count(), 5)
+
+      await select.selectOption('ds')
+      assert.equal(await table.locator('tr.is-ds').count(), 3)
+      assert.equal(await table.locator('tr.is-req').count(), 0)
+      assert.equal(await table.locator('tr.cpg-nocontract-row').count(), 0)
+      assert.equal(await table.locator('tr.is-contract').count(), contracts)
+
+      await select.selectOption('requests')
+      assert.equal(await table.locator('tr.is-ds').count(), 0)
+      assert.equal(await table.locator('tr.is-req').count(), 5)
+      assert.equal(await table.locator('tr.is-contract').count(), contracts)
+
+      // Выбор переживает обновление страницы.
+      await page.reload()
+      const again = await openCard(page)
+      assert.equal(await again.locator('thead select.cpg-child-view').inputValue(), 'requests')
+      assert.equal(await again.locator('tr.is-ds').count(), 0)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('карточка контрагента: сохранённого вида у контрагента нет — показывается всё, а не пустота', async () => {
+    const { page, errors, close } = await openPage(`${CP}&cpLinks=0`, 'table.compact-table tbody tr.table-row')
+    try {
+      await page.evaluate(() => localStorage.setItem('counterparties:childView', 'requests'))
+      await page.reload()
+      await page.locator('table.compact-table tbody tr.table-row', { hasText: 'Подрядчик 01' }).locator('.company-name').click()
+      const table = page.locator('.cpg-contracts table.cpg-contracts-table')
+      await table.waitFor({ timeout: 10000 })
+      const select = table.locator('thead select.cpg-child-view')
+      assert.equal(await select.inputValue(), 'all')
+      assert.equal(await select.locator('option', { hasText: 'Заявки на ДС (0)' }).isDisabled(), true)
+      assert.equal(await table.locator('tr.is-ds').count(), 2)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('карточка контрагента: заявки не загрузились — договоры и ДС на месте, «Повторить» догружает', async () => {
+    const { page, close } = await openPage(CARD, 'table.compact-table tbody tr.table-row')
+    try {
+      await page.evaluate(() => {
+        window.__fakeErrors = { ...(window.__fakeErrors || {}), dc_requests: { code: '500', message: 'сбой сервера' } }
+      })
+      const table = await openCard(page)
+      const section = page.locator('.cpg-contracts')
+      await section.getByText('Не удалось загрузить заявки на ДС: сбой сервера').waitFor()
+      assert.ok(await table.locator('tr.is-contract').count() > 0)
+      assert.ok(await table.locator('tr.is-ds').count() > 0)
+      assert.equal(await table.locator('tr.is-req').count(), 0)
+
+      await page.evaluate(() => { delete window.__fakeErrors.dc_requests })
+      await section.getByRole('button', { name: 'Повторить' }).click()
+      await table.locator('tr.is-req').first().waitFor({ timeout: 10000 })
+      assert.equal(await table.locator('tr.is-req').count(), 5)
+      assert.equal(await section.getByText('Не удалось загрузить заявки').count(), 0)
+    } finally { await close() }
+  })
+
+  it('карточка контрагента: права — только заявки (договоры подписью), только договоры (без заявок и выбора)', async () => {
+    const onlyRequests = await openPage(`${CARD}&noView=contracts`, 'table.compact-table tbody tr.table-row')
+    try {
+      const table = await openCard(onlyRequests.page)
+      const section = onlyRequests.page.locator('.cpg-contracts')
+      await section.getByText('нет доступа к разделу «Договоры и ДС»').waitFor()
+      assert.equal(await table.locator('tr.is-req').count(), 5)
+      assert.equal(await table.locator('tr.is-ds').count(), 0)
+      assert.equal(await table.locator('thead select.cpg-child-view').count(), 0)
+      const contract = table.locator('tr.is-contract', { hasText: 'П-15/26' })
+      assert.equal(await contract.locator('.cpg-cstatus').count(), 0, 'без раздела — только подпись договора')
+      assert.equal(await table.locator('tr.is-contract').count(), 1, 'других договоров контрагента не видно')
+      assert.equal(await onlyRequests.page.locator('.cpg-attach-btn', { hasText: 'Прикрепить' }).count(), 0)
+      assert.deepEqual(onlyRequests.errors, [])
+    } finally { await onlyRequests.close() }
+
+    const onlyContracts = await openPage(`${CARD}&noView=dc_requests`, 'table.compact-table tbody tr.table-row')
+    try {
+      const table = await openCard(onlyContracts.page)
+      assert.equal(await table.locator('tr.is-req').count(), 0)
+      assert.ok(await table.locator('tr.is-ds').count() > 0)
+      assert.equal(await table.locator('thead select.cpg-child-view').count(), 0)
+      assert.equal(await onlyContracts.page.locator('.cpg-contracts').getByRole('link', { name: 'Открыть в реестре заявок' }).count(), 0)
+      assert.deepEqual(onlyContracts.errors, [])
+    } finally { await onlyContracts.close() }
+  })
+
+  it('карточка контрагента, телефон: выбор над списком, объект заголовком, заявки под договором', async () => {
+    const { page, errors, close } = await openPage(`${CARD}&shell=1`, '.cp-mrow', { width: 390, height: 844 }, { isMobile: true, hasTouch: true })
+    try {
+      const row = page.locator('.cp-mrow', { hasText: 'Подрядчик 01' })
+      await row.locator('.cp-mrow-open').click()
+      const select = page.locator('.cpg-contracts-bar select.cpg-child-view')
+      await select.waitFor({ timeout: 10000 })
+      const alfa = page.locator('.cpg-object-card', { hasText: 'ЖК Альфа' })
+      assert.equal(await alfa.locator('.cpg-contract-card-row.is-ds').count(), 1)
+      assert.equal(await alfa.locator('.cpg-contract-card-row.is-req').count(), 4)
+      // У заявки без суммы — ни прочерка, ни пустой строки.
+      const noSum = page.locator('.cpg-contract-card-row.is-req', { hasText: 'Заявка № 14' })
+      assert.equal(await noSum.locator('.cpg-contract-card-sum').count(), 0)
+      await select.selectOption('ds')
+      assert.equal(await alfa.locator('.cpg-contract-card-row.is-req').count(), 0)
+      assert.equal(await alfa.locator('.cpg-contract-card-row.is-ds').count(), 1)
+      const overflow = await page.evaluate(() => {
+        const body = document.querySelector('.cp-detail-body')
+        return body.scrollWidth - body.clientWidth
+      })
+      assert.ok(overflow <= 1, `прокрутка вбок внутри вкладки: ${overflow}px`)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })

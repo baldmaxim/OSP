@@ -241,7 +241,9 @@
   margin: -0.25rem 0 0.5rem;
 }
 .cpg-contracts-count { font-size: 0.75rem; color: var(--text-secondary); }
-.cpg-attach-btn { font-size: 0.8125rem; font-weight: 500; }
+.cpg-contracts-actions { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 1rem; }
+.cpg-attach-btn { font-size: 0.8125rem; font-weight: 500; text-decoration: none; }
+.cpg-tree-note { margin: -0.125rem 0 0.5rem; }
 
 /* Выбор договора для «Прикрепить договор». */
 .cpg-attach { margin-bottom: 0.75rem; }
@@ -265,24 +267,30 @@
   cursor: help;
 }
 .cpg-icon-btn.cpg-detach { width: 1.5rem; height: 1.5rem; }
-.cpg-table-wrap { overflow-x: auto; }
+/* Таблица-дерево: объект → договор → ДС и заявки. Столбцы разделены линиями; предмет забирает всё свободное место
+   и показывается целиком (в окне карточки ширина ограничена, поэтому «остаток», а не своя ширина в rem). */
+.cpg-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
 .cpg-contracts-table {
   width: 100%;
-  min-width: 46rem;
+  min-width: 52rem;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.8125rem;
   line-height: 1.25rem;
 }
 .cpg-col-doc { width: 16rem; }
-.cpg-col-obj { width: 22%; }
-.cpg-col-sum { width: 11rem; }
-.cpg-col-status { width: 9.5rem; }
+.cpg-col-sum { width: 10rem; }
+.cpg-col-status { width: 10.5rem; }
 .cpg-contracts-table th {
   padding: 0.375rem 0.625rem;
   font-size: 0.75rem;
   font-weight: 600;
   text-align: left;
+  vertical-align: middle;
   color: var(--text-secondary);
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
@@ -291,25 +299,64 @@
   padding: 0.4375rem 0.625rem;
   vertical-align: top;
   color: var(--text-primary);
-  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
   overflow-wrap: anywhere;
 }
-/* Договор и его ДС — одна группа: разделитель толще между договорами, ДС — на светлом фоне. */
-.cpg-contract-group + .cpg-contract-group tr:first-child td { border-top: 1px solid var(--border-color); }
-.cpg-contracts-table tr.is-ds td { background: color-mix(in srgb, var(--bg-tertiary) 45%, transparent); }
+/* Разделители столбцов — и в шапке, и в строках; строка объекта и «Договор не указан» идут через всю таблицу. */
+.cpg-contracts-table thead th + th,
+.cpg-contracts-table td + td { border-left: 1px solid var(--border-color); }
 .cpg-contracts-table .cpg-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.cpg-doc-cell { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.375rem; }
-.cpg-doc-kind { font-size: 0.75rem; color: var(--text-secondary); }
-.cpg-doc-link { color: var(--primary-color); text-decoration: none; font-weight: 500; white-space: nowrap; }
+.cpg-th-doc { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.cpg-child-view {
+  min-width: 0;
+  max-width: 10.5rem;
+  padding: 0.0625rem 0.25rem;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.cpg-child-view:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+
+/* Объект — одной узкой строкой над своими договорами. */
+.cpg-contracts-table tr.cpg-object-row th {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--primary-color) 9%, var(--bg-primary));
+  border-top: 2px solid var(--border-color);
+  border-bottom: 0;
+}
+.cpg-object-group:first-of-type tr.cpg-object-row th { border-top: 0; }
+.cpg-object-name { font-weight: 600; overflow-wrap: anywhere; }
+.cpg-object-meta { margin-left: 0.75rem; font-size: 0.75rem; font-weight: 400; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+/* Договор — основная строка, ДС и заявки под ним — подложкой, с отступом в первом столбце. */
+.cpg-contracts-table tr.is-contract td { border-top-color: var(--border-color); }
+.cpg-contracts-table tr.is-ds td,
+.cpg-contracts-table tr.is-req td { background: color-mix(in srgb, var(--bg-tertiary) 45%, transparent); }
+.cpg-contracts-table tr.cpg-nocontract-row td { background: color-mix(in srgb, var(--bg-tertiary) 80%, transparent); }
+.cpg-nocontract { font-size: 0.8125rem; line-height: 1.25rem; font-weight: 500; color: var(--text-secondary); }
+.cpg-nocontract-row .cpg-group-meta { display: inline; margin-left: 0.75rem; }
+.cpg-group-meta { font-size: 0.75rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+.cpg-doc-cell { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.375rem; min-width: 0; }
+.cpg-doc-kind { flex: 0 0 100%; font-size: 0.75rem; line-height: 1rem; color: var(--text-secondary); }
+.cpg-doc-link { color: var(--primary-color); text-decoration: none; font-weight: 500; min-width: 0; }
 .cpg-doc-link:hover { text-decoration: underline; }
 .cpg-doc-date { color: var(--text-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.cpg-work {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
+.cpg-req-object { flex: 0 0 100%; font-size: 0.75rem; line-height: 1rem; color: var(--text-secondary); }
+.cpg-req-in-ds { margin-top: 0.1875rem; font-size: 0.75rem; line-height: 1rem; }
+.cpg-req-in-ds .cpg-muted { font-size: inherit; }
+.cpg-work { white-space: pre-line; overflow-wrap: anywhere; }
 .cpg-sum-actual { font-size: 0.75rem; color: var(--text-secondary); }
+.cpg-contracts-table .cpg-sum-actual span { display: block; }
 
 .cpg-cstatus {
   display: inline-block;
@@ -339,30 +386,21 @@
   overflow: hidden;
 }
 .cpg-contract-card-row { padding: 0.5rem 0.75rem; display: flex; flex-direction: column; gap: 0.25rem; }
-.cpg-contract-card-row.is-ds {
+.cpg-contract-card-row.is-ds,
+.cpg-contract-card-row.is-req {
   padding-left: 1.25rem;
   border-top: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
   background: color-mix(in srgb, var(--bg-tertiary) 45%, transparent);
 }
 .cpg-contract-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; font-size: 0.8125rem; }
-.cpg-contract-card-head .cpg-doc-link { white-space: normal; }
-.cpg-contract-card-head .cpg-doc-kind { display: block; }
-.cpg-contract-card-obj { font-size: 0.8125rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+.cpg-contract-card .cpg-work { font-size: 0.8125rem; line-height: 1.25rem; color: var(--text-primary); }
+/* Телефон: объект — заголовком над карточками договоров. */
+.cpg-object-cards { display: flex; flex-direction: column; gap: 0.75rem; }
+.cpg-object-row-phone { display: flex; flex-direction: column; gap: 0.0625rem; margin-bottom: 0.375rem; font-size: 0.8125rem; line-height: 1.125rem; color: var(--text-primary); }
+.cpg-object-row-phone .cpg-object-meta { margin-left: 0; }
 .cpg-contract-card-sum { font-size: 0.8125rem; font-variant-numeric: tabular-nums; color: var(--text-primary); }
 
-/* «Заявки на ДС» под договорами: строка договора — шапка группы; статус заявки и «В ДС» — плашками. */
-.cpg-dcr-bar { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; margin: -0.25rem 0 0.5rem; }
-.cpg-dcr-count { font-size: 0.75rem; color: var(--text-secondary); }
-.cpg-col-dcr-no { width: 5.5rem; }
-.cpg-col-dcr-ds { width: 9rem; }
-.cpg-col-dcr-obj { width: 15%; }
-.cpg-col-dcr-in-ds { width: 12rem; }
-.cpg-dcr-table tr.cpg-dcr-group td {
-  background: var(--bg-tertiary);
-  font-size: 0.8125rem;
-}
-.cpg-dcr-group-meta { margin-left: 0.75rem; font-size: 0.75rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.cpg-dcr-nocontract { font-weight: 500; color: var(--text-secondary); }
+/* Заявка на ДС в дереве: статус и «в ДС» — плашкой и подписью. */
 .cpg-dcr-ds { white-space: normal; }
 .cpg-dcr-state {
   display: inline-block;

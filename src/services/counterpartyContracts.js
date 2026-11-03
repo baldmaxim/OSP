@@ -15,7 +15,7 @@ import { concludedContractsByCounterparty } from '../utils/counterpartyDocs'
 export const CONTRACT_LINKS_TABLE = 'counterparty_contract_links'
 
 const DOC_FIELDS = 'id, display_id, record_type, parent_contract_id, root_contract_id, status, deleted_at, '
-  + 'contract_number, contract_date, contract_amount, psdc_total, currency, work_name, objects(name)'
+  + 'contract_number, contract_date, contract_amount, psdc_total, currency, work_name, object_id, objects(name)'
 
 // В адрес уходят два списка id (id.in и root_contract_id.in) — порция меньше обычной.
 const ROOT_CHUNK = 50
@@ -137,9 +137,9 @@ export async function loadConcludedContractCounts() {
 // отработаны, какие занесены в ДС. → { requests, docs: Map(id → договор / ДС), linked }; linked=false — колонок
 // договора в базе ещё нет (заявки без группировки по договору). Без постоянного «№» (20261106) — без номера.
 const DC_REQUEST_FIELDS = [
-  'id, request_number, ds_number, works_description, status, amount_before, amount_after, created_at, objects(name), contract_id, amendment_id',
-  'id, request_number, ds_number, works_description, status, amount_before, amount_after, created_at, objects(name)',
-  'id, ds_number, works_description, status, amount_before, amount_after, created_at, objects(name)',
+  'id, request_number, ds_number, works_description, status, amount_before, amount_after, created_at, object_id, objects(name), contract_id, amendment_id',
+  'id, request_number, ds_number, works_description, status, amount_before, amount_after, created_at, object_id, objects(name)',
+  'id, ds_number, works_description, status, amount_before, amount_after, created_at, object_id, objects(name)',
 ]
 const isMissingColumn = (err) => err?.code === '42703' || err?.code === 'PGRST204'
   || /column .* does not exist|could not find .* column/i.test(String(err?.message || ''))
@@ -162,7 +162,7 @@ export async function loadCounterpartyDcRequests(counterpartyId) {
   for (const part of chunkList(ids, 100)) {
     const { data, error } = await db
       .from('contracts')
-      .select('id, record_type, contract_number, contract_date, status, deleted_at')
+      .select(DOC_FIELDS)
       .in('id', part)
     if (error) throw error
     for (const d of data || []) docs.set(d.id, d)

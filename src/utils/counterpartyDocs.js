@@ -49,6 +49,71 @@ export function groupCounterpartyDocs(docs) {
   })
 }
 
+const isContractRoot = (g) => g.root.record_type === DOC_TYPE.CONTRACT
+const dayOf = (value) => String(value || '').slice(0, 10)
+
+// Дерево низа «Общей информации»: объект → договоры → ДС и заявки на ДС. В нём только объекты, где у контрагента
+// есть договор или заявка: других объектов контрагент не касался.
+//   docs — договоры и ДС контрагента плоским списком (loadCounterpartyDocs);
+//   requests — его заявки на ДС; requestDocs — Map(id → договор / ДС), на которые ссылаются заявки.
+// Заявка стоит под своим договором; договор заявки, где контрагент не сторона (или у пользователя нет раздела
+// «Договоры и ДС», и docs пуст), становится строкой дерева. Договор удалён или не указан — заявка в `loose` своего
+// объекта. ДС — всегда под договором, какой бы объект ни стоял у самого ДС. Положение задаёт договор, поэтому объект
+// заявки может отличаться от объекта договора.
+//   → [{ key, name, groups: [{ root, children, actual, requests }], loose: [заявка], counts }]:
+// свежие объекты выше (по последнему документу или заявке), без объекта (key = '') — в конце.
+export function buildObjectTree(docs = [], requests = [], requestDocs = null) {
+  const known = new Set(docs.map(d => d.id))
+  const extra = []
+  for (const r of requests) {
+    const c = r.contract_id ? requestDocs?.get(r.contract_id) : null
+    if (c && !c.deleted_at && !known.has(c.id)) { known.add(c.id); extra.push(c) }
+  }
+
+  const groups = groupCounterpartyDocs([...docs, ...extra]).map(g => ({ ...g, requests: [] }))
+  const groupByDoc = new Map()
+  for (const g of groups) {
+    groupByDoc.set(g.root.id, g)
+    for (const { doc } of g.children) groupByDoc.set(doc.id, g)
+  }
+
+  const objects = new Map()
+  const objectOf = (id, name) => {
+    const key = id || ''
+    let o = objects.get(key)
+    if (!o) objects.set(key, o = { key, name: '', groups: [], loose: [], latest: '' })
+    if (!o.name && name) o.name = name
+    return o
+  }
+  const touch = (o, day) => { if (day > o.latest) o.latest = day }
+
+  for (const g of groups) {
+    const o = objectOf(g.root.object_id, g.root.objects?.name)
+    o.groups.push(g)
+    touch(o, dayOf(g.root.contract_date))
+    for (const { doc } of g.children) touch(o, dayOf(doc.contract_date))
+  }
+  for (const r of requests) {
+    const g = groupByDoc.get(r.contract_id) || groupByDoc.get(r.amendment_id)
+    if (g) g.requests.push(r)
+    else objectOf(r.object_id, r.objects?.name).loose.push(r)
+  }
+  for (const o of objects.values()) {
+    for (const g of o.groups) for (const r of g.requests) touch(o, dayOf(r.created_at))
+    for (const r of o.loose) touch(o, dayOf(r.created_at))
+    const contracts = o.groups.filter(isContractRoot).length
+    o.counts = {
+      contracts,
+      // ДС без загруженного договора — корень группы, но всё равно ДС.
+      amendments: o.groups.reduce((n, g) => n + g.children.length, 0) + o.groups.length - contracts,
+      requests: o.groups.reduce((n, g) => n + g.requests.length, 0) + o.loose.length,
+    }
+  }
+  return [...objects.values()].sort((a, b) => (a.key === '') - (b.key === '')
+    || b.latest.localeCompare(a.latest)
+    || a.name.localeCompare(b.name, 'ru'))
+}
+
 // Заключённый договор — галочка «Договор» и фильтр «С договором» реестра контрагентов: договор (не ДС), не
 // удалён, со статусом «Завершено» или с датой подписания.
 export const isConcludedContract = (c) => !!c && !c.deleted_at && c.record_type === DOC_TYPE.CONTRACT

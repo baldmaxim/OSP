@@ -7,8 +7,9 @@
 //     текст, без колонок НДС в базе — колонки в реестре нет;
 //   • аффилированные компании — группа counterparty_relations: добавить, исключить, открыть карточку компании;
 //     отдельной кнопки и окна «Связи» в реестре больше нет;
-//   • договоры и ДС, где контрагент — сторона (основной или вторая сторона), ДС — под своим договором,
-//     чужие договоры не попадают; на телефоне — карточки, без прокрутки вбок;
+//   • снизу — дерево: объект (только где есть договоры контрагента) → договоры, где контрагент — сторона (основной или
+//     вторая сторона) → ДС под своим договором; чужие договоры и объекты не попадают; предмет — целиком, столбцы
+//     разделены линиями, объект — узкой строкой; на телефоне — карточки, без прокрутки вбок;
 //   • договор можно прикрепить к контрагенту вручную и открепить (миграция 20261031): администратор видит пометку
 //     «добавлен вручную» и кто прикрепил; без права правки — ни прикрепить, ни открепить, пометки нет;
 //     без таблицы привязок — раздел как раньше, без «Прикрепить договор».
@@ -183,28 +184,107 @@ describe('Карточка контрагента: «Общая информац
     } finally { await close() }
   })
 
-  it('договоры и ДС контрагента: свои и как вторая стороны, ДС под договором, чужих нет', async () => {
+  it('объект → договоры → ДС: только объекты контрагента, свои договоры и как вторая сторона, чужих нет', async () => {
     const { page, errors, close } = await openPage(`${BASE}&cpCard=1`)
     try {
       await openCard(page, 'Подрядчик 01')
       const table = page.locator('table.cpg-contracts-table')
       await table.waitFor()
-      assert.equal(await page.locator('.cpg-contracts-count').innerText(), 'Договоров: 3 · ДС: 2')
+      assert.equal(await page.locator('.cpg-contracts-count').innerText(), 'Объектов: 3 · Договоров: 3 · ДС: 2')
+      assert.deepEqual(await table.locator('.cpg-object-name').allInnerTexts(), ['ЖК Северный', 'БЦ Восток', 'ЖК Южный'],
+        'объекты — только где есть договоры контрагента, свежие выше')
+
       const rows = await table.locator('tbody tr').allInnerTexts()
-      assert.equal(rows.length, 5, rows.join('\n'))
-      assert.match(rows[0], /Договор\s+№ П-15\/26\s+от 02\.03\.2026/)
-      assert.match(rows[0], /ЖК Северный/)
-      assert.match(rows[0], /с учётом ДС 1\s250\s000,00 ₽/)
-      assert.match(rows[1], /ДС на дополнительные работы\s+№ ДС-1/)
-      assert.match(rows[2], /ДС на изменение ВОР\s+№ ДС-2/)
-      assert.match(rows[3], /Договор\s+№ Т-7/)
+      assert.equal(rows.length, 8, rows.join('\n'))
+      assert.match(rows[0], /ЖК Северный\s+1 договор · 2 ДС/)
+      assert.match(rows[1], /Договор\s+№ П-15\/26\s+от 02\.03\.2026/)
+      assert.match(rows[1], /с учётом ДС\s+1\s250\s000,00 ₽/)
+      assert.match(rows[2], /ДС на дополнительные работы\s+№ ДС-1/)
+      assert.match(rows[3], /ДС на изменение ВОР\s+№ ДС-2/)
+      assert.match(rows[4], /БЦ Восток\s+1 договор/)
+      assert.match(rows[5], /Договор\s+№ Т-7/)
       // Прикреплённый вручную — тоже здесь, а пометку видит только администратор (у своих договоров её нет).
-      assert.match(rows[4], /Договор\s+№ Л-3\s+от 01\.06\.2024/)
-      assert.match(rows[4], /ЖК Южный/)
+      assert.match(rows[6], /ЖК Южный\s+1 договор/)
+      assert.match(rows[7], /Договор\s+№ Л-3\s+от 01\.06\.2024/)
       assert.equal(await table.locator('.cpg-manual').count(), 1)
-      assert.match(await table.locator('tbody tr').nth(4).locator('.cpg-manual').innerText(), /добавлен вручную/)
+      assert.match(await table.locator('tbody tr').nth(7).locator('.cpg-manual').innerText(), /добавлен вручную/)
       assert.ok(!rows.join('\n').includes('ЧУЖОЙ'), 'чужой договор не показан')
-      assert.equal(await table.locator('tbody tr').first().locator('a.cpg-doc-link').getAttribute('href'), '/contracts/k-1')
+      assert.ok(!rows.join('\n').includes('Другой объект'), 'объект чужого договора не показан')
+      assert.equal(await table.locator('tr.is-contract a.cpg-doc-link').first().getAttribute('href'), '/contracts/k-1')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('вид таблицы: линии между столбцами, объект — узкой строкой, предмет целиком и шире документа', async () => {
+    const { page, errors, close } = await openPage(`${BASE}&cpCard=1`)
+    const LONG = 'Выполнение комплекса работ по устройству навесного вентилируемого фасада корпусов 1–4 с утеплением, '
+      + 'монтажом подсистемы, облицовкой керамогранитом, устройством примыканий к оконным блокам и витражам, '
+      + 'а также окраской металлоконструкций козырьков входных групп и балконов согласно рабочей документации'
+    try {
+      await page.locator('table.compact-table tbody tr.table-row').first().waitFor({ timeout: 60000 })
+      await page.evaluate((text) => { window.__fakeDb.contracts.find(k => k.id === 'k-1').work_name = text }, LONG)
+      await openCard(page, 'Подрядчик 01')
+      const table = page.locator('table.cpg-contracts-table')
+      await table.waitFor()
+
+      const headers = (await table.locator('thead th').allInnerTexts()).map(h => h.split('\n')[0].trim())
+      assert.deepEqual(headers, ['Документ', 'Предмет / описание', 'Сумма', 'Статус'], 'столбца «Объект» нет — объект стал строкой')
+
+      const look = await page.evaluate(() => {
+        const box = (el) => el.getBoundingClientRect()
+        const row = document.querySelector('table.cpg-contracts-table tr.is-contract')
+        const [doc, work, sum, status] = row.querySelectorAll('td')
+        const text = work.querySelector('.cpg-work')
+        const lines = [...document.querySelectorAll('table.cpg-contracts-table thead th, table.cpg-contracts-table tr.is-contract td')]
+          .map(c => [c.cellIndex, getComputedStyle(c).borderLeftWidth, getComputedStyle(c).borderLeftStyle])
+        return {
+          docWidth: box(doc).width,
+          workWidth: box(work).width,
+          sumOverflow: sum.scrollWidth - sum.clientWidth,
+          statusOverflow: status.scrollWidth - status.clientWidth,
+          clipped: text.scrollHeight - text.clientHeight,
+          clamp: getComputedStyle(text).webkitLineClamp,
+          objectHeight: box(document.querySelector('table.cpg-contracts-table tr.cpg-object-row')).height,
+          lines,
+        }
+      })
+      assert.ok(look.workWidth > look.docWidth, `предмет ${look.workWidth} уже документа ${look.docWidth}`)
+      assert.ok(look.workWidth >= 400, `предмет узкий: ${look.workWidth}px`)
+      assert.ok(look.clipped <= 1, `предмет обрезан на ${look.clipped}px`)
+      assert.equal(look.clamp, 'none')
+      assert.ok(look.sumOverflow <= 1, `сумма вылезает на ${look.sumOverflow}px`)
+      assert.ok(look.statusOverflow <= 1, `статус вылезает на ${look.statusOverflow}px`)
+      assert.ok(look.objectHeight <= 30, `строка объекта высотой ${look.objectHeight}px`)
+      for (const [index, width, style] of look.lines) {
+        if (index === 0) continue
+        assert.equal(width, '1px', `нет линии у столбца ${index}`)
+        assert.equal(style, 'solid')
+      }
+      assert.equal(await table.locator('tr.is-contract .cpg-work').first().innerText(), LONG)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('без права «Договоров и ДС» и без заявок — нет дерева и подпись о доступе', async () => {
+    const { page, errors, close } = await openPage(`${BASE}&cpCard=1&noView=contracts,dc_requests`)
+    try {
+      await openCard(page, 'Подрядчик 01')
+      await page.locator('.cpg-contracts', { hasText: 'Нет доступа к разделу «Договоры и ДС»' }).waitFor()
+      assert.equal(await page.locator('table.cpg-contracts-table').count(), 0)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('контрагент без договоров и заявок: пустая подпись, ни таблицы, ни выбора, ни ошибок', async () => {
+    const { page, errors, close } = await openPage(`${BASE}&cpCard=1`)
+    try {
+      await openCard(page, 'Подрядчик 06')
+      const count = page.locator('.cpg-contracts-count')
+      await count.waitFor()
+      assert.equal(await count.innerText(), 'Договоров, ДС и заявок на ДС с этим контрагентом нет.')
+      assert.equal(await page.locator('table.cpg-contracts-table').count(), 0)
+      assert.equal(await page.locator('select.cpg-child-view').count(), 0)
+      assert.equal(await page.locator('.cpg-tree-note').count(), 0)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
@@ -233,8 +313,8 @@ describe('Карточка контрагента: «Общая информац
       await page.waitForFunction(() => window.__fakeDb.counterparty_contract_links.some(l => l.counterparty_id === 'cp-1' && l.contract_id === 'k-3'))
       await table.locator('tbody tr', { hasText: 'ЧУЖОЙ-1' }).waitFor()
       assert.equal(await page.locator('.cpg-attach').count(), 0, 'выбор закрылся')
-      assert.equal(await page.locator('.cpg-contracts-count').innerText(), 'Договоров: 4 · ДС: 2')
-      assert.match(await table.locator('tbody tr', { hasText: 'ЧУЖОЙ-1' }).locator('.cpg-manual').getAttribute('title'), /Стендов С\. С\./)
+      assert.equal(await page.locator('.cpg-contracts-count').innerText(), 'Объектов: 4 · Договоров: 4 · ДС: 2')
+      assert.match(await table.locator('tbody', { hasText: 'Другой объект' }).locator('tr', { hasText: 'ЧУЖОЙ-1' }).locator('.cpg-manual').getAttribute('title'), /Стендов С\. С\./)
       const link = await page.evaluate(() => window.__fakeDb.counterparty_contract_links.find(l => l.contract_id === 'k-3'))
       assert.equal(link.created_by, 'user-1', 'кто прикрепил — ставит база, а не страница')
 
@@ -287,7 +367,7 @@ describe('Карточка контрагента: «Общая информац
     try {
       await openCard(noLinks.page, 'Подрядчик 01')
       await noLinks.page.locator('table.cpg-contracts-table').waitFor()
-      assert.equal(await noLinks.page.locator('.cpg-contracts-count').innerText(), 'Договоров: 2 · ДС: 2')
+      assert.equal(await noLinks.page.locator('.cpg-contracts-count').innerText(), 'Объектов: 2 · Договоров: 2 · ДС: 2')
       assert.equal(await noLinks.page.locator('.cpg-attach-btn').count(), 0)
       assert.deepEqual(noLinks.errors, [])
     } finally { await noLinks.close() }
@@ -323,6 +403,8 @@ describe('Карточка контрагента: «Общая информац
       await row.locator('.cp-mrow-open').click()
       await page.locator('.cpg-contract-card').first().waitFor()
       assert.equal(await page.locator('.cpg-contract-card').count(), 3)
+      assert.deepEqual(await page.locator('.cpg-object-card .cpg-object-name').allInnerTexts(), ['ЖК Северный', 'БЦ Восток', 'ЖК Южный'])
+      assert.match(await page.locator('.cpg-contract-card').first().innerText(), /Устройство фасада/)
       assert.equal(await page.locator('.cpg-contract-card .cpg-manual').count(), 1)
       assert.equal(await page.locator('.cpg-contract-card-row.is-ds').count(), 2)
       const overflow = await page.evaluate(() => {

@@ -630,7 +630,10 @@ if (CP_CARD) {
   fdb.contracts.push({ id: 'k-4', display_id: 106, record_type: 'dp', parent_contract_id: null, root_contract_id: null, counterparty_id: 'cp-5',
     status: 'completed', deleted_at: null, contract_number: 'Л-3', contract_date: '2024-06-01', contract_amount: 300000,
     psdc_total: null, currency: 'RUB', work_name: 'Кровля паркинга', changed_fields: [], objects: { name: 'ЖК Южный' } })
-  for (const k of fdb.contracts) k.counterparties = { name: fdb.counterparties.find((c) => c.id === k.counterparty_id)?.name }
+  for (const k of fdb.contracts) {
+    k.counterparties = { name: fdb.counterparties.find((c) => c.id === k.counterparty_id)?.name }
+    k.object_id = `ob-${k.objects.name}`
+  }
   fdb.counterparty_contract_links = [{ id: 'cl-1', counterparty_id: 'cp-1', contract_id: 'k-4', created_by: 'user-2', created_at: '2026-10-20T07:30:00Z' }]
   window.__fakeUnique.counterparty_contract_links = ['counterparty_id', 'contract_id']
   window.__fakeTriggers.counterparty_contract_links = (row) => { row.created_by = 'user-1' }
@@ -960,6 +963,7 @@ if (params.get('dcStats') === '1') {
       k('kd-x', { counterparty_id: 'cp-2', contract_number: 'ЧУЖОЙ-9', contract_date: '2026-02-01' }),
       k('kd-0', { object_id: null, contract_number: 'Б/Н-1', contract_date: '2025-06-01' }),
     )
+    for (const c of fdb.contracts) if (c.object_id && !c.objects) c.objects = c.object_id === objA.id ? objA : objB
     for (const r of fdb.dc_requests) Object.assign(r, { contract_id: null, amendment_id: null, division: null })
     Object.assign(fdb.dc_requests.find((r) => r.id === 'd1'), { division: 'monolith' })
     Object.assign(fdb.dc_requests.find((r) => r.id === 'd2'), { contract_id: 'kd-1', ds_number: 'ДС-3' })

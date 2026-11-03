@@ -86,21 +86,6 @@ export function summarizeDcRequests(requests) {
   }
 }
 
-// Заявки по договорам: [{ contract | null, requests }] — договоры свежие выше, заявки без договора — в конце.
-// docs — Map(id → договор / ДС); договор, которого нет в docs (удалён), считается «не указан».
-export function groupDcRequestsByContract(requests, docs) {
-  const groups = new Map()
-  for (const r of requests || []) {
-    const contract = (r.contract_id && docs?.get(r.contract_id)) || null
-    const key = contract ? contract.id : ''
-    if (!groups.has(key)) groups.set(key, { contract, requests: [] })
-    groups.get(key).requests.push(r)
-  }
-  return [...groups.values()].sort((a, b) => (!a.contract) - (!b.contract)
-    || String(b.contract?.contract_date || '').localeCompare(String(a.contract?.contract_date || ''))
-    || String(a.contract?.contract_number || '').localeCompare(String(b.contract?.contract_number || ''), 'ru'))
-}
-
 // Подпись договора / ДС: «№ П-15/26 от 02.03.2026» (без номера — «без номера»).
 export function contractLabel(doc) {
   if (!doc) return ''

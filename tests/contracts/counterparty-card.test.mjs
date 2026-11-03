@@ -1,9 +1,10 @@
 // Карточка контрагента, вкладка «Общая информация»: НДС контрагента (ставка или «без НДС»), договоры с ДС
-// контрагента группами «договор и его ДС» и поиск договора для «Прикрепить договор».
+// контрагента группами «договор и его ДС», дерево «объект → договоры → ДС и заявки на ДС» и поиск договора для
+// «Прикрепить договор».
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { VAT_EXEMPT, VAT_NONE, vatFromSelect, vatSelectValue, vatText } from '../../src/utils/counterpartyVat.js'
-import { docTitle, groupCounterpartyDocs, searchContractChoices } from '../../src/utils/counterpartyDocs.js'
+import { buildObjectTree, docTitle, groupCounterpartyDocs, searchContractChoices } from '../../src/utils/counterpartyDocs.js'
 
 describe('НДС контрагента', () => {
   it('выпадающий список ↔ поля базы', () => {
@@ -77,6 +78,70 @@ describe('Договоры и ДС контрагента', () => {
       { kind: 'Договор', num: '№ 15-П', date: '03.02.2026' })
     assert.deepEqual(docTitle(doc({ record_type: 'ds_extra' })),
       { kind: 'ДС на дополнительные работы', num: 'без номера', date: '' })
+  })
+})
+
+describe('Дерево «объект → договоры → ДС и заявки на ДС»', () => {
+  const north = { id: 'o-n', name: 'ЖК Северный' }
+  const east = { id: 'o-e', name: 'БЦ Восток' }
+  const contract = (id, object, over = {}) => doc({
+    id, display_id: Number(id.replace(/\D/g, '')), object_id: object?.id ?? null, objects: object ? { name: object.name } : null, ...over,
+  })
+  const request = (id, object, over = {}) => ({
+    id, object_id: object?.id ?? null, objects: object ? { name: object.name } : null, contract_id: null, amendment_id: null,
+    status: 'in_work', created_at: '2026-01-01T10:00:00Z', ...over,
+  })
+
+  it('объекты — только те, где есть договор или заявка; договоры и заявки внутри своего объекта', () => {
+    const c1 = contract('c1', north, { contract_date: '2025-03-01' })
+    const d1 = contract('d1', east, { record_type: 'ds_extra', parent_contract_id: 'c1', root_contract_id: 'c1', contract_date: '2025-05-01' })
+    const c2 = contract('c2', east, { contract_date: '2026-02-01' })
+    const objects = buildObjectTree([c1, d1, c2], [
+      request('r1', north, { contract_id: 'c1' }),
+      request('r2', north, { amendment_id: 'd1' }),
+      request('r3', north),
+    ])
+    assert.deepEqual(objects.map(o => o.name), ['БЦ Восток', 'ЖК Северный'], 'свежие выше; другие объекты не появляются')
+    const [e, n] = objects
+    assert.deepEqual(e.groups.map(g => g.root.id), ['c2'])
+    assert.deepEqual(n.groups.map(g => g.root.id), ['c1'])
+    // ДС — под договором, хотя объект у него указан другой.
+    assert.deepEqual(n.groups[0].children.map(c => c.doc.id), ['d1'])
+    assert.deepEqual(n.groups[0].requests.map(r => r.id), ['r1', 'r2'], 'заявка находит договор и через своё ДС')
+    assert.deepEqual(n.loose.map(r => r.id), ['r3'], 'заявка без договора — в своём объекте')
+    assert.deepEqual(n.counts, { contracts: 1, amendments: 1, requests: 3 })
+    assert.deepEqual(e.counts, { contracts: 1, amendments: 0, requests: 0 })
+  })
+
+  it('объект есть только у заявки; без объекта — в конце, а не теряется', () => {
+    const objects = buildObjectTree(
+      [contract('c1', null, { contract_date: '2026-06-01' })],
+      [request('r1', east, { created_at: '2025-01-01T00:00:00Z' }), request('r2', null)],
+    )
+    assert.deepEqual(objects.map(o => [o.key, o.name]), [['o-e', 'БЦ Восток'], ['', '']])
+    assert.deepEqual(objects[0].loose.map(r => r.id), ['r1'])
+    assert.deepEqual(objects[1].groups.map(g => g.root.id), ['c1'])
+    assert.deepEqual(objects[1].loose.map(r => r.id), ['r2'])
+  })
+
+  it('договор заявки вне договоров контрагента — строка дерева; удалённый — заявка «без договора»', () => {
+    const foreign = contract('c8', north)
+    const removed = contract('c9', north, { deleted_at: '2026-01-01' })
+    const objects = buildObjectTree([], [
+      request('r1', east, { contract_id: 'c8' }),
+      request('r2', east, { contract_id: 'c9' }),
+      request('r3', east, { contract_id: 'gone' }),
+    ], new Map([['c8', foreign], ['c9', removed]]))
+    assert.deepEqual(objects.map(o => o.name), ['БЦ Восток', 'ЖК Северный'])
+    const byName = new Map(objects.map(o => [o.name, o]))
+    assert.deepEqual(byName.get('ЖК Северный').groups.map(g => [g.root.id, g.requests.map(r => r.id)]), [['c8', ['r1']]])
+    assert.deepEqual(byName.get('БЦ Восток').loose.map(r => r.id), ['r2', 'r3'])
+  })
+
+  it('пусто — пустое дерево; ДС без договора считается как ДС', () => {
+    assert.deepEqual(buildObjectTree(), [])
+    const [only] = buildObjectTree([contract('d9', north, { record_type: 'ds_vor', parent_contract_id: 'gone', root_contract_id: 'gone' })])
+    assert.deepEqual(only.counts, { contracts: 0, amendments: 1, requests: 0 })
   })
 })
 
