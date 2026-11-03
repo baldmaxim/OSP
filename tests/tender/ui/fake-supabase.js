@@ -12,6 +12,8 @@
 // страниц получает первые N строк, count — по-прежнему все.
 // window.__fakeMissingColumns[таблица] — колонок ещё нет (миграция не применена): выборка, где они названы,
 // отвечает 42703, как PostgREST.
+// window.__fakeMissingEmbeds[таблица] — связей ещё нет (встраивание alias:таблица!колонка(*)): выборка, где колонка
+// названа, отвечает PGRST200, как PostgREST.
 // window.__fakeUnique[таблица] — колонки уникального ключа: вставка дубля отвечает 23505, как база.
 // window.__fakeAfter[таблица](op, строка, прежняя) — триггер «после записи» (журнал расценок).
 // window.__fakeTouch(таблица) — строки таблицы тест поменял прямо в __fakeDb после того, как страница её уже читала
@@ -210,6 +212,10 @@ async function run(q) {
       stats.requests.findLast((r) => r.table === q.table && r.op === 'select').missing = absent
       return { data: null, count: null, error: { code: '42703', message: `column ${q.table}.${absent} does not exist` } }
     }
+  }
+  const missingEmbed = q.op === 'select' && window.__fakeMissingEmbeds?.[q.table]?.find((c) => String(q.cols || '').includes(`!${c}(`))
+  if (missingEmbed) {
+    return { data: null, count: null, error: { code: 'PGRST200', message: `Could not find a relationship between '${q.table}' and another table using the hint '${missingEmbed}' in the schema cache` } }
   }
   const rows = snapshot || tableRows(q.table)
   const now = new Date().toISOString()

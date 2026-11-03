@@ -22,6 +22,7 @@ export const UPLOAD_SITES = [
   { file: 'src/pages/GeneralDocumentsPage.jsx', calls: 1, owner: 'general_document', table: 'general_documents' },
   { file: 'src/pages/ObjectDetailPage.jsx', calls: 1, owner: 'object', table: 'objects' },
   { file: 'src/components/ObjectDocumentFileSlot.jsx', calls: 1, owner: 'object', table: 'objects' },
+  { file: 'src/services/objectDocMd.js', calls: 1, owner: 'object', table: 'objects' }, // файл .md документа объекта (20261202)
   { file: 'src/components/WarrantyActSignModal.jsx', calls: 1, owner: 'object', table: 'objects' },
   { file: 'src/components/ObjectDgpFiles.jsx', calls: 1, owner: 'object', table: 'objects' }, // ДГП во вкладке «Смета»
   { file: 'src/components/CounterpartyCardChip.jsx', calls: 1, owner: 'counterparty', table: 'counterparties' },

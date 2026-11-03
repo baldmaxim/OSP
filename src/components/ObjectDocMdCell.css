@@ -1,0 +1,130 @@
+/* Столбец «.md» в таблицах документов объекта: маленький, сразу справа от «Подписанный». */
+.doc-table th.doc-th-md {
+  width: 3.5rem;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+  text-align: center;
+  text-transform: none;
+}
+
+.doc-row-tr td.doc-cell-md {
+  padding-left: 0.125rem;
+  padding-right: 0.125rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.doc-md {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 1.5rem; /* как у кнопок файла в соседних ячейках: значки на одной линии */
+}
+
+.doc-md-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.0625rem 0.1875rem;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.doc-md-no {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--text-tertiary);
+}
+
+.doc-md-yes {
+  color: #15803d;
+}
+
+.doc-md-yes svg {
+  stroke-width: 2.75;
+}
+
+[data-theme='dark'] .doc-md-yes {
+  color: #86efac;
+}
+
+.doc-md-btn:hover {
+  background: var(--bg-tertiary);
+}
+
+.doc-md-btn.doc-md-no:hover {
+  color: var(--text-primary);
+}
+
+.doc-md-btn:focus-visible,
+.doc-md-menu button:focus-visible {
+  outline: 2px solid var(--ui-link, #2563eb);
+  outline-offset: 1px;
+}
+
+.doc-md-cross {
+  flex-shrink: 0;
+}
+
+.doc-md-busy {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--text-tertiary);
+}
+
+/* Меню — в body: обёртка таблицы обрезает всё, что выходит за её края (.doc-table-wrap, overflow: hidden). */
+.doc-md-menu {
+  position: fixed;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  width: 11rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.16);
+  font-size: 0.8125rem;
+}
+
+.doc-md-menu-name {
+  padding: 0.25rem 0.5rem 0.375rem;
+  overflow: hidden;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-md-menu button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.doc-md-menu button:hover {
+  background: var(--bg-tertiary);
+}
+
+.doc-md-menu button.doc-md-menu-danger {
+  color: #b91c1c;
+}
+
+[data-theme='dark'] .doc-md-menu button.doc-md-menu-danger {
+  color: #fca5a5;
+}

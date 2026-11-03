@@ -2361,7 +2361,7 @@ tr:hover .btn-delete-row {
     overflow-x: auto !important;
     -webkit-overflow-scrolling: touch;
   }
-  .doc-table { min-width: 620px; }
+  .doc-table { min-width: 676px; }
 
   /* Таблицы вкладок «Гарантия»/«Площади»/«Удержания» — свой горизонтальный скролл. */
   .object-detail-page .tab-content { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -2370,7 +2370,7 @@ tr:hover .btn-delete-row {
 
 @media (max-width: 640px) {
   /* Мельче служебные ширины, чтобы меньше скроллить. */
-  .doc-table { min-width: 560px; }
+  .doc-table { min-width: 616px; }
   .object-detail-page .tab { padding: 0.5rem 0.75rem; font-size: 0.8125rem; }
   .object-detail-page .cost-header,
   .object-detail-page .doc-section-header,

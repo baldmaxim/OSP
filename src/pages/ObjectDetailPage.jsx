@@ -6,6 +6,7 @@ import { useRole } from '../contexts/RoleContext'
 import { uploadFile, deleteDocument } from '../services/s3'
 import { downloadS3File } from '../components/FileDownload'
 import ObjectDocumentFileSlot from '../components/ObjectDocumentFileSlot'
+import ObjectDocMdCell from '../components/ObjectDocMdCell'
 import ObjectDgpFiles from '../components/ObjectDgpFiles'
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import WarrantyActSignModal from '../components/WarrantyActSignModal'
@@ -13,6 +14,7 @@ import WarrantyDocSelect from '../components/WarrantyDocSelect'
 import AccessDenied from '../components/AccessDenied'
 import FilterDropdown from '../components/FilterDropdown'
 import { fetchAllRows } from '../utils/fetchAllRows'
+import { fetchObjectDocuments } from '../services/objectDocMd'
 import './ObjectDetailPage.css'
 
 // task 372: подсказки для полей площадей (datalist — список + своё значение).
@@ -100,6 +102,7 @@ function DocRow({
   drag, // общий набор обработчиков перетаскивания (см. docDragProps)
   canEdit = true, // task 333: гейт edit/delete/add-attachment действий
   linkedId = null, // документ из ссылки ?doc= («Планы затрат» → «Расчёт ПЗ»: подтверждающий документ) — подсвечен
+  onMdChanged = null, // столбец «.md» (null — миграции 20261202 нет, столбца нет)
 }) {
   const isAttachment = level > 0
   const kids = attachments || getAttachments?.(doc.id) || []
@@ -195,6 +198,7 @@ function DocRow({
         <td className="doc-cell-link-compact">
           <DocFileCell compact s3doc={doc.signed} accent="signed" onPreview={onPreviewFile} onDownload={onDownloadFile} />
         </td>
+        {onMdChanged && <td className="doc-cell-md"><ObjectDocMdCell doc={doc} canEdit={canEdit} onChanged={onMdChanged} /></td>}
         <td className="doc-cell-link-compact">
           <DocFileCell compact s3doc={doc.editable} accent="editable" onPreview={onPreviewFile} onDownload={onDownloadFile} />
         </td>
@@ -240,6 +244,7 @@ function DocRow({
           onDownloadFile={onDownloadFile}
           drag={drag}
           canEdit={canEdit}
+          onMdChanged={onMdChanged}
         />
       ))}
       {/* Отдельной строкой кнопка остаётся только у документа верхнего уровня.
@@ -247,7 +252,7 @@ function DocRow({
           каждого уровня выстроились бы подряд и таблицу было бы не прочитать. */}
       {!isAttachment && canEdit && (
         <tr className="doc-row-tr-add-attachment">
-          <td colSpan={6}>
+          <td colSpan={onMdChanged ? 7 : 6}>
             <button
               type="button"
               className="doc-add-attachment-btn"
@@ -279,6 +284,7 @@ function AgreementAttachmentRow({
   onDownloadFile,
   drag,
   canEdit,
+  onMdChanged,
 }) {
   const kids = getAttachments?.(doc.id) || []
   const isExpanded = expandedDocs.has(doc.id)
@@ -353,6 +359,7 @@ function AgreementAttachmentRow({
         <td className="doc-cell-link-compact">
           <DocFileCell compact s3doc={doc.signed} accent="signed" onPreview={onPreviewFile} onDownload={onDownloadFile} />
         </td>
+        {onMdChanged && <td className="doc-cell-md"><ObjectDocMdCell doc={doc} canEdit={canEdit} onChanged={onMdChanged} /></td>}
         <td className="doc-cell-link-compact">
           <DocFileCell compact s3doc={doc.editable} accent="editable" onPreview={onPreviewFile} onDownload={onDownloadFile} />
         </td>
@@ -386,6 +393,7 @@ function AgreementAttachmentRow({
           onDownloadFile={onDownloadFile}
           drag={drag}
           canEdit={canEdit}
+          onMdChanged={onMdChanged}
         />
       ))}
     </>
@@ -419,6 +427,7 @@ function AgreementRow({
   // task 333: гейт edit/delete/add-attachment/drag-handle
   canEdit = true,
   linkedId = null, // ДС из ссылки ?doc= — подсвечен
+  onMdChanged = null, // столбец «.md» (null — миграции 20261202 нет, столбца нет)
 }) {
   const hasAttachments = attachments.length > 0
   const isExpanded = expandedDocs.has(doc.id)
@@ -493,6 +502,7 @@ function AgreementRow({
         <td className="doc-cell-link-compact">
           <DocFileCell compact s3doc={doc.signed} accent="signed" onPreview={onPreviewFile} onDownload={onDownloadFile} />
         </td>
+        {onMdChanged && <td className="doc-cell-md"><ObjectDocMdCell doc={doc} canEdit={canEdit} onChanged={onMdChanged} /></td>}
         <td className="doc-cell-link-compact">
           <DocFileCell compact s3doc={doc.editable} accent="editable" onPreview={onPreviewFile} onDownload={onDownloadFile} />
         </td>
@@ -520,6 +530,7 @@ function AgreementRow({
           onDownloadFile={onDownloadFile}
           drag={drag}
           canEdit={canEdit}
+          onMdChanged={onMdChanged}
         />
       ))}
       {/* Кнопка «+ Приложение» отдельной строкой под ДС — как у Договора Генподряда.
@@ -543,7 +554,7 @@ function AgreementRow({
           onDrop?.(draggedId, doc.id)
         }}
       >
-        <td colSpan={7}>
+        <td colSpan={onMdChanged ? 8 : 7}>
           <button
             type="button"
             className="doc-add-attachment-btn"
@@ -572,6 +583,7 @@ function ObjectDetailPage() {
 
   const [object, setObject] = useState(null)
   const [documents, setDocuments] = useState([])
+  const [docMdEnabled, setDocMdEnabled] = useState(false) // есть колонка md_s3_document_id (миграция 20261202)
   const [estimateItems, setEstimateItems] = useState([])
   const [loading, setLoading] = useState(true)
   // ?tab=documents&doc=<id> — сразу вкладка и подсвеченный документ (ссылка «Расчёта ПЗ» на подтверждающий ДС).
@@ -726,18 +738,9 @@ function ObjectDetailPage() {
         setStaff(staffRes.data || [])
       }
 
-      const { data: docsData, error: docsError } = await db
-        .from('object_documents')
-        .select('*, signed:s3_documents!signed_s3_document_id(*), editable:s3_documents!editable_s3_document_id(*)')
-        .eq('object_id', objectId)
-        // task 329: при равных order_number сортируем по дате создания —
-        // это гарантирует стабильный порядок для документов, у которых ещё не
-        // выставлен ручной порядок (все DEFAULT 0).
-        .order('order_number', { ascending: true })
-        .order('created_at', { ascending: true })
-      if (docsError) throw docsError
-      const allDocs = docsData || []
+      const { rows: allDocs, mdEnabled } = await fetchObjectDocuments(objectId)
       setDocuments(allDocs)
+      setDocMdEnabled(mdEnabled)
       // При первой загрузке раскрываем все родительские документы с приложениями.
       // Дальнейшие re-fetch (после добавления/удаления) не сбрасывают выбор пользователя.
       if (!didInitExpand.current) {
@@ -934,6 +937,7 @@ function ObjectDetailPage() {
       if (!node) continue
       if (node.signed) result.push(node.signed)
       if (node.editable) result.push(node.editable)
+      if (node.md) result.push(node.md)
       const children = allDocs.filter(d => d.parent_document_id === id)
       for (const c of children) stack.push(c.id)
     }
@@ -1063,6 +1067,12 @@ function ObjectDetailPage() {
       alert('Ошибка скачивания: ' + error.message)
     }
   }
+
+  // Столбец «.md»: без перечитывания карточки — страница не мигает «Загрузкой…». Миграции нет — столбца нет.
+  const handleDocMdChanged = useCallback((docId, s3doc) => {
+    setDocuments(prev => prev.map(d => (d.id === docId ? { ...d, md: s3doc, md_s3_document_id: s3doc?.id || null } : d)))
+  }, [])
+  const docMdHandler = docMdEnabled ? handleDocMdChanged : null
 
   // Закрытие формы документа — отдельная функция, чтобы корректно подчистить
   // pending uploads (файлы, загруженные в S3, но не сохранённые в object_documents).
@@ -2021,6 +2031,7 @@ function ObjectDetailPage() {
                             <th style={{ width: '200px' }}>Наименование</th>
                             <th>№ / дата</th>
                             <th style={{ width: '130px' }}>Подписанный</th>
+                            {docMdHandler && <th className="doc-th-md" title="Файл .md документа">.md</th>}
                             <th style={{ width: '130px' }}>Редактируемый</th>
                             <th style={{ width: '80px' }}>Действия</th>
                           </tr>
@@ -2041,6 +2052,7 @@ function ObjectDetailPage() {
                             onDownloadFile={handleDownloadFile}
                             canEdit={canEditObj}
                             linkedId={linkedDocId}
+                            onMdChanged={docMdHandler}
                           />
                         </tbody>
                       </table>
@@ -2068,6 +2080,7 @@ function ObjectDetailPage() {
                             <th style={{ width: '100px' }}>Дата</th>
                             <th>Описание ДС</th>
                             <th style={{ width: '130px' }}>Подписанный</th>
+                            {docMdHandler && <th className="doc-th-md" title="Файл .md документа">.md</th>}
                             <th style={{ width: '130px' }}>Редактируемый</th>
                             <th style={{ width: '80px' }}>Действия</th>
                           </tr>
@@ -2097,6 +2110,7 @@ function ObjectDetailPage() {
                               onDrop={handleAgreementDrop}
                               canEdit={canEditObj}
                               linkedId={linkedDocId}
+                              onMdChanged={docMdHandler}
                             />
                           ))}
                         </tbody>
