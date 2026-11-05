@@ -7,6 +7,7 @@ import { uploadFile, deleteDocument } from '../services/s3'
 import { downloadS3File } from '../components/FileDownload'
 import ObjectDocumentFileSlot from '../components/ObjectDocumentFileSlot'
 import ObjectDocMdCell from '../components/ObjectDocMdCell'
+import ObjectDocMdZipButton from '../components/ObjectDocMdZipButton'
 import ObjectDgpFiles from '../components/ObjectDgpFiles'
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import WarrantyActSignModal from '../components/WarrantyActSignModal'
@@ -2031,7 +2032,12 @@ function ObjectDetailPage() {
                             <th style={{ width: '200px' }}>Наименование</th>
                             <th>№ / дата</th>
                             <th style={{ width: '130px' }}>Подписанный</th>
-                            {docMdHandler && <th className="doc-th-md" title="Файл .md документа">.md</th>}
+                            {docMdHandler && (
+                              <th className="doc-th-md" title="Файл .md документа">
+                                <ObjectDocMdZipButton objectName={object.name} documents={documents} />
+                                .md
+                              </th>
+                            )}
                             <th style={{ width: '130px' }}>Редактируемый</th>
                             <th style={{ width: '80px' }}>Действия</th>
                           </tr>
@@ -2080,7 +2086,13 @@ function ObjectDetailPage() {
                             <th style={{ width: '100px' }}>Дата</th>
                             <th>Описание ДС</th>
                             <th style={{ width: '130px' }}>Подписанный</th>
-                            {docMdHandler && <th className="doc-th-md" title="Файл .md документа">.md</th>}
+                            {docMdHandler && (
+                              <th className="doc-th-md" title="Файл .md документа">
+                                {/* Кнопка одна на объект — над самой верхней таблицей: договора нет или он скрыт поиском — здесь. */}
+                                {!visibleContract && <ObjectDocMdZipButton objectName={object.name} documents={documents} />}
+                                .md
+                              </th>
+                            )}
                             <th style={{ width: '130px' }}>Редактируемый</th>
                             <th style={{ width: '80px' }}>Действия</th>
                           </tr>

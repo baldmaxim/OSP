@@ -3,13 +3,19 @@
 //   • один файл на документ: загрузка, замена (прежний удаляется после привязки нового), удаление, скачивание;
 //   • только .md, пустой файл не принимается; не привязалось — загруженный файл убран, прежний на месте;
 //   • удаление документа убирает и его .md; без права правки — только отметка и скачивание;
-//   • миграции нет — столбца нет, карточка как раньше.
+//   • миграции нет — столбца нет, карточка как раньше;
+//   • «Скачать все» над столбцом: все файлы .md объекта одним ZIP, шириной с колонку, одна кнопка на объект.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { chromium } from 'playwright'
+import PizZipNs from 'pizzip'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
+import { objectMdArchiveName, planObjectMdArchive } from '../../src/utils/objectMdArchive.js'
+
+const PizZip = typeof PizZipNs === 'function' ? PizZipNs : PizZipNs.default
 
 const read = (f) => fs.readFileSync(path.join(REPO, f), 'utf8')
 
@@ -49,6 +55,31 @@ describe('файл .md документа объекта: миграция и м
   })
 })
 
+describe('«Скачать все» .md: состав и имена архива', () => {
+  const file = (file_name, extra) => ({ file_name, s3_key: `k/${file_name}`, size_bytes: 5, created_at: '2026-11-01T09:00:00Z', ...extra })
+
+  it('только документы с файлом; имена исходные, совпадения — «(2)», без учёта регистра', () => {
+    const { entries } = planObjectMdArchive([
+      { name: 'Договор', md: file('Договор.md') },
+      { name: 'Без файла', md: null },
+      { name: 'ДС 1', md: file('ДОГОВОР.md') },
+      { document_number: 'Прил. 2', md: file('а/б:в.md') },
+    ])
+    assert.deepEqual(entries.map((e) => e.path), ['Договор.md', 'ДОГОВОР (2).md', 'а б в.md'])
+    assert.deepEqual(entries.map((e) => e.section), ['Договор', 'ДС 1', 'Прил. 2'], 'подпись строки в «Не скачано.txt»')
+    assert.equal(entries[1].s3Key, 'k/ДОГОВОР.md')
+    assert.deepEqual(planObjectMdArchive(null).entries, [])
+  })
+
+  it('имя архива — по объекту, хвост не обрезается, запретные для Windows знаки убраны', () => {
+    assert.equal(objectMdArchiveName('ЖК "Южный": корпус 1/2'), "ЖК 'Южный' корпус 1 2 — файлы md")
+    assert.equal(objectMdArchiveName(''), 'Объект — файлы md')
+    const long = objectMdArchiveName('Очень длинное название объекта '.repeat(10))
+    assert.ok(long.length <= 100, long)
+    assert.ok(long.endsWith(' — файлы md'), long)
+  })
+})
+
 const launch = browserLaunchOptions()
 
 describe('столбец «.md» в «Документах» карточки объекта', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
@@ -64,7 +95,7 @@ describe('столбец «.md» в «Документах» карточки о
     await stand?.server.close()
   })
 
-  async function open({ query = '', missing = false, viewport = { width: 1400, height: 900 } } = {}) {
+  async function open({ query = '', missing = false, docs = DOCS, viewport = { width: 1400, height: 900 } } = {}) {
     const context = await browser.newContext({ locale: 'ru-RU', viewport })
     const page = await context.newPage()
     const errors = []
@@ -95,8 +126,8 @@ describe('столбец «.md» в «Документах» карточки о
       }
       for (const t of ['objects', 'object_documents', 's3_documents']) window.__fakeTouch(t)
       window.__navigate('/general/objects/o-1?tab=documents')
-    }, [DOCS, MD_FILE, missing])
-    await page.locator('tr[data-doc-id="gc"]').waitFor({ timeout: 60000 })
+    }, [docs, MD_FILE, missing])
+    await page.locator(`tr[data-doc-id="${docs.some((d) => d.id === 'gc') ? 'gc' : docs[0].id}"]`).waitFor({ timeout: 60000 })
     return { page, errors, dialogs, close: () => context.close().catch(() => {}) }
   }
 
@@ -116,10 +147,10 @@ describe('столбец «.md» в «Документах» карточки о
     const { page, errors, close } = await open()
     try {
       const heads = page.locator('.doc-table').nth(0).locator('thead th')
-      assert.deepEqual(await heads.allTextContents(), ['', 'Наименование', '№ / дата', 'Подписанный', '.md', 'Редактируемый', 'Действия'])
+      assert.deepEqual(await heads.allTextContents(), ['', 'Наименование', '№ / дата', 'Подписанный', 'Скачать все.md', 'Редактируемый', 'Действия'])
       assert.deepEqual(await page.locator('.doc-table').nth(1).locator('thead th').allTextContents(),
         ['', 'Наименование', 'Дата', 'Описание ДС', 'Подписанный', '.md', 'Редактируемый', 'Действия'])
-      const head = page.locator('.doc-th-md').first()
+      const head = page.locator('.doc-th-md').nth(1)
       assert.equal(await head.innerText(), '.md', 'подпись строчными, а не как прочие заголовки')
       assert.ok((await head.boundingBox()).width <= 60, 'столбец маленький')
       // Договор, приложения любого уровня, ДС, приложение ДС.
@@ -138,7 +169,7 @@ describe('столбец «.md» в «Документах» карточки о
         const left = await cell(page, id).evaluate((el) => el.closest('td').cellIndex)
         const headIndex = await cell(page, id).evaluate((el) => {
           const t = el.closest('table')
-          return [...t.querySelectorAll('thead th')].findIndex((th) => th.textContent === '.md')
+          return [...t.querySelectorAll('thead th')].findIndex((th) => th.classList.contains('doc-th-md'))
         })
         assert.equal(left, headIndex, id)
       }
@@ -300,13 +331,130 @@ describe('столбец «.md» в «Документах» карточки о
     try {
       assert.deepEqual(await page.locator('.doc-table').nth(0).locator('thead th').allTextContents(),
         ['', 'Наименование', '№ / дата', 'Подписанный', 'Редактируемый', 'Действия'])
-      assert.equal(await page.locator('.doc-md, .doc-th-md').count(), 0)
+      assert.equal(await page.locator('.doc-md, .doc-th-md, .doc-md-zip').count(), 0)
       assert.equal(await page.locator('tr[data-doc-id="ds"]').count(), 1)
       assert.equal(await page.locator('.doc-row-tr-add-attachment td').first().getAttribute('colspan'), '6')
       assert.equal(await page.locator('.doc-row-tr-add-attachment td').last().getAttribute('colspan'), '7')
       assert.deepEqual(errors, [])
     } finally {
       await close()
+    }
+  })
+
+  const zipButton = (page) => page.locator('.doc-md-zip')
+  async function downloadZip(page) {
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), zipButton(page).click()])
+    const zip = new PizZip(await readFile(await download.path()))
+    await page.locator('.doc-md-zip:not([disabled])').waitFor({ timeout: 10000 })
+    return { name: download.suggestedFilename(), zip, files: Object.keys(zip.files).sort() }
+  }
+
+  it('«Скачать все»: одна на объект, над столбцом и шириной с него, небольшой текст', async () => {
+    const { page, errors, close } = await open()
+    try {
+      assert.equal(await zipButton(page).count(), 1, 'одна кнопка, а не в каждой таблице')
+      const head = page.locator('.doc-table').first().locator('.doc-th-md')
+      assert.equal(await head.locator('.doc-md-zip').count(), 1, 'над столбцом верхней таблицы')
+      const button = await zipButton(page).boundingBox()
+      const column = await head.boundingBox()
+      assert.ok(Math.abs(button.width - column.width) <= 1, `ширина ${button.width} против ${column.width}`)
+      assert.ok(Math.abs(button.x - column.x) <= 1, 'не выступает за колонку')
+      const label = await head.evaluate((th) => {
+        const range = document.createRange()
+        range.selectNode([...th.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && n.textContent.trim()))
+        return range.getBoundingClientRect().top
+      })
+      assert.ok(button.y + button.height <= label, 'кнопка над подписью «.md»')
+      const look = await zipButton(page).evaluate((el) => {
+        const s = getComputedStyle(el)
+        return { size: parseFloat(s.fontSize), fits: el.scrollWidth <= el.clientWidth, transform: s.textTransform }
+      })
+      assert.ok(look.size <= 11, `текст небольшой: ${look.size}px`)
+      assert.equal(look.fits, true, 'слова не вылезают за кнопку')
+      assert.equal(look.transform, 'none')
+      assert.equal(await zipButton(page).innerText(), 'Скачать все')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('«Скачать все»: архив с именем объекта, файлы всех документов, загруженный только что — тоже; поиск состав не сужает', async () => {
+    const { page, errors, dialogs, close } = await open()
+    try {
+      await cell(page, 'gc-att').locator('input[type=file]').setInputFiles(md('Приложение 1.md', '# Приложение\n'))
+      await cell(page, 'gc-att').locator('.doc-md-yes').waitFor({ timeout: 10000 })
+      await cell(page, 'gc-att-att').locator('input[type=file]').setInputFiles(md('ДС 1.md', '# Другой файл с тем же именем\n'))
+      await cell(page, 'gc-att-att').locator('.doc-md-yes').waitFor({ timeout: 10000 })
+      assert.match(await zipButton(page).getAttribute('title'), /: 3$/)
+
+      await page.locator('.docs-search-input').fill('Договор генподряда')
+      await page.locator('tr[data-doc-id="ds"]').waitFor({ state: 'detached' })
+      const { name, zip, files } = await downloadZip(page)
+      assert.equal(name, 'ЖК Южный — файлы md.zip')
+      assert.deepEqual(files, ['ДС 1 (2).md', 'ДС 1.md', 'Приложение 1.md'].sort())
+      assert.equal(zip.file('Приложение 1.md').asText(), '# Приложение\n')
+      assert.equal(zip.file('ДС 1.md').asBinary().length > 0, true)
+      assert.deepEqual(dialogs, [])
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('«Скачать все»: файл не скачался — архив честно неполный; ни один — архива нет, причина видна', async () => {
+    const { page, dialogs, close } = await open()
+    try {
+      await cell(page, 'gc').locator('input[type=file]').setInputFiles(md('Договор.md'))
+      await cell(page, 'gc').locator('.doc-md-yes').waitFor({ timeout: 10000 })
+      await page.evaluate((key) => { delete window.__fakeFiles[key] }, MD_FILE.s3_key)
+
+      const { files, zip } = await downloadZip(page)
+      assert.deepEqual(files, ['Договор.md', 'Не скачано.txt'].sort())
+      const list = zip.file('Не скачано.txt').asText()
+      assert.match(list, /столбец «\.md»/)
+      assert.match(list, /ДС № 1 — ДС 1\.md/)
+      assert.match(dialogs[0], /^Архив неполный: не скачано 1 из 2\./)
+
+      await page.evaluate(() => { window.__fakeFiles = {} })
+      let downloaded = false
+      page.on('download', () => { downloaded = true })
+      await zipButton(page).click()
+      await page.waitForFunction(() => document.querySelector('.doc-md-zip')?.getAttribute('aria-busy') === 'false', null, { timeout: 15000 })
+      assert.match(dialogs[1], /^Не удалось скачать ни одного файла: /)
+      assert.equal(downloaded, false)
+    } finally {
+      await close()
+    }
+  })
+
+  it('«Скачать все»: файлов нет — кнопка неактивна; договора нет — над столбцом ДС; без права правки — работает', async () => {
+    const empty = DOCS.map((d) => ({ ...d, md: null, md_s3_document_id: null }))
+    const none = await open({ docs: empty })
+    try {
+      assert.equal(await zipButton(none.page).isDisabled(), true)
+      assert.equal(await zipButton(none.page).getAttribute('title'), 'Файлов .md пока нет')
+      await none.page.locator('[data-md-doc="gc"] input[type=file]').setInputFiles(md('Договор.md'))
+      await none.page.locator('.doc-md-zip:not([disabled])').waitFor({ timeout: 10000 })
+    } finally {
+      await none.close()
+    }
+
+    const noContract = await open({ docs: DOCS.filter((d) => d.id === 'ds' || d.id === 'ds-att') })
+    try {
+      assert.equal(await zipButton(noContract.page).count(), 1)
+      assert.equal(await noContract.page.locator('.doc-table').count(), 1)
+      assert.equal(await noContract.page.locator('.doc-th-md .doc-md-zip').count(), 1)
+    } finally {
+      await noContract.close()
+    }
+
+    const reader = await open({ query: '&canEdit=0' })
+    try {
+      assert.deepEqual((await downloadZip(reader.page)).files, ['ДС 1.md'])
+      assert.deepEqual(reader.errors, [])
+    } finally {
+      await reader.close()
     }
   })
 

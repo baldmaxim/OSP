@@ -7,6 +7,46 @@
   text-transform: none;
 }
 
+/* «Скачать все» над подписью столбца: шириной с колонку — поверх боковых отступов заголовка (0.25rem), в две строки. */
+.doc-table th.doc-th-md .doc-md-zip {
+  display: block;
+  box-sizing: border-box;
+  width: calc(100% + 0.5rem);
+  margin: -0.25rem -0.25rem 0.25rem;
+  padding: 0.125rem 0;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 0.875rem;
+  letter-spacing: 0;
+  text-align: center;
+  white-space: normal;
+  cursor: pointer;
+}
+
+.doc-table th.doc-th-md .doc-md-zip:hover:not(:disabled) {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.doc-table th.doc-th-md .doc-md-zip:focus-visible {
+  outline: 2px solid var(--ui-link, #2563eb);
+  outline-offset: -2px;
+}
+
+.doc-table th.doc-th-md .doc-md-zip:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+.doc-table th.doc-th-md .doc-md-zip[aria-busy='true'] {
+  cursor: progress;
+}
+
 .doc-row-tr td.doc-cell-md {
   padding-left: 0.125rem;
   padding-right: 0.125rem;
