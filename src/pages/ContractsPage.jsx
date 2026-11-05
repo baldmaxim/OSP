@@ -18,7 +18,7 @@ import VorDivisionFilter from '../components/VorDivisionFilter'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
 import ContractDocsModal from '../components/ContractDocsModal'
 import { CONTRACTS_STRUCTURE } from '../utils/docStorageStructures'
-import { IconDocsStack, IconColumns, IconColumnsWide, IconSearch, IconObject, IconUser, IconTag } from '../components/icons/ToolbarIcons'
+import { IconDocsStack, IconColumns, IconColumnsWide, IconSearch, IconObject, IconJoint, IconUser, IconTag } from '../components/icons/ToolbarIcons'
 import { IconContracts } from '../components/icons/NavIcons'
 import IconTile from '../components/IconTile'
 import useBodyClass from '../hooks/useBodyClass'
@@ -29,6 +29,7 @@ import { fetchAllRows } from '../utils/fetchAllRows'
 import { chunkList } from '../utils/inChunks'
 import { LARIX_LINK_FIELD, LARIX_LINK_LABEL, LARIX_NAME, isInLarix } from '../utils/contractLarix'
 import { registryCounts, registryRows } from '../utils/contractRegistryTabs'
+import { contractParties, counterpartyFilterOptions, hasCounterparty, matchCounterpartyOption } from '../utils/contractCounterpartyFilter'
 import { docTender, tenderChoices, tenderOptionLabel, tenderTitle } from '../utils/contractTender'
 import { VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION } from '../utils/vorDivisions'
 import { contractDivisionEnabled, contractDivisionOf, contractDivisionSaveError } from '../utils/contractDivision'
@@ -283,19 +284,6 @@ function contractLabel(contractNumber) {
   return contractNumber ? `№ ${contractNumber}` : 'без номера'
 }
 
-// Все стороны договора (может быть несколько — трёхсторонний договор), по порядку.
-// Старые договоры без строк в contract_counterparties → fallback на основного контрагента.
-function contractParties(contract) {
-  const rows = contract?.contract_counterparties || []
-  if (rows.length > 0) {
-    return [...rows]
-      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-      .map(r => r.counterparties)
-      .filter(Boolean)
-  }
-  return contract?.counterparties ? [contract.counterparties] : []
-}
-
 // Нормализация ФИО для дедупликации: trim + сжать пробелы (сравнение — без регистра).
 function normalizeName(s) {
   return String(s || '').trim().replace(/\s+/g, ' ')
@@ -497,6 +485,7 @@ function ContractRegistry() {
   // Множественный выбор: договоры часто смотрят сразу по нескольким объектам
   // одного комплекса. Пустой массив = фильтр не применён.
   const [filterObjectIds, setFilterObjectIds] = useState([])
+  const [filterCounterpartyIds, setFilterCounterpartyIds] = useState([])
   // Тип ДС — только в представлении «Дополнительные соглашения».
   const [filterDsType, setFilterDsType] = useState('')
   const [filterLawyerId, setFilterLawyerId] = useState('')
@@ -1360,8 +1349,12 @@ function ContractRegistry() {
   const divisionOf = useCallback((doc) => contractDivisionOf(doc, docIndex.byId), [docIndex])
   const divisionFilterOn = divisionEnabled && filterDivisions.length > 0
 
-  // Все фильтры, кроме подразделения: числа в его списке считаются по реестру без него самого.
-  const filteredBeforeDivision = useMemo(() => {
+  const passesDivision = useCallback(
+    (c) => !divisionFilterOn || filterDivisions.includes(divisionOf(c) || NO_VOR_DIVISION),
+    [divisionFilterOn, filterDivisions, divisionOf])
+
+  // Все фильтры, кроме контрагента и подразделения: контрагенты в списке и числа подразделений считаются без самих себя.
+  const filteredBeforeCounterparty = useMemo(() => {
     const q = searchText.trim().toLowerCase()
     return tabContracts.filter(c => {
       if (filterObjectIds.length > 0 && !filterObjectIds.includes(c.object_id)) return false
@@ -1398,6 +1391,17 @@ function ContractRegistry() {
     })
   }, [tabContracts, filterObjectIds, filterDsType, filterLawyerId, onlyOverdue, onlyNoLarix, onlyNoTender, searchText, isOverdue, normNameById, docIndex, dsSearchHits])
 
+  const filteredBeforeDivision = useMemo(() => {
+    if (filterCounterpartyIds.length === 0) return filteredBeforeCounterparty
+    const ids = new Set(filterCounterpartyIds)
+    return filteredBeforeCounterparty.filter(c => hasCounterparty(c, ids))
+  }, [filteredBeforeCounterparty, filterCounterpartyIds])
+
+  // Контрагенты в списке — у кого есть документы при остальных фильтрах: выбрали объект — только его подрядчики.
+  const counterpartyOptions = useMemo(
+    () => counterpartyFilterOptions(filteredBeforeCounterparty.filter(passesDivision), filterCounterpartyIds, contracts),
+    [filteredBeforeCounterparty, passesDivision, filterCounterpartyIds, contracts])
+
   // Сколько строк вкладки без тендера — на кнопке фильтра.
   const noTenderCount = useMemo(
     () => tabContracts.filter(c => !docTender(c, docIndex.byId)).length,
@@ -1414,9 +1418,7 @@ function ContractRegistry() {
   }, [divisionEnabled, filteredBeforeDivision, divisionOf])
 
   const filteredSortedContracts = useMemo(() => {
-    const list = divisionFilterOn
-      ? filteredBeforeDivision.filter(c => filterDivisions.includes(divisionOf(c) || NO_VOR_DIVISION))
-      : filteredBeforeDivision
+    const list = filteredBeforeDivision.filter(passesDivision)
 
     const dir = sortDir === 'asc' ? 1 : -1
     if (sortKey === 'number') {
@@ -1445,9 +1447,9 @@ function ContractRegistry() {
       if (so !== 0) return so
       return (a.contract_date || '').localeCompare(b.contract_date || '')
     })
-  }, [filteredBeforeDivision, divisionFilterOn, filterDivisions, divisionOf, sortKey, sortDir])
+  }, [filteredBeforeDivision, passesDivision, sortKey, sortDir])
 
-  const hasActiveFilters = !!(filterObjectIds.length || filterDsType || filterLawyerId || searchText || onlyOverdue || onlyNoLarix || onlyNoTender || onlyOurs || divisionFilterOn)
+  const hasActiveFilters = !!(filterObjectIds.length || filterCounterpartyIds.length || filterDsType || filterLawyerId || searchText || onlyOverdue || onlyNoLarix || onlyNoTender || onlyOurs || divisionFilterOn)
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -1455,7 +1457,7 @@ function ContractRegistry() {
   }
 
   const resetFilters = () => {
-    setFilterObjectIds([]); setFilterDsType(''); setFilterLawyerId(''); setSearchText('')
+    setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterDsType(''); setFilterLawyerId(''); setSearchText('')
     setOnlyOverdue(false); setOnlyNoLarix(false); setOnlyNoTender(false); setOnlyOurs(false); setFilterDivisions([])
   }
 
@@ -1516,7 +1518,7 @@ function ContractRegistry() {
   useEffect(() => {
     setPage(1)
     setRowToggled(new Set())
-  }, [activeTab, scope, dept, docKind, filterObjectIds, filterDsType, filterLawyerId, filterDivisions, searchText, onlyOverdue, onlyNoLarix, onlyNoTender, sortKey, sortDir, pageSize])
+  }, [activeTab, scope, dept, docKind, filterObjectIds, filterCounterpartyIds, filterDsType, filterLawyerId, filterDivisions, searchText, onlyOverdue, onlyNoLarix, onlyNoTender, sortKey, sortDir, pageSize])
 
   // Закрываем раскрытие при перелистывании страниц.
   useEffect(() => {
@@ -2796,6 +2798,18 @@ function ContractRegistry() {
               <ObjectDeptBadge status={o.status} />
             </span>
           )}
+        />
+        <FilterDropdown
+          label=""
+          multiple
+          value={filterCounterpartyIds}
+          onChange={setFilterCounterpartyIds}
+          options={counterpartyOptions}
+          searchable
+          searchPlaceholder="Название или ИНН…"
+          matchOption={matchCounterpartyOption}
+          allLabel="Все контрагенты"
+          icon={<IconJoint size={15} />}
         />
         {/* На компьютере фильтр — в заголовке «Работы», где под работами плашка подразделения
             (как у тендеров); на телефоне шапки таблицы нет, поэтому он здесь. */}

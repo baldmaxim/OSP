@@ -12,11 +12,12 @@ import * as XLSX from 'xlsx'
 import { chromium } from 'playwright'
 import { browserLaunchOptions } from '../tender/lib/stand.mjs'
 import { classifyHeader, deliveryUnitWithVat, docDateFromText, parseNum, rulingsFromOps, unitPriceWithVat, vatFromText } from '../../src/utils/supplierDoc.js'
-import { autoPickRows, offersByGroup, otherUnitIndex, otherUnitPrices, RULE_NEWEST, suspectPrice } from '../../src/utils/supplyAutoPick.js'
+import { autoPickRows, offersByGroup, otherUnitIndex, otherUnitPrices, suspectPrice, unplacedLines } from '../../src/utils/supplyAutoPick.js'
 import { parseSupplierPdfPages, parseSupplierWorkbook, readPdfPages, readWorkbookBytes } from '../../src/utils/supplierDocRead.js'
-import { codeTokens, deliveryFactor, docPack, expandName, groupUnitOk, itemCandidates, matchDocItems, offerMatches, offerPrice, positionGroups, sameMaterial, searchGroups } from '../../src/utils/supplyDocMatch.js'
-import { offerNotesOfDoc, packPrice } from '../../src/utils/supplyDocPrice.js'
-import { OFFER_LINES_MAX, offerNotes, readOffer } from '../../src/utils/supplyOffers.js'
+import { codeTokens, deliveryFactor, docPack, expandName, groupUnitOk, itemCandidates, matchDocItems, mergeSamePositions, offerMatches, offerPrice, positionConfidence, positionGroups, sameMaterial, searchGroups } from '../../src/utils/supplyDocMatch.js'
+import { offerNotesOfDoc } from '../../src/utils/supplyDocPrice.js'
+import { nameDiff } from '../../src/utils/supplyNameDiff.js'
+import { lineForGroup, lineNotForGroup, OFFER_LINES_MAX, offerInRoubles, offerNotes, offerVatMode, offerWithVat, readOffer } from '../../src/utils/supplyOffers.js'
 import { normName } from '../../src/utils/supplyRateHelpers.js'
 
 const launch = browserLaunchOptions()
@@ -641,7 +642,6 @@ describe('спецификация ЭТМ: артикул, упаковка и �
     const hose = lineOf(res, 'Хомут 4.6х150')
     assert.match(hose.match.group.name, /^Стяжка кабельная из нержавеющей стали/)
     assert.deepEqual([hose.match.pack, hose.match.unitOk, hose.match.qty], [50, true, true])
-    assert.equal(packPrice({ price: 1200, delivery: null, full: 1200 }, 50).price, 24)
   })
 
   it('спецификация СОТ: обрезанный артикул и бухта 305 м — цена за метр; разные товары сами не сопоставляются', () => {
@@ -650,7 +650,7 @@ describe('спецификация ЭТМ: артикул, упаковка и �
     assert.equal(utp.match.group.name, 'Кабель «витая пара» UTP-4P-Cat.5e-SOLID-OUT-LSZH-UV, Cabeus')
     assert.deepEqual([utp.match.article, utp.match.pack, utp.match.unitOk], [true, 305, true])
     assert.equal(utp.match.group.targets.length, 2, 'сразу в двух ВОР')
-    assert.equal(packPrice({ price: 16775, delivery: null, full: 16775 }, 305).price, 55)
+    assert.equal(offerPrice({ line: { price: 16775 }, pack: utp.match.pack }), 55)
     assert.match(lineOf(res, 'ИК-30м').match.group.name, /RVi-2NCT2362/)
     assert.match(lineOf(res, 'ИК-50м').match.group.name, /RVi-2NCT2479/)
     assert.match(lineOf(res, 'Коробка монтажная').match.group.name, /RVi-2BMB-5/)
@@ -839,38 +839,109 @@ describe('автовыбор цен по документам тендера', (
   }
   const rowFor = (res, name) => res.rows.find((r) => r.group.name === name)
 
-  it('то же наименование важнее дешёвого похожего; среди равных — правило: самая низкая или самый свежий документ', () => {
+  it('то же наименование важнее дешёвого похожего; среди одинаковых — самый свежий документ; выбор человека важнее', () => {
     const docs = [
       docOf('a', '2026-10-01', [line('Кран шаровой Ду15', 100)]),
       docOf('b', '2026-10-20', [line('Кран шаровой Ду15', 120)]),
       docOf('c', '2026-10-25', [line('Кран шаровой полнопроходной латунный Ду15 PN40', 50)]),
     ]
-    const cheap = rowFor(rowsOf(docs), 'Кран шаровой Ду15')
-    assert.deepEqual([cheap.choice.price, cheap.choice.doc.id, cheap.sure, cheap.auto], [100, 'a', true, true])
-    assert.equal(cheap.offers.length, 3, 'остальные — на выбор')
-    assert.equal(rowFor(rowsOf(docs, { rule: RULE_NEWEST }), 'Кран шаровой Ду15').choice.doc.id, 'b')
-    assert.equal(rowFor(rowsOf(docs, { chosen: new Map([[cheap.group.key, cheap.offers[0].id]]) }), 'Кран шаровой Ду15').choice.price, 50, 'ручной выбор важнее правила')
+    const r = rowFor(rowsOf(docs), 'Кран шаровой Ду15')
+    assert.deepEqual([r.choice.price, r.choice.doc.id, r.sure, r.auto], [120, 'b', true, true])
+    assert.equal(r.offers.length, 3, 'остальные — на выбор')
+    assert.equal(r.offers[0].exact, true, 'самые похожие первыми')
+    const similar = r.offers.find((o) => !o.exact)
+    assert.equal(rowFor(rowsOf(docs, { chosen: new Map([[r.group.key, similar.id]]) }), 'Кран шаровой Ду15').choice.price, 50, 'ручной выбор важнее')
   })
 
-  it('своя другая цена — только по отметке; разброс в 3 раза и больше — пометка; цены нет — список', () => {
-    const docs = [docOf('a', null, [line('Кран шаровой Ду15', 100)]), docOf('b', null, [line('Кран шаровой Ду15', 500)])]
-    const res = rowsOf(docs, { currentOf: () => ({ own: [90], copies: 0, empty: 0 }) })
-    const r = rowFor(res, 'Кран шаровой Ду15')
-    assert.deepEqual([r.status.kind, r.auto, r.spread], ['replace', false, 5])
-    assert.ok(res.withoutOffers.some((g) => g.name === 'Манометр общего назначения'))
-    assert.equal(rowsOf(docs, { currentOf: () => ({ own: [100], copies: 0, empty: 0 }) }).rows[0].status.kind, 'same')
+  it('только похожие строки: самая похожая, а не самая дешёвая; до 60 % — показана, но не отмечена', () => {
+    const near = 'Манометр специального назначения латунный'
+    const far = 'Манометр точных измерений специальный корпусной'
+    const res = rowFor(rowsOf([docOf('a', '2026-10-01', [line(near, 500)]), docOf('b', '2026-10-25', [line(far, 90)])]), 'Манометр общего назначения')
+    assert.equal(res.choice.line.name, near, 'похожая строка важнее дешёвой и более свежей')
+    assert.equal(res.check, true, 'не наверняка — на проверку')
+    assert.equal(res.auto, res.choice.score >= 0.6)
   })
 
-  it('не берётся сама: другая ед. изм. без пересчёта, цена × кол-во ≠ сумма, цены в валюте; выбор при проверке файла — важнее', () => {
+  it('высокая похожесть, но другая длина или марка — не «та же позиция»: на проверку, а не сама', () => {
+    const position = 'Патч-корд UTP, кат. 5е, RJ45/RJ45, 5м'
+    const gs = positionGroups([{ name: 'ОВ', positions: [{ name: position, unit: 'шт', volume: 4, k: normName(position) }] }])
+    const res = autoPickRows(offersByGroup([docOf('a', '2026-10-01', [line('Патч-корд UTP, кат. 5е, RJ45/RJ45, 0,3м', 100)])], gs), gs, { currentOf: () => ({ own: [], copies: 0, empty: 1 }) })
+    for (const r of res.rows) assert.deepEqual([r.sure, r.check], [false, true])
+  })
+
+  it('что показывать: цена стоит правильно — строки нет; свежий документ заменяет цену из старого; руками после загрузки — решение человека', () => {
+    const name = 'Кран шаровой Ду15'
+    const cur = (own, ownAt) => () => ({ own, copies: 0, empty: 0, ownAt })
+    const stamp = (id, created, date, price) => ({ doc: { id, file_name: `${id}.xlsx`, created_at: created }, offer: { date, currency: null, lines: [line(name, price)] } })
+    const a = stamp('a', '2026-10-30T10:00:00Z', '2026-10-30', 100)
+    const b = stamp('b', '2026-11-02T10:00:00Z', '2026-11-02', 120)
+    // Та же цена — нет строки.
+    const same = rowsOf([a], { currentOf: cur([100], '2026-11-05T09:00:00Z') })
+    assert.deepEqual([same.rows.length, same.hidden], [0, 1])
+    // Цена поставлена сегодня из A, загружен B: свежее A, хотя дата B раньше дня ввода цены, — заменит и отмечено.
+    const fresh = rowFor(rowsOf([a, b], { currentOf: cur([100], '2026-11-05T09:00:00Z') }), name)
+    assert.deepEqual([fresh.choice.doc.id, fresh.choice.price, fresh.status.kind, fresh.auto], ['b', 120, 'replace', true])
+    // Руками до загрузки документа — документ свежее; после — решение человека, строки нет.
+    const before = rowFor(rowsOf([a], { currentOf: cur([90], '2026-10-01T09:00:00Z') }), name)
+    assert.deepEqual([before.status.kind, before.auto], ['replace', true])
+    assert.equal(rowsOf([a], { currentOf: cur([90], '2026-11-01T09:00:00Z') }).rows.length, 0)
+    // Просто похожая строка — не повод считать свою цену неверной.
+    const analog = stamp('c', '2026-11-02T10:00:00Z', '2026-11-02', 300)
+    analog.offer.lines = [line('Кран шаровой полнопроходной латунный Ду15 PN40', 300)]
+    assert.equal(rowsOf([analog], { currentOf: cur([100], '2026-10-01T09:00:00Z') }).rows.length, 0)
+  })
+
+  it('своя цена похожа на ошибку — показывается, даже если введена после документа; разброс цен — отметку ставит человек', () => {
+    const name = 'Кран шаровой Ду15'
+    const doc = { doc: { id: 'a', file_name: 'a.xlsx', created_at: '2026-10-30T10:00:00Z' }, offer: { date: '2026-10-30', currency: null, lines: [line(name, 100)] } }
+    const wrong = rowFor(rowsOf([doc], { currentOf: () => ({ own: [900], copies: 0, empty: 0, ownAt: '2026-11-05T09:00:00Z' }) }), name)
+    assert.deepEqual([wrong.status.kind, !!wrong.wrong], ['replace', true])
+    const spread = rowFor(rowsOf([docOf('a', '2026-10-01', [line(name, 100)]), docOf('b', '2026-10-20', [line(name, 500)])]), name)
+    assert.deepEqual([spread.spread, spread.auto, spread.check], [5, false, true])
+  })
+
+  it('не берётся сама: другая ед. изм. без пересчёта, цена × кол-во ≠ сумма, цены в валюте; строка видна, человек решает', () => {
     const unit = rowFor(rowsOf([docOf('a', null, [line('Кран шаровой Ду15', 100, { unit: 'упак' })])]), 'Кран шаровой Ду15')
-    assert.deepEqual([unit.choice, unit.offers.length], [null, 1])
+    assert.deepEqual([unit.choice, unit.shown.unitOk, unit.auto], [null, false, false])
     const off = rowFor(rowsOf([docOf('a', null, [line('Кран шаровой Ду15', 100, { sumOff: true })])]), 'Кран шаровой Ду15')
-    assert.equal(off.choice, null)
+    assert.deepEqual([off.choice, off.shown.price, off.check], [null, 100, true])
     const fx = rowsOf([{ doc: { id: 'a', file_name: 'a' }, offer: { currency: 'USD', lines: [line('Кран шаровой Ду15', 100)] } }])
     assert.equal(fx.rows.length, 0)
     const k = normName('Манометр общего назначения')
     const picked = rowFor(rowsOf([docOf('a', null, [line('Что-то своё', 70, { k }), line('Кран шаровой Ду15', 100, { skip: true })])]), 'Манометр общего назначения')
     assert.deepEqual([picked.choice.price, picked.choice.picked], [70, true])
+  })
+
+  it('выбор человека при строке: отказ больше не предлагает, указанный пересчёт — цена за единицу позиции; строки без позиции — отдельно', () => {
+    const name = 'Кран шаровой Ду15'
+    const k = normName(name)
+    const refused = rowsOf([docOf('a', null, [line(name, 100, { no: [k] })])])
+    assert.equal(rowFor(refused, name), undefined, 'отвергнутая строка не возвращается')
+    const docs = [docOf('a', null, [line(name, 100, { no: [k] }), line('Болт М12х80', 15)])]
+    const placed = offersByGroup(docs, groups)
+    assert.deepEqual(unplacedLines(docs, placed).map((u) => u.line.name).sort(), ['Болт М12х80', name].sort())
+    const packed = rowFor(rowsOf([docOf('a', null, [line(name, 1000, { unit: 'упак', packs: { [k]: 50 } })])]), name)
+    assert.deepEqual([packed.choice.price, packed.choice.pack, packed.choice.unitOk], [20, 50, true])
+    // Строка выбрана для позиции: другие её позиции остаются, отказ снимается; отказ — снимает выбор.
+    const chosen = lineForGroup({ k: 'x', also: [], no: [k] }, [k])
+    assert.deepEqual([chosen.k, chosen.also, chosen.no], ['x', [k], []])
+    const declined = lineNotForGroup(chosen, [k])
+    assert.deepEqual([declined.k, declined.also, declined.no], ['x', [], [k]])
+    assert.deepEqual([lineNotForGroup({ k, also: [] }, [k]).k], [null], 'других нет — строка снова ищет сама')
+    const round = readOffer(offerNotes({ lines: [{ name, price: 10, no: [k], packs: { [k]: 5 } }] })).lines[0]
+    assert.deepEqual([round.no, round.packs], [[k], { [k]: 5 }], 'и то и другое хранится при файле')
+  })
+
+  it('НДС и курс у файла: строки пересчитываются; «как есть» в обе стороны — та же цена', () => {
+    const offer = { vat: { mode: 'gross', rate: 22 }, delivery: 1, lines: [{ name: 'А', price: 100, docPrice: 100 }] }
+    assert.equal(offerVatMode(offer), 'gross')
+    const net = offerWithVat(offer, 'net')
+    assert.equal(net.lines[0].price, 122)
+    assert.equal(offerVatMode(net), 'net')
+    assert.equal(offerWithVat(net, 'gross').lines[0].price, 100)
+    assert.equal(offerWithVat(offer, 'gross'), offer, 'тот же режим — без изменений')
+    const rub = offerInRoubles({ currency: 'USD', lines: [{ name: 'А', price: 10 }] }, 90)
+    assert.deepEqual([rub.currency, rub.lines[0].price], [null, 900])
   })
 
   it('пересчёт, после которого количество не похоже на объём, сам не берётся: неверная упаковка или ед. изм. в ВОР', () => {
@@ -890,6 +961,77 @@ describe('автовыбор цен по документам тендера', (
     assert.equal(suspectPrice(120, [plainOffer]), null)
     assert.equal(suspectPrice(900, [{ ...plainOffer, exact: false, score: 0.7 }]), null, 'аналог может стоить иначе')
     assert.equal(suspectPrice(null, [plainOffer]), null)
+  })
+})
+
+// Одна и та же позиция в разных ВОР (решение пользователя 05.11.2026: схлопывать, кроме неуверенных, меньше 90 %). Пары — с копии базы:
+// похожесть текста от 0,9 склеивала и разные материалы, поэтому «уверенность» строже похожести.
+describe('одна и та же позиция в разных ВОР', () => {
+  const group = (name, unit = 'шт', doc = 'А') => positionGroups([{ name: doc, positions: [{ name, unit, volume: 10, k: normName(name) }] }])[0]
+  const conf = (a, b, unit = 'шт') => positionConfidence(group(a, unit, 'А'), group(b, unit, 'Б'))
+
+  for (const [a, b, unit] of [
+    ['Шаровой кран полнопроходной DN25 R850X025', 'Кран шаровой полнопроходной, резьба ВН/ВН, DN25 R850X025 Giacomini'],
+    ['Клапан балансировочный статический DN15 R206BY003', 'Клапан балансировочный статический с измерительными штуцерами со сливом DN15 R206BY003 Giacomini'],
+    ['Фланец свободный металлический Ø225', 'Фланец свободный металлический Ф225'],
+    ['Трубопровод из стальных ВГП оц. труб Ø20x2,8', 'Трубопровод из стальных водогазопроводных оцинкованных труб Ø20x2.8', 'м'],
+    ['Прут 10х10 мм', 'Прут 10х10 мм ГОСТ 2591-2006', 'т'],
+    ['Коммутатор на 8 портов Sonar SNA-800 (шт)', 'Коммутатор на 8 портов Sonar SNA-800 (Калибр+) (шт)'],
+  ]) {
+    it(`одно и то же: «${a}» = «${b}»`, () => assert.ok(conf(a, b, unit) >= 0.9, String(conf(a, b, unit))))
+  }
+  for (const [a, b, unit] of [
+    ['Трубопровод из стальных водогазопроводных неоцинкованных труб Ø20x2.8', 'Трубопровод из стальных водогазопроводных оцинкованных труб Ø20x2.8', 'м'],
+    ['Патч-корд UTP, кат. 5е, RJ45/RJ45, 0,3м (шт)', 'Патч-корд UTP, кат. 5е, RJ45/RJ45, 5м (шт)'],
+    ['Модуль адресный релейный РМ-4К (шт)', 'Модуль адресный релейный РМ-4 (шт)'],
+    ['Коллектор этажный на 5 отводов 0-Л-32-Ф-Р25', 'Коллектор этажный на 6 отводов 0-Л-32-Ф-Р32'],
+    ['Шкаф управления ШУН/В-1,5-03-УК15-R3 (шт)', 'Шкаф управления ШУН/В-1,5-03-ПЧ/УК15-R3 (шт)'],
+    ['Крышка д/угла гориз. 90гр. осн.100 (0,7мм) ДКС (шт)', 'Консоль с опорой ML осн.100 ДКС (шт)'],
+    ['Теплосчётчик Пульсар модификации У DN 15 RS-485', 'Счетчик воды крыльчатый DN15 (RS485), универсальный'],
+    ['Винт М6х10 оц. (шт)', 'Винт М6х10 (шт)'],
+    ['Шпилька М12х1000', 'Анкер М12х1000'],
+    ['Кабель ВВГнг-FRLS 4*1,5 (м)', 'Кабель ВВГнг-LS 4*1,5 (м)', 'м'],
+  ]) {
+    it(`разное: «${a}» ≠ «${b}»`, () => assert.ok(conf(a, b, unit) < 0.9, String(conf(a, b, unit))))
+  }
+  it('другая ед. изм. — не одно и то же; та же, записанная иначе, — одно', () => {
+    assert.equal(positionConfidence(group('Кран шаровой Ду15', 'шт', 'А'), group('Кран шаровой Ду15', 'компл', 'Б')), 0)
+    assert.equal(positionConfidence(group('Кран шаровой Ду15', 'шт', 'А'), group('Кран шаровой Ду15', 'шт.', 'Б')), 1)
+  })
+  const views = (...docs) => docs.map(([name, list]) => ({ name, positions: list.map(([n, unit = 'шт', volume = 10]) => ({ name: n, unit, volume, k: normName(n) })) }))
+  it('складывает разные ВОР, ищется по любой записи; разделённое и уже разное — отдельно; один ВОР не складывает', () => {
+    const a = 'Шаровой кран полнопроходной DN25 R850X025'
+    const b = 'Кран шаровой полнопроходной, резьба ВН/ВН, DN25 R850X025 Giacomini'
+    const groups = positionGroups(views(['ОВ', [[a], ['Хомут монтажный']]], ['ВК', [[b], ['Хомут монтажный']]]))
+    assert.equal(groups.length, 3)
+    const merged = mergeSamePositions(groups)
+    assert.equal(merged.length, 2)
+    const pipe = merged.find((g) => g.name === a)
+    assert.deepEqual(pipe.targets.map((t) => t.doc), ['ОВ', 'ВК'])
+    assert.deepEqual([pipe.sameAs.length, pipe.sameAs[0].name], [1, b])
+    assert.deepEqual(pipe.ks, [normName(a), normName(b)])
+    assert.equal(itemCandidates({ name: b, unit: 'шт' }, merged)[0].exact, true, 'строка счёта находит позицию по второй записи')
+    assert.equal(mergeSamePositions(groups, { split: new Set([pipe.key]) }).length, 3, 'разделённое не складывается')
+    const one = positionGroups(views(['ОВ', [[a], [b]]]))
+    assert.equal(mergeSamePositions(one).length, 2, 'сметчик записал их разными строками')
+    const both = positionGroups(views(['ОВ', [[a], [b]]], ['ВК', [[b]]]))
+    assert.equal(mergeSamePositions(both).length, 2, 'в ОВ это разные строки, значит, и в ВК складывать только с той же записью')
+  })
+  it('цепочка: A = B и B = C ещё не значит A = C', () => {
+    const a = 'Кран шаровой полнопроходной DN15 R850X023 Giacomini'
+    const b = 'Кран шаровой полнопроходной DN15 R850X023'
+    const c = 'Кран шаровой полнопроходной DN15 R850X023 Valtec'
+    const merged = mergeSamePositions(positionGroups(views(['А', [[a]]], ['Б', [[b]]], ['В', [[c]]])))
+    assert.ok(merged.length <= 2)
+    for (const g of merged) for (const s of g.sameAs || []) assert.ok(s.confidence >= 0.9)
+  })
+  it('подсветка отличий: совпавшее не отмечено; другой размер, марка — отмечены; сокращение и порядок слов — не отличие', () => {
+    const marks = (x, y) => nameDiff(x, y).filter((p) => p.differs).map((p) => p.text.trim())
+    assert.deepEqual(marks('Герметик FIREFIX 310 мл', 'Герметик FIREFIX 600 мл'), ['310'])
+    assert.deepEqual(marks('Труба ВГП Ø20', 'Труба водогазопроводная Ø20'), [])
+    assert.deepEqual(marks('Кран шаровой Ду15', 'Шаровой кран Ду15'), [])
+    assert.deepEqual(marks('Труба медная 12,7 мм', 'труба медная ∅12.7'), [], 'число с запятой — одно значение')
+    assert.equal(nameDiff('Кабель ВВГ, 3х1,5', 'Кабель').map((p) => p.text).join(''), 'Кабель ВВГ, 3х1,5', 'текст не теряется')
   })
 })
 

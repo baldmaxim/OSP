@@ -197,7 +197,7 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
       assert.match(await card.locator('.dc-card-notes').textContent(), /нет ред\. формата договора/)
       assert.equal(await card.locator('.dc-chip--object').textContent(), 'Бизнес-центр «Нурлы»')
       assert.deepEqual(await card.locator('.dc-chip--label').allTextContents(), ['Переподписание'])
-      assert.deepEqual(await card.locator('.dc-avatar').allTextContents(), ['ПП', 'ЮМ'])
+      assert.deepEqual(await card.locator('.dc-avatar').allTextContents(), ['ЮМ'], 'исполнители — только юристы ОСП')
       assert.equal(await card.locator('.dc-count').textContent(), '1', 'файл заявки — скрепка с числом')
       assert.match(await card.getAttribute('class'), /\bhas-color dc-c-red\b/)
       assert.match(await card.getAttribute('class'), /\bis-overdue\b/, 'срок прошёл — красная рамка')
@@ -861,7 +861,7 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
       await column(page, 'in_progress').locator('.dc-card[data-id="dcr-2"]').click()
       await page.locator('.dc-detail-modal').waitFor()
       assert.equal(await page.locator('.dc-detail-modal .dc-status-opt:not([disabled])').count(), 0)
-      assert.deepEqual(await page.locator('.dc-detail-modal .dc-detail-people .dc-person-name').allTextContents(), ['Петров П. П.', 'Юристова Мария Андреевна'])
+      assert.deepEqual(await page.locator('.dc-detail-modal .dc-detail-people .dc-person-name').allTextContents(), ['Юристова Мария Андреевна'])
       assert.deepEqual(errors, [])
     } finally {
       await close()

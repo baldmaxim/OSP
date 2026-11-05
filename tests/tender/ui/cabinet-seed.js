@@ -2,13 +2,16 @@
 // заявка, запись цен и анкеты, сводка администратора, решение инженера. Файл ВОР собирается здесь же (xlsx) и
 // лежит в «хранилище» стенда (window.__fakeFiles) — кабинет скачивает и разбирает его как настоящий.
 //   ?page=cabinet (по умолчанию) — кабинет подрядчика «ООО Альфа»; ?page=admin — реестр расценок, вкладка
-//   «Расценки подрядчиков (актуальные тендеры)»; ?selfReg=1 — подрядчик, зарегистрировавшийся на сайте (позиции с сервера, файлов нет).
+//   «Расценки подрядчиков (актуальные тендеры)»; ?selfReg=1 — подрядчик, зарегистрировавшийся на сайте (позиции с сервера, файлов нет);
+//   ?preview=1 — администратор смотрит кабинет от имени подрядчика: функции кабинета ему отказывают, данные — из таблиц;
+//   ?legacyItems=1 — у тендера № 905 есть смета во вкладке «ВОР» (прежний путь: шаблон и загрузка КП).
 import * as XLSX from 'xlsx'
 import { readBidFileBytes } from '../../../src/utils/bidVor'
 
 const params = new URLSearchParams(window.location.search)
 const PAGE = params.get('page') || 'cabinet'
 const SELF_REGISTERED = params.get('selfReg') === '1'
+const PREVIEW = params.get('preview') === '1'
 const CP = { id: 'cp-alpha', name: 'ООО Альфа', ...(SELF_REGISTERED ? { selfRegistered: true } : {}) }
 
 window.__fakeRole = PAGE === 'admin'
@@ -19,7 +22,7 @@ window.__fakeRole = PAGE === 'admin'
   : {
       role: 'contractor', isAdmin: false, isSuperAdmin: false, isEmployee: false, isContractor: true, isLoggedIn: true,
       canEdit: () => false, canView: () => false, user: { id: 'contractor-1' }, scopedObjectIds: [],
-      userProfile: { full_name: 'Альфин А. А.' }, contractorInfo: CP, logout: async () => {},
+      userProfile: { full_name: 'Альфин А. А.' }, contractorInfo: CP, logout: async () => {}, previewActive: PREVIEW,
     }
 
 function vorBook() {
@@ -60,11 +63,12 @@ function vorBook() {
   return `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${b64}`
 }
 
-window.__fakeFiles = { 'tenders/t-open/vor.xlsx': vorBook() }
+window.__fakeFiles = { 'tenders/t-open/vor.xlsx': vorBook(), 'tenders/t-inv/vor.xlsx': vorBook() }
 
 const db = window.__fakeDb = {
   s3_documents: [
     { id: 'doc-vor', owner_type: 'tender', owner_id: 't-open', doc_category: 'vor_statement', file_name: 'ВОР паркинга.xlsx', s3_key: 'tenders/t-open/vor.xlsx', mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size_bytes: 9000, created_at: '2026-10-20T10:00:00Z' },
+    { id: 'doc-inv', owner_type: 'tender', owner_id: 't-inv', doc_category: 'vor_statement', file_name: 'ВОР фасада.xlsx', s3_key: 'tenders/t-inv/vor.xlsx', mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size_bytes: 9000, created_at: '2026-10-20T10:00:00Z' },
   ],
   tender_counterparties: [],
   tender_estimate_items: [],
@@ -91,7 +95,46 @@ const TENDERS = [
   { id: 't-inv', public_tender_number: 905, work_description: 'Фасадные работы', tender_status: 'Идет тендерная процедура', is_open: true,
     object_name: 'ЖК Примавера', object_address: 'Москва', responsible_name: 'Петров П. П.', responsible_phone: null,
     tender_start_date: null, tender_end_date: '2026-12-01', start_date: null, end_date: null, tender_package_link: null, invite: 'request_sent' },
+  // Организация отказалась: тендер идёт, но кабинет его не показывает.
+  { id: 't-decl', public_tender_number: 910, work_description: 'Кровля', tender_status: 'Идет тендерная процедура', is_open: true,
+    object_name: 'ЖК Примавера', object_address: 'Москва', responsible_name: 'Петров П. П.', responsible_phone: null,
+    tender_start_date: null, tender_end_date: '2026-12-01', start_date: null, end_date: null, tender_package_link: null, invite: 'declined' },
+  // Срок прошёл, статус тот же: тендер идёт, это не просрочка.
+  { id: 't-late', public_tender_number: 911, work_description: 'Благоустройство', tender_status: 'Идет тендерная процедура', is_open: true,
+    object_name: 'ЖК Примавера', object_address: 'Москва', responsible_name: 'Сидоров С. С.', responsible_phone: '+7 701 000-00-01',
+    tender_start_date: '2020-01-01', tender_end_date: '2020-01-15', start_date: null, end_date: null, tender_package_link: 'https://disk.example.ru/late' },
 ]
+
+// Те же сведения таблицами: их читает просмотр от имени подрядчика (встраивания стенд не разбирает — поля уже в строке).
+db.tenders = [
+  ...TENDERS.map((t) => ({
+    id: t.id, public_tender_number: t.public_tender_number, work_description: t.work_description, status: t.tender_status, tender_type: 'main',
+    deleted_at: null, tender_start_date: t.tender_start_date, tender_end_date: t.tender_end_date, start_date: t.start_date, end_date: t.end_date,
+    tender_package_link: t.tender_package_link, custom_object_name: null,
+    objects: { name: t.object_name, address: t.object_address, status: 'main_construction' },
+    responsible: { full_name: t.responsible_name, phone: t.responsible_phone },
+  })),
+  // «Прочее»: тендер без объекта — кабинет его не показывает, как bid_tender_open.
+  { id: 't-other', public_tender_number: 950, work_description: 'Прочее', status: 'Идет тендерная процедура', tender_type: 'main', deleted_at: null, objects: null, responsible: null },
+  // Удалённый и тендер на материалы — тоже нет.
+  { id: 't-gone', public_tender_number: 951, work_description: 'Удалённый', status: 'Идет тендерная процедура', tender_type: 'main', deleted_at: '2026-10-01T00:00:00Z', objects: { name: 'ЖК', address: null, status: 'main_construction' }, responsible: null },
+  { id: 't-mat', public_tender_number: 952, work_description: 'На материалы', status: 'Идет тендерная процедура', tender_type: 'materials', deleted_at: null, objects: { name: 'ЖК', address: null, status: 'main_construction' }, responsible: null },
+]
+db.tender_counterparties = TENDERS.filter((t) => t.invite).map((t) => ({ id: `tc-${t.id}`, tender_id: t.id, counterparty_id: CP.id, status: t.invite }))
+  .concat({ id: 'tc-foreign', tender_id: 't-open', counterparty_id: 'cp-beta', status: 'proposal_provided' })
+db.counterparties = [{ id: CP.id, name: CP.name, inn: '7707083893', kpp: '770701001', legal_address: 'Москва, ул. Строителей, 1', actual_address: null,
+  website: null, work_type: 'Монолитные работы', status: 'active', notes: 'служебное примечание', counterparty_number: 1234, vat_rate: 22, vat_exempt: false }]
+const CONTACT_PERSONS = [
+  { id: 'cc-1', counterparty_id: CP.id, full_name: 'Директоров Д. Д.', position: 'Директор', phone: '+7 916 000-00-10', email: 'dir@alpha.ru', created_at: '2026-01-01T00:00:00Z' },
+  { id: 'cc-2', counterparty_id: CP.id, full_name: 'Сметчикова С. С.', position: null, phone: null, email: 'smeta@alpha.ru', created_at: '2026-01-02T00:00:00Z' },
+]
+db.counterparty_contacts = CONTACT_PERSONS
+if (params.get('legacyItems') === '1') {
+  db.tender_estimate_items = [
+    { id: 'ei-1', tender_id: 't-inv', row_number: 1, cost_name: 'Монтаж фасада', unit: 'м2', work_volume: 100, is_section: false, estimate_name: 'Основная смета' },
+    { id: 'ei-2', tender_id: 't-inv', row_number: 2, cost_name: 'Утепление', unit: 'м2', work_volume: 100, is_section: false, estimate_name: 'Основная смета' },
+  ]
+}
 
 const keyOf = (r) => `${r.kind}|${r.item_key}|${r.unit_key || ''}`
 const ok = (data) => ({ data, error: null })
@@ -112,7 +155,8 @@ window.__fakeRpc = {
       positions: [...parsed.materials, ...parsed.works], structure: parsed.structure, conditions: parsed.conditions }])
   },
   contractor_org_card: () => ok([{ name: 'ООО Альфа', inn: '7707083893', kpp: '770701001', legal_address: 'Москва, ул. Строителей, 1', actual_address: null,
-    website: null, work_type: 'Монолитные работы', contact_name: 'Альфин А. А.', contact_phone: '+79161234567', contact_email: 'alfin@alpha.ru' }]),
+    website: null, work_type: 'Монолитные работы', contact_name: 'Альфин А. А.', contact_phone: '+79161234567', contact_email: 'alfin@alpha.ru',
+    counterparty_number: 1234, vat_rate: 22, vat_exempt: false, contacts: CONTACT_PERSONS.map(({ id, full_name, position, phone, email }) => ({ id, full_name, position, phone, email })) }]),
   contractor_contracts: () => ok([{
     id: 'c-1', display_id: 15, contract_number: 'ДП-15', contract_date: '2026-09-01', work_name: 'Монолит паркинга',
     status: 'signed', contract_amount: 1000000, currency: 'RUB', object_name: 'ЖК Primavera к14',
@@ -179,6 +223,25 @@ window.__fakeRpc = {
       materials_priced: 3, works_priced: 0, materials_total: 1000, works_total: 0, total: 1000, notes_count: 0, form_answers: 0,
       vat: null, updated_at: '2026-09-01T09:00:00Z' },
   ]),
+}
+
+// Просмотр от имени подрядчика: запросы идут под администратором, у него нет организации — функции кабинета отказывают, как в базе.
+if (PREVIEW) {
+  const refused = (text) => () => ({ data: null, error: { code: '42501', message: text } })
+  const record = (fn, text) => (args) => { window.__bidCalls.push({ fn, ...args }); return refused(text)() }
+  Object.assign(window.__fakeRpc, {
+    bid_contractor_tenders: refused('Список тендеров кабинета — только для подрядчика'),
+    contractor_org_card: () => ok([]),
+    bid_request: record('bid_request', 'Заявку подаёт подрядчик'),
+    bid_rates_save: record('bid_rates_save', 'Цены вводит подрядчик'),
+    bid_form_save: record('bid_form_save', 'Анкету заполняет подрядчик'),
+    contractor_set_participation: record('contractor_set_participation', 'Отметку участия ставит подрядчик'),
+  })
+  // Администратору правило показывает цены и анкеты всех организаций тендера: чужая цена не должна попасть в просмотр.
+  const concrete = readBidFileBytes(Uint8Array.from(atob(window.__fakeFiles['tenders/t-open/vor.xlsx'].split(',')[1]), (c) => c.charCodeAt(0))).materials[0]
+  db.tender_bid_rates.push({ id: 'r-foreign', tender_id: 't-open', counterparty_id: 'cp-beta', kind: 'material', item_key: concrete.itemKey, unit_key: concrete.unitKey,
+    name: concrete.name, unit: concrete.unit, volume: concrete.volume, price: 999, total: 130000, note: null, source: 'manual', updated_at: '2026-10-23T09:00:00Z' })
+  db.tender_bid_forms.push({ id: 'form-foreign', tender_id: 't-open', counterparty_id: 'cp-beta', answers: { 'f-vat': { label: 'Ставка НДС', value: '22 %' } }, updated_at: '2026-10-23T09:00:00Z' })
 }
 
 if (PAGE === 'admin') {

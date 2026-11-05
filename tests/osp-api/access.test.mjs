@@ -130,6 +130,7 @@ describe('osp-api: права объявлены на маршруте, закр
       'POST /api/fn/s3-presign confirm': { method: 'POST', url: '/api/fn/s3-presign', payload: { action: 'confirm' } },
       'POST /api/fn/s3-presign download': { method: 'POST', url: '/api/fn/s3-presign', payload: { action: 'download' } },
       'POST /api/fn/s3-presign delete': { method: 'POST', url: '/api/fn/s3-presign', payload: { action: 'delete' } },
+      'POST /api/fn/bid-vor-file': { method: 'POST', url: '/api/fn/bid-vor-file', payload: {} },
       'POST /api/fn/cover-upload': { method: 'POST', url: '/api/fn/cover-upload', payload: {} },
       'GET /api/health': { method: 'GET', url: '/api/health' },
       // Свой вход — здесь режим supabase: вход и учётки в Supabase Auth, маршруты своего входа отвечают 404 (кроме
@@ -223,6 +224,11 @@ describe('osp-api: права объявлены на маршруте, закр
     }
     assert.equal(measured['POST /api/fn/ai-assist clause_suggest'].contractor, 403)
     assert.equal(measured['POST /api/fn/cover-upload'].contractor, 403, 'обложку загружает только сотрудник')
+    // Файл ВОР: подрядчик с организацией доходит до проверки тела (и функции базы), остальным — отказ раньше.
+    assert.equal(measured['POST /api/fn/bid-vor-file'].contractor, 400)
+    for (const denied of ['employee', 'admin', 'contractor_noorg', 'unapproved', 'blocked', 'no_user_roles']) {
+      assert.equal(measured['POST /api/fn/bid-vor-file'][denied], 403, denied)
+    }
     assert.equal(measured['GET /api/covers/:name']['имя не по шаблону'], 404)
     assert.equal(measured['GET /api/covers/:name/thumb']['имя не по шаблону'], 404)
     for (const action of ['upload', 'confirm', 'delete']) {

@@ -20,3 +20,6 @@ CREATE TABLE IF NOT EXISTS public.doc_check_request_steps (
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT doc_check_request_steps_title_check CHECK (char_length(title) BETWEEN 1 AND 500)
 );
+
+-- Дату создания и автора заявки (doc_check_requests.created_at, created_by_name) меняет только администратор:
+-- триггер doc_check_requests_created_guard (миграция 20261228).

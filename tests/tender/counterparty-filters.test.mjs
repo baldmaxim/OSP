@@ -211,6 +211,28 @@ describe('Реестр контрагентов: страница', { skip: !lau
     }
   })
 
+  it('шапка и столбец №: большой номер виден целиком, подписи стоят над значениями, разделители не пропадают при прокрутке', async () => {
+    const { page, errors, close } = await open('&cpBigNumbers=1', { width: 1280, height: 800 })
+    try {
+      const cells = await rows(page).locator('td.col-num').evaluateAll((tds) => tds.map((td) => ({ text: td.textContent.trim(), fits: td.scrollWidth <= td.clientWidth })))
+      assert.ok(cells.some((c) => c.text === '1936') && cells.some((c) => c.text.length === 5), JSON.stringify(cells))
+      for (const c of cells) assert.ok(c.fits, `номер ${c.text} обрезан`)
+
+      const style = (sel, prop) => page.locator(sel).first().evaluate((el, p) => getComputedStyle(el)[p], prop)
+      // Подпись слева от значения на том же поле, по центру — там, где значения по центру.
+      assert.equal(await style('thead th.col-name', 'paddingLeft'), await style('tbody td.col-name', 'paddingLeft'))
+      assert.equal(await style('thead th.col-inn', 'paddingLeft'), await style('tbody td.col-inn', 'paddingLeft'))
+      for (const col of ['col-num', 'col-contract', 'col-site-account', 'col-website', 'col-actions']) {
+        assert.equal(await style(`thead th.${col}`, 'textAlign'), 'center', col)
+      }
+      // У слитых границ шапка при прокрутке теряет черту и разделители.
+      assert.equal(await style('table.compact-table', 'borderCollapse'), 'separate')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
   it('колонки номера ещё нет: номер считается по всему реестру и при фильтре тоже не меняется', async () => {
     const { page, errors, close } = await open('&cpNoNumbers=1')
     try {

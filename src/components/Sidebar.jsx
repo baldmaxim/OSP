@@ -14,6 +14,7 @@ import {
   IconAnalysis,
   IconContracts,
   IconDcRequest,
+  IconDpRequest,
   IconDocCheck,
   IconRates,
   IconReports,
@@ -242,6 +243,14 @@ function Sidebar() {
       Icon: IconDcRequest,
       // task 333: гейтим через canView('dc_requests'), чтобы права из админки управляли пунктом.
       visible: isEmployee && canView('dc_requests'),
+    },
+    {
+      key: 'dp-requests',
+      to: '/dp-requests',
+      label: 'Заявка на ДП',
+      tone: 'coral',
+      Icon: IconDpRequest,
+      visible: isEmployee && canView('dp_requests'),
     },
     {
       key: 'doc-check',

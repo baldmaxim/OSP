@@ -4268,5 +4268,665 @@
     "to": "no",
     "why": "образец замера — КП завершённого тендера: свои КП подрядчик меняет, только пока идёт приём предложений",
     "candidate": "20261201_contractor_access.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "admin",
+    "table": "dp_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявка на ДП (на копии пусто — запись не проверяется); читает право просмотра раздела в пределах своих объектов, создаёт право создания, правит право работы и автор, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "admin",
+    "table": "dp_request_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: уведомление о заявке на ДП; вошедшим и гостю не выдана, только функции dp_request_my_alerts и dp_request_alerts_ack",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "admin",
+    "table": "dp_request_alert_recipients",
+    "action": "delete",
+    "from": null,
+    "to": "yes",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "admin",
+    "table": "dp_request_alert_recipients",
+    "action": "insert",
+    "from": null,
+    "to": "yes",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "admin",
+    "table": "dp_request_alert_recipients",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "admin",
+    "table": "dp_request_alert_recipients",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "employee_full",
+    "table": "dp_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявка на ДП (на копии пусто — запись не проверяется); читает право просмотра раздела в пределах своих объектов, создаёт право создания, правит право работы и автор, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "employee_full",
+    "table": "dp_request_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: уведомление о заявке на ДП; вошедшим и гостю не выдана, только функции dp_request_my_alerts и dp_request_alerts_ack",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "employee_full",
+    "table": "dp_request_alert_recipients",
+    "action": "delete",
+    "from": null,
+    "to": "yes",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "employee_full",
+    "table": "dp_request_alert_recipients",
+    "action": "insert",
+    "from": null,
+    "to": "yes",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "employee_full",
+    "table": "dp_request_alert_recipients",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "employee_full",
+    "table": "dp_request_alert_recipients",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "employee_none",
+    "table": "dp_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявка на ДП (на копии пусто — запись не проверяется); читает право просмотра раздела в пределах своих объектов, создаёт право создания, правит право работы и автор, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "employee_none",
+    "table": "dp_request_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: уведомление о заявке на ДП; вошедшим и гостю не выдана, только функции dp_request_my_alerts и dp_request_alerts_ack",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "employee_none",
+    "table": "dp_request_alert_recipients",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "employee_none",
+    "table": "dp_request_alert_recipients",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "employee_none",
+    "table": "dp_request_alert_recipients",
+    "action": "select",
+    "from": null,
+    "to": "none",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "employee_none",
+    "table": "dp_request_alert_recipients",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "vors_only",
+    "table": "dp_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявка на ДП (на копии пусто — запись не проверяется); читает право просмотра раздела в пределах своих объектов, создаёт право создания, правит право работы и автор, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "vors_only",
+    "table": "dp_request_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: уведомление о заявке на ДП; вошедшим и гостю не выдана, только функции dp_request_my_alerts и dp_request_alerts_ack",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "vors_only",
+    "table": "dp_request_alert_recipients",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "vors_only",
+    "table": "dp_request_alert_recipients",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "vors_only",
+    "table": "dp_request_alert_recipients",
+    "action": "select",
+    "from": null,
+    "to": "none",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "vors_only",
+    "table": "dp_request_alert_recipients",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "contractor_own",
+    "table": "dp_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявка на ДП (на копии пусто — запись не проверяется); читает право просмотра раздела в пределах своих объектов, создаёт право создания, правит право работы и автор, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "contractor_own",
+    "table": "dp_request_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: уведомление о заявке на ДП; вошедшим и гостю не выдана, только функции dp_request_my_alerts и dp_request_alerts_ack",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "contractor_own",
+    "table": "dp_request_alert_recipients",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "contractor_own",
+    "table": "dp_request_alert_recipients",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "contractor_own",
+    "table": "dp_request_alert_recipients",
+    "action": "select",
+    "from": null,
+    "to": "none",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "contractor_own",
+    "table": "dp_request_alert_recipients",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "contractor_noorg",
+    "table": "dp_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявка на ДП (на копии пусто — запись не проверяется); читает право просмотра раздела в пределах своих объектов, создаёт право создания, правит право работы и автор, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "contractor_noorg",
+    "table": "dp_request_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: уведомление о заявке на ДП; вошедшим и гостю не выдана, только функции dp_request_my_alerts и dp_request_alerts_ack",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "contractor_noorg",
+    "table": "dp_request_alert_recipients",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "contractor_noorg",
+    "table": "dp_request_alert_recipients",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "contractor_noorg",
+    "table": "dp_request_alert_recipients",
+    "action": "select",
+    "from": null,
+    "to": "none",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "contractor_noorg",
+    "table": "dp_request_alert_recipients",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "unapproved",
+    "table": "dp_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявка на ДП (на копии пусто — запись не проверяется); читает право просмотра раздела в пределах своих объектов, создаёт право создания, правит право работы и автор, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "unapproved",
+    "table": "dp_request_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: уведомление о заявке на ДП; вошедшим и гостю не выдана, только функции dp_request_my_alerts и dp_request_alerts_ack",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "unapproved",
+    "table": "dp_request_alert_recipients",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "unapproved",
+    "table": "dp_request_alert_recipients",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "unapproved",
+    "table": "dp_request_alert_recipients",
+    "action": "select",
+    "from": null,
+    "to": "none",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "unapproved",
+    "table": "dp_request_alert_recipients",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "blocked",
+    "table": "dp_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявка на ДП (на копии пусто — запись не проверяется); читает право просмотра раздела в пределах своих объектов, создаёт право создания, правит право работы и автор, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "blocked",
+    "table": "dp_request_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: уведомление о заявке на ДП; вошедшим и гостю не выдана, только функции dp_request_my_alerts и dp_request_alerts_ack",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "blocked",
+    "table": "dp_request_alert_recipients",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "blocked",
+    "table": "dp_request_alert_recipients",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "blocked",
+    "table": "dp_request_alert_recipients",
+    "action": "select",
+    "from": null,
+    "to": "none",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "blocked",
+    "table": "dp_request_alert_recipients",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "no_user_roles",
+    "table": "dp_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявка на ДП (на копии пусто — запись не проверяется); читает право просмотра раздела в пределах своих объектов, создаёт право создания, правит право работы и автор, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "no_user_roles",
+    "table": "dp_request_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: уведомление о заявке на ДП; вошедшим и гостю не выдана, только функции dp_request_my_alerts и dp_request_alerts_ack",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "no_user_roles",
+    "table": "dp_request_alert_recipients",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "no_user_roles",
+    "table": "dp_request_alert_recipients",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "no_user_roles",
+    "table": "dp_request_alert_recipients",
+    "action": "select",
+    "from": null,
+    "to": "none",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "no_user_roles",
+    "table": "dp_request_alert_recipients",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "anon",
+    "table": "dp_requests",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: заявка на ДП (на копии пусто — запись не проверяется); читает право просмотра раздела в пределах своих объектов, создаёт право создания, правит право работы и автор, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "anon",
+    "table": "dp_request_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: уведомление о заявке на ДП; вошедшим и гостю не выдана, только функции dp_request_my_alerts и dp_request_alerts_ack",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "anon",
+    "table": "dp_request_alert_recipients",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "anon",
+    "table": "dp_request_alert_recipients",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "anon",
+    "table": "dp_request_alert_recipients",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "anon",
+    "table": "dp_request_alert_recipients",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "service_role",
+    "table": "dp_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявка на ДП (на копии пусто — запись не проверяется); читает право просмотра раздела в пределах своих объектов, создаёт право создания, правит право работы и автор, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "service_role",
+    "table": "dp_request_alerts",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: уведомление о заявке на ДП; вошедшим и гостю не выдана, только функции dp_request_my_alerts и dp_request_alerts_ack",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "service_role",
+    "table": "dp_request_alert_recipients",
+    "action": "delete",
+    "from": null,
+    "to": "yes",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "service_role",
+    "table": "dp_request_alert_recipients",
+    "action": "insert",
+    "from": null,
+    "to": "yes",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "service_role",
+    "table": "dp_request_alert_recipients",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
+  },
+  {
+    "release": "20261227",
+    "class": "service_role",
+    "table": "dp_request_alert_recipients",
+    "action": "update",
+    "from": null,
+    "to": "yes",
+    "why": "новая таблица: кому показывать окно о новой заявке на ДП; ведёт право раздела admin, сам получатель видит только себя, правки нет, подрядчику и гостю ничего",
+    "candidate": "20261227_dp_requests.sql"
   }
 ]

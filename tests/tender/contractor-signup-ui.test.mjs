@@ -62,11 +62,28 @@ describe('Регистрация подрядчика на сайте: стра�
       assert.ok(!tabs.some((t) => t.startsWith('Договоры')), 'договоров нет')
 
       await page.getByRole('link', { name: 'Открыть тендер № 857' }).click()
-      assert.match(await page.locator('.cab-join').textContent(), /Откроется расценка на сайте/)
+      assert.match(await page.locator('.cab-join').textContent(), /Откроются файлы ВОР и расценка на сайте/)
       await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
       await page.locator('.bid-tab', { hasText: 'Материалы' }).locator('.bid-tab-count', { hasText: '2' }).waitFor({ timeout: 30000 })
-      assert.equal(await page.locator('.cab-docs').count(), 0, 'файлов нет')
+      assert.equal(await page.locator('.cab-docs').count(), 0, 'списка файлов нет')
       assert.equal(await page.locator('.cab-section h3', { hasText: 'Документы тендера' }).count(), 0)
+
+      // Файл ВОР — по id, через свой маршрут сервера (ключа и строк s3_documents у этой учётки нет).
+      const asked = []
+      await page.route('**/api/fn/bid-vor-file', (route) => {
+        asked.push(route.request().postDataJSON())
+        route.fulfill({ json: { presigned_url: `${new URL(page.url()).origin}/fake-storage/vor.xlsx`, expires_in: 3600, file_name: 'ВОР паркинга.xlsx' } })
+      })
+      await page.route('**/fake-storage/vor.xlsx', (route) => route.fulfill({ status: 200, contentType: 'application/octet-stream', body: 'xlsx' }))
+      const [saved] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Скачать ВОР «ВОР паркинга»' }).click()])
+      assert.equal(saved.suggestedFilename(), 'ВОР паркинга.xlsx')
+      assert.deepEqual(asked, [{ file_id: 'doc-vor' }])
+
+      // Сервер отказал — причина под кнопкой, страница работает.
+      await page.unroute('**/api/fn/bid-vor-file')
+      await page.route('**/api/fn/bid-vor-file', (route) => route.fulfill({ status: 404, json: { error: 'Файл недоступен: приём предложений закрыт или заявка не подана' } }))
+      await page.getByRole('button', { name: 'Скачать ВОР «ВОР паркинга»' }).click()
+      await page.locator('.bid-vor-files .bid-note', { hasText: 'Файл недоступен' }).waitFor()
       assert.equal(await page.getByRole('button', { name: 'Загрузить КП' }).count(), 0)
       assert.match(await page.locator('.bid-conditions').textContent(), /ГУ в размере 5 %/, 'особые условия — с сервера')
 
@@ -89,7 +106,7 @@ describe('Регистрация подрядчика на сайте: стра�
       await company.getByText('7707083893').waitFor()
       // Название компании в шапке кабинета — свой класс: стили вкладки его не задевают.
       assert.equal(await page.locator('.cab-header .cab-company').evaluate((el) => getComputedStyle(el).display), 'block')
-      for (const text of ['ООО Альфа', '770701001', 'Москва, ул. Строителей, 1', 'Монолитные работы', 'Альфин А. А.', '+79161234567', 'alfin@alpha.ru']) {
+      for (const text of ['ООО Альфа', '770701001', 'Москва, ул. Строителей, 1', 'Монолитные работы', 'Альфин А. А.', '+79161234567', 'alfin@alpha.ru', '1234', 'Директоров Д. Д.', 'dir@alpha.ru']) {
         assert.ok(await company.getByText(text, { exact: true }).count(), text)
       }
 

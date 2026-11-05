@@ -6,6 +6,8 @@ import { vatFromAnswers, vatField, vatIncluded, vatLabel } from '../../utils/bid
 import { readBidFileBytes, mergeBidFiles, rateKey, BID_KIND_LABEL } from '../../utils/bidVor'
 import { isWorkbookFileName } from '../../utils/vorFiles'
 import { formatAmount } from '../../utils/money'
+import { downloadS3File, downloadVorFile } from '../FileDownload'
+import { IconDownload } from '../icons/ActionIcons'
 import BidPositionsTable from './BidPositionsTable'
 import BidStructureView from './BidStructureView'
 import BidFormPanel from './BidFormPanel'
@@ -20,7 +22,12 @@ const BidImportDialog = lazy(() => import('./BidImportDialog'))
 // canEdit — тендер открыт и у организации есть доступ (участник или заявка не отклонена): иначе только просмотр.
 //
 // serverPositions — подрядчик, зарегистрировавшийся на сайте (миграция 20261204): файлы ему не отдаются, позиции, структуру и
-// особые условия присылает сервер (bid_positions), дальше всё то же самое.
+// особые условия присылает сервер (bid_positions), дальше всё то же самое. Сам файл ВОР он скачивает отдельным маршрутом.
+//
+// Основной путь расценки — файл ВОР тендера (решение пользователя 05.11.2026): кнопка «Скачать ВОР» у каждого файла сверху, заполненный
+// файл принимает «Цены из файла»; собранная здесь книга — только маленькая кнопка «Шаблон Excel».
+//
+// previewCounterpartyId — просмотр от имени подрядчика: администратору правило показывает цены всех организаций, нужны только эти.
 
 const SAVE_DELAY_MS = 600
 
@@ -52,10 +59,11 @@ const PARSE_ERROR = {
   missing: 'файла нет в хранилище',
 }
 
-export default function BidWorkspace({ tender, canEdit, counterpartyName, tenderNumbers, onSummary, serverPositions = false }) {
+export default function BidWorkspace({ tender, canEdit, counterpartyName, tenderNumbers, onSummary, serverPositions = false, previewCounterpartyId = null }) {
   const tenderId = tender.id
   const [files, setFiles] = useState(null) // null — загрузка списка
   const [filesError, setFilesError] = useState('')
+  const [vorError, setVorError] = useState('')
   const [parsed, setParsed] = useState({}) // id файла → { status, result, error }
   const [rates, setRates] = useState(() => new Map())
   const [ratesState, setRatesState] = useState('loading') // loading | ok | error
@@ -127,7 +135,7 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
     let cancelled = false
     setFormFields(null)
     setFormError('')
-    Promise.all([loadFormFields(), loadMyForm(tenderId)])
+    Promise.all([loadFormFields(), loadMyForm(tenderId, previewCounterpartyId)])
       .then(([list, { form, previous }]) => {
         if (cancelled) return
         setFormFields(list || [])
@@ -136,7 +144,7 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
       })
       .catch((e) => { if (!cancelled) { setFormFields([]); setFormError(e.message || String(e)) } })
     return () => { cancelled = true }
-  }, [tenderId])
+  }, [tenderId, previewCounterpartyId])
   const vat = useMemo(() => vatFromAnswers(formFields, answers), [formFields, answers])
   const needVat = !!vatField(formFields) && !vat
 
@@ -144,14 +152,14 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
   const loadRates = useCallback(async () => {
     setRatesState('loading')
     try {
-      const rows = await loadMyRates(tenderId)
+      const rows = await loadMyRates(tenderId, previewCounterpartyId)
       setRates(new Map(rows.map((r) => [rateKey(r), { price: r.price == null ? null : Number(r.price), note: r.note || '', source: r.source, updated_at: r.updated_at }])))
       setRatesState('ok')
     } catch (e) {
       console.error('Цены подрядчика:', e)
       setRatesState('error')
     }
-  }, [tenderId])
+  }, [tenderId, previewCounterpartyId])
   useEffect(() => { loadRates() }, [loadRates])
 
   // Свои цены из других тендеров — только тому, кто может ставить цены.
@@ -278,6 +286,17 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
     commitMany(historyHits.map((p) => ({ position: p, patch: { price: history.get(p.key).price, source: 'history' } })))
   }
 
+  // Ключ файла есть только у подрядчика от администратора; учётке с регистрации файл отдаёт сервер по id.
+  const downloadVor = async (f) => {
+    setVorError('')
+    try {
+      if (f.s3_key) await downloadS3File(f.s3_key, f.file_name)
+      else await downloadVorFile(f.id, `${f.file_name}.xlsx`)
+    } catch (e) {
+      setVorError(`«${f.file_name}» не скачался: ${e.message || e}`)
+    }
+  }
+
   const exportExcel = async () => {
     const { downloadBidWorkbook } = await import('../../utils/bidExport')
     downloadBidWorkbook({ tender, counterpartyName, positions, rates, files: okFiles, form: { fields: formFields || [], answers } })
@@ -299,6 +318,27 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
 
   return (
     <div className="bid-ws">
+      {files.length > 0 && (
+        <div className="bid-vor-files">
+          <div className="bid-vor-head">
+            <b>{files.length > 1 ? 'Файлы ВОР для расценки' : 'Файл ВОР для расценки'}</b>
+            {canEdit && <span>Скачайте ВОР и заполните цены: готовый файл примет кнопка «Цены из файла», а можно вводить цены прямо в таблице ниже.</span>}
+          </div>
+          <ul className="bid-vor-list">
+            {files.map((f) => (
+              <li key={f.id} className="bid-vor-file">
+                <span className="bid-vor-name" title={f.file_name}>{f.file_name}</span>
+                <button type="button" className="cab-btn cab-btn-primary bid-vor-btn" aria-label={`Скачать ВОР «${f.file_name}»`} onClick={() => downloadVor(f)}>
+                  <IconDownload size={14} />
+                  Скачать ВОР
+                </button>
+              </li>
+            ))}
+          </ul>
+          {vorError && <div className="bid-note is-warn" role="alert">{vorError}</div>}
+        </div>
+      )}
+
       <div className="bid-summary">
         <div className="bid-summary-cells">
           <SummaryCell label="Материалы" s={summary.material} />
@@ -334,11 +374,19 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
               Мои прошлые цены ({historyHits.length})
             </button>
           )}
-          <button type="button" className="cab-btn" onClick={exportExcel} disabled={!allPositions.length}>Скачать Excel</button>
+          <button
+            type="button"
+            className="cab-btn-small"
+            onClick={exportExcel}
+            disabled={!allPositions.length}
+            title="Материалы, работы и структура КП одной книгой, с уже введёнными ценами"
+          >
+            Шаблон Excel
+          </button>
         </div>
       </div>
 
-      <SaveLine save={save} canEdit={canEdit} ratesState={ratesState} onRetry={() => flushRef.current()} onReload={loadRates} />
+      <SaveLine save={save} canEdit={canEdit} preview={!!previewCounterpartyId} ratesState={ratesState} onRetry={() => flushRef.current()} onReload={loadRates} />
 
       {filesError && <div className="bid-note is-warn">{serverPositions ? 'Позиции ВОР не загрузились' : 'Файлы тендера не загрузились'}: {filesError}</div>}
       {files.length === 0 && !filesError && (
@@ -431,7 +479,7 @@ function SummaryCell({ label, s }) {
   )
 }
 
-function SaveLine({ save, canEdit, ratesState, onRetry, onReload }) {
+function SaveLine({ save, canEdit, preview, ratesState, onRetry, onReload }) {
   if (ratesState === 'error') {
     return (
       <div className="bid-save is-error">
@@ -439,6 +487,7 @@ function SaveLine({ save, canEdit, ratesState, onRetry, onReload }) {
       </div>
     )
   }
+  if (preview) return <div className="bid-save">Просмотр от имени подрядчика: цены не записываются.</div>
   if (!canEdit) return <div className="bid-save">Только просмотр: приём предложений закрыт или участие отклонено.</div>
   let text = 'Цены сохраняются сами — отправлять ничего не нужно.'
   let cls = ''

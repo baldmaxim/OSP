@@ -54,6 +54,17 @@
     "no_user_roles": 403,
     "blocked": 403
   },
+  "POST /api/fn/bid-vor-file": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 403,
+    "unapproved": 403,
+    "contractor": 400,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
   "POST /api/fn/cover-upload": {
     "без токена": 401,
     "неверный токен": 401,

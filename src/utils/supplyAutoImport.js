@@ -72,17 +72,3 @@ export function planCleanup(sources, rates) {
 // «Полностью одинаковые» позиции: то же наименование (ключ normName) и те же единицы измерения.
 export const unitSignature = (p) => (p.units ? p.units.map((u) => u.unit) : [p.unit])
   .map((u) => String(u ?? '').replace(/\s+/g, ' ').trim().toLowerCase()).sort().join('|')
-
-// Куда подставить цену после ввода у позиции position ВОР estimateName: одинаковые позиции других ВОР без
-// цены (и без незаконченного ввода). docViews — [{ name, positions }]; isPriced(name, k) — есть ли цена.
-export function identicalTargets(docViews, estimateName, position, isPriced) {
-  const sig = unitSignature(position)
-  const out = []
-  for (const d of docViews) {
-    if (d.name === estimateName) continue
-    for (const p of d.positions) {
-      if (p.k === position.k && unitSignature(p) === sig && !isPriced(d.name, p.k)) out.push({ name: d.name, position: p })
-    }
-  }
-  return out
-}

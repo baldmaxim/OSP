@@ -13,6 +13,7 @@ import {
   dueShort,
   dueState,
   fmtDocDate,
+  shownAssigneeIds,
 } from '../../utils/docCheckHelpers'
 
 const DUE_TITLE = {
@@ -107,7 +108,7 @@ function DocCheckCard({ request, employees, canEdit, showStatus, onOpen, onToggl
           )}
           <DocCheckCardCounts request={request} />
         </div>
-        <DocCheckAvatars ids={request.assignee_ids} manual={request.manual_assignees} employees={employees} />
+        <DocCheckAvatars ids={shownAssigneeIds(request, employees)} employees={employees} />
       </div>
     </article>
   )

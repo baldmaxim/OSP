@@ -36,14 +36,6 @@ export function linePrice(item, vat, factor, deliveryOn) {
   return { price, delivery, full: roundMoney(price + (delivery || 0)) }
 }
 
-// Та же цена за единицу позиции: в единице документа pack единиц позиции (упаковка, бухта; utils/supplyDocMatch.docPack).
-export function packPrice(line, pack) {
-  if (!pack || line.price == null) return line
-  const price = roundMoney(line.price / pack)
-  const delivery = line.delivery != null ? roundMoney(line.delivery / pack) : null
-  return { price, delivery, full: roundMoney(price + (delivery || 0)) }
-}
-
 // Строки распознанного документа «в похожие цены» как есть — НДС как в документе, доставка — к ценам (файл без окна
 // сопоставления): позиции расценка найдёт сама. Цена поставщика — с доставкой. Ответ: { notes, lines } — lines: сколько
 // строк с ценой.

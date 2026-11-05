@@ -100,6 +100,7 @@ describe('Учётка с регистрации на сайте: база (ко
     assert.equal(res.status, 0, (res.stdout + res.stderr).split('\n').filter((l) => /FAIL|ERROR/.test(l)).join('\n'))
     assert.match(res.stdout, /OK 20261203_contractor_signup: применена/)
     assert.match(res.stdout, /OK 20261204_contractor_self_access: применена/)
+    assert.match(res.stdout, /OK 20261226_contractor_org_card_vor_file: применена/)
     sql(SEED)
     as(U.self, `select public.bid_request('${T.open}')`)
     sql(`insert into public.tender_bid_rates (tender_id, counterparty_id, kind, item_key, unit_key, name, unit, volume, price, total) values
@@ -173,10 +174,34 @@ describe('Учётка с регистрации на сайте: база (ко
     assert.ok(JSON.parse(as(U.managed, 'select json_agg(t) from public.bid_contractor_tenders() t')).length > 0)
 
     const card = JSON.parse(as(U.bound, 'select row_to_json(c) from public.contractor_org_card() c'))
-    assert.deepEqual(Object.keys(card).sort(), ['actual_address', 'contact_email', 'contact_name', 'contact_phone', 'inn', 'kpp', 'legal_address', 'name', 'website', 'work_type'])
+    assert.deepEqual(Object.keys(card).sort(), ['actual_address', 'contact_email', 'contact_name', 'contact_phone', 'contacts', 'counterparty_number', 'inn', 'kpp', 'legal_address', 'name', 'vat_exempt', 'vat_rate', 'website', 'work_type'])
+    assert.ok(Number.isInteger(card.counterparty_number) && card.counterparty_number > 0, 'номер контрагента на сайте')
+    assert.ok(Array.isArray(card.contacts))
     assert.equal(card.name, 'ООО Старый')
     assert.equal(card.contact_phone, '+79160000002')
     assert.ok(!JSON.stringify(card).includes('служебное'), 'примечание отдела не приходит')
+  })
+
+  it('файл ВОР: только Excel идущего тендера при доступе организации; остальное — пусто; без организации — отказ', () => {
+    const file = (user, id) => as(user, `select coalesce(json_agg(f), '[]') from public.bid_vor_file('${id}') f`)
+    const FILE = { vor: '018f2a10-0000-7000-8000-00000000f001', pdf: '018f2a10-0000-7000-8000-00000000f002', pack: '018f2a10-0000-7000-8000-00000000f003',
+      foreign: '018f2a10-0000-7000-8000-00000000f004', rejected: '018f2a10-0000-7000-8000-00000000f005', done: '018f2a10-0000-7000-8000-00000000f006' }
+    sql(`insert into public.s3_documents (id, owner_type, owner_id, s3_key, file_name, doc_category) values
+      ('${FILE.vor}', 'tender', '${T.open}', 'tenders/open/vor-a.xlsx', 'ВОР А.xlsx', 'vor_statement'),
+      ('${FILE.pdf}', 'tender', '${T.open}', 'tenders/open/rd.pdf', 'РД.pdf', 'vor'),
+      ('${FILE.pack}', 'tender', '${T.open}', 'tenders/open/pack.xlsx', 'Пакет.xlsx', 'tender_package'),
+      ('${FILE.foreign}', 'tender', '${T.foreign}', 'tenders/foreign/vor.xlsx', 'Чужой.xlsx', 'vor_statement'),
+      ('${FILE.rejected}', 'tender', '${T.rejected}', 'tenders/rejected/vor.xlsx', 'Отклонён.xlsx', 'vor_statement'),
+      ('${FILE.done}', 'tender', '${T.doneMember}', 'tenders/done/vor.xlsx', 'Завершён.xlsx', 'vor_statement')`)
+    try {
+      assert.deepEqual(JSON.parse(file(U.self, FILE.vor)), [{ s3_key: 'tenders/open/vor-a.xlsx', file_name: 'ВОР А.xlsx' }])
+      for (const [what, id] of [['не Excel', FILE.pdf], ['пакет, не ВОР', FILE.pack], ['нет заявки', FILE.foreign], ['заявка отклонена', FILE.rejected], ['тендер завершён', FILE.done]]) {
+        assert.deepEqual(JSON.parse(file(U.self, id)), [], what)
+      }
+      assert.throws(() => file(U.admin, FILE.vor), /только для подрядчика/, 'у администратора организации нет')
+    } finally {
+      sql(`delete from public.s3_documents where id in (${Object.values(FILE).map((id) => `'${id}'`).join(', ')})`)
+    }
   })
 
   it('позиции ВОР: только при доступе к тендеру; файл не отдаётся; отклонённому — ничего', () => {

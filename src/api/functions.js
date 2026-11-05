@@ -28,6 +28,9 @@ export function invokeFunction(name, options) {
   return supabase.functions.invoke(name, options)
 }
 
+// Файл ВОР для расценки — только свой API: учётка с регистрации бывает только на новом портале, строк s3_documents она не видит.
+export const requestBidVorFile = (fileId) => callOspFunction('bid-vor-file', { body: { file_id: fileId } }, { getToken: ospToken, fetchImpl: sessionFetch })
+
 // Путь файлов выбирается один раз, в начале операции: начатая загрузка заканчивается тем же путём.
 export function filesViaOspApi() {
   return filesPath({

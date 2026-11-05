@@ -22,6 +22,7 @@ import {
   fmtDocDate,
   fmtDocDateTime as fmtDateTime,
   initials,
+  shownAssigneeIds,
 } from '../../utils/docCheckHelpers'
 
 // Карточка заявки: данные, шаги, обсуждение, файлы, история.
@@ -56,6 +57,7 @@ function historyValue(field, value, ctx) {
   if (field === 'color') return DOC_CHECK_COLOR_LABEL[value] || value
   if (field === 'doc_type') return DOC_TYPE_LABEL[value] || value
   if (field === 'due_date' || field === 'doc_date') return fmtDocDate(value) || value
+  if (field === 'created_at') return fmtDateTime(value) || value
   if (field === 'object_id') return ctx.objects.get(value) || 'объект удалён'
   if (field === 'counterparty_id') return ctx.counterparties.get(value) || 'контрагент удалён'
   return String(value)
@@ -159,10 +161,8 @@ export default function DocCheckDetailModal({
     counterparties: new Map(counterparties.map(c => [c.id, c.name])),
   }), [tab, employees, objects, counterparties])
   const due = dueState(request)
-  const people = [
-    ...(request.assignee_ids || []).map(id => ({ key: id, name: employeeName(employees, id), tone: avatarTone(id) })),
-    ...(request.manual_assignees || []).map(name => ({ key: `manual:${name}`, name, manual: true })),
-  ]
+  const people = shownAssigneeIds(request, employees)
+    .map(id => ({ key: id, name: employeeName(employees, id), tone: avatarTone(id) }))
   const statuses = availableStatuses(hasBoardFields)
   const mail = safeHttpUrl(request.email_link)
   const isDeleted = !!request.deleted_at
@@ -304,9 +304,8 @@ export default function DocCheckDetailModal({
                       <ul className="dc-detail-people">
                         {people.map(p => (
                           <li key={p.key}>
-                            <span className={`dc-avatar ${p.manual ? 'dc-avatar--manual' : `dc-avatar--t${p.tone}`}`} aria-hidden="true">{initials(p.name)}</span>
+                            <span className={`dc-avatar dc-avatar--t${p.tone}`} aria-hidden="true">{initials(p.name)}</span>
                             <span className="dc-person-name">{p.name}</span>
-                            {p.manual && <span className="dc-person-note" title="Вписан вручную: учётной записи на портале нет">нет учётной записи</span>}
                           </li>
                         ))}
                       </ul>

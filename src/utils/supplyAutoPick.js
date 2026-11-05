@@ -2,34 +2,38 @@
 // находит каждой позиции ВОР цену. Только решения, без запросов: панель даёт документы и что сейчас в расценке, окно
 // показывает выбор и пишет цены по одному нажатию (каждую цену человек видит и может снять).
 //
-// Какая цена. Внутри документа одна позиция — одной строке (utils/supplyDocMatch.matchDocItems), выбор человека из окна
-// проверки строк важнее. Между документами:
+// Какая цена (решения пользователя 05.11.2026). Внутри документа одна позиция — одной строке (utils/supplyDocMatch.matchDocItems),
+// выбор человека важнее. Между документами:
 //  1) только с подходящей ед. изм. (или понятно, сколько её в упаковке, и после пересчёта количество похоже на объём ВОР),
 //     цена × количество сходится с суммой, не в валюте;
-//  2) сначала надёжные — то же наименование, артикул, выбрано человеком; похожие — только если надёжных нет: дешёвый
-//     аналог не должен перебивать то же самое наименование;
-//  3) среди них — по правилу окна: самая низкая цена или самый свежий документ.
-// Разброс цен в SPREAD раз и больше — пометка «проверить»: так выглядит цена за бухту среди цен за метр.
+//  2) есть та же позиция (то же наименование, артикул, выбрано человеком, похожа от 90 %) — из самого свежего документа: новая цена
+//     заменяет прежнюю сама; иначе — самая похожая строка, при равной похожести — из более свежего документа. Дешёвый аналог
+//     не перебивает ту же позицию.
+// Что показывать. Цена уже стоит правильно — строки нет. Своя другая цена — только если есть та же позиция в документе и документ
+// свежее цены или цена похожа на ошибку (за упаковку, в 5 раз): просто похожая строка не повод считать цену неверной, а
+// введённая после загрузки документа цена — решение человека. Свежее цены: цена совпала со строкой другого документа (значит, из
+// него) — по датам документов; иначе (ввели руками) — файл загружен позже последней правки цены: день сравнивать мало, цену и
+// файл часто вносят в один день.
 import { roundMoney } from './money.js'
-import { matchDocItems, matchIndex, docPack, groupUnitOk, offerPrice, packQtyFar, thicknessM } from './supplyDocMatch.js'
+import { AUTO_MIN, SAME_POSITION_MIN, groupUnitOk, lineManualPack, linePack, lineSameAsGroup, matchDocItems, matchIndex, pickedGroups, offerPrice, packQtyFar, thicknessM, docPack } from './supplyDocMatch.js'
 import { canonUnit, isSimilar, nameParts, normUnit } from './supplySimilarity.js'
 
-export const RULE_CHEAPEST = 'cheapest'
-export const RULE_NEWEST = 'newest'
 const SPREAD = 3
 // Своя цена позиции подозрительна: совпала с ценой упаковки в документе или в FAR_FROM раз и больше от надёжных цен.
 const SAME_AS_PACK = 0.03
 const FAR_FROM = 5
 
-const isSure = (o) => o.exact || o.picked || o.article
+export const isSure = (o) => o.exact || o.picked || o.article || o.same
 const entry = (doc, date, line, c) => ({
   id: `${doc.id}:${line.name}:${c.group.key}`, doc, date, line, group: c.group, exact: !!c.exact, picked: !!c.picked, article: !!c.article,
-  score: c.score ?? 1, pack: c.pack ?? null, unitOk: c.unitOk, price: roundMoney(line.price / (c.pack || 1)), qtyFar: packQtyFar(line, c.group, c.pack),
+  score: c.score ?? 1, same: (c.score ?? 1) >= SAME_POSITION_MIN && lineSameAsGroup(line, c.group),
+  pack: c.pack ?? null, unitOk: c.unitOk, price: roundMoney(line.price / (c.pack || 1)),
+  qtyFar: lineManualPack(line, c.group) == null && packQtyFar(line, c.group, c.pack),
 })
 
-// Документы тендера → по позициям. docs — [{ doc, offer }] (строки в notes файла; цены в валюте ждут курса в окне проверки
-// строк и сюда не идут). Ответ — Map ключ группы → цены документов [{ id, doc, date, line, group, exact, picked, article,
-// score, pack, unitOk, price }]. Дата документа — из него самого, иначе день загрузки файла.
+// Документы тендера → по позициям. docs — [{ doc, offer }] (строки в notes файла; цены в валюте ждут курса и сюда не идут).
+// Ответ — Map ключ группы → цены документов [{ id, doc, date, line, group, exact, picked, article, score, pack, unitOk, price }].
+// Дата документа — из него самого, иначе день загрузки файла.
 export function offersByGroup(docs, groups) {
   const index = matchIndex(groups)
   const out = new Map()
@@ -44,8 +48,8 @@ export function offersByGroup(docs, groups) {
     const taken = new Set()
     for (const line of offer.lines) {
       if (line.skip || !line.k) continue
-      for (const g of [line.k, ...(line.also || [])].flatMap((k) => index.byKey.get(k) || [])) {
-        const pack = g.units ? null : docPack(line, g.unit, g.name)
+      for (const g of pickedGroups(line, index)) {
+        const pack = g.units ? null : linePack(line, g)
         taken.add(g.key)
         put(entry(doc, date, line, { group: g, picked: true, pack, unitOk: pack != null || groupUnitOk(line.unit, g) }))
       }
@@ -61,44 +65,81 @@ export function offersByGroup(docs, groups) {
 }
 
 const newer = (a, b) => String(b.date || '').localeCompare(String(a.date || ''))
+const bySimilarity = (a, b) => Number(isSure(b)) - Number(isSure(a)) || b.score - a.score || newer(a, b) || a.price - b.price
+const usable = (o) => o.unitOk && o.price > 0 && !o.line.sumOff && !o.qtyFar
 
-// Цена для позиции по правилу (см. начало файла) или null. rule — RULE_CHEAPEST | RULE_NEWEST.
-export function bestOffer(offers, rule = RULE_CHEAPEST) {
-  const usable = (offers || []).filter((o) => o.unitOk && o.price > 0 && !o.line.sumOff && !o.qtyFar)
-  const sure = usable.filter(isSure)
-  const list = sure.length ? sure : usable
-  if (!list.length) return null
-  const byPrice = (a, b) => a.price - b.price || newer(a, b)
-  const byDate = (a, b) => newer(a, b) || a.price - b.price
-  return [...list].sort(rule === RULE_NEWEST ? byDate : byPrice)[0]
+// Цена для позиции (см. начало файла) или null.
+export function bestOffer(offers) {
+  const list = (offers || []).filter(usable)
+  const sure = list.filter(isSure)
+  if (sure.length) return [...sure].sort((a, b) => newer(a, b) || Number(b.picked) - Number(a.picked) || b.score - a.score || a.price - b.price)[0]
+  return [...list].sort(bySimilarity)[0] || null
 }
 
-// Что сейчас в расценке против новой цены: своя другая цена — { kind: 'replace', prices } (заменяет только человек); цена из
-// другого тендера — 'copy'; пусто хотя бы где-то — 'new'; везде та же — 'same'. cur — { own: [цены], copies, empty }.
+// Что сейчас в расценке против новой цены: своя другая цена — { kind: 'replace', prices }; цена из другого тендера — 'copy'; пусто
+// хотя бы где-то — 'new'; везде та же — 'same'. cur — { own: [цены], copies, empty, ownAt } (ownAt — последняя правка своей цены).
 export function priceStatus(cur, price) {
   const differ = [...new Set(cur.own.map(roundMoney).filter((p) => p !== price))]
   if (differ.length) return { kind: 'replace', prices: differ }
   return cur.copies ? { kind: 'copy' } : cur.empty ? { kind: 'new' } : { kind: 'same' }
 }
 
-// Строки окна автовыбора — по одной на позицию (группу) с ценами: { group, offers, choice, spread, sure, status, auto }.
-// chosen — Map ключ группы → id цены, выбранной человеком; currentOf(group) — что сейчас в расценке. auto — отметить
-// сразу: есть цена и своя другая цена позиции не заменяется. withoutOffers — позиции, цен на которые в документах нет.
-export function autoPickRows(byGroup, groups, { rule = RULE_CHEAPEST, chosen = null, currentOf }) {
+// Документ свежее своей цены позиции (см. начало файла).
+function isFresher(shown, offers, cur) {
+  const own = new Set(cur.own.map(roundMoney))
+  const sources = offers.filter((o) => o !== shown && own.has(o.price))
+  if (sources.length) return sources.every((o) => !o.date || !shown.date || shown.date >= o.date)
+  const uploaded = Date.parse(shown.doc?.created_at || '')
+  const edited = Date.parse(cur.ownAt || '')
+  return !Number.isFinite(uploaded) || !Number.isFinite(edited) || uploaded >= edited
+}
+
+// Строки окна — только те, где человеку есть что решать: { group, offers, choice, shown, spread, sure, status, auto, check }.
+// offers — цены позиции, самые похожие первыми; choice — выбранная цена или null (ни одну нельзя взять как есть); shown — что
+// показать (choice или самая похожая); auto — отметить сразу; check — проверить глазами: похоже не наверняка, ед. изм., разброс цен.
+// chosen — Map ключ группы → id цены, выбранной человеком; currentOf(group) — что сейчас в расценке. hidden — сколько позиций с
+// ценами из документов не показано: цена уже стоит правильно.
+export function autoPickRows(byGroup, groups, { chosen = null, currentOf }) {
   const rows = []
-  const withoutOffers = []
+  let hidden = 0
   for (const group of groups) {
     const offers = byGroup.get(group.key)
-    if (!offers?.length) { withoutOffers.push(group); continue }
-    const sorted = [...offers].sort((a, b) => a.price - b.price || newer(a, b))
+    if (!offers?.length) continue
+    const sorted = [...offers].sort(bySimilarity)
     const picked = chosen?.get(group.key)
-    const choice = (picked && offers.find((o) => o.id === picked)) || bestOffer(offers, rule)
-    const prices = offers.filter((o) => o.unitOk && o.price > 0).map((o) => o.price)
-    const spread = prices.length > 1 && Math.max(...prices) / Math.min(...prices) >= SPREAD ? Math.round(Math.max(...prices) / Math.min(...prices)) : null
-    const status = choice ? priceStatus(currentOf(group), choice.price) : null
-    rows.push({ group, offers: sorted, choice, spread, sure: !!choice && isSure(choice), status, auto: !!choice && !!status && status.kind !== 'replace' && status.kind !== 'same' })
+    const byPerson = picked ? offers.find((o) => o.id === picked) || null : null
+    const choice = byPerson || bestOffer(offers)
+    const shown = choice || sorted[0]
+    const cur = currentOf(group)
+    const status = priceStatus(cur, shown.price)
+    const sure = isSure(shown)
+    // Своя другая цена: документ свежее цены или цена похожа на ошибку.
+    const fresher = isFresher(shown, offers, cur)
+    const wrong = cur.own.some((p) => suspectPrice(roundMoney(p), offers))
+    const show = status.kind === 'same' ? false
+      : status.kind === 'replace' ? !!byPerson || (sure && (fresher || wrong))
+        : true
+    if (!show) { hidden += 1; continue }
+    const sureOthers = offers.filter((o) => usable(o) && isSure(o)).map((o) => o.price)
+    const prices = sure && usable(shown) ? [shown.price, ...sureOthers] : []
+    const times = prices.length > 1 ? Math.max(...prices) / Math.min(...prices) : 1
+    const spread = times >= SPREAD ? Math.round(times) : null
+    const auto = !!choice && !spread && (status.kind === 'replace' ? sure : sure || choice.score >= AUTO_MIN)
+    rows.push({ group, offers: sorted, choice, shown, spread, sure, status, wrong, auto, check: !choice || !sure || !!spread })
   }
-  return { rows, withoutOffers }
+  return { rows, hidden }
+}
+
+// Строки документов, которым не нашлась позиция ВОР: [{ doc, line }]. Цены в валюте ждут курса и сюда не идут.
+export function unplacedLines(docs, byGroup) {
+  const used = new Set()
+  for (const list of byGroup.values()) for (const o of list) used.add(o.line)
+  const out = []
+  for (const { doc, offer } of docs || []) {
+    if (offer.currency) continue
+    for (const line of offer.lines) if (!line.skip && !used.has(line)) out.push({ doc, line })
+  }
+  return out
 }
 
 // Цены других тендеров в другой ед. изм. — в меню похожих цен, с пометкой (решение пользователя 02.11.2026, тендер № 821: сами

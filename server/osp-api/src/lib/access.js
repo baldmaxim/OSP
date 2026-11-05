@@ -25,6 +25,8 @@ export const REQUIREMENTS = {
   // таких маршрутов нет (сейчас это файлы): она работает только через шлюз, по своему короткому списку.
   approved: (row) => !!row && row.is_approved !== false && row.is_blocked !== true && row.self_registered !== true,
   employee: isEmployeeRole,
+  // Подрядчик с организацией, как бы его ни завели (в том числе с регистрации на сайте). Что ему можно с конкретным файлом — решает база.
+  contractor: (row) => !!row && row.is_approved === true && row.is_blocked !== true && !!row.counterparty_id,
   // Вошёл и не заблокирован (заявки может ещё не быть): кто я, смена своего пароля. Одобрение своей сессии
   // проверяет src/lib/principal.js.
   signedIn: (row) => !row || row.is_blocked !== true,

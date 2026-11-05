@@ -145,8 +145,6 @@
 .sp-filter-btn.active { background: var(--hover-bg); color: var(--text-primary); font-weight: var(--ui-medium); }
 .sp-toolbar-right { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-left: auto; }
 .sp-toolbar-right .btn-secondary { display: inline-flex; align-items: center; gap: 0.375rem; }
-.sp-summary-inline { font-size: var(--ui-text); color: var(--text-secondary); white-space: nowrap; }
-.sp-summary-inline b { color: var(--text-primary); font-weight: var(--ui-semibold); }
 
 /* ── Таблица (sp-dense) ─────────────────────────────────────────────────
    Ширины по замерам: № — «999»; ед. — «шт., м²»; объём — «12 345,6789»; цена — поле «1 234 567,00»;
@@ -231,7 +229,7 @@
 .ui-work.ui-work .sp-table :is(th, td).sp-sel { padding-left: 0.5rem; padding-right: 0; text-align: center; }
 .sp-select { width: 1rem; height: 1rem; margin: 0; cursor: pointer; accent-color: var(--primary-color); vertical-align: middle; }
 .sp-select:disabled { cursor: default; }
-.sp-section-line .sp-select { margin-right: 0.25rem; }
+
 .ui-work.ui-work .sp-table > tbody > tr.is-selected > td { background: #eff6ff; }
 
 /* Ссылка на документ — как «Ссылка на КП» реестра тендеров на материалы: «Открыть» / «Скопировать» и карандаш;
@@ -277,31 +275,11 @@
    целиком, не только зона). */
 .sp-doc-drop { padding: 0.875rem 1rem; border: 1px dashed var(--border-color-dark); border-radius: var(--ui-radius); background: var(--bg-primary); }
 .sp-doc-drop.is-over { border-color: var(--primary-color); background: var(--hover-bg); }
-.sp-doc-drop.has-file { border-style: solid; }
+
 .sp-modal.is-drop { box-shadow: 0 0 0 3px var(--primary-color), 0 20px 40px rgba(15, 23, 42, 0.25); }
-.sp-doc-chosen { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; overflow-wrap: anywhere; }
+
 .sp-doc-hint { margin: 0; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
-.sp-di-attached { margin: 0 0 0.5rem; }
-.sp-di-warn { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.375rem; margin: 0 0 0.5rem; color: var(--warning-color); }
-.sp-di-pack { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--text-primary); }
-/* Окно «Счета и КП тендера»: файлы сверху (своя прокрутка, чтобы не вытесняли таблицу), под ними автовыбор. */
-.sp-td-drop { flex: none; padding: 0.625rem 0.75rem; margin-bottom: 0.5rem; }
-.sp-td-files { flex: none; max-height: 9.5rem; margin-bottom: 0.5rem; }
-.sp-td-files > li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.125rem 0.75rem; }
-.sp-td-files .sp-di-file { display: inline-flex; align-items: center; gap: 0.25rem; min-width: 0; overflow-wrap: anywhere; text-align: left; }
-.sp-td-state { flex: 1 1 16rem; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.125rem 0.5rem; color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
-.sp-td-state b { color: var(--text-primary); font-weight: var(--ui-semibold); }
-.sp-td-actions { display: inline-flex; align-items: center; gap: 0.5rem; margin-left: auto; }
-.sp-td-rule { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; margin: 0 0 0 auto; padding: 0; border: 0; }
-.sp-td-rule label { display: inline-flex; align-items: center; gap: 0.375rem; cursor: pointer; }
-.sp-td-source .sp-di-file { display: flex; align-items: center; gap: 0.25rem; overflow-wrap: anywhere; }
-.sp-td-source .sp-di-meta { display: block; }
-.sp-td-tags { margin-top: 0.125rem; }
-.sp-td-more { display: block; margin-top: 0.125rem; }
-.sp-td-source .sp-di-choice { margin-top: 0.25rem; }
-.sp-td-none { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 0.25rem 0 0 1.25rem; }
-.sp-td-sum b { font-weight: var(--ui-semibold); }
-.sp-td-volumes { display: block; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+
 .sp-doc-list-title { margin: 0.25rem 0 0; color: var(--text-secondary); font-size: var(--ui-hint); }
 .sp-doc-list { margin: 0; padding: 0; list-style: none; max-height: 14rem; overflow: auto; border: 1px solid var(--border-color); border-radius: var(--ui-radius); }
 .sp-doc-list > li { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0.5rem; border-bottom: 1px solid var(--border-color); }
@@ -311,124 +289,6 @@
 .sp-doc-list label > .sp-muted { grid-column: 2; }
 .sp-doc-name { overflow-wrap: anywhere; }
 
-/* Окно «Цены из счёта / КП»: выбор файла — обычное окно; сопоставление — почти во весь экран, как просмотр файла
-   (строк документа бывают сотни, у каждой — список позиций ВОР). */
-.sp-modal-backdrop-full { padding: 0.75rem; }
-.sp-modal-docimport { width: min(48rem, 100%); }
-.sp-modal-docimport.is-full { width: min(120rem, 100%); height: calc(100vh - 1.5rem); max-height: none; }
-.sp-modal-docimport.is-full > .sp-modal-body { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
-.sp-drop {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 0.75rem;
-  margin: 0.5rem 0;
-  padding: 1.25rem;
-  border: 1px dashed var(--border-color-dark);
-  border-radius: var(--ui-radius);
-  background: var(--bg-primary);
-}
-.sp-drop.is-over { border-color: var(--primary-color); background: var(--hover-bg); }
-.sp-drop .btn-primary, .sp-drop .btn-secondary { display: inline-flex; align-items: center; gap: 0.375rem; }
-.sp-drop-status { display: flex; align-items: flex-start; gap: 0.375rem; margin: 0.5rem 0 0; }
-.sp-di-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.75rem; margin-bottom: 0.5rem; }
-.sp-di-file { display: inline-flex; align-items: center; gap: 0.25rem; font-weight: var(--ui-medium); overflow-wrap: anywhere; }
-.sp-di-summary b { color: var(--text-primary); font-weight: var(--ui-semibold); }
-.sp-di-settings { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.5rem 1.5rem; margin: 0 0 0.5rem; }
-.sp-di-settings > .sp-di-vat { margin: 0; }
-.sp-di-settings > .sp-di-delivery { flex: 1 1 22rem; margin: 0.5rem 0 0; }
-.sp-di-vat { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; margin: 0 0 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: var(--ui-radius); }
-.sp-di-vat legend { padding: 0 0.25rem; color: var(--text-secondary); font-size: var(--ui-hint); }
-.sp-di-vat label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; }
-.sp-di-rate {
-  width: 3.5rem;
-  height: 1.75rem;
-  padding: 0 0.375rem;
-  border: 1px solid var(--border-color-dark);
-  border-radius: var(--ui-radius);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font: inherit;
-  text-align: right;
-}
-.sp-di-delivery { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0 0 0.5rem; }
-.sp-di-delivery input { margin-top: 0.2rem; }
-.sp-di-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; }
-.sp-di-filter-hint { font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
-.sp-di-wrap { flex: 1; min-height: 12rem; margin-top: 0.5rem; overflow: auto; }
-.ui-work.ui-work .sp-di-table { min-width: 64rem; table-layout: fixed; }
-.sp-di-table .sp-di-c-sel { width: 2.25rem; }
-.sp-di-table .sp-di-c-doc { width: 32%; }
-.sp-di-table .sp-di-c-price { width: 8.5rem; }
-.sp-di-table .sp-di-c-pos { width: auto; }
-.sp-di-table .sp-di-c-now { width: 10rem; }
-.ui-work.ui-work .sp-di-table > thead > tr > th { position: sticky; top: 0; z-index: 1; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
-.ui-work.ui-work .sp-di-table > tbody > tr > td { vertical-align: top; }
-.ui-work.ui-work .sp-di-table > tbody > tr.is-unmatched > td.sp-di-doc { color: var(--text-secondary); }
-.sp-di-sel { text-align: center; }
-.sp-di-sel input { width: 1rem; height: 1rem; margin: 0.25rem 0 0; accent-color: var(--primary-color); }
-.sp-di-name { display: block; overflow-wrap: anywhere; }
-.sp-di-meta { display: flex; flex-wrap: wrap; gap: 0 0.75rem; color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
-.sp-di-price { font-weight: var(--ui-semibold); white-space: nowrap; }
-.sp-di-price .sp-di-meta { justify-content: flex-end; font-weight: var(--ui-regular, 400); }
-.sp-di-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0 0.375rem;
-  border-radius: 999px;
-  background: var(--hover-bg);
-  color: var(--text-secondary);
-  font-size: var(--ui-hint);
-  line-height: var(--ui-hint-lh);
-}
-.sp-di-tag.is-exact { background: var(--success-light); color: #15803d; }
-.sp-di-tag.is-warn { background: var(--warning-light); color: var(--warning-color); }
-/* Позиция ВОР строки документа: «не сопоставлять» и сразу под ним похожие позиции — кружками, выбранная подсвечена. */
-.sp-di-choice { display: grid; gap: 0.125rem; }
-.sp-di-opt {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 0 0.5rem;
-  padding: 0.1875rem 0.375rem;
-  border-radius: var(--ui-radius);
-  cursor: pointer;
-}
-.sp-di-opt:hover { background: var(--hover-bg); }
-.sp-di-opt.is-on { background: #eff6ff; box-shadow: inset 2px 0 0 var(--primary-color); }
-.sp-di-opt input { width: 0.9375rem; height: 0.9375rem; margin: 0.15rem 0 0; accent-color: var(--primary-color); cursor: pointer; }
-.sp-di-opt-name { overflow-wrap: anywhere; }
-.sp-di-opt.is-none .sp-di-opt-name { color: var(--text-secondary); }
-.sp-di-opt-meta { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 0.125rem 0.5rem; color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
-.sp-di-taken { color: var(--warning-color); }
-.sp-di-none { padding: 0.125rem 0.375rem; }
-.sp-di-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; margin-top: 0.25rem; padding-left: 0.375rem; }
-.ui-work.ui-work .sp-di-find { flex: 1 1 14rem; min-width: 10rem; max-width: 24rem; }
-.sp-di-find input {
-  width: 100%;
-  height: 1.75rem;
-  padding: 0 0.5rem 0 1.875rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--ui-radius);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font: inherit;
-  font-size: var(--ui-th);
-}
-.sp-di-find input:focus { outline: none; border-color: var(--primary-color); }
-.sp-di-now { font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
-.sp-di-actions { flex-wrap: wrap; align-items: center; }
-.sp-di-attach { display: inline-flex; align-items: center; gap: 0.5rem; margin-right: auto; }
-.sp-di-progress { color: var(--text-secondary); }
-/* Несколько файлов сразу — «в похожие цены»: файл и что из него распознано. */
-.sp-di-batch { margin: 0.5rem 0 0; padding: 0; list-style: none; border: 1px solid var(--border-color); border-radius: var(--ui-radius); }
-.sp-di-batch > li { display: grid; gap: 0.125rem; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border-color); }
-.sp-di-batch > li:last-child { border-bottom: 0; }
-.sp-di-batch-state { color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
-.sp-di-batch-state b { color: var(--text-primary); font-weight: var(--ui-semibold); }
-.sp-di-batch-state .sp-error-text { display: inline-flex; align-items: center; gap: 0.25rem; }
-.sp-di-saved { display: inline-flex; align-items: center; gap: 0.25rem; color: #15803d; }
 .sp-suggest-tag.is-score { background: transparent; }
 .ui-work.ui-work .sp-table > thead > tr > th {
   font-size: var(--ui-hint);
@@ -455,7 +315,7 @@
 .sp-hint { display: block; margin-top: 0.125rem; color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
 .sp-hint.is-warn { color: var(--warning-color); }
 .sp-hint .sp-link-btn { margin-left: 0.375rem; }
-.ui-work.ui-work .sp-table > tbody > tr.is-unpriced > td { background: var(--warning-light); }
+
 .ui-work.ui-work .sp-table > tbody > tr.is-remote > td { background: #e0f2fe; transition: background 0.6s; }
 .ui-work.ui-work .sp-table > tbody > tr.is-error > td,
 .ui-work.ui-work .sp-table > tbody > tr.is-conflict > td { background: #fef2f2; }
@@ -521,7 +381,7 @@
 .sp-save-status.is-saving { color: var(--text-secondary); }
 .sp-save-status.is-error { color: var(--danger-color); font-weight: var(--ui-medium); }
 .sp-fill-note { color: #075985; }
-.sp-st-group { display: inline-flex; align-items: center; gap: 0.125rem; }
+
 .sp-st { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; }
 .sp-st.is-saving { color: var(--text-secondary); }
 .sp-st.is-saved { color: var(--success-color); }
@@ -547,56 +407,6 @@
 .sp-icon-btn.is-error { color: var(--danger-color); }
 .sp-icon-btn.is-warn { color: var(--warning-color); }
 
-/* ── Секция ВОР: строка-шапка над позициями ВОР ────────────────────────────
-   Заметная граница между ВОР: подложка, рамка сверху, имя ВОР крупнее, сумма ВОР справа. */
-.ui-work.ui-work .sp-table > tbody > tr.sp-section-head > td {
-  padding: 0.5rem 0.625rem;
-  border-top: 2px solid var(--border-color-dark);
-  background: var(--bg-tertiary, var(--hover-bg));
-}
-.ui-work.ui-work .sp-table > tbody > tr.sp-section-head.is-first > td { border-top: 0; }
-.ui-work.ui-work .sp-table > tbody > tr.sp-section-head:hover { background: none; }
-.sp-section-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; }
-.sp-section-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  padding: 0;
-  border: 0;
-  border-radius: var(--ui-radius);
-  background: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-.sp-section-toggle > svg { transition: transform 0.15s; transform: rotate(-90deg); }
-.sp-section-toggle.is-open > svg { transform: none; }
-.sp-section-toggle:hover { background: var(--hover-bg); color: var(--text-primary); }
-.sp-section-name { font-size: var(--ui-block); line-height: var(--ui-block-lh); font-weight: var(--ui-semibold); }
-.sp-section-done { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--success-color); font-size: var(--ui-hint); }
-.sp-section-count { color: var(--text-secondary); font-size: var(--ui-th); }
-.sp-section-sum { margin-left: auto; font-weight: var(--ui-semibold); font-size: var(--ui-text); }
-.sp-section-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.125rem 0.75rem;
-  margin: 0.125rem 0 0 2.5rem;
-  color: var(--text-secondary);
-  font-size: var(--ui-hint);
-  line-height: var(--ui-hint-lh);
-}
-.sp-section-note {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.375rem;
-  margin: 0.375rem 0 0 2.5rem;
-  color: var(--warning-color);
-  font-size: var(--ui-hint);
-  line-height: var(--ui-hint-lh);
-}
 .sp-bind { display: inline-flex; align-items: center; gap: 0.5rem; }
 .sp-bind select {
   height: 1.75rem;
@@ -807,14 +617,11 @@
 [data-theme='dark'] .sp-author.is-auto { color: #7dd3fc; }
 [data-theme='dark'] .sp-suggest { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
 [data-theme='dark'] .sp-suggest-tag.is-current { color: #86efac; }
-[data-theme='dark'] .sp-di-tag.is-exact { color: #86efac; }
-[data-theme='dark'] .sp-di-opt.is-on { background: #1e3a5f; }
-[data-theme='dark'] .sp-di-saved { color: #86efac; }
 
 /* ── Телефон: строка — карточка ─────────────────────────────────────────── */
 @media (max-width: 640px) {
   .sp-page { padding: 0.75rem 1rem 1.5rem; }
-  .sp-registry-hint { display: none; }
+  
   .sp-search { flex: 1 1 100%; }
   .sp-date-filter { flex: 1 1 100%; }
   .ui-work.ui-work .sp-table { min-width: 0; table-layout: auto; }
@@ -828,15 +635,15 @@
     border-bottom: 1px solid var(--border-color);
   }
   .ui-work.ui-work .sp-table > tbody > tr > td { padding: 0; border: 0; background: none; }
-  .ui-work.ui-work .sp-table > tbody > tr.is-unpriced { background: var(--warning-light); }
+  
   .sp-table td.sp-name { grid-column: 1 / -1; font-weight: var(--ui-medium); }
-  .ui-work.ui-work .sp-table > tbody > tr.sp-section-head { display: block; padding: 0; }
-  .ui-work.ui-work .sp-table > tbody > tr.sp-section-head > td { display: block; padding: 0.5rem 0.75rem; }
+  
+  
   .ui-work.ui-work .sp-table > tbody > tr.vt-spacer { display: block; padding: 0; border: 0; }
   .ui-work.ui-work .sp-table > tbody > tr.vt-spacer > td { display: block; }
   .sp-table-wrap.is-virtual { max-height: 75vh; }
-  .sp-section-meta, .sp-section-note { margin-left: 0; }
-  .sp-summary-inline { white-space: normal; }
+  
+  
   .sp-table td.ui-rownum { display: none; }
   .sp-table td[data-label]:not(.sp-name):not([data-label=''])::before {
     content: attr(data-label);
@@ -847,7 +654,7 @@
   .sp-table td.sp-state { grid-column: 1 / -1; }
   .sp-table td.sp-doc { grid-column: 1 / -1; }
   /* Отметка нескольких позиций — на компьютере; на телефоне ссылка прикладывается к позиции в её карточке. */
-  .sp-table :is(th, td).sp-sel, .sp-section-line .sp-select, .sp-sel-bar { display: none; }
+  .sp-table :is(th, td).sp-sel, .sp-sel-bar { display: none; }
   /* Значков нет (позиция не расценена) — пустой полосы под карточкой тоже нет. */
   .sp-table td.sp-state:not(:has(.sp-st, .sp-icon-btn)) { display: none; }
   .sp-table tfoot tr { display: flex; flex-wrap: wrap; justify-content: space-between; padding: 0.5rem 0.75rem; }
@@ -857,16 +664,15 @@
   .sp-suggest { left: 1rem !important; right: 1rem; width: auto !important; }
   .sp-suggest-list > li { grid-template-columns: 1fr; gap: 0.375rem; }
   .sp-suggest-side { justify-content: space-between; }
-  /* «Цены из счёта / КП» на телефоне: строка документа — карточкой. */
-  .ui-work.ui-work .sp-di-table { min-width: 0; table-layout: auto; }
-  .sp-di-table colgroup, .sp-di-table thead { display: none; }
-  .sp-di-table, .sp-di-table tbody { display: block; }
-  .ui-work.ui-work .sp-di-table > tbody > tr { display: grid; grid-template-columns: auto 1fr auto; gap: 0.25rem 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); }
-  .ui-work.ui-work .sp-di-table > tbody > tr > td { padding: 0; border: 0; }
-  .sp-di-table td.sp-di-pos, .sp-di-table td.sp-di-now { grid-column: 1 / -1; }
-  .sp-di-wrap { min-height: 0; }
-  .sp-modal-docimport.is-full > .sp-modal-body { overflow: auto; }
-  .sp-modal-docimport.is-full .sp-di-wrap { flex: none; overflow: visible; }
+  
+  
+  
+  
+  
+  
+  
+  
+  
 }
 
 /* ── Версии ВОР (миграция 20261029): что изменилось, вопросы, перенос цен ─────────────────────────── */
@@ -935,4 +741,200 @@ s.sp-was { display: inline; }
   /* Метка изменения на телефоне — у карточки строки, а не у первой ячейки. */
   .ui-work.ui-work .sp-table > tbody > tr.is-new { box-shadow: inset 3px 0 0 var(--success-color); }
   .ui-work.ui-work .sp-table > tbody > tr.is-changed { box-shadow: inset 3px 0 0 var(--warning-color); }
+}
+
+/* ── Спойлер «ВОРы тендера» над таблицей: сколько расценено и сумма по каждому, файл и редкие действия ── */
+.sp-vors { margin: 0 0 0.5rem; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); color: var(--text-secondary); }
+.sp-vors > summary { display: inline-flex; align-items: center; gap: 0.375rem; cursor: pointer; color: var(--ui-link); }
+.sp-vors > summary > svg { color: var(--warning-color); }
+.sp-vors > ul { margin: 0.375rem 0 0; padding: 0; list-style: none; border: 1px solid var(--border-color); border-radius: var(--ui-radius); background: var(--bg-secondary); }
+.sp-vors > ul > li { padding: 0.375rem 0.625rem; border-bottom: 1px solid var(--border-color); }
+.sp-vors > ul > li:last-child { border-bottom: 0; }
+.sp-vor-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.125rem 0.75rem; }
+.sp-vor-name { color: var(--text-primary); font-size: var(--ui-th); font-weight: var(--ui-medium); overflow-wrap: anywhere; }
+.sp-vor-sum { color: var(--text-primary); font-weight: var(--ui-medium); }
+.sp-vor-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.125rem 0.75rem; margin-left: auto; }
+.sp-vor-note { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; margin-top: 0.25rem; color: var(--warning-color); }
+.sp-vor-filter {
+  height: var(--ui-control-h);
+  max-width: 16rem;
+  padding: 0 0.375rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--ui-text);
+}
+/* Позиция без цены: подсвечено только поле цены, вся строка заливкой мешала читать таблицу. */
+.ui-work.ui-work .sp-table > tbody > tr.is-unpriced > td.sp-price-cell .sp-money-input:not(:disabled) { border-color: var(--warning-muted); background: var(--warning-light); }
+/* Состояние — справа в строке спойлера: постоянное место, длинное сообщение с многоточием, таблица не сдвигается. */
+.sp-subbar { position: relative; min-height: 1.75rem; margin: 0 0 0.25rem; }
+.sp-subbar > .sp-vors { margin: 0; }
+.sp-subbar .sp-vors > summary { min-height: 1.75rem; }
+.sp-subbar > .sp-statusbar { position: absolute; top: 0; right: 0; flex-wrap: nowrap; justify-content: flex-end; max-width: calc(100% - 13rem); height: 1.75rem; min-height: 0; margin: 0; overflow: hidden; }
+.sp-subbar .sp-save-status { flex: none; white-space: nowrap; }
+.sp-subbar .sp-fill-note { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-subbar .sp-sel-bar { flex: none; flex-wrap: nowrap; margin-left: 0; }
+
+/* ── Окно «Счета и КП тендера»: файлы строкой сверху, под ними позиция ВОР и строка счёта рядом ──────── */
+.sp-modal-backdrop-full { padding: 0.75rem; }
+.sp-modal-full { width: min(120rem, 100%); height: calc(100vh - 1.5rem); max-height: none; }
+.sp-modal-full > .sp-modal-body { display: flex; flex: 1; flex-direction: column; gap: 0.5rem; min-height: 0; overflow: hidden; }
+.sp-td-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: 1rem 1.25rem 0.25rem; }
+.sp-td-head h3 { margin-right: 0.75rem; padding: 0; }
+.sp-td-head .btn-primary { display: inline-flex; align-items: center; gap: 0.375rem; height: var(--ui-control-h); padding: 0 0.75rem; }
+.sp-td-meta { color: var(--text-secondary); font-size: var(--ui-hint); font-weight: var(--ui-regular, 400); line-height: var(--ui-hint-lh); }
+/* Файлы — плашками в свои строки со своей прокруткой, чтобы не вытесняли таблицу. */
+.sp-td-files { display: flex; flex: none; flex-wrap: wrap; gap: 0.25rem 0.375rem; max-height: 4.25rem; margin: 0; padding: 0; overflow: auto; list-style: none; }
+.sp-td-files > li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 100%;
+  min-height: 1.625rem;
+  padding: 0 0.125rem 0 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-primary);
+}
+.sp-td-files > li.is-off { border-color: var(--warning-muted); background: var(--warning-light); }
+.sp-td-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-link);
+  font: inherit;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  overflow-wrap: anywhere;
+  text-align: left;
+  cursor: pointer;
+}
+.sp-td-file > svg { flex: none; }
+.sp-td-file:hover { text-decoration: underline; text-underline-offset: 2px; }
+.sp-td-del { flex: none; width: 1.5rem; height: 1.5rem; }
+.sp-td-vat { max-width: 8rem; height: 1.375rem; padding: 0; border: 0; background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--ui-hint); cursor: pointer; }
+.sp-td-tag {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--hover-bg);
+  color: var(--text-secondary);
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+.sp-td-tag.is-warn { background: var(--warning-light); color: var(--warning-color); }
+.sp-td-pack { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.sp-td-pack.is-warn { color: var(--warning-color); }
+.sp-td-num {
+  width: 3.75rem;
+  height: 1.5rem;
+  padding: 0 0.375rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--ui-hint);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.sp-td-empty { display: flex; align-items: center; gap: 0.375rem; margin: 0; padding: 1.5rem 0; color: var(--text-secondary); }
+/* Таблица: наименования — двумя равными колонками, чтобы сравнивать глазами; отличия подсвечены. */
+.sp-td-wrap { flex: 1; min-height: 12rem; padding-bottom: 0; overflow: auto; border: 1px solid var(--border-color); border-radius: var(--ui-radius); }
+.ui-work.ui-work .sp-td-table { width: 100%; min-width: 60rem; table-layout: fixed; border-collapse: collapse; }
+.sp-td-table .sp-td-c-sel { width: 2.25rem; }
+.sp-td-table .sp-td-c-unit { width: 7.5rem; }
+.sp-td-table .sp-td-c-price { width: 7.5rem; }
+.sp-td-table .sp-td-c-now { width: 7rem; }
+.ui-work.ui-work .sp-td-table > thead > tr > th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.375rem 0.625rem;
+  background: var(--bg-secondary);
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+.ui-work.ui-work .sp-td-table > tbody > tr > td { padding: 0.5rem 0.625rem; font-size: var(--ui-text); line-height: var(--ui-text-lh); vertical-align: top; }
+.ui-work.ui-work .sp-td-table > tbody > tr > td.sp-td-line { border-left: 1px solid var(--border-color); }
+.ui-work.ui-work .sp-td-table > tbody > tr.sp-td-group > td { padding: 0.25rem 0.625rem; background: var(--hover-bg); color: var(--text-secondary); font-size: var(--ui-hint); font-weight: var(--ui-medium); line-height: var(--ui-hint-lh); }
+.ui-work.ui-work .sp-td-table > thead > tr > th.ui-money, .sp-td-price { text-align: right; }
+.sp-td-sel { text-align: center; }
+.sp-td-sel input { width: 1rem; height: 1rem; margin: 0.125rem 0 0; accent-color: var(--primary-color); cursor: pointer; }
+.sp-td-name { display: block; overflow-wrap: anywhere; }
+b.sp-td-name { font-weight: var(--ui-semibold); }
+.ui-work.ui-work .sp-td-table > tbody > tr:not(.sp-td-group) > td { border-bottom: 1px solid var(--border-color); background: var(--bg-secondary); }
+.sp-td-diff { padding: 0 0.125rem; border-radius: 3px; background: rgba(245, 158, 11, 0.24); color: inherit; }
+.sp-td-pos > .sp-td-meta { display: block; margin-top: 0.125rem; font-variant-numeric: tabular-nums; }
+.sp-td-line > .sp-td-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.125rem 0.75rem; margin-top: 0.125rem; }
+.sp-td-line > .sp-td-meta .sp-td-file { color: var(--text-secondary); }
+.sp-td-line > .sp-td-tag { margin: 0.25rem 0.25rem 0 0; }
+.sp-td-unit { display: inline-flex; flex-direction: column; gap: 0.125rem; font-size: var(--ui-th); line-height: var(--ui-th-lh); }
+.sp-td-unit.is-ok { flex-direction: row; align-items: center; gap: 0.25rem; color: #15803d; }
+.sp-td-unit.is-off { color: var(--danger-color); }
+.sp-td-unit.is-pack { color: var(--text-primary); }
+.sp-td-unit.is-off .sp-td-pack { color: var(--text-primary); }
+.ui-work.ui-work .sp-td-table > tbody > tr > td.sp-td-price { font-variant-numeric: tabular-nums; font-weight: var(--ui-semibold); white-space: nowrap; }
+.sp-td-now { display: inline-flex; flex-direction: column; font-size: var(--ui-th); line-height: var(--ui-th-lh); }
+.sp-td-now.is-replace { color: var(--warning-color); }
+/* «Другая строка»: самые похожие и поиск по всем строкам документов. */
+.sp-td-picker { display: grid; gap: 0.375rem; margin-top: 0.375rem; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: var(--ui-radius); background: var(--bg-primary); }
+.sp-td-picker ul, .sp-td-picker-list { display: grid; gap: 0.125rem; margin: 0; padding: 0; list-style: none; }
+.sp-td-picker li.is-on { border-radius: var(--ui-radius); background: #eff6ff; }
+.sp-td-opt { display: grid; width: 100%; padding: 0.25rem 0.375rem; border: 0; border-radius: var(--ui-radius); background: none; color: inherit; font: inherit; font-size: var(--ui-th); line-height: var(--ui-th-lh); overflow-wrap: anywhere; text-align: left; cursor: pointer; }
+.sp-td-opt:hover { background: var(--hover-bg); }
+.sp-td-picker > .sp-link-btn { justify-self: start; font-size: var(--ui-hint); }
+.ui-work.ui-work .sp-td-find { max-width: 24rem; }
+.sp-td-find input {
+  width: 100%;
+  height: 1.75rem;
+  padding: 0 0.5rem 0 1.875rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--ui-th);
+}
+.sp-td-find input:focus { border-color: var(--primary-color); outline: none; }
+/* Строки счетов без позиции ВОР — свёрнуты, своя прокрутка. */
+.sp-td-unplaced { flex: none; font-size: var(--ui-th); line-height: var(--ui-th-lh); }
+.sp-td-unplaced > summary { color: var(--ui-link); cursor: pointer; }
+.sp-td-unplaced > ul { max-height: 14rem; margin: 0.375rem 0 0; padding: 0; overflow: auto; list-style: none; border: 1px solid var(--border-color); border-radius: var(--ui-radius); }
+.sp-td-unplaced > ul > li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(14rem, 24rem); gap: 0.25rem 0.75rem; padding: 0.375rem 0.625rem; border-bottom: 1px solid var(--border-color); }
+.sp-td-unplaced > ul > li:last-child { border-bottom: 0; }
+.sp-td-unplaced-name { overflow-wrap: anywhere; }
+.sp-td-unplaced-name > .sp-td-meta { display: block; }
+.sp-td-actions { flex-wrap: wrap; align-items: center; }
+.sp-td-sum { margin-right: auto; color: var(--text-secondary); }
+.sp-td-sum b { color: var(--text-primary); font-weight: var(--ui-semibold); }
+[data-theme='dark'] .sp-td-unit.is-ok { color: #86efac; }
+[data-theme='dark'] .sp-td-picker li.is-on { background: #1e3a5f; }
+@media (max-width: 640px) {
+  .sp-vor-actions { margin-left: 0; }
+  .sp-vor-filter { flex: 1 1 100%; max-width: none; }
+  /* Статус — своей строкой, в подсказке ничего не прячется. Правило шире таблицы компьютера перебивается явно. */
+  .sp-subbar > .sp-statusbar { position: static; flex-wrap: wrap; justify-content: flex-start; max-width: none; height: auto; overflow: visible; }
+  .sp-subbar .sp-fill-note { white-space: normal; }
+  .ui-work.ui-work .sp-table.sp-table.sp-table { min-width: 0; width: 100%; }
+  .ui-work.ui-work .sp-table > tbody > tr { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  /* Окно на телефоне: строка — карточкой, прокручивается всё окно целиком. */
+  .sp-modal-full > .sp-modal-body { overflow: auto; }
+  .sp-td-wrap { flex: none; min-height: 0; overflow: visible; border: 0; }
+  .sp-td-files { max-height: none; }
+  .ui-work.ui-work .sp-td-table { min-width: 0; table-layout: auto; }
+  .sp-td-table colgroup, .sp-td-table thead { display: none; }
+  .sp-td-table, .sp-td-table tbody { display: block; }
+  .ui-work.ui-work .sp-td-table > tbody > tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.25rem 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); }
+  .ui-work.ui-work .sp-td-table > tbody > tr > td { padding: 0; border: 0; }
+  .ui-work.ui-work .sp-td-table > tbody > tr > td.sp-td-line { grid-column: 1 / -1; border: 0; }
+  .ui-work.ui-work .sp-td-table > tbody > tr.sp-td-group { display: block; padding: 0; }
+  .sp-td-unplaced > ul > li { grid-template-columns: minmax(0, 1fr); }
 }

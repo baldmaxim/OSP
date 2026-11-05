@@ -5,9 +5,9 @@ import { formatAmount } from '../../utils/money'
 import { offerPrice } from '../../utils/supplyDocMatch'
 import { fmtPriceDate } from '../../utils/supplyRateHelpers'
 
-// Меню похожих цен позиции. Сверху — цены из документов поставщиков этого тендера, добавленных «в похожие цены»
-// (offers — строки счетов и КП, похожие на позицию: utils/supplyDocMatch.offerMatches): файл, строка документа, цена
-// в документе и в расценку; «Взять» (onPickOffer) — цена в позицию, файл — её документом. Ниже (others) — расценки
+// Меню похожих цен позиции. Сверху — цены из счетов и КП этого тендера (offers — строки документов, похожие на позицию:
+// utils/supplyDocMatch.offerMatches): файл, строка документа, цена в документе и в расценку; «Взять» (onPickOffer) — цена в
+// позицию, файл — её документом. Ниже (others) — расценки
 // снабжения других тендеров (и других ВОР этого) с похожим наименованием, той же ед. изм., не старше 3 месяцев
 // (миграция 20261023; с 20261025 — сначала то же наименование, затем самые похожие: размер «700x700» и числа
 // наименования важнее слов, затем самые новые; у каждой — тот ли размер и документ исходной позиции). «Взять» —
@@ -103,7 +103,7 @@ export default function SupplySuggestMenu({
         <>
           <div className="sp-suggest-head">
             <span className="sp-suggest-title">Цены поставщиков</span>
-            <span className="sp-muted">из счетов и КП, добавленных к тендеру «в похожие цены»: с НДС и доставкой, как посчитано при загрузке</span>
+            <span className="sp-muted">из счетов и КП этого тендера, с НДС и доставкой</span>
           </div>
           <ul className="sp-suggest-list" aria-label="Цены поставщиков">
             {offerList.map((o, i) => (
@@ -248,7 +248,7 @@ function OfferItem({ o, unit, editable, current, onPick, onOpenFile }) {
       <div className="sp-suggest-info">
         <span className="sp-suggest-name">
           {line.name}
-          {o.picked ? <span className="sp-suggest-tag">выбрано при загрузке</span>
+          {o.picked ? <span className="sp-suggest-tag">выбрано вручную</span>
             : o.exact ? <span className="sp-suggest-tag">то же наименование</span>
               : <span className="sp-suggest-tag is-score">похоже на {Math.round(o.score * 100)} %</span>}
           {!o.unitOk && <span className="sp-suggest-tag is-warn">в документе — «{line.unit}»</span>}

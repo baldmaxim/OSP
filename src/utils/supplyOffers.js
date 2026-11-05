@@ -6,8 +6,9 @@
 //
 // Строка: n — наименование, u — ед. изм., q — количество, c — артикул, p — цена в расценку за единицу документа (с НДС
 // и доставкой, как её посчитало окно), d / dv — цена в документе и её НДС ('net' | 'gross' | null), k — позиция,
-// выбранная в окне (ключ наименования normName), ka — ещё позиции той же строки, x — 1, если в окне выбрали «не
-// сопоставлять», so — 1: цена × количество не сходится с суммой, pq — сколько в упаковке. Файл не распознался — вместо
+// выбранная в окне (ключ наименования normName), ka — ещё позиции той же строки, kn — позиции, для которых строку отвергли
+// («нет в счетах»), pm — сколько единиц позиции в единице строки, указал человек (ключ наименования → число), x — 1, если
+// строку не сопоставлять, so — 1: цена × количество не сходится с суммой, pq — сколько в упаковке. Файл не распознался — вместо
 // строк причина (failed): его не скачиваем при каждом открытии расценки. При файле: date — дата документа, currency — цены
 // не в рублях, total — сверка с итогом документа { ok, read, doc }.
 import { roundMoney } from './money.js'
@@ -26,7 +27,7 @@ const text = (v, max = NAME_MAX) => {
 }
 const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v))
 
-// JSON для notes. lines — [{ name, unit, qty, code, price, docPrice, docVat, k, also, skip }]; строки без цены не
+// JSON для notes. lines — [{ name, unit, qty, code, price, docPrice, docVat, k, also, no, packs, skip }]; строки без цены не
 // хранятся. source — 'pdf' | 'sheet'; vat — { mode, rate } (как посчитаны цены); delivery — множитель доставки.
 export function offerNotes({ source = null, vat = null, delivery = 1, lines, date = null, currency = null, total = null }) {
   const out = []
@@ -44,6 +45,8 @@ export function offerNotes({ source = null, vat = null, delivery = 1, lines, dat
     if (l.docVat === 'net' || l.docVat === 'gross') row.dv = l.docVat
     if (l.k) row.k = String(l.k)
     if (l.also?.length) row.ka = l.also.map(String)
+    if (l.no?.length) row.kn = l.no.map(String)
+    if (l.packs && Object.keys(l.packs).length) row.pm = l.packs
     if (l.sumOff) row.so = 1
     if (num(l.packQty) != null) row.pq = num(l.packQty)
     if (l.skip) row.x = 1
@@ -65,8 +68,8 @@ export const unreadableOfferNotes = (reason) => JSON.stringify({
 })
 
 // notes файла → { at, source, vat, delivery, failed, date, currency, total, lines: [{ name, unit, qty, code, price, docPrice,
-// docVat, k, also, skip, sumOff, packQty }] } или null (не документ «в похожие цены», испорченный JSON, другая версия).
-// also, sumOff, packQty — только если есть.
+// docVat, k, also, no, packs, skip, sumOff, packQty }] } или null (не документ «в похожие цены», испорченный JSON, другая версия).
+// also, no, packs, sumOff, packQty — только если есть.
 export function readOffer(notes) {
   if (!notes || typeof notes !== 'string' || !notes.includes(OFFER_KIND)) return null
   let o
@@ -85,9 +88,45 @@ export function readOffer(notes) {
       name, price, unit: text(r.u, 40), qty: num(r.q), code: text(r.c, 80), docPrice: num(r.d),
       docVat: r.dv === 'net' || r.dv === 'gross' ? r.dv : null, k: r.k ? String(r.k) : null, skip: r.x === 1,
       ...(Array.isArray(r.ka) && r.ka.length ? { also: r.ka.map(String) } : {}),
+      ...(Array.isArray(r.kn) && r.kn.length ? { no: r.kn.map(String) } : {}),
+      ...(r.pm && typeof r.pm === 'object' ? { packs: r.pm } : {}),
       ...(r.so === 1 ? { sumOff: true } : {}),
       ...(num(r.pq) != null ? { packQty: num(r.pq) } : {}),
     })
   }
   return { at: o.at || null, source: o.source || null, vat: o.vat || null, delivery: num(o.delivery) || 1, failed: o.failed || null, date: o.date || null, currency: o.currency || null, total: o.total || null, lines }
+}
+
+// Какие цены в документе: 'net' — без НДС, в расценку прибавлен НДС; иначе 'gross' (с НДС или как есть). По самим строкам: колонка
+// «Цена без НДС» и надпись над таблицей считаются одинаково, а в notes лежит итог.
+export function offerVatMode(offer) {
+  const line = offer?.lines?.find((l) => l.docPrice > 0 && l.price > 0)
+  if (!line) return offer?.vat?.mode === 'net' ? 'net' : 'gross'
+  return line.price / (line.docPrice * (offer.delivery || 1)) > 1.005 ? 'net' : 'gross'
+}
+const DEFAULT_RATE = 22
+// Те же строки с другим НДС (человек видит, что документ понят неверно): цены пересчитываются. Тот же режим — без изменений.
+export function offerWithVat(offer, mode) {
+  if (offerVatMode(offer) === mode) return offer
+  const k = 1 + (offer.vat?.rate ?? DEFAULT_RATE) / 100
+  return {
+    ...offer,
+    vat: { mode, rate: offer.vat?.rate ?? DEFAULT_RATE },
+    lines: offer.lines.map((l) => ({ ...l, price: roundMoney(mode === 'net' ? l.price * k : l.price / k) })),
+  }
+}
+// Те же строки в рублях: человек указал курс.
+export const offerInRoubles = (offer, rate) => ({
+  ...offer, currency: null, lines: offer.lines.map((l) => ({ ...l, price: roundMoney(l.price * rate) })),
+})
+// Строка выбрана для позиции (keys — ключи её наименований): остальные позиции строки остаются, отказ снимается.
+export const lineForGroup = (line, keys, current = []) => {
+  const picks = [...new Set([...(line.k ? [line.k] : []), ...(line.also || []), ...current, keys[0]])]
+  const no = (line.no || []).filter((k) => !keys.includes(k))
+  return { ...line, k: picks[0], also: picks.slice(1), no }
+}
+// Строка — не эта позиция: снимается с неё и больше не предлагается. Других выбранных позиций нет — строка снова ищет сама.
+export const lineNotForGroup = (line, keys) => {
+  const picks = [...(line.k ? [line.k] : []), ...(line.also || [])].filter((k) => !keys.includes(k))
+  return { ...line, k: picks[0] || null, also: picks.slice(1), no: [...new Set([...(line.no || []), ...keys])] }
 }

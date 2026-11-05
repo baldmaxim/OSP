@@ -37,10 +37,10 @@ describe('Длинные списки: только видимые строки'
   it('расценка: 2 300 позиций — в таблице окно строк; последняя позиция прокруткой, цена в ней сохраняется', async () => {
     const { page, context, errors } = await open('route=/tenders/materials/mat-p/pricing&tenders=3&bigPricing=2300')
     try {
-      await page.getByText('ВОР «Корпус 1»', { exact: true }).waitFor({ timeout: 120000 })
+      await page.locator('.sp-vors > summary', { hasText: 'ВОРы тендера: 8' }).waitFor({ timeout: 120000 })
       const inDom = await page.locator('.sp-table tbody tr:not(.vt-spacer)').count()
       assert.ok(inDom < 120, `в DOM ${inDom} строк, а не 2 300`)
-      assert.match((await page.locator('.sp-summary-inline').innerText()).replace(/\s/g, ''), /Расценено767из2300/)
+      await page.getByRole('button', { name: 'Расценены (767)', exact: true }).waitFor()
       // Последняя позиция последнего ВОР — прокруткой таблицы до конца.
       const last = 'Цена за единицу: Материал 8.200 — труба стальная электросварная Ø96×3,5 ГОСТ 10704-91 (ВОР «Корпус 8»)'
       const wrap = page.locator('.sp-table-wrap.is-virtual')
@@ -56,7 +56,8 @@ describe('Длинные списки: только видимые строки'
       await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.estimate_name === 'Корпус 8' && r.supply_price === 777))
       await page.locator('.sp-table tbody tr', { has: page.getByLabel(last) }).locator('.sp-st.is-saved').waitFor()
       // Итог закреплён внизу окна прокрутки и пересчитан.
-      assert.match((await page.locator('.sp-table tfoot').innerText()).replace(/\s/g, ''), /расценено768из2300/)
+      await page.getByRole('button', { name: 'Расценены (768)', exact: true }).waitFor()
+      assert.match((await page.locator('.sp-table tfoot').innerText()).replace(/\s/g, ''), /Итого/)
       // Поиск сужает таблицу до найденного — без прокрутки.
       await page.getByLabel('Поиск по наименованию материала').fill('Материал 5.77 ')
       await page.getByLabel('Цена за единицу: Материал 5.77 — труба стальная электросварная Ø93×3,5 ГОСТ 10704-91 (ВОР «Корпус 5»)').waitFor()

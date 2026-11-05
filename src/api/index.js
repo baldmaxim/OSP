@@ -2,7 +2,7 @@
 export { db } from './db'
 export { auth } from './auth'
 export { objectPhotos } from './files'
-export { invokeFunction, filesViaOspApi, ospFiles } from './functions'
+export { invokeFunction, filesViaOspApi, ospFiles, requestBidVorFile } from './functions'
 export { subscribeTable } from './realtime'
 export { apiKeys } from './apiKeys'
 export { contractorSignup, contractorSignupsAdmin, signupManual, signupOpen } from './contractorSignup'

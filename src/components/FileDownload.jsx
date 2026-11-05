@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { saveAs } from 'file-saver'
-import { requestDownloadUrl } from '../services/s3'
+import { requestDownloadUrl, requestVorFileUrl } from '../services/s3'
 import { directDownloadUrl, openLinkDocument } from '../utils/linkDownload'
 import { IconDownload } from './icons/ActionIcons'
 import './FileDownload.css'
@@ -108,6 +108,16 @@ export function downloadS3File(s3Key, fileName) {
     const res = await fetch(presigned_url, { signal })
     if (!res.ok) throw new Error(res.status === 404 ? 'файла нет в хранилище' : `хранилище ответило ${res.status}`)
     return { res }
+  }))
+}
+
+// Файл ВОР подрядчику с регистрации: ключа файла у него нет, сервер проверяет доступ к тендеру и сообщает имя.
+export function downloadVorFile(fileId, fallbackName) {
+  return once(`vor:${fileId}`, () => transfer(fallbackName, async (signal) => {
+    const { presigned_url, file_name } = await requestVorFileUrl(fileId)
+    const res = await fetch(presigned_url, { signal })
+    if (!res.ok) throw new Error(res.status === 404 ? 'файла нет в хранилище' : `хранилище ответило ${res.status}`)
+    return { res, name: file_name || fallbackName }
   }))
 }
 

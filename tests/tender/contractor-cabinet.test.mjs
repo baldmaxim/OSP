@@ -96,6 +96,132 @@ describe('Кабинет подрядчика: расценка на сайте'
     }
   })
 
+  it('реестр: идёт ли тендер — по статусу, а не по сроку; № по центру; от чего отказались — нет; пакет и ответственный на месте', async () => {
+    const { page, errors, close } = await open()
+    try {
+      await page.locator('table.tenders-registry').waitFor({ timeout: 120000 })
+      assert.equal(await page.getByRole('link', { name: 'Открыть тендер № 910' }).count(), 0, 'организация отказалась — тендера нет')
+      const row = (num) => page.locator('table.tenders-registry tbody tr', { has: page.getByRole('link', { name: `Открыть тендер № ${num}` }) })
+
+      // Срок прошёл, статус тот же: это идущий тендер — без красного и без «просрочено».
+      const late = row(911)
+      assert.doesNotMatch(await late.getAttribute('class') || '', /overdue/)
+      assert.equal(await late.locator('.is-overdue').count(), 0)
+      assert.equal(await page.locator('table.tenders-registry tbody tr').count(), 3)
+      assert.equal(await page.locator('table.tenders-registry tbody .cab-chip.is-accent', { hasText: 'Идёт тендерная процедура' }).count(), 3)
+
+      assert.equal(await row(857).locator('a', { hasText: 'Открыть' }).first().getAttribute('href'), 'https://disk.example.ru/pack')
+      assert.match(await row(857).textContent(), /\+7 701 000-00-00/)
+
+      const align = (sel) => page.locator(sel).first().evaluate((el) => getComputedStyle(el).textAlign)
+      assert.equal(await align('table.tenders-registry thead th.cab-th-num'), 'center')
+      assert.equal(await align('table.tenders-registry tbody td.tp-num'), 'center')
+
+      // Тот же тендер открыт: пакет — кнопкой, о просрочке ни слова.
+      await openTender(page, 911)
+      const head = page.locator('.cab-head-block')
+      assert.equal(await head.getByRole('link', { name: 'Тендерный пакет' }).getAttribute('href'), 'https://disk.example.ru/late')
+      assert.match(await head.textContent(), /Идёт тендерная процедура/)
+      assert.doesNotMatch(await head.textContent(), /истёк/)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('файл ВОР — главная кнопка, шаблон — маленькая; файл не того вида не стирает КП; у «Состава работ» нет числа; отказ убирает тендер', async () => {
+    const { page, errors, close } = await open('&legacyItems=1')
+    try {
+      await openTender(page, 905)
+      const vorBtn = page.getByRole('button', { name: 'Скачать ВОР «ВОР фасада.xlsx»' })
+      await vorBtn.waitFor({ timeout: 60000 })
+      const [saved] = await Promise.all([page.waitForEvent('download'), vorBtn.click()])
+      assert.equal(saved.suggestedFilename(), 'ВОР фасада.xlsx')
+      assert.match(await vorBtn.getAttribute('class'), /cab-btn-primary/)
+      const template = page.getByRole('button', { name: 'Скачать шаблон' })
+      assert.match(await template.getAttribute('class'), /cab-btn-small/)
+      assert.match(await page.getByRole('button', { name: 'Шаблон Excel' }).getAttribute('class'), /cab-btn-small/)
+      const height = (loc) => loc.evaluate((el) => el.getBoundingClientRect().height)
+      assert.ok(await height(template) < await height(vorBtn), 'шаблон заметно меньше кнопки ВОР')
+
+      assert.equal((await page.locator('.cab-section h3', { hasText: 'Состав работ' }).textContent()).trim(), 'Состав работ')
+
+      // Заполненный файл ВОР в загрузку шаблона: столбцы другие — отказ с подсказкой, КП не трогаем.
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['№ п/п', 'Наименование', 'Ед. изм.', 'Объём'], [1, 'Монтаж фасада', 'м2', 100]]), 'Материалы')
+      const notTemplate = Buffer.from(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }))
+      await page.locator('.cab-kp-actions input[type=file]').setInputFiles({ name: 'ВОР фасада.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: notTemplate })
+      await page.locator('.cab-note.is-warn', { hasText: 'Это не шаблон КП' }).waitFor({ timeout: 10000 })
+      const writes = await page.evaluate(() => window.__supabaseStats.requests.filter((r) => r.table === 'tender_counterparty_proposals' && r.op !== 'select'))
+      assert.deepEqual(writes, [])
+
+      await page.getByRole('button', { name: 'Отказаться от участия' }).click()
+      await page.locator('table.tenders-registry').waitFor()
+      assert.deepEqual(await calls(page, 'contractor_set_participation'), [{ fn: 'contractor_set_participation', p_tender: 't-inv', p_status: 'declined' }])
+      assert.equal(await page.getByRole('link', { name: 'Открыть тендер № 905' }).count(), 0, 'после отказа тендера в кабинете нет')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('«Моя компания»: номер на сайте — и в шапке, и во вкладке; контактные лица; статуса и примечаний отдела нет', async () => {
+    const { page, errors, close } = await open()
+    try {
+      await page.locator('table.tenders-registry').waitFor({ timeout: 120000 })
+      assert.match(await page.locator('.cab-header .cab-company-number').textContent(), /Номер на сайте: 1234/)
+      await page.locator('.cab-tab', { hasText: 'Моя компания' }).click()
+      const company = page.locator('.cab-org')
+      await company.locator('.cab-org-row', { hasText: 'Номер на сайте' }).locator('dd', { hasText: '1234' }).waitFor()
+      assert.match(await company.locator('.cab-org-row', { hasText: 'Ставка НДС' }).textContent(), /22 %/)
+      const persons = company.locator('.cab-org-contact')
+      assert.equal(await persons.count(), 2)
+      assert.equal(await persons.first().locator('a[href^="tel:"]').count(), 1)
+      assert.equal(await persons.nth(1).locator('a[href="mailto:smeta@alpha.ru"]').count(), 1)
+      assert.doesNotMatch(await company.textContent(), /служебное/)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('просмотр от имени подрядчика: те же тендеры, пакет, ответственный и сведения компании; ничего не записывается, чужих цен нет', async () => {
+    const { page, errors, close } = await open('&preview=1')
+    try {
+      await page.locator('table.tenders-registry').waitFor({ timeout: 120000 })
+      const row = (num) => page.getByRole('link', { name: `Открыть тендер № ${num}` })
+      for (const num of [857, 905, 911]) await row(num).waitFor()
+      for (const num of [910, 704, 950, 951, 952]) assert.equal(await row(num).count(), 0, `тендер № ${num}: отказ, прошлый, без объекта, удалённый, на материалы`)
+      const open857 = page.locator('table.tenders-registry tbody tr', { has: row(857) })
+      assert.equal(await open857.locator('a', { hasText: 'Открыть' }).first().getAttribute('href'), 'https://disk.example.ru/pack')
+      assert.match(await open857.textContent(), /Иванов/)
+
+      await page.locator('.cab-tab', { hasText: 'Моя компания' }).click()
+      const company = page.locator('.cab-org')
+      await company.getByText('7707083893').waitFor()
+      assert.match(await company.locator('.cab-org-row', { hasText: 'Номер на сайте' }).textContent(), /1234/)
+      assert.equal(await company.locator('.cab-org-contact').count(), 2)
+      assert.doesNotMatch(await company.textContent(), /служебное/)
+      assert.equal(await company.getByRole('heading', { name: 'Учётная запись' }).count(), 0, 'учётки у просмотра нет')
+      assert.equal(await company.getByRole('button', { name: 'Сменить пароль' }).count(), 0, 'пароль сменился бы у администратора')
+
+      await page.locator('.cab-tab', { hasText: 'Тендеры' }).click()
+      await openTender(page, 857)
+      await page.locator('.cab-note', { hasText: 'Просмотр от имени подрядчика' }).waitFor()
+      await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
+      await page.getByRole('button', { name: 'Скачать ВОР «ВОР паркинга.xlsx»' }).waitFor({ timeout: 60000 })
+      await page.locator('.bid-tab', { hasText: 'Материалы' }).locator('.bid-tab-count', { hasText: '2' }).waitFor({ timeout: 60000 })
+      await page.locator('.bid-save', { hasText: 'цены не записываются' }).waitFor()
+      assert.match(await page.locator('.bid-sum-cell', { hasText: 'Материалы' }).textContent(), /0 из 2/, 'цена другой организации в просмотр не попала')
+      assert.equal(await page.locator('.bid-table .bid-money-input:not([disabled])').count(), 0, 'ввода цен нет')
+      assert.deepEqual(await calls(page, 'bid_request'), [], 'заявка не записана')
+      assert.deepEqual(await calls(page, 'bid_rates_save'), [])
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
   it('«Цены из файла»: свой прайс — сопоставление, цены «из файла»; своя цена заменяется только по отметке', async () => {
     const { page, errors, close } = await open()
     try {
@@ -180,9 +306,9 @@ describe('Кабинет подрядчика: расценка на сайте'
       await table.waitFor({ timeout: 120000 })
       assert.equal(await page.locator('.tenders-page.ui-work.tp-dense').count(), 1, 'те же стили, что реестр сотрудника')
       const rows = table.locator('tbody > tr')
-      assert.equal(await rows.count(), 2, 'два идущих тендера')
+      assert.equal(await rows.count(), 3, 'три идущих тендера, отказавшегося нет')
       assert.equal(await table.getByText('Слаботочные системы').count(), 0, 'прошлый тендер (704) не показан')
-      assert.deepEqual(await page.locator('.cab-tab').allTextContents(), ['Тендеры2', 'Моя компания'], 'раздела договоров нет')
+      assert.deepEqual(await page.locator('.cab-tab').allTextContents(), ['Тендеры3', 'Моя компания'], 'раздела договоров нет')
 
       const headers = (await table.locator('thead th').allTextContents()).join('|')
       for (const secret of ['Участник', 'КП', 'ВОР', 'План', 'материал', 'Примечание', 'Победител']) {
@@ -239,7 +365,8 @@ describe('Кабинет подрядчика: расценка на сайте'
       await page.getByRole('button', { name: 'Отказаться от участия' }).click()
       await page.waitForFunction(() => window.__bidCalls.some((c) => c.fn === 'contractor_set_participation'))
       assert.deepEqual(await calls(page, 'contractor_set_participation'), [{ fn: 'contractor_set_participation', p_tender: 't-inv', p_status: 'declined' }])
-      await page.locator('.cab-head-top .cab-chip', { hasText: 'Отказ от участия' }).waitFor()
+      await page.locator('table.tenders-registry').waitFor()
+      assert.equal(await page.getByRole('link', { name: 'Открыть тендер № 905' }).count(), 0, 'после отказа тендера в кабинете нет')
       const direct = await page.evaluate(() => window.__supabaseStats.requests.map((r) => r.table))
       assert.ok(!direct.includes('rpc:contractor_contracts'), 'договоры кабинету не нужны')
       for (const table of ['tenders', 'objects', 'contracts', 'contract_counterparties', 'counterparties', 'tender_counterparties']) {

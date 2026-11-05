@@ -36,6 +36,75 @@ export async function loadCabinetTenders() {
   return data || []
 }
 
+// Тендеры кабинета в просмотре от имени подрядчика (администратор, «Посмотреть как подрядчик»): запросы идут под его учёткой, у
+// него нет организации, и функция кабинета отказывает. Поэтому те же строки — чтением таблиц, тот же отбор, что bid_tender_open
+// (идёт процедура, не удалён, основной, объект стройки или гарантии), и только идущие: прошлые кабинет всё равно не показывает.
+const OPEN_OBJECT_STATUSES = new Set(['main_construction', 'warranty_service'])
+export const TENDER_OPEN_STATUS = 'Идет тендерная процедура'
+
+// Таблиц заявок и цен может ещё не быть (база раньше миграции 20261102) — это не ошибка кабинета.
+const readOptional = async (read) => {
+  try {
+    return await read()
+  } catch (e) {
+    if (isMissingBids(e)) return []
+    throw e
+  }
+}
+
+export async function loadCabinetTendersPreview(counterpartyId) {
+  const tenders = await fetchAllRows((from, to) => db
+    .from('tenders')
+    .select('id, public_tender_number, work_description, status, tender_type, custom_object_name, tender_start_date, tender_end_date, start_date, end_date, tender_package_link, objects(name, address, status), responsible:contacts!responsible_contact_id(full_name, phone)')
+    .eq('status', TENDER_OPEN_STATUS)
+    .is('deleted_at', null)
+    .order('id', { ascending: true })
+    .range(from, to))
+  const open = (tenders || []).filter((t) => (t.tender_type == null || t.tender_type === 'main') && OPEN_OBJECT_STATUSES.has(t.objects?.status))
+  const mine = (table, columns) => fetchAllRows((from, to) => db
+    .from(table)
+    .select(columns)
+    .eq('counterparty_id', counterpartyId)
+    .order('id', { ascending: true })
+    .range(from, to))
+  const [invites, requests, rates] = await Promise.all([
+    mine('tender_counterparties', 'id, tender_id, status'),
+    readOptional(() => mine('tender_bid_requests', 'id, tender_id, status')),
+    readOptional(() => mine('tender_bid_rates', 'id, tender_id, price, total')),
+  ])
+  const inviteOf = new Map(invites.map((r) => [r.tender_id, r.status]))
+  const requestOf = new Map(requests.map((r) => [r.tender_id, r.status]))
+  const pricedOf = new Map()
+  for (const r of rates) {
+    const sum = pricedOf.get(r.tender_id) || { cnt: 0, total: 0 }
+    if (r.price != null) sum.cnt += 1
+    sum.total += Number(r.total || 0)
+    pricedOf.set(r.tender_id, sum)
+  }
+  const clean = (v) => String(v ?? '').trim() || null
+  return open.map((t) => ({
+    id: t.id,
+    public_tender_number: t.public_tender_number,
+    work_description: t.work_description,
+    tender_status: t.status,
+    is_open: true,
+    object_name: t.objects?.name || t.custom_object_name || null,
+    object_address: t.objects?.address || null,
+    responsible_name: clean(t.responsible?.full_name),
+    responsible_phone: clean(t.responsible?.phone),
+    tender_start_date: t.tender_start_date,
+    tender_end_date: t.tender_end_date,
+    start_date: t.start_date,
+    end_date: t.end_date,
+    tender_package_link: t.tender_package_link,
+    access: inviteOf.has(t.id) ? 'invited' : (requestOf.get(t.id) || null),
+    invite_status: inviteOf.get(t.id) || null,
+    request_status: requestOf.get(t.id) || null,
+    priced_count: pricedOf.get(t.id)?.cnt || 0,
+    priced_total: pricedOf.get(t.id)?.total || 0,
+  }))
+}
+
 // Заявка на участие → доступ: 'invited' | 'pending' | 'accepted' | 'rejected'.
 export async function requestParticipation(tenderId) {
   return unwrap(await db.rpc('bid_request', { p_tender: tenderId }))
@@ -54,7 +123,20 @@ export async function setParticipationStatus(tenderId, counterpartyId, status) {
   if (direct.error) throw direct.error
 }
 
-// Сведения о своей компании (миграция 20261204). null — функции ещё нет.
+// «Моя компания» в просмотре от имени подрядчика: функция ищет компанию по учётке вошедшего, а у администратора её нет. Поэтому
+// строка контрагента и его контакты читаются напрямую; показывает вкладка только свой перечень полей, сведений учётки здесь нет.
+export async function loadOrgCardPreview(counterpartyId) {
+  const [company, contacts] = await Promise.all([
+    db.from('counterparties').select('*').eq('id', counterpartyId).maybeSingle(),
+    db.from('counterparty_contacts').select('id, full_name, position, phone, email').eq('counterparty_id', counterpartyId)
+      .order('created_at', { ascending: true }).order('id', { ascending: true }),
+  ])
+  if (company.error) throw company.error
+  if (contacts.error) throw contacts.error
+  return company.data ? { ...company.data, contacts: contacts.data || [] } : null
+}
+
+// Сведения о своей компании (миграции 20261204, 20261226). null — функции ещё нет.
 export async function loadOrgCard() {
   const { data, error } = await db.rpc('contractor_org_card')
   if (error) {
@@ -102,13 +184,16 @@ export const downloadFileBytes = (s3Key) => fetchFileBytes(s3Key)
 
 const RATE_COLUMNS = 'id, tender_id, counterparty_id, kind, item_key, unit_key, name, unit, volume, price, total, note, source, updated_at'
 
-export async function loadMyRates(tenderId) {
-  return fetchAllRows((from, to) => db
-    .from('tender_bid_rates')
-    .select(RATE_COLUMNS)
-    .eq('tender_id', tenderId)
-    .order('id', { ascending: true })
-    .range(from, to))
+// counterpartyId — просмотр от имени подрядчика: администратору правило показывает цены всех организаций тендера.
+export async function loadMyRates(tenderId, counterpartyId = null) {
+  return fetchAllRows((from, to) => {
+    let q = db
+      .from('tender_bid_rates')
+      .select(RATE_COLUMNS)
+      .eq('tender_id', tenderId)
+    if (counterpartyId) q = q.eq('counterparty_id', counterpartyId)
+    return q.order('id', { ascending: true }).range(from, to)
+  })
 }
 
 // Свои цены из других тендеров — подсказки «ваша цена в тендере № …». Самые свежие первыми, не больше limit.
@@ -153,11 +238,12 @@ export async function loadFormFields({ all = false } = {}) {
   return data || []
 }
 
-// Анкета организации по тендеру и последняя заполненная (для подстановки в новый тендер).
-export async function loadMyForm(tenderId) {
+// Анкета организации по тендеру и последняя заполненная (для подстановки в новый тендер). counterpartyId — как в loadMyRates.
+export async function loadMyForm(tenderId, counterpartyId = null) {
+  const ofOrg = (q) => (counterpartyId ? q.eq('counterparty_id', counterpartyId) : q)
   const [own, last] = await Promise.all([
-    db.from('tender_bid_forms').select('answers, updated_at').eq('tender_id', tenderId).maybeSingle(),
-    db.from('tender_bid_forms').select('tender_id, answers, updated_at').neq('tender_id', tenderId)
+    ofOrg(db.from('tender_bid_forms').select('answers, updated_at').eq('tender_id', tenderId)).maybeSingle(),
+    ofOrg(db.from('tender_bid_forms').select('tender_id, answers, updated_at').neq('tender_id', tenderId))
       .order('updated_at', { ascending: false }).limit(1).maybeSingle(),
   ])
   if (own.error) throw own.error

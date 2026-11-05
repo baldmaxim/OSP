@@ -1,0 +1,287 @@
+/* «Заявка на ДП». Общее — ContractRegistry.css и workUi.css (класс ui-work на корне); здесь сетка реестра и свои окна. Окна на своих
+   стилях: основа .modal меняется от того, какие разделы уже открывали (см. «Окна доски» в CLAUDE.md). */
+.dp-requests-page .dpr-title-icon { margin-right: 0.5rem; vertical-align: middle; }
+.dp-requests-page .registry-header h2 { display: flex; align-items: center; }
+
+.dpr-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.dpr-bell { display: inline-flex; }
+.dpr-bell svg { width: 1rem; height: 1rem; }
+
+.dpr-page-error { margin: 0.5rem 1rem; }
+
+/* ── Сетка реестра ── ширины в сумме 77.75rem: окно 1500 px с меню показывает все столбцы, шире — все растут пропорционально, уже —
+   таблица прокручивается, шрифт не мельчает. Сумма «1 000 000 000,00» — в строку; два значка действий — по 1.75rem. */
+.dpr-table { width: 100%; min-width: 77.75rem; table-layout: fixed; border-collapse: collapse; }
+.dpr-col-num { width: 2.5rem; }
+.dpr-col-object { width: 9.5rem; }
+.dpr-col-contract { width: 13.5rem; }
+.dpr-col-concept { width: 12.5rem; }
+.dpr-col-amount { width: 7.75rem; }
+.dpr-col-resp { width: 9rem; }
+.dpr-col-reason { width: 11.5rem; }
+.dpr-col-status { width: 7.5rem; }
+.dpr-col-actions { width: 4rem; }
+
+/* Отступ .table-container приходит из стилей других разделов (TenderDetail.css), если их открывали раньше. */
+.dp-requests-page > .table-container { padding: 0; }
+
+/* Закреплённая шапка, как в «Заявке на ДС»: страница не выше окна, таблица прокручивается в своём блоке, заголовки столбцов стоят.
+   Линия под заголовками — тенью: при border-collapse рамка осталась бы у таблицы и уехала со строками. */
+@media (min-width: 641px) {
+  .main-content > .dp-requests-page.ui-work {
+    display: flex;
+    flex-direction: column;
+    max-height: 100%;
+  }
+  .main-content > .dp-requests-page.ui-work > * { flex: none; }
+  .main-content > .dp-requests-page.ui-work > .table-container {
+    flex: 0 1 auto;
+    min-height: 12rem;
+    overflow: auto;
+  }
+  .main-content > .dp-requests-page.ui-work table.dpr-table > thead > tr > th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    box-shadow: inset 0 -1px 0 var(--border-color);
+  }
+}
+
+.dp-requests-page .dpr-table td { vertical-align: top; overflow-wrap: anywhere; }
+.dpr-number,
+.dpr-amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dpr-amount { font-weight: 500; }
+.dp-requests-page .dpr-table .dpr-num-cell { text-align: right; }
+.dpr-contract-title { margin-bottom: 0.25rem; font-weight: 500; }
+.dpr-sub {
+  display: block;
+  margin-top: 0.125rem;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+.dpr-empty { color: var(--text-tertiary); }
+
+.dp-requests-page tr.row-deleted td,
+.dp-requests-page .mcard.row-deleted { opacity: 0.65; }
+
+.dp-requests-page .dpr-highlight,
+.dp-requests-page tr.dpr-highlight > td { background: var(--warning-light); transition: background 0.3s; }
+
+.dpr-status-select {
+  width: 100%;
+  padding: 0.1875rem 0.25rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.dpr-row-actions { display: flex; gap: 0.25rem; }
+
+/* ── Файлы ── */
+.dpr-files { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.dpr-file { display: flex; gap: 0.25rem; align-items: center; min-width: 0; }
+.dpr-file-name {
+  display: inline-flex;
+  flex: 1 1 auto;
+  gap: 0.25rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-link, var(--primary-hover));
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+.dpr-file-name.is-static { color: var(--text-primary); cursor: default; }
+.dpr-file-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dpr-file-name > svg { flex: none; }
+.dpr-file-name:not(.is-static):hover > span { text-decoration: underline; }
+.dpr-file-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.dpr-file-btn:hover:not(:disabled) { border-color: var(--border-color); color: var(--text-primary); }
+.dpr-file-btn.is-danger:hover:not(:disabled) { color: var(--danger-color); }
+.dpr-file-missing { color: var(--danger-color); font-size: 0.8125rem; font-weight: 500; }
+.dpr-file-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.dpr-file-add {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-link, var(--primary-hover));
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.dpr-file-add:hover:not(:disabled) { text-decoration: underline; }
+.dpr-file-add:disabled { color: var(--text-tertiary); cursor: default; }
+
+/* ── Окна ── */
+.dpr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1300; /* выше полосы меню на телефоне (1250) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.5);
+}
+.dpr-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(42rem, 100%);
+  max-height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: 0 1rem 3rem rgba(15, 23, 42, 0.3);
+}
+.dpr-dialog.is-narrow { width: min(34rem, 100%); }
+.dpr-dialog-head {
+  display: flex;
+  flex: none;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.dpr-dialog-head h3 { margin: 0; font-size: 1rem; font-weight: 600; line-height: 1.5rem; }
+.dpr-x {
+  display: inline-flex;
+  padding: 0.25rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.dpr-x:hover:not(:disabled) { color: var(--text-primary); background: var(--hover-bg); }
+.dpr-dialog-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.875rem;
+  min-height: 0;
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+}
+.dpr-dialog-foot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+}
+.dpr-dialog-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; }
+
+.dpr-field { display: flex; flex-direction: column; gap: 0.25rem; }
+.dpr-label { color: var(--text-secondary); font-size: 0.8125rem; font-weight: 500; line-height: 1.125rem; }
+.dpr-req { color: var(--danger-color); font-weight: 600; }
+.dpr-field > input,
+.dpr-field > select,
+.dpr-field > textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4375rem 0.625rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 0.375rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.dpr-field > textarea { resize: vertical; }
+.dpr-field > :is(input, select, textarea):focus { border-color: var(--primary-color); outline: 2px solid color-mix(in srgb, var(--primary-color) 25%, transparent); }
+.dpr-amount-input { font-variant-numeric: tabular-nums; }
+.dpr-hint { color: var(--text-tertiary); font-size: 0.75rem; line-height: 1rem; }
+p.dpr-hint { margin: 0; }
+.dpr-template-link { color: var(--ui-link, var(--primary-hover)); font-size: 0.8125rem; }
+
+.dpr-drop {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  align-items: flex-start;
+  padding: 0.625rem 0.75rem;
+  border: 1px dashed var(--border-color-dark);
+  border-radius: 0.5rem;
+}
+.dpr-drop > .dpr-file { width: 100%; }
+.dpr-drop.is-required { border-color: var(--danger-color); }
+.dpr-drop.is-over { border-color: var(--primary-color); background: var(--primary-light); }
+.dpr-drop .dpr-file-add { font-size: 0.875rem; }
+
+.dpr-error,
+.dpr-error-line { color: var(--danger-color); font-size: 0.8125rem; line-height: 1.125rem; }
+.dpr-error { display: flex; gap: 0.375rem; align-items: flex-start; margin: 0; }
+.dpr-error > svg { flex: none; margin-top: 0.125rem; }
+.dpr-problems { margin: 0; color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.125rem; }
+
+.dpr-recipients { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.dpr-recipients > li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.375rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.dpr-recipients > li:last-child { border-bottom: 0; }
+.dpr-recipient-name { flex: 1 1 auto; min-width: 0; font-size: 0.875rem; overflow-wrap: anywhere; }
+.dpr-recipients .dpr-hint { flex: none; max-width: 40%; text-align: right; }
+.dpr-search {
+  display: flex;
+  gap: 0.375rem;
+  align-items: center;
+  padding: 0 0.625rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 0.375rem;
+  color: var(--text-tertiary);
+}
+.dpr-search > input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.4375rem 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+@media (max-width: 640px) {
+  .dp-requests-page .registry-header { flex-wrap: wrap; gap: 0.5rem; padding: 1rem; }
+  .dp-requests-page .status-tabs { overflow-x: auto; padding: 0 0.5rem; }
+  .dp-requests-page .status-tab { flex: none; padding: 0.625rem 0.75rem; }
+  .dpr-overlay { align-items: stretch; padding: 0.5rem; }
+  .dp-requests-page .mcard .dpr-row-actions { justify-content: flex-end; }
+}

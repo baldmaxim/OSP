@@ -1,8 +1,8 @@
-// «Заявки на проверку ДП/ДС»: карточка заявки — обсуждение, шаги, ссылка на письмо, исполнители без учётной записи
-// (миграция 20261124; образец — обсуждение и чек-лист задач). Правила без браузера и страница в Chromium (стенд
-// tests/tender/ui, route=/doc-check-requests&docCheck=1; у dcr-3 — шаги, сообщения, письмо и вписанный исполнитель).
-//   • на карточке доски: сколько шагов сделано, число сообщений, письмо открывается, не открывая карточку; вписанный
-//     исполнитель — рядом с остальными; фильтр и поиск его видят, «Без исполнителя» — нет;
+// «Заявки на проверку ДП/ДС»: карточка заявки — обсуждение, шаги, ссылка на письмо (миграция 20261124; образец —
+// обсуждение и чек-лист задач). Правила без браузера и страница в Chromium (стенд tests/tender/ui,
+// route=/doc-check-requests&docCheck=1; у dcr-3 — шаги, сообщения и письмо). Исполнители и поля администратора —
+// doc-check-assignees.test.mjs.
+//   • на карточке доски: сколько шагов сделано, число сообщений, письмо открывается, не открывая карточку;
 //   • обсуждение: автор, текст, время; Shift+Enter — перенос; автора ставит база; счётчик на доске — сразу;
 //   • шаги: добавить, отметить, удалить, переставить ручкой и стрелками; правка текста;
 //   • права: без права правки — только просмотр шагов (исполнитель отмечает), написать сообщение может любой;
@@ -16,8 +16,7 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import {
-  NO_ASSIGNEE, assigneeNames, cardCountsById, compareSteps, fieldEvents, manualAssigneeKey, manualAssigneeSuggestions,
-  matchesAssignees, mergeRequestCounts, normalizeManualAssignees, normalizeRequest, stepTitles, MAX_STEP_TITLE, MAX_MANUAL_ASSIGNEES,
+  cardCountsById, compareSteps, fieldEvents, mergeRequestCounts, stepTitles, MAX_STEP_TITLE,
 } from '../../src/utils/docCheckHelpers.js'
 import { safeHttpUrl } from '../../src/utils/publicTenders.js'
 
@@ -46,36 +45,9 @@ describe('Карточка заявки: правила без браузера'
     assert.equal(changed[1].stepsTotal, 3)
   })
 
-  it('«Без исполнителя» — когда нет ни сотрудника, ни вписанного имени', () => {
-    const none = { assignee_ids: [], manual_assignees: [] }
-    const manual = { assignee_ids: [], manual_assignees: ['Сидорова Анна'] }
-    const staff = { assignee_ids: ['u1'], manual_assignees: [] }
-    assert.equal(matchesAssignees(none, [NO_ASSIGNEE]), true)
-    assert.equal(matchesAssignees(manual, [NO_ASSIGNEE]), false, 'вписанный исполнитель — тоже исполнитель')
-    assert.equal(matchesAssignees(staff, [NO_ASSIGNEE]), false)
-    assert.equal(matchesAssignees(manual, [manualAssigneeKey('сидорова анна')]), true, 'имя — без учёта регистра')
-    assert.equal(matchesAssignees(staff, ['u1']), true)
-    assert.equal(matchesAssignees(staff, [manualAssigneeKey('Сидорова Анна')]), false)
-    assert.equal(matchesAssignees(none, []), true)
-    // Строка прежней базы: полей нет.
-    assert.equal(matchesAssignees({}, [NO_ASSIGNEE]), true)
-    assert.deepEqual(normalizeRequest({ id: 1 }).manual_assignees, [])
-  })
-
-  it('имена: без лишних пробелов и повторов, не больше предела; подписи — вместе с сотрудниками', () => {
-    assert.deepEqual(normalizeManualAssignees(['  Сидорова   Анна ', 'сидорова анна', '', 'Петров']), ['Сидорова Анна', 'Петров'])
-    assert.equal(normalizeManualAssignees(Array.from({ length: 30 }, (_, i) => `Имя ${i}`)).length, MAX_MANUAL_ASSIGNEES)
-    assert.deepEqual(assigneeNames({ assignee_ids: ['u1'], manual_assignees: ['Сидорова'] }, (id) => `сотрудник ${id}`), ['сотрудник u1', 'Сидорова'])
-    assert.deepEqual(manualAssigneeSuggestions([{ manual_assignees: ['Б'] }, { manual_assignees: ['А', 'б'] }, {}]), ['Б', 'А'])
-  })
-
-  it('история: ссылка и имена — отдельными полями', () => {
-    const events = fieldEvents(
-      { email_link: null, manual_assignees: ['А'], notes: 'x' },
-      { email_link: 'https://x.invalid/1', manual_assignees: ['А'], notes: 'x' },
-    )
+  it('история: ссылка — отдельным полем', () => {
+    const events = fieldEvents({ email_link: null, notes: 'x' }, { email_link: 'https://x.invalid/1', notes: 'x' })
     assert.deepEqual(events.map(e => [e.field_name, e.new_value]), [['email_link', 'https://x.invalid/1']])
-    assert.equal(fieldEvents({ manual_assignees: ['А'] }, { manual_assignees: ['А', 'Б'] }).length, 1)
   })
 
   it('счётчики и порядок шагов; строки поля — отдельные шаги', () => {
@@ -97,7 +69,7 @@ describe('Карточка заявки: правила без браузера'
 
   it('стили шагов и обсуждения — у самой страницы: она ленивая, чужой CSS может не загрузиться', () => {
     const css = fs.readFileSync(path.join(REPO, 'src', 'pages', 'DocCheckRequestsPage.css'), 'utf8')
-    for (const cls of ['.dc-steps', '.dc-step-handle', '.dc-talk-msg', '.dc-inline-add', '.dc-chip--mail', '.dc-avatar--manual']) {
+    for (const cls of ['.dc-steps', '.dc-step-handle', '.dc-talk-msg', '.dc-inline-add', '.dc-chip--mail']) {
       assert.ok(css.includes(cls), cls)
     }
     const used = ['DocCheckSteps', 'DocCheckDiscussion'].map((f) => fs.readFileSync(path.join(REPO, 'src', 'components', 'doccheck', `${f}.jsx`), 'utf8')).join('')
@@ -355,12 +327,8 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
       assert.equal(await c.locator('.dc-count--talk').textContent(), '2')
       assert.match(await c.locator('.dc-count--talk').getAttribute('title'), /2 сообщения/)
       assert.equal(await c.locator('.dc-chip--mail').textContent(), 'Письмо')
-      // Сотрудник и вписанный — рядом, в одном ряду; вписанный — пунктирным кружком.
-      assert.deepEqual(await c.locator('.dc-avatar').allTextContents(), ['ЮМ', 'СА'])
-      assert.equal(await c.locator('.dc-avatar--manual').textContent(), 'СА')
-      assert.match(await c.locator('.dc-avatars').getAttribute('title'), /Юристова Мария Андреевна, Сидорова Анна Павловна/)
       const other = card(page, 'dcr-2')
-      assert.equal(await other.locator('.dc-count--steps, .dc-count--talk, .dc-chip--mail, .dc-avatar--manual').count(), 0)
+      assert.equal(await other.locator('.dc-count--steps, .dc-count--talk, .dc-chip--mail').count(), 0)
       assert.deepEqual(errors, [])
     } finally {
       await close()
@@ -660,7 +628,7 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
     }
   })
 
-  it('форма: ссылка на письмо и вписанные исполнители сохраняются, пишутся в историю, видны на доске и в реестре', async () => {
+  it('форма: ссылка на письмо сохраняется, пишется в историю, видна на доске и в реестре', async () => {
     const { page, errors, close } = await openPage()
     try {
       const modal = await openCard(page, 'dcr-2')
@@ -673,40 +641,25 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
       assert.equal((await page.evaluate(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-2').email_link)), null)
 
       await form.locator('#dc-email-link').fill(' https://mail.example.invalid/letter/2 ')
-      const names = form.locator('.dc-names-input input')
-      // Подсказка — имя, которым уже пользуются.
-      assert.deepEqual(await form.locator('.dc-names-input datalist option').evaluateAll((els) => els.map((el) => el.value)), ['Сидорова Анна Павловна'])
-      await names.fill('Козлов Пётр')
-      await names.press('Enter')
-      await names.fill('  козлов  пётр ')
-      await names.press('Enter')
-      // Имя, не подтверждённое Enter, тоже попадает при сохранении: поле теряет фокус.
-      await names.fill('Морозова И. В.')
       await form.getByRole('button', { name: 'Сохранить' }).click()
       await form.waitFor({ state: 'detached' })
 
       const saved = await page.evaluate(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-2'))
       assert.equal(saved.email_link, 'https://mail.example.invalid/letter/2')
-      assert.deepEqual(saved.manual_assignees, ['Козлов Пётр', 'Морозова И. В.'])
-      assert.deepEqual(saved.assignee_ids, ['user-2', 'user-3'], 'сотрудники из справочника на месте')
 
       const c = card(page, 'dcr-2')
-      assert.deepEqual(await c.locator('.dc-avatar').allTextContents(), ['ПП', 'ЮМ', 'КП', '+1'])
-      assert.match(await c.locator('.dc-avatars').getAttribute('title'), /Козлов Пётр, Морозова И\. В\./)
       assert.equal(await c.locator('.dc-chip--mail').getAttribute('href'), 'https://mail.example.invalid/letter/2')
 
       const log = await page.evaluate(() => window.__fakeDb.doc_check_request_audit_log.filter((l) => l.request_id === 'dcr-2').map((l) => l.field_name))
-      assert.deepEqual(log.sort(), ['email_link', 'manual_assignees'])
+      assert.deepEqual(log, ['email_link'])
       const detail = await openCard(page, 'dcr-2', 'История')
       await detail.locator('.dc-history li').first().waitFor()
       const history = await detail.locator('.dc-history').textContent()
-      assert.match(history, /Исполнители без учётной записи—\s*→\s*Козлов Пётр, Морозова И\. В\./)
       assert.match(history, /Ссылка на письмо/)
       await detail.locator('.modal-close').click()
 
       await page.locator('.dc-view-btn', { hasText: 'Реестр' }).click()
       const row = page.locator('.dc-table tbody tr', { hasText: 'СУ2-001' })
-      assert.match(await row.locator('.dc-row-people').textContent(), /Козлов Пётр, Морозова И\. В\./)
       assert.equal(await row.locator('.dc-chip--mail').count(), 1)
       // Убрать ссылку можно: пустое поле — NULL, а не ошибка ограничения.
       await row.click()
@@ -715,30 +668,6 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
       await page.locator('.dc-form-modal').getByRole('button', { name: 'Сохранить' }).click()
       await page.locator('.dc-form-modal').waitFor({ state: 'detached' })
       assert.equal(await page.evaluate(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-2').email_link), null)
-      assert.deepEqual(errors, [])
-    } finally {
-      await close()
-    }
-  })
-
-  it('фильтр и поиск видят вписанного исполнителя; «Без исполнителя» его заявку не показывает', async () => {
-    const { page, errors, close } = await openPage()
-    try {
-      const ids = () => page.locator('.dc-column:not(.dc-column--summary) .dc-card').evaluateAll((els) => els.map((el) => el.dataset.id))
-      await page.locator('.dc-search').fill('сидорова')
-      assert.deepEqual(await ids(), ['dcr-3'])
-      await page.locator('.dc-reset').click()
-
-      const trigger = page.locator('.dc-toolbar .fdrop-trigger', { hasText: 'Исполнитель' })
-      await trigger.click()
-      const option = (name) => page.locator('.fdrop-panel .fdrop-option', { hasText: name })
-      await option('Сидорова Анна Павловна (нет в справочнике)').click()
-      assert.deepEqual(await ids(), ['dcr-3'])
-      await option('Сидорова Анна Павловна (нет в справочнике)').click()
-      await option('Без исполнителя').click()
-      assert.ok(!(await ids()).includes('dcr-3'), 'у заявки есть вписанный исполнитель')
-      assert.ok((await ids()).includes('dcr-4'), 'заявка без исполнителей на месте')
-      await page.keyboard.press('Escape')
       assert.deepEqual(errors, [])
     } finally {
       await close()
@@ -809,12 +738,12 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
     try {
       assert.match(await page.locator('.dc-note').textContent(), /20261124_doc_check_card/)
       const c = card(page, 'dcr-2')
-      assert.deepEqual(await c.locator('.dc-avatar').allTextContents(), ['ПП', 'ЮМ'], 'поля 20261113 на месте')
+      assert.deepEqual(await c.locator('.dc-avatar').allTextContents(), ['ЮМ'], 'поля 20261113 на месте')
       const modal = await openCard(page, 'dcr-3')
       assert.deepEqual(await modal.locator('.dc-detail-tab').allTextContents(), ['Заявка', 'Документы', 'История'])
       await modal.getByRole('button', { name: 'Изменить' }).click()
       const form = page.locator('.dc-form-modal')
-      assert.equal(await form.locator('#dc-email-link, .dc-names-input').count(), 0)
+      assert.equal(await form.locator('#dc-email-link').count(), 0)
       await form.locator('#dc-num').fill('3-1')
       await form.getByRole('button', { name: 'Сохранить' }).click()
       await form.waitFor({ state: 'detached' })

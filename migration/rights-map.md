@@ -95,6 +95,9 @@ BSMContractorRatesPage, BSMRatesPage, BSMComparisonPage, BSMSelectionPage, Contr
 | Таблица | Пишут | Гейт записи |
 |---|---|---|
 | dc_requests, dc_request_tasks, dc_request_audit_log | DcRequestsPage | E(dc_requests); выход из «проверки по договору» — admin/суперадмин/lawyer; **окончательное удаление — isAdmin только в интерфейсе** |
+| dp_requests (20261227) | DpRequestsPage | **в базе:** читает V(dp_requests) в пределах своих объектов (`dp_request_scope`), черновик — только автор; создаёт E(dp_requests_create) по своим объектам; правит E(dp_requests), автор с E(dp_requests_create) — свою, пока статус «Новая»; статус — E(dp_requests); насовсем удаляется только свой черновик; подача без файлов понятийного соглашения и документа договора — отказ триггера |
+| dp_request_alert_recipients (20261227) | DpRecipientsModal | **в базе:** читает сам получатель и E(admin); добавляет и убирает E(admin); UPDATE не выдан |
+| dp_request_alerts (20261227) | DpRequestAlert | вошедшим не выдана: заводит триггер при подаче заявки, читает и гасит только сам получатель через `dp_request_my_alerts` и `dp_request_alerts_ack` |
 | doc_check_requests, doc_check_request_audit_log | DocCheckRequestsPage | E(doc_check_requests) |
 | doc_check_request_comments (20261124) | DocCheckDetailModal → «Обсуждение» | **в базе:** читает и пишет `osp_can('doc_check_requests', 'view')`; автор и время — триггер; правки и удаления нет (ни правила, ни выдачи) |
 | doc_check_request_steps (20261124) | DocCheckDetailModal → «Шаги» | **в базе:** читает V(doc_check_requests); добавляет, удаляет E(doc_check_requests); меняет E или исполнитель заявки (`assignee_ids`) — ему триггер оставляет только отметку `is_done` |
@@ -114,6 +117,7 @@ BSMContractorRatesPage, BSMRatesPage, BSMComparisonPage, BSMSelectionPage, Contr
 | object, `doc_category` `cost_plan_direct_costs` / `cost_plan_kp_before_transfers` (документы «Расчёта ПЗ» объекта, 20261121) | **E(cost_plan_docs)** — администратор и экономист ОСП, 20261130 (osp-api `CATEGORY_RULES`: при ссылке на загрузку, подтверждении и удалении — вместо E(objects)); журнал `cost_plan_calc_file_log` — читает сотрудник, пишет только триггер |
 | counterparty | E(counterparties) |
 | dc_request | E(dc_requests) |
+| dp_request | E(dp_requests) или E(dp_requests_create) в osp-api; **какую заявку можно менять, решает триггер базы** `s3_documents_dp_request_guard`: E(dp_requests) — любую, автор — свою, пока статус «Новая» |
 | doc_check_request | E(doc_check_requests) |
 | general_document | E(general_documents) |
 | task | **любой зритель задачи** |

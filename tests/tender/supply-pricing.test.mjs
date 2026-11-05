@@ -1,12 +1,11 @@
 // Расценка материалов снабжением в настоящем браузере на стенде тендеров: данные в памяти
 // (tests/tender/ui/seed.js), триггеры базы подменены той же логикой. Одна таблица в двух местах — страница
 // снабжения (/tenders/materials/:id/pricing) и вкладка «Расценки снабжения» карточки тендера.
-// Проверяется: цена → сумма и сумма → цена, запись с версией строки, все ВОР в одной таблице со своими
-// шапками, подстановка цены в одинаковые позиции других ВОР (только где пусто, и исправление подставленной за
-// сеанс), автозагрузка позиций из вкладки «ВОР», когда файлов нет, причина, если файл ВОР не загрузился (и
-// что она запоминается), сохранение без Enter и постоянная галочка, гонки записи на медленном сервере (Tab
-// через «Итого», правка во время записи — без ложного «изменено другим»), окно «изменено другим», только
-// чтение, понятное сообщение без миграции.
+// Проверяется: цена → сумма и сумма → цена, запись с версией строки, одна строка на позицию (одинаковые позиции всех ВОР сложены,
+// цена пишется всем ВОР строки, сумма делится по объёму), автозагрузка позиций из вкладки «ВОР», когда файлов нет, причина, если файл
+// ВОР не загрузился (и что она запоминается), сохранение без Enter и постоянная галочка, гонки записи на медленном сервере (Tab через
+// «Итого», правка во время записи — без ложного «изменено другим»), окно «изменено другим», только чтение, понятное сообщение без
+// миграции; окно «Счета и КП»: позиция и строка счёта рядом, правильная цена не показывается, свежий документ важнее.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
@@ -15,8 +14,13 @@ import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 
 const launch = browserLaunchOptions()
 const plain = (s) => String(s ?? '').replace(/\s/g, '')
-const price = (name, vor) => `Цена за единицу: ${name} (ВОР «${vor}»)`
-const sum = (name, vor) => `Сумма: ${name} (ВОР «${vor}»)`
+// Подпись строки: один ВОР — его имя, несколько — «ВОР: N» (как в таблице).
+const vorText = (vor) => (vor.startsWith('ВОР:') ? vor : `ВОР «${vor}»`)
+const price = (name, vor) => `Цена за единицу: ${name} (${vorText(vor)})`
+const sum = (name, vor) => `Сумма: ${name} (${vorText(vor)})`
+// Труба есть в обоих ВОР стенда; имя строки — как в первом ВОР таблицы (по алфавиту: «ВК» раньше «ОВ»).
+const TRUBA = 'труба медная ∅12.7'
+const TWO = 'ВОР: 2'
 // Ввод как у человека: фокус (поле подставляет текущее значение и выделяет его в следующем кадре), затем
 // набор поверх выделения и Enter.
 async function enter(locator, text) {
@@ -56,68 +60,153 @@ describe('Расценка снабжением: таблица', { skip: !launc
     await r.page.locator('.sp-table, .sp-banner').first().waitFor({ timeout: 120000 })
     return r
   }
-  const summary = (page) => page.locator('.sp-summary-inline').innerText().then(plain)
+  const pricedCount = (page, n, all) => page.getByRole('button', { name: `Расценены (${n})`, exact: true }).waitFor().then(() => page.getByRole('button', { name: `Все (${all})`, exact: true }).waitFor())
+  const vors = (page, text) => page.locator('.sp-vors > summary', { hasText: text })
+  const openVors = async (page) => { const d = page.locator('.sp-vors'); if (!(await d.evaluate((el) => el.open))) await d.locator('summary').click(); return d }
   const rowOf = (page, name, vor) => page.locator('.sp-table tbody tr', { has: page.getByLabel(price(name, vor)) })
   const ratesNamed = (page, name) => page.evaluate((n) => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.material_name === n), name)
   const rateOf = (page, name, vor) => page.evaluate(([n, v]) => window.__fakeDb.tender_vor_supply_rates
     .find((r) => r.material_name === n && r.estimate_name === v) || null, [name, vor])
 
-  it('все ВОР в одной таблице со своими шапками; цена → сумма, сумма → цена; цена — в такие же позиции других ВОР', async () => {
+  it('одна строка на позицию: цена — всем ВОР строки, сумма — по объёму; другая ед. изм. — своя строка; фильтр по ВОР', async () => {
     const { page, context, errors } = await openPage()
     try {
-      await page.getByText('ВОР «ОВ»', { exact: true }).waitFor()
-      await page.getByText('ВОР «ВК»', { exact: true }).waitFor()
-      assert.match(await summary(page), /Расценено1из6/)
-      // Ни кнопки загрузки позиций, ни окна: позиции уже загружены сами.
+      await vors(page, 'ВОРы тендера: 2').waitFor()
+      assert.equal(await page.locator('.sp-section-head').count(), 0, 'шапок ВОР в таблице нет')
+      // 6 позиций двух ВОР — 5 строк: труба в обоих ВОР одна.
+      await pricedCount(page, 1, 5)
+      assert.equal(await page.getByLabel(/^Цена за единицу:/).count(), 5)
       assert.equal(await page.getByRole('button', { name: /Позиции из ВОР|Загрузить позиции/ }).count(), 0)
+      const pipeRow = rowOf(page, TRUBA, TWO)
+      assert.match(plain(await pipeRow.locator('td[data-label="Объём"]').innerText()), /^1700,?\d*2ВОР$/)
+      assert.match(await pipeRow.locator('td[data-label="Объём"]').getAttribute('title'), /ОВ: 1\s?500[\s\S]*ВК: 200|ВК: 200[\s\S]*ОВ: 1\s?500/)
 
-      // Цена за единицу в ОВ: сумма = 1500 × 412,50; та же труба в ВК (пусто) получает цену сама.
-      await enter(page.getByLabel(price('Труба медная Ø12,7', 'ОВ')), '412,5')
-      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.estimate_name === 'ВК' && r.material_name === 'труба медная ∅12.7'))
-      const r1 = await rateOf(page, 'Труба медная Ø12,7', 'ОВ')
-      assert.equal(r1.tender_id, 'tender-p', 'цена — у основного тендера')
-      assert.equal(r1.price_input, 'unit')
-      assert.equal(r1.volume_at_input, 1500)
-      const vk = await rateOf(page, 'труба медная ∅12.7', 'ВК')
-      assert.equal(vk.supply_price, 412.5)
-      assert.equal(vk.supply_total, 82500)
-      await page.getByText('подставлена в такие же позиции', { exact: false }).waitFor()
-      await page.waitForFunction((l) => /618750,00/.test(document.querySelector(`[aria-label="${l}"]`).value.replace(/\s/g, '')), sum('Труба медная Ø12,7', 'ОВ'))
+      // Цена в строке — обоим ВОР: у каждого своя строка цены и свой объём, итог строки — их сумма.
+      await enter(page.getByLabel(price(TRUBA, TWO)), '412,5')
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.material_key === window.__fakeDb.tender_vor_supply_rates.find((x) => x.estimate_name === 'ВК')?.material_key).length === 2)
+      const ov = await rateOf(page, 'Труба медная Ø12,7', 'ОВ')
+      const vk = await rateOf(page, TRUBA, 'ВК')
+      assert.deepEqual([ov.tender_id, ov.price_input, ov.volume_at_input, ov.supply_total], ['tender-p', 'unit', 1500, 618750], 'цена — у основного тендера')
+      assert.deepEqual([vk.supply_price, vk.supply_total], [412.5, 82500])
+      await page.waitForFunction((l) => /701250,00/.test(document.querySelector(`[aria-label="${l}"]`).value.replace(/\s/g, '')), sum(TRUBA, TWO))
 
-      // Итоговая сумма в ОВ: цена = 48 000 / 48. Кран в ВК — в другой единице: не подставляется.
+      // Сумма на строку из двух ВОР: цена одна, сумма — по объёму каждого.
+      await enter(page.getByLabel(sum(TRUBA, TWO)), '850000')
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => Number(r.supply_price) === 500).length === 2)
+      assert.equal((await rateOf(page, 'Труба медная Ø12,7', 'ОВ')).supply_total, 750000)
+      assert.equal((await rateOf(page, TRUBA, 'ВК')).supply_total, 100000)
+
+      // Кран в ОВ и ВК в разных единицах — разные строки: цена одного не трогает другой.
       await enter(page.getByLabel(sum('Кран шаровой Ду15', 'ОВ')), '48000')
       await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.estimate_name === 'ОВ' && r.material_name === 'Кран шаровой Ду15'))
       assert.equal((await rateOf(page, 'Кран шаровой Ду15', 'ОВ')).supply_price, 1000)
       await page.waitForTimeout(300)
       assert.equal(await rateOf(page, 'Кран шаровой Ду15', 'ВК'), null, 'другая единица — не та же позиция')
 
-      // Уже расценённое в другом ВОР не перетирается: изоляция в ОВ своя, в ВК её нет.
       assert.equal(await page.getByLabel(sum('Хомут монтажный', 'ОВ')).isDisabled(), true, 'без объёма сумму не ввести')
       const before = await rateOf(page, 'Изоляция K-Flex 13×15', 'ОВ')
       await enter(page.getByLabel(price('Изоляция K-Flex 13×15', 'ОВ')), '97')
       await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.find((r) => r.id === 'rate-p-3').supply_price === 97)
       assert.equal((await rateOf(page, 'Изоляция K-Flex 13×15', 'ОВ')).row_version, before.row_version + 1)
+      await pricedCount(page, 3, 5)
+      assert.match(plain(await page.locator('.sp-table tfoot').innerText()), /Итого1004700,00/) // 850 000 + 48 000 + 106 700
 
-      // Цена в ВК меняется отдельно — в ОВ ничего не трогает.
-      await enter(page.getByLabel(price('труба медная ∅12.7', 'ВК')), '400')
-      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.find((r) => r.estimate_name === 'ВК').supply_price === 400)
-      assert.equal((await rateOf(page, 'Труба медная Ø12,7', 'ОВ')).supply_price, 412.5)
-      await page.waitForFunction(() => /Расценено4из6/.test(document.querySelector('.sp-summary-inline').innerText.replace(/\s/g, '')))
-      assert.match(plain(await page.locator('.sp-table tfoot').innerText()), /853450,00/) // 618 750 + 48 000 + 106 700 + 80 000
-      // Свернуть ВОР — его позиции скрыты, шапка остаётся.
-      await page.getByRole('button', { name: 'Свернуть ВОР «ВК»' }).click()
-      assert.equal(await page.getByLabel(price('труба медная ∅12.7', 'ВК')).count(), 0)
+      // Фильтр по ВОР: только его позиции, объём и суммы — его; цена по-прежнему одна на строку.
+      await page.getByLabel('Показать позиции ВОР').selectOption('ВК')
+      await page.getByRole('button', { name: 'Все (2)' }).waitFor()
+      assert.equal(await page.getByLabel(price('Хомут монтажный', 'ОВ')).count(), 0)
+      assert.match(plain(await rowOf(page, TRUBA, TWO).locator('td[data-label="Объём"]').innerText()), /^200/)
+      assert.match(plain(await page.getByLabel(sum(TRUBA, TWO)).inputValue()), /^100000,00$/)
+      assert.match(plain(await page.locator('.sp-table tfoot').innerText()), /Итого100000,00/)
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
     }
   })
 
+  it('разное написание: уверенность от 90 % — одна строка, вторая запись видна, можно разделить; другая длина — разные строки', async () => {
+    const name = 'Кран шаровой полнопроходной DN15 R850X023'
+    const other = 'Шаровой кран полнопроходной, резьба ВН/ВН, DN15 R850X023 Giacomini'
+    const { page, context, errors } = await openPage('&samePos=1')
+    try {
+      // Строка — по первому ВОР таблицы («ВК»), вторая запись — подсказкой.
+      const row = rowOf(page, other, TWO)
+      await row.getByText(`в другом ВОР: «${name}»`).waitFor()
+      assert.equal(await page.getByLabel(/^Цена за единицу: Патч-корд/).count(), 2, 'длины 0,3 м и 5 м — разные позиции, хотя текст почти один')
+      await enter(page.getByLabel(price(other, TWO)), '1200')
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => Number(r.supply_price) === 1200).length === 2)
+      const both = await page.evaluate(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => Number(r.supply_price) === 1200).map((r) => r.estimate_name).sort())
+      assert.deepEqual(both, ['ВК', 'ОВ'])
+
+      // Разделили — две строки, и браузер это помнит.
+      await row.getByRole('button', { name: `Разделить: ${other}` }).click()
+      await page.getByLabel(price(name, 'ОВ')).waitFor()
+      await page.getByLabel(price(other, 'ВК')).waitFor()
+      await page.reload()
+      await page.getByLabel(price(name, 'ОВ')).waitFor({ timeout: 120000 })
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('разные цены одной позиции в ВОР: подсказка и «поставить во все ВОР»; цена только в одном ВОР — то же', async () => {
+    const { page, context, errors } = await openPage('&pipeRates=differ')
+    try {
+      const row = rowOf(page, TRUBA, TWO)
+      await row.getByText('в ВОР разные цены', { exact: false }).waitFor()
+      // Строка показывает самую свежую цену, итог — сумма по ВОР: 1 500 × 400 + 200 × 450.
+      assert.equal(plain(await page.getByLabel(price(TRUBA, TWO)).inputValue()), '400,00')
+      assert.equal(plain(await page.getByLabel(sum(TRUBA, TWO)).inputValue()), '690000,00')
+      await row.getByRole('button', { name: 'поставить 400,00 во все ВОР' }).click()
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.find((x) => x.id === 'rate-pipe-vk').supply_price === 400)
+      await row.getByText('в ВОР разные цены', { exact: false }).waitFor({ state: 'detached' })
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+    const partial = await openPage('&pipeRates=partial')
+    try {
+      const row = rowOf(partial.page, TRUBA, TWO)
+      await row.getByText('цена не во всех ВОР', { exact: false }).waitFor()
+      // Такая строка считается нерасценённой: цена есть не во всех ВОР.
+      await partial.page.getByRole('button', { name: 'Не расценены (4)', exact: true }).waitFor()
+      await row.getByRole('button', { name: 'поставить 400,00 во все ВОР' }).click()
+      await partial.page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((x) => x.estimate_name === 'ВК' && Number(x.supply_price) === 400))
+      await partial.page.getByRole('button', { name: 'Не расценены (3)', exact: true }).waitFor()
+      assert.deepEqual(partial.errors, [])
+    } finally {
+      await partial.context.close()
+    }
+  })
+
+  it('«Скачать Excel» и «Версии ВОР» — только администратору; инженеру с правом правки и зрителю — нет', async () => {
+    const admin = await openPage()
+    try {
+      await admin.page.getByRole('button', { name: 'Скачать Excel' }).waitFor()
+      await admin.page.getByRole('button', { name: 'Версии ВОР' }).waitFor()
+      assert.deepEqual(admin.errors, [])
+    } finally {
+      await admin.context.close()
+    }
+    for (const q of ['&asRole=supply', '&canEdit=0']) {
+      const { page, context, errors } = await openPage(q)
+      try {
+        await page.locator('.sp-table').waitFor()
+        assert.equal(await page.getByRole('button', { name: 'Скачать Excel' }).count(), 0, q)
+        assert.equal(await page.getByRole('button', { name: 'Версии ВОР' }).count(), 0, q)
+        assert.deepEqual(errors, [])
+      } finally {
+        await context.close()
+      }
+    }
+  })
+
   it('файлов ВОР нет — позиции сами берутся из вкладки «ВОР» карточки', async () => {
     const { page, context, errors } = await open('', '/tenders/materials/mat-q/pricing')
     try {
-      await page.getByText('ВОР «Корпус 7»', { exact: true }).waitFor({ timeout: 120000 })
-      await page.getByText('взяты из вкладки «ВОР» карточки тендера', { exact: false }).waitFor()
+      await vors(page, 'ВОР «Корпус 7»').waitFor({ timeout: 120000 })
+      await (await openVors(page)).getByText('вкладка «ВОР» карточки', { exact: false }).waitFor()
       const src = await page.evaluate(() => window.__fakeDb.tender_supply_sources.find((s) => s.tender_id === 'tender-q'))
       assert.equal(src.source, 'vor_tab')
       assert.deepEqual(src.positions.map((p) => [p.name, p.unit, p.volume]), [['Кабель ВВГнг 3×2,5', 'м', 4000], ['Щит ЩРН-12', 'шт', 3]])
@@ -147,8 +236,8 @@ describe('Расценка снабжением: таблица', { skip: !launc
     const { page, context, errors } = await open('', '/tenders/tender-p')
     try {
       await page.getByRole('button', { name: /Расценки снабжения/ }).first().click({ timeout: 120000 })
-      await page.getByText('ВОР «ОВ»', { exact: true }).waitFor()
-      await page.getByText('ВОР «ВК»', { exact: true }).waitFor()
+      await vors(page, 'ВОРы тендера: 2').waitFor()
+      await openVors(page)
       assert.ok(await page.getByRole('button', { name: /загрузить цены из Excel/ }).count() >= 2)
       assert.equal(await page.getByText('Расценка снабжения на сайте').count(), 0)
       await enter(page.getByLabel(price('Кран шаровой Ду15', 'ВК')), '700')
@@ -290,35 +379,13 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
-  it('исправили цену — подставленная за сеанс цена такой же позиции исправляется тоже; изменённая вручную — нет', async () => {
+  it('у позиции без объёма поле итога закрыто и говорит почему — отдельной подсказкой строку не загружаем', async () => {
     const { page, context, errors } = await openPage()
     try {
-      const vk = () => rateOf(page, 'труба медная ∅12.7', 'ВК')
-      await enter(page.getByLabel(price('Труба медная Ø12,7', 'ОВ')), '412,5')
-      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.estimate_name === 'ВК' && r.supply_price === 412.5))
-      await enter(page.getByLabel(price('Труба медная Ø12,7', 'ОВ')), '420')
-      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.estimate_name === 'ВК' && r.supply_price === 420))
-      // В ВК цену поправили руками — дальше она своя.
-      await enter(page.getByLabel(price('труба медная ∅12.7', 'ВК')), '400')
-      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.estimate_name === 'ВК' && r.supply_price === 400))
-      await enter(page.getByLabel(price('Труба медная Ø12,7', 'ОВ')), '430')
-      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.estimate_name === 'ОВ' && r.supply_price === 430))
-      await page.waitForTimeout(500)
-      assert.equal((await vk()).supply_price, 400)
-      assert.deepEqual(errors, [])
-    } finally {
-      await context.close()
-    }
-  })
-
-  it('у позиции без объёма — подсказка «вводится только цена за единицу», поле итога с пометкой', async () => {
-    const { page, context, errors } = await openPage()
-    try {
-      const row = rowOf(page, 'Хомут монтажный', 'ОВ')
-      assert.match(await row.innerText(), /объёма в ВОР нет: вводится только цена за единицу/)
       const total = page.getByLabel(sum('Хомут монтажный', 'ОВ'))
       assert.equal(await total.isDisabled(), true)
       assert.equal(await total.getAttribute('placeholder'), 'нет объёма')
+      assert.match(await total.getAttribute('title'), /в ВОР у позиции нет объёма — введите цену за единицу/)
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
@@ -336,7 +403,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
       await banner.waitFor({ timeout: 120000 })
       assert.match(await banner.innerText(), /нет листа «Материалы» \(листы: РАБОТЫ\)/)
       // Позиции всё равно есть — из вкладки «ВОР» карточки.
-      await first.page.getByText('ВОР «Корпус 7»', { exact: true }).waitFor()
+      await vors(first.page, 'ВОР «Корпус 7»').waitFor()
       assert.equal((await first.page.evaluate(() => window.__fakeFileRequests || [])).length, 1)
       await first.page.close()
 
@@ -364,8 +431,8 @@ describe('Расценка снабжением: таблица', { skip: !launc
     const init = { fn: (url) => { window.__fakeFiles = { 'tenders/tender-q/x-ВОР_Корпус7.xlsx': url } }, arg: dataUrl }
     const { page, context, errors } = await open('&noSheetFile=1', '/tenders/materials/mat-q/pricing', { init })
     try {
-      await page.getByText('ВОР «ВОР_Корпус7»', { exact: true }).waitFor({ timeout: 120000 })
-      await page.getByText('строки с кодом «мат.»', { exact: false }).first().waitFor()
+      await vors(page, 'ВОР «ВОР_Корпус7»').waitFor({ timeout: 120000 })
+      assert.match(await (await openVors(page)).locator('.sp-vor-line', { hasText: 'ВОР_Корпус7' }).getAttribute('title'), /строки с кодом «мат\.»/)
       const src = await page.evaluate(() => window.__fakeDb.tender_supply_sources.find((x) => x.tender_id === 'tender-q' && x.source === 'vor_file'))
       assert.deepEqual(src.positions.map((x) => [x.name, x.unit, x.volume]), [['Кабель ВВГнг 3×2,5', 'м', 4200], ['Щит ЩРН-24', 'шт', 2]])
       assert.equal(src.column_map.mode, 'code')
@@ -384,6 +451,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
       const row = rowOf(page, 'Кран шаровой Ду15', 'ОВ')
       await row.getByRole('button', { name: /Прикрепить документ: Кран шаровой Ду15/ }).click()
       const dialog = page.getByRole('dialog', { name: 'Документ к позиции' })
+      await dialog.getByRole('tab', { name: 'Ссылка' }).click()
       await dialog.getByRole('textbox').fill('javascript:alert(1)')
       await dialog.getByRole('button', { name: 'Сохранить' }).click()
       await dialog.getByText('Нужна ссылка вида https://', { exact: false }).waitFor()
@@ -406,24 +474,30 @@ describe('Расценка снабжением: таблица', { skip: !launc
   it('ссылка нескольким сразу: отметить строки и весь ВОР → одна ссылка всем; сетевой путь; убрать у отмеченных', async () => {
     const { page, context, errors } = await openPage()
     try {
-      await page.getByLabel('Отметить все позиции ВОР «ВК»').check()
+      // Весь ВОР — выбрать его в списке и отметить показанные; плюс одна строка другого ВОР.
+      await page.getByLabel('Показать позиции ВОР').selectOption('ВК')
+      await page.getByLabel('Отметить все показанные позиции').check()
+      await page.getByLabel('Показать позиции ВОР').selectOption('')
       await page.getByLabel('Отметить: Изоляция K-Flex 13×15 (ВОР «ОВ»)').check()
       await page.locator('.sp-sel-bar', { hasText: 'Отмечено: 3' }).waitFor()
       await page.getByRole('button', { name: 'Документ', exact: true }).click()
       const dialog = page.getByRole('dialog', { name: /Документ — 3 позициям/ })
+      await dialog.getByRole('tab', { name: 'Ссылка' }).click()
       await dialog.getByRole('textbox').fill('\\\\su10-fs\\Снабжение\\Счёт 15.pdf')
       await dialog.getByRole('button', { name: 'Прикрепить к 3' }).click()
-      await page.waitForFunction(() => window.__fakeDb.tender_supply_links.length === 3)
+      // Три строки — четыре записи: труба есть в двух ВОР.
+      await page.waitForFunction(() => window.__fakeDb.tender_supply_links.length === 4)
       const urls = await page.evaluate(() => [...new Set(window.__fakeDb.tender_supply_links.map((l) => l.url))])
       assert.deepEqual(urls, ['\\\\su10-fs\\Снабжение\\Счёт 15.pdf'])
       assert.equal(await page.locator('.sp-sel-bar').count(), 0, 'отметка снята после прикрепления')
       assert.equal(await rowOf(page, 'Изоляция K-Flex 13×15', 'ОВ').getByRole('button', { name: 'Скопировать путь к документу «Изоляция K-Flex 13×15»' }).count(), 1)
-      // Убрать у двух из трёх: отметить ВОР «ВК» → «Убрать ссылку (2)».
-      await page.getByLabel('Отметить все позиции ВОР «ВК»').check()
+      // Убрать у трубы и крана ВК.
+      await page.getByLabel('Показать позиции ВОР').selectOption('ВК')
+      await page.getByLabel('Отметить все показанные позиции').check()
       await page.getByRole('button', { name: 'Документ', exact: true }).click()
-      await page.getByRole('dialog').getByRole('button', { name: 'Убрать документ (2)' }).click()
+      await page.getByRole('dialog').getByRole('button', { name: 'Убрать документ' }).click()
       await page.waitForFunction(() => window.__fakeDb.tender_supply_links.length === 1)
-      assert.equal(await page.evaluate(() => window.__fakeDb.tender_supply_links[0].estimate_name), 'ОВ')
+      assert.equal(await page.evaluate(() => window.__fakeDb.tender_supply_links[0].material_name), 'Изоляция K-Flex 13×15')
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
@@ -479,8 +553,8 @@ describe('Расценка снабжением: таблица', { skip: !launc
     const { page, context, errors } = await openPage('&matStatus=%D0%97%D0%B0%D0%B2%D0%B5%D1%80%D1%88%D1%91%D0%BD&brokenFile=1')
     try {
       await page.getByText('Тендер на материалы завершён — расценки только для чтения', { exact: false }).first().waitFor()
-      assert.equal(await page.getByLabel(price('Труба медная Ø12,7', 'ОВ')).isDisabled(), true)
-      assert.equal(await page.getByLabel(sum('Труба медная Ø12,7', 'ОВ')).isDisabled(), true)
+      assert.equal(await page.getByLabel(price(TRUBA, TWO)).isDisabled(), true)
+      assert.equal(await page.getByLabel(sum(TRUBA, TWO)).isDisabled(), true)
       assert.equal(await page.locator('.sp-problem').count(), 0, 'закрытый тендер не загружает ВОР')
       assert.deepEqual(errors, [])
     } finally {
@@ -494,12 +568,13 @@ describe('Расценка снабжением: таблица', { skip: !launc
     for (const query of ['&qPriced=1&qMatStatus=%D0%97%D0%B0%D0%B2%D0%B5%D1%80%D1%88%D1%91%D0%BD', '&qPriced=1&canEdit=0']) {
       const { page, context, errors } = await open(query, '/tenders/materials/mat-q/pricing')
       try {
-        await page.getByText('ВОР «Корпус 7»', { exact: true }).waitFor({ timeout: 120000 })
-        await page.getByText('в расценку не загружался — позиции показаны по вкладке', { exact: false }).waitFor()
+        await vors(page, 'ВОР «Корпус 7»').waitFor({ timeout: 120000 })
+        assert.match(await (await openVors(page)).locator('.sp-vor-line').getAttribute('title'), /в расценку не загружался — позиции показаны по вкладке/)
         const cable = page.getByLabel(price('Кабель ВВГнг 3×2,5', 'Корпус 7'))
         assert.match(plain(await cable.inputValue()), /120,00/, query)
         assert.equal(await cable.isDisabled(), true, query)
-        assert.match(plain(await page.locator('.sp-summary-inline').innerText()), /Расценено1из2·Итого480000,00₽/, query)
+        await pricedCount(page, 1, 2)
+        assert.match(plain(await page.locator('.sp-table tfoot').innerText()), /480000,00/, query)
         assert.equal(await page.locator('.sp-orphans').count(), 0, `цены без позиции не остаются (${query})`)
         await page.waitForTimeout(300)
         assert.equal(await page.evaluate(() => window.__fakeDb.tender_supply_sources.filter((s) => s.tender_id === 'tender-q').length), 0,
@@ -530,10 +605,10 @@ describe('Расценка снабжением: таблица', { skip: !launc
     try {
       // Кран в ОВ — тот же, что у № 445 (шт): подставлен сам; в ВК у крана «компл» — нет.
       const kran = rowOf(page, 'Кран шаровой Ду15', 'ОВ')
-      // Сначала — «цена из другого тендера · от …» (по строке цены), следом — номер, объект и документ.
+      // В строке коротко: откуда и документ; объект и день — в подсказке (день ещё и своей колонкой).
       await kran.locator('.sp-origin', { hasText: 'тендера № 445' }).waitFor({ timeout: 30000 })
-      const hint = await kran.locator('.sp-origin').innerText()
-      assert.match(hint, /цена из тендера № 445 · ЖК Север · от \d\d\.\d\d\.\d{4}/)
+      assert.match(await kran.locator('.sp-origin').innerText(), /^цена из тендера № 445/)
+      assert.match(await kran.locator('.sp-origin').getAttribute('title'), /ЖК Север/)
       assert.equal(await kran.locator('.sp-origin a', { hasText: 'Открыть' }).getAttribute('href'), 'https://disk.example.ru/d/chek-445')
       assert.match(plain(await page.getByLabel(price('Кран шаровой Ду15', 'ОВ')).inputValue()), /^512,50$/)
       const kranRate = await rateOf(page, 'Кран шаровой Ду15', 'ОВ')
@@ -545,14 +620,14 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.equal(await rateOf(page, 'Хомут монтажный', 'ОВ'), null)
 
       // Труба медная Ø12,7 — две похожие; меню с клавиатуры: Enter, стрелка вниз, Enter — вторая (с документом).
-      const truba = rowOf(page, 'Труба медная Ø12,7', 'ОВ')
+      const truba = rowOf(page, TRUBA, TWO)
       const btn = truba.locator('.sp-similar-btn')
       await btn.waitFor()
       assert.match(plain(await btn.innerText()), /похожиецены:2/)
       assert.equal(await rowOf(page, 'Хомут монтажный', 'ОВ').locator('.sp-similar-btn').count(), 0)
       await btn.focus()
       await page.keyboard.press('Enter')
-      const menu = page.getByRole('dialog', { name: 'Похожие цены: Труба медная Ø12,7' })
+      const menu = page.getByRole('dialog', { name: `Похожие цены: ${TRUBA}` })
       await menu.locator('li').first().waitFor()
       assert.deepEqual(await menu.locator('.sp-suggest-name').evaluateAll((els) => els.map((e) => e.firstChild.textContent)),
         ['Труба медная Ø12,7 мм (бухта)', 'Труба медная Ø15,9'], 'от новых к старым')
@@ -570,10 +645,9 @@ describe('Расценка снабжением: таблица', { skip: !launc
       await trubaOrigin.waitFor()
       assert.match((await trubaOrigin.innerText()).trim(), /^Похожая цена: Труба медная Ø15,9; №445; \d\d\.\d\d\.\d{4}; документ: Открыть\.$/)
       assert.match(await trubaOrigin.getAttribute('title'), /ЖК Север · ВОР «ОВ-2»/, 'объект и ВОР — в подсказке')
-      // Документ исходной позиции — к позиции (своего не было); та же труба в ВК — с той же отметкой.
-      await page.waitForFunction(() => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Труба медная Ø12,7' && l.url === 'https://disk.example.ru/d/chek-17'))
+      // Документ исходной позиции — к позиции в обоих ВОР (своего не было); цена в ВК — с той же отметкой.
+      await page.waitForFunction(() => window.__fakeDb.tender_supply_links.filter((l) => l.url === 'https://disk.example.ru/d/chek-17').length === 2)
       await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((x) => x.estimate_name === 'ВК' && x.source_rate_id === 'o-truba-2'))
-      await rowOf(page, 'труба медная ∅12.7', 'ВК').locator('.sp-origin').waitFor()
       const batches = await page.evaluate(() => window.__supabaseStats.requests.filter((q) => q.table === 'rpc:supply_suggestion_counts').map((q) => q.args.p_items.length))
       assert.ok(batches.length >= 1 && batches.every((n) => n <= 200))
 
@@ -591,7 +665,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
   it('цены из других тендеров без права правки: ничего не подставляется, меню только для просмотра, Esc закрывает', async () => {
     const { page, context, errors } = await openPage('&reuse=1&canEdit=0')
     try {
-      const btn = rowOf(page, 'Труба медная Ø12,7', 'ОВ').locator('.sp-similar-btn')
+      const btn = rowOf(page, TRUBA, TWO).locator('.sp-similar-btn')
       await btn.waitFor()
       await btn.click()
       const menu = page.getByRole('dialog', { name: /Похожие цены/ })
@@ -642,22 +716,23 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.match(await kran.locator('.sp-date-cell').getAttribute('title'), /поставил: автоматически \(цену поставил Петров П\. П\.\)/)
 
       // Своя цена — сегодняшний день и тот, кто вошёл.
-      await enter(page.getByLabel(price('Труба медная Ø12,7', 'ОВ')), '400')
-      const truba = rowOf(page, 'Труба медная Ø12,7', 'ОВ')
+      await enter(page.getByLabel(price(TRUBA, TWO)), '400')
+      const truba = rowOf(page, TRUBA, TWO)
       await truba.locator('.sp-author', { hasText: 'Стендов С. С.' }).waitFor()
       const [y, m, d] = day(0).split('-')
       assert.match(await truba.locator('.sp-date-cell').innerText(), new RegExp(`^${d}\\.${m}\\.${y}`))
 
       // С позавчера — только сегодняшние цены; с 4 дней по 2 дня назад — только изоляция (3 дня), кран — 5 дней.
+      await page.getByRole('button', { name: 'фильтр по дате цены' }).click()
       await page.getByLabel('Дата цены: с').fill(day(2))
       await page.waitForFunction(() => !document.querySelector('[aria-label^="Цена за единицу: Изоляция"]'))
-      assert.equal(await shown('Труба медная Ø12,7', 'ОВ'), 1)
+      assert.equal(await shown(TRUBA, TWO), 1)
       assert.equal(await shown('Кран шаровой Ду15', 'ОВ'), 0)
       assert.equal(await shown('Хомут монтажный', 'ОВ'), 0, 'без цены — не попадает')
       await page.getByLabel('Дата цены: с').fill(day(4))
       await page.getByLabel('Дата цены: по').fill(day(2))
       await page.waitForFunction(() => !!document.querySelector('[aria-label^="Цена за единицу: Изоляция"]'))
-      assert.equal(await shown('Труба медная Ø12,7', 'ОВ'), 0)
+      assert.equal(await shown(TRUBA, TWO), 0)
       assert.equal(await shown('Кран шаровой Ду15', 'ОВ'), 0)
       await page.getByRole('button', { name: 'сбросить' }).click()
       await page.waitForFunction(() => !!document.querySelector('[aria-label^="Цена за единицу: Хомут"]'))
@@ -733,93 +808,88 @@ describe('Расценка снабжением: таблица', { skip: !launc
     return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
   }
   const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  // Выбранная позиция ВОР у строки документа: наименование · подписи (ед. изм., похожесть) — из списка в строке.
-  const selected = async (row) => {
-    const on = row.locator('.sp-di-opt.is-on')
-    const name = (await on.locator('.sp-di-opt-name').innerText()).trim()
-    const meta = await on.locator('.sp-di-opt-meta').count() ? (await on.locator('.sp-di-opt-meta').innerText()).replace(/\s*\n\s*/g, ' · ').trim() : ''
-    return meta ? `${name} · ${meta}` : name
-  }
-
-  // «Счета и КП тендера»: файл читается и загружается сразу; проверка построчно — окно поверх.
+  // Окно «Счета и КП тендера»: файл читается и загружается сразу, позиция ВОР и строка счёта — рядом.
   const tenderDocs = (page) => page.getByRole('dialog', { name: 'Счета и КП тендера' })
   const openTenderDocs = async (page) => {
-    await page.getByRole('button', { name: /^Счета и КП тендера/ }).click()
+    await page.getByRole('button', { name: /^Счета и КП/ }).click()
     await tenderDocs(page).locator('input[type=file]').waitFor({ state: 'attached' })
     return tenderDocs(page)
-  }
-  const openReview = async (page, file) => {
-    const docs = await openTenderDocs(page)
-    await docs.locator('input[type=file]').setInputFiles(file)
-    await docs.getByRole('button', { name: `Проверить построчно: ${file.name}` }).click({ timeout: 60000 })
-    const dialog = page.getByRole('dialog', { name: 'Цены из счёта или КП поставщика' })
-    await dialog.locator('.sp-di-table').waitFor({ timeout: 60000 })
-    return dialog
   }
   const closeTenderDocs = async (page) => {
     await tenderDocs(page).getByRole('button', { name: 'Закрыть' }).click()
     await tenderDocs(page).waitFor({ state: 'detached' })
   }
+  const pickRow = (docs, text) => docs.locator('.sp-td-table tbody tr', { hasText: text })
+  const applyBox = (row) => row.getByRole('checkbox', { name: /^Применить цену/ })
+  const fileChips = (docs) => docs.getByRole('list', { name: 'Файлы тендера' })
 
-  it('цены из счёта поставщика (Excel): строки сопоставлены с позициями ВОР, своя цена — только по отметке; цены и файл-документ записаны', async () => {
+  it('счёт (Excel): позиция ВОР полужирным и строка счёта рядом, единицы совпадают; свежий документ заменяет свою цену; применённое больше не показывается', async () => {
     const { page, context, errors } = await openPage()
     try {
-      const dialog = await openReview(page, { name: 'Счёт 15 ТеплоСнаб.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx() })
-      assert.match(plain(await dialog.locator('.sp-di-summary').innerText()), /лист«Счёт»·строксценой:4·сопоставленосВОР:3/)
-      const line = (text) => dialog.locator('.sp-di-table tbody tr', { hasText: text })
+      const docs = await openTenderDocs(page)
+      await docs.locator('input[type=file]').setInputFiles({ name: 'Счёт 15 ТеплоСнаб.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx() })
+      const pipe = pickRow(docs, 'Труба медная 12,7 мм (бухта 15 м)')
+      await pipe.waitFor({ timeout: 60000 })
+      // Построчной проверки и переключателей больше нет.
+      assert.equal(await docs.getByRole('button', { name: /Проверить построчно/ }).count(), 0)
+      assert.equal(await docs.getByRole('radio').count(), 0)
+      assert.equal(await docs.locator('.sp-filter').count(), 0)
+      // Позиция — полужирным, строка счёта — обычным; файл — мелко; отличия подсвечены.
+      assert.equal((await pipe.locator('b.sp-td-name').innerText()).trim(), TRUBA)
+      assert.equal(await pipe.locator('td.sp-td-line b').count(), 0)
+      assert.match(await pipe.locator('td.sp-td-line .sp-td-diff').allInnerTexts().then((x) => x.join(' ')), /бухта/)
+      assert.match(await pipe.locator('td.sp-td-line .sp-td-file').innerText(), /Счёт 15 ТеплоСнаб\.xlsx/)
+      assert.match(await pipe.locator('.sp-td-pos .sp-td-meta').getAttribute('title'), /ВК: 200 м/)
+      assert.match(plain(await pipe.locator('.sp-td-pos .sp-td-meta').innerText()), /1700м·2ВОР/)
+      // Единицы совпадают — статус; цена — с доставкой документа (+0,2 %).
+      await pipe.locator('.sp-td-unit.is-ok').waitFor()
+      assert.equal(plain(await pipe.locator('.sp-td-price').innerText()), '981,83')
+      assert.equal(await applyBox(pipe).isChecked(), true)
+      // Кран — та же позиция: из двух кранов ВОР — той же ед. изм.
+      const kran = pickRow(docs, 'Кран шаровой Ду 15')
+      assert.equal((await kran.locator('b.sp-td-name').innerText()).trim(), 'Кран шаровой Ду15')
+      assert.equal(await applyBox(kran).isChecked(), true)
+      // Своя цена старше документа — документ важнее: отмечено, видно, что заменится.
+      const iso = pickRow(docs, 'Изоляция K-Flex 13x15')
+      assert.match(await iso.locator('.sp-td-now.is-replace').innerText(), /96,00/)
+      assert.equal(await applyBox(iso).isChecked(), true)
+      // Строки, которым нет позиции, — свёрнуты внизу, не в таблице.
+      assert.equal(await pickRow(docs, 'Болт М12х80').count(), 0)
+      await docs.getByText('Строки счетов без позиции ВОР: 1').waitFor()
 
-      // Труба — похожая (другая запись), одна позиция в двух ВОР; кран — то же наименование, а из двух кранов
-      // ВОР — с той же ед. изм. (шт, не компл); изоляция уже расценена — «заменит», без отметки; болта в ВОР нет.
-      // Имя позиции — как в первом ВОР таблицы (ВОР по алфавиту: «ВК» раньше «ОВ»).
-      assert.match(await selected(line('Труба медная 12,7')), /^труба медная ∅12\.7 · м · похоже на \d+ % · в 2 ВОР$/)
-      assert.equal(await selected(line('Кран шаровой Ду 15')), 'Кран шаровой Ду15 · шт · то же наименование')
-      assert.match(await line('Изоляция K-Flex 13x15').innerText(), /заменит 96,00/)
-      assert.equal(await line('Изоляция K-Flex 13x15').getByRole('checkbox', { name: /^Применить цену/ }).isChecked(), false)
-      assert.equal(await line('Труба медная 12,7').getByRole('checkbox', { name: /^Применить цену/ }).isChecked(), true)
-      assert.equal(await selected(line('Болт М12х80')), 'не сопоставлять')
-      assert.equal(await line('Болт М12х80').getByRole('checkbox', { name: /^Применить цену/ }).isDisabled(), true)
-      // В документе «в том числе НДС» — цены как есть; доставка — к ценам пропорционально сумме (+0,2 %), снимается.
-      await dialog.getByText('цены с НДС', { exact: false }).first().waitFor()
-      const delivery = dialog.locator('.sp-di-delivery')
-      assert.match(plain(await delivery.innerText()), /3000,00₽.*\(\+0,2%\)/)
-      assert.match(plain(await line('Труба медная 12,7').locator('.sp-di-price').innerText()), /^981,83$/)
-      await delivery.getByRole('checkbox').uncheck()
-      assert.match(plain(await line('Труба медная 12,7').locator('.sp-di-price').innerText()), /^980,00$/)
-      // Изоляцию заменить — отметить самому.
-      await line('Изоляция K-Flex 13x15').getByRole('checkbox', { name: /^Применить цену/ }).check()
-      await dialog.getByRole('button', { name: 'Применить цены: 3 (позиций ВОР: 4)' }).click()
-      await dialog.waitFor({ state: 'detached', timeout: 30000 })
-      await closeTenderDocs(page)
-
+      await docs.getByRole('button', { name: 'Применить цены: 3' }).click()
+      await docs.waitFor({ state: 'detached', timeout: 30000 })
       await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.tender_id === 'tender-p').length === 4)
-      assert.equal((await rateOf(page, 'Труба медная Ø12,7', 'ОВ')).supply_price, 980)
-      assert.equal((await rateOf(page, 'труба медная ∅12.7', 'ВК')).supply_price, 980)
-      const kran = await rateOf(page, 'Кран шаровой Ду15', 'ОВ')
-      assert.deepEqual([kran.supply_price, kran.price_input], [512.5, 'unit'])
-      assert.equal(await page.evaluate(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.material_name === 'Кран шаровой Ду15' && r.estimate_name === 'ВК').length), 0)
-      const iso = await rateOf(page, 'Изоляция K-Flex 13×15', 'ОВ')
-      assert.deepEqual([iso.id, iso.supply_price], ['rate-p-3', 99], 'своя цена заменена по версии строки')
+      assert.equal((await rateOf(page, 'Труба медная Ø12,7', 'ОВ')).supply_price, 981.83)
+      assert.equal((await rateOf(page, TRUBA, 'ВК')).supply_price, 981.83)
+      const iRate = await rateOf(page, 'Изоляция K-Flex 13×15', 'ОВ')
+      assert.equal(iRate.id, 'rate-p-3', 'своя цена заменена по версии строки')
+      assert.equal(await rateOf(page, 'Кран шаровой Ду15', 'ВК'), null)
 
       // Файл — в хранилище документов основного тендера, своей категорией, и документом четырёх позиций.
       const doc = await page.evaluate(() => window.__fakeDb.s3_documents.find((d) => d.doc_category === 'supply_doc'))
       assert.deepEqual([doc.owner_type, doc.owner_id, doc.file_name], ['tender', 'tender-p', 'Счёт 15 ТеплоСнаб.xlsx'])
-      assert.equal((await page.evaluate(() => window.__fakeUploads))[0].s3_key, doc.s3_key)
       await page.waitForFunction(() => window.__fakeDb.tender_supply_links.length === 4)
       const links = await page.evaluate(() => window.__fakeDb.tender_supply_links)
       assert.ok(links.every((l) => l.s3_document_id === doc.id && l.url == null), JSON.stringify(links))
-      await page.getByText('Из «Счёт 15 ТеплоСнаб.xlsx»: цен записано 4', { exact: false }).waitFor()
-      const open = rowOf(page, 'Труба медная Ø12,7', 'ОВ').getByRole('button', { name: 'Открыть файл документа «Счёт 15 ТеплоСнаб.xlsx» к «Труба медная Ø12,7»' })
+      await page.getByText('Цен записано: 4', { exact: false }).waitFor()
+      const open = rowOf(page, TRUBA, TWO).getByRole('button', { name: `Открыть файл документа «Счёт 15 ТеплоСнаб.xlsx» к «${TRUBA}»` })
       await open.click()
       await page.locator('.s3-doc-modal-title', { hasText: 'Счёт 15 ТеплоСнаб.xlsx' }).waitFor()
       await page.locator('.s3-doc-modal-close').click()
       await page.locator('.s3-doc-modal').waitFor({ state: 'detached' })
+
+      // Цена уже стоит правильно — такой строки в окне нет.
+      const again = await openTenderDocs(page)
+      await again.getByText('Все цены из документов уже стоят в расценке.').waitFor()
+      assert.equal(await again.locator('.sp-td-table').count(), 0)
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
     }
   })
 
-  it('цены из КП в PDF: текст читает pdf.js в отдельном потоке; «Цена без НДС» — НДС сверху; скан без текста — понятный отказ', async () => {
+  it('цены из КП в PDF: текст читает pdf.js в отдельном потоке; «Цена без НДС» — НДС сверху, можно поправить; скан без текста — понятный отказ', async () => {
     const maker = await browser.newPage()
     await maker.setContent(`<html><head><meta charset="utf-8"><style>body{font:10pt Arial,sans-serif}table{border-collapse:collapse}
       td,th{border:1px solid #000;padding:2px 6px;vertical-align:bottom}.r{text-align:right;white-space:nowrap}</style></head><body>
@@ -837,25 +907,27 @@ describe('Расценка снабжением: таблица', { skip: !launc
       const docs = await openTenderDocs(page)
       await docs.locator('input[type=file]').setInputFiles({ name: 'скан.pdf', mimeType: 'application/pdf', buffer: scan })
       await docs.getByText('скан или фото: в PDF нет текста', { exact: false }).waitFor({ timeout: 60000 })
-      await closeTenderDocs(page)
-      const dialog = await openReview(page, { name: 'КП 7.pdf', mimeType: 'application/pdf', buffer: pdf })
-      assert.match(plain(await dialog.locator('.sp-di-summary').innerText()), /PDF,страниц:1·строксценой:2·сопоставленосВОР:2/)
-      const line = (text) => dialog.locator('.sp-di-table tbody tr', { hasText: text })
-      assert.equal(await selected(line('Хомут монтажный')), 'Хомут монтажный · шт · то же наименование')
-      assert.match(await selected(line('Кран шаровой полнопроходной')), /^Кран шаровой Ду15 · шт · похоже на \d+ %$/)
-      // «Итого без НДС», колонки «без НДС» — к цене НДС 22 %: 1 000 → 1 220.
-      await dialog.getByText('цены без НДС — НДС добавится', { exact: false }).waitFor()
-      assert.match(plain(await line('Кран шаровой полнопроходной').locator('.sp-di-price').innerText()), /^1220,00$/)
-      assert.match(plain(await line('Хомут монтажный').locator('.sp-di-price').innerText()), /^43,31$/)
-      // Не прикреплять файл: только цены.
-      await dialog.getByLabel('Прикрепить файл документом к позициям, получившим цену').uncheck()
-      await dialog.getByRole('button', { name: 'Применить цены: 2' }).click()
-      await dialog.waitFor({ state: 'detached', timeout: 30000 })
+      await docs.locator('input[type=file]').setInputFiles({ name: 'КП 7.pdf', mimeType: 'application/pdf', buffer: pdf })
+      const kran = pickRow(docs, 'Кран шаровой полнопроходной')
+      await kran.waitFor({ timeout: 60000 })
+      // Похоже не наверняка — пометка; то же наименование — без пометок. «Без НДС» — к цене НДС 22 %: 1 000 → 1 220.
+      assert.match(await kran.locator('.sp-td-line').innerText(), /похоже на \d+ %/)
+      assert.equal(await pickRow(docs, 'Хомут монтажный').locator('.sp-td-tag').count(), 0)
+      assert.equal(plain(await kran.locator('.sp-td-price').innerText()), '1220,00')
+      assert.equal(plain(await pickRow(docs, 'Хомут монтажный').locator('.sp-td-price').innerText()), '43,31')
+      // Документ понят неверно — поправить у файла: цены пересчитываются и запоминаются.
+      const vat = docs.getByLabel('НДС в ценах: КП 7.pdf')
+      assert.equal(await vat.inputValue(), 'net')
+      await vat.selectOption('gross')
+      await page.waitForFunction(() => /1000,00/.test(document.querySelector('.sp-td-table')?.innerText.replace(/\s/g, '') || ''))
+      await vat.selectOption('net')
+      await page.waitForFunction(() => /1220,00/.test(document.querySelector('.sp-td-table')?.innerText.replace(/\s/g, '') || ''))
+      await docs.getByRole('button', { name: 'Применить цены: 2' }).click()
+      await docs.waitFor({ state: 'detached', timeout: 30000 })
       await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Хомут монтажный'))
       assert.equal((await rateOf(page, 'Хомут монтажный', 'ОВ')).supply_price, 43.31)
       assert.equal((await rateOf(page, 'Кран шаровой Ду15', 'ОВ')).supply_price, 1220)
-      assert.deepEqual(await page.evaluate(() => window.__fakeDb.s3_documents.filter((d) => d.doc_category === 'supply_doc').map((d) => d.file_name).sort()), ['КП 7.pdf', 'скан.pdf'], 'файлы у тендера, документом позиций не стали')
-      assert.equal(await page.evaluate(() => window.__fakeDb.tender_supply_links.length), 0)
+      assert.deepEqual(await page.evaluate(() => window.__fakeDb.s3_documents.filter((d) => d.doc_category === 'supply_doc').map((d) => d.file_name).sort()), ['КП 7.pdf', 'скан.pdf'])
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
@@ -863,13 +935,16 @@ describe('Расценка снабжением: таблица', { skip: !launc
   })
 
   // Доставка позиции (миграция 20261120, стенд delivery=1 — колонки есть, триггер считает как база).
-  const deliveryCell = (page, name, vor, mode = 'за единицу') => page.getByLabel(`Доставка ${mode}: ${name} (ВОР «${vor}»)`)
-  const deliveryMode = (page, name, vor) => page.getByLabel(`Доставка за единицу или на позицию: ${name} (ВОР «${vor}»)`)
+  const deliveryCell = (page, name, vor, mode = 'за единицу') => page.getByLabel(`Доставка ${mode}: ${name} (${vorText(vor)})`)
+  const deliveryMode = (page, name, vor) => page.getByLabel(`Доставка за единицу или на позицию: ${name} (${vorText(vor)})`)
   const rateWhen = (page, test, arg) => page.waitForFunction(test, arg, { timeout: 30000 })
 
   it('доставка: за единицу и на позицию, цена с доставкой и итог; смена вида — та же доставка; итог вводится с доставкой; без цены — закрыта', async () => {
     const { page, context, errors } = await openPage('&delivery=1')
     try {
+      // Пока доставки нет ни у одной цены — колонка скрыта, открывается кнопкой.
+      assert.equal(await page.locator('.sp-table th', { hasText: 'Доставка, ₽' }).count(), 0)
+      await page.getByRole('button', { name: 'показать доставку' }).click()
       await page.locator('.sp-table th', { hasText: 'Доставка, ₽' }).waitFor()
       const iso = 'Изоляция K-Flex 13×15'
       const row = rowOf(page, iso, 'ОВ')
@@ -915,12 +990,12 @@ describe('Расценка снабжением: таблица', { skip: !launc
       await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.find((r) => r.material_name === 'Хомут монтажный').delivery_value === 5)
       assert.equal((await rateOf(page, 'Хомут монтажный', 'ОВ')).supply_price, 40)
 
-      // Труба: цена сама ушла в такую же позицию ВК — и доставка за единицу туда же (у ВК свой объём).
-      await enter(page.getByLabel(price('Труба медная Ø12,7', 'ОВ')), '412,5')
-      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.some((r) => r.estimate_name === 'ВК' && r.material_name === 'труба медная ∅12.7'))
-      await enter(deliveryCell(page, 'Труба медная Ø12,7', 'ОВ'), '10')
-      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.find((r) => r.estimate_name === 'ВК' && r.material_name === 'труба медная ∅12.7').delivery_value === 10)
-      const vk = await rateOf(page, 'труба медная ∅12.7', 'ВК')
+      // Труба — строка из двух ВОР: доставка за единицу — обоим (у ВК свой объём), на позицию — по объёму.
+      await enter(page.getByLabel(price(TRUBA, TWO)), '412,5')
+      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.filter((r) => Number(r.supply_price) === 412.5).length === 2)
+      await enter(deliveryCell(page, TRUBA, TWO), '10')
+      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.delivery_value === 10).length === 2)
+      const vk = await rateOf(page, TRUBA, 'ВК')
       assert.deepEqual([vk.input_value, vk.delivery_input, vk.supply_price, vk.supply_total], [412.5, 'unit', 422.5, 84500])
       assert.deepEqual(errors, [])
     } finally {
@@ -944,7 +1019,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
-  it('окно «Цены из счёта / КП» с доставкой: строка «Доставка» документа — по позициям пропорционально сумме, в колонку «Доставка», а не в цену', async () => {
+  it('счёт с доставкой: строка «Доставка» — по позициям пропорционально сумме, в цене позиции; колонка «Доставка» не заполняется', async () => {
     const maker = await browser.newPage()
     await maker.setContent(`<html><head><meta charset="utf-8"><style>body{font:7pt Arial,sans-serif}table{border-collapse:collapse;width:170mm;table-layout:fixed}
       td,th{border:1px solid #000;padding:0 2px;vertical-align:top;line-height:1.15}th{background:#ccc;font-weight:normal}.r{text-align:right}</style></head><body>
@@ -959,23 +1034,18 @@ describe('Расценка снабжением: таблица', { skip: !launc
     await maker.close()
     const { page, context, errors } = await openPage('&delivery=1')
     try {
-      const dialog = await openReview(page, { name: 'КП 10068.pdf', mimeType: 'application/pdf', buffer: pdf })
-      const line = (text) => dialog.locator('.sp-di-table tbody tr', { hasText: text })
-      // Доставка 6 755 = 5 % суммы товаров: к цене кранов +25, изоляции +5,05 — отдельной строкой «в т. ч. доставка».
-      assert.match(plain(await dialog.locator('.sp-di-delivery').innerText()), /6755,00₽.*\(\+5%\).*колонкой«Доставка»/)
-      assert.equal(plain(await line('Кран шаровой Ду15').locator('.sp-di-price').innerText()), '525,00вт.ч.доставка25,00')
-      assert.equal(plain(await line('Изоляция K-Flex').locator('.sp-di-price').innerText()), '106,05вт.ч.доставка5,05')
-      assert.match(await line('Изоляция K-Flex').innerText(), /заменит 96,00/)
-      await line('Изоляция K-Flex').getByRole('checkbox', { name: /^Применить цену/ }).check()
-      await dialog.getByLabel('Прикрепить файл документом к позициям, получившим цену').uncheck()
-      await dialog.getByRole('button', { name: 'Применить цены: 2' }).click()
-      await dialog.waitFor({ state: 'detached', timeout: 30000 })
+      const docs = await openTenderDocs(page)
+      await docs.locator('input[type=file]').setInputFiles({ name: 'КП 10068.pdf', mimeType: 'application/pdf', buffer: pdf })
+      const kranRow = pickRow(docs, 'Кран шаровой Ду15 латунный')
+      await kranRow.waitFor({ timeout: 60000 })
+      // Доставка 6 755 = 5 % суммы товаров: к цене кранов +25.
+      assert.equal(plain(await kranRow.locator('.sp-td-price').innerText()), '525,00')
+      await applyBox(kranRow).check()
+      await docs.getByRole('button', { name: /^Применить цены:/ }).click()
+      await docs.waitFor({ state: 'detached', timeout: 30000 })
       await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Кран шаровой Ду15' && r.estimate_name === 'ОВ'))
-      await rateWhen(page, () => window.__fakeDb.tender_vor_supply_rates.find((r) => r.id === 'rate-p-3').input_value === 101)
       const kran = await rateOf(page, 'Кран шаровой Ду15', 'ОВ')
-      assert.deepEqual([kran.input_value, kran.delivery_input, kran.delivery_value, kran.supply_price], [500, 'unit', 25, 525])
-      const isoRate = await rateOf(page, 'Изоляция K-Flex 13×15', 'ОВ')
-      assert.deepEqual([isoRate.input_value, isoRate.delivery_input, isoRate.delivery_value, isoRate.supply_price], [101, 'unit', 5.05, 106.05])
+      assert.deepEqual([kran.input_value, kran.delivery_input, kran.delivery_value, kran.supply_price], [525, null, null, 525])
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
@@ -1002,53 +1072,50 @@ describe('Расценка снабжением: таблица', { skip: !launc
   }, name)
   const similarBtn = (row) => row.locator('.sp-similar-btn')
 
-  it('окно «Цены из счёта / КП»: у строки — «не сопоставлять» и сразу список позиций, поиск по всем; «Только в похожие цены» — цены не пишутся, у позиций — цены поставщиков; «Взять» — цена и файл', async () => {
+  it('другая строка и отказ — при файле: «нет в счетах» больше не предлагается; строке без позиции указать позицию поиском; цены не пишутся, пока не применили; «Взять» — цена и файл', async () => {
     const { page, context, errors } = await openPage()
     try {
       const ratesBefore = await page.evaluate(() => window.__fakeDb.tender_vor_supply_rates.length)
-      const dialog = await openReview(page, { name: 'Счёт 15 ТеплоСнаб.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx() })
-      assert.match(await dialog.getAttribute('class'), /is-full/, 'сопоставление — почти во весь экран')
-      const line = (text) => dialog.locator('.sp-di-table tbody tr', { hasText: text })
-      // Выпадающего списка нет: «не сопоставлять» и под ним позиции — отметить можно несколько.
-      assert.equal(await dialog.locator('select').count(), 0)
-      const pipe = line('Труба медная 12,7')
-      const options = pipe.getByRole('group', { name: 'Позиция ВОР для «Труба медная 12,7 мм (бухта 15 м)»' }).getByRole('checkbox')
-      assert.ok(await options.count() >= 2)
-      assert.equal(await pipe.locator('.sp-di-opt').first().innerText(), 'не сопоставлять')
-      // Трубу — не сопоставлять (руками); болт — хомуту, найденному поиском среди всех позиций.
-      await pipe.getByRole('checkbox', { name: 'не сопоставлять' }).check()
-      assert.equal(await pipe.getByRole('checkbox', { name: /^Применить цену/ }).isDisabled(), true)
-      const bolt = line('Болт М12х80')
-      await bolt.getByRole('searchbox', { name: 'Найти позицию ВОР для «Болт М12х80»' }).fill('хомут')
-      await bolt.getByRole('checkbox', { name: /Хомут монтажный/ }).check()
-      assert.match(await selected(bolt), /^Хомут монтажный · шт · найдено поиском$/)
-      await bolt.getByRole('searchbox').fill('')
-      assert.match(await selected(bolt), /^Хомут монтажный/, 'выбранная остаётся в списке и без поиска')
-
-      await dialog.getByRole('button', { name: 'Только в похожие цены' }).click()
-      await dialog.waitFor({ state: 'detached', timeout: 30000 })
+      const docs = await openTenderDocs(page)
+      await docs.locator('input[type=file]').setInputFiles({ name: 'Счёт 15 ТеплоСнаб.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx() })
+      const pipe = pickRow(docs, 'Труба медная 12,7')
+      await pipe.waitFor({ timeout: 60000 })
+      // Трубу — это не она: строка больше не предлагается и уходит в «без позиции».
+      await pipe.getByRole('button', { name: 'другая строка' }).click()
+      await pipe.getByRole('searchbox', { name: `Найти строку счёта для «${TRUBA}»` }).waitFor()
+      await pipe.getByRole('button', { name: 'нет в счетах — не предлагать эту строку' }).click()
+      await pipe.waitFor({ state: 'detached' })
+      await docs.getByText('Строки счетов без позиции ВОР: 2').click()
+      // Болт — хомуту, найденному поиском среди всех позиций: строка появляется и отмечена.
+      await docs.getByRole('searchbox', { name: 'Найти позицию ВОР для «Болт М12х80»' }).fill('хомут')
+      await docs.locator('.sp-td-unplaced .sp-td-opt', { hasText: 'Хомут монтажный' }).click()
+      const xomutRow = pickRow(docs, 'Хомут монтажный')
+      await xomutRow.waitFor()
+      assert.match(await xomutRow.innerText(), /Болт М12х80/)
+      assert.equal(await applyBox(xomutRow).isChecked(), true)
+      await page.waitForFunction(() => {
+        const d = window.__fakeDb.s3_documents.find((x) => x.doc_category === 'supply_doc')
+        return d?.notes && JSON.parse(d.notes).lines.find((l) => l.n === 'Болт М12х80').k
+      })
       await closeTenderDocs(page)
-      await page.getByText('В похожие цены: «Счёт 15 ТеплоСнаб.xlsx» — строк с ценой 4', { exact: false }).waitFor()
       assert.equal(await page.evaluate(() => window.__fakeDb.tender_vor_supply_rates.length), ratesBefore, 'цены не записаны')
       assert.equal(await page.evaluate(() => window.__fakeDb.tender_supply_links.length), 0, 'документ позициям не прикреплён')
       const doc = await offerDoc(page, 'Счёт 15 ТеплоСнаб.xlsx')
-      assert.equal(doc.offer.kind, 'supply_offer')
       const byName = Object.fromEntries(doc.offer.lines.map((l) => [l.n, l]))
-      assert.deepEqual(Object.keys(byName).sort(), ['Болт М12х80', 'Изоляция K-Flex 13x15', 'Кран шаровой Ду 15', 'Труба медная 12,7 мм (бухта 15 м)'])
-      assert.equal(byName['Труба медная 12,7 мм (бухта 15 м)'].x, 1, '«не сопоставлять» руками запомнено')
-      assert.ok(byName['Болт М12х80'].k, 'позиция, выбранная в окне, запомнена')
-      assert.equal(byName['Кран шаровой Ду 15'].p, 513.46, 'цена — с доставкой, как в окне')
+      assert.ok(byName['Труба медная 12,7 мм (бухта 15 м)'].kn?.length, 'отказ запомнен при файле')
+      assert.ok(byName['Болт М12х80'].k, 'выбранная позиция запомнена при файле')
+      assert.equal(byName['Кран шаровой Ду 15'].p, 513.46, 'цена — с доставкой')
 
-      // Хомут без цены — «похожие цены: 1» (строка болта); труба — нигде; изоляция расценена — «цены поставщиков».
+      // В таблице: хомут без цены — «похожие цены: 1» (строка болта); труба — нигде; изоляция расценена — «цены поставщиков».
       const xomut = rowOf(page, 'Хомут монтажный', 'ОВ')
       assert.equal(plain(await similarBtn(xomut).innerText()), 'похожиецены:1')
-      assert.equal(await similarBtn(rowOf(page, 'Труба медная Ø12,7', 'ОВ')).count(), 0)
+      assert.equal(await similarBtn(rowOf(page, TRUBA, TWO)).count(), 0)
       assert.equal(plain(await similarBtn(rowOf(page, 'Изоляция K-Flex 13×15', 'ОВ')).innerText()), 'ценыпоставщиков:1')
       await similarBtn(xomut).click()
       const menu = page.getByRole('dialog', { name: 'Похожие цены: Хомут монтажный' })
       await menu.getByText('Цены поставщиков', { exact: true }).waitFor()
       const offer = menu.locator('li.is-offer', { hasText: 'Болт М12х80' })
-      await offer.getByText('выбрано при загрузке').waitFor()
+      await offer.getByText('выбрано вручную').waitFor()
       assert.match(plain(await offer.locator('.sp-suggest-price').innerText()), /^15,03₽/)
       await offer.getByRole('button', { name: /Взять цену 15,03/ }).click()
       await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Хомут монтажный' && r.estimate_name === 'ОВ'))
@@ -1072,16 +1139,16 @@ describe('Расценка снабжением: таблица', { skip: !launc
         { name: 'КП 3 Климат-Опт.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx2() },
       ]
       await dialog.locator('input[type=file]').setInputFiles(invoices)
-      const files = dialog.getByRole('list', { name: 'Файлы тендера' })
-      await files.getByText('строк с ценой: 2', { exact: false }).waitFor({ timeout: 60000 })
-      await files.getByText('строк с ценой: 4', { exact: false }).waitFor({ timeout: 60000 })
+      const files = fileChips(dialog)
+      await files.locator('.sp-td-file', { hasText: 'Счёт 15 ТеплоСнаб.xlsx' }).waitFor({ timeout: 60000 })
+      await files.locator('.sp-td-file', { hasText: 'КП 3 Климат-Опт.xlsx' }).waitFor({ timeout: 60000 })
       const second = await offerDoc(page, 'КП 3 Климат-Опт.xlsx')
       assert.equal(second.offer.lines.length, 2)
       assert.ok(second.offer.lines.every((l) => !l.k && !l.x), 'позиции не выбраны — их найдёт расценка')
       assert.equal(await page.evaluate(() => window.__fakeDb.tender_supply_links.length), 0)
 
       await dialog.locator('input[type=file]').setInputFiles(invoices[1])
-      await files.getByText('этот файл уже есть у тендера', { exact: false }).waitFor({ timeout: 30000 })
+      await files.getByText('уже есть у тендера', { exact: false }).waitFor({ timeout: 30000 })
       assert.equal(await page.evaluate(() => window.__fakeDb.s3_documents.filter((d) => d.doc_category === 'supply_doc').length), 2)
       await closeTenderDocs(page)
       const kran = rowOf(page, 'Кран шаровой Ду15', 'ОВ')
@@ -1099,7 +1166,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
-  it('документ к позиции перетаскиванием: файл на ячейку «Документ» — окно сразу с ним; файл в окно — вкладка «Файл»', async () => {
+  it('файл к позиции перетаскиванием: на ячейку «Документ» — сразу окно всех расценок, файл — документ позиции; файл в окно документа — то же; мимо — ко всему тендеру', async () => {
     const { page, context, errors } = await openPage()
     try {
       const dropFile = async (target, name) => {
@@ -1112,55 +1179,58 @@ describe('Расценка снабжением: таблица', { skip: !launc
         await target.dispatchEvent('drop', { dataTransfer: dt })
       }
       await dropFile(rowOf(page, 'Кран шаровой Ду15', 'ОВ').locator('td.sp-doc'), 'Чек 9.pdf')
-      let dialog = page.getByRole('dialog', { name: 'Документ к позиции' })
-      assert.equal(await dialog.getByRole('tab', { name: 'Файл' }).getAttribute('aria-selected'), 'true')
-      await dialog.getByText('Чек 9.pdf').waitFor()
-      await dialog.getByRole('button', { name: 'Сохранить' }).click()
+      const docs = tenderDocs(page)
+      await fileChips(docs).getByText('Чек 9.pdf').waitFor({ timeout: 60000 })
       await page.waitForFunction(() => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Кран шаровой Ду15' && l.s3_document_id))
+      await closeTenderDocs(page)
       await rowOf(page, 'Кран шаровой Ду15', 'ОВ').getByRole('button', { name: 'Открыть файл документа «Чек 9.pdf» к «Кран шаровой Ду15»' }).waitFor()
 
-      // Окно открыто на «Ссылке» — бросили файл в окно: «Файл» с этим файлом.
+      // Окно документа: бросили файл на вкладке «Ссылка» — то же самое, подтверждать не нужно.
       await rowOf(page, 'Хомут монтажный', 'ОВ').getByRole('button', { name: /Прикрепить документ: Хомут монтажный/ }).click()
-      dialog = page.getByRole('dialog', { name: 'Документ к позиции' })
-      assert.equal(await dialog.getByRole('tab', { name: 'Ссылка' }).getAttribute('aria-selected'), 'true')
+      const dialog = page.getByRole('dialog', { name: 'Документ к позиции' })
+      await dialog.getByRole('tab', { name: 'Ссылка' }).click()
       await dropFile(dialog, 'Счёт 10.pdf')
-      assert.equal(await dialog.getByRole('tab', { name: 'Файл' }).getAttribute('aria-selected'), 'true')
-      await dialog.getByText('Счёт 10.pdf').waitFor()
-      await dialog.getByRole('button', { name: 'Сохранить' }).click()
+      await fileChips(docs).getByText('Счёт 10.pdf').waitFor({ timeout: 60000 })
+      await dialog.waitFor({ state: 'detached' })
       await page.waitForFunction(() => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Хомут монтажный' && l.s3_document_id))
-      // Файл, брошенный мимо ячейки, страницу не уводит: это файл ко всему тендеру.
+      await closeTenderDocs(page)
+
+      // Файл, брошенный мимо ячейки, страницу не уводит: это файл ко всему тендеру, позициям не прикрепляется.
+      const before = await page.evaluate(() => window.__fakeDb.tender_supply_links.length)
       await dropFile(page.locator('.sp-toolbar-right'), 'мимо.pdf')
       await page.getByRole('heading', { name: 'Расценка материалов' }).waitFor()
-      const docs = tenderDocs(page)
-      await docs.getByRole('list', { name: 'Файлы тендера' }).getByText('мимо.pdf').waitFor({ timeout: 60000 })
+      await fileChips(docs).getByText('мимо.pdf').waitFor({ timeout: 60000 })
       await page.waitForFunction(() => window.__fakeDb.s3_documents.filter((d) => d.doc_category === 'supply_doc').length === 3, null, { timeout: 60000 })
+      assert.equal(await page.evaluate(() => window.__fakeDb.tender_supply_links.length), before)
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
     }
   })
 
-  it('файл документом к позиции: «Файл» — загрузить с компьютера; другой позиции — тот же файл из списка; ссылка вместо файла', async () => {
+  it('файл документом к позиции: с компьютера — сразу окно расценок; другой позиции — тот же файл из списка; ссылка вместо файла', async () => {
     const { page, context, errors } = await openPage()
     try {
       await rowOf(page, 'Кран шаровой Ду15', 'ОВ').getByRole('button', { name: /Прикрепить документ: Кран шаровой Ду15/ }).click()
       let dialog = page.getByRole('dialog', { name: 'Документ к позиции' })
-      await dialog.getByRole('tab', { name: 'Файл' }).click()
+      assert.equal(await dialog.getByRole('tab', { name: 'Файл' }).getAttribute('aria-selected'), 'true', 'обычно прикладывают файл')
       await dialog.locator('input[type=file]').setInputFiles({ name: 'Чек 777.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%%EOF\n') })
-      await dialog.getByText('Чек 777.pdf').waitFor()
-      await dialog.getByRole('button', { name: 'Сохранить' }).click()
+      const docs = tenderDocs(page)
+      await fileChips(docs).getByText('Чек 777.pdf').waitFor({ timeout: 60000 })
       await page.waitForFunction(() => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Кран шаровой Ду15' && l.s3_document_id))
+      await closeTenderDocs(page)
       const doc = await page.evaluate(() => window.__fakeDb.s3_documents.find((d) => d.file_name === 'Чек 777.pdf'))
       assert.deepEqual([doc.owner_id, doc.doc_category], ['tender-p', 'supply_doc'])
       await rowOf(page, 'Кран шаровой Ду15', 'ОВ').getByRole('button', { name: 'Открыть файл документа «Чек 777.pdf» к «Кран шаровой Ду15»' }).waitFor()
 
-      // Хомуту — тот же файл из списка загруженных к тендеру.
+      // Хомуту — тот же файл из списка загруженных к тендеру: тоже окно расценок, второй раз файл не загружается.
       await rowOf(page, 'Хомут монтажный', 'ОВ').getByRole('button', { name: /Прикрепить документ: Хомут монтажный/ }).click()
       dialog = page.getByRole('dialog', { name: 'Документ к позиции' })
-      await dialog.getByRole('tab', { name: 'Файл' }).click()
       await dialog.getByRole('radio', { name: /Чек 777\.pdf/ }).check()
       await dialog.getByRole('button', { name: 'Сохранить' }).click()
       await page.waitForFunction((id) => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Хомут монтажный' && l.s3_document_id === id), doc.id)
+      await docs.waitFor()
+      await closeTenderDocs(page)
       assert.equal(await page.evaluate(() => window.__fakeDb.s3_documents.filter((d) => d.doc_category === 'supply_doc').length), 1, 'второй раз файл не загружается')
 
       // У крана — ссылка вместо файла: файл снимается (одно из двух).
@@ -1174,6 +1244,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
       const kran = await page.evaluate(() => window.__fakeDb.tender_supply_links.find((l) => l.material_name === 'Кран шаровой Ду15'))
       assert.equal(kran.s3_document_id, null)
       await rowOf(page, 'Кран шаровой Ду15', 'ОВ').getByRole('link', { name: 'Открыть документ к «Кран шаровой Ду15»' }).waitFor()
+      assert.equal(await tenderDocs(page).count(), 0, 'ссылка окна расценок не открывает')
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
@@ -1195,41 +1266,61 @@ describe('Расценка снабжением: таблица', { skip: !launc
     return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
   }
 
-  it('файл в колонке «Документ»: счёт читается сам — окно проверки цен; цена за упаковку — за штуку; строка — в несколько позиций; файл не загружается заново', async () => {
+  it('файл к позиции: счёт читается сам, окно расценок; цена за упаковку — за штуку; неизвестный пересчёт — указать; файл не загружается заново', async () => {
     const { page, context, errors } = await openPage()
     try {
       await rowOf(page, 'Хомут монтажный', 'ОВ').getByRole('button', { name: /Прикрепить документ: Хомут монтажный/ }).click()
       const link = page.getByRole('dialog', { name: 'Документ к позиции' })
-      await link.getByRole('tab', { name: 'Файл' }).click()
-      await link.getByText('Цены из счёта и КП', { exact: false }).waitFor()
+      await link.getByText('Сразу откроется окно расценок', { exact: false }).waitFor()
       await link.locator('input[type=file]').setInputFiles({ name: 'Спецификация ЭТМ.xlsx', mimeType: XLSX_MIME, buffer: packXlsx() })
-      await link.getByRole('button', { name: 'Сохранить' }).click()
 
-      const dialog = page.getByRole('dialog', { name: 'Цены из счёта или КП поставщика' })
-      await dialog.locator('.sp-di-table').waitFor({ timeout: 60000 })
-      await dialog.getByText('Файл прикреплён к позиции.', { exact: false }).waitFor()
-      const line = (text) => dialog.locator('.sp-di-table tbody tr', { hasText: text })
-      assert.match(await line('Хомут монтажный').innerText(), /арт\. 27403/, 'артикул, а не код поставщика')
-      assert.equal(plain(await line('Хомут монтажный').locator('.sp-di-price').innerText()), '10,00зашт')
-      await line('Хомут монтажный').getByText('1 упак = 50 шт: 10,00 ₽ за шт').waitFor()
-      assert.equal(await line('Хомут монтажный').getByRole('checkbox', { name: /^Применить цену/ }).isChecked(), true, 'пересчёт понятен — ед. изм. подходит')
+      const docs = tenderDocs(page)
+      const row = pickRow(docs, 'Хомут монтажный (50шт)')
+      await row.waitFor({ timeout: 60000 })
+      assert.equal(plain(await row.locator('.sp-td-price').innerText()), '10,00')
+      await row.getByText('1 упак = 50 шт').waitFor()
+      assert.equal(await applyBox(row).isChecked(), true, 'пересчёт понятен — ед. изм. подходит')
+      assert.equal(await page.evaluate(() => window.__fakeDb.tender_supply_links.filter((l) => l.material_name === 'Хомут монтажный' && l.s3_document_id).length), 1, 'файл уже документ позиции')
+      await docs.getByRole('button', { name: /^Применить цены: 2/ }).click()
+      await docs.waitFor({ state: 'detached', timeout: 30000 })
 
-      // Кран — ещё и позиции «компл»: отмечаем вторую; цена встанет обеим.
-      const kran = line('Кран шаровой Ду 15').getByRole('group').getByRole('checkbox', { name: /Кран шаровой Ду15/ })
-      assert.equal(await kran.count(), 2)
-      await kran.nth(1).check()
-      assert.equal(await kran.nth(0).isChecked(), true, 'первая остаётся')
-      await dialog.getByRole('button', { name: /^Применить цены: 2/ }).click()
-      await dialog.waitFor({ state: 'hidden', timeout: 30000 })
-
-      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.material_name === 'Кран шаровой Ду15').length >= 2)
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Хомут монтажный'))
       assert.equal(Number((await rateOf(page, 'Хомут монтажный', 'ОВ')).supply_price), 10)
       const doc = await page.evaluate(() => window.__fakeDb.s3_documents.filter((d) => d.doc_category === 'supply_doc'))
       assert.equal(doc.length, 1, 'файл загружен один раз')
       assert.equal((await page.evaluate(() => window.__fakeUploads.filter((u) => /Спецификация/.test(u.s3_key)))).length, 1)
-      const lines = JSON.parse(doc[0].notes).lines
-      assert.equal(lines.find((l) => /Хомут/.test(l.n)).p, 500, 'в файле — цена за единицу документа')
-      assert.equal(lines.find((l) => /Кран/.test(l.n)).ka.length, 1, 'вторая позиция строки сохранена')
+      assert.equal(JSON.parse(doc[0].notes).lines.find((l) => /Хомут/.test(l.n)).p, 500, 'в файле — цена за единицу документа')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('ед. изм. разные и пересчёт неизвестен: строка видна, не отмечена; указали — цена за единицу позиции, запомнено при файле', async () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['№', 'Наименование', 'Ед. изм.', 'Кол-во', 'Цена с НДС', 'Сумма с НДС'],
+      [1, 'Хомут монтажный', 'упак', 2, 1000, 2000],
+      ['', 'Итого', '', '', '', 2000],
+    ])
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Счёт')
+    const { page, context, errors } = await openPage()
+    try {
+      const docs = await openTenderDocs(page)
+      await docs.locator('input[type=file]').setInputFiles({ name: 'Упаковки.xlsx', mimeType: XLSX_MIME, buffer: XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) })
+      const row = pickRow(docs, 'Хомут монтажный')
+      await row.waitFor({ timeout: 60000 })
+      await row.locator('.sp-td-unit.is-off').waitFor()
+      assert.equal(await applyBox(row).isChecked(), false)
+      assert.equal(await applyBox(row).isDisabled(), true)
+      await row.getByLabel('Сколько шт в 1 упак: Хомут монтажный').fill('50')
+      await row.getByLabel('Сколько шт в 1 упак: Хомут монтажный').press('Enter')
+      await page.waitForFunction(() => /20,00/.test(document.querySelector('.sp-td-price')?.innerText || ''))
+      assert.equal(await applyBox(row).isChecked(), true)
+      await page.waitForFunction(() => {
+        const d = window.__fakeDb.s3_documents.find((x) => x.file_name === 'Упаковки.xlsx')
+        return d?.notes && JSON.parse(d.notes).lines[0].pm
+      })
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
@@ -1253,17 +1344,14 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.equal(stored['doc-photo'], null, 'фото не скачиваем')
       await rowOf(page, 'Кран шаровой Ду15', 'ОВ').getByRole('button', { name: /похожие цены: 1|цены поставщиков: 1/i }).waitFor({ timeout: 30000 })
 
-      // Окно файлов тендера: прочитанный — с числом строк; нечитаемый и фото — с причиной; проверка построчно — без новой загрузки.
+      // Окно: прочитанный файл — плашкой, нечитаемый и фото — с причиной; цены применяются без новой загрузки.
       const docs = await openTenderDocs(page)
-      const list = docs.getByRole('list', { name: 'Файлы тендера' })
-      await list.locator('li', { hasText: 'Счёт старый.xlsx' }).getByText('строк с ценой:', { exact: false }).waitFor()
+      const list = fileChips(docs)
+      await list.locator('.sp-td-file', { hasText: 'Счёт старый.xlsx' }).waitFor()
       await list.locator('li', { hasText: 'Испорченный.xlsx' }).getByText('не нашли таблицу', { exact: false }).or(list.locator('li', { hasText: 'Испорченный.xlsx' }).getByText('файл не читается', { exact: false })).waitFor()
       await list.locator('li', { hasText: 'Чек.jpg' }).getByText('цены из него не прочитать', { exact: false }).waitFor()
-      await docs.getByRole('button', { name: 'Проверить построчно: Счёт старый.xlsx' }).click()
-      const dialog = page.getByRole('dialog', { name: 'Цены из счёта или КП поставщика' })
-      await dialog.locator('.sp-di-table').waitFor({ timeout: 60000 })
-      await dialog.getByRole('button', { name: /^Применить цены:/ }).click()
-      await dialog.waitFor({ state: 'hidden', timeout: 30000 })
+      await docs.getByRole('button', { name: /^Применить цены:/ }).click()
+      await docs.waitFor({ state: 'detached', timeout: 30000 })
       await page.waitForFunction(() => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Кран шаровой Ду15' && l.s3_document_id === 'doc-unread'))
       assert.equal((await page.evaluate(() => window.__fakeUploads || [])).length, 0, 'файл заново не загружается')
       assert.deepEqual(errors, [])
@@ -1282,7 +1370,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
-  it('автовыбор на весь тендер: подсказка над таблицей; то же наименование важнее дешёвого похожего; правило и ручной выбор; своя цена — по отметке; файл — документ своих позиций', async () => {
+  it('автовыбор: то же наименование важнее дешёвого похожего, из двух одинаковых — самый свежий документ; другая строка — выбор человека; снятая отметка — цена не тронута', async () => {
     const { page, context, errors } = await openPage()
     try {
       const docs = await openTenderDocs(page)
@@ -1290,33 +1378,35 @@ describe('Расценка снабжением: таблица', { skip: !launc
         { name: 'Счёт 15 ТеплоСнаб.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx() },
         { name: 'КП 3 Климат-Опт.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx2() },
       ])
-      const row = (text) => docs.locator('.sp-td-table tbody tr', { hasText: text })
-      await row('Кран шаровой Ду15').first().waitFor({ timeout: 60000 })
-      await docs.getByRole('list', { name: 'Файлы тендера' }).getByText('нашли позиции:', { exact: false }).nth(1).waitFor({ timeout: 60000 })
+      await fileChips(docs).locator('.sp-td-file', { hasText: 'КП 3 Климат-Опт.xlsx' }).waitFor({ timeout: 60000 })
+      await fileChips(docs).locator('.sp-td-file', { hasText: 'Счёт 15 ТеплоСнаб.xlsx' }).waitFor({ timeout: 60000 })
+      const rowOfPick = (text) => docs.locator('.sp-td-table tbody tr').filter({ has: page.locator('b.sp-td-name', { hasText: text }) })
       // Кран: 513,46 с тем же наименованием важнее 500 похожего; выбор можно поменять.
-      const kran = row('Кран шаровой Ду15').first()
-      assert.equal(plain(await kran.locator('.sp-di-price').innerText()), '513,46зашт')
-      assert.match(await kran.locator('.sp-td-source').innerText(), /Счёт 15 ТеплоСнаб\.xlsx[\s\S]*то же наименование/)
-      await kran.getByRole('button', { name: 'ещё цены: 1' }).click()
-      await kran.getByRole('radio', { name: /500,00 ₽ — КП 3 Климат-Опт\.xlsx/ }).check()
-      assert.equal(plain(await kran.locator('.sp-di-price').innerText()), '500,00зашт')
-      // Своя цена изоляции — только по отметке; позиция без цены в документах — во вкладке «Цены нет».
-      const iso = row('Изоляция K-Flex')
-      assert.match(await iso.innerText(), /заменит 96,00/)
-      assert.equal(await iso.getByRole('checkbox', { name: /^Применить цену/ }).isChecked(), false)
-      await docs.getByRole('button', { name: /^Цены нет/ }).click()
-      await docs.getByRole('list', { name: 'Позиции без цены в документах' }).getByText('Хомут монтажный').waitFor()
-      await docs.getByRole('button', { name: /^Все/ }).click()
+      const kran = rowOfPick('Кран шаровой Ду15')
+      await kran.waitFor()
+      assert.equal(plain(await kran.locator('.sp-td-price').innerText()), '513,46')
+      assert.match(await kran.locator('.sp-td-line .sp-td-file').innerText(), /Счёт 15 ТеплоСнаб\.xlsx/)
+      await kran.getByRole('button', { name: 'другая строка' }).click()
+      await kran.locator('.sp-td-opt', { hasText: 'КП 3 Климат-Опт.xlsx' }).click()
+      await page.waitForFunction(() => /500,00/.test(document.querySelector('.sp-td-table')?.innerText || ''))
+      assert.equal(plain(await kran.locator('.sp-td-price').innerText()), '500,00')
+      // Изоляция: свою цену заменит документ — отметку можно снять.
+      const iso = rowOfPick('Изоляция K-Flex')
+      assert.match(await iso.locator('.sp-td-now.is-replace').innerText(), /96,00/)
+      await applyBox(iso).uncheck()
 
       await docs.getByRole('button', { name: /^Применить цены:/ }).click()
       await docs.waitFor({ state: 'detached', timeout: 30000 })
-      await page.getByText('Автовыбор: цен записано', { exact: false }).waitFor()
+      await page.getByText('Цен записано:', { exact: false }).waitFor()
       await page.waitForFunction(() => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Кран шаровой Ду15'))
       assert.equal((await rateOf(page, 'Кран шаровой Ду15', 'ОВ')).supply_price, 500)
       assert.equal((await rateOf(page, 'Изоляция K-Flex 13×15', 'ОВ')).supply_price, 96, 'своя цена не тронута')
       const docId = (name) => page.evaluate((n) => window.__fakeDb.s3_documents.find((d) => d.file_name === n).id, name)
       const linkOf = (name) => page.evaluate((n) => window.__fakeDb.tender_supply_links.find((l) => l.material_name === n)?.s3_document_id, name)
       assert.equal(await linkOf('Кран шаровой Ду15'), await docId('КП 3 Климат-Опт.xlsx'))
+      // Выбор помнится при файле: при следующем открытии у крана ничего не предлагается.
+      const again = await openTenderDocs(page)
+      assert.equal(await again.locator('.sp-td-table tbody tr', { has: page.locator('b.sp-td-name', { hasText: 'Кран шаровой Ду15' }) }).count(), 0)
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
@@ -1328,10 +1418,10 @@ describe('Расценка снабжением: таблица', { skip: !launc
     try {
       const docs = await openTenderDocs(page)
       await docs.locator('input[type=file]').setInputFiles({ name: 'Спецификация ЭТМ.xlsx', mimeType: XLSX_MIME, buffer: packXlsx() })
-      await docs.getByRole('list', { name: 'Файлы тендера' }).getByText('строк с ценой:', { exact: false }).waitFor({ timeout: 60000 })
+      await fileChips(docs).locator('.sp-td-file', { hasText: 'Спецификация ЭТМ.xlsx' }).waitFor({ timeout: 60000 })
       await closeTenderDocs(page)
-      // Подсказка над таблицей ведёт в то же окно.
-      await page.getByRole('button', { name: 'Посмотреть и подставить' }).waitFor()
+      // Новые цены из документов — числом на кнопке окна.
+      await page.getByRole('button', { name: /^Счета и КП \(1\) · новых цен: \d+/ }).waitFor()
       await enter(page.getByLabel(price('Хомут монтажный', 'ОВ')), '500')
       const row = rowOf(page, 'Хомут монтажный', 'ОВ')
       await row.getByText('Похоже, это цена за упак (50 шт): за шт — 10,00 ₽.', { exact: false }).waitFor({ timeout: 30000 })
@@ -1386,17 +1476,19 @@ describe('Расценка снабжением: таблица', { skip: !launc
       // Фильтр «Изменения ВОР»: только изменённые строки и предложения перенести цену.
       await page.getByRole('button', { name: 'Изменения ВОР (4)' }).click()
       assert.equal(await page.getByLabel(price('Кран шаровой Ду15', 'ВК')).count(), 0, 'неизменённые скрыты')
-      await rowOf(page, 'Труба медная Ø12,7', 'ОВ').waitFor()
-      await page.getByRole('button', { name: 'Все', exact: true }).click()
+      await rowOf(page, TRUBA, TWO).waitFor()
+      await page.getByRole('button', { name: /^Все \(/ }).click()
 
       // Цена убранной «трубы (бухта)» сама на «трубу» не перешла — предложение перенести.
       assert.equal(await rateOf(page, 'Труба медная Ø12,7', 'ОВ'), null)
-      const pipe = rowOf(page, 'Труба медная Ø12,7', 'ОВ')
+      const pipe = rowOf(page, TRUBA, TWO)
       await pipe.getByText('похоже на убранную из ВОР «Труба медная Ø12,7 (бухта)»', { exact: false }).waitFor()
-      await pipe.getByRole('button', { name: 'Перенести цену «Труба медная Ø12,7 (бухта)» на «Труба медная Ø12,7»' }).click()
+      await pipe.getByRole('button', { name: `Перенести цену «Труба медная Ø12,7 (бухта)» на «${TRUBA}»` }).click()
       await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.find((r) => r.id === 'rate-p-old')?.material_name === 'Труба медная Ø12,7')
-      await page.waitForFunction((l) => /950,00/.test(document.querySelector(`[aria-label="${l}"]`)?.value || ''), price('Труба медная Ø12,7', 'ОВ'))
+      await page.waitForFunction((l) => /950,00/.test(document.querySelector(`[aria-label="${l}"]`)?.value || ''), price(TRUBA, TWO))
       await page.getByText('перенесена на «Труба медная Ø12,7»', { exact: false }).waitFor()
+      // Цена перенесена на позицию одного ВОР — строка говорит, что не во всех.
+      await pipe.getByText('цена не во всех ВОР', { exact: false }).waitFor()
       assert.equal(await page.locator('.sp-orphans').count(), 0, 'цен без позиции не осталось')
       assert.equal((await rateOf(page, 'Труба медная Ø12,7', 'ОВ')).id, 'rate-p-old', 'та же строка цены')
 
@@ -1441,7 +1533,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
       await dialog.getByRole('button', { name: 'Да, это новая версия' }).click()
       await page.waitForFunction(() => !window.__fakeDb.tender_supply_sources.some((s) => s.estimate_name === 'ВОР_ОВ изм.1'))
       await q.first().waitFor({ state: 'detached' })
-      await page.getByText('файл «ВОР_ОВ изм.1.xlsx», лист «Материалы»', { exact: false }).waitFor()
+      assert.match(await (await openVors(page)).locator('.sp-vor-line', { hasText: 'ВОР «ОВ»' }).getAttribute('title'), /файл «ВОР_ОВ изм\.1\.xlsx», лист «Материалы»/)
       const rpc = await page.evaluate(() => window.__supabaseStats.requests.filter((r) => r.table === 'rpc:supply_vor_adopt').map((r) => r.args))
       assert.deepEqual(rpc, [{ p_tender: 'tender-p', p_new: 'ВОР_ОВ изм.1', p_old: 'ОВ' }])
       await page.getByText('ВОР «ОВ» — новая версия из файла «ВОР_ОВ изм.1.xlsx»', { exact: false }).waitFor()
@@ -1480,10 +1572,10 @@ describe('Расценка снабжением: таблица', { skip: !launc
   it('таблицы версий ВОР нет (миграция 20261029 не применена) — расценка работает как раньше', async () => {
     const { page, context, errors } = await openPage('&noVersions=1')
     try {
-      await page.getByText('ВОР «ОВ»', { exact: true }).waitFor()
+      await vors(page, 'ВОРы тендера: 2').waitFor()
       assert.equal(await page.getByRole('button', { name: 'Версии ВОР' }).count(), 0)
       assert.equal(await page.locator('.sp-version-q, .sp-rev-banner').count(), 0)
-      assert.match(await summary(page), /Расценено1из6/)
+      await pricedCount(page, 1, 5)
       assert.deepEqual(errors, [])
     } finally {
       await context.close()

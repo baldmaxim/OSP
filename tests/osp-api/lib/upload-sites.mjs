@@ -28,6 +28,7 @@ export const UPLOAD_SITES = [
   { file: 'src/components/ObjectDgpFiles.jsx', calls: 1, owner: 'object', table: 'objects' }, // ДГП во вкладке «Смета»
   { file: 'src/components/CounterpartyCardChip.jsx', calls: 1, owner: 'counterparty', table: 'counterparties' },
   { file: 'src/pages/DcRequestsPage.jsx', calls: 1, owner: 'dc_request', table: 'dc_requests' },
+  { file: 'src/services/dpRequests.js', calls: 1, owner: 'dp_request', table: 'dp_requests' }, // понятийное соглашение и документ договора (20261227)
   { file: 'src/components/ConceptAgreementCell.jsx', calls: 1, owner: 'contract', table: 'contracts' },
   { file: 'src/components/ContractClausesTab.jsx', calls: 1, owner: 'contract', table: 'contracts' },
 ]

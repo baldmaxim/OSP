@@ -1,6 +1,7 @@
 // Общие константы раздела «Заявки на проверку ДП/ДС».
 // Держим здесь всё, что нужно и доске, и реестру, и карточке — чтобы статусы,
 // подписи и цвета не разъезжались между тремя видами (как в taskHelpers.js).
+import { ROLES } from '../contexts/roleConstants.js'
 import { daysUntilDate, splitChecklistLines } from './taskHelpers.js'
 
 // Порядок в массиве = порядок колонок канбана (как на доске, где отдел вёл
@@ -148,17 +149,11 @@ export function normalizeLabels(list) {
   return uniqueTexts(list, MAX_LABELS, 60)
 }
 
-// Исполнители без учётной записи (миграция 20261124): имена текстом, рядом с assignee_ids. Не больше 20 — как в базе.
-export const MAX_MANUAL_ASSIGNEES = 20
-export function normalizeManualAssignees(list) {
-  return uniqueTexts(list, MAX_MANUAL_ASSIGNEES, 120)
-}
-
-// Подсказки при вводе — то, чем уже пользуются: частые первыми.
-function frequentTexts(lists) {
+// Подсказки меток — то, чем уже пользуются: частые первыми.
+export function labelSuggestions(requests) {
   const counts = new Map()
-  for (const list of lists) {
-    for (const text of list || []) {
+  for (const request of requests || []) {
+    for (const text of request.labels || []) {
       const key = text.toLowerCase()
       const cur = counts.get(key)
       counts.set(key, { text: cur?.text || text, n: (cur?.n || 0) + 1 })
@@ -168,25 +163,41 @@ function frequentTexts(lists) {
     .sort((a, b) => b.n - a.n || a.text.localeCompare(b.text, 'ru'))
     .map(x => x.text)
 }
-export const labelSuggestions = (requests) => frequentTexts((requests || []).map(r => r.labels))
-export const manualAssigneeSuggestions = (requests) => frequentTexts((requests || []).map(r => r.manual_assignees))
 
-// Все исполнители заявки подписями: nameOf(id) — имя сотрудника из справочника.
-export function assigneeNames(request, nameOf) {
-  return [...(request?.assignee_ids || []).map(id => nameOf(id)), ...(request?.manual_assignees || [])]
+// Исполнитель заявки — только действующий юрист ОСП (решение пользователя 05.11.2026). Заблокированных в справочнике
+// сотрудников нет: там только подтверждённые учётки, а блокировка снимает подтверждение (ограничение в user_roles).
+// Поэтому всё считается по справочнику: уволили юриста или сменили ему роль — со всех карточек он пропадает сам.
+// Кто стоял исполнителем раньше (другие сотрудники, колонка manual_assignees с прежней доски), остаётся в базе, но не
+// показывается и не считается исполнителем.
+const isAssigneeStaff = (employee) => employee?.role === ROLES.LAWYER
+
+export function shownAssigneeIds(request, employees) {
+  return (request?.assignee_ids || []).filter(id => isAssigneeStaff(employees?.get(id)))
 }
 
-// Фильтр «Исполнитель»: сотрудник — по id, вписанный руками — по имени, без учёта регистра. «Без исполнителя» — когда
-// нет ни тех, ни других: заявка с вписанным именем исполнителя имеет.
+// Кого можно выбрать: варианты для выпадающего списка, по алфавиту.
+export function assigneeStaffOptions(employees) {
+  return [...(employees?.values() || [])]
+    .filter(isAssigneeStaff)
+    .map(e => ({ value: e.user_id, label: e.display_name || e.full_name || e.email || 'Без имени' }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+}
+
+// Что записать после формы: выбранные плюс те, кого форма не показывала. Правка заявки не должна менять то, чего человек
+// не видел: и прежних исполнителей, и всех сразу, если справочник не загрузился. Порядок прежний: иначе в истории заявки
+// появлялась бы смена исполнителей, которой не было.
+export function assigneeIdsToSave(prevIds, selected, employees) {
+  const chosen = new Set(selected)
+  const kept = (prevIds || []).filter(id => chosen.has(id) || !isAssigneeStaff(employees?.get(id)))
+  return [...kept, ...selected.filter(id => !kept.includes(id))]
+}
+
+// Фильтр «Исполнитель»: «Без исполнителя» — когда на карточке нет ни одного.
 export const NO_ASSIGNEE = '__none'
-export const manualAssigneeKey = (name) => `manual:${String(name).toLowerCase()}`
-export function matchesAssignees(request, selected) {
+export function matchesAssignees(request, selected, employees) {
   if (!selected?.length) return true
-  const ids = request?.assignee_ids || []
-  const names = (request?.manual_assignees || []).map(manualAssigneeKey)
-  return selected.some(a => (a === NO_ASSIGNEE
-    ? ids.length === 0 && names.length === 0
-    : ids.includes(a) || names.includes(a)))
+  const ids = shownAssigneeIds(request, employees)
+  return selected.some(a => (a === NO_ASSIGNEE ? ids.length === 0 : ids.includes(a)))
 }
 
 // Обсуждение и шаги заявки (миграция 20261124). Пределы — как ограничения в базе.
@@ -255,6 +266,31 @@ export function createdShort(value) {
 export const fmtDocDateTime = (value) => (value ? new Date(value).toLocaleString('ru-RU', {
   day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
 }) : '')
+
+// Значение поля datetime-local: время браузера, как и на экране.
+export function toDateTimeInput(value) {
+  const d = value ? new Date(value) : null
+  if (!d || Number.isNaN(d.getTime())) return ''
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+// Дата создания и автор заявки — правка администратора (решение пользователя 05.11.2026; в базе —
+// триггер doc_check_requests_created_guard). В запись идёт только изменённое: поле показывает время до минуты, и
+// неизменённая дата не должна терять секунды и появляться в истории заявки.
+export const MAX_CREATOR_NAME = 200
+export function createdFieldsPatch(request, createdAtInput, creatorInput, now = Date.now()) {
+  const patch = {}
+  if (createdAtInput !== toDateTimeInput(request?.created_at)) {
+    const at = new Date(createdAtInput)
+    if (!createdAtInput || Number.isNaN(at.getTime())) return { error: 'Укажите дату создания заявки' }
+    if (at.getTime() > now) return { error: 'Дата создания не может быть позже текущего времени' }
+    patch.created_at = at.toISOString()
+  }
+  const name = String(creatorInput ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_CREATOR_NAME) || null
+  if (name !== (request?.created_by_name || null)) patch.created_by_name = name
+  return { patch }
+}
 
 // «ДП № 12 от 01.03.2026» — одна строка-подпись документа для карточки и списка.
 export function docTitle(req) {
@@ -333,7 +369,7 @@ const EMBED = `,
   objects(id, name, status),
   counterparties(id, name)`
 // Поля карточки (миграция 20261124): та же миграция заводит обсуждение и шаги, поэтому их колонки — признак всего набора.
-export const CARD_FIELDS = ['email_link', 'manual_assignees']
+export const CARD_FIELDS = ['email_link']
 // Что читать — от полного набора к прежнему: первая выборка, на которую база ответила без 42703.
 export const DOC_CHECK_SELECTS = [
   { board: true, card: true, select: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}, ${CARD_FIELDS.join(', ')}${EMBED}` },
@@ -348,7 +384,7 @@ export function isMissingBoardColumn(err) {
 
 // Строка из базы — к виду доски: массивы вместо NULL (прежняя база их не отдаёт).
 export function normalizeRequest(r) {
-  return { ...r, assignee_ids: r.assignee_ids || [], labels: r.labels || [], manual_assignees: r.manual_assignees || [] }
+  return { ...r, assignee_ids: r.assignee_ids || [], labels: r.labels || [] }
 }
 
 // Заявки с числом файлов, шагов и сообщений. Заявка, у которой числа прежние, остаётся тем же объектом (cache — WeakMap
@@ -394,6 +430,8 @@ export const FIELD_LABEL = {
   color: 'Цвет',
   labels: 'Метки',
   archived_at: 'Архив',
+  created_at: 'Дата создания',
+  created_by_name: 'Кто создал',
 }
 
 // Поле изменилось? Массивы (исполнители, метки) — по составу и порядку.

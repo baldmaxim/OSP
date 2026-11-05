@@ -14,6 +14,7 @@ import {
   VAT_OPTIONS, VAT_FIELD_CODE, parseVatAnswer, vatIncluded, vatLabel, vatFromAnswers, parseOptions, answerAllowed,
 } from '../../src/utils/bidForm.js'
 import { readMainConditions } from '../../src/utils/bidVor.js'
+import { ANCHOR_HEADER, TEMPLATE_HEADERS, matchProposalRows } from '../../src/utils/contractorProposal.js'
 
 function bytesOf(sheets) {
   const wb = XLSX.utils.book_new()
@@ -266,5 +267,30 @@ describe('Цены из файла подрядчика', () => {
     ], groups)
     assert.ok(matched[0].match)
     assert.equal(matched[1].match, null)
+  })
+})
+
+describe('Шаблон КП: чужой файл не читается', () => {
+  const items = [{ id: 'i1', row_number: 1, cost_name: 'Монтаж', work_volume: 2, estimate_name: 'Основная смета' }]
+
+  it('файл другого вида (например, сам ВОР): строки не читаются, а цены из чужих колонок не появляются', () => {
+    const vor = [['№ п/п', 'Наименование', 'Ед. изм.', 'Объём', 'Цена', 'Итого', '', '', 100, 200], [1, 'Монтаж', 'м2', 2, 100, 200, '', '', 100, 200]]
+    const res = matchProposalRows(vor, items)
+    assert.equal(res.notTemplate, true)
+    assert.deepEqual(res.rows, [])
+  })
+
+  it('шаблон без служебного столбца и с ним читается как раньше', () => {
+    const headers = TEMPLATE_HEADERS.filter((h) => h !== ANCHOR_HEADER)
+    const noAnchor = matchProposalRows([headers, [1, '', '', 'Монтаж', '', 'м2', 2, '', 100, 50]], items)
+    assert.equal(noAnchor.notTemplate, undefined)
+    assert.equal(noAnchor.matchedBy, 'number')
+    assert.equal(noAnchor.rows[0].total_unit_price, 150)
+    const row = Array(TEMPLATE_HEADERS.length).fill('')
+    row[8] = 100
+    row[TEMPLATE_HEADERS.indexOf(ANCHOR_HEADER)] = 'i1'
+    const anchored = matchProposalRows([TEMPLATE_HEADERS, row], items)
+    assert.equal(anchored.matchedBy, 'anchor')
+    assert.equal(anchored.rows[0].unit_price_materials, 100)
   })
 })

@@ -28,11 +28,11 @@ import { baseTotalFromFull, composePrice, rateBasePrice, rateDelivery, ratePrice
 import { positionsFromEstimate } from '../../utils/vorMaterials'
 import { VOR_PARSER_VERSION } from '../../utils/vorFiles'
 import {
-  estimateVersion, fileVersion, identicalTargets, planCleanup, planFileImports, planTabImports,
+  estimateVersion, fileVersion, planCleanup, planFileImports, planTabImports,
 } from '../../utils/supplyAutoImport'
-import { matchDocItems, offerMatches, offerPrice, positionGroups } from '../../utils/supplyDocMatch'
-import { autoPickRows, offersByGroup, otherUnitIndex, otherUnitPrices, suspectPrice } from '../../utils/supplyAutoPick'
-import { readOffer } from '../../utils/supplyOffers'
+import { mergeSamePositions, offerMatches, offerPrice, positionGroups } from '../../utils/supplyDocMatch'
+import { autoPickRows, isSure, offersByGroup, otherUnitIndex, otherUnitPrices, suspectPrice } from '../../utils/supplyAutoPick'
+import { lineForGroup, lineNotForGroup, offerInRoubles, offerNotes, offerWithVat, readOffer } from '../../utils/supplyOffers'
 import {
   carrySuggestions, carryTargets, composeChanges, revisionTitle, unitMismatch, versionQuestions,
 } from '../../utils/supplyVorVersions'
@@ -46,14 +46,13 @@ import '../../styles/workUi.css'
 const SupplyImportDialog = lazy(() => import('./SupplyImportDialog'))
 const loadSheetReader = () => import('../../utils/vorMaterialsSheet')
 // Распознавание счёта / КП поставщика (Excel — xlsx, PDF — pdf.js) — тоже только по требованию.
-const SupplyDocImportDialog = lazy(() => import('./SupplyDocImportDialog'))
 const SupplyTenderDocsDialog = lazy(() => import('./SupplyTenderDocsDialog'))
 const S3DocumentPreview = lazy(() => import('../S3DocumentPreview'))
 // История версий ВОР (миграция 20261029) — по требованию.
 const SupplyVersionsDialog = lazy(() => import('./SupplyVersionsDialog'))
 // Цены из документа поставщика пишутся по нескольку разом — не сотни запросов одновременно.
 const DOC_APPLY_PARALLEL = 4
-// Файл-документ больше этого не читаем (окно распознавания — тот же предел): прикрепить можно, цены — вручную.
+// Файл-документ больше этого не читаем: прикрепить можно, цены — вручную.
 const DOC_READ_MAX_BYTES = 30 * 1024 * 1024
 
 // Расценка материалов ВОР снабжением (миграция 20261020) — одна таблица в двух местах: вкладка «Расценки
@@ -64,28 +63,28 @@ const DOC_READ_MAX_BYTES = 30 * 1024 * 1024
 // тендера, если ни один не дал позиций — вкладка «ВОР» карточки (utils/supplyAutoImport). Записывать может
 // только тот, у кого право правки, — у остальных подсказка, что ВОР загрузится при открытии снабжением.
 // Не загрузилось — плашка с причиной и что сделать; причина запоминается (localStorage), и тот же файл не
-// скачивается и не разбирается при каждом открытии. Все ВОР — в одной таблице, у каждого строка-шапка.
+// скачивается и не разбирается при каждом открытии.
+//
+// Таблица — одна строка на позицию: одинаковые позиции всех ВОР сложены, не складываются, только если уверенности меньше 90 %
+// (utils/supplyDocMatch.mergeSamePositions; решение пользователя 05.11.2026). Цена строки пишется всем её ВОР: у каждого ВОР по-прежнему
+// своя строка цены и свой объём, поэтому карточка, «Сравнение КП» и реестр СУ-10 работают как раньше. ВОРы — под спойлером над таблицей.
 //
 // Цены — tender_vor_supply_rates основного тендера: введённое сразу видно в карточке и в «Сравнении КП», в
 // реестре «Расценки от снабжения СУ-10» — после его пересчёта (до 10 минут). Сохранение — само (через секунду
 // после ввода, при уходе из поля), с версией строки: чужая правка не перетирается молча. Последняя известная
 // версия каждой строки — в ratesRef, который обновляется сразу при записи (не на следующей отрисовке): очередь
 // записей одной строки и опрос не работают со старой версией. Сохранённая цена — зелёная галочка в строке.
-// Чужие правки — опросом журнала раз в 20 с: перечитываются только изменившиеся строки. Цена позиции
-// подставляется в такие же позиции других ВОР, где цены нет (и туда, куда её подставили за этот сеанс, если
-// там ничего не меняли).
+// Чужие правки — опросом журнала раз в 20 с: перечитываются только изменившиеся строки.
 //
 // Колонка «Документ» — чек, счёт или КП поставщика (tender_supply_links, миграция 20261022): к любой позиции, с ценой
 // или без; одной позиции — «+ документ» в строке, нескольким сразу — отметить строки и «Документ». Документ — ссылка
 // (адрес, сетевой путь) или файл в хранилище документов тендера (миграция 20261025; без неё — только ссылка). Таблицы
 // ссылок ещё нет в базе — колонки нет, остальное работает как раньше.
 //
-// «Цены из счёта / КП» — распознавание документа поставщика в Excel или PDF (SupplyDocImportDialog): строки с ценами
-// сопоставляются с позициями всех ВОР (точно по наименованию, иначе по похожести), человек проверяет, и цены пишутся
-// как ввод руками — той же очередью записей с версией строки; файл становится документом позиций, получивших цену.
-// Документ можно и не применять, а добавить «в похожие цены» (один после проверки или сразу несколько без неё):
-// распознанные строки хранятся вместе с файлом (utils/supplyOffers), у похожих позиций — «цены поставщиков» (и у
-// расценённых — сравнить КП), «Взять» ставит цену и прикладывает файл документом позиции.
+// «Счета и КП» (SupplyTenderDocsDialog): закинули документ — строки с ценами сами находят позиции, человек сравнивает и применяет; цены
+// пишутся как ввод руками — той же очередью записей с версией строки, файл становится документом позиций. Файл, загруженный к позиции
+// (ячейка «Документ»), сразу открывает это окно. Строки хранятся вместе с файлом (utils/supplyOffers), у позиций — ещё и «цены
+// поставщиков» в меню похожих.
 //
 // Цены из других тендеров (миграция 20261023). Одинаковые позиции без цены (то же наименование по ключу и та же
 // ед. изм.) получают самую свежую цену другого тендера не старше 3 месяцев сами — при открытии у того, у кого право
@@ -102,7 +101,7 @@ const DOC_READ_MAX_BYTES = 30 * 1024 * 1024
 // шапке ВОР — что случилось, в строках — «новая позиция», «было …» у объёма и ед. изм.; фильтр «Изменения». Таблицы
 // версий нет в базе — ничего этого нет, остальное работает как раньше.
 //
-// Больше VIRTUALIZE_FROM строк (у больших тендеров до 2,3 тыс. позиций) — в таблице только видимые строки
+// Больше VIRTUALIZE_FROM строк (у больших тендеров больше тысячи позиций) — в таблице только видимые строки
 // (VirtualTableBody, прокрутка внутри, шапка и итог закреплены): иначе каждое сохранение заставляло браузер
 // заново раскладывать и рисовать всю таблицу — секунды на слабом компьютере.
 
@@ -119,6 +118,8 @@ const posKey = (estimateName, k) => `${estimateName}∣${k}`
 const draftsKey = (mainId) => `supply-pricing-drafts:${mainId}`
 // «Не то» у предложения перенести цену убранной позиции — помнится в браузере, чтобы не спрашивать снова.
 const carrySkipKey = (mainId) => `supply-carry-skip:${mainId}`
+// «Разделить» у строки, сложенной из разных записей, — помнится в браузере.
+const splitKeyOf = (mainId) => `supply-split:${mainId}`
 // Документ позиции для выгрузки: адрес или «файл: имя».
 const linkLabel = (link, docs) => (!link ? '' : link.s3_document_id ? `файл: ${docs.get(link.s3_document_id)?.file_name || 'загружен на сайт'}` : link.url || '')
 // Признак «ссылки менялись» — как loadLinksMarker: сколько их и время последней правки.
@@ -143,11 +144,12 @@ const blockStrayDrop = {
 }
 // Своя цена позиции за единицу (не скопированная) — или null.
 const ownPriceOf = (rate) => (rate && !rate.source_kind ? roundMoney(rateUnitPrice(rate)) : null)
-// Цены поставщиков, которые не совпадают со своей ценой позиции (её саму взяли из документа — не предлагаем снова).
+// Сколько цен поставщиков предложить: у позиции без цены — все; у расценённой — только той же позиции и не совпадающие со своей ценой
+// (её саму взяли из документа — не предлагаем снова; просто похожие строки тут только мешают).
 const otherOffers = (offers, rate) => {
   if (!offers) return 0
   const own = ownPriceOf(rate)
-  return own == null ? offers.length : offers.filter((o) => offerPrice(o) !== own).length
+  return own == null ? offers.length : offers.filter((o) => isSure(o) && offerPrice(o) !== own).length
 }
 
 // Почему ВОР не загрузился и что сделать.
@@ -263,6 +265,71 @@ function rowView(position, rate, draft) {
   }
 }
 
+// Строка таблицы — одна на позицию, сложенная из целей (позиция в каждом ВОР). Объём позиции показанных ВОР.
+function summedPosition(targets) {
+  if (targets.length === 1) return targets[0].position
+  const first = targets[0].position
+  if (first.units) {
+    const byUnit = new Map()
+    for (const t of targets) {
+      for (const u of t.position.units || [t.position]) {
+        const key = String(u.unit || '').toLowerCase()
+        const cur = byUnit.get(key) || { unit: u.unit, volume: null }
+        if (u.volume != null) cur.volume = (cur.volume ?? 0) + Number(u.volume)
+        byUnit.set(key, cur)
+      }
+    }
+    return { ...first, units: [...byUnit.values()] }
+  }
+  const list = targets.map((t) => t.position.volume).filter((v) => v != null)
+  return { ...first, volume: list.length ? list.reduce((s, v) => s + Number(v), 0) : null }
+}
+
+// Что показать в строке: цена — ведущей цели (черновик важнее; своя цена — важнее скопированной; новая — важнее старой), сумма и объём
+// — всех показанных. Состояние записи — самое тревожное среди целей.
+const DRAFT_ORDER = ['conflict', 'error', 'saving', 'queued']
+const newestRated = (list) => [...list].sort((a, b) => String(b.rate.updated_at || '').localeCompare(String(a.rate.updated_at || '')))[0] || null
+function composeRow(base, targets, vorFilter) {
+  const { group, index, p } = base
+  const shown = vorFilter ? targets.filter((t) => t.doc === vorFilter) : targets
+  const first = targets[0]
+  const withDraft = DRAFT_ORDER.map((st) => targets.find((t) => t.draft?.status === st)).find(Boolean) || null
+  const rated = targets.filter((t) => t.rate)
+  const inShown = (list) => list.filter((t) => shown.includes(t))
+  const ownRated = rated.filter((t) => !t.rate.source_kind)
+  const lead = withDraft || newestRated(inShown(ownRated)) || newestRated(inShown(rated)) || newestRated(ownRated) || newestRated(rated) || shown[0] || first
+  let view = lead.view
+  if (targets.length > 1) {
+    const totals = shown.map((t) => t.view.total).filter((v) => v != null)
+    const dTotals = shown.map((t) => t.view.deliveryTotal).filter((v) => v != null)
+    const d = lead.view.delivery
+    view = {
+      ...lead.view,
+      volume: p.units || p.volume == null ? null : Number(p.volume),
+      total: totals.length ? roundMoney(totals.reduce((s, v) => s + v, 0)) : null,
+      volumeChanged: shown.some((t) => t.view.volumeChanged),
+      priced: lead.view.priced || shown.some((t) => t.view.priced),
+      delivery: d?.mode === 'total' && dTotals.length ? { mode: 'total', value: roundMoney(dTotals.reduce((s, v) => s + v, 0)) } : d,
+      deliveryTotal: dTotals.length ? roundMoney(dTotals.reduce((s, v) => s + v, 0)) : null,
+    }
+  }
+  const prices = [...new Set(rated.map((t) => roundMoney(rateUnitPrice(t.rate))))]
+  return {
+    key: first.key, doc: first.doc, p, index, group, targets, lead, rate: lead.rate, draft: withDraft?.draft || null, view,
+    vors: [...new Set(targets.map((t) => t.doc))],
+    vorLabel: targets.length === 1 ? `ВОР «${first.doc}»` : `ВОР: ${targets.length}`,
+    shownCount: shown.length,
+    duplicates: targets.flatMap((t) => t.duplicates),
+    change: targets.find((t) => t.change)?.change || null,
+    carry: targets.find((t) => t.carry)?.carry || null,
+    unitOff: targets.find((t) => t.unitOff)?.unitOff || null,
+    allPriced: shown.every((t) => t.view.priced),
+    partial: rated.length > 0 && rated.length < targets.length,
+    unequal: prices.length > 1,
+    prices,
+  }
+}
+
 // Расценка позиции по ключу «ВОР∣ключ наименования»: самая свежая (дубли из Excel — ниже).
 function rateIn(list, key) {
   const [estimateName, k] = key.split('∣')
@@ -284,7 +351,7 @@ const storeDrafts = (mainId, drafts) => {
   try {
     const keep = {}
     for (const [k, d] of Object.entries(drafts)) {
-      if (ACTIVE_STATUSES.has(d.status) && !d.auto) keep[k] = { mode: d.mode, value: d.value, delivery: d.delivery, estimateName: d.estimateName, at: d.at, source: d.source || undefined }
+      if (ACTIVE_STATUSES.has(d.status)) keep[k] = { mode: d.mode, value: d.value, delivery: d.delivery, estimateName: d.estimateName, at: d.at, source: d.source || undefined }
     }
     if (Object.keys(keep).length) localStorage.setItem(draftsKey(mainId), JSON.stringify(keep))
     else localStorage.removeItem(draftsKey(mainId))
@@ -329,7 +396,9 @@ export default function SupplyPricingPanel({
   const [loadedItems, setLoadedItems] = useState(null)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
-  const [collapsed, setCollapsed] = useState(() => new Set())
+  const [vorFilter, setVorFilter] = useState('') // показать только позиции этого ВОР
+  const [deliveryOpen, setDeliveryOpen] = useState(false) // колонка «Доставка», пока ни у одной цены её нет
+  const [dateOpen, setDateOpen] = useState(false) // фильтр по дате цены
   const [flash, setFlash] = useState({}) // key → { kind: 'saved' | 'remote' | 'auto', by, at, from }
   const [conflict, setConflict] = useState(null)
   const [historyFor, setHistoryFor] = useState(null)
@@ -342,18 +411,16 @@ export default function SupplyPricingPanel({
   const [lastSavedAt, setLastSavedAt] = useState(null)
   const [bindTarget, setBindTarget] = useState({})
   const [links, setLinks] = useState(null) // null — таблицы ссылок ещё нет в базе (миграция 20261022)
-  const [selected, setSelected] = useState(() => new Set()) // отмеченные позиции (ключи «ВОР∣ключ»)
-  const [linkDialog, setLinkDialog] = useState(null) // { targets }
+  const [selected, setSelected] = useState(() => new Set()) // отмеченные строки (row.key)
+  const [linkDialog, setLinkDialog] = useState(null) // { targets, rowCount, title, vors }
   const [linkBusy, setLinkBusy] = useState(false)
   const [linkError, setLinkError] = useState('')
   const linksMarkerRef = useRef(null)
   // Файлы-документы позиций (id → строка s3_documents): имя и ключ для просмотра. Файл бывает и другого тендера.
   const [linkDocs, setLinkDocs] = useState(() => new Map())
   const [preview, setPreview] = useState(null) // файл документа в окне просмотра
-  const [docImport, setDocImport] = useState(null) // { groups, preset } — проверка одного файла построчно; файл уже прочитан
-  const [tenderDocs, setTenderDocs] = useState(null) // { files } — окно «Счета и КП тендера»; files — брошенные на таблицу
-  const [autoPickHidden, setAutoPickHidden] = useState(false) // «скрыть» у подсказки над таблицей, до следующего открытия
-  // Документы поставщиков «в похожие цены»: [{ doc, offer }] (utils/supplyOffers); null — ещё не загружены.
+  const [tenderDocs, setTenderDocs] = useState(null) // { files, attachTo } — окно «Счета и КП тендера»: файлы, которые уже выбрали, и к каким позициям они
+  // Документы поставщиков: [{ doc, offer }] (utils/supplyOffers); null — ещё не загружены.
   const [offerDocs, setOfferDocs] = useState(null)
   // Файлы тендера без цен: [{ doc, failed }] — не прочитались, фото и прочее; failed null — читается.
   const [otherDocs, setOtherDocs] = useState([])
@@ -385,13 +452,11 @@ export default function SupplyPricingPanel({
 
   const mainId = ctx?.mainId || null
   const editable = canEditRole && !!ctx && !ctx.locked && !missing
-  const docViewsRef = useRef([])
   const inflight = useRef(new Set())
   const queued = useRef(new Map())
   const retryTimers = useRef(new Map())
   const recentlyDeleted = useRef(new Map())
   const recentLocal = useRef(new Map())
-  const autoFilled = useRef(new Map()) // key → { id, version } — цену подставили мы, и её с тех пор не меняли
   const logIdRef = useRef(null)
   const sourcesSigRef = useRef(null)
   const runSaveRef = useRef(null)
@@ -503,7 +568,7 @@ export default function SupplyPricingPanel({
   useEffect(() => { if (mainId) storeDrafts(mainId, drafts) }, [mainId, drafts])
   useEffect(() => {
     const onBeforeUnload = (e) => {
-      if (Object.values(draftsRef.current).some((d) => ACTIVE_STATUSES.has(d.status) && !d.auto)) {
+      if (Object.values(draftsRef.current).some((d) => ACTIVE_STATUSES.has(d.status))) {
         e.preventDefault()
         e.returnValue = ''
       }
@@ -702,7 +767,7 @@ export default function SupplyPricingPanel({
     }
   }, [])
 
-  // Документы поставщиков «в похожие цены» — при открытии, после своих загрузок и удалений, при возврате на вкладку
+  // Документы поставщиков — при открытии, после своих загрузок и удалений, при возврате на вкладку
   // браузера (коллега мог добавить КП; не чаще раза в минуту). Не загрузились — таблица работает без цен поставщиков.
   const offersAt = useRef(0)
   const reloadOffers = useCallback(async (throttled = false) => {
@@ -743,27 +808,37 @@ export default function SupplyPricingPanel({
   const sourceViews = useMemo(() => [...sources, ...tabFallback]
     .map((s) => ({ source: s, name: s.estimate_name, positions: mergePositions(s.positions) })), [sources, tabFallback])
 
-  // Цены поставщиков по позициям («ВОР∣ключ» → [{ line, score, exact, picked, unitOk }]): строки документов «в
-  // похожие цены» → похожие позиции (utils/supplyDocMatch.offerMatches). Сначала выбранные при загрузке и с тем же
-  // наименованием, затем самые похожие, при равенстве — дешевле. Пересчёт — только при смене документов или позиций,
-  // не при каждой цене.
-  const offerLineCounts = useMemo(() => new Map((offerDocs || []).map((x) => [x.doc.id, x.offer.lines.length])), [offerDocs])
+  // Позиции таблицы: одинаковые позиции всех ВОР — одной строкой (utils/supplyDocMatch.mergeSamePositions), что человек разделил —
+  // помнит браузер. От них же — цены поставщиков и окно счетов. Пересчёт — только при смене позиций, не при каждой цене.
+  const [splitKeys, setSplitKeys] = useState(() => new Set())
+  useEffect(() => {
+    if (!mainId) return
+    try { setSplitKeys(new Set(JSON.parse(localStorage.getItem(splitKeyOf(mainId)) || '[]'))) } catch { setSplitKeys(new Set()) }
+  }, [mainId])
+  const splitRow = (row) => setSplitKeys((prev) => {
+    const next = new Set([...prev, row.group.key, ...(row.group.sameAs || []).map((s) => s.key)])
+    try { localStorage.setItem(splitKeyOf(mainId), JSON.stringify([...next].slice(-500))) } catch { /* только на этот сеанс */ }
+    return next
+  })
+  const tenderGroups = useMemo(() => mergeSamePositions(positionGroups(sourceViews), { split: splitKeys }), [sourceViews, splitKeys])
+
+  // Цены поставщиков по позициям («ВОР∣ключ» → [{ line, score, exact, picked, unitOk }]): строки документов тендера → похожие
+  // позиции (utils/supplyDocMatch.offerMatches). Сначала выбранные и с тем же наименованием, затем самые похожие, при равенстве —
+  // дешевле. Пересчёт — только при смене документов или позиций, не при каждой цене.
   const offersByKey = useMemo(() => {
     const out = new Map()
     if (!offerDocs?.length) return out
     const lines = []
     for (const { doc, offer } of offerDocs) if (!offer.currency) for (const line of offer.lines) lines.push({ ...line, doc })
     const rank = (o) => (o.picked || o.exact ? 2 : o.score)
-    for (const list of offerMatches(lines, positionGroups(sourceViews)).values()) {
+    for (const list of offerMatches(lines, tenderGroups).values()) {
       const sorted = list.sort((a, b) => rank(b) - rank(a) || offerPrice(a) - offerPrice(b))
       for (const t of sorted[0].group.targets) out.set(posKey(t.doc, t.position.k), sorted)
     }
     return out
-  }, [offerDocs, sourceViews])
+  }, [offerDocs, tenderGroups])
 
-  // Автовыбор: цены всех документов тендера по позициям (utils/supplyAutoPick); сколько позиций можно заполнить — для
-  // подсказки над таблицей. Пересчёт — только при смене документов и позиций; число — ещё и при смене цен.
-  const tenderGroups = useMemo(() => positionGroups(sourceViews), [sourceViews])
+  // Автовыбор: цены всех документов тендера по позициям (utils/supplyAutoPick); сколько позиций можно заполнить — на кнопке окна.
   const pickByGroup = useMemo(() => offersByGroup(offerDocs || [], tenderGroups), [offerDocs, tenderGroups])
   // Цены других тендеров в другой ед. изм.: сами не подставляются, в меню похожих — с пометкой. Считаются только для показанных
   // строк (otherUnitFor), результат — в памяти, пока те же цены и позиции.
@@ -783,7 +858,7 @@ export default function SupplyPricingPanel({
     let list = otherUnitMemo.get(row.key)
     if (!list) {
       const siblings = sourceViews.find((d) => d.name === row.doc)?.positions || []
-      list = otherUnitPrices(row.p, otherIndex, siblings)
+      list = otherUnitPrices(row.targets[0].p, otherIndex, siblings)
       otherUnitMemo.set(row.key, list)
     }
     return list
@@ -800,7 +875,6 @@ export default function SupplyPricingPanel({
     }
     return { ...d, priced, total: roundMoney(total) }
   }), [sourceViews, ratesByKey])
-  docViewsRef.current = docViews
 
   const grand = useMemo(() => docViews.reduce((a, d) => ({
     positions: a.positions + d.positions.length, priced: a.priced + d.priced, total: roundMoney(a.total + d.total),
@@ -879,63 +953,47 @@ export default function SupplyPricingPanel({
   const viewerProblems = useMemo(() => viewerJobs.map((j) => serverFailure(importState, j.doc)).filter(Boolean), [viewerJobs, importState])
   const pendingForViewer = useMemo(() => viewerJobs.filter((j) => !viewerProblems.some((p) => p.doc.id === j.doc.id)), [viewerJobs, viewerProblems])
 
-  const sections = useMemo(() => {
+  // Строки таблицы — одна на позицию (tenderGroups). Основа строки — только от списков: не пересобирается при каждой цене, строки не
+  // перерисовываются зря. Выбран один ВОР — объём и сумма только его, а цена по-прежнему пишется всем ВОР строки.
+  const rowBases = useMemo(() => tenderGroups.map((group, index) => {
+    const shown = vorFilter ? group.targets.filter((t) => t.doc === vorFilter) : group.targets
+    return shown.length ? { group, index, p: summedPosition(shown) } : null
+  }).filter(Boolean), [tenderGroups, vorFilter])
+  const allRows = useMemo(() => rowBases.map((base) => composeRow(base, base.group.targets.map((t) => {
+    const key = posKey(t.doc, t.position.k)
+    const list = ratesByKey.get(key) || []
+    const rate = list[0] || null
+    const draft = drafts[key] || null
+    return {
+      key, doc: t.doc, p: t.position, rate, duplicates: list.slice(1), draft, view: rowView(t.position, rate, draft),
+      change: changesByDoc.get(t.doc)?.get(t.position.k) || null, carry: carry.byTarget.get(key) || null, unitOff: unitMismatch(rate, t.position),
+    }
+  }), vorFilter)), [rowBases, ratesByKey, drafts, changesByDoc, carry, vorFilter])
+  const counts = useMemo(() => {
+    let priced = 0
+    let changed = 0
+    for (const r of allRows) {
+      if (r.allPriced) priced += 1
+      if (r.change || r.carry || r.unitOff) changed += 1
+    }
+    return { all: allRows.length, priced, unpriced: allRows.length - priced, changed }
+  }, [allRows])
+  const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
-    let gi = 0
-    return docViews.map((d) => {
-      const changes = changesByDoc.get(d.name)
-      const rows = d.positions.map((p, index) => {
-        const key = posKey(d.name, p.k)
-        const list = ratesByKey.get(key) || []
-        const rate = list[0] || null
-        const draft = drafts[key] || null
-        const sug = carry.byTarget.get(key) || null
-        return {
-          p, index, key, rate, duplicates: list.slice(1), draft, view: rowView(p, rate, draft), doc: d.name,
-          change: changes?.get(p.k) || null, carry: sug, unitOff: unitMismatch(rate, p),
-        }
-      }).filter((r) => {
-        if (filter === 'changed' && !r.change && !r.carry && !r.unitOff) return false
-        if (q && !r.p.name.toLowerCase().includes(q)) return false
-        if (dateFrom || dateTo) {
-          const d = r.rate?.price_date
-          if (!d || (dateFrom && d < dateFrom) || (dateTo && d > dateTo)) return false
-        }
-        if (filter === 'unpriced') return !r.view.priced
-        if (filter === 'priced') return r.view.priced
-        return true
-      })
-      const open = !collapsed.has(d.name)
-      for (const r of rows) r.gi = open ? gi++ : -1
-      return { doc: d, rows, open }
-    })
-  }, [docViews, ratesByKey, drafts, search, filter, collapsed, dateFrom, dateTo, changesByDoc, carry])
-  // Сколько строк с изменениями (для кнопки фильтра): изменённые позиции, предложения перенести цену, другая ед. изм.
-  const changedCount = useMemo(() => {
-    let n = 0
-    for (const d of docViews) {
-      const changes = changesByDoc.get(d.name)
-      for (const p of d.positions) {
-        const key = posKey(d.name, p.k)
-        if (changes?.get(p.k) || carry.byTarget.has(key) || unitMismatch(ratesByKey.get(key)?.[0] || null, p)) n += 1
+    return allRows.filter((r) => {
+      if (filter === 'changed' && !r.change && !r.carry && !r.unitOff) return false
+      if (q && !r.targets.some((t) => t.p.name.toLowerCase().includes(q))) return false
+      if (dateFrom || dateTo) {
+        const d = r.rate?.price_date
+        if (!d || (dateFrom && d < dateFrom) || (dateTo && d > dateTo)) return false
       }
-    }
-    return n
-  }, [docViews, changesByDoc, carry, ratesByKey])
-
-  // Строки таблицы подряд — шапки ВОР и позиции: так их рисует и обычная таблица, и окно видимых строк.
-  const items = useMemo(() => {
-    const out = []
-    for (const s of sections) {
-      if (!s.rows.length && (search || filter !== 'all' || dateFrom || dateTo)) continue
-      out.push({ kind: 'head', s, first: out.length === 0 })
-      if (!s.open) continue
-      if (!s.rows.length) out.push({ kind: 'empty', s })
-      for (const row of s.rows) out.push({ kind: 'row', row })
-    }
-    return out
-  }, [sections, search, filter, dateFrom, dateTo])
-  const virtual = items.length > VIRTUALIZE_FROM
+      if (filter === 'unpriced') return !r.allPriced
+      if (filter === 'priced') return r.allPriced
+      return true
+    }).map((r, gi) => ({ ...r, gi }))
+  }, [allRows, search, filter, dateFrom, dateTo])
+  const shownDoc = vorFilter ? docViews.find((d) => d.name === vorFilter) || null : null
+  const virtual = rows.length > VIRTUALIZE_FROM
   const tableWrapRef = useRef(null)
 
   // ── Сохранение ────────────────────────────────────────────────────────────────────────────────────
@@ -973,52 +1031,12 @@ export default function SupplyPricingPanel({
     })
   }, [setRates])
 
-  const isOwnAuto = useCallback((key, rate) => {
-    const a = autoFilled.current.get(key)
-    return !!a && !!rate && a.id === rate.id && a.version === rate.row_version
-  }, [])
-  // Цену можно заменить подстановкой из такой же позиции этого тендера: её подставили мы за этот сеанс или база
-  // из другого тендера (своя цена этого тендера важнее чужой).
-  const replaceable = useCallback((key, rate) => isOwnAuto(key, rate) || rate?.source_kind === 'auto', [isOwnAuto])
-
   const reloadContext = useCallback(async () => {
     try {
       const c = await loadPricingContext(ctx?.opened?.id || tenderId)
       if (c) updateCtx(c)
     } catch { /* останется прежнее */ }
   }, [ctx, tenderId, updateCtx])
-
-  // Цену позиции — в такие же позиции других ВОР, где цены ещё нет (решение пользователя 16.10), и туда, куда
-  // её подставили за этот сеанс или база из другого тендера, если там с тех пор ничего не меняли (исправили цену —
-  // исправится и там). Выбранная из другого тендера цена переходит с той же отметкой и днём расценки.
-  // Доставка переходит за единицу (у такой же позиции другого ВОР — свой объём).
-  const fillIdentical = useCallback((estimateName, position, row) => {
-    const price = roundMoney(rateBasePrice(row))
-    if (!(price > 0)) return
-    const d = rateDelivery(row)
-    const dUnit = d ? composePrice({ mode: 'unit', value: 0, delivery: d, volume: Number(row.volume_at_input) || null }).deliveryUnit : null
-    const delivery = !deliveryOnRef.current ? undefined : dUnit > 0 ? { mode: 'unit', value: roundMoney(dUnit) } : null
-    const full = roundMoney(price + (delivery?.value || 0))
-    const source = row.source_rate_id ? { rateId: row.source_rate_id, kind: row.source_kind } : null
-    const taken = (name, k) => {
-      const key = posKey(name, k)
-      const d = draftsRef.current[key]
-      if (d && !d.auto) return true
-      const r = rateIn(ratesRef.current, key)
-      if (!r) return false
-      return !replaceable(key, r) || (r.price_input === 'unit' && Number(r.supply_price) === full && (r.source_rate_id || null) === (source?.rateId || null))
-    }
-    const targets = identicalTargets(docViewsRef.current, estimateName, position, taken)
-    for (const t of targets) {
-      runSaveRef.current(posKey(t.name, t.position.k), { mode: 'unit', value: price, delivery, estimateName: t.name, position: t.position, auto: true, from: estimateName, source })
-    }
-    if (targets.length) {
-      const docs = [...new Set(targets.map((t) => `«${t.name}»`))].join(', ')
-      setFillNote(`Цена «${position.name}» подставлена в такие же позиции: ВОР ${docs}.`)
-      clearTimeout(fillTimer.current)
-      fillTimer.current = setTimeout(() => setFillNote(''), FILL_NOTE_MS)
-    }
-  }, [draftsRef, ratesRef, replaceable])
 
   const runSave = useCallback(async (key, intent) => {
     if (inflight.current.has(key)) {
@@ -1033,11 +1051,6 @@ export default function SupplyPricingPanel({
     // Последняя версия строки — из ratesRef: он обновлён ответом предыдущей записи ещё до отрисовки.
     const rate = rateIn(ratesRef.current, key)
     try {
-      // Подстановка в одинаковую позицию: цену там поставил человек — его не трогаем.
-      if (intent.auto && rate && !replaceable(key, rate)) {
-        if (!queued.current.has(key)) setDraft(key, null)
-        return
-      }
       const res = intent.mode === 'clear'
         ? (rate ? await clearRate(rate) : { status: 'ok', row: null })
         : await saveRate({ rate, mainId, estimateName: intent.estimateName, position: intent.position, mode: intent.mode, value: intent.value, source: intent.source, delivery: intent.delivery })
@@ -1046,18 +1059,9 @@ export default function SupplyPricingPanel({
       if (ok) {
         if (row) applyRow(null, row)
         else if (rate) applyRow(rate, null)
-        if (intent.auto && row) autoFilled.current.set(key, { id: row.id, version: row.row_version })
-        else autoFilled.current.delete(key)
         if (!queued.current.has(key)) setDraft(key, null)
-        flashRow(key, intent.auto ? { kind: 'auto', from: intent.from } : { kind: 'saved' }, intent.auto ? REMOTE_FLASH_MS : SAVED_FLASH_MS)
-        if (!intent.auto) {
-          setLastSavedAt(new Date().toISOString())
-          // fill: false — цены из документа поставщика: одинаковые позиции других ВОР пишутся той же пачкой.
-          if (row && intent.fill !== false) fillIdentical(intent.estimateName, intent.position, row)
-        }
-      } else if (intent.auto) {
-        if (res.current) applyRow(null, res.current)
-        if (!queued.current.has(key)) setDraft(key, null)
+        flashRow(key, { kind: 'saved' }, SAVED_FLASH_MS)
+        setLastSavedAt(new Date().toISOString())
       } else {
         // Строку изменил другой: очередь этой строки не пишем поверх него — спрашиваем (последнее введённое).
         const mine = queued.current.get(key) || intent
@@ -1069,21 +1073,17 @@ export default function SupplyPricingPanel({
       }
     } catch (e) {
       const kind = e.kind || classifyError(e)?.kind || 'error'
-      if (intent.auto && kind !== 'retry') {
-        if (!queued.current.has(key)) setDraft(key, null)
-      } else {
-        const attempts = (draftsRef.current[key]?.attempts || 0) + 1
-        setDraft(key, { ...intent, status: 'error', kind, message: e.message, attempts })
-        if (kind === 'retry') {
-          const delay = RETRY_DELAYS[Math.min(attempts - 1, RETRY_DELAYS.length - 1)]
-          retryTimers.current.set(key, setTimeout(() => {
-            retryTimers.current.delete(key)
-            const d = draftsRef.current[key]
-            if (d?.status === 'error' && d.kind === 'retry') {
-              runSaveRef.current(key, { mode: d.mode, value: d.value, delivery: d.delivery, estimateName: d.estimateName, position: d.position, auto: d.auto, from: d.from, source: d.source, fill: d.fill })
-            }
-          }, delay))
-        }
+      const attempts = (draftsRef.current[key]?.attempts || 0) + 1
+      setDraft(key, { ...intent, status: 'error', kind, message: e.message, attempts })
+      if (kind === 'retry') {
+        const delay = RETRY_DELAYS[Math.min(attempts - 1, RETRY_DELAYS.length - 1)]
+        retryTimers.current.set(key, setTimeout(() => {
+          retryTimers.current.delete(key)
+          const d = draftsRef.current[key]
+          if (d?.status === 'error' && d.kind === 'retry') {
+            runSaveRef.current(key, { mode: d.mode, value: d.value, delivery: d.delivery, estimateName: d.estimateName, position: d.position, source: d.source })
+          }
+        }, delay))
       }
       if (kind === 'locked') reloadContext()
     } finally {
@@ -1094,18 +1094,17 @@ export default function SupplyPricingPanel({
         runSaveRef.current(key, next)
       }
     }
-  }, [mainId, ratesRef, draftsRef, applyRow, setDraft, flashRow, reloadContext, fillIdentical, replaceable])
+  }, [mainId, ratesRef, draftsRef, applyRow, setDraft, flashRow, reloadContext])
   runSaveRef.current = runSave
 
-  // Ячейка отдала набранное (через секунду после ввода, при уходе из поля). Строка и черновик — последние
-  // известные, а не с прошлой отрисовки. Запись несёт и доставку позиции (какая сейчас видна): очередь записей строки
-  // пишет последнее целиком. «Итого» — с доставкой: введённый итог минус доставка — сумма цены материала.
-  const commit = useCallback((row, field, raw) => {
-    const { p, key, doc } = row
+  // Цена одной цели строки (позиция в одном ВОР). Строка и черновик — последние известные, а не с прошлой отрисовки. Запись несёт и
+  // доставку позиции (какая сейчас видна): очередь записей строки пишет последнее целиком. «Итого» — с доставкой: введённый итог минус
+  // доставка — сумма цены материала.
+  const commitTarget = useCallback((t, field, value) => {
+    const { p, key, doc } = t
     const rate = rateIn(ratesRef.current, key)
     const draft = draftsRef.current[key] || null
     const view = rowView(p, rate, draft)
-    const value = parseAmount(raw)
     const base = { estimateName: doc, position: p, ...(deliveryOnRef.current ? { delivery: view.delivery } : {}) }
     if (value == null) {
       if (!rate && !inflight.current.has(key) && !queued.current.has(key)) {
@@ -1130,14 +1129,29 @@ export default function SupplyPricingPanel({
     runSave(key, { ...base, mode: field, value: input })
   }, [ratesRef, draftsRef, runSave, setDraft])
 
+  // Ячейка отдала набранное (через секунду после ввода, при уходе из поля): цена — всем ВОР строки (одна позиция — одна цена, решение
+  // пользователя 05.11.2026). Сумма введена за показанный объём: каждому ВОР — его доля по объёму, ВОР без объёма — цена за единицу.
+  const commit = useCallback((row, field, raw) => {
+    const value = parseAmount(raw)
+    if (field === 'total' && value != null && row.targets.length > 1 && row.view.volume > 0) {
+      const price = value / row.view.volume
+      for (const t of row.targets) {
+        if (Number(t.p.volume) > 0) commitTarget(t, 'total', roundMoney(price * Number(t.p.volume)))
+        else commitTarget(t, 'unit', roundMoney(price))
+      }
+      return
+    }
+    for (const t of row.targets) commitTarget(t, field, value)
+  }, [commitTarget])
+
   // Доставка позиции (mode — за единицу или на позицию): пишется вместе с ценой, как она видна сейчас (черновик или
-  // сохранённая). Без цены доставку не поставить — она прибавляется к цене. Пусто — без доставки.
-  const commitDelivery = useCallback((row, raw, mode) => {
-    const { p, key, doc } = row
+  // сохранённая). Без цены доставку не поставить — она прибавляется к цене. Пусто — без доставки. Доставка на позицию в строке из
+  // нескольких ВОР — каждому его доля по объёму.
+  const commitDeliveryTarget = useCallback((t, value, mode) => {
+    const { p, key, doc } = t
     const rate = rateIn(ratesRef.current, key)
     const draft = draftsRef.current[key] || null
     const view = rowView(p, rate, draft)
-    const value = parseAmount(raw)
     const next = value == null ? null : { mode, value: roundMoney(value) }
     if (sameDelivery(next, view.delivery)) return
     const price = draft && (draft.mode === 'unit' || draft.mode === 'total') ? { mode: draft.mode, value: draft.value } : rate ? ratePriceInput(rate) : null
@@ -1148,40 +1162,67 @@ export default function SupplyPricingPanel({
     if (next?.mode === 'total' && !(view.volume > 0)) { fail('Доставку на позицию можно ввести только у позиции с объёмом — введите за единицу'); return }
     runSave(key, { ...base, ...price, delivery: next })
   }, [ratesRef, draftsRef, runSave, setDraft])
+  const commitDelivery = useCallback((row, raw, mode) => {
+    const value = parseAmount(raw)
+    const volume = row.view.volume
+    for (const t of row.targets) {
+      if (value != null && mode === 'total' && row.targets.length > 1 && volume > 0) {
+        if (Number(t.p.volume) > 0) commitDeliveryTarget(t, value * (Number(t.p.volume) / volume), 'total')
+        else commitDeliveryTarget(t, value / volume, 'unit')
+      } else {
+        commitDeliveryTarget(t, value, mode)
+      }
+    }
+  }, [commitDeliveryTarget])
 
-  const retryDraft = (key) => {
-    const d = draftsRef.current[key]
-    if (!d) return
-    const estimateName = d.estimateName || key.split('∣')[0]
-    const owner = docViews.find((x) => x.name === estimateName)
-    const position = d.position || owner?.positions.find((p) => posKey(estimateName, p.k) === key)
-    if (!position) return
-    runSave(key, { mode: d.mode, value: d.value, delivery: d.delivery, estimateName, position, source: d.source })
+  const retryRow = (row) => {
+    for (const t of row.targets) {
+      const d = draftsRef.current[t.key]
+      if (d?.status === 'error') runSave(t.key, { mode: d.mode, value: d.value, delivery: d.delivery, estimateName: t.doc, position: t.p, source: d.source })
+    }
   }
-  const discardDraft = (key) => {
-    const timer = retryTimers.current.get(key)
-    if (timer) { clearTimeout(timer); retryTimers.current.delete(key) }
-    queued.current.delete(key)
-    setDraft(key, null)
+  const discardRow = (row) => {
+    for (const t of row.targets) {
+      if (!draftsRef.current[t.key]) continue
+      const timer = retryTimers.current.get(t.key)
+      if (timer) { clearTimeout(timer); retryTimers.current.delete(t.key) }
+      queued.current.delete(t.key)
+      setDraft(t.key, null)
+    }
   }
 
   const acceptVolume = (row) => {
-    const { p, key, doc } = row
-    const rate = rateIn(ratesRef.current, key)
-    if (!rate) return
-    const volume = p.units || p.volume == null ? null : Number(p.volume)
-    // Доставка — как была (суммой — та же сумма на новый объём).
-    const delivery = deliveryOnRef.current ? rateDelivery(rate) : undefined
-    if (rate.price_input === 'total' && volume > 0) {
-      runSave(key, { estimateName: doc, position: p, mode: 'total', value: roundMoney(rateBasePrice(rate) * volume), delivery })
-    } else {
-      runSave(key, { estimateName: doc, position: p, mode: 'unit', value: Number(rate.input_value ?? rate.supply_price), delivery })
+    for (const { p, key, doc } of row.targets) {
+      const rate = rateIn(ratesRef.current, key)
+      if (!rate || !rowView(p, rate, null).volumeChanged) continue
+      const volume = p.units || p.volume == null ? null : Number(p.volume)
+      // Доставка — как была (суммой — та же сумма на новый объём).
+      const delivery = deliveryOnRef.current ? rateDelivery(rate) : undefined
+      if (rate.price_input === 'total' && volume > 0) {
+        runSave(key, { estimateName: doc, position: p, mode: 'total', value: roundMoney(rateBasePrice(rate) * volume), delivery })
+      } else {
+        runSave(key, { estimateName: doc, position: p, mode: 'unit', value: Number(rate.input_value ?? rate.supply_price), delivery })
+      }
     }
   }
 
   const removeDuplicates = async (row) => {
-    for (const r of row.duplicates) {
+    for (const r of row.targets.flatMap((t) => t.duplicates)) {
       try { await clearRate(r); applyRow(r, null) } catch (e) { setNotice(e.message); break }
+    }
+  }
+
+  // Цена строки — всем её ВОР (у ВОР разные цены или цена не во всех): как она видна в строке, за единицу.
+  const unifyRow = (row) => {
+    const r = row.rate
+    if (!r) return
+    const price = roundMoney(rateBasePrice(r))
+    const d = rateDelivery(r)
+    const dUnit = d ? composePrice({ mode: 'unit', value: 0, delivery: d, volume: Number(r.volume_at_input) || null }).deliveryUnit : null
+    const delivery = !deliveryOnRef.current ? undefined : dUnit > 0 ? { mode: 'unit', value: roundMoney(dUnit) } : null
+    const source = r.source_rate_id ? { rateId: r.source_rate_id, kind: r.source_kind } : null
+    for (const t of row.targets) {
+      if (t.rate?.id !== r.id) runSave(t.key, { mode: 'unit', value: price, delivery, estimateName: t.doc, position: t.p, source })
     }
   }
 
@@ -1416,39 +1457,44 @@ export default function SupplyPricingPanel({
   }
   useEffect(() => () => clearTimeout(similarTimer.current), [])
 
-  // «Взять» из меню похожих: цена за единицу с отметкой источника; документ исходной позиции (адрес или файл) — если
+  // «Взять» из меню похожих: цена за единицу с отметкой источника — всем ВОР строки; документ исходной позиции (адрес или файл) — где
   // своего нет. Взятая цена — вся цена позиции (с доставкой там, откуда взяли): своя доставка позиции снимается.
   const pickSuggestion = (row, s) => {
     setSuggest(null)
-    runSave(row.key, { mode: 'unit', value: Number(s.unit_price), estimateName: row.doc, position: row.p, source: { rateId: s.rate_id, kind: 'pick' },
-      ...(deliveryOn ? { delivery: null } : {}) })
+    for (const t of row.targets) {
+      runSave(t.key, { mode: 'unit', value: Number(s.unit_price), estimateName: t.doc, position: t.p, source: { rateId: s.rate_id, kind: 'pick' },
+        ...(deliveryOn ? { delivery: null } : {}) })
+    }
     const doc = s.doc_id && filesOn ? { docId: s.doc_id } : s.url ? { url: s.url } : null
-    if (linksByKey && doc && !linksByKey.get(row.key)) {
+    const free = linksByKey && doc ? row.targets.filter((t) => !linksByKey.get(t.key)) : []
+    if (free.length) {
       if (doc.docId) rememberDoc({ id: s.doc_id, file_name: s.doc_name, s3_key: s.doc_key })
-      saveLinks(mainId, [{ estimateName: row.doc, name: row.p.name }], doc)
+      saveLinks(mainId, free.map((t) => ({ estimateName: t.doc, name: t.p.name })), doc)
         .then(mergeLinks)
         .catch((e) => setNotice(`Цена взята, а документ к позиции не прикрепился: ${e.message}`))
     }
   }
 
-  // «Взять» цену поставщика (документ «в похожие цены»): цена — как ввод руками (своя, с подстановкой в такие же
-  // позиции других ВОР без цены), файл документа — документом позиции вместо прежнего: цена теперь из него. Цена
-  // поставщика — с его доставкой: своя доставка позиции снимается.
+  // «Взять» цену поставщика: цена — как ввод руками (своя), всем ВОР строки, файл документа — документом позиции вместо прежнего: цена
+  // теперь из него. Цена поставщика — с его доставкой: своя доставка позиции снимается.
   const pickOffer = (row, o) => {
     setSuggest(null)
-    runSave(row.key, { mode: 'unit', value: offerPrice(o), estimateName: row.doc, position: row.p, ...(deliveryOn ? { delivery: null } : {}) })
+    for (const t of row.targets) {
+      runSave(t.key, { mode: 'unit', value: offerPrice(o), estimateName: t.doc, position: t.p, ...(deliveryOn ? { delivery: null } : {}) })
+    }
     const doc = o.line.doc
-    if (linksByKey && filesOn && linksByKey.get(row.key)?.s3_document_id !== doc.id) {
+    const other = linksByKey && filesOn ? row.targets.filter((t) => linksByKey.get(t.key)?.s3_document_id !== doc.id) : []
+    if (other.length) {
       rememberDoc(doc)
-      saveLinks(mainId, [{ estimateName: row.doc, name: row.p.name }], { docId: doc.id })
+      saveLinks(mainId, other.map((t) => ({ estimateName: t.doc, name: t.p.name })), { docId: doc.id })
         .then(mergeLinks)
         .catch((e) => setNotice(`Цена взята, а файл к позиции не прикрепился: ${e.message}`))
     }
     linkDone(`«${row.p.name}»: цена из «${doc.file_name}», файл — документ позиции.`)
   }
 
-  // ── Цены из счёта / КП поставщика ─────────────────────────────────────────────────────────────────
-  // Документ «в похожие цены» загружен — сразу в таблицу (без повторного чтения).
+  // ── Счета и КП тендера ────────────────────────────────────────────────────────────────────────────
+  // Распознанный файл — сразу в таблицу и окно (без повторного чтения).
   const offerLoaded = useCallback((doc, notes) => {
     const offer = readOffer(notes)
     rememberDoc(doc)
@@ -1459,40 +1505,60 @@ export default function SupplyPricingPanel({
     offerLoaded(doc, offer?.notes ?? null)
     if (!readOffer(offer?.notes)?.lines.length) setOtherDocs((prev) => [{ doc, failed: offer?.reason || 'unsupported' }, ...prev.filter((x) => x.doc.id !== doc.id)])
   }
-  // «Только в похожие цены» при проверке файла: выбор строк сохраняется при файле, цены не пишутся.
-  const addOffer = async (file, notes, existing) => {
-    if (filesOn) await saveSupplyDocNotes(existing.id, notes)
-    offerLoaded(existing, notes)
+  // Выбор человека в окне — при файле: те же строки с правкой (utils/supplyOffers), notes пишутся целиком.
+  const offerDocsRef = useRef(offerDocs)
+  offerDocsRef.current = offerDocs
+  const rewriteOffer = async (doc, next) => {
+    const notes = offerNotes(next)
+    const offer = readOffer(notes)
+    // Ссылка — сразу: вторая правка того же файла в этом же такте (другая строка взамен этой) опирается на первую.
+    const list = (offerDocsRef.current || []).map((x) => (x.doc.id === doc.id ? { doc: x.doc, offer } : x))
+    offerDocsRef.current = list
+    setOfferDocs(list)
+    if (filesOn && !localFiles.current.has(doc.id)) await saveSupplyDocNotes(doc.id, notes)
   }
-  const offersDone = ({ files: names, lines }) => {
-    setDocImport(null)
-    linkDone(`В похожие цены: ${names.map((n) => `«${n}»`).join(', ')} — строк с ценой ${lines}. У позиций — «цены поставщиков», выбирайте «Взять».`)
+  const offerOf = (doc) => (offerDocsRef.current || []).find((x) => x.doc.id === doc.id)?.offer || null
+  const rewriteLine = async (doc, line, change) => {
+    const offer = offerOf(doc)
+    if (offer) await rewriteOffer(doc, { ...offer, lines: offer.lines.map((l) => (l === line || (l.name === line.name && l.price === line.price) ? change(l) : l)) })
   }
-  // Что сейчас в расценке у позиций группы: свои цены, цены из других тендеров, позиции без цены.
+  const pickLine = (group, doc, line) => {
+    // Строка остаётся и у других своих позиций: одна строка бывает на несколько записей одного материала.
+    const current = [...pickByGroup.values()].flat().filter((o) => o.line === line && o.group !== group).map((o) => o.group.k)
+    return rewriteLine(doc, line, (l) => lineForGroup(l, group.ks || [group.k], current))
+  }
+  const rejectLine = (group, doc, line) => rewriteLine(doc, line, (l) => lineNotForGroup(l, group.ks || [group.k]))
+  const setLinePack = (group, doc, line, n) => rewriteLine(doc, line, (l) => ({ ...l, packs: { ...l.packs, [group.k]: n } }))
+  const setOfferRate = async (doc, rate) => { const o = offerOf(doc); if (o) await rewriteOffer(doc, offerInRoubles(o, rate)) }
+  const setOfferVat = async (doc, mode) => { const o = offerOf(doc); if (o) await rewriteOffer(doc, offerWithVat(o, mode)) }
+  // Что сейчас в расценке у позиций группы: свои цены и когда их правили, цены из других тендеров, позиции без цены.
   const currentOf = useCallback((group) => {
     const own = []
     let copies = 0
     let empty = 0
+    let ownAt = null
     for (const t of group.targets) {
       const r = rateIn(ratesRef.current, posKey(t.doc, t.position.k))
       if (!r) empty += 1
       else if (r.source_kind) copies += 1
-      else own.push(rateUnitPrice(r))
+      else {
+        own.push(rateUnitPrice(r))
+        if (r.updated_at && (!ownAt || r.updated_at > ownAt)) ownAt = r.updated_at
+      }
     }
-    return { own, copies, empty }
+    return { own, copies, empty, ownAt }
   }, [ratesRef])
 
-  // Записать цены строк документа: цены всех позиций групп — той же очередью, что ввод руками (версия строки, повтор при
-  // сбое сети, «изменено другим»), по нескольку разом; та же своя цена не переписывается. Строка — цена и доставка за
-  // единицу (delivery, из колонки или строки доставки документа; нет — без доставки: документ — вся цена позиции); doc —
-  // файл строки, если он свой у каждой (автовыбор). Ответ: { jobs, queue, failed }.
+  // Записать цены строк документа: цены всех позиций групп — той же очередью, что ввод руками (версия строки, повтор при сбое сети,
+  // «изменено другим»), по нескольку разом; та же своя цена не переписывается. Цена документа — вся цена позиции (с доставкой): своя
+  // доставка снимается; doc — файл строки. Ответ: { jobs, queue, failed }.
   const writeDocPrices = async (lines, onProgress) => {
     const jobs = []
     for (const l of lines) {
       for (const t of l.group.targets) {
         const key = posKey(t.doc, t.position.k)
         const rate = rateIn(ratesRef.current, key)
-        const delivery = deliveryOn ? (l.delivery > 0 ? { mode: 'unit', value: l.delivery } : null) : undefined
+        const delivery = deliveryOn ? null : undefined
         const same = !!rate && !rate.source_kind && rate.price_input === 'unit' && roundMoney(rateBasePrice(rate)) === l.price
           && (delivery === undefined || sameDelivery(rateDelivery(rate), delivery))
         jobs.push({ key, target: t, price: l.price, delivery, same, doc: l.doc || null })
@@ -1505,7 +1571,7 @@ export default function SupplyPricingPanel({
     const worker = async () => {
       while (next < queue.length) {
         const j = queue[next++]
-        await runSaveRef.current(j.key, { mode: 'unit', value: j.price, delivery: j.delivery, estimateName: j.target.doc, position: j.target.position, fill: false })
+        await runSaveRef.current(j.key, { mode: 'unit', value: j.price, delivery: j.delivery, estimateName: j.target.doc, position: j.target.position })
         done += 1
         onProgress?.(done, jobs.length)
       }
@@ -1513,39 +1579,18 @@ export default function SupplyPricingPanel({
     await Promise.all(Array.from({ length: Math.min(DOC_APPLY_PARALLEL, queue.length) }, worker))
     return { jobs, queue, failed: queue.filter((j) => ['error', 'conflict'].includes(draftsRef.current[j.key]?.status)).length }
   }
-
-  // Проверка файла построчно: цены (writeDocPrices), затем файл — документом этих позиций (прежний заменяется), а его
-  // строки с выбором окна — при файле. existing — файл уже у тендера, заново не загружается.
-  const applyDocPrices = async ({ lines, notes = null, attach, file, existing }, onProgress) => {
-    const doc = attach ? existing : null
-    offerLoaded(existing, notes)
-    if (filesOn) saveSupplyDocNotes(existing.id, notes).catch(() => { /* цены важнее: выбор при файле не сохранится */ })
-    const { jobs, queue, failed } = await writeDocPrices(lines, onProgress)
-    let attached = 0
-    if (doc) {
-      try {
-        const rows = await saveLinks(mainId, jobs.map((j) => ({ estimateName: j.target.doc, name: j.target.position.name })), { docId: doc.id })
-        mergeLinks(rows)
-        attached = rows.length
-      } catch (e) {
-        setNotice(`Цены записаны, а файл к позициям не прикрепился: ${e.message}`)
-      }
-    }
-    setDocImport(null)
-    linkDone(`Из «${file?.name || 'документа'}»: цен записано ${queue.length - failed}${jobs.length > queue.length ? `, ещё у ${jobs.length - queue.length} та же цена` : ''}`
-      + `${failed ? `, не сохранено ${failed} — строки с красным значком` : ''}${attached ? `; файл — документ ${attached} позиций` : ''}.`)
-    return { ok: true }
-  }
   // Цена из меню похожих в другой ед. изм.: как есть — копия с отметкой источника (в реестр СУ-10 не попадает, там она была бы
   // с чужой единицей); пересчитанная — своя цена.
   const takeOtherUnit = (row, offer, converted) => {
     setSuggest(null)
     const source = converted ? {} : { source: { rateId: offer.rate.id, kind: 'pick' } }
-    runSave(row.key, { mode: 'unit', value: converted ? offer.converted.price : offer.rate.price, estimateName: row.doc, position: row.p, ...source, ...(deliveryOn ? { delivery: null } : {}) })
+    for (const t of row.targets) {
+      runSave(t.key, { mode: 'unit', value: converted ? offer.converted.price : offer.rate.price, estimateName: t.doc, position: t.p, ...source, ...(deliveryOn ? { delivery: null } : {}) })
+    }
     linkDone(`«${row.p.name}»: цена из тендера № ${offer.rate.tender_number}${converted ? ` — пересчитана за ${row.p.unit}` : ''}.`)
   }
 
-  // Автовыбор (окно «Счета и КП тендера»): цена строки — как ввод руками, файл — документом позиций, получивших цену из него.
+  // Окно «Счета и КП тендера»: цена строки — как ввод руками, файл — документом позиций, получивших цену из него.
   const applyAutoPick = async (lines, onProgress) => {
     const { jobs, queue, failed } = await writeDocPrices(lines, onProgress)
     let attached = 0
@@ -1568,12 +1613,22 @@ export default function SupplyPricingPanel({
       }
     }
     setTenderDocs(null)
-    linkDone(`Автовыбор: цен записано ${queue.length - failed}${jobs.length > queue.length ? `, ещё у ${jobs.length - queue.length} та же цена` : ''}`
-      + `${failed ? `, не сохранено ${failed} — строки с красным значком` : ''}${attached ? `; файлы — документы ${attached} позиций` : ''}.`)
+    linkDone(`Цен записано: ${queue.length - failed}${failed ? `, не сохранено: ${failed} — строки с красным значком` : ''}${attached ? '; файлы — документы позиций' : ''}.`)
     return { ok: true }
   }
+  // Файл прикрепляют к позиции (окно «Документ», ячейка таблицы): документ этих позиций. Цены не записаны, поэтому сбой — не повод
+  // терять файл: он уже у тендера.
+  const attachDoc = async (doc, attachTo) => {
+    if (!attachTo?.length || !filesOn) return
+    try {
+      mergeLinks(await saveLinks(mainId, attachTo.map((t) => ({ estimateName: t.estimateName, name: t.name })), { docId: doc.id }))
+      rememberDoc(doc)
+    } catch (e) {
+      setNotice(`Файл загружен, а к позиции не прикрепился: ${e.message}`)
+    }
+  }
   // Файл ко всему тендеру: прочитать (не прочитался — всё равно прикрепить, причина — в окне) и загрузить со строками.
-  const addTenderFile = async (file) => {
+  const addTenderFile = async (file, attachTo = null) => {
     const offer = file.size > DOC_READ_MAX_BYTES ? { read: null, notes: null, reason: 'big' }
       : await readDocOffer(async () => new Uint8Array(await file.arrayBuffer()), file.name)
     let doc
@@ -1583,15 +1638,7 @@ export default function SupplyPricingPanel({
       localFiles.current.set(doc.id, file)
     }
     registerDoc(doc, offer)
-  }
-  // Проверка файла построчно: скачать и прочитать заново (в notes — только строки с ценами), выбор при файле — в окне.
-  const reviewTenderDoc = async (doc) => {
-    const local = localFiles.current.get(doc.id)
-    const offer = await readDocOffer(async () => (local ? new Uint8Array(await local.arrayBuffer()) : fetchSupplyDocBytes(doc)), doc.file_name)
-    if (!offer.read) return { reason: offer.reason || 'unavailable' }
-    const saved = (offerDocs || []).find((x) => x.doc.id === doc.id)?.offer.lines || null
-    setDocImport({ groups: tenderGroups, preset: { file: { name: doc.file_name }, doc, read: offer.read, saved } })
-    return null
+    await attachDoc(doc, attachTo)
   }
   const closeSuggest = useCallback((restoreFocus) => {
     setSuggest((cur) => {
@@ -1648,12 +1695,6 @@ export default function SupplyPricingPanel({
     }
   }
 
-  const toggleDoc = (name) => setCollapsed((prev) => {
-    const next = new Set(prev)
-    if (next.has(name)) next.delete(name); else next.add(name)
-    return next
-  })
-
   // ── Отметка позиций и ссылки на документы ─────────────────────────────────────────────────────────
   const toggleSelect = (key) => setSelected((prev) => {
     const next = new Set(prev)
@@ -1666,26 +1707,21 @@ export default function SupplyPricingPanel({
     return next
   })
 
-  // Окно ссылки для позиций по ключам: одна (кнопка в строке) или все отмеченные.
-  const openLinkDialog = (keys, file = null) => {
-    const targets = []
-    for (const d of docViewsRef.current) {
-      for (const p of d.positions) {
-        const key = posKey(d.name, p.k)
-        if (keys.has(key)) targets.push({ key, name: p.name, estimateName: d.name, link: linksByKey?.get(key) || null })
-      }
-    }
-    if (!targets.length) return
+  // Цели строк для окна документа и записи ссылок: каждая позиция каждого ВОР строки.
+  const linkTargets = (list) => list.flatMap((r) => r.targets.map((t) => ({ key: t.key, name: t.p.name, estimateName: t.doc, link: linksByKey?.get(t.key) || null })))
+  // Окно документа для строк: одна (кнопка в строке) или все отмеченные.
+  const openLinkDialog = (list) => {
+    if (!list.length) return
     setLinkError('')
-    setLinkDialog({ targets, file })
+    setLinkDialog({ targets: linkTargets(list), rowCount: list.length, title: list[0].p.name, vors: list[0].vors })
   }
   const linkDone = (text) => {
     setFillNote(text)
     clearTimeout(fillTimer.current)
     fillTimer.current = setTimeout(() => setFillNote(''), FILL_NOTE_MS)
   }
-  // Файл-документ заодно читается: счёт или КП — его цены (notes при файле) у позиций и окно проверки. Не прочитался —
-  // файл всё равно прикрепляем, причина — в подписи.
+  // Файл-документ заодно читается: счёт или КП — его цены (notes при файле) у позиций. Не прочитался — файл всё равно прикрепляем,
+  // причина — в окне файлов.
   const readDocOffer = async (bytesOf, fileName) => {
     try {
       return await readSupplyDocBytes(await bytesOf(), fileName)
@@ -1693,41 +1729,29 @@ export default function SupplyPricingPanel({
       return { read: null, notes: null, reason: 'unavailable' }
     }
   }
-  // Окно проверки цен прочитанного файла — если хоть одна его строка нашла позицию ВОР. Ответ — открылось ли.
-  const reviewDocOffer = (offer, preset) => {
-    if (!offer?.read) return false
-    const groups = positionGroups(docViewsRef.current)
-    if (!matchDocItems(offer.read.items.filter((it) => !it.delivery), groups, { packs: true }).some((m) => m.match)) return false
-    setDocImport({ groups, preset: { ...preset, read: offer.read } })
-    return true
+  // Файл к позиции — сразу окно всех расценок (решение пользователя 05.11.2026): файл читается и прикрепляется там, виден ход.
+  const openWithFile = (file, attachTo) => {
+    setLinkDialog(null)
+    setSelected(new Set())
+    setTenderDocs({ files: [file], attachTo })
   }
   // doc — { url } (ссылка), { docId, doc } (уже загруженный файл) или { file } (загрузить и прикрепить).
   const saveLink = async (doc) => {
-    const { targets } = linkDialog
+    const { targets, rowCount } = linkDialog
+    if (doc.file) {
+      openWithFile(doc.file, targets)
+      return
+    }
     setLinkBusy(true)
     setLinkError('')
     try {
-      let target = doc
-      let offer = null
-      let preset = null
-      if (doc.file) {
-        offer = doc.file.size > DOC_READ_MAX_BYTES ? { read: null, notes: null, reason: 'big' } : await readDocOffer(async () => new Uint8Array(await doc.file.arrayBuffer()), doc.file.name)
-        const uploaded = await uploadSupplyDoc(mainId, doc.file, offer.notes)
-        registerDoc(uploaded, offer)
-        target = { docId: uploaded.id }
-        preset = { file: doc.file, doc: uploaded, attached: targets.length }
-      } else if (doc.docId && doc.doc && !(doc.doc.size_bytes > DOC_READ_MAX_BYTES)) {
-        offer = await readDocOffer(() => fetchSupplyDocBytes(doc.doc), doc.doc.file_name)
-        preset = { file: { name: doc.doc.file_name }, doc: doc.doc, attached: targets.length }
-      }
-      const rows = await saveLinks(mainId, targets.map((t) => ({ estimateName: t.estimateName, name: t.name })), target.docId ? { docId: target.docId } : target)
+      const rows = await saveLinks(mainId, targets.map((t) => ({ estimateName: t.estimateName, name: t.name })), doc.docId ? { docId: doc.docId } : doc)
       mergeLinks(rows)
-      if (targets.length > 1) setSelected(new Set())
+      if (doc.doc) rememberDoc(doc.doc)
+      if (rowCount > 1) setSelected(new Set())
       setLinkDialog(null)
-      const what = target.docId ? 'Файл' : 'Ссылка на документ'
-      const unread = offer && !offer.read && offer.reason !== 'unsupported' ? ' Цены из него не прочитались — внесите их вручную.' : ''
-      linkDone(`${targets.length > 1 ? `${what} — документ ${targets.length} позиций.` : `${what} к «${targets[0].name}» сохранен${target.docId ? '' : 'а'}.`}${unread}`)
-      reviewDocOffer(offer, preset)
+      if (doc.docId) setTenderDocs({ files: null })
+      else linkDone(rowCount > 1 ? `Ссылка на документ — ${rowCount} позициям.` : `Ссылка на документ к «${linkDialog.title}» сохранена.`)
     } catch (e) {
       setLinkError(e.message)
       if (e.kind === 'locked') reloadContext()
@@ -1741,7 +1765,7 @@ export default function SupplyPricingPanel({
     const used = (links || []).filter((l) => l.s3_document_id === doc.id).length
     const offered = offerDocs?.find((x) => x.doc.id === doc.id)?.offer.lines.length || 0
     if (!window.confirm(`Удалить файл «${doc.file_name}»?${used ? `\n\nОн документ у позиций этого тендера: ${used} — у них документа не станет.` : ''}`
-      + `${offered ? `\nЕго цены (строк: ${offered}) уйдут из похожих цен.` : ''}`
+      + `${offered ? `\nЕго цены (строк: ${offered}) больше не будут предлагаться; уже поставленные останутся.` : ''}`
       + '\nЕсли цену брали в другие тендеры вместе с этим файлом, там документ тоже пропадёт.')) return false
     try {
       await deleteSupplyDoc(doc)
@@ -1902,35 +1926,40 @@ export default function SupplyPricingPanel({
     }
   }
 
-  // Действия строк — через одну стабильную функцию: строки таблицы (memo) перерисовываются только когда
-  // меняются их собственные данные, а не при каждом сохранении в соседней строке.
-  // Сколько позиций можно заполнить по документам тендера — подсказка над таблицей (своя другая цена сюда не входит).
+  // Сколько позиций можно заполнить по документам тендера — на кнопке окна (цена, которая уже стоит, сюда не входит).
   const autoPickReady = useMemo(() => {
     if (!editable || !offerDocs?.length) return 0
     return autoPickRows(pickByGroup, tenderGroups, { currentOf }).rows.filter((r) => r.auto).length
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rates: currentOf читает цены из ссылки, пересчёт — при их смене
   }, [editable, offerDocs, pickByGroup, tenderGroups, currentOf, rates])
 
+  // Действия строк — через одну стабильную функцию: строки таблицы (memo) перерисовываются только когда
+  // меняются их собственные данные, а не при каждом сохранении в соседней строке.
   const actionsRef = useRef(null)
   actionsRef.current = {
     takeOffer: pickOffer,
     commit,
     commitDelivery,
-    retry: retryDraft,
-    discard: discardDraft,
-    conflict: (row) => setConflict({ key: row.key, intent: { mode: row.draft.mode, value: row.draft.value, delivery: row.draft.delivery, estimateName: row.doc, position: row.p }, current: row.rate, position: row.p }),
+    retry: retryRow,
+    discard: discardRow,
+    conflict: (row) => {
+      const t = row.targets.find((x) => x.draft?.status === 'conflict')
+      if (t) setConflict({ key: t.key, intent: { mode: t.draft.mode, value: t.draft.value, delivery: t.draft.delivery, estimateName: t.doc, position: t.p }, current: t.rate, position: t.p })
+    },
     acceptVolume,
-    history: (row) => setHistoryFor({ position: row.p, rate: row.rate, estimateName: row.doc, key: row.key }),
+    history: (row) => setHistoryFor({ position: row.lead.p, rate: row.lead.rate, estimateName: row.lead.doc, key: row.lead.key, row }),
     removeDuplicates,
     toggleSelect,
-    editLink: (key) => openLinkDialog(new Set([key])),
-    // Файл перетащили на ячейку «Документ» — окно документа сразу с этим файлом.
-    dropDoc: (key, file) => openLinkDialog(new Set([key]), file),
+    editLink: (row) => openLinkDialog([row]),
+    // Файл перетащили на ячейку «Документ» — сразу окно всех расценок с этим файлом.
+    dropDoc: (row, file) => openWithFile(file, linkTargets([row])),
     suggest: (row, anchor) => setSuggest((cur) => (cur?.row.key === row.key ? null : { row, anchor })),
     openFile: (doc) => setPreview(doc),
-    carry: (row) => carryPrice(row.carry.rate, row.doc, row.p),
-    dismissCarry: (row) => dismissCarry(row.carry.rate, row.key),
-    confirmUnit,
+    carry: (row) => { const t = row.targets.find((x) => x.carry); if (t) carryPrice(t.carry.rate, t.doc, t.p) },
+    dismissCarry: (row) => { const t = row.targets.find((x) => x.carry); if (t) dismissCarry(t.carry.rate, t.key) },
+    confirmUnit: (row) => { for (const t of row.targets) if (t.unitOff) confirmUnit(t) },
+    split: splitRow,
+    unify: unifyRow,
   }
   const act = useCallback((name, ...args) => actionsRef.current[name](...args), [])
 
@@ -1939,20 +1968,20 @@ export default function SupplyPricingPanel({
   if (loadError) return <p className="sp-error-text">{loadError}</p>
   if (!ctx) return <p className="sp-error-text">Тендер не найден.</p>
 
-  const draftList = Object.values(drafts).filter((d) => !d.auto)
+  const draftList = Object.values(drafts)
   const savingCount = draftList.filter((d) => d.status === 'saving' || d.status === 'queued').length
   const failedCount = draftList.filter((d) => d.status === 'error' || d.status === 'conflict').length
   const readOnlyReason = ctx.locked
     ? 'Тендер на материалы завершён — расценки только для чтения. Чтобы изменить, верните тендеру на материалы прежний статус.'
     : !canEditRole ? 'Только просмотр: вводить цены могут снабжение и тендерный отдел (право правки раздела).' : ''
-  const fromTab = docViews.length > 0 && docViews.every((d) => d.source.source === 'vor_tab')
 
   // Колонки: [отметка] № · наименование · ед. · объём · цена · [доставка] · итог · [дата цены] · [документ] · состояние.
   // «Дата цены» — день расценки (миграция 20261023); колонок ещё нет в базе — нет и её, и фильтра по дате.
-  // «Доставка» — миграция 20261120; без неё колонки нет.
+  // «Доставка» — миграция 20261120; видна, если у какой-то цены она есть или её открыли кнопкой: у большинства позиций её нет.
   const datesOn = rates.length ? rates.some((r) => 'price_date' in r) : !reuseOff
-  const colCount = 7 + (linksOn ? 1 : 0) + (selectable ? 1 : 0) + (datesOn ? 1 : 0) + (deliveryOn ? 1 : 0)
-  const shownKeys = items.filter((it) => it.kind === 'row').map((it) => it.row.key)
+  const deliveryShown = deliveryOn && (deliveryOpen || rates.some((r) => rateDelivery(r)))
+  const colCount = 7 + (linksOn ? 1 : 0) + (selectable ? 1 : 0) + (datesOn ? 1 : 0) + (deliveryShown ? 1 : 0)
+  const shownKeys = rows.map((r) => r.key)
   const shownSelected = shownKeys.filter((k) => selected.has(k)).length
   const tenderDocCount = (offerDocs?.length || 0) + otherDocs.length
   const panelDrop = editable && filesOn ? {
@@ -1960,113 +1989,95 @@ export default function SupplyPricingPanel({
     onDrop: (e) => {
       if (!withFiles(e) || e.defaultPrevented) return
       e.preventDefault()
-      if (!docImport && !linkDialog) setTenderDocs({ files: [...e.dataTransfer.files] })
+      if (!linkDialog) setTenderDocs({ files: [...e.dataTransfer.files] })
     },
   } : blockStrayDrop
 
-  // Строка-шапка ВОР: имя, «расценено N из M», сумма, источник и действия, пометки.
-  const renderHead = ({ doc: d, open }, first) => {
-    const notes = docNotes.get(d.name) || []
-    const s = d.source
-    const complete = d.positions.length > 0 && d.priced === d.positions.length
-    const hasRates = rates.some((r) => r.estimate_name === d.name)
+  // ВОРы тендера — под спойлером: сколько расценено и сумма по каждому, файл и редкие действия. Открыт сам, только если есть что сказать.
+  const renderVors = () => {
+    const urgent = docViews.some((d) => docNotes.has(d.name) || revByDoc.has(d.name))
     return (
-      <tr key={`head:${d.name}`} className={`sp-section-head${first ? ' is-first' : ''}`}>
-        <td colSpan={colCount}>
-          <div className="sp-section-line">
-            {selectable && (() => {
-              const keys = d.positions.map((p) => posKey(d.name, p.k))
-              const n = keys.filter((k) => selected.has(k)).length
-              return (
-                <SelectBox checked={keys.length > 0 && n === keys.length} indeterminate={n > 0 && n < keys.length} disabled={!keys.length}
-                  onChange={(on) => setSelectedKeys(keys, on)} label={`Отметить все позиции ВОР «${d.name}»`} />
-              )
-            })()}
-            <button type="button" className={`sp-section-toggle${open ? ' is-open' : ''}`} onClick={() => toggleDoc(d.name)} aria-expanded={open}
-              aria-label={`${open ? 'Свернуть' : 'Развернуть'} ВОР «${d.name}»`}>
-              <IconChevronDown size={16} />
-            </button>
-            <span className="sp-section-name">ВОР «{d.name}»</span>
-            {complete && <span className="sp-section-done" title="Все позиции расценены"><IconCheck size={14} /> расценён</span>}
-            <span className="sp-section-count ui-num">расценено {d.priced} из {d.positions.length}</span>
-            <span className="sp-section-sum ui-num">{formatAmount(d.total)} ₽</span>
-          </div>
-          <div className="sp-section-meta">
-            {s.source === 'vor_file'
-              ? <>файл «{files.find((f) => f.id === s.s3_document_id)?.file_name || s.file_name || 'удалён'}», лист «{s.sheet_name || 'Материалы'}»{s.column_map?.mode === 'code' ? ', строки с кодом «мат.»' : ''}</>
-              : <>вкладка «ВОР» карточки тендера</>}
-            {s.displayOnly
-              ? <span> · в расценку не загружался — позиции показаны по вкладке</span>
-              : <span> · загружено {fmtTime(s.parsed_at)}{s.parsed_by ? (nameOf(s.parsed_by) ? `, ${nameOf(s.parsed_by)}` : '') : ' автоматически'}</span>}
-            {s.source === 'vor_file' && s.s3_document_id && files.some((f) => f.id === s.s3_document_id) && (
-              <>
-                <button type="button" className="sp-link-btn" onClick={() => downloadFile(s.s3_document_id)}>скачать файл</button>
-                {editable && (
-                  <button type="button" className="sp-link-btn" onClick={() => setMappingFile(files.find((f) => f.id === s.s3_document_id))}>колонки листа</button>
+      <details className="sp-vors" open={urgent || undefined}>
+        <summary>
+          {docViews.length > 1 ? `ВОРы тендера: ${docViews.length}` : `ВОР «${docViews[0].name}»`}
+          {urgent && <IconAlert size={14} />}
+        </summary>
+        <ul>
+          {docViews.map((d) => {
+            const s = d.source
+            const file = s.source === 'vor_file' && s.s3_document_id ? files.find((f) => f.id === s.s3_document_id) || null : null
+            const notes = docNotes.get(d.name) || []
+            const revs = revByDoc.get(d.name) || []
+            const sourceText = s.source === 'vor_file'
+              ? `файл «${file?.file_name || s.file_name || 'удалён'}», лист «${s.sheet_name || 'Материалы'}»${s.column_map?.mode === 'code' ? ', строки с кодом «мат.»' : ''}`
+              : 'вкладка «ВОР» карточки тендера'
+            const loaded = s.displayOnly ? 'в расценку не загружался — позиции показаны по вкладке'
+              : `загружено ${fmtTime(s.parsed_at)}${s.parsed_by ? (nameOf(s.parsed_by) ? `, ${nameOf(s.parsed_by)}` : '') : ' автоматически'}`
+            return (
+              <li key={d.name}>
+                <div className="sp-vor-line" title={`${sourceText} · ${loaded}`}>
+                  <span className="sp-vor-name">ВОР «{d.name}»</span>
+                  <span className="sp-vor-count ui-num">расценено {d.priced} из {d.positions.length}</span>
+                  <span className="sp-vor-sum ui-num">{formatAmount(d.total)} ₽</span>
+                  <span className="sp-vor-actions">
+                    {s.source !== 'vor_file' && <span className="sp-muted">вкладка «ВОР» карточки</span>}
+                    {file && <button type="button" className="sp-link-btn" onClick={() => downloadFile(file.id)}>скачать файл</button>}
+                    {file && editable && <button type="button" className="sp-link-btn" onClick={() => setMappingFile(file)}>колонки листа</button>}
+                    {excelImport && editable && (
+                      <button type="button" className="sp-link-btn" onClick={() => excelImport.onImport(d.name)}><IconUpload size={14} /> загрузить цены из Excel</button>
+                    )}
+                    {editable && rates.some((r) => r.estimate_name === d.name) && (
+                      <button type="button" className="sp-link-btn is-danger" onClick={() => clearDoc(d)}>очистить цены</button>
+                    )}
+                  </span>
+                </div>
+                {revs.slice(0, 3).map((r) => (
+                  <div key={`rev-${r.id}`} className={`sp-vor-note sp-rev-note is-${r.kind}`}>
+                    <IconRefresh size={14} />
+                    <span>
+                      <b>{r.kind === 'added' ? 'Новый ВОР' : r.kind === 'removed' ? 'Файл удалён' : 'ВОР обновлён'}</b> <span className="ui-num">{fmtTime(r.created_at)}</span>: {revisionTitle(r)}
+                      {r.uploaded_by_name && <span className="sp-muted"> · загрузил(а) {r.uploaded_by_name}</span>}
+                    </span>
+                  </div>
+                ))}
+                {revs.length > 3 && <div className="sp-vor-note sp-rev-note"><span className="sp-muted">и ещё изменений: {revs.length - 3}</span></div>}
+                {revs.length > 0 && editable && (
+                  <div className="sp-vor-note"><button type="button" className="sp-link-btn" onClick={() => reviewDocs([d.name])}>изменения просмотрены</button></div>
                 )}
-              </>
-            )}
-            {excelImport && editable && (
-              <button type="button" className="sp-link-btn" onClick={() => excelImport.onImport(d.name)}>
-                <IconUpload size={14} /> загрузить цены из Excel
-              </button>
-            )}
-            {editable && hasRates && (
-              <button type="button" className="sp-link-btn is-danger" onClick={() => clearDoc(d)}>очистить цены</button>
-            )}
-          </div>
-          {(revByDoc.get(d.name) || []).slice(0, 3).map((r) => (
-            <div key={`rev-${r.id}`} className={`sp-section-note sp-rev-note is-${r.kind}`}>
-              <IconRefresh size={14} />
-              <span>
-                <b>{r.kind === 'added' ? 'Новый ВОР' : r.kind === 'removed' ? 'Файл удалён' : 'ВОР обновлён'}</b> <span className="ui-num">{fmtTime(r.created_at)}</span>: {revisionTitle(r)}
-                {r.uploaded_by_name && <span className="sp-muted"> · загрузил(а) {r.uploaded_by_name}</span>}
-              </span>
-            </div>
-          ))}
-          {(revByDoc.get(d.name) || []).length > 3 && (
-            <div className="sp-section-note sp-rev-note"><span className="sp-muted">и ещё изменений: {(revByDoc.get(d.name) || []).length - 3} — в истории версий</span></div>
-          )}
-          {(revByDoc.get(d.name) || []).length > 0 && (
-            <div className="sp-section-note sp-rev-actions">
-              {changesByDoc.get(d.name)?.size > 0 && (
-                <button type="button" className="sp-link-btn" onClick={() => { setFilter('changed'); if (!open) toggleDoc(d.name) }}>показать изменения</button>
-              )}
-              {editable && <button type="button" className="sp-link-btn" onClick={() => reviewDocs([d.name])}>изменения просмотрены</button>}
-            </div>
-          )}
-          {notes.map((n, i) => (
-            <div key={i} className="sp-section-note">
-              <IconAlert size={14} /> {n.text}
-              {n.kind === 'bind' && editable && (
-                <span className="sp-bind">
-                  <select value={bindTarget[d.name] || ''} onChange={(e) => setBindTarget((prev) => ({ ...prev, [d.name]: e.target.value }))}
-                    aria-label={`ВОР карточки для «${d.name}»`}>
-                    <option value="">ВОР карточки…</option>
-                    {(estimate?.names || []).map((n2) => <option key={n2} value={n2}>{n2}</option>)}
-                  </select>
-                  <button type="button" className="sp-link-btn" disabled={!bindTarget[d.name]} onClick={() => bindDoc(d.name)}>Привязать</button>
-                </span>
-              )}
-            </div>
-          ))}
-        </td>
-      </tr>
+                {notes.map((n, i) => (
+                  <div key={i} className="sp-vor-note">
+                    <IconAlert size={14} /> {n.text}
+                    {n.kind === 'bind' && editable && (
+                      <span className="sp-bind">
+                        <select value={bindTarget[d.name] || ''} onChange={(e) => setBindTarget((prev) => ({ ...prev, [d.name]: e.target.value }))}
+                          aria-label={`ВОР карточки для «${d.name}»`}>
+                          <option value="">ВОР карточки…</option>
+                          {(estimate?.names || []).map((n2) => <option key={n2} value={n2}>{n2}</option>)}
+                        </select>
+                        <button type="button" className="sp-link-btn" disabled={!bindTarget[d.name]} onClick={() => bindDoc(d.name)}>Привязать</button>
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </li>
+            )
+          })}
+        </ul>
+      </details>
     )
   }
   const linkDocOf = (link) => (link?.s3_document_id ? (linkDocs.get(link.s3_document_id) || null) : null)
-  const renderItem = (it) => {
-    if (it.kind === 'head') return renderHead(it.s, it.first)
-    if (it.kind === 'empty') return <tr key={`empty:${it.s.doc.name}`}><td colSpan={colCount} className="no-data">В этом ВОР нет позиций</td></tr>
-    const { row } = it
+  const renderRow = (row) => {
     if (!reuseOff) noteSimilar(row)
+    const link = linksByKey ? row.targets.map((t) => linksByKey.get(t.key)).find(Boolean) || null : null
+    const rowOffers = offersByKey.get(row.key)
     return (
-      <PriceRow key={row.key} row={row} flash={flash[row.key]} editable={editable} nameOf={nameOf} act={act}
-        offerCount={otherOffers(offersByKey.get(row.key), row.rate)} fileDrop={editable && filesOn}
-        suspect={suspectPrice(ownPriceOf(row.rate), offersByKey.get(row.key))}
-        linksOn={linksOn} link={linksByKey?.get(row.key) || null} linkDoc={linkDocOf(linksByKey?.get(row.key))}
+      <PriceRow key={row.key} row={row} flash={row.targets.map((t) => flash[t.key]).find(Boolean)} editable={editable} nameOf={nameOf} act={act}
+        offerCount={otherOffers(rowOffers, row.rate)} fileDrop={editable && filesOn}
+        suspect={suspectPrice(ownPriceOf(row.rate), rowOffers)}
+        linksOn={linksOn} link={link} linkDoc={linkDocOf(link)}
         selectable={selectable} selected={selected.has(row.key)}
-        origin={row.rate?.source_kind ? (origins.get(row.rate.id) || null) : null} datesOn={datesOn} showAuthor={showAuthor} deliveryOn={deliveryOn}
+        origin={row.rate?.source_kind ? (origins.get(row.rate.id) || null) : null} datesOn={datesOn} showAuthor={showAuthor} deliveryOn={deliveryShown}
         similar={(!reuseOff && wantsSimilar(row) ? similarOthers(row, similar.get(row.key) || 0) : 0) + otherUnitFor(row).length}
         suggestOpen={suggest?.row.key === row.key} />
     )
@@ -2074,14 +2085,6 @@ export default function SupplyPricingPanel({
 
   return (
     <div className={`ui-work sp-panel sp-panel-${variant}`} {...panelDrop}>
-      {autoPickReady > 0 && !autoPickHidden && !tenderDocs && (
-        <div className="sp-banner" role="status">
-          <IconCheck size={16} />
-          <span>В документах тендера есть цены для позиций без цены: {autoPickReady}.</span>
-          <button type="button" className="btn-primary" onClick={() => setTenderDocs({ files: null })}>Посмотреть и подставить</button>
-          <button type="button" className="sp-link-btn" onClick={() => setAutoPickHidden(true)}>скрыть</button>
-        </div>
-      )}
       {missing && (
         <div className="sp-banner is-warn" role="status">
           <IconAlert size={16} />
@@ -2157,13 +2160,9 @@ export default function SupplyPricingPanel({
       {(revisions || []).length > 0 && (
         <div className="sp-banner is-info sp-rev-banner" role="status">
           <IconRefresh size={16} />
-          <span>
-            Сметный отдел обновил ВОР: {[...revByDoc.keys()].map((n) => `«${n}»`).join(', ')}. Что изменилось — в шапке ВОР и в строках:
-            {' '}новые позиции, «было …» у объёма и ед. изм.; цены убранных позиций сохранены — внизу, в «Ценах без позиции».
-            {' '}Цена осталась сама только у позиций с тем же наименованием.
-          </span>
-          {changedCount > 0 && filter !== 'changed' && (
-            <button type="button" className="sp-link-btn" onClick={() => setFilter('changed')}>только изменения ({changedCount})</button>
+          <span>Сметный отдел обновил ВОР: {[...revByDoc.keys()].map((n) => `«${n}»`).join(', ')}. Изменения подсвечены в таблице, цена осталась только у позиций с тем же наименованием.</span>
+          {counts.changed > 0 && filter !== 'changed' && (
+            <button type="button" className="sp-link-btn" onClick={() => setFilter('changed')}>только изменения ({counts.changed})</button>
           )}
           {editable && <button type="button" className="sp-link-btn" onClick={() => reviewDocs(null)}>все изменения просмотрены</button>}
         </div>
@@ -2174,10 +2173,6 @@ export default function SupplyPricingPanel({
           <button type="button" className="sp-link-btn" onClick={() => setNotice('')}>Скрыть</button>
         </div>
       )}
-      {fromTab && (
-        <p className="sp-muted sp-source-hint">Файлов ВОР с листом «Материалы» или колонкой «КОД» в «ВОРах и РД» нет — позиции взяты из вкладки «ВОР» карточки тендера: строки с кодом «мат.».</p>
-      )}
-
       {!missing && docViews.length === 0 && !importing && (
         <div className="sp-empty">
           <p>Позиций для расценки нет.</p>
@@ -2197,38 +2192,40 @@ export default function SupplyPricingPanel({
               <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Поиск по наименованию" aria-label="Поиск по наименованию материала" />
             </label>
             <div className="sp-filter" role="group" aria-label="Показать позиции">
-              {[['all', 'Все'], ['unpriced', 'Не расценены'], ['priced', 'Расценены'],
-                ...(changedCount > 0 || filter === 'changed' ? [['changed', `Изменения ВОР (${changedCount})`]] : [])].map(([k, label]) => (
+              {[['all', `Все (${counts.all})`], ['unpriced', `Не расценены (${counts.unpriced})`], ['priced', `Расценены (${counts.priced})`],
+                ...(counts.changed > 0 || filter === 'changed' ? [['changed', `Изменения ВОР (${counts.changed})`]] : [])].map(([k, label]) => (
                 <button key={k} type="button" className={`sp-filter-btn${filter === k ? ' active' : ''}`} aria-pressed={filter === k} onClick={() => setFilter(k)}>{label}</button>
               ))}
             </div>
-            {datesOn && (
+            {docViews.length > 1 && (
+              <select className="sp-vor-filter" value={vorFilter} onChange={(e) => setVorFilter(e.target.value)} aria-label="Показать позиции ВОР">
+                <option value="">Все ВОР ({docViews.length})</option>
+                {docViews.map((d) => <option key={d.name} value={d.name}>{d.name} · {d.priced} из {d.positions.length}</option>)}
+              </select>
+            )}
+            {datesOn && (dateOpen || dateFrom || dateTo ? (
               <div className={`sp-date-filter${dateFrom || dateTo ? ' is-active' : ''}`} role="group" aria-label="Дата цены">
                 <span>Дата цены</span>
                 <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} aria-label="Дата цены: с" />
                 <span aria-hidden="true">—</span>
                 <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} aria-label="Дата цены: по" />
-                {(dateFrom || dateTo) && (
-                  <button type="button" className="sp-link-btn" onClick={() => { setDateFrom(''); setDateTo('') }}>сбросить</button>
-                )}
+                <button type="button" className="sp-link-btn" onClick={() => { setDateFrom(''); setDateTo(''); setDateOpen(false) }}>сбросить</button>
               </div>
-            )}
-            {docViews.length > 1 && (
-              <button type="button" className="sp-link-btn" onClick={() => setCollapsed(collapsed.size ? new Set() : new Set(docViews.map((d) => d.name)))}>
-                {collapsed.size ? 'Развернуть все ВОР' : 'Свернуть все ВОР'}
-              </button>
+            ) : (
+              <button type="button" className="sp-link-btn" onClick={() => setDateOpen(true)}>фильтр по дате цены</button>
+            ))}
+            {deliveryOn && !rates.some((r) => rateDelivery(r)) && (
+              <button type="button" className="sp-link-btn" aria-pressed={deliveryOpen} onClick={() => setDeliveryOpen(!deliveryOpen)}>{deliveryOpen ? 'скрыть доставку' : 'показать доставку'}</button>
             )}
             <div className="sp-toolbar-right">
-              <span className="sp-summary-inline" aria-live="polite">Расценено <b className="ui-num">{grand.priced}</b> из <b className="ui-num">{grand.positions}</b> · Итого <b className="ui-num">{formatAmount(grand.total)} ₽</b></span>
-              <span className="sp-muted sp-registry-hint">В реестре «Расценки от снабжения СУ-10» — в течение 10 минут</span>
               {editable && (
-                <button type="button" className="btn-secondary" onClick={() => setTenderDocs({ files: null })}
-                  title="Прикрепить счета и КП ко всему тендеру (Excel, PDF): цены подберутся к позициям ВОР сами">
-                  <IconUpload size={16} /> Счета и КП тендера{tenderDocCount > 0 ? ` (${tenderDocCount})` : ''}
+                <button type="button" className={autoPickReady > 0 ? 'btn-primary' : 'btn-secondary'} onClick={() => setTenderDocs({ files: null })}
+                  title="Счета и КП поставщиков (Excel, PDF): цены подберутся к позициям ВОР сами">
+                  <IconUpload size={16} /> Счета и КП{tenderDocCount > 0 ? ` (${tenderDocCount})` : ''}{autoPickReady > 0 ? ` · новых цен: ${autoPickReady}` : ''}
                 </button>
               )}
-              <button type="button" className="btn-secondary" onClick={exportExcel}><IconFileSpreadsheet size={16} /> Скачать Excel</button>
-              {revisions !== null && (
+              {showAuthor && <button type="button" className="btn-secondary" onClick={exportExcel}><IconFileSpreadsheet size={16} /> Скачать Excel</button>}
+              {showAuthor && revisions !== null && (
                 <button type="button" className="btn-secondary" onClick={() => setVersionsOpen(true)} title="Что менялось в ВОР и цены каждой прежней версии">
                   <IconHistory size={16} /> Версии ВОР
                 </button>
@@ -2236,39 +2233,41 @@ export default function SupplyPricingPanel({
             </div>
           </div>
 
-          {/* Строка состояния постоянной высоты: «сохраняем / всё сохранено / не сохранено» и подстановка цены —
-              без плашек над таблицей, которые сдвигали строки под курсором. */}
-          {editable && (
-            <div className="sp-statusbar" role="status" aria-live="polite">
-              {failedCount > 0 ? (
-                <span className="sp-save-status is-error"><IconAlertCircle size={16} /> Не сохранено: {failedCount} — строки с красным значком, нажмите на значок, чтобы повторить</span>
-              ) : savingCount > 0 ? (
-                <span className="sp-save-status is-saving"><IconClock size={16} /> Сохраняем…</span>
-              ) : lastSavedAt ? (
-                <span className="sp-save-status is-ok"><IconCheck size={16} /> Все цены сохранены · {fmtClock(lastSavedAt)}</span>
-              ) : (
-                <span className="sp-save-status sp-muted">Цены сохраняются сами — через секунду после ввода или при переходе в другое поле</span>
-              )}
-              {fillNote && <span className="sp-fill-note">{fillNote}</span>}
-              {reuseNote && !fillNote && <span className="sp-fill-note">{reuseNote}</span>}
-              {selectable && selected.size > 0 && (
+          {/* Строка постоянной высоты под панелью: спойлер ВОР слева, состояние справа — сообщения не сдвигают таблицу под курсором. */}
+          <div className="sp-subbar">
+            {renderVors()}
+            {editable && (
+          <div className="sp-statusbar" role="status" aria-live="polite">
+              {selectable && selected.size > 0 ? (
                 <span className="sp-sel-bar">
                   <span>Отмечено: <b className="ui-num">{selected.size}</b></span>
-                  <button type="button" className="btn-secondary sp-sel-action" onClick={() => openLinkDialog(selected)}>
+                  <button type="button" className="btn-secondary sp-sel-action" onClick={() => openLinkDialog(allRows.filter((r) => selected.has(r.key)))}>
                     <IconLink size={16} /> Документ
                   </button>
                   <button type="button" className="sp-link-btn" onClick={() => setSelected(new Set())}>Снять отметку</button>
                 </span>
+              ) : (
+                <>
+                  {failedCount > 0 ? (
+                    <span className="sp-save-status is-error"><IconAlertCircle size={16} /> Не сохранено: {failedCount} — нажмите красный значок в строке</span>
+                  ) : savingCount > 0 ? (
+                    <span className="sp-save-status is-saving"><IconClock size={16} /> Сохраняем…</span>
+                  ) : lastSavedAt ? (
+                    <span className="sp-save-status is-ok"><IconCheck size={16} /> Все цены сохранены · {fmtClock(lastSavedAt)}</span>
+                  ) : null}
+                  {(fillNote || reuseNote) && <span className="sp-fill-note" title={fillNote || reuseNote}>{fillNote || reuseNote}</span>}
+                </>
               )}
             </div>
-          )}
+            )}
+          </div>
 
           <div ref={tableWrapRef} className={`table-container sp-table-wrap${virtual ? ' is-virtual' : ''}`}>
-            <table className={`data-table sp-table${linksOn ? ' has-links' : ''}${datesOn ? (showAuthor ? ' has-dates has-authors' : ' has-dates') : ''}${deliveryOn ? ' has-delivery' : ''}`}>
+            <table className={`data-table sp-table${linksOn ? ' has-links' : ''}${datesOn ? (showAuthor ? ' has-dates has-authors' : ' has-dates') : ''}${deliveryShown ? ' has-delivery' : ''}`}>
               <colgroup>
                 {selectable && <col className="sp-c-sel" />}
                 <col className="sp-c-num" /><col className="sp-c-name" /><col className="sp-c-unit" /><col className="sp-c-vol" />
-                <col className="sp-c-price" />{deliveryOn && <col className="sp-c-delivery" />}<col className="sp-c-total" />
+                <col className="sp-c-price" />{deliveryShown && <col className="sp-c-delivery" />}<col className="sp-c-total" />
                 {datesOn && <col className="sp-c-date" />}
                 {linksOn && <col className="sp-c-doc" />}
                 <col className="sp-c-state" />
@@ -2286,11 +2285,11 @@ export default function SupplyPricingPanel({
                   <th>Наименование</th>
                   <th>Ед. изм.</th>
                   <th className="ui-money">Объём</th>
-                  {deliveryOn
+                  {deliveryShown
                     ? <th className="ui-money" title="Цена материала за единицу с НДС; доставку — в соседней колонке (необязательно): цена позиции = цена + доставка за единицу">Цена за ед. с НДС, ₽</th>
                     : <th className="ui-money" title="Как в листе «Материалы» ВОР: цена с учётом доставки и НДС">Цена за ед. с доставкой и НДС, ₽</th>}
-                  {deliveryOn && <th className="ui-money" title="Необязательно: за единицу или на всю позицию. Прибавляется к цене — в расценке цена за единицу с доставкой">Доставка, ₽</th>}
-                  <th className="ui-money" title={deliveryOn ? 'Объём × цена за единицу с доставкой, с НДС' : 'Объём × цена за единицу, с НДС'}>Итого с НДС, ₽</th>
+                  {deliveryShown && <th className="ui-money" title="Необязательно: за единицу или на всю позицию. Прибавляется к цене — в расценке цена за единицу с доставкой">Доставка, ₽</th>}
+                  <th className="ui-money" title={deliveryShown ? 'Объём × цена за единицу с доставкой, с НДС' : 'Объём × цена за единицу, с НДС'}>Итого с НДС, ₽</th>
                   {datesOn && (
                     <th title={showAuthor ? 'День расценки (по Москве) и кто поставил цену' : 'День расценки — когда ввели или изменили цену (по Москве)'}>
                       {showAuthor ? 'Дата цены, кто' : 'Дата цены'}
@@ -2301,14 +2300,14 @@ export default function SupplyPricingPanel({
                 </tr>
               </thead>
               {virtual
-                ? <VirtualTableBody rowCount={items.length} renderRow={(i) => renderItem(items[i])} colSpan={colCount} scrollRef={tableWrapRef} rowHeight={44} />
-                : <tbody>{items.map(renderItem)}</tbody>}
+                ? <VirtualTableBody rowCount={rows.length} renderRow={(i) => renderRow(rows[i])} colSpan={colCount} scrollRef={tableWrapRef} rowHeight={44} />
+                : <tbody>{rows.length ? rows.map(renderRow) : <tr><td colSpan={colCount} className="no-data">Позиций нет</td></tr>}</tbody>}
               <tfoot>
                 <tr>
-                  <td colSpan={selectable ? 5 : 4}>Итого{docViews.length > 1 ? ` по ${docViews.length} ВОР` : ''} · расценено <span className="ui-num">{grand.priced}</span> из <span className="ui-num">{grand.positions}</span></td>
+                  <td colSpan={selectable ? 5 : 4}>Итого</td>
                   <td />
-                  {deliveryOn && <td />}
-                  <td className="ui-money"><b>{formatAmount(grand.total)}</b></td>
+                  {deliveryShown && <td />}
+                  <td className="ui-money"><b>{formatAmount(shownDoc ? shownDoc.total : grand.total)}</b></td>
                   {datesOn && <td />}
                   {linksOn && <td />}
                   <td />
@@ -2323,7 +2322,7 @@ export default function SupplyPricingPanel({
         <details className="sp-orphans" open={orphans.some((r) => removedByKey.has(posKey(r.estimate_name, r.material_key)) || carry.byRate.has(r.id)) || undefined}>
           <summary>Цены без позиции в ВОР ({orphans.length}){carry.byRate.size > 0 ? ` · похожих позиций для переноса: ${carry.byRate.size}` : ''}</summary>
           <p className="sp-muted">
-            Наименования нет в позициях своего ВОР (ВОР обновился или цена загружена из Excel с другим написанием). Цены не удаляются сами;
+            Наименования нет в позициях своего ВОР. Цены не удаляются сами;
             {revisions !== null ? ' цену можно перенести на позицию ВОР — день расценки и документ сохранятся.' : ''}
           </p>
           <ul>
@@ -2385,20 +2384,14 @@ export default function SupplyPricingPanel({
       {tenderDocs && (
         <Suspense fallback={<div className="sp-modal-backdrop"><div className="sp-modal"><p className="sp-modal-body">Открываем…</p></div></div>}>
           <SupplyTenderDocsDialog docs={offerDocs || []} others={otherDocs} byGroup={pickByGroup} groups={tenderGroups} rates={rates} filesOn={filesOn} currentOf={currentOf}
-            initialFiles={tenderDocs.files} onAddFile={addTenderFile} onDeleteDoc={deleteFile} onReview={reviewTenderDoc} onOpenFile={setPreview}
-            onApply={applyAutoPick} onClose={() => setTenderDocs(null)} />
+            initialFiles={tenderDocs.files} attachTo={tenderDocs.attachTo || null} onAddFile={addTenderFile} onAttachDoc={attachDoc} onDeleteDoc={deleteFile} onOpenFile={setPreview}
+            onApply={applyAutoPick} onPickLine={pickLine} onRejectLine={rejectLine} onPack={setLinePack} onSetRate={setOfferRate} onSetVat={setOfferVat}
+            onClose={() => setTenderDocs(null)} />
         </Suspense>
       )}
       {linkDialog && (
-        <SupplyLinkDialog mainId={mainId} targets={linkDialog.targets} busy={linkBusy} error={linkError} filesOn={filesOn}
-          initialFile={linkDialog.file || null} offerLines={offerLineCounts}
+        <SupplyLinkDialog mainId={mainId} targets={linkDialog.targets} rowCount={linkDialog.rowCount} title={linkDialog.title} busy={linkBusy} error={linkError} filesOn={filesOn}
           onSave={saveLink} onRemove={removeLink} onDeleteFile={deleteFile} onClose={() => { if (!linkBusy) setLinkDialog(null) }} />
-      )}
-      {docImport && (
-        <Suspense fallback={<div className="sp-modal-backdrop"><div className="sp-modal"><p className="sp-modal-body">Открываем…</p></div></div>}>
-          <SupplyDocImportDialog groups={docImport.groups} preset={docImport.preset} currentOf={currentOf} filesOn={filesOn} deliveryOn={deliveryOn}
-            onApply={applyDocPrices} onAddOffers={addOffer} onOffersDone={offersDone} onClose={() => setDocImport(null)} />
-        </Suspense>
       )}
       {preview && (
         <Suspense fallback={null}>
@@ -2432,11 +2425,15 @@ export default function SupplyPricingPanel({
           onRestore={(v) => {
             const h = historyFor
             setHistoryFor(null)
-            const volume = h.position.units ? null : Number(h.position.volume)
-            const intent = v.input === 'total' && v.total != null && volume > 0
-              ? { mode: 'total', value: Number(v.total) }
-              : { mode: 'unit', value: Number(v.price) }
-            runSave(h.key, { ...intent, estimateName: h.estimateName, position: h.position })
+            // Строка из нескольких ВОР — та же цена всем; одна — как её вводили.
+            const list = h.row?.targets || [{ key: h.key, doc: h.estimateName, p: h.position }]
+            for (const t of list) {
+              const volume = t.p.units ? null : Number(t.p.volume)
+              const intent = list.length === 1 && v.input === 'total' && v.total != null && volume > 0
+                ? { mode: 'total', value: Number(v.total) }
+                : { mode: 'unit', value: Number(v.price) }
+              runSave(t.key, { ...intent, estimateName: t.doc, position: t.p })
+            }
           }}
         />
       )}
@@ -2444,27 +2441,28 @@ export default function SupplyPricingPanel({
   )
 }
 
-// Строка перерисовывается, только когда меняются её позиция, цена, ввод, подсветка или номер.
-const samePriceRow = (a, b) => a.row.p === b.row.p && a.row.rate === b.row.rate && a.row.draft === b.row.draft
-  && a.row.gi === b.row.gi && a.row.index === b.row.index && a.row.doc === b.row.doc
-  && a.row.duplicates.length === b.row.duplicates.length
+// Строка перерисовывается, только когда меняются её позиция, цены, ввод, подсветка или номер.
+const sameTarget = (x, y) => x.rate === y.rate && x.draft === y.draft && x.change === y.change && x.carry === y.carry
+  && x.unitOff === y.unitOff && x.duplicates.length === y.duplicates.length
+const samePriceRow = (a, b) => a.row.p === b.row.p && a.row.group === b.row.group
+  && a.row.gi === b.row.gi && a.row.index === b.row.index && a.row.targets.length === b.row.targets.length
+  && a.row.targets.every((t, i) => sameTarget(t, b.row.targets[i]))
   && a.flash === b.flash && a.editable === b.editable && a.nameOf === b.nameOf && a.act === b.act
   && a.linksOn === b.linksOn && a.link === b.link && a.linkDoc === b.linkDoc && a.selectable === b.selectable && a.selected === b.selected
   && a.origin === b.origin && a.similar === b.similar && a.suggestOpen === b.suggestOpen
   && a.offerCount === b.offerCount && a.fileDrop === b.fileDrop
   && a.datesOn === b.datesOn && a.showAuthor === b.showAuthor && a.deliveryOn === b.deliveryOn
-  && a.row.change === b.row.change && a.row.carry === b.row.carry && a.row.unitOff === b.row.unitOff
   && a.suspect?.offer === b.suspect?.offer && a.suspect?.kind === b.suspect?.kind
 
 const PriceRow = memo(function PriceRow({
   row, flash, editable, nameOf, act, linksOn, link, linkDoc, selectable, selected, origin, similar, suggestOpen, datesOn, showAuthor,
   offerCount = 0, fileDrop = false, deliveryOn = false, suspect = null,
 }) {
-  const { p, draft, view, index, gi, change } = row
+  const { p, draft, view, index, gi, change, vorLabel } = row
   const [dropping, setDropping] = useState(false)
   const choices = similar + offerCount
   const choicesLabel = row.rate && !row.rate.source_kind ? 'цены поставщиков' : row.rate?.source_kind ? 'другие похожие цены' : 'похожие цены'
-  // Файл, перетащенный на ячейку «Документ», — окно документа с этим файлом (перетаскивают не только файлы — текст тоже).
+  // Файл, перетащенный на ячейку «Документ», — сразу окно всех расценок с этим файлом (перетаскивают не только файлы — текст тоже).
   const drop = fileDrop ? {
     onDragOver: (e) => { if (withFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDropping(true) } },
     onDragLeave: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDropping(false) },
@@ -2473,22 +2471,24 @@ const PriceRow = memo(function PriceRow({
       e.preventDefault()
       setDropping(false)
       const f = e.dataTransfer.files?.[0]
-      if (f) act('dropDoc', row.key, f)
+      if (f) act('dropDoc', row, f)
     },
   } : null
   const mixed = !!p.units
   const noVolume = !mixed && !(view.volume > 0)
   const totalDisabled = !editable || mixed || noVolume
-  // «было …» под объёмом — только если объём и правда другой (у позиции могла смениться одна ед. изм.).
-  const wasVolume = (change?.op === 'volume' || change?.op === 'unit') && change.oldVolume != null && !mixed
+  // «было …» под объёмом — только если объём и правда другой (у позиции могла смениться одна ед. изм.); в строке из нескольких ВОР — в подсказке строки.
+  const wasVolume = row.targets.length === 1 && (change?.op === 'volume' || change?.op === 'unit') && change.oldVolume != null && !mixed
     && Number(change.oldVolume) !== Number(p.volume)
+  const vorsTitle = row.targets.map((t) => `${t.doc}: ${t.p.units ? t.p.units.map((u) => `${fmtVolume(u.volume)} ${u.unit || ''}`).join('; ') : `${fmtVolume(t.p.volume)} ${t.p.unit || ''}`}`).join('\n')
+  const unifyLabel = view.fullPrice != null ? `поставить ${formatAmount(roundMoney(view.fullPrice))} во все ВОР` : 'поставить во все ВОР'
   return (
     <tr
       className={[
         !view.priced && 'is-unpriced',
         change?.op === 'added' && 'is-new',
         (change?.op === 'volume' || change?.op === 'unit' || row.unitOff) && 'is-changed',
-        (flash?.kind === 'remote' || flash?.kind === 'auto') && 'is-remote',
+        flash?.kind === 'remote' && 'is-remote',
         draft?.status === 'error' && 'is-error',
         draft?.status === 'conflict' && 'is-conflict',
         selected && 'is-selected',
@@ -2496,18 +2496,25 @@ const PriceRow = memo(function PriceRow({
     >
       {selectable && (
         <td className="sp-sel" data-label="">
-          <SelectBox checked={selected} onChange={() => act('toggleSelect', row.key)} label={`Отметить: ${p.name} (ВОР «${row.doc}»)`} />
+          <SelectBox checked={selected} onChange={() => act('toggleSelect', row.key)} label={`Отметить: ${p.name} (${vorLabel})`} />
         </td>
       )}
       <td className="ui-rownum" data-label="№">{index + 1}</td>
       <td className="sp-name" data-label="Наименование">
         <span>{p.name}</span>
+        {row.group.sameAs?.length > 0 && (
+          <span className="sp-hint">
+            в другом ВОР: {row.group.sameAs.map((s) => `«${s.name}»`).join(', ')}
+            <button type="button" className="sp-link-btn" title="Это разные материалы: показать отдельными строками" onClick={() => act('split', row)}
+              aria-label={`Разделить: ${p.name}`}>разделить</button>
+          </span>
+        )}
         {change?.op === 'added' && <span className="sp-hint sp-change is-new">новая позиция в ВОР</span>}
         {change?.op === 'volume' && <span className="sp-hint sp-change">объём изменился{change.oldVolume != null ? <> — было <span className="ui-num">{fmtVolume(change.oldVolume)}</span></> : ''}</span>}
         {change?.op === 'unit' && !row.unitOff && <span className="sp-hint sp-change">ед. изм. изменилась — была «{change.oldUnit || '—'}»</span>}
         {row.unitOff && (
           <span className="sp-hint is-warn">
-            цена — за «{row.rate.unit}», а в ВОР теперь «{p.unit}»: проверьте или введите новую
+            цена — за «{row.rate?.unit}», а в ВОР теперь «{p.unit}»: проверьте или введите новую
             {editable && <button type="button" className="sp-link-btn" onClick={() => act('confirmUnit', row)}>цена верна за «{p.unit}»</button>}
           </span>
         )}
@@ -2525,15 +2532,16 @@ const PriceRow = memo(function PriceRow({
           </span>
         )}
         {mixed && <span className="sp-hint">разные ед. изм.: цена одна на все строки ВОР, сумма — по каждой</span>}
-        {noVolume && (
-          <span className="sp-hint">
-            {p.volume == null ? 'объёма в ВОР нет' : 'объём в ВОР — 0'}: вводится только цена за единицу, итог не посчитать
-          </span>
-        )}
         {row.duplicates.length > 0 && (
           <span className="sp-hint is-warn">
             ещё цен на это наименование: {row.duplicates.length} (из Excel)
             {editable && <button type="button" className="sp-link-btn" onClick={() => act('removeDuplicates', row)}>оставить последнюю</button>}
+          </span>
+        )}
+        {(row.unequal || row.partial) && !draft && (
+          <span className="sp-hint is-warn" title={vorsTitle}>
+            {row.unequal ? <>в ВОР разные цены: <span className="ui-num">{row.prices.slice(0, 3).map((x) => formatAmount(x)).join(' · ')}</span></> : 'цена не во всех ВОР'}
+            {editable && <button type="button" className="sp-link-btn" onClick={() => act('unify', row)}>{unifyLabel}</button>}
           </span>
         )}
         {row.rate?.source_kind && !draft && <OriginHint rate={row.rate} origin={origin} onOpenFile={(doc) => act('openFile', doc)} />}
@@ -2553,7 +2561,7 @@ const PriceRow = memo(function PriceRow({
         {choices > 0 && (
           <span className="sp-hint">
             <button type="button" className={`sp-similar-btn${suggestOpen ? ' is-open' : ''}${offerCount ? ' has-offers' : ''}`} aria-haspopup="dialog" aria-expanded={suggestOpen}
-              aria-label={`${offerCount && !similar ? 'Цены поставщиков' : 'Похожие цены'}: ${choices}${offerCount && similar ? `, из документов поставщиков — ${offerCount}` : ''}. ${p.name} (ВОР «${row.doc}»)`}
+              aria-label={`${offerCount && !similar ? 'Цены поставщиков' : 'Похожие цены'}: ${choices}${offerCount && similar ? `, из документов поставщиков — ${offerCount}` : ''}. ${p.name} (${vorLabel})`}
               onClick={(e) => act('suggest', row, e.currentTarget)}>
               {choicesLabel}: <span className="ui-num">{choices}</span> <IconChevronDown size={14} />
             </button>
@@ -2565,17 +2573,18 @@ const PriceRow = memo(function PriceRow({
         {change?.op === 'unit' && change.oldUnit && ' '}
         {mixed ? p.units.map((u) => u.unit || '—').join(', ') : (p.unit || '—')}
       </td>
-      <td className="ui-money" data-label="Объём">
+      <td className="ui-money" data-label="Объём" title={vorsTitle}>
         {mixed ? p.units.map((u, i) => <div key={i}>{fmtVolume(u.volume)} {u.unit || ''}</div>) : fmtVolume(p.volume)}
+        {row.shownCount > 1 && <div className="sp-was">{row.shownCount} ВОР</div>}
         {wasVolume && <div className="sp-was" title="Объём в прежней версии ВОР">было {fmtVolume(change.oldVolume)}</div>}
       </td>
-      <td className="sp-input-cell" data-label={deliveryOn ? 'Цена с НДС, ₽' : 'Цена с доставкой и НДС, ₽'}>
+      <td className="sp-input-cell sp-price-cell" data-label={deliveryOn ? 'Цена с НДС, ₽' : 'Цена с доставкой и НДС, ₽'}>
         <SupplyMoneyCell
           value={view.unitPrice}
           derived={view.primary === 'total' && view.priced}
           disabled={!editable}
           cellId={`unit-${gi}`}
-          label={`Цена за единицу: ${p.name} (ВОР «${row.doc}»)`}
+          label={`Цена за единицу: ${p.name} (${vorLabel})`}
           title={view.primary === 'total' && view.priced ? 'Посчитано из суммы: сумма ÷ объём' : undefined}
           invalid={draft?.status === 'error' && draft.mode === 'unit'}
           onCommit={(raw) => act('commit', row, 'unit', raw)}
@@ -2593,7 +2602,7 @@ const PriceRow = memo(function PriceRow({
           derived={view.primary === 'unit' && view.priced}
           disabled={totalDisabled}
           cellId={`total-${gi}`}
-          label={`Сумма: ${p.name} (ВОР «${row.doc}»)`}
+          label={`Сумма: ${p.name} (${vorLabel})`}
           placeholder={editable && mixed ? 'разные ед.' : editable && noVolume ? 'нет объёма' : '—'}
           title={mixed ? 'Сумму не ввести: у позиции разные единицы измерения'
             : noVolume ? 'Сумму не ввести: в ВОР у позиции нет объёма — введите цену за единицу'
@@ -2609,9 +2618,9 @@ const PriceRow = memo(function PriceRow({
       )}
       {linksOn && (
         <td className={`sp-doc${dropping ? ' is-drop' : ''}`} data-label="Документ" {...drop}
-          title={fileDrop && !link ? 'Перетащите сюда файл документа или нажмите «+ документ»' : undefined}>
-          <LinkCell link={link} file={linkDoc} editable={editable} name={p.name} doc={row.doc} nameOf={nameOf}
-            onEdit={() => act('editLink', row.key)} onOpenFile={(d) => act('openFile', d)} />
+          title={fileDrop && !link ? 'Перетащите сюда счёт или нажмите «+ документ»' : undefined}>
+          <LinkCell link={link} file={linkDoc} editable={editable} name={p.name} vorLabel={vorLabel} nameOf={nameOf}
+            onEdit={() => act('editLink', row)} onOpenFile={(d) => act('openFile', d)} />
         </td>
       )}
       <td className="sp-state" data-label="">
@@ -2649,7 +2658,7 @@ function DeliveryCell({ row, editable, act }) {
           value={view.delivery?.value ?? null}
           disabled={!editable || !view.priced}
           cellId={`deliv-${gi}`}
-          label={`Доставка ${mode === 'total' ? 'на позицию' : 'за единицу'}: ${p.name} (ВОР «${row.doc}»)`}
+          label={`Доставка ${mode === 'total' ? 'на позицию' : 'за единицу'}: ${p.name} (${row.vorLabel})`}
           placeholder={closed ? 'после цены' : '—'}
           title={closed ? 'Сначала цена: доставка прибавляется к цене за единицу' : undefined}
           invalid={invalid}
@@ -2657,7 +2666,7 @@ function DeliveryCell({ row, editable, act }) {
         />
         {(editable || view.delivery) && (
           <select className="sp-delivery-mode" value={mode} disabled={!editable || !view.priced || (!canTotal && mode === 'unit')}
-            aria-label={`Доставка за единицу или на позицию: ${p.name} (ВОР «${row.doc}»)`}
+            aria-label={`Доставка за единицу или на позицию: ${p.name} (${row.vorLabel})`}
             title={canTotal ? 'За единицу или на всю позицию (объём ВОР)' : 'Без объёма в ВОР — только за единицу'}
             onChange={(e) => changeMode(e.target.value)}>
             {DELIVERY_MODES.map(([k, label]) => <option key={k} value={k} disabled={k === 'total' && !canTotal}>{label}</option>)}
@@ -2730,8 +2739,6 @@ function OriginHint({ rate, origin, onOpenFile }) {
       ) : (
         <>
           цена из {tender}
-          {origin?.object_name && <> · {origin.object_name}</>}
-          {date && <> · от <span className="ui-num">{fmtPriceDate(date)}</span></>}
         </>
       )}
       {date && !isFreshPriceDate(date) && <span className="sp-origin-stale">{sep}старше 3 месяцев</span>}
@@ -2773,24 +2780,22 @@ function RowState({ row, flash, editable, nameOf, act }) {
     const canRetry = draft.kind === 'retry' || draft.kind === 'stored' || draft.kind === 'error'
     status = canRetry
       ? (
-        <button type="button" className="sp-icon-btn is-error" onClick={() => act('retry', row.key)} aria-label={`Не сохранено: ${draft.message}. Повторить`} title={`Не сохранено: ${draft.message}. Нажмите, чтобы повторить`}>
+        <button type="button" className="sp-icon-btn is-error" onClick={() => act('retry', row)} aria-label={`Не сохранено: ${draft.message}. Повторить`} title={`Не сохранено: ${draft.message}. Нажмите, чтобы повторить`}>
           <IconAlertCircle size={16} />
         </button>
       )
       : <span className="sp-st is-error" role="img" title={draft.message} aria-label={`Не сохранено: ${draft.message}`}><IconAlertCircle size={16} /></span>
-    middle = <button type="button" className="sp-icon-btn" onClick={() => act('discard', row.key)} aria-label="Отменить ввод" title="Отменить ввод">×</button>
+    middle = <button type="button" className="sp-icon-btn" onClick={() => act('discard', row)} aria-label="Отменить ввод" title="Отменить ввод">×</button>
   } else if (rate) {
     const who = nameOf(rate.updated_by)
-    const text = flash?.kind === 'auto'
-      ? `Сохранено: подставлено из ВОР «${flash.from}» — такая же позиция`
-      : flash?.kind === 'remote'
-        ? `Изменил(а) ${nameOf(flash.by) || 'другой пользователь'}${flash.at ? ` в ${fmtTime(flash.at)}` : ''}`
-        : `Сохранено${rate.updated_at ? ` ${fmtTime(rate.updated_at)}` : ''}${who ? `, ${who}` : ''}`
-    const fresh = flash?.kind === 'saved' || flash?.kind === 'auto'
+    const text = flash?.kind === 'remote'
+      ? `Изменил(а) ${nameOf(flash.by) || 'другой пользователь'}${flash.at ? ` в ${fmtTime(flash.at)}` : ''}`
+      : `Сохранено${rate.updated_at ? ` ${fmtTime(rate.updated_at)}` : ''}${who ? `, ${who}` : ''}`
+    const fresh = flash?.kind === 'saved'
     status = <span className={`sp-st is-saved${fresh ? ' is-fresh' : ''}`} role="img" aria-label={text} title={text}><IconCheck size={16} /></span>
   }
   if (view.volumeChanged && !draft) {
-    const text = `Объём изменился: было ${fmtVolume(rate.volume_at_input)}, стало ${fmtVolume(view.volume)}. Цена за единицу та же, сумма пересчитана`
+    const text = row.targets.length === 1 ? `Объём изменился: было ${fmtVolume(rate?.volume_at_input)}, стало ${fmtVolume(view.volume)}. Цена за единицу та же, сумма пересчитана` : 'Объём изменился. Цена за единицу та же, сумма пересчитана'
     middle = editable
       ? <button type="button" className="sp-icon-btn is-warn" onClick={() => act('acceptVolume', row)} aria-label={`${text}. Принять`} title={`${text}. Нажмите, чтобы принять`}><IconAlert size={16} /></button>
       : <span className="sp-st is-warn" role="img" title={text} aria-label={text}><IconAlert size={16} /></span>
@@ -2912,19 +2917,19 @@ function SelectBox({ checked, indeterminate = false, disabled = false, onChange,
 // Документ позиции — как «Ссылка на КП» в реестре тендеров на материалы: ссылка — «Открыть» (адрес http(s), новая
 // вкладка) или «Скопировать» (сетевой путь браузер не откроет), адрес — в подсказке; файл — скрепка и имя файла,
 // открывается в окне просмотра. Правка — карандаш. Нет — «+ документ» у того, у кого право правки, иначе «—».
-function LinkCell({ link, file, editable, name, doc, nameOf, onEdit, onOpenFile }) {
+function LinkCell({ link, file, editable, name, vorLabel, nameOf, onEdit, onOpenFile }) {
   const [copied, setCopied] = useState(false)
   if (!link) {
     return editable
       ? <button type="button" className="tp-add-link" onClick={onEdit} title="Прикрепить документ: ссылку или файл"
-          aria-label={`Прикрепить документ: ${name} (ВОР «${doc}»)`}>+ документ</button>
+          aria-label={`Прикрепить документ: ${name} (${vorLabel})`}>+ документ</button>
       : <span className="sp-muted">—</span>
   }
   const who = nameOf(link.updated_by)
   const stamp = `${link.updated_at ? ` · ${fmtTime(link.updated_at)}` : ''}${who ? `, ${who}` : ''}`
   const edit = editable && (
     <button type="button" className="sp-icon-btn sp-doc-edit" onClick={onEdit} title="Изменить документ"
-      aria-label={`Изменить документ: ${name} (ВОР «${doc}»)`}>
+      aria-label={`Изменить документ: ${name} (${vorLabel})`}>
       <IconPencil size={14} />
     </button>
   )

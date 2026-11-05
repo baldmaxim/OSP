@@ -2,26 +2,16 @@ import { useId, useState } from 'react'
 import { IconClose } from '../icons/ToolbarIcons'
 import { MAX_LABELS, normalizeLabels } from '../../utils/docCheckHelpers'
 
-// Список коротких текстов заявки: плашки с крестиком и поле ввода. Enter или запятая — добавить;
-// подсказки — то, чем уже пользуются (частые первыми). По умолчанию — метки; те же плашки у
-// исполнителей без учётной записи (свои предел, разбор и подписи).
-export default function DocCheckLabelsInput({
-  value, onChange, suggestions,
-  normalize = normalizeLabels,
-  max = MAX_LABELS,
-  className = 'dc-labels-input',
-  inputLabel = 'Новая метка',
-  placeholder = 'Метка: Enter — добавить',
-  fullText = `Не больше ${MAX_LABELS} меток`,
-  removeLabel = (label) => `Убрать метку «${label}»`,
-}) {
+// Метки заявки: плашки с крестиком и поле ввода. Enter или запятая — добавить;
+// подсказки — то, чем уже пользуются (частые первыми).
+export default function DocCheckLabelsInput({ value, onChange, suggestions }) {
   const [draft, setDraft] = useState('')
   const listId = useId()
   const labels = value || []
-  const full = labels.length >= max
+  const full = labels.length >= MAX_LABELS
 
   const add = (text) => {
-    const next = normalize([...labels, ...String(text).split(',')])
+    const next = normalizeLabels([...labels, ...String(text).split(',')])
     if (next.length !== labels.length) onChange(next)
     setDraft('')
   }
@@ -29,11 +19,11 @@ export default function DocCheckLabelsInput({
   const offered = (suggestions || []).filter(s => !labels.some(l => l.toLowerCase() === s.toLowerCase()))
 
   return (
-    <div className={className}>
+    <div className="dc-labels-input">
       {labels.map(l => (
         <span key={l} className="dc-chip dc-chip--label">
           {l}
-          <button type="button" className="dc-chip-x" aria-label={removeLabel(l)} onClick={() => remove(l)}>
+          <button type="button" className="dc-chip-x" aria-label={`Убрать метку «${l}»`} onClick={() => remove(l)}>
             <IconClose size={11} />
           </button>
         </span>
@@ -43,8 +33,8 @@ export default function DocCheckLabelsInput({
         list={listId}
         value={draft}
         disabled={full}
-        aria-label={inputLabel}
-        placeholder={full ? fullText : placeholder}
+        aria-label="Новая метка"
+        placeholder={full ? `Не больше ${MAX_LABELS} меток` : 'Метка: Enter — добавить'}
         onChange={(e) => {
           const v = e.target.value
           // Выбор подсказки из списка приходит целиком — добавляем сразу.

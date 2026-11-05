@@ -31,6 +31,7 @@
 .cab-brand-text { display: flex; flex-direction: column; min-width: 0; }
 .cab-title { font-size: 0.75rem; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; }
 .cab-company { font-size: 1rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cab-company-number { font-size: 0.75rem; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 .cab-header-right { display: flex; align-items: center; gap: 0.75rem; }
 .cab-user { font-size: 0.8125rem; color: var(--text-tertiary); }
 .cab-logout {
@@ -115,10 +116,16 @@
 .ui-work.ui-work.tp-dense.cab-registry .tp-c-resp { width: 8rem; }
 .ui-work.ui-work.tp-dense.cab-registry .tp-c-package { width: 6rem; }
 .ui-work.ui-work.tp-dense.cab-registry .cab-c-open { width: 9rem; }
+/* № — по центру столбца, как и его заголовок. */
+.ui-work.ui-work.tp-dense.cab-registry .tp-grid > thead > tr > th.cab-th-num,
+.ui-work.ui-work.tp-dense.cab-registry .tp-grid > tbody > tr > td.tp-num { text-align: center; }
 .cab-registry .cab-object { display: block; cursor: default; }
 .cab-registry .sortable-th { cursor: pointer; user-select: none; }
 .cab-registry .cab-chip { white-space: normal; display: inline-block; }
 .cab-registry .cab-muted { font-size: inherit; }
+.cab-status-line { margin-top: 0.25rem; }
+/* Подпись в две строки: у полного скругления плашка становится овалом. */
+.cab-status-line .cab-chip { border-radius: 6px; }
 .cab-priced { margin-top: 0.125rem; font-size: 0.6875rem; color: #15803d; }
 [data-theme='dark'] .cab-priced { color: #6ee7b7; }
 /* «Открыть тендер» — кнопка, а не текст-ссылка: её видно в каждой строке. Селектор сильнее правил ссылок таблицы (workUi.css). */
@@ -145,7 +152,6 @@
 .ui-work.ui-work.tp-dense.cab-registry .tp-grid a.cab-open-btn:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
 
 .cab-soon { color: #b45309; }
-.cab-late { color: #b91c1c; }
 
 .cab-chip {
   padding: 0.1rem 0.4rem;
@@ -167,6 +173,8 @@
 
 /* ── Содержимое ────────────────────────────────────────────────────────── */
 .cab-head-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }
+/* Ссылка на тендерный пакет — кнопкой справа в шапке тендера. */
+a.cab-package-btn { margin-left: auto; text-decoration: none; }
 .cab-facts a { color: var(--primary-color); }
 .cab-join { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .cab-head-block,
@@ -219,9 +227,8 @@
 }
 .cab-doc-btn:hover { border-color: var(--primary-color); color: var(--primary-color); }
 
-/* Шаги подачи КП */
-.cab-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; counter-reset: step; }
-.cab-steps li {
+/* Подача КП по шаблону: основной путь — файл ВОР и расценка, поэтому шаблон — маленькая кнопка. */
+.cab-kp-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -231,6 +238,20 @@
   border-radius: 8px;
   background: var(--bg-primary);
 }
+.cab-kp-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.5rem; flex-shrink: 0; }
+.cab-btn-small {
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cab-btn-small:hover:not(:disabled) { border-color: var(--primary-color); color: var(--primary-color); }
+.cab-btn-small:disabled { opacity: 0.55; cursor: default; }
 .cab-step-text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
 .cab-step-text b { font-size: 0.875rem; }
 .cab-step-text span { font-size: 0.75rem; color: var(--text-tertiary); }
@@ -325,8 +346,10 @@
     font-weight: 600;
   }
   .cab-registry .table-container { overflow: visible; }
-  .ui-work.ui-work.tp-dense.cab-registry .tp-grid .tp-num { text-align: left; }
-  .cab-steps li { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+  .ui-work.ui-work.tp-dense.cab-registry .tp-grid > tbody > tr > td.tp-num { text-align: left; }
+  .cab-kp-row { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+  .cab-kp-actions { justify-content: flex-start; }
+  a.cab-package-btn { margin-left: 0; }
   .cab-join { flex-direction: column; align-items: stretch; }
   .cab-btn { width: 100%; }
   .cab-doc { flex-wrap: wrap; }

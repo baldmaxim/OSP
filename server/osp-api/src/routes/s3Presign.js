@@ -48,6 +48,7 @@ export const FOLDER_BY_OWNER = {
   object: 'objects',
   counterparty: 'counterparties',
   dc_request: 'dc-requests',
+  dp_request: 'dp-requests',
   doc_check_request: 'doc-check-requests',
   general: 'general',
   general_document: 'general-documents',
@@ -65,6 +66,7 @@ export const OWNER_TABLES = {
   object: ['objects'],
   counterparty: ['counterparties'],
   dc_request: ['dc_requests'],
+  dp_request: ['dp_requests'],
   doc_check_request: ['doc_check_requests'],
   general: ['psdc', 'vor_requests', 'section_templates', 'kp_manual_rates'],
   general_document: ['general_documents'],
@@ -89,6 +91,9 @@ export const WRITE_RULES = {
   objects: [['objects', 'edit']],
   counterparties: [['counterparties', 'edit']],
   dc_requests: [['dc_requests', 'edit']],
+  // Заявка на ДП (20261227): автор — право создания, остальные — работа с заявками. Какую заявку можно менять, решает
+  // триггер базы s3_documents_dp_request_guard: здесь нет разницы между своей заявкой и чужой.
+  dp_requests: [['dp_requests', 'edit'], ['dp_requests_create', 'edit']],
   doc_check_requests: [['doc_check_requests', 'edit']],
   general_documents: [['general_documents', 'edit']],
   tasks: [],
@@ -132,6 +137,8 @@ const KEY_REUSE = { error: 'Этот ключ операции уже испол
 
 export const UPLOAD_TTL_SEC = 15 * 60
 export const DOWNLOAD_TTL_SEC = 60 * 60
+// Скачивание (не превью) — под исходным именем: filename= — ASCII, filename*= — UTF-8.
+export const attachmentDisposition = (name) => `attachment; filename="${sanitizeFileName(name)}"; filename*=UTF-8''${encodeURIComponent(name)}`
 
 class RightsUnavailable extends Error {}
 
@@ -357,15 +364,10 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           const s3Key = String(body.s3_key || '')
           if (!s3Key) return reply.code(400).send({ error: 'Missing s3_key' })
           if (!await assertKeyAllowed(s3Key)) return reply.code(404).send({ error: 'Файл не найден' })
-          // Скачивание (не превью) — под исходным именем: filename= — ASCII, filename*= — UTF-8.
           const rawName = String(body.file_name || '')
           const wantDownload = body.download === true || body.download === 'true'
           const params = { Bucket: bucket, Key: s3Key }
-          if (wantDownload && rawName) {
-            const ascii = sanitizeFileName(rawName)
-            const encoded = encodeURIComponent(rawName)
-            params.ResponseContentDisposition = `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`
-          }
+          if (wantDownload && rawName) params.ResponseContentDisposition = attachmentDisposition(rawName)
           const presignedUrl = await getSignedUrl(s3, new GetObjectCommand(params), { expiresIn: DOWNLOAD_TTL_SEC })
           return { presigned_url: presignedUrl, expires_in: DOWNLOAD_TTL_SEC }
         }

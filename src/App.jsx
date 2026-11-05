@@ -7,6 +7,7 @@ import Sidebar from './components/Sidebar'
 import AccessError from './components/AccessError'
 import AccessDenied from './components/AccessDenied'
 import UpdatePrompt from './components/UpdatePrompt'
+import DpRequestAlert from './components/dpRequests/DpRequestAlert'
 import ChunkErrorBoundary from './components/ChunkErrorBoundary'
 import RolePreviewBar from './components/RolePreviewBar'
 import ReloginModal from './components/ReloginModal'
@@ -47,6 +48,7 @@ function HomeRedirect() {
   else if (canView('tasks')) to = '/tasks'
   else if (canView('contracts')) to = '/contracts'
   else if (canView('dc_requests')) to = '/dc-requests'
+  else if (canView('dp_requests')) to = '/dp-requests'
   else if (canView('reports')) to = '/reports'
   return <Navigate to={to} replace />
 }
@@ -83,6 +85,7 @@ const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 const ContractDetailPage = lazy(() => import('./pages/ContractDetailPage'))
 const PsdcBatchPage = lazy(() => import('./pages/PsdcBatchPage'))
 const DcRequestsPage = lazy(() => import('./pages/DcRequestsPage'))
+const DpRequestsPage = lazy(() => import('./pages/DpRequestsPage'))
 const DocCheckRequestsPage = lazy(() => import('./pages/DocCheckRequestsPage'))
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 const PublicTendersPage = lazy(() => import('./pages/PublicTendersPage'))
@@ -111,6 +114,8 @@ function EmployeeLayout() {
 
   return (
     <NotificationsProvider>
+    {/* Большое окно о новой заявке на ДП — на любой странице, только у получателей из списка. */}
+    <DpRequestAlert />
     <div className="layout">
       <Sidebar />
       <main className="main-content">
@@ -161,6 +166,7 @@ function EmployeeLayout() {
             <Route path="/contracts/psdc-batch" element={<PermissionRoute section="contracts"><PsdcBatchPage /></PermissionRoute>} />
             <Route path="/contracts/:contractId" element={<PermissionRoute section="contracts"><ContractDetailPage /></PermissionRoute>} />
             <Route path="/dc-requests" element={<PermissionRoute section="dc_requests"><DcRequestsPage /></PermissionRoute>} />
+            <Route path="/dp-requests" element={<PermissionRoute section="dp_requests"><DpRequestsPage /></PermissionRoute>} />
             <Route path="/doc-check-requests" element={<PermissionRoute section="doc_check_requests"><DocCheckRequestsPage /></PermissionRoute>} />
             {/* /profile — без отдельной секции в role_permissions: доступен любому
                 сотруднику. PermissionRoute без section всё равно гейтит загрузку/ошибку

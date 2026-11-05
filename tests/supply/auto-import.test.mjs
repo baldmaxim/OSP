@@ -4,7 +4,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  targetNameForFile, planFileImports, planTabImports, planCleanup, identicalTargets, unitSignature, fileVersion, estimateVersion,
+  targetNameForFile, planFileImports, planTabImports, planCleanup, unitSignature, fileVersion, estimateVersion,
 } from '../../src/utils/supplyAutoImport.js'
 import { normName } from '../../src/utils/supplyRateHelpers.js'
 
@@ -102,13 +102,6 @@ describe('Одинаковые позиции', () => {
     { name: 'ВК', positions: [pos('труба МЕДНАЯ ∅12.7', ' М '), pos('Кран шаровой Ду15', 'компл')] },
     { name: 'ЭОМ', positions: [pos('Труба медная Ø12,7', 'м')] },
   ]
-
-  it('то же наименование и та же единица, только где цены нет; свой ВОР и другая единица — нет', () => {
-    const priced = new Set(['ЭОМ∣' + normName('Труба медная Ø12,7')])
-    const t = identicalTargets(views, 'ОВ', views[0].positions[0], (name, k) => priced.has(`${name}∣${k}`))
-    assert.deepEqual(t.map((x) => x.name), ['ВК'])
-    assert.deepEqual(identicalTargets(views, 'ОВ', views[0].positions[1], () => false), [])
-  })
 
   it('подпись единиц: регистр и пробелы не важны, набор единиц — важен', () => {
     assert.equal(unitSignature({ unit: ' М ' }), unitSignature({ unit: 'м' }))

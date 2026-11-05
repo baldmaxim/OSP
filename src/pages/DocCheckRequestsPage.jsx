@@ -27,7 +27,7 @@ import {
   CLOSED_DOC_CHECK_STATUSES,
   NO_ASSIGNEE,
   NO_CARD_COUNTS,
-  assigneeNames,
+  assigneeStaffOptions,
   cardTitle,
   compareForBoard,
   dueState,
@@ -36,8 +36,6 @@ import {
   fmtDocDateTime,
   isMissingBoardColumn,
   labelSuggestions,
-  manualAssigneeKey,
-  manualAssigneeSuggestions,
   matchesAssignees,
   matchesDeadline,
   mergeRequestCounts,
@@ -45,6 +43,7 @@ import {
   normalizeRequest,
   normalizeSummary,
   placeInColumn,
+  shownAssigneeIds,
 } from '../utils/docCheckHelpers'
 import '../styles/workUi.css'
 import '../components/MobileCards.css'
@@ -65,8 +64,7 @@ import './DocCheckRequestsPage.css'
 //
 // Без колонок миграции 20261113 (прежняя база) страница читает прежний набор
 // полей и работает как раньше: без исполнителей, сроков, меток, цвета и архива.
-// Без миграции 20261124 — без обсуждения, шагов, ссылки на письмо и исполнителей
-// без учётной записи.
+// Без миграции 20261124 — без обсуждения, шагов и ссылки на письмо.
 
 const SUMMARY_KEY = 'docCheckSummary'
 const VIEW_KEY = 'docCheckView'
@@ -84,9 +82,21 @@ function writeStored(key, value) {
 
 const sameCounts = (a, b) => a.size === b.size && [...b].every(([id, n]) => a.get(id) === n)
 
+// Исполнители в строке реестра: кружки и ФИО.
+function RowAssignees({ request, employees }) {
+  const ids = shownAssigneeIds(request, employees)
+  if (!ids.length) return '—'
+  return (
+    <span className="dc-row-people">
+      <DocCheckAvatars ids={ids} employees={employees} />
+      <span>{ids.map(id => employeeName(employees, id)).join(', ')}</span>
+    </span>
+  )
+}
+
 export default function DocCheckRequestsPage() {
   useBodyClass('ui-work-portal')
-  const { canEdit, role, userProfile, user, isAdmin } = useRole()
+  const { canEdit, role, userProfile, user, isAdmin, isSuperAdmin } = useRole()
   const canEditSection = canEdit('doc_check_requests')
   const myId = user?.id || null
 
@@ -456,13 +466,13 @@ export default function DocCheckRequestsPage() {
       if (filterObjectIds.length && !filterObjectIds.includes(r.object_id)) return false
       if (filterCounterpartyIds.length && !filterCounterpartyIds.includes(r.counterparty_id)) return false
       if (filterTypes.length && !filterTypes.includes(r.doc_type)) return false
-      if (!matchesAssignees(r, filterAssignees)) return false
+      if (!matchesAssignees(r, filterAssignees, employees)) return false
       if (filterPriorities.length && !filterPriorities.includes(r.priority)) return false
       if (!matchesDeadline(r, filterDeadline)) return false
       if (!q) return true
       return [
         r.doc_number, r.notes, r.objects?.name, r.counterparties?.name, cardTitle(r), ...r.labels,
-        ...assigneeNames(r, id => employeeName(employees, id, '')),
+        ...shownAssigneeIds(r, employees).map(id => employeeName(employees, id, '')),
       ].some(v => (v || '').toLowerCase().includes(q))
     })
   }, [inMode, search, filterObjectIds, filterCounterpartyIds, filterTypes, filterAssignees,
@@ -476,7 +486,6 @@ export default function DocCheckRequestsPage() {
   }, [visible, mode])
 
   const allLabels = useMemo(() => labelSuggestions(requests.filter(r => !r.deleted_at)), [requests])
-  const allManualAssignees = useMemo(() => manualAssigneeSuggestions(requests.filter(r => !r.deleted_at)), [requests])
 
   // Сколько заявок открытого списка на объекте — в подписи выпадающего списка «Объект» (03.11.2026, вместо плашек над доской).
   const objectCounts = useMemo(() => {
@@ -485,21 +494,10 @@ export default function DocCheckRequestsPage() {
     return counts
   }, [inMode])
 
-  const assigneeOptions = useMemo(() => {
-    const ids = new Set()
-    const manual = new Map()
-    for (const r of requests) {
-      for (const id of r.assignee_ids) ids.add(id)
-      for (const name of r.manual_assignees) if (!manual.has(manualAssigneeKey(name))) manual.set(manualAssigneeKey(name), name)
-    }
-    return [
-      { value: NO_ASSIGNEE, label: 'Без исполнителя' },
-      ...[
-        ...[...ids].map(id => ({ value: id, label: employeeName(employees, id) })),
-        ...[...manual].map(([value, name]) => ({ value, label: `${name} (нет в справочнике)` })),
-      ].sort((a, b) => a.label.localeCompare(b.label, 'ru')),
-    ]
-  }, [requests, employees])
+  const assigneeOptions = useMemo(() => [
+    { value: NO_ASSIGNEE, label: 'Без исполнителя' },
+    ...assigneeStaffOptions(employees),
+  ], [employees])
 
   // Объекты с заявками — первыми, частые выше; остальные — по алфавиту, как в справочнике.
   const objectOptions = useMemo(() => objects
@@ -545,16 +543,7 @@ export default function DocCheckRequestsPage() {
                   <div className="dc-row-counts"><DocCheckCardCounts request={r} /></div>
                 </td>
                 <td>{r.objects?.name || '—'}</td>
-                {hasBoardFields && (
-                  <td>
-                    {r.assignee_ids.length || r.manual_assignees.length ? (
-                      <span className="dc-row-people">
-                        <DocCheckAvatars ids={r.assignee_ids} manual={r.manual_assignees} employees={employees} />
-                        <span>{assigneeNames(r, id => employeeName(employees, id)).join(', ')}</span>
-                      </span>
-                    ) : '—'}
-                  </td>
-                )}
+                {hasBoardFields && <td><RowAssignees request={r} employees={employees} /></td>}
                 {hasBoardFields && (
                   <td className="ui-num">
                     <span className={r.due_date ? `dc-due-text is-${dueState(r)}` : ''}>{fmtDocDate(r.due_date) || '—'}</span>
@@ -670,7 +659,7 @@ export default function DocCheckRequestsPage() {
       )}
       {!error && hasBoardFields && !hasCardFields && isAdmin && (
         <div className="dc-note">
-          Обсуждение, шаги, ссылка на письмо и исполнители без учётной записи появятся после
+          Обсуждение, шаги и ссылка на письмо появятся после
           миграции <code>20261124_doc_check_card</code>.
         </div>
       )}
@@ -680,7 +669,7 @@ export default function DocCheckRequestsPage() {
           <>
             <FilterDropdown
               label="" multiple searchable
-              searchPlaceholder="Поиск сотрудника…" allLabel="Исполнитель"
+              searchPlaceholder="Поиск юриста…" allLabel="Исполнитель"
               icon={<IconUser size={15} />}
               value={filterAssignees} onChange={setFilterAssignees}
               options={assigneeOptions}
@@ -765,9 +754,9 @@ export default function DocCheckRequestsPage() {
           counterparties={counterparties}
           employees={employees}
           labelSuggestions={allLabels}
-          manualSuggestions={allManualAssignees}
           hasBoardFields={hasBoardFields}
           hasCardFields={hasCardFields}
+          canEditCreated={isAdmin || isSuperAdmin}
           onSave={handleSave}
           onClose={() => setFormFor(null)}
         />

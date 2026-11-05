@@ -12,7 +12,9 @@ import IconTile from '../components/IconTile'
 import PersonName from '../components/PersonName'
 import { IconHardHat, IconChevronDown } from '../components/icons/TenderHubIcons'
 import { IconSearch } from '../components/icons/ToolbarIcons'
-import { loadCabinetTenders, requestParticipation, setParticipationStatus } from '../services/contractorBids'
+import {
+  loadCabinetTenders, loadCabinetTendersPreview, loadOrgCard, loadOrgCardPreview, requestParticipation, setParticipationStatus, TENDER_OPEN_STATUS,
+} from '../services/contractorBids'
 import { phoneHref } from '../utils/siteContacts'
 import { breakAfterDash, formatDateRange } from '../utils/dateRange'
 import '../components/Tenders.css'
@@ -40,22 +42,24 @@ const ContractorCompanyTab = lazy(() => import('../components/contractor/Contrac
 // организации — функциями с перечнем полей (миграция 20261201): правило по строкам колонки не ограничивает.
 //
 // Подрядчик, зарегистрировавшийся на сайте (contractorInfo.selfRegistered, миграции 20261203 и 20261204): только тендеры, расценка
-// и своя компания. Файлов, сметы и загрузки КП нет — сервер их не отдаёт, интерфейс их и не запрашивает.
-
-// Идёт приём предложений — то же условие, что bid_tender_open в базе.
-const TENDER_OPEN_STATUS = 'Идет тендерная процедура'
+// и своя компания. Сметы, загрузки КП и общего списка файлов нет — сервер их не отдаёт, интерфейс их и не запрашивает; файлы ВОР
+// для расценки он скачивает отдельным маршрутом (решение пользователя 05.11.2026, миграция 20261226).
+//
+// Решения пользователя 05.11.2026: идёт ли тендер — по статусу, а не по сроку (срок прошёл, а статус тот же — тендер идёт, без красного);
+// тендеры, от которых организация отказалась, в кабинете не показываются (вернуть участие можно через отдел).
+//
+// Просмотр от имени подрядчика (previewActive): запросы идут под администратором, у него нет организации, и функции кабинета
+// отказывают. Поэтому те же сведения читаются из таблиц, а записи нет: заявка только на экране, цены и анкета — только просмотр.
 
 const PARTICIPATION_LABEL = {
   request_sent: 'Приглашение отправлено',
   proposal_provided: 'КП загружено',
   accepted_for_work: 'Принято в работу',
-  declined: 'Отказ от участия',
 }
 const PARTICIPATION_CLASS = {
   request_sent: 'is-wait',
   proposal_provided: 'is-done',
   accepted_for_work: 'is-done',
-  declined: 'is-off',
 }
 
 // Доступ организации к тендеру (bid_access): участник, заявка с сайта или ничего.
@@ -89,12 +93,15 @@ const fromCabinetRow = (r) => ({
   pricedTotal: r.priced_total == null ? 0 : Number(r.priced_total),
 })
 const isHttp = (url) => /^https?:\/\//i.test(String(url || '').trim())
-// Без функции кабинета (база раньше миграции, просмотр от имени роли) признака нет — по статусу тендера.
+// Без функции кабинета (база раньше миграции) признака нет — по статусу тендера.
 const isCurrentTender = (t) => t.isOpen ?? t.status === TENDER_OPEN_STATUS
+const isDeclined = (t) => t.participationStatus === 'declined'
+const STATUS_LABEL = 'Идёт тендерная процедура'
+const PREVIEW_NOTE = 'Просмотр от имени подрядчика: заявка, цены и анкета не записываются.'
 
 // Плашка участия в строке реестра и в шапке тендера.
 function participationChip(tender, bidsEnabled) {
-  if (!bidsEnabled || tender.participationStatus === 'declined') {
+  if (!bidsEnabled) {
     return tender.participationStatus
       ? { label: PARTICIPATION_LABEL[tender.participationStatus] || tender.participationStatus, cls: PARTICIPATION_CLASS[tender.participationStatus] || '' }
       : null
@@ -142,7 +149,7 @@ function daysLeft(dateStr) {
 
 function ContractorCabinetPage() {
   const navigate = useNavigate()
-  const { contractorInfo, isContractor, userProfile, logout } = useRole()
+  const { contractorInfo, isContractor, userProfile, logout, previewActive = false } = useRole()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const selfRegistered = contractorInfo?.selfRegistered === true
@@ -173,10 +180,23 @@ function ContractorCabinetPage() {
   const cpId = contractorInfo?.id || null
   const [bidsEnabled, setBidsEnabled] = useState(false)
   const [joining, setJoining] = useState(false)
+  // Сведения о компании нужны шапке (номер на сайте) и вкладке «Моя компания». undefined — ещё читаются.
+  const [orgCard, setOrgCard] = useState(undefined)
+  const [orgCardError, setOrgCardError] = useState('')
 
-  // Тендеры кабинета: открытые + свои (миграция 20261102), без неё — только приглашения. Отказ 42501 — просмотр
-  // от имени роли (запросы идут под администратором, у него нет организации): тогда тоже приглашения.
+  useEffect(() => {
+    let cancelled = false
+    setOrgCard(undefined)
+    setOrgCardError('')
+    ;(previewActive ? (cpId ? loadOrgCardPreview(cpId) : Promise.resolve(null)) : loadOrgCard())
+      .then((row) => { if (!cancelled) setOrgCard(row) })
+      .catch((e) => { if (!cancelled) { setOrgCard(null); setOrgCardError(e.message || String(e)) } })
+    return () => { cancelled = true }
+  }, [cpId, previewActive])
+
+  // Тендеры кабинета: открытые + свои (миграция 20261102), без неё — только приглашения.
   const loadTenderList = useCallback(async () => {
+    if (previewActive) return { list: (await loadCabinetTendersPreview(cpId)).map(fromCabinetRow), bids: true }
     try {
       const rows = await loadCabinetTenders()
       if (rows) return { list: rows.map(fromCabinetRow), bids: true }
@@ -193,7 +213,7 @@ function ContractorCabinetPage() {
       .map(p => ({ ...p.tenders, participationStatus: p.status, access: 'invited' }))
       .sort((a, b) => (b.tender_end_date || '').localeCompare(a.tender_end_date || ''))
     return { list, bids: false }
-  }, [cpId, selfRegistered])
+  }, [cpId, selfRegistered, previewActive])
 
   // ── Загрузка: идущие тендеры организации; прошлые в кабинете не показываются ──
   const loadAll = useCallback(async () => {
@@ -203,7 +223,7 @@ function ContractorCabinetPage() {
     try {
       const tenderList = await loadTenderList()
       setBidsEnabled(tenderList.bids)
-      setInvitations(tenderList.list.filter(isCurrentTender))
+      setInvitations(tenderList.list.filter((t) => isCurrentTender(t) && !isDeclined(t)))
     } catch (err) {
       console.error('Кабинет подрядчика:', err)
       setLoadError(err.message || 'Не удалось загрузить данные кабинета.')
@@ -288,7 +308,8 @@ function ContractorCabinetPage() {
   const handleUploadProposal = async (e) => {
     const file = e.target.files?.[0]
     e.target.value = ''
-    if (!file || !activeTender || !cpId) return
+    // Просмотр от имени подрядчика: запись шла бы от администратора и заменила бы настоящее КП организации.
+    if (!file || !activeTender || !cpId || previewActive) return
     setUploading(true)
     setUploadNote(null)
     try {
@@ -297,8 +318,18 @@ function ContractorCabinetPage() {
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
       const excelData = XLSX.utils.sheet_to_json(sheet, { header: 1 })
 
-      const { rows, skippedAmbiguous } = matchProposalRows(excelData, estimateItems)
+      const { rows, skippedAmbiguous, notTemplate } = matchProposalRows(excelData, estimateItems)
 
+      // Заполненный файл ВОР сюда не подходит (другие столбцы): цены разъехались бы, а прежнее КП было бы уже стёрто.
+      if (notTemplate || (rows.length > 0 && !rows.some((r) => r.total_unit_price > 0))) {
+        setUploadNote({
+          kind: 'warn',
+          text: notTemplate
+            ? 'Это не шаблон КП. Заполненный файл ВОР загружайте кнопкой «Цены из файла» в разделе «Расценка» — или заполните шаблон с этой страницы.'
+            : 'В файле нет цен. Заполните столбцы с ценами и загрузите файл ещё раз; прежнее предложение не изменилось.',
+        })
+        return
+      }
       if (rows.length === 0) {
         setUploadNote({
           kind: 'warn',
@@ -346,10 +377,11 @@ function ContractorCabinetPage() {
   }
 
   const handleDecline = async () => {
-    if (!activeTender || !cpId) return
-    if (!window.confirm('Отказаться от участия в этом тендере? Отметку увидит отдел сопровождения подрядчиков.')) return
+    if (!activeTender || !cpId || previewActive) return
+    if (!window.confirm('Отказаться от участия в этом тендере? Отметку увидит отдел сопровождения подрядчиков, а тендер пропадёт из кабинета. Вернуть участие можно через отдел.')) return
     try {
       await setParticipationStatus(activeTender.id, cpId, 'declined')
+      setSearchParams({}, { replace: true })
       await loadAll()
     } catch (err) {
       alert('Не удалось изменить статус: ' + (err.message || err))
@@ -359,6 +391,11 @@ function ContractorCabinetPage() {
   // Участвовать в открытом тендере: заявка с сайта (инженер решит, сделать ли участником), расценка — сразу.
   const handleJoin = async () => {
     if (!activeTender || joining) return
+    // Просмотр от имени подрядчика: заявка только на экране, чтобы увидеть, что откроется подрядчику.
+    if (previewActive) {
+      setInvitations(prev => prev.map(t => (t.id === activeTender.id ? { ...t, access: 'pending' } : t)))
+      return
+    }
     setJoining(true)
     try {
       const access = await requestParticipation(activeTender.id)
@@ -428,6 +465,7 @@ function ContractorCabinetPage() {
           <div className="cab-brand-text">
             <span className="cab-title">Кабинет подрядчика</span>
             <span className="cab-company">{contractorInfo?.name || '—'}</span>
+            {orgCard?.counterparty_number != null && <span className="cab-company-number">Номер на сайте: {orgCard.counterparty_number}</span>}
           </div>
         </div>
         <div className="cab-header-right">
@@ -464,13 +502,13 @@ function ContractorCabinetPage() {
         <div className="cab-state cab-state-error">{loadError}</div>
       ) : tab === 'company' ? (
         <Suspense fallback={<div className="cab-state">Загрузка…</div>}>
-          <ContractorCompanyTab />
+          <ContractorCompanyTab card={orgCard} error={orgCardError} preview={previewActive} />
         </Suspense>
       ) : activeTenderId ? (
         <main className="cab-main cab-tender">
           <Link to="/contractor" className="cab-back">← Все тендеры</Link>
           {!activeTender ? (
-            <div className="cab-state">Этот тендер недоступен: приём предложений по нему закрыт.</div>
+            <div className="cab-state">Этот тендер недоступен: приём предложений по нему закрыт или ваша организация отказалась от участия.</div>
           ) : (
                 <>
                   <div className="cab-head-block">
@@ -478,16 +516,20 @@ function ContractorCabinetPage() {
                       <span className="cab-card-num">
                         {activeTender.public_tender_number ? `Тендер № ${activeTender.public_tender_number}` : 'Тендер'}
                       </span>
+                      <span className="cab-chip is-accent">{STATUS_LABEL}</span>
                       {activeChip && <span className={`cab-chip ${activeChip.cls}`}>{activeChip.label}</span>}
+                      {isHttp(activeTender.tender_package_link) && (
+                        <a className="cab-btn cab-package-btn" href={activeTender.tender_package_link.trim()} target="_blank" rel="noopener noreferrer">
+                          Тендерный пакет
+                        </a>
+                      )}
                     </div>
                     <h2>{activeTender.objects?.name || 'Объект не указан'}</h2>
                     <p className="cab-work">{activeTender.work_description}</p>
                     <div className="cab-facts">
                       <span><b>Приём КП:</b> {formatDateRange(activeTender.tender_start_date, activeTender.tender_end_date) || '—'}</span>
-                      {deadline != null && (
-                        <span className={deadline < 0 ? 'cab-late' : deadline <= 3 ? 'cab-soon' : undefined}>
-                          {deadline < 0 ? 'Срок подачи истёк' : `Осталось дней: ${deadline}`}
-                        </span>
+                      {deadline != null && deadline >= 0 && (
+                        <span className={deadline <= 3 ? 'cab-soon' : undefined}>Осталось дней: {deadline}</span>
                       )}
                       {activeTender.objects?.address && <span><b>Адрес:</b> {activeTender.objects.address}</span>}
                       {activeTender.responsible_name && (
@@ -500,12 +542,11 @@ function ContractorCabinetPage() {
                           )}
                         </span>
                       )}
-                      {isHttp(activeTender.tender_package_link) && (
-                        <span><a href={activeTender.tender_package_link.trim()} target="_blank" rel="noopener noreferrer">Тендерный пакет</a></span>
-                      )}
                       {activeTender.uploadedAt && <span><b>КП загружено:</b> {formatDateTime(activeTender.uploadedAt)}</span>}
                     </div>
                   </div>
+
+                  {previewActive && <div className="cab-note is-warn">{PREVIEW_NOTE}</div>}
 
                   {/* Участие: открытый тендер без заявки — «Участвовать»; заявка — что дальше. */}
                   {bidsEnabled && !activeTender.access && (
@@ -513,8 +554,7 @@ function ContractorCabinetPage() {
                       <div className="cab-step-text">
                         <b>Хотите участвовать?</b>
                         <span>
-                          {selfRegistered ? 'Откроется расценка на сайте.' : 'Откроются файлы ВОР и расценка на сайте.'} Отдел увидит вашу организацию и решит, включить ли
-                          её в участники тендера.
+                          Откроются файлы ВОР и расценка на сайте. Отдел увидит вашу организацию и решит, включить ли её в участники тендера.
                         </span>
                       </div>
                       <button type="button" className={`cab-btn cab-btn-primary${joining ? ' is-busy' : ''}`} disabled={joining} onClick={handleJoin}>
@@ -576,7 +616,8 @@ function ContractorCabinetPage() {
                         <BidWorkspace
                           key={activeTender.id}
                           tender={{ ...activeTender, object_name: activeTender.objects?.name }}
-                          canEdit={CAN_PRICE.has(activeTender.access)}
+                          canEdit={CAN_PRICE.has(activeTender.access) && !previewActive}
+                          previewCounterpartyId={previewActive ? cpId : null}
                           counterpartyName={contractorInfo?.name || ''}
                           tenderNumbers={tenderNumbers}
                           onSummary={handleBidSummary}
@@ -586,33 +627,27 @@ function ContractorCabinetPage() {
                     </section>
                   )}
 
-                  {/* Подача КП по шаблону — прежний путь: смета во вкладке «ВОР» карточки (в новых тендерах её нет) */}
+                  {/* Подача КП по шаблону — прежний путь: смета во вкладке «ВОР» карточки (в новых тендерах её нет). Основное — файл ВОР и «Расценка» выше. */}
                   {(!bidsEnabled || pricedItems.length > 0) && activeTender.access === 'invited' && (
                   <section className="cab-section">
-                    <h3>Коммерческое предложение</h3>
+                    <h3>Коммерческое предложение по шаблону</h3>
                     {pricedItems.length === 0 ? (
                       <p className="cab-muted">Смета тендера ещё не опубликована — шаблон появится позже.</p>
                     ) : (
                       <>
-                        <ol className="cab-steps">
-                          <li>
-                            <div className="cab-step-text">
-                              <b>Скачайте шаблон</b>
-                              <span>Excel со сметой тендера — {pricedItems.length} позиций. Заполните два столбца с ценами.</span>
-                            </div>
-                            <button type="button" className="cab-btn" onClick={handleDownloadTemplate}>Скачать шаблон</button>
-                          </li>
-                          <li>
-                            <div className="cab-step-text">
-                              <b>Загрузите заполненный файл</b>
-                              <span>Повторная загрузка полностью заменяет предыдущее предложение.</span>
-                            </div>
-                            <label className={`cab-btn cab-btn-primary${uploading ? ' is-busy' : ''}`}>
+                        <div className="cab-kp-row">
+                          <div className="cab-step-text">
+                            <b>Загрузите заполненный шаблон</b>
+                            <span>Excel со сметой тендера — {pricedItems.length} позиций: заполните два столбца с ценами. Повторная загрузка полностью заменяет предыдущее предложение.</span>
+                          </div>
+                          <div className="cab-kp-actions">
+                            <button type="button" className="cab-btn-small" onClick={handleDownloadTemplate}>Скачать шаблон</button>
+                            <label className={`cab-btn${uploading ? ' is-busy' : ''}`} title={previewActive ? PREVIEW_NOTE : undefined}>
                               {uploading ? 'Загрузка…' : 'Загрузить КП'}
-                              <input type="file" accept=".xlsx,.xls" hidden disabled={uploading} onChange={handleUploadProposal} />
+                              <input type="file" accept=".xlsx,.xls" hidden disabled={uploading || previewActive} onChange={handleUploadProposal} />
                             </label>
-                          </li>
-                        </ol>
+                          </div>
+                        </div>
                         {uploadNote && (
                           <div className={`cab-note ${uploadNote.kind === 'ok' ? 'is-ok' : 'is-warn'}`}>{uploadNote.text}</div>
                         )}
@@ -628,7 +663,7 @@ function ContractorCabinetPage() {
                   {/* Состав сметы — первые позиции, чтобы понять объём работ */}
                   {pricedItems.length > 0 && (
                     <section className="cab-section">
-                      <h3>Состав работ ({pricedItems.length})</h3>
+                      <h3>Состав работ</h3>
                       <div className="cab-table-wrap">
                         <table className="cab-table">
                           <thead>
@@ -652,9 +687,9 @@ function ContractorCabinetPage() {
                     </section>
                   )}
 
-                  {!selfRegistered && activeTender.access === 'invited' && activeTender.participationStatus && activeTender.participationStatus !== 'declined' && (
+                  {!selfRegistered && activeTender.access === 'invited' && activeTender.participationStatus && (
                     <div className="cab-decline">
-                      <button type="button" className="cab-btn cab-btn-ghost" onClick={handleDecline}>
+                      <button type="button" className="cab-btn cab-btn-ghost" disabled={previewActive} title={previewActive ? PREVIEW_NOTE : undefined} onClick={handleDecline}>
                         Отказаться от участия
                       </button>
                     </div>
@@ -714,7 +749,7 @@ function ContractorCabinetPage() {
               </colgroup>
               <thead>
                 <tr>
-                  <th className="sortable-th" onClick={() => toggleSort('public_tender_number')} title="Номер тендера. Нажмите для сортировки">
+                  <th className="sortable-th cab-th-num" onClick={() => toggleSort('public_tender_number')} title="Номер тендера. Нажмите для сортировки">
                     №{sortIndicator('public_tender_number')}
                   </th>
                   <th>Объект</th>
@@ -743,7 +778,7 @@ function ContractorCabinetPage() {
                   const phone = t.responsible_phone
                   const works = formatDateRange(t.start_date, t.end_date)
                   return (
-                    <tr key={t.id} className={left != null && left < 0 ? 'overdue-row' : ''}>
+                    <tr key={t.id}>
                       <td className="tp-num" data-label="№">{number}</td>
                       <td data-label="Объект">
                         <span className="row-link primary cab-object">{t.objects?.name || 'Объект не указан'}</span>
@@ -780,9 +815,10 @@ function ContractorCabinetPage() {
                           : <span className="cab-muted">Не участвуете</span>}
                         {t.pricedCount > 0 && <div className="cab-priced">расценено {t.pricedCount}</div>}
                       </td>
-                      <td className={`tender-period-cell ui-num${left != null && left < 0 ? ' is-overdue' : ''}`} data-label="Срок тендерных процедур">
+                      <td className="tender-period-cell ui-num" data-label="Срок тендерных процедур">
                         {breakAfterDash(formatDateRange(t.tender_start_date, t.tender_end_date)) || '—'}
                         {left != null && left >= 0 && left <= 3 && <div className="cab-soon">осталось {left} дн.</div>}
+                        <div className="cab-status-line"><span className="cab-chip is-accent">{STATUS_LABEL}</span></div>
                       </td>
                       <td className="ui-num" data-label="Срок работ">{breakAfterDash(works) || '—'}</td>
                       <td data-label="Ответственный">

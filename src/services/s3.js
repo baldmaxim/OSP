@@ -3,15 +3,12 @@
 // С флагом ospApiFilesV2 — через свой API osp-api с ключом операции (src/api/ospFiles.js): повтор не
 // создаёт второй документ, удаление — сначала строка, затем объект. Путь выбирается один раз, в начале
 // операции; без флага всё как прежде.
-import { db, auth, invokeFunction, filesViaOspApi, ospFiles } from '../api'
+import { db, auth, invokeFunction, filesViaOspApi, ospFiles, requestBidVorFile } from '../api'
 import { chunkList } from '../utils/inChunks'
 
 const FUNCTION_NAME = 's3-presign'
 
-async function invokePresign(action, payload) {
-  const { data, error } = await invokeFunction(FUNCTION_NAME, {
-    body: { action, ...payload }
-  })
+async function unwrapFunction({ data, error }) {
   if (error) {
     // supabase-js оборачивает non-2xx ответ в FunctionsHttpError, у которого message —
     // общий («non-2xx status code»). Достаём реальную причину из тела ответа функции
@@ -28,6 +25,17 @@ async function invokePresign(action, payload) {
   }
   if (data?.error) throw new Error(data.error)
   return data
+}
+
+async function invokePresign(action, payload) {
+  return unwrapFunction(await invokeFunction(FUNCTION_NAME, {
+    body: { action, ...payload }
+  }))
+}
+
+// Файл ВОР подрядчику (миграция 20261226) → { presigned_url, file_name }: у учётки с регистрации нет ключа файла, только его id.
+export async function requestVorFileUrl(fileId) {
+  return unwrapFunction(await requestBidVorFile(fileId))
 }
 
 export async function requestUploadUrl({ ownerType, ownerId, fileName, mimeType }) {

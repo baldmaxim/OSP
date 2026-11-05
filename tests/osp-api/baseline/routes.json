@@ -302,6 +302,16 @@
   },
   {
     "method": "POST",
+    "url": "/api/fn/bid-vor-file",
+    "kind": "user",
+    "require": "contractor",
+    "reason": null,
+    "body": [
+      "file_id"
+    ]
+  },
+  {
+    "method": "POST",
     "url": "/api/fn/cover-upload",
     "kind": "user",
     "require": "employee",

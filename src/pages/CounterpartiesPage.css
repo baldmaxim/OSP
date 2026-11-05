@@ -245,7 +245,9 @@
 /* Table */
 .compact-table {
   width: 100%;
-  border-collapse: collapse;
+  /* separate: у collapse границы ячеек шапки не едут вместе с залипшей шапкой — при прокрутке пропадают черта и разделители. */
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 0.8125rem;
 }
 
@@ -256,14 +258,16 @@
   background: var(--bg-tertiary);
 }
 
+/* Шапка: те же поля, что у ячеек, — подпись стоит ровно над значением. */
 .compact-table th {
-  padding: 0.3rem 0.375rem;
+  padding: 0.375rem 0.5rem;
   text-align: left;
+  vertical-align: middle;
   font-weight: 600;
-  font-size: 0.625rem;
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
   user-select: none;
 }
@@ -281,8 +285,8 @@
 }
 
 .compact-table th {
-  /* такие же лёгкие вертикальные полоски в шапке */
-  border-right: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+  /* разделители шапки — на её фоне полупрозрачная полоска не видна, и подписи «плывут» над столбцами */
+  border-right: 1px solid var(--border-color);
 }
 
 .compact-table th:last-child,
@@ -306,11 +310,24 @@
   vertical-align: middle;
 }
 
-/* task 202: № — гарантированная центровка по горизонтали и вертикали */
+/* task 202: № — гарантированная центровка по горизонтали и вертикали. Поля узкие и без переноса:
+   у четырёхзначного номера при обычных полях оставалось «1…». */
+.compact-table th.col-num { width: 3.5rem; }             /* до шести цифр; .col-num общий с другими страницами */
 .compact-table th.col-num,
 .compact-table td.col-num {
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
   text-align: center;
   vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* Значения этих столбцов по центру — подпись над ними тоже. */
+.compact-table th.col-contract,
+.compact-table th.col-site-account,
+.compact-table th.col-website,
+.compact-table th.col-actions {
+  text-align: center;
 }
 
 /* task 203: чекбокс — полная центровка в столбце (был смещён вправо из-за паддингов) */

@@ -42,6 +42,9 @@ export default function FilterDropdown({
   // Необязательная подсказка триггера вместо «Метка: значение» (напр. пояснение,
   // где ещё меняется это поле).
   triggerTitle = null,
+  // Необязательно: свой поиск по списку (опция, набранный текст) → подходит ли.
+  // По умолчанию — вхождение текста в label.
+  matchOption = null,
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -76,8 +79,8 @@ export default function FilterDropdown({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return options
-    return options.filter(o => String(o.label).toLowerCase().includes(q))
-  }, [options, query])
+    return options.filter(o => (matchOption ? matchOption(o, q) : String(o.label).toLowerCase().includes(q)))
+  }, [options, query, matchOption])
 
   const isActive = multiple
     ? selectedValues.length > 0

@@ -32,6 +32,7 @@ import { createRateLimit, createConcurrency, DEFAULT_LIMITS } from './lib/limits
 import { access, installAccess } from './lib/access.js'
 import { OPEN_ROUTES } from './open-routes.js'
 import { registerS3Presign } from './routes/s3Presign.js'
+import { registerBidFiles } from './routes/bidFiles.js'
 import { registerAiAssist } from './routes/aiAssist.js'
 import { registerRates, parseRatesKeys } from './routes/rates.js'
 import { registerApiKeys } from './routes/apiKeys.js'
@@ -615,6 +616,7 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   registerSignup(app, ctx)
   registerDbGateway(app, ctx)
   registerS3Presign(app, ctx)
+  registerBidFiles(app, ctx)
   registerAiAssist(app, ctx)
   registerRates(app, ctx)
   registerApiKeys(app, ctx)

@@ -237,6 +237,14 @@ const PRICING_POSITIONS_VK = [
   { name: 'труба медная ∅12.7', unit: 'м', volume: 200, order: 1 },
   { name: 'Кран шаровой Ду15', unit: 'компл', volume: 5, order: 2 },
 ].map((p) => ({ ...p, k: normName(p.name) }))
+// samePos=1 — в двух ВОР одна и та же позиция записана по-разному (артикул совпал) и позиции, похожие текстом, но разные (длина).
+if (params.get('samePos') === '1') {
+  const add = (list, name, unit, volume) => list.push({ name, unit, volume, order: list.length + 1, k: normName(name) })
+  add(PRICING_POSITIONS, 'Кран шаровой полнопроходной DN15 R850X023', 'шт', 10)
+  add(PRICING_POSITIONS_VK, 'Шаровой кран полнопроходной, резьба ВН/ВН, DN15 R850X023 Giacomini', 'шт', 6)
+  add(PRICING_POSITIONS, 'Патч-корд UTP, кат. 5е, RJ45/RJ45, 0,3м', 'шт', 4)
+  add(PRICING_POSITIONS_VK, 'Патч-корд UTP, кат. 5е, RJ45/RJ45, 5м', 'шт', 4)
+}
 window.__fakeDb.tender_supply_sources = [{
   id: 'src-p', tender_id: 'tender-p', estimate_name: 'ОВ', source: 'vor_file', s3_document_id: 'doc-vor-p', file_name: 'ВОР_ОВ.xlsx',
   sheet_name: 'Материалы', column_map: null, source_version: 'file:doc-vor-p:2026-10-12T09:00:00Z', positions: PRICING_POSITIONS,
@@ -305,6 +313,16 @@ window.__fakeDb.tender_vor_supply_rates.push({
   row_version: 1, updated_by: 'user-2', updated_at: '2026-10-12T10:00:00Z', created_at: '2026-10-12T10:00:00Z',
   material_key: normName('Изоляция K-Flex 13×15'),
 })
+// pipeRates=differ — у трубы в ОВ и ВК разные цены; =partial — цена только в ОВ.
+if (params.get('pipeRates')) {
+  const pipe = (id, estimate, name, price, volume, at) => window.__fakeDb.tender_vor_supply_rates.push({
+    id, tender_id: 'tender-p', estimate_name: estimate, material_name: name, unit: 'м', supply_price: price, supply_price_exact: null,
+    supply_total: price * volume, price_input: 'unit', input_value: price, volume_at_input: volume, row_version: 1, updated_by: 'user-2',
+    updated_at: at, created_at: at, material_key: normName(name),
+  })
+  pipe('rate-pipe-ov', 'ОВ', 'Труба медная Ø12,7', 400, 1500, '2026-10-20T10:00:00Z')
+  if (params.get('pipeRates') === 'differ') pipe('rate-pipe-vk', 'ВК', 'труба медная ∅12.7', 450, 200, '2026-10-10T10:00:00Z')
+}
 window.__fakeDb.tender_supply_rate_log = []
 // Уникальные ключи, как в базе: цена — одна на (тендер, ВОР, наименование), список позиций — один на ВОР.
 window.__fakeUnique = {
@@ -1257,7 +1275,8 @@ if (params.get('docCheck') === '1') {
       labels: ['В бумажном виде'], email_link: 'https://mail.example.invalid/letter/3',
       assignee_ids: ['user-3'], manual_assignees: ['Сидорова Анна Павловна'] }),
     req('dcr-4', { status: 'done', doc_type: 'dp', doc_number: 'СУ2-004' }),
-    req('dcr-5', { status: 'done', counterparty_id: 'cp-2', object_id: 'obj-2', doc_number: '5', sort_order: 2 }),
+    // Исполнитель заблокирован: в справочнике сотрудников (employee_directory) его нет.
+    req('dcr-5', { status: 'done', counterparty_id: 'cp-2', object_id: 'obj-2', doc_number: '5', sort_order: 2, assignee_ids: ['user-blocked'] }),
     req('dcr-6', { status: 'awaiting_scan', doc_type: 'dp', counterparty_id: 'cp-3', object_id: 'obj-2', doc_number: 'СУ2-006' }),
     req('dcr-7', { status: 'tax_clause', doc_type: 'dp', doc_number: 'СУ2-007', color: 'yellow', labels: ['Переподписание'] }),
     req('dcr-8', { status: 'done', doc_type: 'dp', doc_number: 'СУ2-008', archived_at: '2026-10-25T10:00:00Z' }),
@@ -1369,14 +1388,14 @@ if (params.get('compareRpc') !== '0') {
 //   cp-6     Клининг                    да                договор подразделения «Монолит»
 //   cp-7     Кровельные                 да       1        чёрный список
 //   cp-8     Фасадные                   да       1        удалён
-// Номера — не по порядку названий. &cpNoNumbers=1 — колонки номера нет (база раньше миграции 20261225);
+// Номера — не по порядку названий. &cpBigNumbers=1 — четырёхзначные и больше; &cpNoNumbers=1 — колонки номера нет (база раньше миграции 20261225);
 // &cpSiteRpc=missing — функции нет, =error — отказ сервера.
 if (params.get('cpFilters') === '1') {
   const cps = window.__fakeDb.counterparties
   const WORK = ['Монолитные работы, Кровельные работы', 'Монолитные работы', 'Монолитные работы', 'Фасадные работы', 'Фасадные работы', 'Клининг', 'Кровельные работы', 'Фасадные работы']
   cps.forEach((cp, i) => {
     cp.work_type = WORK[i]
-    if (params.get('cpNoNumbers') !== '1') cp.counterparty_number = 100 - i * 3
+    if (params.get('cpNoNumbers') !== '1') cp.counterparty_number = params.get('cpBigNumbers') === '1' ? 1936 + i * 17011 : 100 - i * 3
   })
   cps[6].status = 'blacklist'
   cps[7].deleted_at = '2026-10-01T00:00:00Z'

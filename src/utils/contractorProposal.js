@@ -7,7 +7,7 @@
 // несколько.
 
 import * as XLSX from 'xlsx'
-import { cleanNumeric } from './parseProposalExcel'
+import { cleanNumeric } from './parseProposalExcel.js'
 
 // Заголовок столбца-якоря. Ищем по подстроке «не изменя» — так же, как парсер
 // сотрудника, чтобы файл, выгруженный там, читался и здесь.
@@ -69,10 +69,11 @@ export function buildProposalWorkbook(estimateItems, { tenderName = 'Тенде�
 }
 
 // Разбор заполненного файла: строки Excel → расценки по позициям ВОР.
-// Возвращает { rows, skippedAmbiguous, matchedBy }.
+// Возвращает { rows, skippedAmbiguous, matchedBy, notTemplate }.
 //   rows              — [{ estimate_item_id, unit_price_materials, ... }]
 //   skippedAmbiguous  — сколько строк не удалось привязать однозначно
 //   matchedBy         — 'anchor' | 'number'
+//   notTemplate       — без якоря и без столбцов цен шаблона: файл другого вида (например, сам файл ВОР), строки не читаются
 export function matchProposalRows(excelData, estimateItems) {
   const byId = new Map(estimateItems.map(it => [String(it.id), it]))
   const docNames = new Set(estimateItems.map(it => it.estimate_name || 'Основная смета'))
@@ -85,6 +86,10 @@ export function matchProposalRows(excelData, estimateItems) {
 
   const headerCells = (excelData[0] || []).map(c => String(c ?? '').toLowerCase())
   const anchorCol = headerCells.findIndex(h => h.includes('не изменя'))
+  // Номер строки есть и в других таблицах, а цены здесь читаются по месту столбца: чужой файл дал бы цены из чужих колонок.
+  if (anchorCol < 0 && !(headerCells[COL.priceMaterials]?.includes('цен') && headerCells[COL.priceWorks]?.includes('цен'))) {
+    return { rows: [], skippedAmbiguous: 0, matchedBy: 'number', notTemplate: true }
+  }
   // Без якоря сопоставляем по номеру только когда ВОР один: иначе номер «1»
   // есть в каждом документе и цена уедет не туда.
   const canMatchByNumber = anchorCol < 0 && docNames.size <= 1

@@ -128,6 +128,25 @@ export function docPack(item, unit, groupName = null) {
   return n != null && Number.isFinite(n) && n > 0 && n !== 1 ? n : null
 }
 
+// Сколько единиц позиции в единице строки: указал человек (packs: ключ наименования → число) или написано в документе.
+const groupKeys = (g) => g.ks || [g.k]
+export const lineManualPack = (line, g) => {
+  if (!line?.packs) return null
+  for (const k of groupKeys(g)) if (line.packs[k] > 0) return line.packs[k]
+  return null
+}
+export const linePack = (line, g) => lineManualPack(line, g) ?? docPack(line, g.unit, g.name)
+// Человек сказал, что строка — не эта позиция (no: ключи наименований).
+export const lineRejects = (line, g) => !!line?.no?.length && groupKeys(g).some((k) => line.no.includes(k))
+
+// Позиции, выбранные человеком для строки документа (k, also): выбор идёт по ключу наименования, а одно наименование бывает в разных
+// ед. изм. («Кран шаровой Ду15» в шт и компл) — достаётся той, что подходит по единице; ни одна не подходит — всем.
+export function pickedGroups(line, index) {
+  const groups = [...new Set([line.k, ...(line.also || [])].filter(Boolean).flatMap((k) => index.byKey.get(k) || []))].filter((g) => !lineRejects(line, g))
+  const fits = groups.filter((g) => (g.units ? null : linePack(line, g)) != null || groupUnitOk(line.unit, g))
+  return fits.length ? fits : groups
+}
+
 // Объёмы позиции: в каждом ВОР и во всех вместе.
 function volumesOf(g) {
   const volumes = []
@@ -163,6 +182,7 @@ const EXPAND = [
   // дефис: «5 штук» — не числительное)
   [/(^|[\s,;(«"])([1-5])-(?:х ?-? ?)?(?=[а-яё]{3})/gi, (_, pre, n) => `${pre}${NUMERAL[n]}`],
   [/(^|[^a-zа-яё])вгп(?![a-zа-яё])/gi, '$1водогазопроводная'],
+  [/(^|[^a-zа-яё])оц(?:инк)?\.?(?![a-zа-яё])/gi, '$1оцинкованная'],
   [/(^|[^a-zа-яё])гофротруб/gi, '$1труба гофрированная '],
   [/(^|[^a-zа-яё])гофра(?![a-zа-яё])/gi, '$1труба гофрированная'],
   [/(^|[^a-zа-яё])(?:с )?зонд[а-яё]*/gi, '$1с протяжкой'],
@@ -261,6 +281,142 @@ export function sameMaterial(g1, g2) {
     && a.words.every((w) => b.words.some((x) => sameWord(w, x)))
 }
 
+// ── Одна и та же позиция в разных ВОР ───────────────────────────────────────────────────────────────
+// Расценка показывает одинаковые позиции всех ВОР одной строкой (решение пользователя 05.11.2026: не схлопываются, только если
+// уверенности меньше 90 %). Цена строки пишется всем её ВОР, поэтому уверенность — не сама похожесть текста: на копии базы
+// (22 тендера с несколькими ВОР) похожесть от 0,9 давала и «неоцинкованных / оцинкованных труб Ø20x2.8», «Патч-корд … 0,3м /
+// 5м», «Модуль РМ-4К / РМ-4», «Коллектор на 5 / на 6 отводов». Поэтому похожесть считается, только если нет различий:
+//  • своё обозначение с цифрами у каждой стороны (размер, длина, модель) — другой материал;
+//  • своё слово у каждой стороны (неоцинкованных / оцинкованных, FRHF / LS) — другой материал, кроме случая, когда у обеих один
+//    и тот же артикул: одно и то же изделие поставщики описывают разными словами.
+// Позиции одного ВОР не складываются: сметчик сам записал их разными строками. Спорная пара остаётся на виду (sameAs), и человек
+// может её разделить. Замер на той же копии: 5 397 групп → 5 338, из 50 пар с разной записью спорная одна («АРМ АСУД и АСКУЭ» —
+// «АРМ АСУД»); 144 мс на самом большом тендере.
+export const SAME_POSITION_MIN = 0.9
+// Артикул — обозначение от 6 знаков с буквами и цифрами (R850X024, SNA-800) или только цифры от 5 (91920). Не артикул: размер
+// («М6х10», «М12х1000»: X внутри артикула — между числами от трёх цифр), интерфейс («RS-485» короче), сокращение с точкой («осн.100»).
+const ARTICLE_MIN = 6
+const ARTICLE_DIGITS_MIN = 5
+const ARTICLE_SCORE_MIN = 0.95
+const isArticle = (raw, token) => {
+  if (/^[a-zа-я]+\.[0-9]+$/.test(raw)) return false
+  if (raw.includes('×') && !/^[a-zа-я]+[0-9]{3,}×[0-9]{3,}$/.test(raw)) return false
+  if (/^[0-9]+$/.test(token)) return token.length >= ARTICLE_DIGITS_MIN
+  return token.length >= ARTICLE_MIN && /[0-9]/.test(token) && /[a-zа-я]/.test(token)
+}
+// Обозначения с цифрами: кроме ссылок на ГОСТ / ТУ; Ø225 = Ф225 = DN225 = 225, 20мм = 20 мм, 400x300 = 300x400; кириллица-двойник —
+// латиницей (СК-712 = CK-712), разделители внутри обозначения не важны. Ответ: { tokens, articles }.
+const DESIGNATION_UNIT_RE = new RegExp(`${UNIT_TAIL}$`)
+function designations(name) {
+  const s = String(name || '').toLowerCase().replace(/ё/g, 'е')
+    .replace(/(^|[^a-zа-я])(гост|ту|сто|снип|сп|din|iso|en) ?(р ?)?[0-9][0-9.–—/-]*/g, '$1 ')
+    .replace(/([0-9]),(?=[0-9])/g, '$1.')
+    .replace(/([0-9]) ?[xх×*] ?(?=[0-9])/g, '$1×')
+    .replace(/(^|[\s,;(])(?:ø|⌀|ф|d|dn|ду)\s?=?\s?(?=[0-9])/g, '$1')
+  const tokens = new Set()
+  const articles = new Set()
+  for (const piece of s.split(/[\s,;:()«»"'+№#_]+/)) {
+    const raw = piece.replace(/^[-./=]+|[-./=]+$/g, '')
+    if (!/[0-9]/.test(raw)) continue
+    const number = raw.replace(DESIGNATION_UNIT_RE, '')
+    if (/^[0-9.×]+$/.test(number)) {
+      tokens.add(number.split('×').map((n) => n.replace(/^0+(?=[0-9])/, '').replace(/(\.[0-9]*?)0+$/, '$1').replace(/\.$/, '')).sort((a, b) => Number(a) - Number(b)).join('×'))
+      if (/^[0-9]{5,}$/.test(number)) articles.add(number)
+      continue
+    }
+    const token = sameCodeForm(raw.replace(/[-./=]/g, ''))
+    tokens.add(token)
+    if (isArticle(raw, token)) articles.add(token)
+  }
+  return { tokens, articles }
+}
+const SAME_FEATURES = new WeakMap()
+function sameFeatures(g) {
+  let f = SAME_FEATURES.get(g)
+  if (!f) {
+    f = { ...designations(g.name), docs: new Set(g.targets.map((t) => t.doc)), unit: g.units ? null : canonUnit(g.unit) }
+    SAME_FEATURES.set(g, f)
+  }
+  return f
+}
+const onlyIn = (a, b) => [...a].some((t) => !b.has(t))
+
+// Различие, при котором это другая вещь, как бы ни был похож текст (см. выше). Ответ: { differs, article } — article: общий артикул.
+function clearDifference(a, b, wordsA, wordsB) {
+  if (onlyIn(a.tokens, b.tokens) && onlyIn(b.tokens, a.tokens)) return { differs: true, article: false }
+  const article = [...a.articles].some((t) => b.articles.has(t))
+  const hasOwn = (x, y) => x.some((w) => !y.some((v) => sameWord(w, v)))
+  return { differs: !article && hasOwn(wordsA, wordsB) && hasOwn(wordsB, wordsA), article }
+}
+
+// Насколько мы уверены, что две группы — одна и та же позиция: 0…1. Разные ед. изм., свои обозначения или свои слова у каждой
+// стороны — 0: другая вещь или сомнение. Тот же ключ наименования — 1.
+export function positionConfidence(g1, g2) {
+  const a = sameFeatures(g1)
+  const b = sameFeatures(g2)
+  if (!a.unit || !b.unit || a.unit !== b.unit) return 0
+  if (g1.k === g2.k) return 1
+  const { differs, article } = clearDifference(a, b, features(g1).parts.words, features(g2).parts.words)
+  if (differs) return 0
+  const { score } = pairScore(itemFeatures({ name: g1.name }), g2)
+  return article ? Math.max(score, ARTICLE_SCORE_MIN) : score
+}
+
+// Строка счёта не отличается от позиции по тем же правилам: высокая похожесть без этого — ещё не «та же позиция» (0,3 м и 5 м).
+export function lineSameAsGroup(line, g) {
+  const parts = nameParts(expandName(line.name))
+  return !clearDifference(designations(line.name), sameFeatures(g), parts.words, features(g).parts.words).differs
+}
+
+// Группы позиций → те же, где одна и та же позиция разных ВОР сложена в одну (см. выше). Сложенная группа: первая по порядку,
+// с целями всех сложенных, ks — все ключи наименований, sameAs — другие записи [{ key, name, confidence }], их видит человек.
+// split — Set ключей групп, которые человек разделил. Группа войдёт в сложенную, только если уверенность высока со всеми её записями.
+export function mergeSamePositions(groups, { min = SAME_POSITION_MIN, split = null } = {}) {
+  const docsTotal = new Set(groups.flatMap((g) => g.targets.map((t) => t.doc))).size
+  if (docsTotal < 2) return groups
+  const byHead = new Map()
+  for (const g of groups) {
+    for (const w of features(g).parts.words) {
+      const h = w.slice(0, 4)
+      const list = byHead.get(h)
+      if (list) list.push(g)
+      else byHead.set(h, [g])
+    }
+  }
+  const clusterOf = new Map()
+  const out = []
+  for (const g of groups) {
+    if (clusterOf.has(g)) continue
+    const cluster = { lead: g, members: [g], docs: new Set(sameFeatures(g).docs), confidence: new Map() }
+    clusterOf.set(g, cluster)
+    out.push(cluster)
+    if (split?.has(g.key)) continue
+    const tried = new Set([g])
+    for (const w of features(g).parts.words) {
+      for (const other of byHead.get(w.slice(0, 4)) || []) {
+        if (tried.has(other)) continue
+        tried.add(other)
+        if (clusterOf.has(other) || split?.has(other.key)) continue
+        const f = sameFeatures(other)
+        if ([...f.docs].some((d) => cluster.docs.has(d))) continue
+        const levels = cluster.members.map((m) => positionConfidence(m, other))
+        const least = Math.min(...levels)
+        if (least < min) continue
+        cluster.members.push(other)
+        cluster.confidence.set(other, levels[0])
+        for (const d of f.docs) cluster.docs.add(d)
+        clusterOf.set(other, cluster)
+      }
+    }
+  }
+  return out.map(({ lead, members, confidence }) => (members.length === 1 ? lead : {
+    ...lead,
+    ks: [...new Set(members.map((m) => m.k))],
+    targets: members.flatMap((m) => m.targets),
+    sameAs: members.slice(1).filter((m) => m.k !== lead.k).map((m) => ({ key: m.key, name: m.name, confidence: confidence.get(m) })),
+  }))
+}
+
 // Похожесть строки документа и группы: { score, words, text, code, qty, sameNums, apart }. score — 0…1 (1 — только
 // точное совпадение наименования, его считает вызывающий); apart — числа у обоих разные (размер, сечение); qty —
 // количество как в ВОР. a.code — совпал артикул, a.article — и он из колонки документа.
@@ -310,7 +466,7 @@ export function matchIndex(groups) {
   const codeKeys = new Map()
   const add = (map, k, g) => { let s = map.get(k); if (!s) { s = []; map.set(k, s) } s.push(g) }
   for (const g of groups) {
-    add(byKey, g.k, g)
+    for (const k of g.ks || [g.k]) add(byKey, k, g)
     const f = features(g)
     const seen = new Set()
     for (const w of f.parts.words) { const h = w.slice(0, 4); if (!seen.has(h)) { seen.add(h); add(heads, h, g) } }
@@ -381,9 +537,9 @@ export function itemCandidates(item, groups, index = null, limit = MATCH_CANDIDA
     if (r.score >= LIST_MIN) out.set(g.key, { group: g, ...r, exact: false, article })
   }
   return [...out.values()].map((c) => {
-    const pack = packs && !c.group.units ? docPack(item, c.group.unit, c.group.name) : null
+    const pack = packs && !c.group.units ? linePack(item, c.group) : null
     return { ...c, pack, unitOk: pack != null || groupUnitOk(item.unit, c.group) }
-  }).sort(byRank).slice(0, limit)
+  }).filter((c) => !lineRejects(item, c.group)).sort(byRank).slice(0, limit)
 }
 
 // Сопоставляется сама: точно или не ниже AUTO_MIN.
@@ -436,10 +592,10 @@ export function offerMatches(lines, groups, index = null) {
   }
   for (const line of lines) {
     if (line.skip) continue
-    const picked = [line.k, ...(line.also || [])].filter(Boolean).flatMap((k) => ix.byKey.get(k) || [])
+    const picked = pickedGroups(line, ix)
     if (picked.length) {
       for (const g of picked) {
-        const pack = g.units ? null : docPack(line, g.unit, g.name)
+        const pack = g.units ? null : linePack(line, g)
         put(g, { line, score: 1, exact: false, picked: true, article: false, pack, unitOk: pack != null || groupUnitOk(line.unit, g) })
       }
       continue
@@ -450,7 +606,7 @@ export function offerMatches(lines, groups, index = null) {
     const near = first.exact ? null : all.find((c) => c !== first && autoMatch(c) && rankOf(first) - rankOf(c) <= 0.05)
     for (const c of all) {
       if (c === first || c === near || (c.unitOk && (c.article || sameMaterial(first.group, c.group)))) {
-        put(c.group, { line, score: c.score, exact: c.exact, picked: false, article: !!c.article, unitOk: c.unitOk, pack: c.pack })
+        put(c.group, { line, score: c.score, exact: c.exact, picked: false, article: !!c.article, same: c.score >= SAME_POSITION_MIN && lineSameAsGroup(line, c.group), unitOk: c.unitOk, pack: c.pack })
       }
     }
   }

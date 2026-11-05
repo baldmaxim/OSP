@@ -570,6 +570,50 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
     assert.deepEqual([off.statusCode, off.json().code], [503, 'OSP_GATEWAY_OFF'])
   })
 
+  it('файл ВОР подрядчику: решает функция базы под его входом, ключ файла наружу не выходит, в шлюзе функции нет', async () => {
+    const FILE = '018f2a10-7c3e-7a11-9b52-1f0e2d3c4b5a'
+    const self = { role: 'contractor', counterparty_id: 'cp-1', is_approved: true, is_blocked: false, self_registered: true }
+    let answer = { body: JSON.stringify([{ s3_key: DOC_KEY, file_name: 'ВОР паркинга.xlsx' }]) }
+    let role = self
+    reply = (r) => {
+      if (r.url.startsWith('/user_roles')) return { body: JSON.stringify([role]) }
+      if (r.url.startsWith('/rpc/bid_vor_file')) return answer
+      return {}
+    }
+    const vor = (fileId = FILE) => app.inject({ method: 'POST', url: '/api/fn/bid-vor-file', payload: { file_id: fileId },
+      headers: { authorization: `Bearer ${user()}`, 'content-type': 'application/json' } })
+
+    seen.length = 0
+    const res = await vor()
+    assert.equal(res.statusCode, 200, res.body)
+    const body = res.json()
+    assert.equal(body.file_name, 'ВОР паркинга.xlsx')
+    assert.deepEqual(Object.keys(body).sort(), ['expires_in', 'file_name', 'presigned_url'], 'ключа файла в ответе нет')
+    const url = new URL(body.presigned_url)
+    assert.match(decodeURIComponent(url.searchParams.get('response-content-disposition')), /attachment; .*filename\*=UTF-8''/, 'файл — под своим именем')
+    const call = seen.find((r) => r.url.startsWith('/rpc/bid_vor_file'))
+    assert.deepEqual(JSON.parse(call.body.toString()), { p_file: FILE })
+    assert.equal(decode(call.headers.authorization.replace(/^Bearer /, '')).sub, USER, 'функция — под входом подрядчика, не служебным')
+
+    // Функция не отдала строку (чужой тендер, закрытый, заявка отклонена, не файл ВОР) — как будто файла нет.
+    answer = { body: '[]' }
+    assert.equal((await vor()).statusCode, 404)
+    answer = { status: 403, body: JSON.stringify({ code: '42501', message: 'Файл ВОР — только для подрядчика' }) }
+    assert.equal((await vor()).statusCode, 403)
+    assert.equal((await vor('../../etc')).statusCode, 400, 'id файла — только uuid')
+
+    // Сотрудник: функция и не вызывается.
+    seen.length = 0
+    role = { role: 'engineer', counterparty_id: null, is_approved: true, is_blocked: false }
+    assert.equal((await vor()).statusCode, 403)
+    assert.equal(seen.filter((r) => r.url.startsWith('/rpc/bid_vor_file')).length, 0)
+
+    // Из браузера функция недоступна: ни в общем списке шлюза, ни в коротком.
+    const read = (name) => JSON.parse(fs.readFileSync(path.join(SERVER, 'src', 'data', name), 'utf8'))
+    assert.equal(read('allow.json').rpc.bid_vor_file, undefined)
+    assert.equal(read('allow-self-contractor.json').rpc.bid_vor_file, undefined)
+  })
+
   it('маршруты файлов и готовность читают данные через тот же шлюз, а не из Supabase', async () => {
     reply = (r) => (r.url.startsWith('/user_roles') ? { body: '[]' } : r.url.startsWith('/app_settings') ? { body: '[{"key":"x"}]' } : {})
     const res = await app.inject({ method: 'POST', url: '/api/fn/s3-presign', payload: { action: 'download', s3_key: 'a/b' },

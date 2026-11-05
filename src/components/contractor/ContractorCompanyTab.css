@@ -13,6 +13,15 @@
 .cab-org-row:last-child { border-bottom: 0; }
 .cab-org-row dt { color: var(--text-tertiary); }
 .cab-org-row dd { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.cab-org-contacts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.cab-org-contact { padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); font-size: 0.875rem; line-height: 1.25rem; }
+.cab-org-contact:first-child { padding-top: 0; }
+.cab-org-contact:last-child { padding-bottom: 0; border-bottom: 0; }
+.cab-org-contact-name { font-weight: 600; }
+.cab-org-contact-sub { color: var(--text-tertiary); font-size: 0.8125rem; }
+.cab-org-contact-links { display: flex; flex-wrap: wrap; gap: 0.125rem 1rem; font-variant-numeric: tabular-nums; }
+.cab-org-contact-links a, .cab-org .cab-hint a { color: var(--primary-color); }
+.cab-org > .cab-hint { margin: 0 0.25rem; }
 .cab-org-password { display: flex; flex-direction: column; gap: 0.6rem; max-width: 26rem; }
 .cab-org-field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; }
 .cab-org-field input {

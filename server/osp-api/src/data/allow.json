@@ -376,6 +376,21 @@
         "update"
       ]
     },
+    "dp_request_alert_recipients": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select"
+      ]
+    },
+    "dp_requests": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
     "employee_directory": {
       "authenticated": [
         "select"
@@ -1029,6 +1044,15 @@
       "authenticated"
     ],
     "current_counterparty_id": [
+      "authenticated"
+    ],
+    "dp_request_alerts_ack": [
+      "authenticated"
+    ],
+    "dp_request_my_alerts": [
+      "authenticated"
+    ],
+    "dp_request_scope": [
       "authenticated"
     ],
     "get_auth_users": [

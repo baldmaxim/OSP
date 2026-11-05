@@ -8,9 +8,13 @@ import {
   DOC_CHECK_PRIORITIES,
   DOC_CHECK_STATUS_LABEL,
   DOC_TYPES,
-  MAX_MANUAL_ASSIGNEES,
+  MAX_CREATOR_NAME,
+  assigneeIdsToSave,
+  assigneeStaffOptions,
+  createdFieldsPatch,
   normalizeLabels,
-  normalizeManualAssignees,
+  shownAssigneeIds,
+  toDateTimeInput,
 } from '../../utils/docCheckHelpers'
 
 // Форма заявки на проверку ДП/ДС.
@@ -23,17 +27,18 @@ import {
 // Статуса в форме нет: новая заявка встаёт в колонку, где нажали «+ Добавить
 // заявку» (по кнопке в шапке — в «Новые заявки»), дальше её двигают по доске.
 // Исполнители, срок, приоритет, цвет и метки — только при колонках 20261113
-// (hasBoardFields); без них форма прежняя. Исполнители без учётной записи и ссылка
-// на письмо — только при колонках 20261124 (hasCardFields).
+// (hasBoardFields); без них форма прежняя. Ссылка на письмо — только при колонках
+// 20261124 (hasCardFields). Исполнителем выбирают только юриста ОСП. Дату создания и
+// автора заявки меняет только администратор, у созданной заявки (canEditCreated).
 
 const EMPTY = {
   object_id: '', counterparty_id: '', doc_type: 'ds', doc_number: '', doc_date: '', notes: '',
-  assignee_ids: [], due_date: '', priority: '', color: '', labels: [], manual_assignees: [], email_link: '',
+  assignee_ids: [], due_date: '', priority: '', color: '', labels: [], email_link: '',
 }
 
 export default function DocCheckFormModal({
-  request, status, objects, counterparties, employees, labelSuggestions, manualSuggestions,
-  hasBoardFields, hasCardFields, onSave, onClose,
+  request, status, objects, counterparties, employees, labelSuggestions,
+  hasBoardFields, hasCardFields, canEditCreated, onSave, onClose,
 }) {
   const [form, setForm] = useState(() => (request
     ? {
@@ -43,13 +48,14 @@ export default function DocCheckFormModal({
       doc_number: request.doc_number || '',
       doc_date: request.doc_date || '',
       notes: request.notes || '',
-      assignee_ids: request.assignee_ids || [],
+      assignee_ids: shownAssigneeIds(request, employees),
       due_date: request.due_date || '',
       priority: request.priority || '',
       color: request.color || '',
       labels: request.labels || [],
-      manual_assignees: request.manual_assignees || [],
       email_link: request.email_link || '',
+      created_at: toDateTimeInput(request.created_at),
+      created_by_name: request.created_by_name || '',
     }
     : EMPTY))
   const [saving, setSaving] = useState(false)
@@ -67,6 +73,11 @@ export default function DocCheckFormModal({
       setError('Ссылка на письмо — адрес вида https://…')
       return
     }
+    const created = request && canEditCreated ? createdFieldsPatch(request, form.created_at, form.created_by_name) : { patch: {} }
+    if (created.error) {
+      setError(created.error)
+      return
+    }
     setSaving(true)
     try {
       const payload = {
@@ -79,7 +90,7 @@ export default function DocCheckFormModal({
       }
       if (hasBoardFields) {
         Object.assign(payload, {
-          assignee_ids: form.assignee_ids,
+          assignee_ids: assigneeIdsToSave(request?.assignee_ids, form.assignee_ids, employees),
           due_date: form.due_date || null,
           priority: form.priority || null,
           color: form.color || null,
@@ -87,20 +98,18 @@ export default function DocCheckFormModal({
         })
       }
       if (hasCardFields) {
-        Object.assign(payload, {
-          manual_assignees: normalizeManualAssignees(form.manual_assignees),
-          email_link: emailLink || null,
-        })
+        payload.email_link = emailLink || null
       }
+      Object.assign(payload, created.patch)
       await onSave(payload)
     } finally {
       setSaving(false)
     }
   }
 
-  const employeeOptions = [...employees.values()]
-    .map(e => ({ value: e.user_id, label: e.display_name || e.full_name || e.email || 'Без имени' }))
-    .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+  // Кого подсказать в «Кто создал»: любой сотрудник, не только юрист. Ввод свободный: автор мог уже уйти из компании.
+  const creatorNames = [...new Set([...employees.values()].map(e => e.display_name || e.full_name || e.email).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'ru'))
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -217,12 +226,12 @@ export default function DocCheckFormModal({
                     label=""
                     multiple
                     searchable
-                    searchPlaceholder="Поиск сотрудника…"
+                    searchPlaceholder="Поиск юриста…"
                     allLabel="Не назначены"
                     icon={<IconUser size={15} />}
                     value={form.assignee_ids}
                     onChange={(v) => set({ assignee_ids: v })}
-                    options={employeeOptions}
+                    options={assigneeStaffOptions(employees)}
                     className="dc-form-assignees"
                   />
                 </div>
@@ -236,24 +245,6 @@ export default function DocCheckFormModal({
                   />
                 </div>
               </div>
-
-              {hasCardFields && (
-                <div className="dc-form-row">
-                  <span className="dc-form-label">Исполнители без учётной записи</span>
-                  <DocCheckLabelsInput
-                    value={form.manual_assignees}
-                    onChange={(manual_assignees) => set({ manual_assignees })}
-                    suggestions={manualSuggestions}
-                    normalize={normalizeManualAssignees}
-                    max={MAX_MANUAL_ASSIGNEES}
-                    className="dc-names-input"
-                    inputLabel="Исполнитель без учётной записи"
-                    placeholder="Имя: Enter — добавить"
-                    fullText={`Не больше ${MAX_MANUAL_ASSIGNEES} имён`}
-                    removeLabel={(name) => `Убрать исполнителя «${name}»`}
-                  />
-                </div>
-              )}
 
               <div className="dc-form-grid dc-form-grid--wide">
                 <div className="dc-form-row">
@@ -305,6 +296,38 @@ export default function DocCheckFormModal({
                 />
               </div>
             </>
+          )}
+
+          {request && canEditCreated && (
+            <div className="dc-form-admin">
+              <p className="dc-form-admin-title">Создание заявки — меняет только администратор</p>
+              <div className="dc-form-grid">
+                <div className="dc-form-row">
+                  <label htmlFor="dc-created-at">Дата создания</label>
+                  <input
+                    id="dc-created-at"
+                    type="datetime-local"
+                    value={form.created_at}
+                    onChange={(e) => set({ created_at: e.target.value })}
+                  />
+                </div>
+                <div className="dc-form-row">
+                  <label htmlFor="dc-created-by">Кто создал</label>
+                  <input
+                    id="dc-created-by"
+                    type="text"
+                    list="dc-created-by-names"
+                    maxLength={MAX_CREATOR_NAME}
+                    value={form.created_by_name}
+                    onChange={(e) => set({ created_by_name: e.target.value })}
+                    placeholder="ФИО"
+                  />
+                  <datalist id="dc-created-by-names">
+                    {creatorNames.map(name => <option key={name} value={name} />)}
+                  </datalist>
+                </div>
+              </div>
+            </div>
           )}
 
           {error && <p className="dc-form-error" role="alert">{error}</p>}
