@@ -1,4 +1,5 @@
-// Регистрация подрядчика на сайте (устройство и гарантии — src/lib/auth/signup.js):
+// Регистрация подрядчика на сайте (устройство и гарантии — src/lib/auth/signup.js). В режиме «вручную» писем нет: остаются
+// задача на вычисление, заявка и маршруты администратора, остальные открытые адреса отвечают 404.
 //
 //   GET  /api/auth/register/challenge  — задача на вычисление перед заявкой (открытый);
 //   POST /api/auth/register            — заявка, без пароля; ответ один, есть учётка с этой почтой или нет (открытый);
@@ -20,7 +21,7 @@ import { originProblem } from '../lib/principal.js'
 import { READONLY_CODE, READONLY_TEXT } from '../lib/writeBarrier.js'
 
 export const SIGNUP_CHALLENGE_REASON = 'Задача на вычисление перед заявкой на регистрацию: данных не отдаёт, лимит по адресу'
-export const SIGNUP_REGISTER_REASON = 'Заявка подрядчика на регистрацию: до входа сессии нет; только с портала, задача на вычисление, лимиты; учётка появляется только после подтверждения почты'
+export const SIGNUP_REGISTER_REASON = 'Заявка подрядчика на регистрацию: до входа сессии нет; только с портала, задача на вычисление, лимиты; учётка появляется только после подтверждения почты или решения администратора'
 export const SIGNUP_PREVIEW_REASON = 'Что подтверждается: только по одноразовой ссылке из письма, сведения самой заявки и организации из её карточки'
 export const SIGNUP_CONFIRM_REASON = 'Подтверждение почты и пароль по одноразовой ссылке из письма: учётки ещё нет, вход не выдаётся'
 export const SIGNUP_CLAIM_REASON = 'Подтверждение представителя компании по одноразовой ссылке, отправленной на почту из её карточки: учётки ещё нет'
@@ -46,7 +47,7 @@ const CONFIRM_BODY = z.object({ token: TOKEN, password: z.string().min(1).max(10
 const CLAIM_BODY = z.object({ token: TOKEN, decision: z.enum(['approve', 'deny']) })
 const FORGOT_BODY = z.object({ email: z.string().trim().min(3).max(254), website: z.string().max(1000).optional(), ...POW })
 const RESET_BODY = z.object({ token: TOKEN, newPassword: z.string().min(1).max(1024) })
-const DECISION_BODY = z.object({ decision: z.enum(['approve', 'refuse']) })
+const DECISION_BODY = z.object({ decision: z.enum(['approve', 'refuse']), counterpartyId: z.string().uuid().optional() })
 const LIST_STATUS = new Set(['claim', 'review', 'active', 'refused'])
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -59,6 +60,8 @@ const isJson = (request) => /^application\/json(\s*;|$)/i.test(String(request.he
 export function registerSignup(app, ctx) {
   const { config, signup, pow, limiters, isReadOnly = () => false } = ctx
   const open = Boolean(signup && pow)
+  // Ссылки из писем и письмо о пароле — только когда портал отправляет письма.
+  const mailFlow = open && signup.mode === 'email'
   const publicOrigin = config.auth?.publicOrigin
   const ipOf = (request) => String(request.ip || '').slice(0, 64)
   const notFound = (reply) => reply.code(404).send({ error: 'Not found' })
@@ -116,6 +119,7 @@ export function registerSignup(app, ctx) {
     method: 'POST', url: '/api/auth/register/preview', bodyLimit: SIGNUP_BODY_LIMIT,
     config: { access: access.open(SIGNUP_PREVIEW_REASON), body: PREVIEW_BODY },
     handler: async (request, reply) => {
+      if (!mailFlow) return notFound(reply)
       if (gate(request, reply, limiters.signupToken)) return reply
       const { ok, ...data } = await signup.preview({ token: request.body.token, kind: request.body.kind })
       if (!ok) return refuse(reply, { ...data, ok })
@@ -127,6 +131,7 @@ export function registerSignup(app, ctx) {
     method: 'POST', url: '/api/auth/register/confirm', bodyLimit: SIGNUP_BODY_LIMIT,
     config: { access: access.open(SIGNUP_CONFIRM_REASON), body: CONFIRM_BODY },
     handler: async (request, reply) => {
+      if (!mailFlow) return notFound(reply)
       if (gate(request, reply, limiters.signupToken)) return reply
       const result = await signup.confirm({ token: request.body.token, password: request.body.password })
       if (!result.ok) return refuse(reply, result)
@@ -138,6 +143,7 @@ export function registerSignup(app, ctx) {
     method: 'POST', url: '/api/auth/register/claim', bodyLimit: SIGNUP_BODY_LIMIT,
     config: { access: access.open(SIGNUP_CLAIM_REASON), body: CLAIM_BODY },
     handler: async (request, reply) => {
+      if (!mailFlow) return notFound(reply)
       if (gate(request, reply, limiters.signupToken)) return reply
       const result = await signup.decideClaim({ token: request.body.token, decision: request.body.decision })
       if (!result.ok) return refuse(reply, result)
@@ -149,6 +155,7 @@ export function registerSignup(app, ctx) {
     method: 'POST', url: '/api/auth/password/forgot', bodyLimit: SIGNUP_BODY_LIMIT,
     config: { access: access.open(PASSWORD_FORGOT_REASON), body: FORGOT_BODY },
     handler: async (request, reply) => {
+      if (!mailFlow) return notFound(reply)
       if (gate(request, reply, limiters.signupIp)) return reply
       const b = request.body
       if (b.website) return reply.code(ACCEPTED).send({ ok: true })
@@ -162,6 +169,7 @@ export function registerSignup(app, ctx) {
     method: 'POST', url: '/api/auth/password/reset', bodyLimit: SIGNUP_BODY_LIMIT,
     config: { access: access.open(PASSWORD_RESET_REASON), body: RESET_BODY },
     handler: async (request, reply) => {
+      if (!mailFlow) return notFound(reply)
       if (gate(request, reply, limiters.signupToken)) return reply
       const result = await signup.resetPassword({ token: request.body.token, newPassword: request.body.newPassword })
       if (!result.ok) return refuse(reply, result)
@@ -185,7 +193,7 @@ export function registerSignup(app, ctx) {
       const status = LIST_STATUS.has(String(q.status)) ? String(q.status) : null
       const before = q.before && !Number.isNaN(Date.parse(String(q.before))) ? new Date(String(q.before)).toISOString() : null
       try {
-        return { open, ...(await service.adminList({ status, before, limit: Number(q.limit) || 100 })) }
+        return { open, mode: service.mode, ...(await service.adminList({ status, before, limit: Number(q.limit) || 100 })) }
       } catch (err) {
         if (err?.code === '42P01') return noTables(reply)
         throw err
@@ -201,9 +209,11 @@ export function registerSignup(app, ctx) {
       if (!UUID.test(request.params.id)) return reply.code(404).send({ error: 'Заявка не найдена', code: 'OSP_SIGNUP_NOT_FOUND' })
       if (isReadOnly()) return reply.code(503).send({ error: READONLY_TEXT, code: READONLY_CODE })
       try {
-        const result = await service.adminDecide({ id: request.params.id, decision: request.body.decision, actorId: request.auth.user.id })
+        const result = await service.adminDecide({
+          id: request.params.id, decision: request.body.decision, counterpartyId: request.body.counterpartyId ?? null, actorId: request.auth.user.id,
+        })
         if (!result.ok) return refuse(reply, result)
-        return { status: result.status }
+        return { status: result.status, ...(result.temporaryPassword ? { temporaryPassword: result.temporaryPassword } : {}) }
       } catch (err) {
         if (err?.code === '42P01') return noTables(reply)
         throw err

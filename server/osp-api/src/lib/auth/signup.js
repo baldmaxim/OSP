@@ -1,6 +1,12 @@
-// Регистрация подрядчика на сайте без одобрения администратора (AUTH_MODE=own, OSP_CONTRACTOR_SIGNUP=1).
+// Регистрация подрядчика на сайте (AUTH_MODE=own, OSP_CONTRACTOR_SIGNUP=1). Два режима, OSP_CONTRACTOR_SIGNUP_MODE:
 //
-// Заявка → письмо на указанную почту → хозяин почты задаёт пароль → проверки → доступ. До этого нет ни учётки, ни контрагента.
+// manual (по умолчанию, решение пользователя 05.11.2026: заявки одобряем сами, почты у портала пока нет):
+//   заявка без пароля → сразу к администратору, письма нет. Те же проверки, но их итог — не решение, а подсказка, что проверить
+//   (reasons). Администратор открывает доступ и один раз видит временный пароль, как при «Добавить пользователя», передаёт его
+//   человеку сам; при первом входе пароль меняется на свой. Почта не подтверждена, поэтому доказательство одно: администратор
+//   связывается с компанией по контактам из карточки, а не из заявки. ИНН общедоступен и ничего не доказывает.
+//
+// email: заявка → письмо на указанную почту → хозяин почты задаёт пароль → проверки → доступ. До этого нет ни учётки, ни контрагента.
 // Пароль в заявке не принимается намеренно: иначе чужой человек подал бы заявку с почтой директора и своим паролем, директор
 // подтвердил бы письмо СУ-10, и кабинет открылся бы чужому паролем. Пароль задаёт тот, кто открыл письмо.
 //
@@ -25,7 +31,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { Resolver } from 'node:dns/promises'
 import { hashPassword } from './passwords.js'
-import { checkNewPassword } from './policy.js'
+import { checkNewPassword, generateTemporaryPassword } from './policy.js'
 import { SIGNUP_CONSENT_VERSION, companyNameKey, digitsOnly, emailDomain, emailProblem, isPublicMailDomain, validateSignup } from '../../shared/contractorSignupRules.js'
 
 export const SIGNUP_DEFAULTS = {
@@ -49,6 +55,12 @@ export const SIGNUP_DEFAULTS = {
   dailyNoticesPerUser: 2,
   dailyResetsPerUser: 3,
 }
+
+// Режим «вручную»: почту никто не подтверждает, поэтому заявка стоит дешевле, а каждая лишняя занимает человека.
+export const SIGNUP_MANUAL_DEFAULTS = { dailyTotal: 50, dailyPerIp: 5 }
+
+// Режим «вручную»: что показать администратору вместо решения, которое при подтверждении почты принял бы сервер.
+const MANUAL_HINT = { new: 'new_company', bind: 'contact_matches', claim: 'contact_differs' }
 
 export const SIGNUP_ERRORS = {
   invalidToken: { status: 400, code: 'OSP_SIGNUP_TOKEN', message: 'Ссылка устарела или уже использована' },
@@ -145,8 +157,8 @@ const MAIL = {
   }),
 }
 
-export function createSignup({ db, box, verifier, blocklist, mail, sessions, publicOrigin, notifyEmail = '', domainAcceptsMail, log = console, options = {} }) {
-  const o = { ...SIGNUP_DEFAULTS, ...options }
+export function createSignup({ db, box, verifier, blocklist, mail, sessions, publicOrigin, notifyEmail = '', domainAcceptsMail, log = console, options = {}, mode = 'email' }) {
+  const o = { ...SIGNUP_DEFAULTS, ...(mode === 'manual' ? SIGNUP_MANUAL_DEFAULTS : {}), ...options }
   const acceptsMail = domainAcceptsMail || createDomainCheck()
   const newHash = (password) => (verifier.hash ? verifier.hash(password) : hashPassword(password))
   const link = (path) => `${publicOrigin}${path}`
@@ -250,8 +262,8 @@ export function createSignup({ db, box, verifier, blocklist, mail, sessions, pub
   }
 
   // Учётка, строка ролей (всегда подрядчик своей организации), пароль — одной транзакцией. Заявка закрывается, отпечаток
-  // из неё стирается. Отметка на выходе — 'auth'.
-  async function createAccount(tx, reg, counterpartyId, actorId = null) {
+  // из неё стирается. mustChange — пароль временный, выдан администратором. Отметка на выходе — 'auth'.
+  async function createAccount(tx, reg, counterpartyId, actorId = null, mustChange = false) {
     await tx.mark('internal')
     await tx.query(`insert into auth.users (id, aud, role, email, email_confirmed_at, created_at, updated_at, raw_user_meta_data)
         values ($1, 'authenticated', 'authenticated', $2, now(), now(), now(), jsonb_build_object('full_name', $3::text, 'kind', 'contractor'))`,
@@ -261,11 +273,43 @@ export function createSignup({ db, box, verifier, blocklist, mail, sessions, pub
     [reg.id, reg.email, reg.contact_name, reg.phone, counterpartyId, reg.company_name])
     await tx.mark('auth')
     await tx.query(`insert into osp_auth.credentials (user_id, secret, version, algo, source, must_change)
-        values ($1, $2, 1, 'scrypt', 'own', false)`, [reg.id, reg.secret])
+        values ($1, $2, 1, 'scrypt', 'own', $3)`, [reg.id, reg.secret, mustChange])
     await event(tx, reg.id, 'self_registered', { by: actorId })
     await tx.query(`update osp_auth.registrations set status = 'active', secret = null, token_hash = null, expires_at = null,
         claim_token_hash = null, claim_expires_at = null, counterparty_id = $2, decided_at = now(), decided_by = $3 where id = $1`,
     [reg.id, counterpartyId, actorId])
+  }
+
+  // Режим «вручную»: заявка сразу у администратора, с подсказками, что проверить. Ответ заявителю тот же, что бы ни нашлось:
+  // ни учётки, ни компании, ни чёрного списка отсюда не узнать. Отметка на входе и выходе — 'auth'.
+  async function queueForReview(tx, { id, v, norm, ip, domain, hasAccount }) {
+    const open = (await tx.query(`select 1 from osp_auth.registrations
+      where email_norm = $1 and status in ('pending', 'claim', 'review')`, [norm])).rows.length > 0
+    if (open) return
+    const sent = (await tx.query(`select count(*)::int as total, count(*) filter (where ip = $2)::int as from_ip
+      from osp_auth.registrations where email_norm = $1 and created_at > now() - interval '1 day'`, [norm, ip])).rows[0]
+    if (sent.total >= o.dailyPerEmail || sent.from_ip >= o.dailyPerEmailIp) return
+    if (!isPublicMailDomain(domain)) {
+      const fromDomain = (await tx.query(`select count(*)::int as n from osp_auth.registrations
+        where split_part(email_norm, '@', 2) = $1 and created_at > now() - interval '1 day'`, [domain])).rows[0].n
+      if (fromDomain >= o.dailyPerDomain) return
+    }
+    await tx.mark('internal')
+    const verdict = await companyVerdict(tx, { inn: v.inn, email_norm: norm, phone: v.phone, company_name: v.companyName })
+    await tx.mark('auth')
+    const reasons = verdict.kind === 'review' ? [...verdict.reasons] : [MANUAL_HINT[verdict.kind]]
+    if (hasAccount) reasons.unshift('account_exists')
+    const deleted = (await tx.query('select 1 from osp_auth.tombstones where email_norm = $1 limit 1', [norm])).rows.length > 0
+    if (deleted) reasons.push('email_deleted')
+    const refused = (await tx.query(`select 1 from osp_auth.registrations where status = 'refused'
+      and (email_norm = $1 or inn = $2) and decided_at > now() - interval '180 days' limit 1`, [norm, v.inn])).rows.length > 0
+    if (refused) reasons.push('previously_refused')
+    await tx.query(`insert into osp_auth.registrations (id, email, email_norm, company_name, inn, kpp, contact_name, phone,
+          consent_version, consent_at, status, counterparty_id, reasons, ip)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), 'review', $10, $11, $12)`,
+    [id, v.email, norm, v.companyName, v.inn, v.kpp, v.contactName, v.phone, SIGNUP_CONSENT_VERSION,
+      verdict.counterpartyId, reasons, ip || null])
+    if (notifyEmail) await send(tx, notifyEmail, MAIL.review(link('/admin')))
   }
 
   // ── Заявка ───────────────────────────────────────────────────────────────────────────────────────
@@ -298,6 +342,10 @@ export function createSignup({ db, box, verifier, blocklist, mail, sessions, pub
         const norm = (await tx.query('select osp_private.email_norm($1) as norm', [v.email])).rows[0].norm
         const existing = (await tx.query('select id from auth.users where osp_private.email_norm(email) = $1', [norm])).rows[0]
         await tx.mark('auth')
+        if (mode === 'manual') {
+          await queueForReview(tx, { id, v, norm, ip, domain, hasAccount: Boolean(existing) })
+          return
+        }
         if (existing) {
           const notices = (await tx.query(`select count(*)::int as n from osp_auth.events
             where user_id = $1 and kind = 'signup_notice' and at > now() - interval '1 day'`, [existing.id])).rows[0].n
@@ -576,13 +624,32 @@ export function createSignup({ db, box, verifier, blocklist, mail, sessions, pub
   }
 
   // decision: 'approve' | 'refuse'. Компанию в ЧС одобрить нельзя: сначала снять статус (это решение видно в журнале контрагента).
-  async function adminDecide({ id, decision, actorId }) {
+  // Заявка без пароля (режим «вручную») → временный пароль в ответе, один раз: его отпечаток считается до транзакции, расчёт долгий.
+  // counterpartyId — контрагент из реестра, к которому привязать учётку, если по ИНН компания не нашлась (в реестре бывает пустой ИНН).
+  // Без него — компания с этим ИНН, а нет такой — новый контрагент.
+  async function adminDecide({ id, decision, actorId, counterpartyId = null }) {
+    let temp = null
+    if (decision === 'approve') {
+      const noPassword = await db.read(null, async (tx) => {
+        await tx.mark('auth')
+        return (await tx.query(`select 1 from osp_auth.registrations where id = $1 and secret is null and status in ('review', 'claim')`, [id])).rows.length > 0
+      })
+      if (noPassword) {
+        const password = generateTemporaryPassword()
+        try {
+          temp = { password, hash: await newHash(password) }
+        } catch (err) {
+          if (err?.code === 'OSP_AUTH_BUSY') return fail('busy')
+          throw err
+        }
+      }
+    }
     try {
       return await db.write(null, async (tx) => {
         await tx.mark('auth')
         const reg = (await tx.query('select * from osp_auth.registrations where id = $1 for update', [id])).rows[0]
         if (!reg) return { ok: false, status: 404, code: 'OSP_SIGNUP_NOT_FOUND', message: 'Заявка не найдена — обновите список' }
-        if (!['review', 'claim'].includes(reg.status) || !reg.secret) {
+        if (!['review', 'claim'].includes(reg.status) || (decision === 'approve' && !reg.secret && !temp)) {
           return { ok: false, status: 409, code: 'OSP_SIGNUP_STATE', message: 'По этой заявке решение уже принято' }
         }
         if (decision !== 'approve') {
@@ -602,10 +669,21 @@ export function createSignup({ db, box, verifier, blocklist, mail, sessions, pub
           return { ok: false, status: 409, code: 'OSP_SIGNUP_BLACKLISTED', message: 'Компания в чёрном списке: сначала снимите статус в реестре контрагентов' }
         }
         const live = same.filter((c) => !c.deleted_at)
-        const company = live.find((c) => c.id === reg.counterparty_id)?.id ?? live[0]?.id ?? await createCompany(tx, reg)
-        await createAccount(tx, reg, company, actorId)
+        let company = live.find((c) => c.id === reg.counterparty_id)?.id ?? live[0]?.id ?? null
+        if (counterpartyId && counterpartyId !== company) {
+          if (company) return { ok: false, status: 409, code: 'OSP_SIGNUP_COMPANY', message: 'Этот ИНН уже есть у другой компании реестра: обновите список' }
+          const picked = (await tx.query(`select status::text as status, deleted_at from public.counterparties where id = $1 for share`, [counterpartyId])).rows[0]
+          if (!picked || picked.deleted_at) return { ok: false, status: 409, code: 'OSP_SIGNUP_COMPANY', message: 'Контрагент не найден или удалён: выберите другого' }
+          if (picked.status === 'blacklist') {
+            return { ok: false, status: 409, code: 'OSP_SIGNUP_BLACKLISTED', message: 'Компания в чёрном списке: сначала снимите статус в реестре контрагентов' }
+          }
+          company = counterpartyId
+        }
+        company ??= await createCompany(tx, reg)
+        const secret = reg.secret || box.encrypt(temp.hash, reg.id)
+        await createAccount(tx, { ...reg, secret }, company, actorId, Boolean(temp))
         await send(tx, reg.email, MAIL.active(loginLink))
-        return { ok: true, status: 'active' }
+        return { ok: true, status: 'active', ...(temp ? { temporaryPassword: temp.password } : {}) }
       })
     } catch (err) {
       if (isUniqueViolation(err)) return { ok: false, status: 409, code: 'email_taken', message: 'Учётная запись с такой почтой уже есть' }
@@ -631,5 +709,5 @@ export function createSignup({ db, box, verifier, blocklist, mail, sessions, pub
     })
   }
 
-  return { register, preview, confirm, decideClaim, forgot, resetPassword, adminList, adminDecide, cleanup }
+  return { mode, register, preview, confirm, decideClaim, forgot, resetPassword, adminList, adminDecide, cleanup }
 }

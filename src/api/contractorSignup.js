@@ -8,3 +8,5 @@ export const contractorSignupsAdmin = createSignupAdminClient({ fetchImpl: sessi
 
 // Открыта ли регистрация — решил сервер (/api/auth/config): страница только не предлагает закрытое.
 export const signupOpen = () => getAuthMode().signup === true
+// Заявку решает администратор: писем нет, ни ссылок подтверждения, ни восстановления пароля по почте.
+export const signupManual = () => getAuthMode().signupMode === 'manual'

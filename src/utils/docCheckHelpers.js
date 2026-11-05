@@ -244,6 +244,14 @@ export function fmtDocDate(value) {
   return d.toLocaleDateString('ru-RU')
 }
 
+// «23.10» — когда заявку добавили, на карточке доски: без года (полная дата — в подсказке).
+export function createdShort(value) {
+  if (!value) return ''
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
+}
+
 export const fmtDocDateTime = (value) => (value ? new Date(value).toLocaleString('ru-RU', {
   day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
 }) : '')
@@ -263,46 +271,52 @@ export function cardTitle(req) {
   return cp ? `${cp} / ${docTitle(req)}` : docTitle(req)
 }
 
-// Порядок карточек внутри колонки доски: сначала заданный перетаскиванием
-// sort_order, при равенстве — старые сверху (порядок поступления заявок).
+// Порядок карточек внутри колонки доски — новые сверху (решение пользователя 05.11.2026): больший sort_order выше, при
+// равенстве — та, что добавлена позже. Сверху вниз номера убывают: новая карточка берёт следующий номер (nextSortOrder) и
+// сама встаёт наверх, а прежние данные менять не нужно.
 export function compareForBoard(a, b) {
-  if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order
-  return new Date(a.created_at) - new Date(b.created_at)
+  if (a.sort_order !== b.sort_order) return b.sort_order - a.sort_order
+  return new Date(b.created_at) - new Date(a.created_at)
+}
+
+// «Сводка по ДП» — выборка из разных колонок, номера порядка там несравнимы (в каждой колонке свой счёт): только по дате.
+export function compareNewestFirst(a, b) {
+  return (new Date(b.created_at) - new Date(a.created_at)) || (b.sort_order - a.sort_order)
 }
 
 // Место карточки в колонке: её номер и какие соседи сдвигаются. rows — вся колонка в порядке доски, без самой карточки,
 // вместе с теми, кого сейчас скрывает фильтр (иначе новые номера совпали бы с номерами скрытых, и порядок рассыпался бы);
 // beforeId — перед какой встать, null — в конец. Соседей трогаем, только если между ними нет места, и с той стороны, где
-// сдвигать меньше: бросок к верху «Завершено» (сотни карточек) — несколько записей, а не сотни. Номера могут быть
-// отрицательными и повторяться (при равных порядок задаёт дата создания).
+// сдвигать меньше: бросок к верху «Завершено» (сотни карточек) — несколько записей, а не сотни. Сверху вниз номера убывают;
+// могут быть отрицательными и повторяться (при равных порядок задаёт дата создания).
 export function placeInColumn(rows, beforeId) {
   const found = beforeId ? rows.findIndex(r => r.id === beforeId) : -1
   const at = found >= 0 ? found : rows.length
-  const prev = rows[at - 1]
-  const next = rows[at]
-  if (!prev && !next) return { sortOrder: 1, shifted: [] }
-  if (!next) return { sortOrder: prev.sort_order + 1, shifted: [] }
-  if (!prev) return { sortOrder: next.sort_order - 1, shifted: [] }
-  if (next.sort_order - prev.sort_order > 1) return { sortOrder: prev.sort_order + 1, shifted: [] }
+  const above = rows[at - 1]
+  const below = rows[at]
+  if (!above && !below) return { sortOrder: 1, shifted: [] }
+  if (!below) return { sortOrder: above.sort_order - 1, shifted: [] }
+  if (!above) return { sortOrder: below.sort_order + 1, shifted: [] }
+  if (above.sort_order - below.sort_order > 1) return { sortOrder: above.sort_order - 1, shifted: [] }
 
   const down = []
-  let cur = prev.sort_order + 1
-  for (let i = at; i < rows.length && rows[i].sort_order <= cur; i++) {
-    cur += 1
+  let cur = above.sort_order - 1
+  for (let i = at; i < rows.length && rows[i].sort_order >= cur; i++) {
+    cur -= 1
     down.push({ id: rows[i].id, sort_order: cur })
   }
   const up = []
-  cur = next.sort_order - 1
-  for (let i = at - 1; i >= 0 && rows[i].sort_order >= cur; i--) {
-    cur -= 1
+  cur = below.sort_order + 1
+  for (let i = at - 1; i >= 0 && rows[i].sort_order <= cur; i--) {
+    cur += 1
     up.push({ id: rows[i].id, sort_order: cur })
   }
   return down.length <= up.length
-    ? { sortOrder: prev.sort_order + 1, shifted: down }
-    : { sortOrder: next.sort_order - 1, shifted: up }
+    ? { sortOrder: above.sort_order - 1, shifted: down }
+    : { sortOrder: below.sort_order + 1, shifted: up }
 }
 
-// Конец колонки: номер для карточки, которую ставят последней.
+// Верх колонки: номер для новой карточки и для той, что перешла сюда из другой колонки не перетаскиванием.
 export function nextSortOrder(rows, status) {
   return (rows || [])
     .filter(r => r.status === status && !r.deleted_at && !r.archived_at)

@@ -807,6 +807,183 @@ describe('регистрация подрядчика на настоящей б
     assert.ok(sent.some((m) => m.to === 'dept@su10.test' && !/clean\.ru|ООО/.test(m.text)), 'отдел узнаёт о заявке без персональных данных')
   })
 
+  describe('режим «вручную» (OSP_CONTRACTOR_SIGNUP_MODE=manual, почты нет)', () => {
+    const manual = { signup: { enabled: true, mode: 'manual', mailFrom: '', smtpUrl: '' } }
+    const decide = (id, body, who) => app.inject({ method: 'POST', url: `/api/admin/contractor-signups/${id}/decision`, payload: body, headers: as(who, { unsafe: true }) })
+    const queue = async (who) => {
+      const res = await app.inject({ method: 'GET', url: '/api/admin/contractor-signups?status=review', headers: as(who) })
+      assert.equal(res.statusCode, 200, res.body)
+      return res.json()
+    }
+
+    it('открыта без почты; страница знает режим; письма, ссылки и восстановление пароля закрыты', async () => {
+      await makeApp(manual)
+      const cfg = (await app.inject({ method: 'GET', url: '/api/auth/config' })).json()
+      assert.equal(cfg.signup, true)
+      assert.equal(cfg.signupMode, 'manual')
+      assert.equal(app.mailOutbox, undefined, 'очередь писем не запускается')
+      assert.equal((await app.inject({ method: 'GET', url: '/api/auth/register/challenge' })).statusCode, 200)
+      for (const [url, payload] of [
+        ['/api/auth/register/preview', { token: 'a'.repeat(43), kind: 'confirm' }],
+        ['/api/auth/register/confirm', { token: 'a'.repeat(43), password: PASSWORD }],
+        ['/api/auth/register/claim', { token: 'a'.repeat(43), decision: 'approve' }],
+        ['/api/auth/password/forgot', { email: 'a@b.ru', challenge: 'x', answer: '1' }],
+        ['/api/auth/password/reset', { token: 'a'.repeat(43), newPassword: PASSWORD }],
+      ]) assert.equal((await post(url, payload)).statusCode, 404, url)
+      // Свой вход не включён — закрыта и здесь.
+      await makeApp({ ...manual, authMode: 'both', auth: { keys: KEYS, pilotIds: [ADMIN.id], publicOrigin: ORIGIN, idleDays: 14, absoluteDays: 30, sessionCacheMs: 0 } })
+      assert.ok(!('signup' in (await app.inject({ method: 'GET', url: '/api/auth/config' })).json()))
+    })
+
+    it('заявка сразу у администратора, с подсказками; до решения нет ни учётки, ни контрагента, ни пароля', async () => {
+      await makeApp(manual)
+      assert.equal((await register()).statusCode, 202)
+      assert.equal((await register({ email: 'petrov@old-contractor.ru', inn: INN.existing, phone: '+7 926 000-16-01' })).statusCode, 202)
+      assert.equal((await register({ email: 'chuzhoy@clean.ru', inn: INN.existing, phone: '+7 926 000-16-02' })).statusCode, 202)
+      assert.equal((await register({ email: 'nomail@clean.ru', inn: INN.nomail, phone: '+7 926 000-16-03' })).statusCode, 202)
+      assert.equal((await register({ email: 'black@clean.ru', inn: INN.black, phone: '+7 926 000-16-04' })).statusCode, 202)
+      assert.equal(count('auth.users', `email like '%clean.ru' or email like '%stroy-fresh.ru'`), 0)
+      assert.equal(count('public.counterparties', `registered_via = 'self'`), 0)
+      assert.equal(count('osp_auth.registrations', 'secret is not null or token_hash is not null', 'osp:auth'), 0)
+      assert.equal(count('osp_auth.mail_outbox', 'true', 'osp:auth'), 0)
+
+      const admin = await signedIn(ADMIN.email, ADMIN.password)
+      const { items, mode } = await queue(admin)
+      assert.equal(mode, 'manual')
+      const reasons = (email) => items.find((r) => r.email === email).reasons
+      assert.deepEqual(reasons('ivanov@stroy-fresh.ru'), ['new_company'])
+      assert.deepEqual(reasons('petrov@old-contractor.ru'), ['contact_matches'])
+      assert.deepEqual(reasons('chuzhoy@clean.ru'), ['contact_differs'])
+      assert.deepEqual(reasons('nomail@clean.ru'), ['no_company_mail'])
+      assert.deepEqual(reasons('black@clean.ru'), ['inn_blacklisted'])
+      assert.equal(items.find((r) => r.email === 'chuzhoy@clean.ru').counterparty_name, 'ООО Старый подрядчик')
+    })
+
+    it('ответ один: занятый адрес, чёрный список и повтор неотличимы; повтор новую заявку не заводит', async () => {
+      await makeApp(manual)
+      asMark('osp:internal', `insert into auth.users (id, aud, role, email, created_at, updated_at, raw_user_meta_data)
+        values ('44444444-4444-4444-8444-444444444444', 'authenticated', 'authenticated', 'taken@clean.ru', now(), now(), '{}')`)
+      const answers = [
+        await register({ email: 'fresh@clean.ru', inn: INN.fresh2, phone: '+7 926 000-17-01' }),
+        await register({ email: 'fresh@clean.ru', inn: INN.fresh2, phone: '+7 926 000-17-01' }),
+        await register({ email: 'taken@clean.ru', inn: INN.sameName, phone: '+7 926 000-17-02' }),
+        await register({ email: 'black@clean.ru', inn: INN.black, phone: '+7 926 000-17-03' }),
+      ]
+      for (const res of answers) {
+        assert.equal(res.statusCode, 202)
+        assert.deepEqual(res.json(), { ok: true })
+      }
+      assert.equal(count('osp_auth.registrations', `email_norm = 'fresh@clean.ru'`, 'osp:auth'), 1)
+      const admin = await signedIn(ADMIN.email, ADMIN.password)
+      const { items } = await queue(admin)
+      const taken = items.find((r) => r.email === 'taken@clean.ru')
+      assert.ok(taken.reasons.includes('account_exists'), 'администратор видит, что учётка уже есть')
+      const res = await decide(taken.id, { decision: 'approve' }, admin)
+      assert.equal(res.statusCode, 409)
+      assert.equal(res.json().code, 'email_taken')
+      assert.equal(asMark('osp:internal', `select count(*) from public.user_roles where email = 'taken@clean.ru'`), '0')
+    })
+
+    it('одобрение: временный пароль один раз, смена при первом входе, узкий доступ; новый контрагент заведён', async () => {
+      await makeApp(manual)
+      await register()
+      const admin = await signedIn(ADMIN.email, ADMIN.password)
+      const emp = await signedIn(EMPLOYEE.email, EMPLOYEE.password)
+      const { items } = await queue(admin)
+      const { id } = items[0]
+      assert.equal((await decide(id, { decision: 'approve' }, emp)).statusCode, 403, 'решает только администратор')
+
+      const res = await decide(id, { decision: 'approve' }, admin)
+      assert.equal(res.statusCode, 200, res.body)
+      const { status, temporaryPassword } = res.json()
+      assert.equal(status, 'active')
+      assert.ok(temporaryPassword.length >= 15)
+      assert.equal(res.headers['cache-control'], 'no-store')
+      assert.equal(logs.join('').includes(temporaryPassword), false, 'пароля нет в журнале')
+      assert.equal(asMark('osp:auth', `select must_change from osp_auth.credentials where user_id = '${id}'`), 't')
+      assert.equal(asMark('osp:internal', `select role || '|' || self_registered || '|' || is_approved from public.user_roles where user_id = '${id}'`), 'contractor|true|true')
+      assert.equal(count('public.counterparties', `registered_via = 'self' and inn = '${INN.fresh}'`), 1)
+      assert.equal(asMark('osp:auth', `select status || '|' || coalesce(secret, 'стёрт') from osp_auth.registrations where id = '${id}'`), 'active|стёрт')
+
+      const signIn = await login(form().email, temporaryPassword)
+      assert.equal(signIn.statusCode, 200, signIn.body)
+      assert.equal(signIn.json().mustChange, true, 'при первом входе пароль меняется на свой')
+      assert.equal((await decide(id, { decision: 'approve' }, admin)).statusCode, 409, 'повторно — нельзя, второго пароля нет')
+    })
+
+    it('контрагент на выбор: компания в реестре без ИНН; чужой, удалённый и чёрный список не подходят; ИНН важнее выбора', async () => {
+      await makeApp(manual)
+      const blank = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9'
+      asMark('osp:internal', `insert into public.counterparties (id, name) values ('${blank}', 'ООО Новая стройка') on conflict (id) do nothing`)
+      try {
+        await register()
+        await register({ email: 'chuzhoy@clean.ru', inn: INN.existing, phone: '+7 926 000-18-01' })
+        const admin = await signedIn(ADMIN.email, ADMIN.password)
+        const { items } = await queue(admin)
+        const fresh = items.find((r) => r.email === form().email)
+        const known = items.find((r) => r.email === 'chuzhoy@clean.ru')
+
+        const black = await decide(fresh.id, { decision: 'approve', counterpartyId: CP.black }, admin)
+        assert.equal(black.statusCode, 409)
+        assert.equal(black.json().code, 'OSP_SIGNUP_BLACKLISTED')
+        const nobody = await decide(fresh.id, { decision: 'approve', counterpartyId: '99999999-9999-4999-8999-999999999999' }, admin)
+        assert.equal(nobody.statusCode, 409)
+        assert.equal(nobody.json().code, 'OSP_SIGNUP_COMPANY')
+        assert.equal((await decide(fresh.id, { decision: 'approve', counterpartyId: 'не uuid' }, admin)).statusCode, 400)
+        const other = await decide(known.id, { decision: 'approve', counterpartyId: blank }, admin)
+        assert.equal(other.statusCode, 409, 'компания с этим ИНН уже есть')
+        assert.equal(count('auth.users', `email in ('${form().email}', 'chuzhoy@clean.ru')`), 0, 'отказы ничего не создали')
+
+        const res = await decide(fresh.id, { decision: 'approve', counterpartyId: blank }, admin)
+        assert.equal(res.statusCode, 200, res.body)
+        assert.equal(asMark('osp:internal', `select counterparty_id::text from public.user_roles where user_id = '${fresh.id}'`), blank)
+        assert.equal(count('public.counterparties', `registered_via = 'self'`), 0, 'новый контрагент не заведён')
+      } finally {
+        asMark('osp:internal', `delete from public.user_roles where counterparty_id = '${blank}'; delete from public.counterparties where id = '${blank}'; select 1`)
+      }
+    })
+
+    it('отказ: письма нет, данных пароля нет, следующая заявка помечена; подделать заявку с паролем нельзя', async () => {
+      await makeApp(manual)
+      await register()
+      const admin = await signedIn(ADMIN.email, ADMIN.password)
+      const { items } = await queue(admin)
+      assert.equal((await decide(items[0].id, { decision: 'refuse' }, admin)).json().status, 'refused')
+      assert.equal(count('osp_auth.mail_outbox', 'true', 'osp:auth'), 0)
+      await register()
+      const next = (await queue(admin)).items.find((r) => r.email === form().email)
+      assert.ok(next.reasons.includes('previously_refused'))
+      // Лишнее поле «пароль» в заявке просто не читается: у заявки нет пароля, вход — только после решения.
+      const withPassword = await post('/api/auth/register', { ...form({ email: 'hack@clean.ru', phone: '+7 926 000-19-01' }), password: PASSWORD, ...(await proof()) })
+      assert.ok([202, 400].includes(withPassword.statusCode))
+      assert.equal(count('osp_auth.registrations', 'secret is not null', 'osp:auth'), 0)
+      assert.equal((await login('hack@clean.ru')).statusCode, 400)
+    })
+
+    it('очередь не засорить: пределы за сутки ниже, чем в режиме писем; сверх предела новых заявок нет, вход работает', async () => {
+      await makeApp(manual, undefined, { dailyTotal: 2 })
+      assert.equal((await register({ email: 'a1@clean.ru', inn: INN.sameMail, phone: '+7 926 000-20-01' })).statusCode, 202)
+      assert.equal((await register({ email: 'a2@clean.ru', inn: INN.samePhone, phone: '+7 926 000-20-02' })).statusCode, 202)
+      const third = await register({ email: 'a3@clean.ru', inn: INN.sameDomain, phone: '+7 926 000-20-03' })
+      assert.equal(third.statusCode, 503)
+      assert.equal(third.json().code, 'OSP_SIGNUP_CLOSED')
+      assert.equal(count('osp_auth.registrations', 'true', 'osp:auth'), 2)
+      assert.equal((await login(ADMIN.email, ADMIN.password)).statusCode, 200)
+      const { SIGNUP_MANUAL_DEFAULTS, SIGNUP_DEFAULTS } = await import(path.join(SERVER, 'src', 'lib', 'auth', 'signup.js'))
+      assert.ok(SIGNUP_MANUAL_DEFAULTS.dailyTotal < SIGNUP_DEFAULTS.dailyTotal)
+      assert.ok(SIGNUP_MANUAL_DEFAULTS.dailyPerIp < SIGNUP_DEFAULTS.dailyPerIp)
+    })
+
+    it('по умолчанию — режим «вручную»: письма только по явному значению', async () => {
+      const { loadConfig } = await import(path.join(SERVER, 'src', 'config.js'))
+      const env = { AUTH_MODE: 'own', OSP_AUTH_KEYS: KEYS, OSP_PUBLIC_ORIGIN: ORIGIN, OSP_CONTRACTOR_SIGNUP: '1' }
+      assert.equal(loadConfig(env).signup.mode, 'manual')
+      assert.equal(loadConfig({ ...env, OSP_CONTRACTOR_SIGNUP_MODE: 'email' }).signup.mode, 'email')
+      assert.equal(loadConfig({ ...env, OSP_CONTRACTOR_SIGNUP_MODE: 'что-то' }).signup.mode, 'manual')
+      assert.equal(loadConfig({ AUTH_MODE: 'own', OSP_AUTH_KEYS: KEYS, OSP_PUBLIC_ORIGIN: ORIGIN }).signup.enabled, false, 'без флага закрыта')
+    })
+  })
+
   it('учётка, удалённая администратором, сама не возвращается', async () => {
     asMark('osp:auth', `insert into osp_auth.tombstones (user_id, email_norm) values ('77777777-7777-4777-8777-777777777777', 'deleted@firm.ru'); select 1`)
     assert.deepEqual((await confirm(await registerAndGetToken({ email: 'deleted@firm.ru', inn: INN.fresh2, phone: '+7 926 000-16-01' }))).json(), { status: 'review' })

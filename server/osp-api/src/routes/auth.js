@@ -52,7 +52,7 @@ export function registerAuth(app, ctx) {
     method: 'GET', url: '/api/auth/config',
     config: { access: access.open(AUTH_CONFIG_REASON) },
     // signup — только когда регистрация подрядчиков действительно открыта (src/routes/signup.js).
-    handler: async () => ({ mode, ownLogin: mode === 'own', ...(ctx.signup && ctx.pow ? { signup: true } : {}) }),
+    handler: async () => ({ mode, ownLogin: mode === 'own', ...(ctx.signup && ctx.pow ? { signup: true, signupMode: ctx.signup.mode } : {}) }),
   })
 
   app.route({

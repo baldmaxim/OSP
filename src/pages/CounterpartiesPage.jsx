@@ -16,12 +16,15 @@ import { buildRelationGroups, groupMatesOf, planRemoveFromGroup } from '../utils
 import { VAT_NONE, vatFromSelect, vatSelectValue, vatText } from '../utils/counterpartyVat'
 import { CP_LIMITED_HINT, CP_LIMITED_LABEL, LIMITED_MISSING_TEXT, cpStatusFromText, isLimitedStatusMissing } from '../utils/counterpartyStatus'
 
-// Компанию создала регистрация подрядчика на сайте (миграция 20261203).
-const SELF_REGISTERED_HINT = 'Компанию создала регистрация на сайте: ИНН проверен только по контрольной сумме, отдел её ещё не проверял. Цены попадут в реестр расценок, только если сделать её участником тендера.'
+// Компанию завели по заявке с сайта (миграция 20261203).
+const SELF_REGISTERED_HINT = 'Компанию завели по заявке с сайта: ИНН проверен только по контрольной сумме. Цены попадут в реестр расценок, только если сделать её участником тендера.'
 import { docTitle } from '../utils/counterpartyDocs'
 import { counterpartySearchIndex, searchCounterparties } from '../utils/counterpartySearch'
 import CounterpartyGeneralTab from '../components/counterparty/CounterpartyGeneralTab'
-import { loadCounterpartyContractSummary } from '../services/counterpartyContracts'
+import { loadCounterpartyContractSummary, loadCounterpartySiteAccounts } from '../services/counterpartyContracts'
+import {
+  compareCounterparties, counterpartyFacets, counterpartyNumbers, filterCounterparties, isMissingSiteAccounts,
+} from '../utils/counterpartyFilters'
 import CounterpartyVatSelect from '../components/counterparty/CounterpartyVatSelect'
 import VorDivisionChip from '../components/VorDivisionChip'
 import VorDivisionFilter from '../components/VorDivisionFilter'
@@ -56,8 +59,6 @@ const TENDER_STATUS_LABEL = {
   proposal_provided: 'Предоставил КП',
   accepted_for_work: 'Принят в работу',
 }
-
-const ruCollator = new Intl.Collator('ru')
 
 // «Вид работ» хранится строкой через запятую (splitWorkTypes — utils/workTypeDivisions.js).
 
@@ -226,6 +227,28 @@ function ContractMark({ count }) {
   )
 }
 
+// Значок и отметка «есть регистрация на сайте»: действующая учётка кабинета подрядчика. Значок свой, а не галочка: на телефоне
+// отметка стоит в одной строке с галочкой договора.
+function SiteAccountIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="m16 11 2 2 4-4" />
+    </svg>
+  )
+}
+
+function SiteAccountMark({ count }) {
+  if (!count) return null
+  const title = `Есть регистрация на сайте. Учётных записей кабинета подрядчика: ${count}`
+  return (
+    <span className="cp-contract-mark" title={title} role="img" aria-label={title}>
+      <SiteAccountIcon />
+      {count > 1 && <span className="cp-contract-mark-n">{count}</span>}
+    </span>
+  )
+}
+
 function CounterpartiesPage() {
   const { isAdmin, canEdit, canView, userProfile } = useRole()
   // task 333: гейт add/edit/delete и inline-editing для раздела «counterparties».
@@ -259,6 +282,10 @@ function CounterpartiesPage() {
   // null — ещё грузятся, 'error' — не загрузились (фильтр недоступен, список работает).
   const [contractCounts, setContractCounts] = useState(null)
   const [onlyWithContract, setOnlyWithContract] = useState(false)
+  // Учётки кабинета подрядчика: Map(id контрагента → число) — отметка «Регистрация» и фильтр «С регистрацией». null — ещё
+  // грузятся, 'error' — не загрузились, 'missing' — в базе нет функции (миграция 20261225): ни столбца, ни кнопки.
+  const [siteAccounts, setSiteAccounts] = useState(null)
+  const [onlyRegistered, setOnlyRegistered] = useState(false)
   const fileInputRef = useRef(null)
 
   const [counterpartyFormData, setCounterpartyFormData] = useState(EMPTY_CP_FORM)
@@ -341,6 +368,7 @@ function CounterpartiesPage() {
     fetchRelations()
     fetchWorkTypesDirectory()
     fetchContractCounts()
+    fetchSiteAccounts()
   }, [])
 
   // Отдельно от списка: договоров тысячи, а список контрагентов не должен их ждать.
@@ -352,6 +380,16 @@ function CounterpartiesPage() {
     } catch (err) {
       console.warn('Не удалось загрузить договоры контрагентов:', err?.message || err)
       setContractCounts(prev => (prev instanceof Map ? prev : 'error'))
+    }
+  }
+
+  const fetchSiteAccounts = async () => {
+    try {
+      setSiteAccounts(await loadCounterpartySiteAccounts())
+    } catch (err) {
+      if (isMissingSiteAccounts(err)) { setSiteAccounts('missing'); return }
+      console.warn('Не удалось загрузить регистрации контрагентов:', err?.message || err)
+      setSiteAccounts('error')
     }
   }
 
@@ -1180,7 +1218,7 @@ function CounterpartiesPage() {
     }
 
     const headers = [
-      '№ п/п',
+      '№',
       'Наименование организации',
       'Категория работ',
       'Вид работ',
@@ -1212,9 +1250,9 @@ function CounterpartiesPage() {
     // Порядок берём как есть: filteredCounterparties уже отсортирован так же —
     // активные сверху, чёрный список снизу, внутри по имени.
     const rows = []
-    exportList.forEach((cp, idx) => {
+    exportList.forEach((cp) => {
       const baseRow = [
-        idx + 1,
+        numbersById.get(cp.id),
         cp.name || '',
         cp.department || '',
         cp.work_type || '',
@@ -1445,87 +1483,95 @@ function CounterpartiesPage() {
     }
   }
 
-  // Уникальные виды работ (для фильтра) и сколько действующих контрагентов у каждого (справочник).
-  const { uniqueWorkTypes, workTypeUsage } = useMemo(() => {
-    const all = new Set()
+  // Сколько действующих контрагентов у каждого вида работ (справочник).
+  const workTypeUsage = useMemo(() => {
     const usage = new Map()
     for (const c of counterparties) {
-      for (const wt of splitWorkTypes(c.work_type)) {
-        all.add(wt)
-        if (!c.deleted_at) usage.set(wt, (usage.get(wt) || 0) + 1)
-      }
+      if (c.deleted_at) continue
+      for (const wt of splitWorkTypes(c.work_type)) usage.set(wt, (usage.get(wt) || 0) + 1)
     }
-    return { uniqueWorkTypes: [...all].sort(ruCollator.compare), workTypeUsage: usage }
+    return usage
   }, [counterparties])
+
+  // Постоянный «№» — по всему реестру, а не по выборке: фильтры его не меняют (utils/counterpartyFilters.js).
+  const numbersById = useMemo(() => counterpartyNumbers(counterparties), [counterparties])
 
   // Что ищется у каждого контрагента (поля карточки и контакты, без пробелов и знаков) — один раз на загрузку
   // списка, а не на каждую букву поиска. Правила поиска — utils/counterpartySearch.js.
   const searchIndexById = useMemo(() => {
     const map = new Map()
-    for (const c of counterparties) map.set(c.id, counterpartySearchIndex(c))
+    for (const c of counterparties) map.set(c.id, counterpartySearchIndex(c, numbersById.get(c.id)))
     return map
-  }, [counterparties])
+  }, [counterparties, numbersById])
 
-  // «С договором» действует, когда договоры загрузились: до того фильтр не прячет весь список.
+  // Кнопки действуют, когда данные загрузились: до того фильтр не прячет весь список.
   const contractFilterOn = onlyWithContract && contractCounts instanceof Map
+  const siteFilterOn = onlyRegistered && siteAccounts instanceof Map
+  const siteShown = siteAccounts !== 'missing'
 
-  // Вкладка и фильтры без поиска (мемоизация): сортировка не повторяется на каждую букву поиска.
-  const tabBeforeDivision = useMemo(() => {
-    return counterparties.filter(counterparty => {
-      // task 197 + 201: фильтр по активной вкладке (активные / чёрный список / удалённые)
-      if (activeTab === 'deleted') {
-        if (!counterparty.deleted_at) return false
-      } else if (counterparty.deleted_at || (counterparty.status === 'blacklist') !== (activeTab === 'blacklist')) {
-        return false
-      }
-      // Фильтр по виду работ (проверяем каждый вид отдельно)
-      if (workTypeFilter && !splitWorkTypes(counterparty.work_type).includes(workTypeFilter)) return false
-      return !contractFilterOn || contractCounts.get(counterparty.id)
-    }).sort((a, b) => {
-      // Сортировка: активные сверху, черный список снизу, внутри — по имени
-      if ((a.status === 'blacklist') !== (b.status === 'blacklist')) return a.status === 'blacklist' ? 1 : -1
-      return ruCollator.compare(a.name || '', b.name || '')
-    })
-  }, [counterparties, workTypeFilter, contractFilterOn, contractCounts, activeTab])
-
-  // Подразделения: число контрагентов вкладки на каждое (без этого фильтра) и сам фильтр. Контрагент с видами работ
-  // разных подразделений попадает в каждое из них.
-  const cpDivisionCounts = useMemo(
-    () => (divisionsById ? divisionCounts(tabBeforeDivision, c => divisionsById.get(c.id) || []) : null),
-    [divisionsById, tabBeforeDivision],
-  )
-  const tabCounterparties = useMemo(
-    () => (divisionFilterOn
-      ? tabBeforeDivision.filter(c => matchesDivisions(divisionsById.get(c.id), filterDivisions))
-      : tabBeforeDivision),
-    [divisionFilterOn, tabBeforeDivision, divisionsById, filterDivisions],
-  )
+  // Все фильтры — одним расчётом (utils/counterpartyFilters.js): список и числа на кнопках считаются по одним правилам.
+  const filters = useMemo(() => ({
+    // Панель «Виды работ» открыта поверх скрытой таблицы контрагентов: таблица остаётся той же, не собирается заново (task 343/344).
+    tab: activeTab === 'work_types' ? 'active' : activeTab,
+    workType: workTypeFilter,
+    divisions: divisionFilterOn ? filterDivisions : [],
+    divisionsById,
+    onlyContract: contractFilterOn,
+    contractCounts: contractCounts instanceof Map ? contractCounts : null,
+    onlySite: siteFilterOn,
+    siteAccounts: siteAccounts instanceof Map ? siteAccounts : null,
+  }), [activeTab, workTypeFilter, divisionFilterOn, filterDivisions, divisionsById, contractFilterOn, contractCounts, siteFilterOn, siteAccounts])
 
   // Поиск — task 339: по deferred-значению, отвязан от ввода в input. Ничего не нашлось как набрано — поиск
   // в другой раскладке, затем с опечатками; searchFix — чем заменён запрос (строка над списком).
-  const { items: filteredCounterparties, fix: searchFix } = useMemo(
-    () => searchCounterparties(tabCounterparties, deferredSearchQuery, (cp) => searchIndexById.get(cp.id)),
-    [tabCounterparties, deferredSearchQuery, searchIndexById],
+  const searchIn = useCallback(
+    (items) => searchCounterparties(items, deferredSearchQuery, (cp) => searchIndexById.get(cp.id)),
+    [deferredSearchQuery, searchIndexById],
   )
+  // Сортировка — один раз на выборку, а не на каждую букву поиска.
+  const filteredBeforeSearch = useMemo(
+    () => filterCounterparties(counterparties, filters).sort(compareCounterparties),
+    [counterparties, filters],
+  )
+  const { items: filteredCounterparties, fix: searchFix } = useMemo(
+    () => searchIn(filteredBeforeSearch),
+    [searchIn, filteredBeforeSearch],
+  )
+  // Что каждый фильтр предлагает при всех остальных: число на кнопке и в списке подразделений — сколько будет строк после
+  // нажатия, в списке видов работ — только те, с которыми что-то останется.
+  const facets = useMemo(
+    () => counterpartyFacets(counterparties, filters, (items) => searchIn(items).items),
+    [counterparties, filters, searchIn],
+  )
+  const cpDivisionCounts = useMemo(
+    () => (divisionsById ? divisionCounts(facets.divisionItems, c => divisionsById.get(c.id) || []) : null),
+    [divisionsById, facets],
+  )
+
+  const anyFilterOn = !!(searchQuery.trim() || workTypeFilter || divisionFilterOn || contractFilterOn || siteFilterOn)
+  const resetFilters = () => {
+    setSearchQuery('')
+    setWorkTypeFilter('')
+    setWtfSearch('')
+    setFilterDivisions([])
+    setOnlyWithContract(false)
+    setOnlyRegistered(false)
+  }
 
   const selectedSet = useMemo(() => new Set(selectedCounterpartyIds), [selectedCounterpartyIds])
   const allVisibleSelected = filteredCounterparties.length > 0 && filteredCounterparties.every(cp => selectedSet.has(cp.id))
+  // Отмеченные остаются отмеченными при смене фильтра (можно собрать строки из разных выборок), поэтому пишем, сколько из них
+  // сейчас не видно: «В корзину» заденет и их.
+  const selectedHidden = useMemo(() => {
+    if (selectedCounterpartyIds.length === 0) return 0
+    const visible = new Set(filteredCounterparties.map(cp => cp.id))
+    return selectedCounterpartyIds.filter(id => !visible.has(id)).length
+  }, [selectedCounterpartyIds, filteredCounterparties])
 
   // При смене вкладки/фильтра/поиска показываем список с начала (лёгкий первый экран).
   useEffect(() => {
     setVisibleCount(RENDER_STEP)
-  }, [activeTab, workTypeFilter, contractFilterOn, deferredSearchQuery, filterDivisions])
-
-  // Сколько контрагентов текущей вкладки с договором — число на кнопке «С договором».
-  const tabWithContractCount = useMemo(() => {
-    if (!(contractCounts instanceof Map)) return null
-    let n = 0
-    for (const c of counterparties) {
-      const tab = c.deleted_at ? 'deleted' : c.status === 'blacklist' ? 'blacklist' : 'active'
-      if (tab === activeTab && contractCounts.get(c.id)) n += 1
-    }
-    return n
-  }, [counterparties, contractCounts, activeTab])
+  }, [activeTab, workTypeFilter, contractFilterOn, siteFilterOn, deferredSearchQuery, filterDivisions])
 
   const tabCounts = useMemo(() => {
     const counts = { active: 0, blacklist: 0, deleted: 0 }
@@ -1625,17 +1671,13 @@ function CounterpartiesPage() {
                 />
               </div>
 
-              {/* task 323: поисковый dropdown по видам работ. Источник — uniqueWorkTypes
-                  (значения, реально используемые в counterparties), чтобы фильтр не
-                  предлагал заведомо «пустые» варианты. */}
+              {/* task 323: поисковый dropdown по видам работ. Источник — виды работ контрагентов, которые
+                  проходят остальные фильтры: фильтр не предлагает заведомо «пустые» варианты. */}
               {(() => {
                 const q = wtfSearch.trim().toLowerCase()
-                const pool = divisionFilterOn
-                  ? uniqueWorkTypes.filter(wt => matchesDivisions(wtDivisionByName.has(wt) ? [wtDivisionByName.get(wt)] : [], filterDivisions))
-                  : uniqueWorkTypes
                 const opts = !q
-                  ? pool
-                  : pool.filter(wt => wt.toLowerCase().includes(q))
+                  ? facets.workTypes
+                  : facets.workTypes.filter(wt => wt.toLowerCase().includes(q))
                 const displayValue = wtfOpen ? wtfSearch : workTypeFilter
                 return (
                   <div className={`wt-filter-wrap ${workTypeFilter ? 'has-value' : ''}`}>
@@ -1707,8 +1749,30 @@ function CounterpartiesPage() {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
                   strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
                 С договором
-                {tabWithContractCount != null && <span className="cp-contract-filter-count">{tabWithContractCount}</span>}
+                {facets.contract != null && <span className="cp-contract-filter-count">{facets.contract}</span>}
               </button>
+
+              {/* Только контрагенты с действующей учёткой кабинета подрядчика — те же, у кого отметка «Регистрация». */}
+              {siteShown && (
+                <button
+                  type="button"
+                  className={`cp-contract-filter${siteFilterOn ? ' is-active' : ''}`}
+                  onClick={() => setOnlyRegistered(v => !v)}
+                  aria-pressed={siteFilterOn}
+                  disabled={!(siteAccounts instanceof Map)}
+                  title={siteAccounts === 'error'
+                    ? 'Регистрации не загрузились — фильтр недоступен. Обновите страницу'
+                    : siteAccounts === null
+                      ? 'Регистрации загружаются…'
+                      : siteFilterOn
+                        ? 'Показаны только контрагенты с регистрацией на сайте — нажмите, чтобы показать всех'
+                        : 'Показать только контрагентов с регистрацией на сайте: есть действующая учётка кабинета подрядчика'}
+                >
+                  <SiteAccountIcon />
+                  С регистрацией
+                  {facets.site != null && <span className="cp-contract-filter-count">{facets.site}</span>}
+                </button>
+              )}
 
             </div>
 
@@ -1755,7 +1819,10 @@ function CounterpartiesPage() {
 
         {activeTab !== 'work_types' && canEditCp && selectedCounterpartyIds.length > 0 && (
           <div className="toolbar-selection">
-            <span>Выбрано: {selectedCounterpartyIds.length}</span>
+            <span>
+              Выбрано: {selectedCounterpartyIds.length}
+              {selectedHidden > 0 && <span className="cp-selection-hidden"> (скрыто фильтрами: {selectedHidden})</span>}
+            </span>
             <button className="btn-link" onClick={handleSelectAll}>
               {allVisibleSelected ? 'Снять' : 'Выбрать все'}
             </button>
@@ -1952,9 +2019,14 @@ function CounterpartiesPage() {
           {filteredCounterparties.length === 0 ? (
             <div className="empty-state">
               <p className="empty-title">
-                {searchQuery.trim() || workTypeFilter || contractFilterOn ? 'Ничего не найдено' : 'Нет контрагентов'}
+                {anyFilterOn ? 'Ничего не найдено' : 'Нет контрагентов'}
               </p>
-              {!searchQuery.trim() && !workTypeFilter && !contractFilterOn && canEditCp && (
+              {anyFilterOn ? (
+                <>
+                  <p className="empty-hint">Фильтры действуют вместе: снимите лишний или сбросьте все.</p>
+                  <button type="button" className="btn-secondary" onClick={resetFilters}>Сбросить фильтры</button>
+                </>
+              ) : canEditCp && (
                 <button className="btn-add" onClick={handleAddNewCounterparty}>+ Добавить</button>
               )}
             </div>
@@ -1980,11 +2052,12 @@ function CounterpartiesPage() {
                       {isLimited && <span className="cp-mrow-limited" title={CP_LIMITED_HINT}>{CP_LIMITED_LABEL}</span>}
                       {cp.registered_via === 'self' && <span className="cp-self-registered" title={SELF_REGISTERED_HINT}>с сайта</span>}
                       {contractCounts instanceof Map && <ContractMark count={contractCounts.get(cp.id)} />}
+                      {siteAccounts instanceof Map && <SiteAccountMark count={siteAccounts.get(cp.id)} />}
                       <CounterpartyDocBadges summary={docSummaryByCp.get(cp.id)} />
                     </div>
                     {cp.work_type && <div className="cp-mrow-wt">{cp.work_type}</div>}
-                    {(cp.inn || c0) && (
-                      <div className="cp-mrow-meta">
+                    <div className="cp-mrow-meta">
+                        <span className="cp-mrow-no">№ {numbersById.get(cp.id)}</span>
                         {cp.inn && <span className="cp-mrow-inn">ИНН {cp.inn}</span>}
                         {c0?.full_name && <span className="cp-mrow-person" title={c0.full_name}>{shortPersonName(c0.full_name)}</span>}
                         {phone && (
@@ -1993,8 +2066,7 @@ function CounterpartiesPage() {
                             {phone}
                           </a>
                         )}
-                      </div>
-                    )}
+                    </div>
                   </li>
                 )
               })}
@@ -2026,6 +2098,7 @@ function CounterpartiesPage() {
                     </th>
                     <th className="col-name">Наименование</th>
                     <th className="col-contract" title="Есть заключённые договоры с компанией">Договор</th>
+                    {siteShown && <th className="col-site-account" title="Есть регистрация на сайте: действующая учётка кабинета подрядчика">Регистрация</th>}
                     <th className={`col-worktype${divisionFilterOn ? ' th-filtered' : ''}`}>
                       {divisionsById ? (
                         <span className="cp-th-worktype">
@@ -2045,7 +2118,7 @@ function CounterpartiesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCounterparties.slice(0, visibleCount).map((counterparty, cpIndex) => {
+                  {filteredCounterparties.slice(0, visibleCount).map((counterparty) => {
                     const contacts = counterparty.counterparty_contacts || []
                     const contactsCount = contacts.length
                     const isSelected = selectedSet.has(counterparty.id)
@@ -2056,7 +2129,7 @@ function CounterpartiesPage() {
                         className={`table-row ${isSelected ? 'selected' : ''} ${counterparty.status === 'blacklist' ? 'blacklist' : ''}`}
                         onClick={() => openDetail(counterparty)}
                       >
-                        <td className="col-num">{cpIndex + 1}</td>
+                        <td className="col-num">{numbersById.get(counterparty.id)}</td>
                         <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
                           {/* task 333: bulk-select только с правом редактирования */}
                           {canEditCp && (
@@ -2092,6 +2165,11 @@ function CounterpartiesPage() {
                         <td className="col-contract">
                           {contractCounts instanceof Map && <ContractMark count={contractCounts.get(counterparty.id)} />}
                         </td>
+                        {siteShown && (
+                          <td className="col-site-account">
+                            {siteAccounts instanceof Map && <SiteAccountMark count={siteAccounts.get(counterparty.id)} />}
+                          </td>
+                        )}
                         <td className="col-worktype">
                           {counterparty.work_type ? (
                             <div className="worktype-list">
@@ -2250,7 +2328,7 @@ function CounterpartiesPage() {
                   })}
                   {visibleCount < filteredCounterparties.length && (
                     <tr className="show-more-row">
-                      <td colSpan={vatSupported ? 13 : 12}>
+                      <td colSpan={12 + (vatSupported ? 1 : 0) + (siteShown ? 1 : 0)}>
                         <button
                           type="button"
                           className="btn-show-more"
@@ -2280,6 +2358,7 @@ function CounterpartiesPage() {
             <div className="modal-header cp-detail-header">
               <div className="cp-detail-title">
                 <h3>{detailCp.name}</h3>
+                <span className="cp-detail-inn">№ {numbersById.get(detailCp.id)}</span>
                 {detailCp.inn && <span className="cp-detail-inn">ИНН: {detailCp.inn}</span>}
               </div>
               <div className="cp-detail-header-actions">

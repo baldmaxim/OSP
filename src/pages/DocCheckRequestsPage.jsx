@@ -315,7 +315,7 @@ export default function DocCheckRequestsPage() {
     }
   }
 
-  // Новая колонка — в её конец.
+  // Новая колонка — наверх: свежее там сверху.
   const moveTo = (request, status) => {
     if (request.status === status) return
     patchRequest(request, { status, sort_order: nextSortOrder(requests, status) }, [statusEvent(request, status)])

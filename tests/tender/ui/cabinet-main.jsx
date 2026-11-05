@@ -15,7 +15,7 @@ import { setAuthMode } from '../../../src/api/authMode'
 
 const params = new URLSearchParams(window.location.search)
 const page = params.get('page') || 'cabinet'
-if (page === 'signup') setAuthMode({ mode: 'own', ownLogin: true, signup: params.get('closed') !== '1' }, () => false)
+if (page === 'signup') setAuthMode({ mode: 'own', ownLogin: true, signup: params.get('closed') !== '1', signupMode: params.get('signupMode') }, () => false)
 const START = { admin: '/rates-registry?tab=bids', signup: '/signup', signups: '/signups' }
 
 createRoot(document.getElementById('root')).render(

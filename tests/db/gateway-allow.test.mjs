@@ -83,7 +83,9 @@ describe('Разрешения шлюза из миграций базы нов�
   })
 
   it('каждое разрешение миграций уже в allow.json (иначе: node scripts/build-db-allow.mjs)', () => {
-    for (const { kind, name, entry } of yandexAllowAnnotations()) {
+    // Как в сборке списка: по порядку миграций, последняя строка побеждает («none» закрывает выданное раньше).
+    const last = new Map(yandexAllowAnnotations().map((a) => [`${a.kind} ${a.name}`, a]))
+    for (const { kind, name, entry } of last.values()) {
       const have = (kind === 'table' ? ALLOW.tables : ALLOW.rpc)[name]
       assert.deepEqual(have ?? null, entry, `${kind} ${name}`)
     }

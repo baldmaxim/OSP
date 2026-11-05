@@ -9,6 +9,7 @@ import {
   DOC_CHECK_PRIORITY_LABEL,
   DOC_CHECK_STATUS_LABEL,
   cardTitle,
+  createdShort,
   dueShort,
   dueState,
   fmtDocDate,
@@ -24,11 +25,12 @@ const DUE_TITLE = {
 
 // Карточка заявки на проверку ДП/ДС на доске — по образцу прежней доски отдела:
 // кружок «завершить», заголовок «Контрагент / ДС № 1» с примечанием, внизу
-// объект и метки, срок, приоритет, файлы, шаги, сообщения, письмо и кружки
+// объект, дата добавления и метки, срок, приоритет, файлы, шаги, сообщения, письмо и кружки
 // исполнителей; цвет карточки — заливкой. Остальное — в карточке заявки по щелчку.
 function DocCheckCard({ request, employees, canEdit, showStatus, onOpen, onToggleDone, onMenu }) {
   const done = CLOSED_DOC_CHECK_STATUSES.has(request.status)
   const due = dueState(request)
+  const created = createdShort(request.created_at)
   const classes = [
     'dc-card',
     canEdit ? 'is-movable' : '',
@@ -76,8 +78,13 @@ function DocCheckCard({ request, employees, canEdit, showStatus, onOpen, onToggl
 
       <div className="dc-card-foot">
         <div className="dc-card-chips">
-          <span className="dc-chip dc-chip--object" title={request.objects?.name || 'Объект не указан'}>
-            {request.objects?.name || 'Без объекта'}
+          <span className="dc-card-where">
+            <span className="dc-chip dc-chip--object" title={request.objects?.name || 'Объект не указан'}>
+              {request.objects?.name || 'Без объекта'}
+            </span>
+            {created && (
+              <span className="dc-chip dc-chip--created" title={`Дата добавления: ${fmtDocDate(request.created_at)}`}>{created}</span>
+            )}
           </span>
           {(request.labels || []).map(l => (
             <span key={l} className="dc-chip dc-chip--label" title={`Метка: ${l}`}>

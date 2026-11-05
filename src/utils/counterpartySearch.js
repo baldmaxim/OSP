@@ -47,8 +47,8 @@ function phoneKeys(phone) {
 }
 
 // Что ищется у контрагента — один раз на загрузку списка: text — все поля карточки и контактов, names — название
-// и ФИО контактов (для поиска с опечатками).
-export function counterpartySearchIndex(cp) {
+// и ФИО контактов (для поиска с опечатками), no — постоянный номер.
+export function counterpartySearchIndex(cp, no = null) {
   const fields = [cp.name, cp.work_type, cp.inn, cp.kpp, cp.legal_address, cp.actual_address, cp.website, cp.notes]
   const names = [cp.name]
   for (const ct of cp.counterparty_contacts || []) {
@@ -58,6 +58,7 @@ export function counterpartySearchIndex(cp) {
   return {
     text: fields.map(searchKey).filter(Boolean).join('\n'),
     names: names.map(searchKey).filter(Boolean),
+    no,
   }
 }
 
@@ -97,11 +98,16 @@ export function typoDistance(query, text) {
 
 // Поиск по уже отобранному списку, порядок сохраняется (с опечатками — сначала ближайшие).
 // fix: null — найдено как набрано; { kind: 'layout', query } — в другой раскладке; { kind: 'typo' } — с опечатками.
+// Постоянный номер: «№ 12» — ровно этот контрагент; просто «12» — он первым, дальше совпадения в ИНН, телефонах и других полях.
 export function searchCounterparties(list, query, indexOf) {
   const match = textMatcher(query)
   if (!match) return { items: list, fix: null }
-  const found = list.filter((cp) => match(indexOf(cp).text))
-  if (found.length) return { items: found, fix: null }
+  const numbered = /^(№)?\s*(\d+)$/.exec(String(query ?? '').trim())
+  const no = numbered ? Number(numbered[2]) : null
+  const hasNo = (cp) => no != null && indexOf(cp).no === no
+  if (numbered?.[1]) return { items: list.filter(hasNo), fix: null }
+  const found = list.filter((cp) => hasNo(cp) || match(indexOf(cp).text))
+  if (found.length) return { items: [...found.filter(hasNo), ...found.filter((cp) => !hasNo(cp))], fix: null }
 
   const switched = switchLayout(query).trim()
   const matchSwitched = searchKey(switched) !== searchKey(query) && textMatcher(switched)

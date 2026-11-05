@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import BrandLogo from '../components/BrandLogo'
-import { contractorSignup, signupOpen } from '../api'
+import { contractorSignup, signupManual, signupOpen } from '../api'
 import { SIGNUP_LIMITS, digitsOnly, validateSignup } from '../utils/contractorSignupRules'
 import './LoginPage.css'
 
 // Регистрация подрядчика на сайте и всё, что к ней относится: заявка, подтверждение почты, подтверждение с почты компании,
 // восстановление пароля. Сервер — server/osp-api/src/routes/signup.js; правила полей — utils/contractorSignupRules.js (здесь
-// для удобства, решает сервер).
+// для удобства, решает сервер). В режиме «вручную» (signupManual) от всего этого остаётся заявка: её решает администратор,
+// письмо не уходит, временный пароль передаёт отдел.
 //
 // Ссылка из письма — с токеном после «#»: он не уходит ни на сервер при открытии страницы, ни в журнал nginx, ни в заголовок
 // Referer. Страница забирает его и убирает из адреса. Открытие ссылки ничего не меняет (её открывают и почтовые сканеры):
@@ -60,6 +61,7 @@ function RegisterView() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [sentTo, setSentTo] = useState('')
+  const manual = signupManual()
   const set = (key) => (e) => {
     const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value
     setForm((f) => ({ ...f, [key]: value }))
@@ -89,6 +91,17 @@ function RegisterView() {
     }
   }
 
+  if (sentTo && manual) {
+    return (
+      <Shell subtitle="Заявка на регистрацию">
+        <div className="login-success" role="status">
+          Заявка принята. Отдел сопровождения подрядчиков проверит её и свяжется с вашей организацией: передаст временный пароль для входа с почтой {sentTo}.
+        </div>
+        <p className="login-note">Вопросы — на tender.osp@su10.ru.</p>
+      </Shell>
+    )
+  }
+
   if (sentTo) {
     return (
       <Shell subtitle="Регистрация подрядчика">
@@ -110,7 +123,7 @@ function RegisterView() {
   )
 
   return (
-    <Shell subtitle="Регистрация подрядчика">
+    <Shell subtitle={manual ? 'Заявка на регистрацию' : 'Регистрация подрядчика'}>
       {error && <div className="login-error" role="alert">{error}</div>}
       <form onSubmit={submit} className="login-form" noValidate>
         {field('companyName', 'Организация *', { type: 'text', required: true, autoFocus: true, autoComplete: 'organization', maxLength: SIGNUP_LIMITS.company, placeholder: 'ООО «Подрядчик»' })}
@@ -129,9 +142,13 @@ function RegisterView() {
           <span>Согласен на обработку указанных персональных данных (ФИО, телефон, почта) для регистрации и участия в тендерах СУ-10</span>
         </label>
         {errors.consent && <small className="login-field-error" role="alert">{errors.consent}</small>}
-        <button type="submit" className="login-button" disabled={busy}>{busy ? 'Отправка…' : 'Зарегистрироваться'}</button>
+        <button type="submit" className="login-button" disabled={busy}>{busy ? 'Отправка…' : manual ? 'Отправить заявку' : 'Зарегистрироваться'}</button>
       </form>
-      <p className="login-note">Пароль вы зададите по ссылке из письма. После этого откроется кабинет: активные тендеры, расценка и сведения о вашей компании.</p>
+      <p className="login-note">
+        {manual
+          ? 'Заявку проверит отдел сопровождения подрядчиков. После одобрения вам передадут временный пароль, при первом входе вы смените его на свой. В кабинете — активные тендеры, расценка и сведения о вашей компании.'
+          : 'Пароль вы зададите по ссылке из письма. После этого откроется кабинет: активные тендеры, расценка и сведения о вашей компании.'}
+      </p>
     </Shell>
   )
 }
@@ -379,6 +396,14 @@ export default function ContractorSignupPage({ view = 'register' }) {
   useEffect(() => {
     document.title = 'Регистрация подрядчика — СУ-10'
   }, [])
+  // Без писем восстановить пароль самому нельзя: временный выдаёт отдел.
+  if (view === 'forgot' && signupManual()) {
+    return (
+      <Shell subtitle="Восстановление пароля">
+        <p className="login-note">Забыли пароль — обратитесь к вашему менеджеру или на tender.osp@su10.ru: вам выдадут временный.</p>
+      </Shell>
+    )
+  }
   // Закрыта — страницы заявки и письма о пароле не показываем; ссылки из уже отправленных писем проверит сервер.
   if ((view === 'register' || view === 'forgot') && !signupOpen()) {
     return (

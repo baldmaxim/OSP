@@ -458,11 +458,6 @@
         "select"
       ]
     },
-    "larix_contract_rates": {
-      "authenticated": [
-        "select"
-      ]
-    },
     "larix_sync_runs": {
       "authenticated": [
         "select"
@@ -1028,6 +1023,9 @@
       "authenticated"
     ],
     "contractor_set_participation": [
+      "authenticated"
+    ],
+    "counterparty_site_accounts": [
       "authenticated"
     ],
     "current_counterparty_id": [

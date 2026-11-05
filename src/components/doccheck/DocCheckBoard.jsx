@@ -8,6 +8,7 @@ import {
   availableStatuses,
   boardColumns,
   compareForBoard,
+  compareNewestFirst,
   matchesSummary,
 } from '../../utils/docCheckHelpers'
 
@@ -72,7 +73,7 @@ function DocCheckBoard({
       map.get(r.status).push(r)
       if (matchesSummary(r, summary)) map.get(SUMMARY_COLUMN).push(r)
     }
-    for (const list of map.values()) list.sort(compareForBoard)
+    for (const [value, list] of map) list.sort(value === SUMMARY_COLUMN ? compareNewestFirst : compareForBoard)
     const extra = [...map.keys()].filter(k => !columns.some(c => c.value === k))
     return {
       byColumn: map,

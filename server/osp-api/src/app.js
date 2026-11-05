@@ -551,20 +551,25 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     app.addHook('onClose', async () => clearInterval(timer))
   }
 
-  // Регистрация подрядчика на сайте. Открыта, только если всё на месте: свой вход, флаг и почта. Чего-то нет — маршруты
-  // отвечают 404, страница формы не показывает; портал работает как раньше. Заявки администратору видны и при закрытой:
-  // они могли остаться. Письма — очередью отдельным тактом (src/lib/auth/mailOutbox.js).
+  // Регистрация подрядчика на сайте. Открыта, только если всё на месте: свой вход, флаг и (в режиме email) почта. Чего-то нет —
+  // маршруты отвечают 404, страница формы не показывает; портал работает как раньше. Заявки администратору видны и при
+  // закрытой: они могли остаться. Письма — очередью отдельным тактом (src/lib/auth/mailOutbox.js); в режиме manual их нет.
   const signupConfig = config.signup || {}
   const signupOptions = signupConfig.dailyTotal ? { dailyTotal: signupConfig.dailyTotal, ...deps.signupOptions } : deps.signupOptions
   const signupMailReady = Boolean(signupConfig.mailFrom && (signupConfig.smtpUrl || deps.createMailTransport))
   const signupWanted = Boolean(signupConfig.enabled)
-  const signupUsable = signupWanted && authMode === 'own' && Boolean(db) && signupMailReady
+  const signupMode = signupConfig.mode === 'manual' ? 'manual' : 'email'
+  const signupByMail = signupMode === 'email'
+  const signupUsable = signupWanted && authMode === 'own' && Boolean(db) && (!signupByMail || signupMailReady)
   if (signupWanted && !signupUsable) {
-    app.log.error({ authMode, mail: signupMailReady, db: Boolean(db) }, 'signup: регистрация подрядчиков закрыта — нужны AUTH_MODE=own, OSP_DB_URL, OSP_SMTP_URL и OSP_MAIL_FROM')
+    app.log.error({ authMode, mode: signupMode, mail: signupMailReady, db: Boolean(db) }, signupByMail
+      ? 'signup: регистрация подрядчиков закрыта — нужны AUTH_MODE=own, OSP_DB_URL, OSP_SMTP_URL и OSP_MAIL_FROM'
+      : 'signup: регистрация подрядчиков закрыта — нужны AUTH_MODE=own и OSP_DB_URL')
   }
   let mailOutbox = null
   let pow = null
-  if (signupUsable) {
+  if (signupUsable) pow = deps.proofOfWork || createProofOfWork()
+  if (signupUsable && signupByMail) {
     // Транспорт создаётся при первой отправке: nodemailer не нужен службе, пока регистрация закрыта.
     let transport = null
     const lazyTransport = { sendMail: async (message) => {
@@ -574,16 +579,15 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     mailOutbox = createMailOutbox({
       db, box: authBox, transport: lazyTransport, from: signupConfig.mailFrom, replyTo: signupConfig.replyTo, log: app.log, isReadOnly, options: deps.outboxOptions,
     })
-    pow = deps.proofOfWork || createProofOfWork()
     const stopOutbox = mailOutbox.start()
     app.addHook('onClose', async () => stopOutbox())
   }
   const signupAdmin = ownAuth && db ? createSignup({
     db, box: authBox, verifier: passwordVerifier, blocklist: passwordBlocklist, sessions,
-    // Без почты письма не ставятся: заявки решаются, а уведомлять нечем (при закрытой регистрации новых заявок нет).
+    // Без почты письма не ставятся: заявки решаются, а уведомлять нечем: в режиме manual администратор сообщает заявителю сам.
     mail: mailOutbox || { enqueue: async () => {} },
     publicOrigin: config.auth.publicOrigin, notifyEmail: signupConfig.notifyEmail,
-    domainAcceptsMail: deps.domainAcceptsMail, log: app.log, options: signupOptions,
+    domainAcceptsMail: deps.domainAcceptsMail, log: app.log, options: signupOptions, mode: signupMode,
   }) : null
   const signup = signupUsable ? signupAdmin : null
   if (signup && config.authCleanup !== false) {

@@ -136,7 +136,7 @@ export function createSignupAdminClient({ fetchImpl }) {
     return data
   }
   return {
-    // { open, items: [...], hasMore }
+    // { open, mode, items: [...], hasMore }
     list: ({ status = null, before = null } = {}) => {
       const q = new URLSearchParams()
       if (status) q.set('status', status)
@@ -144,6 +144,9 @@ export function createSignupAdminClient({ fetchImpl }) {
       const text = q.toString()
       return call(text ? `?${text}` : '')
     },
-    decide: (id, decision) => call(`/${encodeURIComponent(id)}/decision`, { method: 'POST', body: { decision } }),
+    // → { status, temporaryPassword? }: временный пароль — один раз, если заявка без пароля. counterpartyId — контрагент из реестра.
+    decide: (id, decision, { counterpartyId = null } = {}) => call(`/${encodeURIComponent(id)}/decision`, {
+      method: 'POST', body: { decision, ...(counterpartyId ? { counterpartyId } : {}) },
+    }),
   }
 }

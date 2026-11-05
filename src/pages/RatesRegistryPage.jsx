@@ -23,7 +23,7 @@ const S3DocumentPreview = lazy(() => import('../components/S3DocumentPreview'))
 // task 356/354/411: «Реестр расценок» — общий список расценок из разных источников.
 //   1) От подрядчиков (КП) — представление kp_rates_registry (дедуп на стороне БД).
 //   2) ДП и ДС — в разработке. 3) Снабжение СУ-10 — supply_rates_registry.
-//   4) Договорные расценки (Larix) — таблица larix_contract_rates, загрузка из Larix.CPM раз в день
+//   4) Договорные расценки (Larix) — представление larix_rates_registry, загрузка из Larix.CPM раз в день
 //      (server/osp-api/src/lib/larixSync.js), вкладка — LarixRegistrySection.
 //   5) Расценки подрядчиков (актуальные тендеры) — цены из кабинета подрядчика по тендерам, которые ещё идут
 //      (tender_bid_rates), только администратору — ContractorBidsSection. После завершения тендера они попадают

@@ -389,6 +389,17 @@
 .dc-chip > svg { flex-shrink: 0; color: var(--text-tertiary); }
 .dc-chip--object { color: var(--text-primary); }
 .dc-chip--label { background: color-mix(in srgb, var(--text-tertiary) 12%, var(--bg-secondary)); }
+/* Объект и дата добавления — одной строкой: не хватает места, сокращается название объекта, карточка не растёт. */
+.dc-card-where { display: flex; align-items: center; gap: 0.25rem; min-width: 0; max-width: 100%; }
+/* Дата добавления: на мягкой подложке и чуть плотнее соседних подписей. Год — в подсказке. */
+.dc-chip--created {
+  flex-shrink: 0;
+  border-color: transparent;
+  background: color-mix(in srgb, var(--text-tertiary) 16%, var(--bg-secondary));
+  color: var(--text-primary);
+  font-weight: var(--ui-semibold);
+  font-variant-numeric: tabular-nums;
+}
 .dc-due { font-variant-numeric: tabular-nums; }
 .dc-due.is-overdue { border-color: var(--danger-color); color: var(--danger-color); }
 .dc-due.is-overdue > svg { color: var(--danger-color); }

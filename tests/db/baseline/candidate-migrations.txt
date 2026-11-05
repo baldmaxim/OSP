@@ -40,3 +40,4 @@
 20261202_object_documents_md.sql
 20261210_tender_concept_agreement.sql
 20261211_contracts_estimat_status.sql
+20261225_counterparty_number.sql

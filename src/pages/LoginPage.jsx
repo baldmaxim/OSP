@@ -4,7 +4,7 @@ import { useRole } from '../contexts/RoleContext'
 import BrandLogo from '../components/BrandLogo'
 import ChangePasswordForm from '../components/ChangePasswordForm'
 import { takeAuthRedirectResult } from '../utils/authRedirect'
-import { signupOpen } from '../api'
+import { signupManual, signupOpen } from '../api'
 import './LoginPage.css'
 
 // Приём заявок подрядчиков на доступ в кабинет. Временно остановлен (2026-09-18):
@@ -472,11 +472,15 @@ function LoginPage({ variant = 'employee' }) {
               {isContractorVariant && signupOpen() ? (
                 <>
                   <button type="button" className="login-link" onClick={() => navigate('/partner/register')}>
-                    Первый раз здесь? Зарегистрировать компанию
+                    {signupManual() ? 'Первый раз здесь? Подать заявку на регистрацию' : 'Первый раз здесь? Зарегистрировать компанию'}
                   </button>
-                  <button type="button" className="login-link login-link-muted" onClick={() => navigate('/partner/forgot')}>
-                    Забыли пароль?
-                  </button>
+                  {signupManual() ? (
+                    <p className="login-note">Забыли пароль — обратитесь к вашему менеджеру: он выдаст временный.</p>
+                  ) : (
+                    <button type="button" className="login-link login-link-muted" onClick={() => navigate('/partner/forgot')}>
+                      Забыли пароль?
+                    </button>
+                  )}
                 </>
               ) : (
                 <p className="login-note">

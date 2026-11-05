@@ -1298,8 +1298,17 @@ if (params.get('docCheck') === '1') {
       assignee_ids: n % 3 ? ['user-2'] : ['user-3'], manual_assignees: n % 4 ? [] : ['Сидорова Анна Павловна'],
       labels: n % 6 ? [] : ['Переподписание'], due_date: n % 7 ? null : day(n % 30) }))
   }
+  // dcDates=1 — ДП из «Сводки» добавлены в разные дни; у самой старой — самый большой номер порядка своей колонки.
+  if (params.get('dcDates') === '1') {
+    const dated = (id, created_at, o) => Object.assign(fdb.doc_check_requests.find((r) => r.id === id), { created_at }, o)
+    dated('dcr-2', '2026-10-23T09:00:00Z')
+    dated('dcr-6', '2026-10-25T09:00:00Z')
+    dated('dcr-7', '2026-09-30T09:00:00Z', { sort_order: 50 })
+  }
   // Встраивание objects(...) / counterparties(...) после записи — как PostgREST (стенд встраивания не разбирает).
-  window.__fakeTriggers = { ...(window.__fakeTriggers || {}), doc_check_requests: (row) => embed(row),
+  // Дату добавления ставит база (значение колонки по умолчанию).
+  window.__fakeTriggers = { ...(window.__fakeTriggers || {}),
+    doc_check_requests: (row) => { row.created_at ??= new Date().toISOString(); embed(row) },
     // Автора и время сообщения ставит база (триггер doc_check_request_comments_stamp): что прислал клиент — не важно.
     doc_check_request_comments: (row) => {
       row.author_user_id = params.get('asUser') || 'user-1'
@@ -1347,5 +1356,43 @@ if (params.get('compareRpc') !== '0') {
       // Ответ базы — JSON: строки не общие с «таблицей» стенда.
       return { data: JSON.parse(JSON.stringify({ coverage, rows })), error: null }
     },
+  }
+}
+
+// ── Реестр контрагентов: постоянный номер и фильтры вместе (?route=/general/counterparties&cps=8&cpDivisions=1&cpFilters=1) ──
+//            вид работ                  договор  учётки  прочее
+//   cp-1     Монолитные, Кровельные     да       2
+//   cp-2     Монолитные                 да
+//   cp-3     Монолитные                          1
+//   cp-4     Фасадные                   да       1
+//   cp-5     Фасадные
+//   cp-6     Клининг                    да                договор подразделения «Монолит»
+//   cp-7     Кровельные                 да       1        чёрный список
+//   cp-8     Фасадные                   да       1        удалён
+// Номера — не по порядку названий. &cpNoNumbers=1 — колонки номера нет (база раньше миграции 20261225);
+// &cpSiteRpc=missing — функции нет, =error — отказ сервера.
+if (params.get('cpFilters') === '1') {
+  const cps = window.__fakeDb.counterparties
+  const WORK = ['Монолитные работы, Кровельные работы', 'Монолитные работы', 'Монолитные работы', 'Фасадные работы', 'Фасадные работы', 'Клининг', 'Кровельные работы', 'Фасадные работы']
+  cps.forEach((cp, i) => {
+    cp.work_type = WORK[i]
+    if (params.get('cpNoNumbers') !== '1') cp.counterparty_number = 100 - i * 3
+  })
+  cps[6].status = 'blacklist'
+  cps[7].deleted_at = '2026-10-01T00:00:00Z'
+  const contract = (id, counterparty_id, division = null) => ({ id, counterparty_id, division, record_type: 'dp', status: 'completed', signed_date: null, deleted_at: null })
+  window.__fakeDb.contracts = [
+    contract('fk-1', 'cp-1'), contract('fk-2', 'cp-2'), contract('fk-4', 'cp-4'), contract('fk-6', 'cp-6', 'monolith'),
+    contract('fk-7', 'cp-7'), contract('fk-8', 'cp-8'),
+  ]
+  const accounts = [['cp-1', 2], ['cp-3', 1], ['cp-4', 1], ['cp-7', 1], ['cp-8', 1]]
+  const site = params.get('cpSiteRpc')
+  window.__fakeRpc = {
+    ...(window.__fakeRpc || {}),
+    counterparty_site_accounts: () => (site === 'missing'
+      ? { data: null, error: { code: 'PGRST202', message: 'Could not find the function public.counterparty_site_accounts' } }
+      : site === 'error'
+        ? { data: null, error: { code: '500', message: 'сбой' } }
+        : { data: accounts.map(([counterparty_id, n]) => ({ counterparty_id, accounts: n })), error: null }),
   }
 }

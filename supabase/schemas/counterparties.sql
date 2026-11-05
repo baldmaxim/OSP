@@ -4,6 +4,8 @@ CREATE TYPE counterparty_status AS ENUM ('active', 'limited', 'blacklist');
 -- Таблица counterparties (Контрагенты/Подрядчики)
 CREATE TABLE IF NOT EXISTS counterparties (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  -- Постоянный номер («№» в реестре, миграция 20261225): не меняется, не переиспользуется.
+  counterparty_number INTEGER GENERATED ALWAYS AS IDENTITY NOT NULL UNIQUE,
   name VARCHAR(255) NOT NULL,
   work_type VARCHAR(255),
   inn VARCHAR(12),

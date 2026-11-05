@@ -8,7 +8,7 @@
 // Права — в базе: читает сотрудник, прикрепляет и открепляет право правки «Контрагентов».
 import { db } from '../api'
 import { chunkList } from '../utils/inChunks'
-import { fetchAllRowsParallel } from '../utils/fetchAllRows'
+import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { DOC_TYPE } from '../utils/contractAmendments'
 import { concludedContractsByCounterparty } from '../utils/counterpartyDocs'
 import { contractDivisionsByCounterparty } from '../utils/workTypeDivisions'
@@ -141,6 +141,16 @@ export async function loadCounterpartyContractSummary() {
     counts: concludedContractsByCounterparty(contracts, parties, links),
     divisions: contractDivisionsByCounterparty(contracts, parties, links),
   }
+}
+
+// У каких организаций есть действующая учётка кабинета подрядчика (миграция 20261225) → Map(id контрагента → число учёток):
+// отметка «Регистрация» и фильтр «С регистрацией». Сотруднику строки user_roles закрыты, поэтому функция: ни почты, ни ФИО.
+export async function loadCounterpartySiteAccounts() {
+  const rows = await fetchAllRows((from, to) => db
+    .rpc('counterparty_site_accounts')
+    .order('counterparty_id', { ascending: true })
+    .range(from, to))
+  return new Map(rows.map((r) => [r.counterparty_id, r.accounts]))
 }
 
 // Заявки на ДС контрагента для «Общей информации» карточки (миграция 20261109): по его договорам — какие

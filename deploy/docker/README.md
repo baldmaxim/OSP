@@ -282,13 +282,24 @@ rm -f ~/rates-key-tender.hdr
 
 ## Регистрация подрядчиков на сайте
 
-Закрыта, пока не заданы настройки. Порядок (устройство — `server/osp-api/README.md`, «Регистрация подрядчика на сайте»):
+Закрыта, пока не заданы настройки. Устройство — `server/osp-api/README.md`, «Регистрация подрядчика на сайте».
+
+**Заявки вручную (сейчас, почта не нужна).** Заявки решает администратор: «Администрирование» → «Регистрации подрядчиков».
+
+1. `bash scripts/deploy-server.sh migrate` — миграции `20261203`, `20261204`, затем `both`.
+2. Жетон адреса клиента — как в п. 3 ниже, обязателен: лимиты заявок по адресу без него становятся общими.
+3. В `secrets/osp-api.env`: `OSP_CONTRACTOR_SIGNUP=1` (`OSP_CONTRACTOR_SIGNUP_MODE` не задавать: по умолчанию `manual`). Затем `bash deploy.sh api-restart`.
+4. Проверить: `/api/auth/config` отдаёт `"signup":true,"signupMode":"manual"`, на `/partner` появилась ссылка «Подать заявку на регистрацию»; подать заявку и открыть доступ.
+
+Закрыть немедленно: как ниже. Заявки останутся видны администратору.
+
+**Самостоятельно, по письму (`OSP_CONTRACTOR_SIGNUP_MODE=email`, на будущее).** Порядок:
 
 1. `bash scripts/deploy-server.sh migrate` — миграции `20261203` и `20261204`, затем `both`.
 2. Почта: ящик отправителя и SMTP (Yandex Cloud Postbox или другой), у домена — SPF, DKIM, DMARC. С сервера corp должен быть открыт исходящий порт 465 или 587.
 3. **Жетон адреса клиента обязателен** (`bash scripts/deploy-server.sh edge-token-init`, если не сделано): без него служба видит один адрес на всех, и лимиты по адресу превращаются в общие — один человек закроет вход и регистрацию всем.
    Проверка: в журнале osp-web нет строки «OSP_EDGE_TOKEN не задан».
-4. В `secrets/osp-api.env` (права 600, значения на экран не выводить, в чат и git не класть): `OSP_SMTP_URL`, `OSP_MAIL_FROM`, `OSP_CONTRACTOR_SIGNUP=1`, при желании
+4. В `secrets/osp-api.env` (права 600, значения на экран не выводить, в чат и git не класть): `OSP_CONTRACTOR_SIGNUP_MODE=email`, `OSP_SMTP_URL`, `OSP_MAIL_FROM`, `OSP_CONTRACTOR_SIGNUP=1`, при желании
    `OSP_SIGNUP_NOTIFY_EMAIL`. Затем `bash deploy.sh api-restart`.
 5. Проверить: `/api/auth/config` отдаёт `"signup":true`, на `/partner` появилась ссылка; пройти регистрацию на свой адрес; в журнале службы нет `mail outbox`-ошибок.
 

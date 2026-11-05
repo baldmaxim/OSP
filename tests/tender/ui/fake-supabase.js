@@ -84,6 +84,7 @@ function applyFilters(rows, filters) {
     if (f.op === 'in') return f.val.map(String).includes(String(r[f.col]))
     if (f.op === 'gt') return r[f.col] > f.val
     if (f.op === 'gte') return r[f.col] >= f.val
+    if (f.op === 'ilike') return String(r[f.col] ?? '').toLowerCase().includes(String(f.val).replace(/^%|%$/g, '').toLowerCase())
     if (f.op === 'or') return f.conds.some((c) => testCond(r, c))
     return true
   }))
@@ -157,6 +158,7 @@ function builder(table) {
     in(col, val) { q.filters.push({ op: 'in', col, val }); return self },
     gt(col, val) { q.filters.push({ op: 'gt', col, val }); return self },
     gte(col, val) { q.filters.push({ op: 'gte', col, val }); return self },
+    ilike(col, val) { q.filters.push({ op: 'ilike', col, val }); return self },
     neq() { return self },
     not() { return self },
     // Таймаут запроса (окно «ВОРы и РД») — стенд отвечает сам, отменять нечего.

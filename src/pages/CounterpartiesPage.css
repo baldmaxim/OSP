@@ -301,6 +301,7 @@
 .compact-table td.col-website,
 .compact-table td.col-status,
 .compact-table td.col-contract,
+.compact-table td.col-site-account,
 .compact-table td.col-actions {
   vertical-align: middle;
 }
@@ -357,6 +358,7 @@
 .col-website { width: 4rem; text-align: center; }
 .col-status { width: 7.5rem; }                         /* «Малые суммы ▾» — 92px */
 .col-contract { width: 4.75rem; text-align: center; } /* «ДОГОВОР» в шапке — 62px */
+.col-site-account { width: 6.75rem; text-align: center; } /* «РЕГИСТРАЦИЯ» в шапке */
 .col-actions { width: 4.25rem; text-align: center; }   /* две кнопки по 24px */
 
 /* Row states */
@@ -1683,13 +1685,14 @@
   .counterparties-toolbar .toolbar-left { width: auto; flex: 1 1 auto; margin: 0; gap: 0.5rem; }
   .counterparties-toolbar .page-title { font-size: 1.125rem; }
   .counterparties-toolbar .toolbar-actions { flex: 0 1 auto; flex-wrap: wrap; gap: 0.375rem; }
-  .counterparties-toolbar .toolbar-center { order: 3; flex: 1 1 100%; flex-wrap: nowrap !important; }
-  .counterparties-toolbar .toolbar-center > * { flex: 1 1 0 !important; min-width: 0 !important; max-width: none !important; }
+  /* Поиск и вид работ делят первую строку, кнопки-фильтры — вторую, поровну: в одну строку с полями они не помещаются. */
+  .counterparties-toolbar .toolbar-center { order: 3; flex: 1 1 100%; flex-wrap: wrap !important; }
+  .counterparties-toolbar .toolbar-center > * { flex: 1 1 calc(50% - 0.25rem) !important; min-width: 0 !important; max-width: none !important; }
   .counterparties-toolbar .search-container input,
   .counterparties-toolbar .wt-filter-input { height: 40px; font-size: 16px; } /* iOS не увеличивает поле с 16px */
-  /* Фильтр по подразделениям — отдельной строкой под панелью: в строке поиска уже три поля. */
+  /* Фильтр по подразделениям — отдельной строкой под панелью: поля и кнопки заняли две строки. */
   .cp-phone-divisions { padding: 0.5rem 0.75rem 0; }
-  /* Поле фильтра — одно из трёх в строке: список раскрывается от всей строки панели, а не от узкого поля. */
+  /* Поле фильтра узкое: список раскрывается от всей панели, а не от него. */
   .counterparties-toolbar .toolbar-center { position: relative; }
   .counterparties-toolbar .wt-filter-wrap { position: static; }
   .counterparties-toolbar .wt-filter-dropdown { left: 0; right: 0; width: auto; min-width: 0; max-width: none; max-height: 60vh; }
@@ -1855,11 +1858,14 @@
   text-align: center;
 }
 @media (max-width: 640px) {
-  /* Поиск и вид работ делят строку поровну, кнопка «С договором» — по своей ширине. */
-  .counterparties-toolbar .toolbar-center > .cp-contract-filter { flex: none !important; height: 40px; padding: 0 0.5rem; }
+  .counterparties-toolbar .toolbar-center > .cp-contract-filter { justify-content: center; height: 40px; padding: 0 0.5rem; }
 }
 
-/* Компанию создала регистрация на сайте (миграция 20261203). */
+/* Отмеченные строки, которых сейчас не видно: «В корзину» заденет и их. */
+.cp-selection-hidden { color: var(--warning-color, #b45309); font-weight: 600; }
+.cp-mrow-no { color: var(--text-tertiary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Компанию завели по заявке с сайта (миграция 20261203). */
 .cp-self-registered {
   display: inline-block;
   margin-left: 0.35rem;

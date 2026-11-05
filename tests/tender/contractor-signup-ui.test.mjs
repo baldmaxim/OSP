@@ -291,6 +291,102 @@ describe('Регистрация подрядчика на сайте: стра�
     }
   })
 
+  it('режим «вручную»: заявка без письма и пароля; страница о письме не обещает, восстановления пароля нет', async () => {
+    const { page, errors, seen, close } = await open('&page=signup&view=register&signupMode=manual', {
+      api: {
+        'GET /api/auth/register/challenge': () => ({ status: 200, body: { challenge: 'c', bits: 1 } }),
+        'POST /api/auth/register': () => ({ status: 202, body: { ok: true } }),
+      },
+    })
+    try {
+      await page.getByLabel('Организация *').waitFor()
+      const note = await page.locator('.login-note').innerText()
+      assert.match(note, /проверит отдел/)
+      assert.doesNotMatch(note, /письм/i)
+      await page.getByLabel('Организация *').fill('ООО Заявитель')
+      await page.getByLabel('ИНН *').fill('7707083893')
+      await page.getByLabel('Контактное лицо *').fill('Иванов Иван Иванович')
+      await page.getByLabel('Контактный телефон *').fill('+7 916 123-45-67')
+      await page.getByLabel('Рабочая почта *').fill('a@firm.ru')
+      await page.locator('.login-consent input').check()
+      await page.getByRole('button', { name: 'Отправить заявку' }).click()
+      const done = page.locator('.login-success')
+      await done.waitFor()
+      const text = await done.innerText()
+      assert.match(text, /временный пароль/)
+      assert.doesNotMatch(text, /письмо|ссылк/i)
+      const sent = seen.find((r) => r.path === '/api/auth/register' && r.method === 'POST').body
+      assert.equal('password' in sent, false)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+    const forgot = await open('&page=signup&view=forgot&signupMode=manual')
+    try {
+      await forgot.page.getByText('обратитесь к вашему менеджеру').waitFor()
+      assert.equal(await forgot.page.locator('form').count(), 0)
+    } finally {
+      await forgot.close()
+    }
+  })
+
+  it('режим «вручную» у администратора: проверка, контрагент на выбор, временный пароль один раз', async () => {
+    const row = {
+      id: '11111111-1111-4111-8111-111111111111', email: 'a@firm.ru', company_name: 'ООО «Подрядчик 01»', inn: '7707083893', kpp: null, contact_name: 'Иванов',
+      phone: '+79161234567', status: 'review', reasons: ['new_company'], counterparty_id: null, counterparty_name: null,
+      created_at: '2026-11-05T10:00:00Z', decided_at: null, decided_by: null,
+    }
+    const known = { ...row, id: '22222222-2222-4222-8222-222222222222', email: 'b@firm.ru', reasons: ['contact_differs'], counterparty_id: 'cp-2', counterparty_name: 'ООО Из реестра' }
+    let rows = [row, known]
+    const { page, errors, seen, close } = await open('&page=signups', {
+      api: {
+        'GET /api/admin/contractor-signups': () => ({ status: 200, body: { open: true, mode: 'manual', items: rows, hasMore: false } }),
+        [`POST /api/admin/contractor-signups/${row.id}/decision`]: () => { rows = rows.filter((r) => r.id !== row.id); return { status: 200, body: { status: 'active', temporaryPassword: 'Времен-ный-Пароль-1' } } },
+        [`POST /api/admin/contractor-signups/${known.id}/decision`]: () => ({ status: 409, body: { error: 'Учётная запись с такой почтой уже есть', code: 'email_taken' } }),
+      },
+    })
+    const posts = () => seen.filter((r) => r.method === 'POST')
+    try {
+      await page.locator('.css-table tbody tr').first().waitFor()
+      assert.equal(await page.getByRole('tab', { name: 'Ждут подтверждения компании' }).count(), 0, 'писем нет — ждать нечего')
+      assert.ok((await page.locator('.css-table thead').innerText()).includes('Что проверить'))
+      assert.ok((await page.locator('.css-table').innerText()).includes('такого ИНН в реестре нет'))
+
+      // Нажатие только открывает окно: без проверки и выбора контрагента ничего не уходит.
+      const line = (r) => page.locator('.css-table tbody tr', { hasText: r.email })
+      await line(row).getByRole('button', { name: 'Открыть доступ' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Открыть доступ' })
+      await dialog.waitFor()
+      assert.equal(posts().length, 0)
+      assert.match(await dialog.innerText(), /Заявку мог подать кто угодно/)
+      assert.match(await dialog.innerText(), /будет заведён новый контрагент/)
+      // Поиск начат сам, по названию без формы собственности: компания в реестре могла быть без ИНН.
+      assert.equal(await dialog.getByLabel('Поиск контрагента').inputValue(), 'Подрядчик 01')
+      await dialog.getByRole('button', { name: 'Отмена' }).click()
+      await dialog.waitFor({ state: 'hidden' })
+
+      // Отказ сервера виден в окне, окно не закрывается.
+      await line(known).getByRole('button', { name: 'Открыть доступ' }).click()
+      await dialog.waitFor()
+      assert.match(await dialog.innerText(), /ООО Из реестра/)
+      assert.equal(await dialog.getByLabel('Поиск контрагента').count(), 0, 'ИНН нашёл компанию — выбирать нечего')
+      await dialog.getByRole('button', { name: 'Открыть доступ' }).click()
+      await dialog.getByText('Учётная запись с такой почтой уже есть').waitFor()
+      await dialog.getByRole('button', { name: 'Отмена' }).click()
+
+      await line(row).getByRole('button', { name: 'Открыть доступ' }).click()
+      await dialog.getByRole('button', { name: 'Открыть доступ' }).click()
+      await page.locator('.adm-temp-password', { hasText: 'Времен-ный-Пароль-1' }).waitFor()
+      assert.deepEqual(posts().at(-1).body, { decision: 'approve' })
+      await page.getByRole('button', { name: 'Готово' }).click()
+      await page.locator('.adm-temp-password').waitFor({ state: 'hidden' })
+      assert.equal(await line(row).count(), 0)
+      assert.deepEqual(errors.filter((e) => !/409/.test(e)), [])
+    } finally {
+      await close()
+    }
+  })
+
   it('заявки у администратора: причины и решение; на телефоне форма не вылезает за экран', async () => {
     const row = {
       id: '11111111-1111-4111-8111-111111111111', email: 'a@firm.ru', company_name: 'ООО Заявитель', inn: '7707083893', kpp: null, contact_name: 'Иванов',
