@@ -1067,6 +1067,15 @@ if (CONTRACTS > 0) {
     linked.tender_id = tender.id
     linked.tenders = { work_description: tender.work_description, public_tender_number: tender.public_tender_number }
   }
+  // &contractsEstimat=1 — колонки отметки Estimat есть (миграция 20261211): ctr-1 загружен, ctr-4 — «не загружать»,
+  // остальные не отмечены; ctr-3 — ДС договора ctr-2; ctr-7 — в «Удалённых»; ctr-10 — с длинным номером.
+  if (params.get('contractsEstimat') === '1') {
+    for (const c of contracts) Object.assign(c, { estimat_status: 'none', estimat_status_at: null, estimat_status_by: null })
+    contracts[9].contract_number = 'СУ10-2026/00123-АЛ-ВОР-ИЗМ-1'
+    Object.assign(contracts[0], { estimat_status: 'uploaded', estimat_status_at: '2026-10-20T09:00:00Z', estimat_status_by: 'Иванов И. И.' })
+    Object.assign(contracts[3], { estimat_status: 'skip', estimat_status_at: '2026-10-21T09:00:00Z', estimat_status_by: 'Петров П. П.' })
+    contracts[6].deleted_at = '2026-10-22T09:00:00Z'
+  }
   window.__fakeDb.contracts = contracts
   window.__fakeDb.contract_appendices = []
   window.__fakeDb.s3_documents.push(...contracts.filter((_, i) => i % 7 === 0).map((c) => ({

@@ -257,6 +257,46 @@ describe('Позиции ВОР — заранее, службой osp-api', { s
     assert.equal(state(T.heat).status, 'ok')
   })
 
+  it('такт расписания: база не менялась — прохода нет; запись в таблицу, не успели, страховка — проход есть', async () => {
+    // Собственные записи прохода сдвигают счётчики, а статистика приходит с задержкой: такт может пройти лишний раз, но
+    // проходы обязаны прекратиться, как только база успокоилась.
+    const untilQuiet = async (running) => {
+      for (let i = 0; i < 80; i++) {
+        const out = await running.runIfChanged()
+        if (out.skipped) return out
+        await new Promise((r) => setTimeout(r, 500))
+      }
+      return null
+    }
+    let running = job()
+    assert.ok(!(await running.runIfChanged()).skipped, 'первый такт после запуска службы — всегда проход')
+    assert.deepEqual(await untilQuiet(running), { skipped: 'unchanged' })
+    assert.deepEqual(await running.runIfChanged(), { skipped: 'unchanged' }, 'и дальше тихо')
+
+    // Новый файл ВОР — такт его видит и разбирает.
+    const NEW = '00000000-0000-4000-8000-00000000a3f9'
+    sql(`insert into public.s3_documents (id, owner_type, owner_id, s3_key, file_name, doc_category, created_at)
+      values ('${NEW}', 'tender', '${T.none}', 'k/tact.xlsx', 'ВОР такт.xlsx', 'vor_statement', '2026-10-21 09:00:00+00')`)
+    store.set('k/tact.xlsx', MATERIALS)
+    assert.deepEqual(await untilQuiet(running), { skipped: 'unchanged' })
+    assert.ok(sources(T.none).some((s) => s.s3_document_id === NEW), 'файл разобран без ручного запуска')
+
+    // Страховка: в тихой базе проход всё равно приходит.
+    running = job({ maxQuietMs: 0 })
+    await running.runIfChanged()
+    assert.ok(!(await running.runIfChanged()).skipped, 'срок истёк — проход без изменений в базе')
+
+    // Не успели за проход — следующий такт идёт, даже если в базе тихо.
+    sql(`insert into public.s3_documents (id, owner_type, owner_id, s3_key, file_name, doc_category, created_at)
+      values ('00000000-0000-4000-8000-00000000a3fb', 'tender', '${T.none}', 'k/tact2.xlsx', 'ВОР такт 2.xlsx', 'vor_statement', '2026-10-22 09:00:00+00')`)
+    store.set('k/tact2.xlsx', MATERIALS)
+    running = job({ maxFilesPerRun: 0 })
+    const budgeted = await running.runIfChanged()
+    assert.ok(budgeted.retry > 0, JSON.stringify(budgeted))
+    await new Promise((r) => setTimeout(r, 1500))
+    assert.ok(!(await running.runIfChanged()).skipped, 'файл ждёт своей очереди — такт не пропускается')
+  })
+
   it('настройка: OSP_SUPPLY_IMPORT=1 без базы или хранилища — служба не запускается', async () => {
     const { parseSupplyImport } = await import(path.join(SERVER, 'src', 'config.js'))
     assert.equal(parseSupplyImport({}), false)

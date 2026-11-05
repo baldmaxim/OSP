@@ -11,6 +11,7 @@ import { chunkList } from '../utils/inChunks'
 import { fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { DOC_TYPE } from '../utils/contractAmendments'
 import { concludedContractsByCounterparty } from '../utils/counterpartyDocs'
+import { contractDivisionsByCounterparty } from '../utils/workTypeDivisions'
 
 export const CONTRACT_LINKS_TABLE = 'counterparty_contract_links'
 
@@ -113,24 +114,33 @@ export async function detachContract(counterpartyId, contractId) {
   if (error) throw error
 }
 
-// Заключённые договоры всех контрагентов → Map(id контрагента → число): галочка «Договор» и фильтр «С договором»
-// реестра контрагентов. Договоров тысячи, поэтому только нужные колонки; без таблицы привязок — без них.
-export async function loadConcludedContractCounts() {
+// Договоры всех контрагентов для их реестра → { counts, divisions }. counts — Map(id контрагента → число заключённых):
+// галочка «Договор» и фильтр «С договором». divisions — Map(id контрагента → подразделения его договоров): дополняют
+// подразделения видов работ. Договоров тысячи, поэтому только нужные колонки; без таблицы привязок — без них; без колонки
+// contracts.division (миграция 20261112) — без подразделений.
+export async function loadCounterpartyContractSummary() {
   const all = (table, cols, filter = (q) => q) => fetchAllRowsParallel((from, to, withCount) => filter(db
     .from(table)
     .select(cols, withCount ? { count: 'exact' } : undefined))
     .order('id', { ascending: true })
     .range(from, to))
+  const CONTRACT_COLS = 'id, counterparty_id, record_type, status, signed_date, deleted_at'
+  const onlyContracts = (q) => q.eq('record_type', DOC_TYPE.CONTRACT).is('deleted_at', null)
   const [contracts, parties, links] = await Promise.all([
-    all('contracts', 'id, counterparty_id, record_type, status, signed_date, deleted_at',
-      (q) => q.eq('record_type', DOC_TYPE.CONTRACT).is('deleted_at', null)),
+    all('contracts', `${CONTRACT_COLS}, division`, onlyContracts).catch((err) => {
+      if (isMissingColumn(err)) return all('contracts', CONTRACT_COLS, onlyContracts)
+      throw err
+    }),
     all('contract_counterparties', 'id, contract_id, counterparty_id'),
     all(CONTRACT_LINKS_TABLE, 'id, contract_id, counterparty_id').catch((err) => {
       if (isMissingLinksTable(err)) return []
       throw err
     }),
   ])
-  return concludedContractsByCounterparty(contracts, parties, links)
+  return {
+    counts: concludedContractsByCounterparty(contracts, parties, links),
+    divisions: contractDivisionsByCounterparty(contracts, parties, links),
+  }
 }
 
 // Заявки на ДС контрагента для «Общей информации» карточки (миграция 20261109): по его договорам — какие

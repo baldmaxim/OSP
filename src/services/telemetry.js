@@ -13,7 +13,7 @@ import { db, auth } from '../api'
 import { onClientError } from '../api/clientErrors'
 
 const BUILD_ID = typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev'
-const VERSION_INTERVAL_MS = 10 * 60 * 1000
+const VERSION_INTERVAL_MS = 30 * 60 * 1000
 const ERROR_REPEAT_MS = 60 * 1000
 const MAX_ERRORS_PER_MINUTE = 20
 

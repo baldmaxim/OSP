@@ -1,8 +1,9 @@
 // Подразделения видов работ и контрагентов (миграция 20261115, решение пользователя 29.10.2026).
-// Подразделение — у вида работ (work_types.division, коды подразделений ВОР — utils/vorDivisions.js). Своего поля у
-// контрагента нет: его подразделения — подразделения его видов работ (counterparties.work_type — названия через
-// запятую), поэтому вручную у контрагентов ничего не ставится. Вид работ без подразделения или не из справочника
-// подразделения не даёт; контрагент без единого подразделения — «Не указано» (NO_VOR_DIVISION) в фильтре.
+// Подразделение — у вида работ (work_types.division, коды подразделений ВОР — utils/vorDivisions.js) и у договора
+// (contracts.division, «Договоры и ДС»). Своего поля у контрагента нет: его подразделения — подразделения его видов работ
+// (counterparties.work_type — названия через запятую) и его договоров (03.11.2026: несколько договоров с разными
+// подразделениями дополняют контрагента), поэтому вручную у контрагентов ничего не ставится. Вид работ без подразделения
+// или не из справочника подразделения не даёт; контрагент без единого подразделения — «Не указано» (NO_VOR_DIVISION) в фильтре.
 import { VOR_DIVISIONS, NO_VOR_DIVISION } from './vorDivisions.js'
 
 // «Прочее» — только у видов работ (миграция 20261119, решение пользователя 30.10.2026): аренда, охрана, клининг,
@@ -36,6 +37,32 @@ export function workTypesDivisions(workType, byName) {
     if (d) set.add(d)
   }
   return [...set].sort((a, b) => ORDER.get(a) - ORDER.get(b))
+}
+
+// Подразделения контрагента из нескольких списков — без повторов, в порядке WORK_TYPE_DIVISIONS, только известные коды.
+export function mergeDivisions(...lists) {
+  const set = new Set()
+  for (const list of lists) for (const d of list || []) if (ORDER.has(d)) set.add(d)
+  return [...set].sort((a, b) => ORDER.get(a) - ORDER.get(b))
+}
+
+// → Map(id контрагента → подразделения его договоров). Контрагент договора — основная сторона, другая сторона или договор
+// прикреплён к нему вручную: те же договоры, что в его карточке. Удалённые договоры и ДС (у них своего подразделения нет)
+// выбирает запрос — здесь только то, что пришло.
+export function contractDivisionsByCounterparty(contracts, parties = [], links = []) {
+  const divisionOf = new Map()
+  for (const c of contracts || []) if (c.division) divisionOf.set(c.id, c.division)
+  const sets = new Map()
+  const add = (counterpartyId, contractId) => {
+    const division = divisionOf.get(contractId)
+    if (!counterpartyId || !division) return
+    if (!sets.has(counterpartyId)) sets.set(counterpartyId, new Set())
+    sets.get(counterpartyId).add(division)
+  }
+  for (const c of contracts || []) add(c.counterparty_id, c.id)
+  for (const p of parties) add(p.counterparty_id, p.contract_id)
+  for (const l of links) add(l.counterparty_id, l.contract_id)
+  return new Map([...sets].map(([id, set]) => [id, mergeDivisions(set)]))
 }
 
 // Проходит ли контрагент фильтр: пустой фильтр — все; иначе хотя бы одно подразделение из выбранных,

@@ -171,6 +171,9 @@ export function loadConfig(env = process.env) {
     keepPreTransferFiles: env.OSP_KEEP_PRE_TRANSFER_FILES !== '0',
     // Пересчёт реестра расценок раз в 10 минут (в Supabase это делало расписание pg_cron).
     registryRefresh: env.OSP_REGISTRY_REFRESH === '1',
+    // Миниатюры обложек — в память сразу после запуска службы (src/routes/covers.js): первый, кто откроет «Объекты» после
+    // выкладки, не ждёт хранилища. '0' — выключить. Нужна своя база (OSP_DB_URL) и хранилище.
+    coverWarm: env.OSP_COVER_WARM !== '0',
     // Позиции ВОР для расценки снабжением — заранее, на сервере, раз в 10 минут (src/lib/supplyImport.js): статус
     // «Расценка: N из M» в реестре тендеров на материалы — у всех тендеров, без открытия расценки.
     supplyImport: parseSupplyImport(env),

@@ -18,7 +18,8 @@ import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import { VOR_DIVISIONS, NO_VOR_DIVISION } from '../../src/utils/vorDivisions.js'
 import {
-  WORK_TYPE_DIVISIONS, divisionByWorkType, divisionCounts, hasDivisionColumn, isMissingWorkTypeDivision, matchesDivisions,
+  WORK_TYPE_DIVISIONS, contractDivisionsByCounterparty, divisionByWorkType, divisionCounts, hasDivisionColumn, isMissingWorkTypeDivision,
+  matchesDivisions, mergeDivisions,
   workTypeDivisionSaveError, workTypesDivisions,
 } from '../../src/utils/workTypeDivisions.js'
 
@@ -59,6 +60,26 @@ describe('Подразделения видов работ: правила и т
     assert.match(workTypeDivisionSaveError({ code: '23514', message: 'new row violates check constraint "work_types_division_check"' }), /20261119/)
     assert.match(workTypeDivisionSaveError({ code: 'PGRST204', message: "Could not find the 'division' column" }), /20261115/)
     assert.equal(workTypeDivisionSaveError({ code: '23505', message: 'duplicate' }), null)
+  })
+
+  it('подразделения договоров контрагента: все стороны и прикреплённые, без повторов, вместе с видами работ', () => {
+    const contracts = [
+      { id: 'k1', counterparty_id: 'a', division: 'finishing' },
+      { id: 'k2', counterparty_id: 'a', division: 'monolith' },
+      { id: 'k3', counterparty_id: 'a', division: 'monolith' },
+      { id: 'k4', counterparty_id: 'b', division: null },
+      { id: 'k5', counterparty_id: 'c', division: 'general' },
+    ]
+    const parties = [{ contract_id: 'k5', counterparty_id: 'b' }, { contract_id: 'k4', counterparty_id: 'c' }]
+    const links = [{ contract_id: 'k1', counterparty_id: 'd' }, { contract_id: 'нет такого', counterparty_id: 'd' }]
+    const map = contractDivisionsByCounterparty(contracts, parties, links)
+    assert.deepEqual(map.get('a'), mergeDivisions(['monolith', 'finishing']), 'два разных договора — два подразделения')
+    assert.deepEqual(map.get('b'), ['general'], 'другая сторона договора')
+    assert.deepEqual(map.get('c'), ['general'], 'договор без подразделения ничего не добавляет')
+    assert.deepEqual(map.get('d'), ['finishing'], 'прикреплён вручную')
+    assert.equal(map.has('нет такого'), false)
+    assert.deepEqual(contractDivisionsByCounterparty([]), new Map())
+    assert.deepEqual(mergeDivisions(['general', 'finishing'], ['general', 'нет такого'], null), mergeDivisions(['finishing', 'general']))
   })
 
   it('миграция «Прочего»: коды — WORK_TYPE_DIVISIONS, нераспределённым — other, обе базы одинаковы', () => {
@@ -138,6 +159,43 @@ describe('Реестр контрагентов: подразделения по
   // Текст плашек без подписи для читалок экрана («Подразделение: …»).
   const chips = async (loc) => (await loc.allInnerTexts()).map((t) => t.replace(/^Подразделение:\s*/, ''))
   const pick = async (page, label) => page.locator('.fdrop-panel .fdrop-option', { hasText: label }).first().click()
+
+  it('подразделения договоров дополняют контрагента: плашки, счётчик и фильтр; удалённый договор не считается; контрагенту — без правки', async () => {
+    const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 1440, height: 900 } })
+    const page = await context.newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    try {
+      // Договоры — до первого открытия реестра: стенд запоминает выборки.
+      await page.goto(`${stand.url}?${BASE.replace('/general/counterparties', '/tenders/construction')}&tenders=5`)
+      await page.locator('table.tenders-registry > tbody > tr').first().waitFor({ timeout: 60000 })
+      await page.evaluate(() => {
+        const base = { record_type: 'dp', status: 'in_work', signed_date: null, deleted_at: null }
+        window.__fakeDb.contracts = [
+          { ...base, id: 'dv-1', counterparty_id: 'cp-4', division: 'finishing' },
+          { ...base, id: 'dv-2', counterparty_id: 'cp-4', division: 'general' },
+          { ...base, id: 'dv-3', counterparty_id: 'cp-4', division: 'nvf_spk', deleted_at: '2026-10-01T00:00:00Z' },
+          { ...base, id: 'dv-4', counterparty_id: 'cp-5', division: 'finishing' },
+        ]
+        window.__navigate('/general/counterparties')
+      })
+      const monolithRow = row(page, 'Подрядчик 04')
+      await monolithRow.locator('.cp-divs .vdiv').nth(2).waitFor({ timeout: 60000 })
+      assert.deepEqual(await chips(monolithRow.locator('.cp-divs .vdiv')), ['Монолит', 'Общестроительные работы', 'Отделка'])
+      assert.deepEqual(await chips(row(page, 'Подрядчик 05').locator('.cp-divs .vdiv')), ['Отделка'], 'вид работ без подразделения — только договор')
+
+      await page.locator('th.col-worktype .fdrop-trigger').click()
+      const options = await page.locator('.fdrop-panel .fdrop-option-text').allTextContents()
+      assert.ok(options.includes('Отделка (2)'), options.join(', '))
+      await pick(page, 'Отделка')
+      await page.keyboard.press('Escape')
+      await page.waitForFunction(() => document.querySelectorAll('table.compact-table tbody tr.table-row').length === 2)
+      assert.deepEqual((await names(page)).sort(), ['Подрядчик 04', 'Подрядчик 05'])
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close().catch(() => {})
+    }
+  })
 
   it('плашки подразделений под видами работ; фильтр в заголовке «Вид работ» со счётчиками и «Не указано»', async () => {
     const { page, errors, close } = await openPage(BASE)

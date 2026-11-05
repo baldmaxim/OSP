@@ -20,7 +20,9 @@ import IconTile from '../components/IconTile'
 import FilterDropdown from '../components/FilterDropdown'
 import { IconObject, IconUser, IconSearch, IconTag } from '../components/icons/ToolbarIcons'
 import { IconDocument } from '../components/icons/TenderHubIcons'
+import { IconTrophy } from '../components/icons/ActionIcons'
 import { isConstructionTender } from '../utils/tenderDepartments'
+import { TENDER_WINNERS_SELECT, tenderWinnersOf, isMissingWinnersError } from '../utils/tenderWinners'
 import { shortPersonName } from '../utils/personName'
 import { vorStartDate } from '../utils/vorDates'
 import { useClampOverflow } from '../utils/clampMeasure'
@@ -285,17 +287,20 @@ function VorsPage() {
         return { rows: [], supported: true }
       })
       // Колонок СТО (миграция 20260922) и подразделения (20260927) может ещё не
-      // быть — убираем недостающие по одной, страница работает и без них.
+      // быть — убираем недостающие по одной, страница работает и без них. Так же с победителями.
       let sto = true
       let division = true
+      let winners = true
       let data
       for (;;) {
         try {
-          data = await load((sto ? ', vor_sto_user_id, vor_sto_name' : '') + (division ? ', vor_division' : ''))
+          data = await load((sto ? ', vor_sto_user_id, vor_sto_name' : '') + (division ? ', vor_division' : '')
+            + (winners ? `, ${TENDER_WINNERS_SELECT}` : ''))
           break
         } catch (err) {
           if (sto && isMissingStoColumnError(err)) { sto = false; continue }
           if (division && isMissingDivisionColumnError(err)) { division = false; continue }
+          if (winners && isMissingWinnersError(err)) { winners = false; continue }
           throw err
         }
       }
@@ -607,7 +612,8 @@ function VorsPage() {
       (t.work_description || '').toLowerCase().includes(q) ||
       (VOR_DIVISION_LABEL[t.vor_division] || '').toLowerCase().includes(q) ||
       (vorResponsibleOf(t).name || '').toLowerCase().includes(q) ||
-      (t.responsible_contact?.full_name || '').toLowerCase().includes(q)
+      (t.responsible_contact?.full_name || '').toLowerCase().includes(q) ||
+      tenderWinnersOf(t).some(w => (w.name || '').toLowerCase().includes(q))
     )
   }
 
@@ -771,8 +777,8 @@ function VorsPage() {
           <input
             type="search"
             className="cost-plans-search"
-            placeholder="№, объект, описание, ФИО"
-            aria-label="Поиск по номеру тендера или заявки, объекту, описанию работ и ФИО ответственных"
+            placeholder="№, объект, описание, ФИО, победитель"
+            aria-label="Поиск по номеру тендера или заявки, объекту, описанию работ, ФИО ответственных и победителю"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -851,6 +857,7 @@ function VorsPage() {
             <col className="vr-col-division" />
             <col className="vr-col-sto" />
             <col className="vr-col-resp" />
+            <col className="vr-col-winner" />
             <col className="vr-col-term" />
             <col className="vr-col-docs" />
             <col className="vr-col-status" />
@@ -870,6 +877,7 @@ function VorsPage() {
               <th>Подразделение</th>
               <th>Ответственный СТО</th>
               <th>Ответственный<br />по тендеру</th>
+              <th>Победитель</th>
               <th>Срок подготовки ВОР</th>
               <th>ВОРы и РД</th>
               <th>Статус</th>
@@ -878,7 +886,7 @@ function VorsPage() {
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={9} className="no-data">
+                <td colSpan={10} className="no-data">
                   {tenders.length === 0
                     ? 'Нет тендеров и заявок. Создайте тендер на странице «Тендеры» или заявку на ВОР кнопкой выше.'
                     : activeTab === 'deleted'
@@ -921,10 +929,11 @@ function VorsPage() {
                       onClick={() => toggleExpanded(t.id)}
                     >
                       <IconChevronRight />
-                      {t._kind === 'request'
-                        ? <span className="vor-request-badge" title="Заявка на ВОР без тендера">Заявка<br />№ {t.request_number}</span>
-                        : <span>{t.public_tender_number ?? '—'}</span>}
+                      <span>{t._kind === 'request' ? t.request_number : (t.public_tender_number ?? '—')}</span>
                     </button>
+                    {/* Плашка — под номером, а не рядом: стрелка, «Заявка» и «№ 128» в одну колонку 4,5rem не помещались,
+                        и плашка наезжала на название объекта. */}
+                    {t._kind === 'request' && <div className="vor-request-badge" title="Заявка на ВОР без тендера">заявка</div>}
                     {sets.length > 0 && (
                       <div
                         className={`vr-rd-count${readySets === sets.length ? ' is-done' : ''}`}
@@ -1059,6 +1068,22 @@ function VorsPage() {
                         : <span className="muted-tiny">—</span>)}
                   </td>
                   <td>
+                    {(() => {
+                      const winners = tenderWinnersOf(t)
+                      if (winners.length === 0) {
+                        return t.status === 'Завершен'
+                          ? <span className="muted-tiny">Не выбран</span>
+                          : <span className="muted-tiny">—</span>
+                      }
+                      return winners.map(w => (
+                        <div key={w.id} className="vr-winner" title={w.scope ? `Победитель: ${w.name} — ${w.scope}` : `Победитель: ${w.name}`}>
+                          <span className="vr-winner-icon" aria-hidden="true"><IconTrophy size={14} /></span>
+                          <span>{w.name}{w.scope && <span className="vr-winner-scope"> — {w.scope}</span>}</span>
+                        </div>
+                      ))
+                    })()}
+                  </td>
+                  <td>
                     {/* Срок — читаемым текстом; правка в окошке. Просрочен, если
                         окончание прошло, а ВОР ещё не завершён. */}
                     <DateRangeCell
@@ -1133,7 +1158,7 @@ function VorsPage() {
                 </tr>
                 {open && (
                   <tr className="vr-rd-row" id={`vr-rd-${t.id}`}>
-                    <td colSpan={9}>
+                    <td colSpan={10}>
                       <VorRdSetsPanel
                         owner={{ kind: t._kind === 'request' ? 'request' : 'tender', id: t.id }}
                         ownerLabel={ownerLabel}

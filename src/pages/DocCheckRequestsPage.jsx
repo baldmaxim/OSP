@@ -8,10 +8,9 @@ import DocCheckAvatars from '../components/doccheck/DocCheckAvatars'
 import DocCheckCardCounts from '../components/doccheck/DocCheckCardCounts'
 import FilterDropdown from '../components/FilterDropdown'
 import IconTile from '../components/IconTile'
-import { IconObject, IconSearch, IconTag, IconUser } from '../components/icons/ToolbarIcons'
+import { IconObject, IconSearch, IconUser } from '../components/icons/ToolbarIcons'
 import { IconArchive, IconCalendar, IconFlag, IconRestore, IconTrash } from '../components/icons/ActionIcons'
 import { IconDocCheck } from '../components/icons/NavIcons'
-import { panByDrag } from '../components/doccheck/boardGestures'
 import { fetchAllRows, fetchAllActiveCounterparties } from '../utils/fetchAllRows'
 import { chunkList } from '../utils/inChunks'
 import { employeeName, employeesById, fetchEmployees } from '../services/employees'
@@ -58,7 +57,7 @@ import './DocCheckRequestsPage.css'
 // «примерно такую же, как на фото»): колонки от «Новых заявок» до «Проверки
 // документов (исключение налоговой оговорки)», «Сводка по ДП», карточки с
 // цветом, метками, сроком и исполнителями, фильтры по исполнителю, сроку,
-// приоритету, метке и объекту, архив.
+// приоритету и объекту, архив.
 //
 // Заявка НЕ привязана к записи реестра «Договоры и ДС»: проверка идёт до того,
 // как договор туда заводят, поэтому объект, контрагент, тип, № и дата вводятся
@@ -84,12 +83,6 @@ function writeStored(key, value) {
 }
 
 const sameCounts = (a, b) => a.size === b.size && [...b].every(([id, n]) => a.get(id) === n)
-
-// Плашки объектов: не помещаются в строку — тянуть мышью, как доску (нажатие без сдвига остаётся щелчком по плашке).
-const panQuickChips = (e) => {
-  const box = e.currentTarget
-  if (e.button === 0 && e.pointerType === 'mouse' && box.scrollWidth > box.clientWidth) panByDrag(e, box, () => {})
-}
 
 export default function DocCheckRequestsPage() {
   useBodyClass('ui-work-portal')
@@ -117,8 +110,6 @@ export default function DocCheckRequestsPage() {
   const [filterAssignees, setFilterAssignees] = useState([])
   const [filterDeadline, setFilterDeadline] = useState('')
   const [filterPriorities, setFilterPriorities] = useState([])
-  const [filterLabels, setFilterLabels] = useState([])
-  const [onlyMine, setOnlyMine] = useState(false)
   const [summary, setSummary] = useState(() => normalizeSummary(readStored(SUMMARY_KEY, null)))
 
   const [formFor, setFormFor] = useState(null)   // { request, status } | null
@@ -465,10 +456,8 @@ export default function DocCheckRequestsPage() {
       if (filterObjectIds.length && !filterObjectIds.includes(r.object_id)) return false
       if (filterCounterpartyIds.length && !filterCounterpartyIds.includes(r.counterparty_id)) return false
       if (filterTypes.length && !filterTypes.includes(r.doc_type)) return false
-      if (onlyMine && !(myId && r.assignee_ids.includes(myId))) return false
       if (!matchesAssignees(r, filterAssignees)) return false
       if (filterPriorities.length && !filterPriorities.includes(r.priority)) return false
-      if (filterLabels.length && !filterLabels.some(l => r.labels.includes(l))) return false
       if (!matchesDeadline(r, filterDeadline)) return false
       if (!q) return true
       return [
@@ -476,8 +465,8 @@ export default function DocCheckRequestsPage() {
         ...assigneeNames(r, id => employeeName(employees, id, '')),
       ].some(v => (v || '').toLowerCase().includes(q))
     })
-  }, [inMode, search, filterObjectIds, filterCounterpartyIds, filterTypes, onlyMine, myId, filterAssignees,
-    filterPriorities, filterLabels, filterDeadline, employees])
+  }, [inMode, search, filterObjectIds, filterCounterpartyIds, filterTypes, filterAssignees,
+    filterPriorities, filterDeadline, employees])
 
   // Реестр — в порядке колонок доски, внутри колонки — как на доске; удалённые — сначала последние.
   const listRows = useMemo(() => {
@@ -489,19 +478,11 @@ export default function DocCheckRequestsPage() {
   const allLabels = useMemo(() => labelSuggestions(requests.filter(r => !r.deleted_at)), [requests])
   const allManualAssignees = useMemo(() => manualAssigneeSuggestions(requests.filter(r => !r.deleted_at)), [requests])
 
-  // Объекты открытого списка — плашки быстрого отбора, частые первыми. Видны и в «Архиве», и в «Удалённых»: выбранный отбор
-  // действует и там, и спрятанный он молча скрывал бы заявки.
-  const objectChips = useMemo(() => {
+  // Сколько заявок открытого списка на объекте — в подписи выпадающего списка «Объект» (03.11.2026, вместо плашек над доской).
+  const objectCounts = useMemo(() => {
     const counts = new Map()
-    for (const r of inMode) {
-      if (!r.object_id) continue
-      const cur = counts.get(r.object_id)
-      if (cur) cur.n += 1
-      else counts.set(r.object_id, { id: r.object_id, n: 1, name: r.objects?.name || 'Объект' })
-    }
-    return [...counts.values()]
-      .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name, 'ru'))
-      .slice(0, 14)
+    for (const r of inMode) if (r.object_id) counts.set(r.object_id, (counts.get(r.object_id) || 0) + 1)
+    return counts
   }, [inMode])
 
   const assigneeOptions = useMemo(() => {
@@ -520,18 +501,20 @@ export default function DocCheckRequestsPage() {
     ]
   }, [requests, employees])
 
-  const objectOptions = useMemo(() => objects.map(o => ({ value: o.id, label: o.name })), [objects])
+  // Объекты с заявками — первыми, частые выше; остальные — по алфавиту, как в справочнике.
+  const objectOptions = useMemo(() => objects
+    .map(o => ({ value: o.id, label: objectCounts.get(o.id) ? `${o.name} (${objectCounts.get(o.id)})` : o.name, n: objectCounts.get(o.id) || 0, name: o.name }))
+    .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name, 'ru')), [objects, objectCounts])
   const counterpartyOptions = useMemo(() => counterparties.map(c => ({ value: c.id, label: c.name })), [counterparties])
 
   const detail = detailId ? withCounts.find(r => r.id === detailId) : null
   const hasFilters = filterObjectIds.length > 0 || filterCounterpartyIds.length > 0 || filterTypes.length > 0
-    || filterAssignees.length > 0 || filterPriorities.length > 0 || filterLabels.length > 0
-    || !!filterDeadline || onlyMine || search.trim() !== ''
+    || filterAssignees.length > 0 || filterPriorities.length > 0
+    || !!filterDeadline || search.trim() !== ''
   const resetFilters = () => {
     setSearch(''); setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterTypes([])
-    setFilterAssignees([]); setFilterPriorities([]); setFilterLabels([]); setFilterDeadline(''); setOnlyMine(false)
+    setFilterAssignees([]); setFilterPriorities([]); setFilterDeadline('')
   }
-  const toggleObject = (id) => setFilterObjectIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]))
   const deletedCount = requests.filter(r => r.deleted_at).length
   const archivedCount = requests.filter(r => !r.deleted_at && r.archived_at).length
   const showBoard = view === 'board' && mode === 'active'
@@ -620,7 +603,7 @@ export default function DocCheckRequestsPage() {
   return (
     <div className={`doc-check-page ui-work${showBoard ? ' is-board' : ''}`}>
       {/* Шапка — две низкие строки (решение пользователя 03.11.2026: больше заявок на экране): название, вид, поиск и
-          действия; под ними фильтры и быстрый отбор. */}
+          действия; под ними фильтры. */}
       <div className="page-header dc-head">
         <h2>
           {/* Тон тот же, что у пункта меню, — раздел узнаётся по цвету. */}
@@ -714,15 +697,6 @@ export default function DocCheckRequestsPage() {
               value={filterPriorities} onChange={setFilterPriorities}
               options={DOC_CHECK_PRIORITIES}
             />
-            {allLabels.length > 0 && (
-              <FilterDropdown
-                label="" multiple searchable
-                searchPlaceholder="Поиск метки…" allLabel="Метка"
-                icon={<IconTag size={15} />}
-                value={filterLabels} onChange={setFilterLabels}
-                options={allLabels.map(l => ({ value: l, label: l }))}
-              />
-            )}
           </>
         )}
         <FilterDropdown
@@ -746,28 +720,6 @@ export default function DocCheckRequestsPage() {
         />
         {hasFilters && (
           <button type="button" className="dc-reset" onClick={resetFilters}>Сбросить</button>
-        )}
-        {(objectChips.length > 0 || (hasBoardFields && myId)) && (
-          <div className="dc-quick" aria-label="Быстрый отбор" onPointerDown={panQuickChips}>
-            {hasBoardFields && myId && (
-              <button
-                type="button"
-                className={`dc-quick-chip dc-quick-chip--mine${onlyMine ? ' is-active' : ''}`}
-                aria-pressed={onlyMine}
-                onClick={() => setOnlyMine(v => !v)}
-              ><IconUser size={13} />Мои заявки</button>
-            )}
-            {objectChips.map(o => (
-              <button
-                key={o.id}
-                type="button"
-                className={`dc-quick-chip${filterObjectIds.includes(o.id) ? ' is-active' : ''}`}
-                aria-pressed={filterObjectIds.includes(o.id)}
-                onClick={() => toggleObject(o.id)}
-                title={`${o.name}: ${o.n}`}
-              >{o.name}<span className="dc-quick-n">{o.n}</span></button>
-            ))}
-          </div>
         )}
       </div>
 

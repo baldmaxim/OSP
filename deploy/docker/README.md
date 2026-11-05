@@ -295,6 +295,20 @@ rm -f ~/rates-key-tender.hdr
 Закрыть немедленно: `OSP_CONTRACTOR_SIGNUP=` и `bash deploy.sh api-restart`. Уже зарегистрированные продолжают работать; заблокировать их можно в «Администрировании».
 Откат API на выпуск без регистрации снимает с таких учёток короткий список шлюза (второй замок в базе остаётся): перед откатом заблокируйте их.
 
+## Сколько портал потребляет
+
+Что сделано для экономии и почему — `CLAUDE.md`, «Нагрузка на сервер». Измерить на сервере (только чтение, соседи не затрагиваются):
+
+```bash
+# пользователь corpsu: память и процессор контейнеров ОСП сейчас
+docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}' osp-osp-web-1 osp-osp-api-1 osp-osp-postgrest-1
+# пользователь corpsu: сколько места занимают образы ОСП
+docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep '^osp-'
+```
+
+Имена контейнеров — из `docker compose -p osp ps`. Статика сжата, если `curl -sI -H 'Accept-Encoding: gzip' https://tender.su10.ru/assets/<файл>.js`
+показывает `content-encoding: gzip`.
+
 ## Флаги и барьер записи
 
 - Флаги портала — `/opt/portals/osp/shared/config.json`; правятся без пересборки, открытые вкладки

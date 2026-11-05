@@ -1,8 +1,9 @@
 // Позиции ВОР для расценки снабжением — заранее, на сервере (миграция 20261024_supply_import_state).
 //
 //   const job = createSupplyImport({ db, s3, bucket, log })
-//   const stop = job.start({ isReadOnly })   // такт: первый через 90 с, далее каждые 10 минут
-//   await job.runOnce()                       // один проход (тесты, ручной запуск)
+//   const stop = job.start({ isReadOnly })   // такт: первый через 90 с, далее каждые 10 минут, если база менялась
+//   await job.runIfChanged()                  // то, что делает такт: без изменений в базе прохода нет
+//   await job.runOnce()                       // один проход всегда (тесты, ручной запуск)
 //
 // Раньше позиции разбирал только браузер — когда расценку открывали снабжение или тендерный отдел, — и в
 // реестре «Тендеры на материалы» у тендера, которого ещё не открывали, вместо «Расценка: N из M» стояло
@@ -35,6 +36,8 @@ export const SUPPLY_IMPORT_DEFAULTS = {
   parseTimeoutMs: 120_000,
   parseHeapMb: 192,
   downloadTimeoutMs: 60_000,
+  // Страховка: в тихой базе проход всё равно раз в 6 часов (такт пропускается, только если счётчики записей не менялись).
+  maxQuietMs: 6 * 60 * 60_000,
 }
 // Категории файлов ВОР в «ВОРах и РД» (src/services/tenderVorRd.js).
 export const VOR_CATEGORIES = ['vor_statement', 'vor']
@@ -109,12 +112,19 @@ select json_build_object(
 ) as tender
 from mains join public.tenders t on t.id = mains.id and t.deleted_at is null`
 
-// Подпись вкладки «ВОР» по ВОР — как estimateSignatures страницы (число строк и время последней загрузки).
+// Подпись вкладки «ВОР» по ВОР — как estimateSignatures страницы (число строк и время последней загрузки). Одним запросом
+// на все тендеры прохода: раньше на каждый шла своя транзакция — ~260 раз по четыре обмена с базой каждые 10 минут.
 const SIGNATURES_SQL = `
-select json_build_object('name', x.name, 'count', x.n, 'latest', x.latest) as sig
-from (select coalesce(i.estimate_name, 'Основная смета') as name, count(*)::int as n, max(i.created_at) as latest
-      from public.tender_estimate_items i where i.tender_id = $1 group by 1) x
-order by x.name`
+select x.tender_id, json_build_object('name', x.name, 'count', x.n, 'latest', x.latest) as sig
+from (select i.tender_id, coalesce(i.estimate_name, 'Основная смета') as name, count(*)::int as n, max(i.created_at) as latest
+      from public.tender_estimate_items i where i.tender_id = any($1::uuid[]) group by 1, 2) x
+order by x.tender_id, x.name`
+
+// Менялось ли то, что читает проход: счётчики записей таблиц (чтение каталога, к самим таблицам не обращается).
+const WATCHED_TABLES = ['tenders', 's3_documents', 'tender_supply_sources', 'tender_estimate_items', 'tender_vor_supply_rates']
+const ACTIVITY_SQL = `
+select coalesce(string_agg(relid::text || ':' || n_tup_ins || ':' || n_tup_upd || ':' || n_tup_del, ',' order by relid), '') as signature
+from pg_catalog.pg_stat_user_tables where schemaname = 'public' and relname = any($1::text[])`
 
 const ITEMS_SQL = `
 select coalesce(json_agg(json_build_object('estimate_name', i.estimate_name, 'code', i.code, 'cost_name', i.cost_name, 'unit', i.unit,
@@ -181,10 +191,33 @@ export function createSupplyImport({ db, s3, bucket, log = console, parse = pars
     return true
   }
 
+  const workbookFiles = (t) => (t.files || []).filter((f) => isWorkbookFileName(f.file_name))
+  const knownFileIssue = (t, doc) => (Array.isArray(t.state?.issues) ? t.state.issues : [])
+    .find((i) => i.doc_id === doc.id && i.version === fileVersion(doc) && i.parser === VOR_PARSER_VERSION && STICKY.has(i.kind))
+  // Подпись вкладки «ВОР» нужна, если позиции могут прийти из неё или файлам нужны имена ВОР карточки.
+  const needsSignatures = (t) => {
+    if (t.locked) return false
+    const sources = t.sources || []
+    if (!sources.some((s) => s.source === 'vor_file')) return true
+    return planFileImports(workbookFiles(t), sources, []).jobs.some((j) => !knownFileIssue(t, j.doc))
+  }
+
+  async function loadSignatures(list) {
+    const ids = list.filter(needsSignatures).map((t) => t.id)
+    const byTender = new Map()
+    if (!ids.length) return byTender
+    const rows = await db.read(null, async (tx) => (await tx.query(SIGNATURES_SQL, [ids])).rows, { statementTimeoutMs: 60_000 })
+    for (const row of rows) {
+      if (!byTender.has(row.tender_id)) byTender.set(row.tender_id, [])
+      byTender.get(row.tender_id).push(row.sig)
+    }
+    return byTender
+  }
+
   // Один тендер. budget — сколько файлов ещё можно разобрать и до какого времени.
-  async function processTender(t, budget, stats) {
+  async function processTender(t, budget, stats, signatures) {
     const prev = t.state
-    const files = (t.files || []).filter((f) => isWorkbookFileName(f.file_name))
+    const files = workbookFiles(t)
     const filesSig = filesSignature(files)
     if (t.locked) {
       // Завершён: списки позиций не меняются (их не пустит и база). Статус «N из M» — по прежним спискам.
@@ -194,15 +227,8 @@ export function createSupplyImport({ db, s3, bucket, log = console, parse = pars
       return
     }
     let sources = t.sources || []
-    const prevIssues = Array.isArray(prev?.issues) ? prev.issues : []
-    const fileIssueFor = (doc) => prevIssues.find((i) => i.doc_id === doc.id && i.version === fileVersion(doc) && i.parser === VOR_PARSER_VERSION && STICKY.has(i.kind))
-
-    // Подпись вкладки «ВОР» нужна, если позиции могут прийти из неё или файлам нужны имена ВОР карточки.
-    const { jobs: firstJobs } = planFileImports(files, sources, [])
-    const needSigs = !sources.some((s) => s.source === 'vor_file') || firstJobs.some((j) => !fileIssueFor(j.doc))
-    const sigs = needSigs
-      ? await db.read(null, async (tx) => (await tx.query(SIGNATURES_SQL, [t.id])).rows.map((r) => r.sig))
-      : null
+    const fileIssueFor = (doc) => knownFileIssue(t, doc)
+    const sigs = needsSignatures(t) ? (signatures.get(t.id) || []) : null
     const cardNames = sigs ? sigs.map((s) => s.name) : []
     const tabSig = sigs ? tabSignature(sigs) : (prev?.tab_sig ?? null)
 
@@ -285,6 +311,8 @@ export function createSupplyImport({ db, s3, bucket, log = console, parse = pars
     // Позиций нет и причин нет — ни файл, ни вкладка «ВОР» материалов не дали (или их нет вовсе).
     const positions = sources.reduce((n, s) => n + (s.positions_count || 0), 0)
     const status = positions > 0 ? 'ok' : issues.length ? 'issues' : pending ? 'pending' : 'no_vor'
+    // Не успели за проход или сбой связи и записи — следующий такт должен прийти, даже если в базе тихо.
+    if (pending || issues.some((i) => !STICKY.has(i.kind))) stats.retry += 1
     if (await saveState(t.id, prev, { status, files_sig: filesSig, tab_sig: tabSig, parser_version: VOR_PARSER_VERSION, issues, positions_count: positions })) {
       stats.states += 1
     }
@@ -293,17 +321,18 @@ export function createSupplyImport({ db, s3, bucket, log = console, parse = pars
   async function runOnce() {
     if (running) return { skipped: 'busy' }
     running = true
-    const stats = { tenders: 0, imported: 0, failed: 0, states: 0, errors: 0 }
+    const stats = { tenders: 0, imported: 0, failed: 0, states: 0, errors: 0, retry: 0 }
     try {
       const list = await db.read(null, async (tx) => (await tx.query(CANDIDATES_SQL, [VOR_CATEGORIES])).rows.map((r) => r.tender),
         { statementTimeoutMs: 60_000 })
       // Сначала тендеры без состояния (их ещё не смотрели) и без позиций, затем остальные.
       list.sort((a, b) => Number(!!a.state) - Number(!!b.state) || Number((a.sources || []).length > 0) - Number((b.sources || []).length > 0))
+      const signatures = await loadSignatures(list)
       const budget = { files: o.maxFilesPerRun, until: Date.now() + o.maxRunMs }
       for (const t of list) {
         stats.tenders += 1
         try {
-          await processTender(t, budget, stats)
+          await processTender(t, budget, stats, signatures)
         } catch (e) {
           stats.errors += 1
           log.warn?.({ tender: t.id, code: e?.code, msg: String(e?.message || e).slice(0, 160) }, 'supply import: tender')
@@ -315,11 +344,30 @@ export function createSupplyImport({ db, s3, bucket, log = console, parse = pars
     }
   }
 
+  // Такт расписания: в базе с прошлого чистого прохода ничего не менялось — прохода нет (ночь, выходные). Подпись читается
+  // до прохода: правка во время него сдвинет счётчики, и следующий такт пройдёт снова. Собственные записи прохода сдвигают
+  // их тоже: за изменившимся проходом идёт ещё один, он уже ничего не пишет, и дальше тихо. Счётчики не прочитались, был
+  // сбой или не всё успели — проходит как раньше; раз в maxQuietMs — в любом случае.
+  let lastClean = null
+  async function runIfChanged() {
+    let signature = null
+    try {
+      signature = await db.read(null, async (tx) => (await tx.query(ACTIVITY_SQL, [WATCHED_TABLES])).rows[0]?.signature || null)
+    } catch (e) {
+      log.warn?.({ code: e?.code, msg: String(e?.message || e).slice(0, 160) }, 'supply import: activity')
+    }
+    if (signature && lastClean?.signature === signature && Date.now() - lastClean.at < o.maxQuietMs) return { skipped: 'unchanged' }
+    const stats = await runOnce()
+    if (stats.skipped) return stats
+    lastClean = signature && !stats.errors && !stats.retry ? { signature, at: Date.now() } : null
+    return stats
+  }
+
   function start({ isReadOnly = () => false } = {}) {
     let interval = null
     const tick = () => {
       if (isReadOnly()) return
-      runOnce()
+      runIfChanged()
         .then((s) => { if (s.imported || s.failed || s.errors) log.info?.(s, 'supply import') })
         .catch((e) => log.warn?.({ code: e?.code, msg: String(e?.message || e).slice(0, 160) }, 'supply import'))
     }
@@ -332,5 +380,5 @@ export function createSupplyImport({ db, s3, bucket, log = console, parse = pars
     return () => { clearTimeout(first); if (interval) clearInterval(interval) }
   }
 
-  return { runOnce, start }
+  return { runOnce, runIfChanged, start }
 }

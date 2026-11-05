@@ -376,6 +376,17 @@ networks:
     assert.match(csp, /frame-ancestors 'self'/)
     const asset =docker(['compose', '-p', PROJECT, 'exec', '-T', 'osp-web', 'sh', '-c', 'ls /var/www/osp/assets | head -n 1']).stdout.trim()
     assert.match(https(`/assets/${asset}`, ['-D', '-', '-o', '/dev/null']).stdout, /cache-control: public, immutable/i)
+    // Файлы сборки — заранее сжатые копии: nginx отдаёт готовое, заголовки те же; без Accept-Encoding — исходный файл.
+    const bigJs = docker(['compose', '-p', PROJECT, 'exec', '-T', 'osp-web', 'sh', '-c', 'cd /var/www/osp/assets && ls -S *.js | head -n 1']).stdout.trim()
+    const packed = https(`/assets/${bigJs}`, ['-D', '-', '-o', '/dev/null', '-H', 'Accept-Encoding: gzip']).stdout
+    assert.match(packed, /content-encoding: gzip/i)
+    assert.match(packed, /vary: accept-encoding/i)
+    assert.match(packed, /cache-control: public, immutable/i)
+    assert.match(packed, /x-content-type-options: nosniff/i)
+    const plain = https(`/assets/${bigJs}`, ['-D', '-', '-o', '/dev/null']).stdout
+    assert.doesNotMatch(plain, /content-encoding/i)
+    const size = (headers) => Number(/content-length: (\d+)/i.exec(headers)?.[1])
+    assert.ok(size(packed) < size(plain) / 2, `сжатие: ${size(packed)} из ${size(plain)}`)
     assert.equal(code(`https://osp.root.sx:${p443}/assets/no-such-file.js`), '404')
     // Самоудаление service worker прежнего сайта (public/sw.js): скрипт, без кэша — браузер должен получить его.
     const sw = https('/sw.js', ['-D', '-'])

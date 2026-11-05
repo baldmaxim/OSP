@@ -37,13 +37,14 @@ import { registerRates, parseRatesKeys } from './routes/rates.js'
 import { registerApiKeys } from './routes/apiKeys.js'
 import { createApiKeyStore } from './lib/apiKeys.js'
 import { registerCovers } from './routes/covers.js'
-import { registerDbGateway, createInternalTokens, createRemoteVerifier } from './routes/dbGateway.js'
+import { registerDbGateway, createInternalTokens, createRemoteVerifier, GATEWAY_URL } from './routes/dbGateway.js'
 import { createAuthAdmin, createAuthUsersMirror } from './lib/authUsers.js'
 import { createWriteBarrier } from './lib/writeBarrier.js'
 import { createLoadStatus, isFinalLoad } from './lib/loadStatus.js'
 import { createLarixClient } from './lib/larixClient.js'
 import { createLarixSync, dbTarget, supabaseTarget } from './lib/larixSync.js'
 import { createSupplyImport } from './lib/supplyImport.js'
+import { createRegistryRefresh } from './lib/registryRefresh.js'
 import { createSecretBox } from './lib/auth/secretBox.js'
 import { createPasswordVerifier } from './lib/auth/passwords.js'
 import { loadBlocklist } from './lib/auth/policy.js'
@@ -62,9 +63,10 @@ const ALLOW = JSON.parse(fs.readFileSync(new URL('./data/allow.json', import.met
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 // Функции портала, которые меняют учётку во входе Supabase Auth, а не только строки базы.
 const AUTH_ADMIN_RPC = { admin_delete_user: 'deleteUser', admin_confirm_user_email: 'confirmEmail' }
-const REGISTRY_REFRESH_MS = 10 * 60_000
 const AUTH_CLEANUP_MS = 10 * 60_000
 const SUPERADMIN_TTL_MS = 30_000
+// Чтение шлюза дольше этого — в журнал службы (быстрые удачные чтения пишет только nginx).
+const SLOW_READ_MS = 1000
 // Ключи API: занести ключи из настроек сервера (пока не вышло) и убрать журнал вызовов старше 90 дней.
 const API_KEYS_TICK_MS = 10 * 60_000
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -359,19 +361,10 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     return null
   }
 
-  // Пересчёт реестра расценок по расписанию. Защита от двойного запуска — блокировка в базе:
-  // вторая копия службы (или параллельный запуск) пересчёт пропустит.
-  const refreshRegistry = () => db.write(null, async (tx) => {
-    const { rows } = await tx.query('select pg_try_advisory_xact_lock(hashtext($1)) as ok', ['osp:registry-refresh'])
-    if (rows[0].ok) await tx.query('select public.refresh_rates_registry()')
-    return rows[0].ok
-  }, { statementTimeoutMs: 180_000 })
+  // Пересчёт реестра расценок по расписанию — только если источники менялись (src/lib/registryRefresh.js).
   if (db && config.registryRefresh) {
-    const timer = setInterval(() => {
-      refreshRegistry().catch((err) => app.log.warn({ code: err?.code, msg: String(err?.message || err).slice(0, 120) }, 'registry refresh'))
-    }, REGISTRY_REFRESH_MS)
-    timer.unref()
-    app.addHook('onClose', async () => clearInterval(timer))
+    const stopRegistry = createRegistryRefresh({ db, log: app.log, ...deps.registryRefresh }).start()
+    app.addHook('onClose', async () => stopRegistry())
   }
 
   // Позиции ВОР для расценки снабжением — заранее, раз в 10 минут (src/lib/supplyImport.js): разбор файлов в
@@ -471,13 +464,18 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     return payload
   })
 
+  // Каждый запрос пишет nginx контейнера сайта (адрес клиента, метод, путь, код). Здесь — то, что нужно при разборе:
+  // запись, отказ, сбой, медленное чтение. Удачное быстрое чтение шлюза и проверка живости строк не добавляют:
+  // таких запросов большинство, а журнал контейнера ограничен по размеру и вытеснял бы полезное.
   app.addHook('onResponse', async (request, reply) => {
-    request.log.info({
-      method: request.method,
-      route: request.routeOptions?.url || 'not-found',
-      status: reply.statusCode,
-      ms: Math.round(reply.elapsedTime),
-    }, 'request')
+    const route = request.routeOptions?.url || 'not-found'
+    const ms = Math.round(reply.elapsedTime)
+    const ok = reply.statusCode < 400
+    if (ok && route === '/api/health') return
+    if (ok && route === GATEWAY_URL && ms < SLOW_READ_MS && (request.method === 'GET' || request.method === 'HEAD')) return
+    // Имя таблицы или функции — не данные; параметров и тел в журнале нет, как и раньше.
+    const name = request.dbCall?.name
+    request.log.info({ method: request.method, route, status: reply.statusCode, ms, ...(name ? { name } : {}) }, 'request')
   })
 
   // Права — на маршруте: без config.access маршрут не регистрируется (закрыто по умолчанию),
@@ -606,7 +604,7 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   }
   if (mailOutbox) app.decorate('mailOutbox', mailOutbox)
 
-  const ctx = { signup, signupAdmin, pow, config, getS3, getAnthropic, getServiceClient, limiters, db, refreshRegistry,
+  const ctx = { signup, signupAdmin, pow, config, getS3, getAnthropic, getServiceClient, limiters, db,
     verifyUserToken, allow: deps.allow || ALLOW, mint, beforeGateway, gatewayOn, isReadOnly, loadStatus,
     principal, authService, sessions, isSuperadmin, apiKeys, coverThumbs: deps.coverThumbs, coverThumbWaitMs: deps.coverThumbWaitMs }
   registerAuth(app, ctx)

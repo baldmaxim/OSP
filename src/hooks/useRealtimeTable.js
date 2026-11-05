@@ -24,6 +24,7 @@ export function useRealtimeTable({
   table,
   schema = 'public',
   filter = null,          // например `tender_id=eq.${id}`
+  columns = null,         // какие колонки нужны обработчикам (через запятую, с id); не задано — все
   enabled = true,
   onUpdate,               // (newRow, oldRow) => void
   onInsert,               // (newRow) => void — вместо onStructuralChange для новых строк
@@ -52,7 +53,7 @@ export function useRealtimeTable({
 
     const channelName = `rt:${schema}.${table}${filter ? `:${filter}` : ''}:${Math.random().toString(36).slice(2, 8)}`
     const unsubscribe = subscribeTable(
-      { channelName, schema, table, filter },
+      { channelName, schema, table, filter, columns },
       (payload) => {
         if (payload.eventType === 'UPDATE') {
           if (onUpdateRef.current) onUpdateRef.current(payload.new, payload.old)
@@ -70,7 +71,7 @@ export function useRealtimeTable({
       unsubscribe()
       setConnected(false)
     }
-  }, [table, schema, filter, enabled, debounceMs])
+  }, [table, schema, filter, columns, enabled, debounceMs])
 
   return { connected }
 }

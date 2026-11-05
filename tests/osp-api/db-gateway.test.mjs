@@ -170,8 +170,10 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
         const record = { method: req.method, url: req.url, headers: req.headers, body: Buffer.concat(chunks) }
         seen.push(record)
         const r = reply(record)
-        res.writeHead(r.status ?? 200, { 'content-type': 'application/json; charset=utf-8', ...(r.headers || {}) })
-        res.end(r.body ?? '[]')
+        setTimeout(() => {
+          res.writeHead(r.status ?? 200, { 'content-type': 'application/json; charset=utf-8', ...(r.headers || {}) })
+          res.end(r.body ?? '[]')
+        }, r.delayMs || 0)
       })
     })
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -336,6 +338,43 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
     const head = await call('HEAD', '/api/db/tenders?select=id', { token: user(), headers: { prefer: 'count=exact' } })
     assert.deepEqual([head.statusCode, head.headers['content-range'], head.body], [200, '*/29298', ''])
     assert.equal(seen.at(-1).method, 'HEAD')
+  })
+
+  it('ответ — потоком: большой доходит целиком, с заголовками; HEAD и 204 — без тела', async () => {
+    const big = JSON.stringify(Array.from({ length: 20000 }, (_, i) => ({ id: i, name: 'строка '.repeat(10) })))
+    reply = () => ({ status: 206, body: big, headers: { 'content-range': '0-19999/20000' } })
+    const res = await call('GET', '/api/db/tenders?select=*', { token: user() })
+    assert.equal(res.statusCode, 206)
+    assert.equal(res.body, big)
+    assert.equal(res.headers['content-range'], '0-19999/20000')
+    assert.match(res.headers['content-type'], /application\/json/)
+    reply = () => ({ status: 200, body: '', headers: { 'content-range': '*/7' } })
+    const head = await call('HEAD', '/api/db/tenders?select=id', { token: user(), headers: { prefer: 'count=exact' } })
+    assert.deepEqual([head.statusCode, head.body, head.headers['content-range']], [200, '', '*/7'])
+    reply = () => ({ status: 204, body: '' })
+    const patched = await call('PATCH', '/api/db/tenders?id=eq.1', { token: user(), body: '{"status":"x"}' })
+    assert.deepEqual([patched.statusCode, patched.body], [204, ''])
+  })
+
+  it('журнал службы: быстрое удачное чтение и живость не пишет; запись, отказ и медленное чтение — пишет, с именем таблицы и без параметров', async () => {
+    const lines = () => logs.map((l) => JSON.parse(l)).filter((l) => l.msg === 'request')
+    await call('GET', '/api/health')
+    reply = () => ({ body: '[]' })
+    await call('GET', '/api/db/tenders?select=id&status=eq.секрет', { token: user() })
+    await call('HEAD', '/api/db/tenders?select=id', { token: user() })
+    assert.deepEqual(lines(), [])
+    await call('PATCH', '/api/db/tenders?id=eq.секрет', { token: user(), body: '{"status":"x"}' })
+    await call('GET', '/api/db/no_such_table?select=id', { token: user() })
+    reply = () => ({ body: '[]', delayMs: 1100 })
+    await call('GET', '/api/db/objects?select=id', { token: user() })
+    const written = lines()
+    assert.deepEqual(written.map((l) => [l.method, l.route, l.status, l.name]), [
+      ['PATCH', '/api/db/*', 200, 'tenders'],
+      ['GET', '/api/db/*', 404, undefined],
+      ['GET', '/api/db/*', 200, 'objects'],
+    ])
+    assert.ok(written[2].ms >= 1000)
+    assert.ok(!logs.join('').includes('секрет'), 'параметры запроса в журнал не попадают')
   })
 
   it('барьер записи: файл-переключатель оставляет только чтение', async () => {

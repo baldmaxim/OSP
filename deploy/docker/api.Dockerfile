@@ -19,6 +19,7 @@ COPY server/osp-api/src ./src
 USER node
 EXPOSE 8787
 # Жив ли процесс. Готовность зависимостей (/api/ready) проверяет выкладка — deploy/docker/deploy.sh.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:8787/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+# wget из busybox, а не node -e: проверка каждую минуту не должна запускать ещё один Node (40 МБ и 0,1 с процессора).
+HEALTHCHECK --interval=60s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1:8787/api/health || exit 1
 CMD ["node", "src/server.js"]

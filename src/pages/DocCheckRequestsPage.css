@@ -141,43 +141,6 @@
   color: var(--danger-color);
 }
 
-/* Быстрый отбор: «Мои заявки» и объекты (частые первыми) — как плашки объектов на прежней доске. Одной строкой, остаток
-   панели: что не поместилось, прокручивается (мышью — тянуть), а строка не растёт. */
-.dc-quick {
-  flex: 1 1 12rem;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin-left: 0.25rem;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.dc-quick::-webkit-scrollbar { display: none; }
-.dc-quick-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  flex: none;
-  height: 1.5rem;
-  padding: 0 0.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: 999px;
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-  font-size: var(--ui-hint);
-  font-weight: var(--ui-medium);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.dc-quick-chip:hover { border-color: var(--border-color-dark); color: var(--text-primary); }
-.dc-quick-chip.is-active {
-  border-color: var(--primary-color);
-  background: color-mix(in srgb, var(--primary-color) 14%, var(--bg-secondary));
-  color: var(--text-primary);
-}
-.dc-quick-n { color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
-
 .dc-empty, .dc-error, .dc-note, .dc-mode-banner {
   margin: 0.5rem 0.625rem 0;
   padding: 0.5rem 0.75rem;
@@ -1127,8 +1090,6 @@
 @media (max-width: 640px) {
   .dc-toolbar { padding-left: 0.75rem; padding-right: 0.75rem; }
   .dc-search-wrap { flex-basis: 100%; order: 3; max-width: none; }
-  .dc-quick { flex-basis: 100%; margin-left: 0; }
-  .dc-quick-chip { height: 1.875rem; }
   .doc-check-page.ui-work.ui-work .dc-head > :last-child:not(h2) { margin-left: 0; justify-content: flex-start; }
   .dc-board { padding: 0.75rem; scroll-snap-type: x mandatory; }
   .dc-column { flex-basis: 85vw; max-height: none; scroll-snap-align: start; }

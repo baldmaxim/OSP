@@ -10,6 +10,8 @@ import ConceptAgreementCell from '../components/ConceptAgreementCell'
 import FolderPathCell from '../components/FolderPathCell'
 import SignalLinkCell from '../components/SignalLinkCell'
 import LarixLinkCell from '../components/LarixLinkCell'
+import EstimatToggle from '../components/EstimatToggle'
+import { estimatEvent, estimatPatch, estimatState } from '../utils/contractEstimat'
 import RootFolderPathButton from '../components/RootFolderPathButton'
 import VorDivisionChip from '../components/VorDivisionChip'
 import VorDivisionFilter from '../components/VorDivisionFilter'
@@ -1929,6 +1931,21 @@ function ContractRegistry() {
   // Путь к Larix.CPM — вносится так же, как путь к Signal. По его заполненности
   // определяется, внесён ли договор в Larix (utils/contractLarix.js).
   const handleSaveLarixLink = (contractId, value) => handleInlineField(contractId, LARIX_LINK_FIELD, value.trim())
+  // Плашка «Estimat»: не загружено → загружено → не загружать (utils/contractEstimat.js). Цвет меняется только
+  // после записи: запись, не задевшая строку (нет права, документ удалён), — ошибка, а не ложная отметка.
+  const handleEstimatChange = async (doc, next) => {
+    const patch = estimatPatch(next, userProfile?.full_name || 'Сотрудник')
+    try {
+      const { data, error } = await db.from('contracts').update(patch).eq('id', doc.id).select('id')
+      if (error) throw error
+      if (!data?.length) throw new Error('отметка не сохранена: нет права правки или документ уже удалён')
+      setContracts(prev => prev.map(c => c.id === doc.id ? { ...c, ...patch } : c))
+      await logContractEvent(doc.id, 'field_updated', estimatEvent(estimatState(doc), next))
+    } catch (error) {
+      console.error('Ошибка отметки Estimat:', error.message)
+      alert('Ошибка: ' + error.message)
+    }
+  }
   const handleInlineField = async (contractId, field, rawValue) => {
     const value = rawValue === '' ? null : rawValue
     const contract = contracts.find(c => c.id === contractId)
@@ -2462,6 +2479,8 @@ function ContractRegistry() {
             <span className="ce2-ds-work" title={ds.work_name || ''}>{ds.work_name || 'предмет не указан'}</span>
             <span className="ce2-ds-amount">{amount || '—'}{hasAppliedPsdc(ds) ? ' (ПСДЦ)' : ''}</span>
           </button>
+          {/* Не внутри кнопки строки: кнопка в кнопке недопустима. */}
+          {!dsDeleted && <EstimatToggle doc={ds} canEdit={canEditContracts} onChange={handleEstimatChange} />}
           <Link
             to={`/contracts/${ds.id}`}
             className="ce2-ds-open"
@@ -2891,6 +2910,9 @@ function ContractRegistry() {
                     {isWarrantyObject(contract.objects?.status) && <ObjectDeptBadge status={contract.objects?.status} />}
                   </div>
                   {workName && <div className="mcard-desc">{workName}</div>}
+                  {!docDeleted && (
+                    <EstimatToggle doc={contract} canEdit={canEditContracts} onChange={handleEstimatChange} className="is-mcard" />
+                  )}
                   <div className="mcard-rows">
                     {docTender(contract, docIndex.byId) && (
                       <div className="mcard-row">
@@ -3068,22 +3090,25 @@ function ContractRegistry() {
                     onClick={(e) => e.stopPropagation()}
                     title={missingLabel ? `Не заполнено: ${missingLabel}` : undefined}
                   >
-                    <Link
-                      to={`/contracts/${contract.id}`}
-                      className={`contract-ds-link ${isExpanded ? 'is-active' : ''}`}
-                      onClick={(e) => e.stopPropagation()}
-                      title="Открыть карточку договора (колёсиком мыши — в новой вкладке)"
-                    >
-                      {dsNum
-                        ? <span className="cds-main">№ {dsNum}</span>
-                        : <span className="cds-main cds-missing">№ не присвоен</span>}
-                      {dsDate
-                        ? <span className="cds-sub">от {dsDate}</span>
-                        : <span className="cds-sub cds-missing">дата не указана</span>}
-                      {contract.display_id != null && (
-                        <span className="cds-id" title="Постоянный ID документа в портале">ID {contract.display_id}</span>
-                      )}
-                    </Link>
+                    <div className="cnum-head">
+                      <Link
+                        to={`/contracts/${contract.id}`}
+                        className={`contract-ds-link ${isExpanded ? 'is-active' : ''}`}
+                        onClick={(e) => e.stopPropagation()}
+                        title="Открыть карточку договора (колёсиком мыши — в новой вкладке)"
+                      >
+                        {dsNum
+                          ? <span className="cds-main">№ {dsNum}</span>
+                          : <span className="cds-main cds-missing">№ не присвоен</span>}
+                        {dsDate
+                          ? <span className="cds-sub">от {dsDate}</span>
+                          : <span className="cds-sub cds-missing">дата не указана</span>}
+                        {contract.display_id != null && (
+                          <span className="cds-id" title="Постоянный ID документа в портале">ID {contract.display_id}</span>
+                        )}
+                      </Link>
+                      {!docDeleted && <EstimatToggle doc={contract} canEdit={canEditContracts} onChange={handleEstimatChange} />}
+                    </div>
                     {isAmendment(contract) && (
                       <span className={`ds-type-badge is-${contract.record_type}`} title={DOC_TYPE_LABEL[contract.record_type]}>
                         {DOC_TYPE_SHORT[contract.record_type]}

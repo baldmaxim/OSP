@@ -78,17 +78,21 @@
   text-align: center;
 }
 
-/* ── Каркас: список слева, содержимое справа ───────────────────────────── */
-.cab-body {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-  gap: 1rem;
-  padding: 1rem 1.5rem 2rem;
-  align-items: start;
-}
-.cab-list { display: flex; flex-direction: column; gap: 0.5rem; }
+/* ── Открытый тендер ───────────────────────────────────────────────────── */
 .cab-main { min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
+.cab-tender { flex: 1; padding: 1rem 1.5rem 2rem; }
+.cab-back {
+  align-self: flex-start;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.cab-back:hover { border-color: var(--primary-color); color: var(--primary-color); }
 
 .cab-state {
   padding: 2.5rem 1.5rem;
@@ -98,36 +102,48 @@
 }
 .cab-state-error { color: #b91c1c; }
 
-/* ── Карточка в списке ─────────────────────────────────────────────────── */
-.cab-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  padding: 0.75rem 0.85rem;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--bg-secondary);
-  text-align: left;
-  cursor: pointer;
-  color: inherit;
+/* ── Реестр тендеров: тот же плотный реестр, что у сотрудника (TendersRegistryPolish.css, .tp-dense) ── */
+.tenders-page.cab-registry { flex: 1; min-width: 0; padding: 1rem 1.5rem 2rem; }
+/* Столбцов меньше, чем у сотрудника: своя сетка и своя ширина, с которой появляется прокрутка. */
+.ui-work.ui-work.tp-dense.cab-registry .tp-grid { min-width: 76rem; }
+.ui-work.ui-work.tp-dense.cab-registry .tp-c-num { width: 3.5rem; }
+.ui-work.ui-work.tp-dense.cab-registry .tp-c-object { width: 10.5rem; }
+.ui-work.ui-work.tp-dense.cab-registry .tp-c-desc { width: 15rem; }
+.ui-work.ui-work.tp-dense.cab-registry .tp-c-status { width: 8rem; }
+.ui-work.ui-work.tp-dense.cab-registry .tp-c-period { width: 8rem; }
+.ui-work.ui-work.tp-dense.cab-registry .cab-c-works { width: 8rem; }
+.ui-work.ui-work.tp-dense.cab-registry .tp-c-resp { width: 8rem; }
+.ui-work.ui-work.tp-dense.cab-registry .tp-c-package { width: 6rem; }
+.ui-work.ui-work.tp-dense.cab-registry .cab-c-open { width: 9rem; }
+.cab-registry .cab-object { display: block; cursor: default; }
+.cab-registry .sortable-th { cursor: pointer; user-select: none; }
+.cab-registry .cab-chip { white-space: normal; display: inline-block; }
+.cab-registry .cab-muted { font-size: inherit; }
+.cab-priced { margin-top: 0.125rem; font-size: 0.6875rem; color: #15803d; }
+[data-theme='dark'] .cab-priced { color: #6ee7b7; }
+/* «Открыть тендер» — кнопка, а не текст-ссылка: её видно в каждой строке. Селектор сильнее правил ссылок таблицы (workUi.css). */
+.ui-work.ui-work.tp-dense.cab-registry .tp-grid a.cab-open-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--primary-color);
+  border-radius: 7px;
+  background: var(--primary-color);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
-.cab-card:hover { border-color: var(--primary-color); }
-.cab-card.is-active {
-  border-color: var(--primary-color);
-  box-shadow: inset 3px 0 0 var(--primary-color);
-}
-.cab-card-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
-.cab-card-num { font-size: 0.8125rem; font-weight: 700; }
-.cab-card-obj { font-size: 0.875rem; font-weight: 600; }
-.cab-card-work {
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.cab-card-foot { font-size: 0.75rem; color: var(--text-tertiary); }
+.ui-work.ui-work.tp-dense.cab-registry .tp-grid a.cab-open-btn:hover { filter: brightness(1.08); text-decoration: none; }
+.ui-work.ui-work.tp-dense.cab-registry .tp-grid a.cab-open-btn:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+
 .cab-soon { color: #b45309; }
 .cab-late { color: #b91c1c; }
 
@@ -148,20 +164,6 @@
 [data-theme='dark'] .cab-chip.is-done { color: #6ee7b7; }
 [data-theme='dark'] .cab-chip.is-accent { color: #93c5fd; }
 [data-theme='dark'] .cab-chip.is-off { color: #d1d5db; }
-
-/* Группы списка: «Мои тендеры» и «Открытые тендеры» (миграция 20261102) */
-.cab-list-group { display: flex; flex-direction: column; gap: 0.5rem; }
-.cab-list-group + .cab-list-group { margin-top: 0.75rem; }
-.cab-list-title {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.cab-list-title span { font-weight: 600; }
-.cab-card-priced { color: #15803d; }
-[data-theme='dark'] .cab-card-priced { color: #6ee7b7; }
 
 /* ── Содержимое ────────────────────────────────────────────────────────── */
 .cab-head-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }
@@ -293,9 +295,37 @@
   .cab-header-right { justify-content: space-between; }
   .cab-tabs { padding: 0 0.75rem; overflow-x: auto; }
   .cab-tab { white-space: nowrap; }
-  .cab-body { grid-template-columns: 1fr; padding: 0.75rem; }
-  /* Список тендеров сверху, выбранный — под ним: две колонки на 390px нечитаемы. */
-  .cab-list { order: -1; }
+  .cab-tender { padding: 0.75rem; }
+  /* Реестр на телефоне — карточки: подпись слева, значение справа; таблица в 76rem на 390px нечитаема. */
+  .tenders-page.cab-registry { padding: 0.75rem; }
+  .ui-work.ui-work.tp-dense.cab-registry .tp-grid { min-width: 0; }
+  .cab-registry .tp-grid colgroup, .cab-registry .tp-grid thead { display: none; }
+  .cab-registry .tp-grid, .cab-registry .tp-grid tbody { display: block; width: 100%; }
+  .cab-registry .tp-grid tbody > tr {
+    display: block;
+    margin-bottom: 0.625rem;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-secondary);
+  }
+  .ui-work.ui-work.tp-dense.cab-registry .tp-grid > tbody > tr > td {
+    display: block;
+    width: auto;
+    border-right: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
+    padding: 0.5rem 0.75rem;
+  }
+  .ui-work.ui-work.tp-dense.cab-registry .tp-grid > tbody > tr > td:last-child { border-bottom: 0; }
+  .cab-registry .tp-grid td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.125rem;
+    color: var(--text-tertiary);
+    font-size: 0.6875rem;
+    font-weight: 600;
+  }
+  .cab-registry .table-container { overflow: visible; }
+  .ui-work.ui-work.tp-dense.cab-registry .tp-grid .tp-num { text-align: left; }
   .cab-steps li { flex-direction: column; align-items: stretch; gap: 0.5rem; }
   .cab-join { flex-direction: column; align-items: stretch; }
   .cab-btn { width: 100%; }

@@ -1187,10 +1187,12 @@
 }
 
 .winner-icon {
-  font-size: 0.875rem;
-  opacity: 0.85;
+  display: inline-flex;
   flex-shrink: 0;
+  color: #b45309;
+  vertical-align: -0.125em;
 }
+[data-theme='dark'] .winner-icon { color: #fbbf24; }
 
 .winner-name {
   color: var(--text-primary);

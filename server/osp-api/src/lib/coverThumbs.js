@@ -6,6 +6,7 @@
 //
 //   const thumbs = createCoverThumbs({ getS3, bucket, isReadOnly, log })
 //   await thumbs.get(name)  // { status: 'ok', bytes } | { status: 'missing' } | { status: 'original', reason }
+//   await thumbs.warm(names) // прогрев после запуска службы: { total, ok, other }
 //
 // Откуда берётся: память процесса → covers/thumbs/… в хранилище → делается из оригинала и кладётся туда (один раз
 // на обложку). Не отказывает никогда: 'original' значит «покажите оригинал, как раньше», и маршрут отвечает
@@ -15,10 +16,14 @@
 // Адрес открытый, поэтому ожидающих — не больше maxPending: сверх этого сразу 'original', без обращения к хранилищу.
 // Файл, который не разобрался, не разбирается снова весь failureTtlMs — иначе каждое открытие страницы запускало бы
 // процесс заново. Барьер записи (перенос) — миниатюра отдаётся, но в хранилище не кладётся.
+//
+// Прогрев (03.11.2026): память пуста после каждой выкладки, и первый, кто открывал «Объекты», ждал чтения из хранилища
+// (1,8–3 с на обложку; не успели за 5 с — ещё и оригинал), а следующие получали всё за 0,3 с. Служба сама читает обложки
+// портала в память, пока их никто не ждёт: показ в это время встаёт в ту же очередь (inflight) и не читает файл второй раз.
 import { fork } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
-import { bytesOf, coverKey, coverThumbKey, isNotFound, COVER_THUMB_TYPE } from './covers.js'
+import { bytesOf, coverKey, coverThumbKey, isNotFound, COVER_NAME_RE, COVER_THUMB_TYPE } from './covers.js'
 
 export const COVER_THUMB_DEFAULTS = {
   // Загрузка принимает до 20 МБ (COVER_MAX_BYTES), прежние обложки — до 5 МБ.
@@ -30,6 +35,8 @@ export const COVER_THUMB_DEFAULTS = {
   // Миниатюра — 30–90 КБ: в памяти помещаются все обложки портала, с запасом.
   memoryBytes: 16 * 1024 * 1024,
   failureTtlMs: 60 * 60_000,
+  // Прогрев: не больше стольких чтений сразу — у службы мало процессора, соседние запросы не должны ждать.
+  warmConcurrency: 3,
 }
 
 const CHILD = fileURLToPath(new URL('./coverThumbChild.js', import.meta.url))
@@ -166,7 +173,21 @@ export function createCoverThumbs({ getS3, bucket, isReadOnly = () => false, log
     return enqueue(() => make(name))
   }
 
-  return {
+  const api = {
+    // Сбой отдельной обложки не мешает остальным: get() не отказывает никогда.
+    async warm(names) {
+      const queue = [...new Set(names)].filter((name) => COVER_NAME_RE.test(name))
+      const result = { total: queue.length, ok: 0, other: 0 }
+      const worker = async () => {
+        for (let name = queue.shift(); name; name = queue.shift()) {
+          const out = await api.get(name)
+          if (out.status === 'ok') result.ok += 1
+          else result.other += 1
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(o.warmConcurrency, queue.length) }, worker))
+      return result
+    },
     get(name) {
       const bytes = recall(name)
       if (bytes) return Promise.resolve({ status: 'ok', bytes })
@@ -185,4 +206,5 @@ export function createCoverThumbs({ getS3, bucket, isReadOnly = () => false, log
       return job
     },
   }
+  return api
 }

@@ -51,6 +51,10 @@ CREATE TABLE IF NOT EXISTS contracts (
   -- Подразделение договора (миграция 20261112): коды подразделений ВОР, как tenders.vor_division.
   -- У ДС не заполняется — реестр показывает подразделение их договора.
   division TEXT CHECK (division IS NULL OR division IN ('monolith', 'nvf_spk', 'general', 'hvac_water', 'electrical', 'finishing')),
+  -- Отметка «Загружено в Estimat» (миграция 20261211): своя у договора и у каждого ДС; кто и когда — только у выставленной.
+  estimat_status TEXT NOT NULL DEFAULT 'none' CONSTRAINT contracts_estimat_status_check CHECK (estimat_status IN ('none', 'uploaded', 'skip')),
+  estimat_status_at TIMESTAMPTZ,
+  estimat_status_by TEXT,
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

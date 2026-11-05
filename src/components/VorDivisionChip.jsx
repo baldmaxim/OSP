@@ -11,7 +11,7 @@ import './VorDivisionChip.css'
 // subject='dc' — подразделение заявки на ДС (dc_requests.division, те же коды): свои подсказки, без «ВОРов и РД».
 // subject='contract' — подразделение договора (contracts.division, utils/contractDivision.js); у ДС — договора.
 // subject='wt' — подразделение вида работ (work_types.division, utils/workTypeDivisions.js), вкладка «Виды работ».
-// subject='cp' — подразделение контрагента по его виду работ (только показ, в строке реестра контрагентов).
+// subject='cp' — подразделение контрагента по его видам работ и договорам (только показ, в строке реестра контрагентов).
 // У видов работ и контрагентов есть ещё «Прочее» (WORK_TYPE_DIVISIONS), у остальных — только подразделения ВОР.
 const LISTS = {
   vor: { options: [{ value: '', label: 'Не указано' }, ...VOR_DIVISIONS], label: VOR_DIVISION_LABEL },
@@ -46,7 +46,7 @@ const TEXTS = {
   },
   cp: {
     sr: 'Подразделение: ',
-    read: (l) => `Подразделение по виду работ: ${l}`,
+    read: (l) => `Подразделение (по видам работ и договорам): ${l}`,
   },
 }
 

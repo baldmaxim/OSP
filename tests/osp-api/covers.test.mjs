@@ -501,6 +501,42 @@ describe('Миниатюры обложек: GET /api/covers/<имя>/thumb', { 
     assert.ok(destroyed)
   })
 
+  it('прогрев: обложки читаются в память до первого показа; показ после него не ходит в хранилище; сбой одной не мешает', async () => {
+    const stored = { [`covers/thumbs/800/${cover(1)}.webp`]: Buffer.from('thumb-1'), [`covers/thumbs/800/${cover(2)}.webp`]: Buffer.from('thumb-2') }
+    const fake = memoryS3({ ...stored, [`covers/${cover(3)}`]: Buffer.from('original-3') }, { failGet: (key) => key.includes(cover(4)) })
+    let rendered = 0
+    const thumbs = createCoverThumbs({ getS3: () => fake, bucket: 'osp', render: async () => { rendered += 1; return { bytes: Buffer.from('thumb-3') } } })
+    const out = await thumbs.warm([cover(1), cover(2), cover(3), cover(4), cover(1), 'covers/../secret', ''])
+    assert.deepEqual(out, { total: 4, ok: 3, other: 1 }, 'повтор и имя не по шаблону не считаются')
+    assert.equal(rendered, 1, 'разбор — только у обложки без миниатюры')
+    fake.calls.length = 0
+    assert.equal((await thumbs.get(cover(1))).status, 'ok')
+    assert.equal((await thumbs.get(cover(3))).status, 'ok')
+    assert.deepEqual(fake.calls, [], 'показ после прогрева — из памяти')
+  })
+
+  it('прогрев после запуска: имена — из objects.cover_image_url; без своей базы и без настройки его нет; сбой не роняет службу', async () => {
+    const { warmCoverThumbs, COVER_WARM_DELAY_MS } = await import(path.join(SERVER, 'src', 'routes', 'covers.js'))
+    assert.ok(COVER_WARM_DELAY_MS > 0)
+    const queries = []
+    const db = { read: async (_who, fn) => fn({ query: async (sql, params) => { queries.push({ sql, params }); return { rows: [{ name: cover(1) }, { name: cover(2) }] } } }) }
+    const warmed = []
+    const out = await warmCoverThumbs({ db, thumbs: { warm: async (names) => { warmed.push(...names); return { total: names.length, ok: names.length, other: 0 } } } })
+    assert.deepEqual(warmed, [cover(1), cover(2)])
+    assert.equal(out.ok, 2)
+    assert.match(queries[0].sql, /public\.objects/)
+    assert.deepEqual(queries[0].params, ['/api/covers/'.length + 1, '/api/covers/'])
+
+    // Без подключения к базе прогрева нет: запуск ничего не читает.
+    {
+      let asked = 0
+      const app = await start({ coverThumbs: { get: async () => { asked += 1; return { status: 'missing' } }, warm: async () => { asked += 1; return {} } } })
+      await sleep(10)
+      assert.equal(asked, 0, 'прогрев не запускался')
+      await app.close()
+    }
+  })
+
   it('память ограничена: давно не показанная миниатюра вытесняется и читается снова из хранилища', async () => {
     const storage = memoryS3({ [`covers/thumbs/800/${cover(1)}.webp`]: Buffer.alloc(6), [`covers/thumbs/800/${cover(2)}.webp`]: Buffer.alloc(6) })
     const thumbs = createCoverThumbs({ getS3: () => storage, bucket: 'osp', render: renderOk, memoryBytes: 10 })

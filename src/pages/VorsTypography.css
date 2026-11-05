@@ -319,19 +319,20 @@ body.vors-typography :is(.drc-done, .drc-link) {
 .cost-plans-page.vors-page .vors-table {
   table-layout: fixed;
   width: 100%;
-  min-width: 95.5rem;          /* сумма колонок ниже (79.5rem) + 16rem под описание */
+  min-width: 100rem;           /* сумма колонок ниже (на мониторе 1920 с меню помещается без прокрутки) */
 }
 .cost-plans-page.vors-page .vors-table td { overflow-wrap: break-word; }
 .cost-plans-page.vors-page .vr-col-num { width: 4.5rem; }
 .cost-plans-page.vors-page .vr-col-object { width: 9rem; }
 /* Описание — тоже своей шириной (30.10.2026): 16rem под него и были заложены в min-width. Окно шире суммы
    (свёрнутое меню, широкий монитор) — браузер растягивает ВСЕ столбцы пропорционально, а не одно описание. */
-.cost-plans-page.vors-page .vr-col-desc { width: 16rem; }
+.cost-plans-page.vors-page .vr-col-desc { width: 14.5rem; }
 .cost-plans-page.vors-page .vr-col-division { width: 10rem; } /* чип «Общестроительные работы» */
-.cost-plans-page.vors-page .vr-col-sto { width: 11rem; }
-.cost-plans-page.vors-page .vr-col-resp { width: 10rem; }
+.cost-plans-page.vors-page .vr-col-sto { width: 10.5rem; }
+.cost-plans-page.vors-page .vr-col-resp { width: 9rem; }
+.cost-plans-page.vors-page .vr-col-winner { width: 10rem; }  /* название компании — в две-три строки */
 .cost-plans-page.vors-page .vr-col-term { width: 15rem; }    /* «21.12.2026 — 15.01.2027» + значок + отступы */
-.cost-plans-page.vors-page .vr-col-docs { width: 11rem; }
+.cost-plans-page.vors-page .vr-col-docs { width: 9.5rem; }
 .cost-plans-page.vors-page .vr-col-status { width: 9rem; }   /* плашка «Не требуется» (≈7.3rem) + отступы ячейки */
 
 /* ── Описание работ: до трёх строк + «Показать полностью» ─────────────────── */
@@ -421,6 +422,31 @@ body.vors-typography :is(.drc-done, .drc-link) {
 @media (prefers-reduced-motion: reduce) {
   .cost-plans-page.vors-page .vr-rd-chevron { transition: none; }
 }
+/* Заявка без тендера: номер — как у тендера, плашка «заявка» — под ним, в ширину колонки. */
+.cost-plans-page.vors-page .vors-table .vor-request-badge {
+  display: inline-block;
+  margin-top: 0.125rem;
+  max-width: 100%;
+  white-space: nowrap;
+}
+/* Победитель (свои правила: Tenders.css на этой странице может быть не загружен). */
+.cost-plans-page.vors-page .vr-winner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+  font-size: var(--vr-text);
+  line-height: var(--vr-text-lh);
+}
+.cost-plans-page.vors-page .vr-winner > :last-child { min-width: 0; overflow-wrap: anywhere; }  /* длинное слово не вылезает на соседний столбец */
+.cost-plans-page.vors-page .vr-winner + .vr-winner { margin-top: 0.25rem; }
+.cost-plans-page.vors-page .vr-winner-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  margin-top: 0.125rem;
+  color: #b45309;
+}
+[data-theme='dark'] .cost-plans-page.vors-page .vr-winner-icon { color: #fbbf24; }
+.cost-plans-page.vors-page .vr-winner-scope { color: var(--text-secondary); }
 /* «2 из 5» — по скольким комплектам ВОР готов. */
 .cost-plans-page.vors-page .vr-rd-count {
   margin-top: 0.125rem;

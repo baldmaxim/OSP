@@ -55,13 +55,13 @@ describe('Регистрация подрядчика на сайте: стра�
   it('кабинет с регистрации: тендеры, расценка, компания; договоров и файлов нет; только разрешённые запросы', async () => {
     const { page, errors, close } = await open('&selfReg=1')
     try {
-      await page.locator('.cab-list-title', { hasText: 'Мои тендеры' }).waitFor({ timeout: 120000 })
-      assert.equal(await page.locator('.cab-card', { hasText: 'Тендер № 704' }).count(), 0, 'завершённых тендеров нет')
+      await page.locator('table.tenders-registry').waitFor({ timeout: 120000 })
+      assert.equal(await page.getByRole('link', { name: 'Открыть тендер № 704' }).count(), 0, 'завершённых тендеров нет')
       const tabs = await page.locator('.cab-tab').allTextContents()
       assert.ok(tabs.some((t) => t.startsWith('Тендеры')) && tabs.includes('Моя компания'), tabs.join())
       assert.ok(!tabs.some((t) => t.startsWith('Договоры')), 'договоров нет')
 
-      await page.locator('.cab-card', { hasText: 'Тендер № 857' }).click()
+      await page.getByRole('link', { name: 'Открыть тендер № 857' }).click()
       assert.match(await page.locator('.cab-join').textContent(), /Откроется расценка на сайте/)
       await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
       await page.locator('.bid-tab', { hasText: 'Материалы' }).locator('.bid-tab-count', { hasText: '2' }).waitFor({ timeout: 30000 })
@@ -79,7 +79,8 @@ describe('Регистрация подрядчика на сайте: стра�
       await page.locator('.bid-kp-table').waitFor()
 
       // Разобрать ещё не успели — подсказка, а не ошибка.
-      await page.locator('.cab-card', { hasText: 'Тендер № 905' }).click()
+      await page.locator('.cab-back').click()
+      await page.getByRole('link', { name: 'Открыть тендер № 905' }).click()
       await page.locator('.bid-note', { hasText: 'Готовим позиции ВОР' }).waitFor()
       assert.equal(await page.locator('.cab-decline').count(), 0, 'отказа от участия у учётки с регистрации нет')
 
@@ -106,12 +107,13 @@ describe('Регистрация подрядчика на сайте: стра�
     }
   })
 
-  it('подрядчик от администратора: файлы, договоры и расценка из файла — как раньше', async () => {
+  it('подрядчик от администратора: файлы и расценка из файла — как раньше; прошлых тендеров и договоров нет и у него', async () => {
     const { page, errors, close } = await open()
     try {
-      await page.locator('.cab-list-title', { hasText: 'Мои тендеры' }).waitFor({ timeout: 120000 })
-      assert.ok((await page.locator('.cab-tab').allTextContents()).some((t) => t.startsWith('Договоры')))
-      await page.locator('.cab-card', { hasText: 'Тендер № 857' }).click()
+      await page.locator('table.tenders-registry').waitFor({ timeout: 120000 })
+      assert.ok(!(await page.locator('.cab-tab').allTextContents()).some((t) => t.startsWith('Договоры')))
+      assert.equal(await page.getByRole('link', { name: 'Открыть тендер № 704' }).count(), 0)
+      await page.getByRole('link', { name: 'Открыть тендер № 857' }).click()
       await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
       await page.locator('.cab-doc-name', { hasText: 'ВОР паркинга.xlsx' }).waitFor()
       await page.locator('.bid-tab', { hasText: 'Работы' }).locator('.bid-tab-count', { hasText: '2' }).waitFor({ timeout: 60000 })

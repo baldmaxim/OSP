@@ -22,6 +22,7 @@ import TenderProposalsCompare from '../components/TenderProposalsCompare'
 import VorDocsModal from '../components/VorDocsModal'
 import VirtualTableBody from '../components/VirtualTableBody'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
+import { IconTrophy } from '../components/icons/ActionIcons'
 import { vorStartDate } from '../utils/vorDates'
 import AccessDenied from '../components/AccessDenied'
 import FilterDropdown from '../components/FilterDropdown'
@@ -1648,7 +1649,7 @@ function TenderDetailPage() {
     switch (eventType) {
       case 'created': return '🟢'
       case 'status_changed': return '🔄'
-      case 'winner_assigned': return '🏆'
+      case 'winner_assigned': return <span className="winner-icon"><IconTrophy size={14} /></span>
       case 'field_updated': return '📝'
       case 'participant_added': return '➕'
       case 'participant_removed': return '➖'
@@ -2135,7 +2136,7 @@ function TenderDetailPage() {
               <span className="info-value winner-name">
                 {winnersList.map((w) => (
                   <span key={w.id} style={{ display: 'block' }}>
-                    🏆 {w.name}{w.scope ? ` — ${w.scope}` : ''}
+                    <span className="winner-icon" aria-hidden><IconTrophy size={14} /></span> {w.name}{w.scope ? ` — ${w.scope}` : ''}
                   </span>
                 ))}
               </span>
@@ -2691,7 +2692,7 @@ function TenderDetailPage() {
                           <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>{idx + 1}</td>
                           <td className="tc-company-cell">
                             <div className="tc-company-name">
-                              {isWinner && <span title="Победитель" style={{ marginRight: '0.25rem' }}>🏆</span>}
+                              {isWinner && <span className="winner-icon" title="Победитель" style={{ marginRight: '0.25rem' }}><IconTrophy size={14} /></span>}
                               {tc.counterparties?.name}
                               {isWinner && winnerScope && (
                                 <span className="tc-company-scope">— {winnerScope}</span>

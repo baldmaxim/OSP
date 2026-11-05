@@ -35,10 +35,14 @@ export default function UpdatePrompt() {
     let timer = null
 
     const check = async () => {
+      // Телеметрия — и из скрытой вкладки: по ней видно, что вкладки старых сборок ещё открыты.
+      reportClientVersion().catch(() => {})
+      // Скрытой вкладке версия и флаги не нужны: вернувшись на неё, пользователь вызовет проверку сам (onVisible).
+      // Открытых вкладок бывает полсотни, почти все — в фоне.
+      if (document.visibilityState !== 'visible') return
       // Флаги config.json — и в открытой вкладке: явное false выключает новый путь без перезагрузки.
       refreshRuntimeFeatures().catch(() => {})
       if (forced.current) return
-      reportClientVersion().catch(() => {})
       try {
         // b= — id сборки этой вкладки: по логу nginx видно, остались ли вкладки
         // старых сборок (в том числе открытые до появления телеметрии).

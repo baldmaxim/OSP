@@ -6,11 +6,12 @@
 // одобрения (триггер базы), удаление учётки (каскад).
 //
 // Поиск сессии кэшируется в памяти не дольше cacheMs (5 с): отзыв из другой службы или триггером действует не
-// позже чем через 5 с; отзыв в этой службе — сразу. last_used_at пишется не чаще раза в touchMs (минуту).
+// позже чем через 5 с; отзыв в этой службе — сразу. last_used_at пишется не чаще раза в touchMs (10 минут): при сроке
+// без активности в 14 дней точнее не нужно, а строка на каждого работающего раз в минуту — лишняя запись в базу.
 import { createHash, randomBytes } from 'node:crypto'
 
 const DAY = 24 * 60 * 60 * 1000
-export const SESSION_DEFAULTS = { idleMs: 14 * DAY, absoluteMs: 30 * DAY, cacheMs: 5000, touchMs: 60_000, maxEntries: 5000 }
+export const SESSION_DEFAULTS = { idleMs: 14 * DAY, absoluteMs: 30 * DAY, cacheMs: 5000, touchMs: 10 * 60_000, maxEntries: 5000 }
 
 export const tokenHash = (token) => createHash('sha256').update(String(token)).digest('hex')
 const newToken = () => randomBytes(32).toString('base64url')

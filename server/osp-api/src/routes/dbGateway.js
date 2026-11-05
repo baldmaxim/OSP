@@ -26,6 +26,7 @@
 // Отказы шлюза имеют тот же вид и коды, что отказы PostgREST: портал уже умеет их показывать.
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
+import { Readable } from 'node:stream'
 import { SignJWT } from 'jose'
 import { access } from '../lib/access.js'
 import { bearerToken } from '../lib/keys.js'
@@ -283,7 +284,10 @@ export function registerDbGateway(app, ctx) {
       const value = res.headers.get(h)
       if (value) reply.header(h, value)
     }
-    return reply.send(method === 'HEAD' ? '' : Buffer.from(await res.arrayBuffer()))
+    // Ответ — потоком: страница реестра и сравнение КП бывают в мегабайты, а копить их в памяти службы незачем.
+    // Клиент ушёл — поток закрывается, и запрос к PostgREST снимается вместе с ним.
+    if (method === 'HEAD' || !res.body) return reply.send('')
+    return reply.send(Readable.fromWeb(res.body))
   }
 
   // Свой разбор тела: запрос передаётся в PostgREST как есть, байт в байт.

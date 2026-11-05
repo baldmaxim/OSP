@@ -80,7 +80,8 @@ import { useIsPhone } from '../hooks/useMediaQuery'
 import useBodyClass from '../hooks/useBodyClass'
 import ClampText from '../components/ClampText'
 import PersonName from '../components/PersonName'
-import { IconPencil, IconTrash, IconRestore, IconLetter, IconDownload } from '../components/icons/ActionIcons'
+import { tenderWinnersOf } from '../utils/tenderWinners'
+import { IconPencil, IconTrash, IconRestore, IconLetter, IconDownload, IconTrophy } from '../components/icons/ActionIcons'
 import '../components/Tenders.css'
 import '../components/TendersRegistryPolish.css'
 // Общий рабочий стиль разделов (docs/UI_GUIDELINES.md) — после стилей страницы.
@@ -506,6 +507,8 @@ ${ATTACHMENT_BLOCK}
   }
   useRealtimeTable({
     table: 'tender_counterparties',
+    // Счётчикам нужны только статус и тендер: примечания и ссылки участников (4 тыс. строк) читать незачем.
+    columns: 'id,tender_id,status',
     onUpdate: (newRow, oldRow) => {
       if (!participantChangeAffectsCounts(newRow, oldRow)) return
       queueTenderCounts(newRow.tender_id)
@@ -2297,22 +2300,6 @@ ${ATTACHMENT_BLOCK}
   )
   const getWinnerScope = (cpId) => selectedWinners.find(w => w.counterparty_id === cpId)?.scope_note || ''
 
-  // task 215: список победителей тендера для отображения (с откатом на одиночного winner)
-  const getTenderWinners = (tender) => {
-    const tw = tender?.tender_winners || []
-    if (tw.length > 0) {
-      return tw.map(w => ({
-        id: w.counterparty_id,
-        name: w.counterparties?.name || '—',
-        scope: w.scope_note || ''
-      }))
-    }
-    if (tender?.winner) {
-      return [{ id: tender.winner.id, name: tender.winner.name, scope: '' }]
-    }
-    return []
-  }
-
   const handleConfirmWinner = async () => {
     if (!tenderForWinnerSelection) return
 
@@ -3998,7 +3985,7 @@ ${ATTACHMENT_BLOCK}
                     {isCompletedTab && (
                       <td>
                         {(() => {
-                          const winners = getTenderWinners(tender)
+                          const winners = tenderWinnersOf(tender)
                           if (winners.length === 0) {
                             return <span className="responsible-empty">Не выбран</span>
                           }
@@ -4006,7 +3993,7 @@ ${ATTACHMENT_BLOCK}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                               {winners.map(w => (
                                 <span key={w.id} className="winner-cell" title="Победитель">
-                                  <span className="winner-icon" aria-hidden>🏆</span>
+                                  <span className="winner-icon" aria-hidden><IconTrophy size={14} /></span>
                                   <span className="winner-name">
                                     {w.name}
                                     {w.scope && (

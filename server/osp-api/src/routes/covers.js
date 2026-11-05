@@ -39,8 +39,33 @@ export const COVER_THUMBS_OPEN_REASON = 'Миниатюра обложки об�
 const any = z.unknown().optional()
 export const COVER_UPLOAD_BODY = z.object({ name: any, mime_type: any, size_bytes: any })
 
-export function registerCovers(app, { config, getS3, isReadOnly = () => false, coverThumbs = null, coverThumbWaitMs = COVER_THUMB_WAIT_MS }) {
+// Через сколько после запуска службы читать обложки в память (src/lib/coverThumbs.js): сначала — запросы, которые ждут.
+export const COVER_WARM_DELAY_MS = 3_000
+// Обложки, которые показывает портал: только наш адрес, прочие (внешние ссылки, прежний бакет) миниатюр не имеют.
+const COVER_NAMES_SQL = `select substr(cover_image_url, $1) as name from public.objects where starts_with(cover_image_url, $2)`
+
+// Прогрев памяти миниатюр после запуска. Не обязателен: не вышел — обложки читаются при первом показе, как раньше.
+export async function warmCoverThumbs({ db, thumbs, log }) {
+  const { rows } = await db.read(null, (tx) => tx.query(COVER_NAMES_SQL, [COVER_URL_PREFIX.length + 1, COVER_URL_PREFIX]))
+  const out = await thumbs.warm(rows.map((r) => r.name))
+  log?.info(out, 'cover thumbs warmed')
+  return out
+}
+
+export function registerCovers(app, { config, db = null, getS3, isReadOnly = () => false, coverThumbs = null, coverThumbWaitMs = COVER_THUMB_WAIT_MS }) {
   const thumbs = coverThumbs || createCoverThumbs({ getS3, bucket: config.s3?.bucket, isReadOnly, log: app.log })
+
+  if (db && config.coverWarm && config.s3?.bucket) {
+    let timer
+    app.addHook('onReady', async () => {
+      timer = setTimeout(() => {
+        warmCoverThumbs({ db, thumbs, log: app.log })
+          .catch((e) => app.log.warn({ code: e?.code, msg: String(e?.message || e).slice(0, 120) }, 'cover thumbs warm'))
+      }, COVER_WARM_DELAY_MS)
+      timer.unref()
+    })
+    app.addHook('onClose', async () => clearTimeout(timer))
+  }
 
   const s3ForView = (request, reply) => {
     try {

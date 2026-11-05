@@ -4,6 +4,8 @@
 // таблицы в базе — подсказка про обновление базы, остальная страница работает.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import { isValidRdLink, compareRdSets, rdSetOwnerId } from '../../src/utils/vorRdSets.js'
@@ -208,6 +210,69 @@ describe('Комплекты РД в «ВОРах и РД»', { skip: !launch &&
     } finally {
       await close()
     }
+  })
+
+  it('заявка: номер и плашка не вылезают из колонки; столбец «Победитель»: основной, несколько, не выбран, поиск', async () => {
+    const { page, errors, close } = await openVors('', () => {
+      const obj = window.__fakeDb.objects[0]
+      window.__fakeDb.vor_requests = [{
+        id: 'req-1', request_number: 128, department: 'construction', object_id: obj.id, objects: { name: obj.name, status: obj.status },
+        work_description: 'ВОР без тендера', vor_status: 'in_progress', created_at: '2026-10-01T09:00:00Z', deleted_at: null,
+      }]
+      const tender = (num) => window.__fakeDb.tenders.find((t) => t.public_tender_number === num)
+      Object.assign(tender(193), { status: 'Завершен', winner: { id: 'cp-1', name: 'ООО Единственный победитель СтройМонолитИнвестТехноГруппХолдинг' }, tender_winners: [] })
+      Object.assign(tender(194), { status: 'Завершен', tender_winners: [
+        { counterparty_id: 'cp-1', scope_note: 'Корпус 1', counterparties: { id: 'cp-1', name: 'ООО Первый' } },
+        { counterparty_id: 'cp-2', scope_note: '', counterparties: { id: 'cp-2', name: 'ООО Второй' } },
+      ] })
+      Object.assign(tender(195), { status: 'Завершен' })
+      Object.assign(tender(196), { status: 'Идет тендерная процедура' })
+    })
+    try {
+      const reqRow = page.locator('table.vors-table > tbody > tr.vor-request-row')
+      assert.match(await reqRow.locator('.vr-rd-toggle').textContent(), /^128$/)
+      const fit = await reqRow.locator('td').first().evaluate((td) => {
+        const cell = td.getBoundingClientRect()
+        const inside = (el) => { const b = el.getBoundingClientRect(); return b.left >= cell.left && b.right <= cell.right }
+        return { badge: inside(td.querySelector('.vor-request-badge')), toggle: inside(td.querySelector('.vr-rd-toggle')) }
+      })
+      assert.deepEqual(fit, { badge: true, toggle: true }, 'плашка «заявка» и номер — в пределах колонки')
+
+      const winnerCell = (row) => row.locator('td').nth(6)
+      assert.equal((await page.locator('table.vors-table thead th').allTextContents())[6], 'Победитель')
+      assert.equal((await winnerCell(reqRow).textContent()).trim(), '—')
+      assert.match(await winnerCell(mainRow(page, 193)).textContent(), /ООО Единственный победитель/)
+      assert.equal(await winnerCell(mainRow(page, 193)).evaluate((td) => {
+        const cell = td.getBoundingClientRect()
+        const range = document.createRange()
+        range.selectNodeContents(td)
+        return range.getBoundingClientRect().right <= cell.right
+      }), true, 'длинное название не вылезает на соседний столбец')
+      const many = await winnerCell(mainRow(page, 194)).locator('.vr-winner').allTextContents()
+      assert.deepEqual(many.map((t) => t.trim()), ['ООО Первый — Корпус 1', 'ООО Второй'])
+      assert.equal(await winnerCell(mainRow(page, 194)).locator('.vr-winner-icon svg').count(), 2, 'значок — SVG, не эмодзи')
+      assert.equal((await winnerCell(mainRow(page, 195)).textContent()).trim(), 'Не выбран')
+      assert.equal((await winnerCell(mainRow(page, 196)).textContent()).trim(), '—', 'тендер идёт — победителя ещё нет')
+
+      await page.locator('.cost-plans-search').fill('единственный')
+      assert.equal(await page.locator('tr.vr-main-row').count(), 1)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('кубка-эмодзи нет нигде в исходниках страниц', () => {
+    const offenders = []
+    const walk = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name)
+        if (entry.isDirectory()) walk(full)
+        else if (/\.jsx?$/.test(entry.name) && fs.readFileSync(full, 'utf8').includes('\u{1F3C6}')) offenders.push(full)
+      }
+    }
+    walk(path.join(REPO, 'src'))
+    assert.deepEqual(offenders, [])
   })
 
   it('заявка на ВОР без тендера — свои комплекты; ссылка комплекта открывает статус «Завершён»', async () => {

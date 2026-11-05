@@ -1,5 +1,6 @@
 // Кабинет подрядчика в браузере (миграция 20261102, стенд tests/tender/ui/cabinet.html, данные в памяти):
-//   • список: «Мои тендеры» и «Открытые тендеры» — номер, объект, сроки; в карточке — ответственный и телефон;
+//   • реестр как у сотрудника («Тендеры — Основное строительство»), только идущие тендеры: № , объект, описание, участие,
+//     сроки, ответственный, пакет, кнопка «Открыть тендер»; прошлых тендеров и раздела договоров нет;
 //   • открытый тендер без заявки: файлов и расценки нет, «Участвовать и расценить» — заявка, затем файл ВОР
 //     скачивается и разбирается: «Материалы» и «Работы» — по листам, «Структура КП» — по листу «КП»;
 //   • цена пишется сама (bid_rates_save) — с ключами позиции и объёмом; сумма и итоги пересчитываются;
@@ -8,7 +9,6 @@
 //     списка (22, 7, 5, 0 %; 20 %, 10 % и «Без НДС» убраны 23.10.2026): пока не выбрана — «не указана» в итогах,
 //     выбрана — «в т. ч. НДС» по этой ставке;
 //   • «Особые условия» с «Главного листа» файла ВОР — над вкладками;
-//   • закрытый тендер — только просмотр;
 //   • администратор: реестр расценок → «Расценки подрядчиков (актуальные тендеры)» — сводка без завершённых
 //     тендеров, подробности организации, позиции списком, поля анкеты.
 import { describe, it, before, after } from 'node:test'
@@ -42,13 +42,16 @@ describe('Кабинет подрядчика: расценка на сайте'
     return { page, errors, close: () => context.close().catch(() => {}) }
   }
   const calls = (page, fn) => page.evaluate((name) => window.__bidCalls.filter((c) => c.fn === name), fn)
+  const openTender = async (page, num) => {
+    await page.getByRole('link', { name: `Открыть тендер № ${num}` }).click()
+    await page.locator('.cab-head-block').waitFor({ timeout: 60000 })
+  }
 
   it('заявка → файл ВОР → материалы, работы и структура КП; цена пишется сама, итоги пересчитываются', async () => {
     const { page, errors, close } = await open()
     try {
-      await page.locator('.cab-list-title', { hasText: 'Мои тендеры' }).waitFor({ timeout: 120000 })
-      assert.equal(await page.locator('.cab-list-title', { hasText: 'Открытые тендеры' }).count(), 1)
-      await page.locator('.cab-card', { hasText: 'Тендер № 857' }).click()
+      await page.locator('table.tenders-registry').waitFor({ timeout: 120000 })
+      await openTender(page, 857)
       const head = page.locator('.cab-head-block')
       await head.getByText('Иванов Иван Иванович').waitFor()
       assert.equal(await head.locator('a[href^="tel:"]').getAttribute('href'), 'tel:+77010000000')
@@ -96,7 +99,7 @@ describe('Кабинет подрядчика: расценка на сайте'
   it('«Цены из файла»: свой прайс — сопоставление, цены «из файла»; своя цена заменяется только по отметке', async () => {
     const { page, errors, close } = await open()
     try {
-      await page.locator('.cab-card', { hasText: 'Тендер № 857' }).click()
+      await openTender(page, 857)
       await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
       await page.locator('.bid-tab', { hasText: 'Работы' }).locator('.bid-tab-count', { hasText: '2' }).waitFor({ timeout: 60000 })
       await page.getByRole('button', { name: 'Цены из файла' }).click()
@@ -127,7 +130,7 @@ describe('Кабинет подрядчика: расценка на сайте'
   it('анкета: поля администратора без скрытых, ответ — при уходе из поля; ставка НДС — из списка, видна в итогах', async () => {
     const { page, errors, close } = await open()
     try {
-      await page.locator('.cab-card', { hasText: 'Тендер № 857' }).click()
+      await openTender(page, 857)
       await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
       // Особые условия «Главного листа» — над вкладками.
       await page.locator('.bid-conditions li', { hasText: 'ГУ в размере 5 %' }).waitFor({ timeout: 60000 })
@@ -170,32 +173,75 @@ describe('Кабинет подрядчика: расценка на сайте'
     }
   })
 
-  it('закрытый тендер, где организация участник: только просмотр, без «Участвовать»', async () => {
+  it('реестр: как у сотрудника, только идущие тендеры; прошлых тендеров и договоров нет; «Открыть тендер» — заметная кнопка', async () => {
     const { page, errors, close } = await open()
     try {
-      await page.locator('.cab-card', { hasText: 'Тендер № 704' }).click()
-      await page.locator('.cab-chip', { hasText: 'Приём предложений закрыт' }).waitFor({ timeout: 60000 })
-      assert.equal(await page.getByRole('button', { name: 'Участвовать и расценить' }).count(), 0)
-      await page.locator('.bid-save', { hasText: 'Только просмотр' }).waitFor()
-      assert.equal(await page.getByRole('button', { name: 'Отказаться от участия' }).count(), 0, 'приём закрыт — отметку участия не менять')
-      assert.equal(await page.getByText('Загрузить КП').count(), 0, 'приём закрыт — КП не загрузить')
+      const table = page.locator('table.tenders-registry')
+      await table.waitFor({ timeout: 120000 })
+      assert.equal(await page.locator('.tenders-page.ui-work.tp-dense').count(), 1, 'те же стили, что реестр сотрудника')
+      const rows = table.locator('tbody > tr')
+      assert.equal(await rows.count(), 2, 'два идущих тендера')
+      assert.equal(await table.getByText('Слаботочные системы').count(), 0, 'прошлый тендер (704) не показан')
+      assert.deepEqual(await page.locator('.cab-tab').allTextContents(), ['Тендеры2', 'Моя компания'], 'раздела договоров нет')
+
+      const headers = (await table.locator('thead th').allTextContents()).join('|')
+      for (const secret of ['Участник', 'КП', 'ВОР', 'План', 'материал', 'Примечание', 'Победител']) {
+        assert.ok(!headers.includes(secret), `столбец «${secret}» подрядчику не показывается: ${headers}`)
+      }
+      const row = rows.filter({ hasText: 'Бетонные полы паркинга' })
+      assert.match(await row.locator('td').first().textContent(), /857/)
+      assert.match(await row.textContent(), /ЖК Primavera к14/)
+      assert.match(await row.textContent(), /Не участвуете/)
+      assert.match(await row.textContent(), /20\.10.*30\.11\.2026/, 'срок приёма')
+      assert.equal(await row.locator('a[href^="tel:"]').getAttribute('href'), 'tel:+77010000000')
+      assert.equal(await row.locator('td a[target="_blank"]', { hasText: 'Открыть' }).getAttribute('href'), 'https://disk.example.ru/pack')
+      await row.getByRole('button', { name: 'Показать адрес' }).click()
+      assert.equal(await row.locator('.tp-obj-address').textContent(), 'Москва')
+
+      // Кнопка, а не текст-ссылка: залита цветом, в одну строку, помещается в свою ячейку.
+      const btn = row.getByRole('link', { name: 'Открыть тендер № 857' })
+      assert.equal(await btn.textContent(), 'Открыть тендер')
+      const look = await btn.evaluate((el) => {
+        const cs = getComputedStyle(el)
+        const box = el.getBoundingClientRect()
+        const cell = el.parentElement.getBoundingClientRect()
+        return { background: cs.backgroundColor, color: cs.color, line: cs.textDecorationLine, fits: box.left >= cell.left && box.right <= cell.right, height: box.height }
+      })
+      assert.notEqual(look.background, 'rgba(0, 0, 0, 0)', 'кнопка залита')
+      assert.equal(look.color, 'rgb(255, 255, 255)')
+      assert.equal(look.line, 'none')
+      assert.ok(look.fits, 'кнопка в пределах ячейки')
+      assert.ok(look.height >= 28, `высота ${look.height}`)
+
+      // Поиск и вкладка «Участвую».
+      await page.locator('.cab-registry .tp-search').fill('фасад')
+      assert.equal(await rows.count(), 1)
+      await page.locator('.cab-registry .tp-search').fill('')
+      await page.locator('.cab-registry .tender-tab', { hasText: 'Участвую' }).click()
+      assert.equal(await rows.count(), 1)
+      assert.match(await rows.first().textContent(), /Фасадные работы/)
+      await page.locator('.cab-registry .tender-tab', { hasText: 'Все тендеры' }).click()
+
+      // Открытие и возврат (стенд — MemoryRouter: кнопку браузера здесь не проверить).
+      await openTender(page, 857)
+      await page.locator('.cab-back').click()
+      await table.waitFor()
       assert.deepEqual(errors, [])
     } finally {
       await close()
     }
   })
 
-  it('отметка участия и договоры — функциями кабинета, без прямых обращений к таблицам организации, тендеров и договоров', async () => {
+  it('отметка участия — функцией кабинета; договоры не запрашиваются; прямых обращений к таблицам организации и тендеров нет', async () => {
     const { page, errors, close } = await open()
     try {
-      await page.locator('.cab-card', { hasText: 'Тендер № 905' }).click()
+      await openTender(page, 905)
       await page.getByRole('button', { name: 'Отказаться от участия' }).click()
       await page.waitForFunction(() => window.__bidCalls.some((c) => c.fn === 'contractor_set_participation'))
       assert.deepEqual(await calls(page, 'contractor_set_participation'), [{ fn: 'contractor_set_participation', p_tender: 't-inv', p_status: 'declined' }])
-      await page.locator('.cab-tab', { hasText: 'Договоры' }).click()
-      await page.locator('.cab-card', { hasText: 'Договор № ДП-15' }).waitFor({ timeout: 60000 })
-      await page.locator('.cab-card', { hasText: 'ЖК Primavera к14' }).waitFor()
+      await page.locator('.cab-head-top .cab-chip', { hasText: 'Отказ от участия' }).waitFor()
       const direct = await page.evaluate(() => window.__supabaseStats.requests.map((r) => r.table))
+      assert.ok(!direct.includes('rpc:contractor_contracts'), 'договоры кабинету не нужны')
       for (const table of ['tenders', 'objects', 'contracts', 'contract_counterparties', 'counterparties', 'tender_counterparties']) {
         assert.ok(!direct.includes(table), `прямое обращение к ${table}`)
       }
@@ -205,11 +251,15 @@ describe('Кабинет подрядчика: расценка на сайте'
     }
   })
 
-  it('телефон: список над тендером, без прокрутки страницы вбок', async () => {
+  it('телефон: реестр карточками с кнопкой, без прокрутки страницы вбок', async () => {
     const { page, errors, close } = await open('', { width: 390, height: 844 })
     try {
-      await page.locator('.cab-card').first().waitFor({ timeout: 60000 })
-      await page.locator('.cab-card', { hasText: 'Тендер № 857' }).click()
+      await page.getByRole('link', { name: 'Открыть тендер № 857' }).waitFor({ timeout: 60000 })
+      const listOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+      assert.ok(listOverflow <= 1, `реестр шире экрана на ${listOverflow}px`)
+      const button = await page.getByRole('link', { name: 'Открыть тендер № 857' }).boundingBox()
+      assert.ok(button.width > 200, `кнопка на всю карточку, ширина ${button.width}`)
+      await openTender(page, 857)
       await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
       await page.locator('.bid-tab', { hasText: 'Материалы' }).locator('.bid-tab-count', { hasText: '2' }).waitFor({ timeout: 60000 })
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)

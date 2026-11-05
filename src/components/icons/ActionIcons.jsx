@@ -50,6 +50,14 @@ export const IconLink = ({ size }) => (
     <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
   </AiSvg>
 )
+// Победитель тендера — кубок в стиле бокового меню (вместо эмодзи).
+export const IconTrophy = ({ size }) => (
+  <AiSvg size={size}>
+    <path d="M8 21h8" /><path d="M12 16v5" />
+    <path d="M7 3h10v7a5 5 0 0 1-10 0V3Z" />
+    <path d="M7 5H4v2a3 3 0 0 0 3 3" /><path d="M17 5h3v2a3 3 0 0 1-3 3" />
+  </AiSvg>
+)
 export const IconCheck = ({ size }) => (
   <AiSvg size={size}><path d="M20 6 9 17l-5-5" /></AiSvg>
 )

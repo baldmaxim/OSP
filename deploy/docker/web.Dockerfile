@@ -17,6 +17,7 @@ RUN npm ci --no-audit --no-fund
 COPY index.html vite.config.js release.json ./
 COPY public ./public
 COPY src ./src
+COPY scripts/precompress-dist.mjs ./scripts/precompress-dist.mjs
 ARG VITE_SUPABASE_URL=
 ARG VITE_SUPABASE_ANON_KEY=
 ARG OSP_BUILD_ID=
@@ -25,7 +26,8 @@ ARG OSP_BUILD_ID=
 ARG OSP_NODE_HEAP=768
 RUN NODE_OPTIONS="--max-old-space-size=$OSP_NODE_HEAP" \
     VITE_SUPABASE_URL="$VITE_SUPABASE_URL" VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" \
-    OSP_BUILD_ID="$OSP_BUILD_ID" npm run build
+    OSP_BUILD_ID="$OSP_BUILD_ID" npm run build \
+ && node scripts/precompress-dist.mjs dist
 
 FROM nginx:1.29-alpine
 # publish.sh: bash, rsync, GNU find (-printf), node — прочитать version.json.
@@ -41,6 +43,6 @@ COPY deploy/docker/web/site.conf /etc/nginx/conf.d/site.conf
 COPY deploy/docker/web/security-headers.conf deploy/docker/web/csp.conf /etc/nginx/osp/
 USER nginx
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+HEALTHCHECK --interval=60s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -q -O /dev/null http://127.0.0.1:8080/version.json || exit 1
 ENTRYPOINT ["bash", "/opt/osp/entrypoint.sh"]

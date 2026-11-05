@@ -14,6 +14,7 @@
 !vendor/
 !deploy/publish.sh
 !deploy/docker/web/
+!scripts/precompress-dist.mjs
 
 # Свой API
 !server/osp-api/package.json

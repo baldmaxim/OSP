@@ -21,13 +21,13 @@ const SELF_REGISTERED_HINT = 'Компанию создала регистрац
 import { docTitle } from '../utils/counterpartyDocs'
 import { counterpartySearchIndex, searchCounterparties } from '../utils/counterpartySearch'
 import CounterpartyGeneralTab from '../components/counterparty/CounterpartyGeneralTab'
-import { loadConcludedContractCounts } from '../services/counterpartyContracts'
+import { loadCounterpartyContractSummary } from '../services/counterpartyContracts'
 import CounterpartyVatSelect from '../components/counterparty/CounterpartyVatSelect'
 import VorDivisionChip from '../components/VorDivisionChip'
 import VorDivisionFilter from '../components/VorDivisionFilter'
 import {
   WORK_TYPE_DIVISIONS, WORK_TYPE_DIVISION_LABEL, divisionByWorkType, divisionCounts, hasDivisionColumn,
-  matchesDivisions, splitWorkTypes, workTypeDivisionSaveError, workTypesDivisions,
+  matchesDivisions, mergeDivisions, splitWorkTypes, workTypeDivisionSaveError, workTypesDivisions,
 } from '../utils/workTypeDivisions'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
@@ -320,16 +320,20 @@ function CounterpartiesPage() {
   const [wtDirSearch, setWtDirSearch] = useState('')
   const [wtDirDivisions, setWtDirDivisions] = useState([])
 
-  // Подразделения (миграция 20261115): у вида работ, контрагенту — по его видам работ (utils/workTypeDivisions.js).
-  // Колонки ещё нет — ни плашек, ни фильтров, ни выбора в справочнике.
+  // Подразделения (миграция 20261115): у вида работ и у договора, контрагенту — по его видам работ и договорам
+  // (utils/workTypeDivisions.js; договоры грузятся отдельно, подразделения из них дополняют строку, когда придут).
+  // Колонки у видов работ ещё нет — ни плашек, ни фильтров, ни выбора в справочнике, пока нет и подразделений договоров.
   const divisionSupported = useMemo(() => hasDivisionColumn(workTypesDirectory), [workTypesDirectory])
   const wtDivisionByName = useMemo(() => divisionByWorkType(workTypesDirectory), [workTypesDirectory])
+  const [contractDivisions, setContractDivisions] = useState(null)
   const divisionsById = useMemo(() => {
-    if (!divisionSupported) return null
+    if (!divisionSupported && !contractDivisions?.size) return null
     const map = new Map()
-    for (const c of counterparties) map.set(c.id, workTypesDivisions(c.work_type, wtDivisionByName))
+    for (const c of counterparties) {
+      map.set(c.id, mergeDivisions(workTypesDivisions(c.work_type, wtDivisionByName), contractDivisions?.get(c.id)))
+    }
     return map
-  }, [divisionSupported, wtDivisionByName, counterparties])
+  }, [divisionSupported, wtDivisionByName, counterparties, contractDivisions])
   const divisionFilterOn = !!divisionsById && filterDivisions.length > 0
 
   useEffect(() => {
@@ -342,7 +346,9 @@ function CounterpartiesPage() {
   // Отдельно от списка: договоров тысячи, а список контрагентов не должен их ждать.
   const fetchContractCounts = async () => {
     try {
-      setContractCounts(await loadConcludedContractCounts())
+      const { counts, divisions } = await loadCounterpartyContractSummary()
+      setContractCounts(counts)
+      setContractDivisions(divisions)
     } catch (err) {
       console.warn('Не удалось загрузить договоры контрагентов:', err?.message || err)
       setContractCounts(prev => (prev instanceof Map ? prev : 'error'))

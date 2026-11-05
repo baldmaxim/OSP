@@ -5,7 +5,7 @@
 //     приоритет, файлы, кружки исполнителей, цвет; просроченная — красной рамкой;
 //   • кружок «завершить», меню карточки (цвет, перенос в колонку, архив), «+ Добавить заявку» в колонке,
 //     «В архив» у «Завершено» и «Архив» с возвратом, перетаскивание; в базу — только сменившийся порядок;
-//   • быстрый отбор: объекты над доской, «Мои заявки»;
+//   • шапка: объект — выпадающим списком (со счётчиком заявок); ни плашек объектов, ни «Мои заявки», ни фильтра меток;
 //   • жесты мышью (boardGestures.js): предпросмотр и заглушка места, автопрокрутка, Escape; касание карточки не двигает её;
 //     прокрутка удержанием; шапка в две низкие строки, доска на всё окно; «Удалённые»: кто удалил;
 //   • колонок 20261113 ещё нет — доска как раньше, без ошибок; без права правки — только просмотр.
@@ -145,6 +145,13 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
     return { page, errors, close: () => context.close().catch(() => {}) }
   }
   const column = (page, status) => page.locator(`.dc-column[data-status="${status}"]`)
+  // Отбор по объекту — выпадающий список в шапке (несколько на выбор, окно закрывается Escape).
+  const pickObject = async (page, name) => {
+    await page.locator('.dc-toolbar .fdrop-trigger', { hasText: 'Объект' }).click()
+    await page.locator('.fdrop-panel .fdrop-option', { hasText: name }).click()
+    await page.keyboard.press('Escape')
+    await page.locator('.fdrop-panel').waitFor({ state: 'detached' })
+  }
   const cardsIn = (page, status) => column(page, status).locator('.dc-card').evaluateAll((els) => els.map((el) => el.dataset.id))
   const counts = (page) => page.locator('.dc-column').evaluateAll((els) => Object.fromEntries(els.map((el) => [
     el.dataset.status, Number(el.querySelector('.dc-column-count').textContent)])))
@@ -186,18 +193,19 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
     }
   })
 
-  it('быстрый отбор: объект над доской и «Мои заявки»; поиск — по метке', async () => {
+  it('шапка: объект — выпадающим списком со счётчиком; плашек, «Мои заявки» и фильтра меток нет; поиск — по метке', async () => {
     const { page, errors, close } = await openPage()
     try {
-      const chips = await page.locator('.dc-quick-chip').allTextContents()
-      assert.deepEqual(chips, ['Мои заявки', 'ЖК «Северный квартал»4', 'Бизнес-центр «Нурлы»3'])
-      await page.locator('.dc-quick-chip', { hasText: 'Бизнес-центр' }).click()
+      assert.equal(await page.locator('.dc-quick, .dc-quick-chip').count(), 0, 'плашек над доской нет')
+      assert.equal(await page.getByText('Мои заявки').count(), 0)
+      const toolbar = await page.locator('.dc-toolbar .fdrop-trigger').allTextContents()
+      assert.ok(toolbar.some((t) => t.includes('Объект')), toolbar.join())
+      assert.ok(!toolbar.some((t) => t.includes('Метка')), 'фильтра меток нет')
+
+      await pickObject(page, 'Бизнес-центр')
       assert.deepEqual((await counts(page)).in_progress, 1)
       assert.deepEqual(await cardsIn(page, 'in_progress'), ['dcr-2'])
       await page.locator('.dc-reset').click()
-      await page.locator('.dc-quick-chip', { hasText: 'Мои заявки' }).click()
-      assert.deepEqual(await page.locator('.dc-card').evaluateAll((els) => els.map((el) => el.dataset.id)), ['dcr-1'])
-      await page.locator('.dc-quick-chip', { hasText: 'Мои заявки' }).click()
       await page.locator('.dc-search').fill('бумажном')
       assert.deepEqual(await page.locator('.dc-card').evaluateAll((els) => els.map((el) => el.dataset.id)), ['dcr-3'])
       assert.deepEqual(errors, [])
@@ -545,7 +553,7 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
     const { page, errors, close } = await openPage('&docCheckMany=10')
     try {
       assert.deepEqual(await cardsIn(page, 'in_progress'), ['dcr-2', 'dcr-3', 'dcr-many-5', 'dcr-many-10'])
-      await page.locator('.dc-quick-chip', { hasText: 'Бизнес-центр' }).click()
+      await pickObject(page, 'Бизнес-центр')
       assert.deepEqual(await cardsIn(page, 'in_progress'), ['dcr-2', 'dcr-many-10'])
 
       // Между видимыми стоят скрытые. Из другой колонки — перед второй видимой: встаёт рядом с ней. По одним видимым соседям
@@ -561,7 +569,7 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
       assert.deepEqual(await cardsIn(page, 'in_progress'), ['dcr-2', 'dcr-3', 'dcr-many-5', 'dcr-5', 'dcr-many-10'])
 
       // Видимую — в конец видимых: скрытые остаются на своих местах (раньше видимым раздавались номера 1, 2, 3).
-      await page.locator('.dc-quick-chip', { hasText: 'Бизнес-центр' }).click()
+      await pickObject(page, 'Бизнес-центр')
       const last = await column(page, 'in_progress').locator('.dc-card[data-id="dcr-many-10"]').boundingBox()
       await press(page, 'in_progress', 'dcr-2')
       await page.mouse.move(last.x + 40, last.y + last.height - 3, { steps: 4 })
@@ -742,10 +750,10 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
       await page.waitForFunction(() => !window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-1').deleted_at)
       assert.equal(await rows.count(), 1)
 
-      // Отбор виден и здесь: спрятанный, он молча скрывал бы заявки; пусто из-за него — так и сказано (у dcr-9 исполнителя нет).
-      await page.locator('.dc-quick-chip', { hasText: 'Мои заявки' }).click()
+      // Фильтры видны и здесь: пусто из-за них — так и сказано.
+      await page.locator('.dc-search').fill('нет такого')
       assert.match(await page.locator('.dc-empty').textContent(), /Ничего не найдено/)
-      await page.locator('.dc-quick-chip', { hasText: 'Мои заявки' }).click()
+      await page.locator('.dc-search').fill('')
 
       // В «Архиве» столбца нет.
       await page.locator('.dc-mode-toggle', { hasText: 'Архив' }).click()
