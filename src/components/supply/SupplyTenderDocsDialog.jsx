@@ -8,7 +8,7 @@ import { autoPickRows, unplacedLines } from '../../utils/supplyAutoPick'
 import { searchGroups } from '../../utils/supplyDocMatch'
 import { DOC_READ_PROBLEM } from '../../utils/supplyDocPrice'
 import { nameDiff } from '../../utils/supplyNameDiff'
-import { offerVatMode } from '../../utils/supplyOffers'
+import { offerVatMode, scanProgressText } from '../../utils/supplyOffers'
 
 // За один раз — не больше (каждый файл читается и загружается по очереди).
 const FILES_MAX = 20
@@ -137,6 +137,7 @@ const PickRow = memo(function PickRow({ row, checked, busy, allLines, onCheck, o
         {!sure && <span className="sp-td-tag">похоже на {Math.round(shown.score * 100)} %</span>}
         {spread && <span className="sp-td-tag is-warn">цены в счетах отличаются в {spread} раз</span>}
         {shown.line.sumOff && <span className="sp-td-tag is-warn">цена × кол-во ≠ сумма</span>}
+        {shown.line.unsure && !shown.line.sumOff && <span className="sp-td-tag is-warn" title="Строка со скана, а суммы для сверки в ней нет: цифры могли распознаться неверно.">со скана: сверьте с файлом</span>}
         {shown.qtyFar && <span className="sp-td-tag is-warn">после пересчёта количество не похоже на объём</span>}
         {open && <LinePicker row={row} allLines={allLines} busy={busy} onPick={(d, l) => onPick(group, d, l, shown)} onReject={(d, l) => onReject(group, d, l)} onClose={() => setOpen(false)} />}
       </td>
@@ -175,8 +176,9 @@ function UnplacedLine({ item, groups, busy, onPick }) {
 // Счета и КП тендера: закинули файлы (кнопкой или перетаскиванием в окно) — расценка сама читает их и подбирает позициям цены:
 // самую похожую строку, а если та же позиция есть в нескольких документах — из самого свежего (utils/supplyAutoPick). Человек
 // сравнивает позицию ВОР и строку счёта, единицы и применяет одной кнопкой: цены пишутся как ввод руками, файл становится документом
-// позиции. Цена уже стоит правильно — такой строки нет. Файл, который не читается (скан, Word, фото), остаётся у тендера с понятной
-// причиной. docs — [{ doc, offer }]; others — [{ doc, failed }] (не прочитан; failed null — читается); byGroup — цены по позициям
+// позиции. Цена уже стоит правильно — такой строки нет. Скан и фото распознаются прямо в браузере (секунды на страницу, ход виден), их
+// цифры сверяются между собой; файл, который не читается (Word, плохой скан), остаётся у тендера с понятной причиной.
+// docs — [{ doc, offer }]; others — [{ doc, failed, progress }] (не прочитан; failed null — читается); byGroup — цены по позициям
 // (offersByGroup); groups — позиции; rates — чтобы пересчитать «сейчас в расценке» после записи; initialFiles — файлы, которые уже
 // выбрали (бросили на таблицу, прикрепили к позиции), attachTo — позиции, к которым они прикрепляются.
 // onAddFile(file, attachTo) — прочитать и загрузить (ошибка — исключением); onAttachDoc(doc, attachTo) — файл уже есть у тендера;
@@ -224,7 +226,7 @@ export default function SupplyTenderDocsDialog({
       }
       setUploads((prev) => [...prev, { id, name: file.name, status: 'reading' }])
       try {
-        await onAddFile(file, attach)
+        await onAddFile(file, attach, ({ page, pages }) => setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, progress: scanProgressText(page, pages) } : u))))
         setUploads((prev) => prev.filter((u) => u.id !== id))
       } catch (e) {
         setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, status: 'failed', error: e.message || 'ошибка загрузки' } : u)))
@@ -319,7 +321,7 @@ export default function SupplyTenderDocsDialog({
                 <li key={`u${u.id}`} className={u.status === 'failed' ? 'is-off' : undefined} role="status">
                   <PaperclipIcon size={12} /> {u.name}
                   <span className="sp-td-meta">
-                    {u.status === 'reading' && 'читаем…'}
+                    {u.status === 'reading' && (u.progress || 'читаем…')}
                     {u.status === 'duplicate' && 'уже есть у тендера'}
                     {u.status === 'failed' && <><IconAlert size={12} /> не загрузился: {u.error}</>}
                   </span>
@@ -345,6 +347,9 @@ export default function SupplyTenderDocsDialog({
                         <option value="net">без НДС, +{offer.vat?.rate ?? 22} %</option>
                       </select>
                     )}
+                    {offer.ocr && (
+                      <span className="sp-td-tag" title="Текст распознан со скана. Цену без сверки цена × кол-во = сумма расценка сама не отмечает.">со скана{offer.total?.ok ? ', итог сошёлся' : ''}</span>
+                    )}
                     {offer.total && !offer.total.ok && (
                       <span className="sp-td-tag is-warn" title={`Итог в документе ${formatAmount(offer.total.doc)} ₽, в прочитанных строках ${formatAmount(offer.total.read)} ₽: часть строк могла не прочитаться, или в документе скидка на весь заказ.`}>итог не сходится</span>
                     )}
@@ -353,10 +358,10 @@ export default function SupplyTenderDocsDialog({
                   </li>
                 )
               })}
-              {others.map(({ doc, failed }) => (
+              {others.map(({ doc, failed, progress: reading }) => (
                 <li key={doc.id} className={failed ? 'is-off' : undefined}>
                   <button type="button" className="sp-td-file" onClick={() => onOpenFile(doc)} title="Открыть файл"><PaperclipIcon size={12} /> {doc.file_name}</button>
-                  <span className="sp-td-meta">{failed ? DOC_READ_PROBLEM[failed] || DOC_READ_PROBLEM.broken : 'читаем…'}</span>
+                  <span className="sp-td-meta">{failed ? DOC_READ_PROBLEM[failed] || DOC_READ_PROBLEM.broken : (reading || 'читаем…')}</span>
                   <button type="button" className="sp-icon-btn sp-td-del" onClick={() => onDeleteDoc(doc)} disabled={busy}
                     aria-label={`Удалить файл «${doc.file_name}»`} title="Удалить файл — пропадёт у всех позиций, где он документ"><IconTrash size={14} /></button>
                 </li>
@@ -364,7 +369,7 @@ export default function SupplyTenderDocsDialog({
             </ul>
           )}
 
-          {noFiles && <p className="sp-td-empty">Закиньте счёт или КП — Excel или PDF с текстом. Цены подберутся к позициям ВОР сами, останется сравнить и применить.</p>}
+          {noFiles && <p className="sp-td-empty">Закиньте счёт или КП — Excel, PDF, скан или фото. Цены подберутся к позициям ВОР сами, останется сравнить и применить.</p>}
           {!noFiles && !rows.length && !uploading && docs.length > 0 && (
             <p className="sp-td-empty" role="status"><IconCheck size={16} /> Все цены из документов уже стоят в расценке.</p>
           )}

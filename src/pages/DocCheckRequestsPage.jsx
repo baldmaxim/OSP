@@ -11,7 +11,10 @@ import IconTile from '../components/IconTile'
 import { IconObject, IconSearch, IconUser } from '../components/icons/ToolbarIcons'
 import { IconArchive, IconCalendar, IconFlag, IconRestore, IconTrash } from '../components/icons/ActionIcons'
 import { IconDocCheck } from '../components/icons/NavIcons'
-import { fetchAllRows, fetchAllActiveCounterparties } from '../utils/fetchAllRows'
+import { fetchAllRows } from '../utils/fetchAllRows'
+import { counterpartyNumbers } from '../utils/counterpartyFilters'
+import { counterpartyPickerOptions, filterCounterpartyOptions, isPickableCounterparty } from '../utils/counterpartyPicker'
+import { fetchPickerCounterparties } from '../services/counterpartyPicker'
 import { chunkList } from '../utils/inChunks'
 import { employeeName, employeesById, fetchEmployees } from '../services/employees'
 import { fetchCardCounts as readCardCounts, fetchDeletions } from '../services/docCheckCard'
@@ -96,9 +99,14 @@ function RowAssignees({ request, employees }) {
 
 export default function DocCheckRequestsPage() {
   useBodyClass('ui-work-portal')
-  const { canEdit, role, userProfile, user, isAdmin, isSuperAdmin } = useRole()
+  const { canEdit, role, userProfile, user, isAdmin, isSuperAdmin, scopedObjectIds } = useRole()
   const canEditSection = canEdit('doc_check_requests')
   const myId = user?.id || null
+  // Сотрудник с привязкой к объектам (руководитель строительства, экономист объекта) видит заявки только своих объектов
+  // (06.11.2026, решение пользователя); заявки без объекта ему не видны. Пусто — все объекты (администратор, офис). То же
+  // правило — в базе (миграция 20270101, doc_check_scope()); здесь — ещё и для «Посмотреть от имени роли» и базы до миграции.
+  const scopeKey = (scopedObjectIds || []).join(',')
+  const scopeIds = useMemo(() => (scopeKey ? scopeKey.split(',') : []), [scopeKey])
 
   const [requests, setRequests] = useState([])
   const [objects, setObjects] = useState([])
@@ -144,9 +152,10 @@ export default function DocCheckRequestsPage() {
     const seq = ++loadSeq.current
     const epoch = writeEpoch.current
     if (!quiet) setLoading(true)
-    const read = (select) => fetchAllRows((from, to) => db
+    const scoped = (query) => (scopeIds.length ? query.in('object_id', scopeIds) : query)
+    const read = (select) => fetchAllRows((from, to) => scoped(db
       .from('doc_check_requests')
-      .select(select)
+      .select(select))
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true })
       .order('id', { ascending: true })
@@ -175,7 +184,7 @@ export default function DocCheckRequestsPage() {
     } finally {
       if (seq === loadSeq.current) setLoading(false)
     }
-  }, [])
+  }, [scopeIds])
 
   // Сколько файлов у заявок — скрепка на карточке.
   const fetchDocCounts = useCallback(async () => {
@@ -236,17 +245,19 @@ export default function DocCheckRequestsPage() {
   useEffect(() => {
     fetchRequests()
     fetchDocCounts()
-    // Объекты обоих отделов и контрагенты — для формы и фильтров.
-    db.from('objects').select('id, name, status')
+    // Объекты обоих отделов и контрагенты — для формы и фильтров. С привязкой к объектам — только свои.
+    let objectsQuery = db.from('objects').select('id, name, status')
+    if (scopeIds.length) objectsQuery = objectsQuery.in('id', scopeIds)
+    objectsQuery
       .order('status', { ascending: true }).order('name', { ascending: true })
       .then(({ data, error: e }) => { if (!e) setObjects(data || []) })
-    fetchAllActiveCounterparties()
+    fetchPickerCounterparties()
       .then(setCounterparties)
       .catch(err => console.warn('Не удалось загрузить контрагентов:', err.message))
     fetchEmployees()
       .then(list => setEmployees(employeesById(list)))
       .catch(err => console.warn('Не удалось загрузить сотрудников:', err.message))
-  }, [fetchRequests, fetchDocCounts])
+  }, [fetchRequests, fetchDocCounts, scopeIds])
 
   // Правки коллег — при возврате на вкладку браузера, не чаще раза в 30 с.
   useEffect(() => {
@@ -503,7 +514,12 @@ export default function DocCheckRequestsPage() {
   const objectOptions = useMemo(() => objects
     .map(o => ({ value: o.id, label: objectCounts.get(o.id) ? `${o.name} (${objectCounts.get(o.id)})` : o.name, n: objectCounts.get(o.id) || 0, name: o.name }))
     .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name, 'ru')), [objects, objectCounts])
-  const counterpartyOptions = useMemo(() => counterparties.map(c => ({ value: c.id, label: c.name })), [counterparties])
+  // Контрагенты — весь реестр (номера без колонки считаются по нему), выбрать — только из «Активных» реестра контрагентов.
+  // Поиск — по названию, ИНН и постоянному номеру (06.11.2026), и в форме, и в фильтре.
+  const counterpartyOptions = useMemo(() => {
+    const numbers = counterpartyNumbers(counterparties)
+    return counterpartyPickerOptions(counterparties.filter(isPickableCounterparty), numbers)
+  }, [counterparties])
 
   const detail = detailId ? withCounts.find(r => r.id === detailId) : null
   const hasFilters = filterObjectIds.length > 0 || filterCounterpartyIds.length > 0 || filterTypes.length > 0
@@ -697,10 +713,11 @@ export default function DocCheckRequestsPage() {
         />
         <FilterDropdown
           label="" multiple searchable
-          searchPlaceholder="Поиск контрагента…" allLabel="Контрагент"
+          searchPlaceholder="Название, ИНН или №" allLabel="Контрагент"
           icon={<IconUser size={15} />}
           value={filterCounterpartyIds} onChange={setFilterCounterpartyIds}
           options={counterpartyOptions}
+          filterOptions={filterCounterpartyOptions}
         />
         <FilterDropdown
           label="" multiple allLabel="ДП и ДС"
@@ -740,7 +757,9 @@ export default function DocCheckRequestsPage() {
           {hasFilters && inMode.length > 0 ? 'Ничего не найдено — попробуйте изменить фильтры'
             : mode === 'deleted' ? 'Удалённых заявок нет'
               : mode === 'archive' ? 'В архиве пусто'
-                : 'Заявок пока нет. Создайте первую — она попадёт в колонку «Новые заявки».'}
+                : scopeIds.length ? 'По вашим объектам заявок пока нет.'
+                  : canEditSection ? 'Заявок пока нет. Создайте первую — она попадёт в колонку «Новые заявки».'
+                    : 'Заявок пока нет.'}
         </div>
       ) : (
         listTable
@@ -751,7 +770,7 @@ export default function DocCheckRequestsPage() {
           request={formFor.request}
           status={formFor.status}
           objects={objects}
-          counterparties={counterparties}
+          counterpartyOptions={counterpartyOptions}
           employees={employees}
           labelSuggestions={allLabels}
           hasBoardFields={hasBoardFields}

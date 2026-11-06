@@ -154,13 +154,11 @@ describe('Регистрация подрядчика на сайте: стра�
       assert.equal(seen.length, 0, 'с ошибками на сервер ничего не уходит')
 
       await fill('Рабочая почта *', 'ivanov@company.ru')
-      await fill('Организация *', 'ООО «Ромашка»')
+      await fill('Организация *', '«Ромашка»')
       await fill('ИНН *', '7707083894')
       await page.getByRole('button', { name: 'Зарегистрироваться' }).click()
       await page.locator('.login-field-error', { hasText: 'ИНН не прошёл проверку' }).waitFor()
 
-      await fill('ИНН *', '500100732259')
-      assert.equal(await page.getByLabel('КПП').count(), 0, 'у ИП КПП нет')
       await fill('ИНН *', '7707083893')
       await fill('КПП', '770701001')
       await fill('Контактное лицо *', 'Иванов Иван')
@@ -177,6 +175,10 @@ describe('Регистрация подрядчика на сайте: стра�
       assert.equal(sent.search, '', 'в адресе ничего нет')
       assert.equal(sent.body.email, 'ivanov@company.ru')
       assert.equal(sent.body.inn, '7707083893')
+      assert.equal(sent.body.kpp, '770701001')
+      assert.equal(sent.body.legalForm, 'ООО')
+      assert.equal(sent.body.companyName, '«Ромашка»')
+      assert.equal(sent.body.phone, '+79161234567')
       assert.ok(!('password' in sent.body), 'пароля в заявке нет')
       assert.equal(sent.body.consent, true)
       assert.ok(!('website' in sent.body), 'ловушка пуста')
@@ -194,13 +196,254 @@ describe('Регистрация подрядчика на сайте: стра�
     }
   })
 
+  it('поля заявки: ИНН и телефон — только цифры, КПП — ещё буквы на своём месте; не больше положенного; курсор при правке не уезжает', async () => {
+    const { page, errors, close } = await open('&page=signup&view=register')
+    try {
+      const inn = page.getByLabel('ИНН *', { exact: true })
+      const kpp = page.getByLabel('КПП', { exact: true })
+      const phone = page.getByLabel('Контактный телефон *', { exact: true })
+      const ext = page.getByLabel('доб.', { exact: true })
+      await inn.waitFor()
+
+      // Набор с клавиатуры: буквы и знаки не появляются, лишние цифры тоже.
+      await inn.pressSequentially('77а07-08ь3 893')
+      assert.equal(await inn.inputValue(), '7707083893')
+      await inn.pressSequentially('12345')
+      assert.equal(await inn.inputValue(), '770708389312', 'форма не названа — до 12 цифр')
+      await inn.fill('ИНН 7707083893')
+      assert.equal(await inn.inputValue(), '7707083893', 'вставка с подписью')
+      assert.equal(await page.locator('#signup-inn').getAttribute('maxlength'), null, 'вставленное не обрезается до очистки')
+
+      await kpp.pressSequentially('kpp7707 01001999')
+      assert.equal(await kpp.inputValue(), '770701001')
+      await kpp.fill('')
+      await kpp.pressSequentially('77ab01ab001')
+      assert.equal(await kpp.inputValue(), '7701AB001', 'буквы — в 5–6 знаках, заглавные')
+      await kpp.fill('7701АВ001')
+      assert.equal(await kpp.inputValue(), '7701AB001', 'русские А и В — как латинские')
+      // Правка КПП в середине: курсор после той же буквы.
+      await kpp.focus()
+      await page.keyboard.press('Home')
+      for (let i = 0; i < 5; i += 1) await page.keyboard.press('ArrowRight')
+      await page.keyboard.type('я')
+      assert.equal(await kpp.inputValue(), '7701AB001')
+      assert.equal(await kpp.evaluate((el) => el.value.slice(0, el.selectionStart)), '7701A')
+
+      // Телефон: «+7» стоит перед полем, вводится остальное; маска по ходу набора.
+      assert.equal(await page.locator('.login-input-group .login-input-affix').first().textContent(), '+7')
+      await phone.pressSequentially('9x16')
+      assert.equal(await phone.inputValue(), '(916')
+      await phone.pressSequentially('1234567999')
+      assert.equal(await phone.inputValue(), '(916)123-45-67', 'не больше 10 цифр')
+      await ext.pressSequentially('доб12345678')
+      assert.equal(await ext.inputValue(), '123456', 'добавочный — до 6 цифр')
+
+      // Правка цифры в середине: курсор остаётся на месте, буква его не сдвигает.
+      await phone.focus()
+      await page.keyboard.press('Home')
+      for (let i = 0; i < 6; i += 1) await page.keyboard.press('ArrowRight')
+      await page.keyboard.press('Backspace')
+      assert.equal(await phone.inputValue(), '(916)234-56-7')
+      await page.keyboard.type('я')
+      await page.keyboard.type('1')
+      assert.equal(await phone.inputValue(), '(916)123-45-67')
+      assert.equal(await phone.evaluate((el) => el.value.slice(0, el.selectionStart)), '(916)1')
+
+      // Привычные записи номера.
+      for (const [typed, shown] of [['89161234567', '(916)123-45-67'], ['+7 (916) 123-45-67', '(916)123-45-67'], ['8121234567', '(812)123-45-67'], ['88121234567', '(812)123-45-67']]) {
+        await phone.fill('')
+        await phone.pressSequentially(typed)
+        assert.equal(await phone.inputValue(), shown, typed)
+      }
+      await ext.fill('')
+      await phone.fill('+7 916 123-45-67 доб. 321')
+      assert.equal(await phone.inputValue(), '(916)123-45-67', 'вставлен с добавочным')
+      assert.equal(await ext.inputValue(), '321')
+
+      // Неполный номер и почта без @ — замечание сразу при выходе из поля; исправил — пропало.
+      await phone.fill('916123')
+      await ext.focus()
+      await page.locator('.login-field-error', { hasText: '10 цифр' }).waitFor()
+      await phone.fill('9161234567')
+      assert.equal(await page.locator('.login-field-error').count(), 0)
+      const email = page.getByLabel('Рабочая почта *', { exact: true })
+      assert.equal(await email.getAttribute('maxlength'), '100')
+      await email.fill('ivanov.company.ru')
+      await inn.focus()
+      await page.locator('.login-field-error', { hasText: 'нужен знак @' }).waitFor()
+      await email.fill('ivanov@company.ru')
+      await inn.focus()
+      assert.equal(await page.locator('.login-field-error').count(), 0)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('организация: выбирать не нужно — форма встаёт сама из названия или по ИНН; список только поправить и сужается по ИНН', async () => {
+    const { page, errors, seen, close } = await open('&page=signup&view=register', {
+      api: { ...CHALLENGE, 'POST /api/auth/register': () => ({ status: 202, body: { ok: true } }) },
+    })
+    try {
+      const form = page.getByLabel('Форма организации')
+      const name = page.getByLabel('Организация *', { exact: true })
+      const inn = page.getByLabel('ИНН *', { exact: true })
+      const hint = page.locator('.login-field-hint')
+      const kpp = page.getByLabel('КПП', { exact: true })
+      const options = () => form.locator('option').allTextContents()
+      await name.waitFor()
+      assert.equal(await form.inputValue(), '', 'ничего не выбрано и выбирать не обязательно')
+      assert.deepEqual(await options(), ['—', 'ООО', 'ИП', 'СЗ', 'АО', 'ПАО', 'ЗАО', 'ОАО', 'НАО', 'АНО', 'ГУП', 'МУП', 'ФГУП', 'ГБУ'])
+      assert.match(await hint.textContent(), /определится сама/)
+
+      // Написали с формой: она ушла в колонку, в названии её нет.
+      await name.pressSequentially('АО "Гамма"')
+      assert.equal(await name.inputValue(), '"Гамма"')
+      assert.equal(await form.inputValue(), 'АО')
+      assert.equal(await hint.textContent(), 'В заявке: АО "Гамма"')
+      // Очистил название — форма снова определяется сама.
+      await name.fill('')
+      assert.equal(await form.inputValue(), '')
+      await name.pressSequentially('ИПотека')
+      assert.equal(await name.inputValue(), 'ИПотека', 'часть слова — не форма')
+      assert.equal(await form.inputValue(), '')
+      assert.equal(await hint.textContent(), 'В заявке: ИПотека', 'без формы — название как есть')
+
+      // Формы в названии нет — по ИНН, это видно; при 12 цифрах в списке только ИП и СЗ, КПП нет.
+      await inn.fill('500100732259')
+      assert.equal(await form.inputValue(), 'ИП')
+      assert.deepEqual(await options(), ['—', 'ИП', 'СЗ'])
+      assert.equal(await kpp.count(), 0, 'у ИП КПП нет')
+      assert.equal(await hint.textContent(), 'В заявке: ИП ИПотека · определена по ИНН, если не так — выберите другую')
+      await inn.fill('7707083893')
+      assert.equal(await form.inputValue(), 'ООО')
+      assert.ok((await options()).includes('АО') && !(await options()).includes('ИП'))
+      assert.equal(await kpp.count(), 1)
+      await kpp.fill('7701AB001')
+
+      // Догадка неверна — поправить: выбранное не сбивается и подсказка про ИНН уходит; другая форма в названии — часть названия.
+      await form.selectOption('ПАО')
+      assert.equal(await form.inputValue(), 'ПАО')
+      await name.fill('СЗ Инвест')
+      assert.equal(await form.inputValue(), 'ПАО')
+      assert.equal(await hint.textContent(), 'В заявке: ПАО СЗ Инвест')
+      await inn.focus()
+      await page.keyboard.press('End')
+      await page.keyboard.type('999')
+      assert.equal(await inn.inputValue(), '7707083893', 'у ПАО — 10 цифр')
+
+      // Названной форме ИНН не подходит — причина у поля, в списке форма остаётся.
+      await name.fill('')
+      await name.fill('ИП Петров П.П.')
+      assert.equal(await form.inputValue(), 'ИП')
+      assert.ok((await options()).includes('ИП'))
+      await page.getByLabel('Рабочая почта *', { exact: true }).fill('a@firm.ru')
+      await page.getByLabel('Контактное лицо *', { exact: true }).fill('Иванов Иван')
+      await page.getByLabel('Контактный телефон *', { exact: true }).fill('9161234567')
+      await page.locator('.login-consent input').check()
+      await page.getByRole('button', { name: 'Зарегистрироваться' }).click()
+      await page.locator('.login-field-error', { hasText: 'ИНН у ИП — 12 цифр' }).waitFor()
+      assert.equal(seen.filter((r) => r.method === 'POST').length, 0, 'с ошибками на сервер ничего не уходит')
+
+      // СЗ: словом в названии; КПП, скрытый сменой формы, не уходит и ошибкой не становится.
+      await name.fill('')
+      await name.fill('Самозанятый Иванов Иван')
+      assert.equal(await form.inputValue(), 'СЗ')
+      assert.equal(await hint.textContent(), 'В заявке: СЗ Иванов Иван · СЗ — самозанятый')
+      await inn.fill('500100732259')
+      await page.getByLabel('доб.', { exact: true }).fill('77')
+      await page.getByRole('button', { name: 'Зарегистрироваться' }).click()
+      await page.locator('.login-success').waitFor()
+      const sent = seen.find((r) => r.path === '/api/auth/register' && r.method === 'POST').body
+      assert.equal(sent.legalForm, 'СЗ')
+      assert.equal(sent.companyName, 'Иванов Иван')
+      assert.equal(sent.inn, '500100732259')
+      assert.equal(sent.kpp, null)
+      assert.equal(sent.phone, '+79161234567 доб. 77')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+
+    // Подрядчик ничего не трогал: написал название и ИНН — форма по ИНН и КПП с буквами ушли в заявке. Убрал форму — название как есть.
+    for (const [clear, legalForm] of [[false, 'ООО'], [true, '']]) {
+      const run = await open('&page=signup&view=register', { api: { ...CHALLENGE, 'POST /api/auth/register': () => ({ status: 202, body: { ok: true } }) } })
+      try {
+        await run.page.getByLabel('Организация *', { exact: true }).fill('Гамма')
+        await run.page.getByLabel('ИНН *', { exact: true }).fill('7707083893')
+        await run.page.getByLabel('КПП', { exact: true }).fill('7701ab001')
+        if (clear) await run.page.getByLabel('Форма организации').selectOption('')
+        await run.page.getByLabel('Контактное лицо *', { exact: true }).fill('Иванов Иван')
+        await run.page.getByLabel('Контактный телефон *', { exact: true }).fill('9161234567')
+        await run.page.getByLabel('Рабочая почта *', { exact: true }).fill('a@firm.ru')
+        await run.page.locator('.login-consent input').check()
+        await run.page.getByRole('button', { name: 'Зарегистрироваться' }).click()
+        await run.page.locator('.login-success').waitFor()
+        const body = run.seen.find((r) => r.path === '/api/auth/register' && r.method === 'POST').body
+        assert.equal(body.legalForm, legalForm)
+        assert.equal(body.companyName, 'Гамма')
+        assert.equal(body.kpp, '7701AB001')
+      } finally {
+        await run.close()
+      }
+    }
+  })
+
   it('регистрация закрыта: формы нет', async () => {
     const { page, close } = await open('&page=signup&view=register&closed=1')
     try {
       await page.getByText('Регистрация на сайте сейчас закрыта').waitFor()
       assert.equal(await page.locator('form').count(), 0)
+      assert.equal(await page.locator('.login-contact a').innerText(), 'tender.osp@su10.ru', 'контакт для связи есть и здесь')
     } finally {
       await close()
+    }
+  })
+
+  it('контакт для связи и каналы СУ-10: почта видна сразу, MAX, Telegram и сайт — ссылками, логотипы без запросов наружу', async () => {
+    const { page, errors, close } = await open('&page=signup&view=register&signupMode=manual', { viewport: { width: 1366, height: 700 } })
+    const outside = []
+    page.on('request', (r) => { if (!new URL(r.url()).hostname.match(/^(127\.0\.0\.1|localhost)$/) && !r.url().startsWith('data:')) outside.push(r.url()) })
+    try {
+      const mail = page.getByRole('link', { name: 'tender.osp@su10.ru' })
+      await mail.waitFor()
+      assert.match(await mail.getAttribute('href'), /^mailto:tender\.osp@su10\.ru\?subject=/)
+      // Над формой: виден без прокрутки, даже когда форма выше окна.
+      const box = await mail.boundingBox()
+      assert.ok(box.y >= 0 && box.y + box.height <= 700, `почта в первом экране: ${JSON.stringify(box)}`)
+      assert.ok(await page.evaluate(() => document.querySelector('.login-contact').compareDocumentPosition(document.querySelector('form')) & Node.DOCUMENT_POSITION_FOLLOWING))
+
+      const links = await page.locator('.login-channels a').evaluateAll((els) => els.map((a) => ({
+        href: a.getAttribute('href'), target: a.target, rel: a.rel, text: a.textContent.trim(), logo: !!a.querySelector('svg'),
+      })))
+      const common = { target: '_blank', rel: 'noopener noreferrer', logo: true }
+      assert.deepEqual(links, [
+        { href: 'https://max.ru/id7736255508_biz', text: 'MAX', ...common },
+        { href: 'https://t.me/su10official', text: 'Telegram', ...common },
+        { href: 'https://su10.ru', text: 'Сайт su10.ru', ...common },
+      ])
+      // Логотип MAX — настоящий: заливка градиентом определена в самой странице, белый рисунок поверх.
+      const max = await page.locator('.login-channels a').first().locator('svg').evaluate((svg) => {
+        const rect = svg.querySelector('rect')
+        const id = rect.getAttribute('fill').match(/url\(#(.+)\)/)[1]
+        return { gradient: !!svg.querySelector(`#${id} stop`), mark: svg.querySelector('path').getAttribute('fill'), width: svg.getBoundingClientRect().width }
+      })
+      assert.deepEqual(max, { gradient: true, mark: '#fff', width: 18 })
+      // Три канала — одной строкой карточки.
+      const tops = await page.locator('.login-channels a').evaluateAll((els) => new Set(els.map((a) => Math.round(a.getBoundingClientRect().top))).size)
+      assert.equal(tops, 1)
+      assert.deepEqual(outside, [], 'запросов наружу нет')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+    // На телефоне: ни прокрутки вбок, ни обрезанной почты.
+    const phone = await open('&page=signup&view=register&signupMode=manual', { viewport: { width: 360, height: 700 } })
+    try {
+      await phone.page.locator('.login-channels a').first().waitFor()
+      assert.equal(await phone.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0)
+    } finally {
+      await phone.close()
     }
   })
 
@@ -320,10 +563,10 @@ describe('Регистрация подрядчика на сайте: стра�
       const note = await page.locator('.login-note').innerText()
       assert.match(note, /проверит отдел/)
       assert.doesNotMatch(note, /письм/i)
-      await page.getByLabel('Организация *').fill('ООО Заявитель')
+      await page.getByLabel('Организация *').fill('Заявитель')
       await page.getByLabel('ИНН *').fill('7707083893')
       await page.getByLabel('Контактное лицо *').fill('Иванов Иван Иванович')
-      await page.getByLabel('Контактный телефон *').fill('+7 916 123-45-67')
+      await page.getByLabel('Контактный телефон *').fill('916 123-45-67')
       await page.getByLabel('Рабочая почта *').fill('a@firm.ru')
       await page.locator('.login-consent input').check()
       await page.getByRole('button', { name: 'Отправить заявку' }).click()
@@ -432,10 +675,28 @@ describe('Регистрация подрядчика на сайте: стра�
     const phone = await open('&page=signup&view=register', { viewport: { width: 375, height: 700 } })
     try {
       await phone.page.getByLabel('Организация *').waitFor()
+      await phone.page.getByLabel('Контактный телефон *', { exact: true }).fill('9161234567')
+      await phone.page.getByLabel('доб.', { exact: true }).fill('123456')
       const width = await phone.page.evaluate(() => document.documentElement.scrollWidth)
       assert.ok(width <= 375, `шире экрана: ${width}`)
+      for (const id of ['#signup-phone', '#signup-phoneExt']) {
+        assert.ok(await phone.page.locator(id).evaluate((el) => el.scrollWidth <= el.clientWidth), `${id}: цифры обрезаны`)
+      }
     } finally {
       await phone.close()
+    }
+    // На компьютере номер и добавочный — одной строкой, все цифры видны.
+    const wide = await open('&page=signup&view=register')
+    try {
+      await wide.page.getByLabel('Контактный телефон *', { exact: true }).fill('9161234567')
+      await wide.page.getByLabel('доб.', { exact: true }).fill('123456')
+      const [number, ext] = await Promise.all(['#signup-phone', '#signup-phoneExt'].map((id) => wide.page.locator(id).boundingBox()))
+      assert.equal(number.y, ext.y, 'одна строка')
+      for (const id of ['#signup-phone', '#signup-phoneExt']) {
+        assert.ok(await wide.page.locator(id).evaluate((el) => el.scrollWidth <= el.clientWidth), `${id}: цифры обрезаны`)
+      }
+    } finally {
+      await wide.close()
     }
   })
 })

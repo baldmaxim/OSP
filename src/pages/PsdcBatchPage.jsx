@@ -13,6 +13,7 @@ import { DOC_TYPE_SHORT } from '../utils/contractAmendments'
 import { IconDownload, IconFileSpreadsheet, IconUpload } from '../components/icons/BsmIcons'
 import { IconSearch } from '../components/icons/ToolbarIcons'
 import PsdcIssues from '../components/psdc/PsdcIssues'
+import { CONTRACTS_REGISTRY_PATH } from '../utils/contractsHub'
 import '../components/ContractRegistry.css'
 import '../components/psdc/Psdc.css'
 
@@ -416,7 +417,7 @@ function PsdcBatchPage() {
         <h2>
           <IconFileSpreadsheet size={22} /> Массовая загрузка ПСДЦ
         </h2>
-        <Link to="/contracts" className="btn-secondary psdc-btn">К реестру договоров</Link>
+        <Link to={CONTRACTS_REGISTRY_PATH} className="btn-secondary psdc-btn">К реестру договоров</Link>
       </div>
 
       <p className="psdc-hint psdc-batch-intro">

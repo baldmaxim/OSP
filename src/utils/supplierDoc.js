@@ -92,7 +92,8 @@ export function classifyHeader(text) {
   }
   if (/(^|[^а-я])код(?![а-я])/.test(t) && /единиц|измер|окей/.test(t)) return { field: 'skip' }
   if (/наименован|товар|номенклатур|продукц|описани|материал|оборудован|услуг|предмет/.test(t)) return { field: 'name' }
-  if (/^ед(\.|\s|$)|ед\.?\s*изм|единиц|измерен/.test(t)) return { field: 'unit' }
+  // «Eg.» — так распознаватель читает «Ед.» на скане.
+  if (/^ед(\.|\s|$)|ед\.?\s*изм|единиц|измерен|^eg\.?$/.test(t)) return { field: 'unit' }
   if (/кол-?во|количеств|^кол\.?(\s|$)|объ[её]м/.test(t)) return { field: 'qty' }
   if (/(^|[^а-я])(марка|модель|обозначени)/.test(t)) return { field: 'code', internal: false }
   return null
@@ -174,12 +175,24 @@ const columnScore = (p) => ['num', 'name', 'code', 'unit', 'qty', 'vat', 'vatRat
 // ── Таблица Excel: сетка ячеек ───────────────────────────────────────────────────────────────────────
 // grid — массив строк, строка — массив значений ячеек (как sheet_to_json header:1, объединённые ячейки уже
 // заполнены значением левой верхней). Ответ: { headerRow (0-based), span, columns } | null.
-export const HEADER_SCAN_ROWS = 40
+//
+// Шапка бывает глубоко: «Счёт на оплату» из 1С — это реквизиты банка, условия поставки и пустые строки вёрстки над таблицей (тендер
+// № 902: шапка в 50-й строке, и файл считался «нет таблицы»). Текст условий сам похож на шапку («…товара», «…стоимости…»),
+// поэтому: ячейка длиннее HEADER_CELL_MAX — абзац, а не заголовок колонки; и шапка из двух колонок (WEAK_HEADER_SCORE) поиск
+// не останавливает: дальше может быть настоящая. Вид каждой надписи запоминается: объединённая ячейка повторяет её по всей ширине.
+export const HEADER_SCAN_ROWS = 200
+const HEADER_CELL_MAX = 120
+const WEAK_HEADER_SCORE = 2
 export function detectGridHeader(grid, scanRows = HEADER_SCAN_ROWS) {
   let best = null
   const last = Math.min(grid.length, scanRows)
+  const kinds = new Map()
+  const kindOf = (text) => {
+    if (!kinds.has(text)) kinds.set(text, classifyHeader(text))
+    return kinds.get(text)
+  }
   for (let r = 0; r < last; r++) {
-    if (best && r > best.headerRow + best.span + 2) break
+    if (best && best.score > WEAK_HEADER_SCORE && r > best.headerRow + best.span + 2) break
     for (let span = 1; span <= 3 && r + span <= grid.length; span++) {
       const rows = grid.slice(r, r + span)
       const width = Math.max(0, ...rows.map((row) => row?.length || 0))
@@ -188,15 +201,19 @@ export function detectGridHeader(grid, scanRows = HEADER_SCAN_ROWS) {
         const parts = []
         for (const row of rows) {
           const v = cellText(row?.[c])
-          if (v && parts[parts.length - 1] !== v) parts.push(v)
+          if (v && v.length <= HEADER_CELL_MAX && parts[parts.length - 1] !== v) parts.push(v)
         }
-        const k = classifyHeader(parts.join(' '))
-        if (k) cols.push({ index: c, text: parts.join(' '), ...k })
+        const text = parts.join(' ')
+        const k = kindOf(text)
+        if (k) cols.push({ index: c, text, ...k })
       }
       const picked = pickColumns(cols)
       if (!picked) continue
       const score = columnScore(picked)
-      if (!best || score > best.score) best = { headerRow: r, span, score, columns: picked }
+      // При равной оценке — без лишних строк сверху: пустая строка над шапкой ничего не даёт, а реквизиты покупателя над ней могли бы
+      // приписаться к колонкам.
+      const tighter = !!best && score === best.score && r + span === best.headerRow + best.span && span < best.span
+      if (!best || score > best.score || tighter) best = { headerRow: r, span, score, columns: picked }
     }
   }
   return best && { headerRow: best.headerRow, span: best.span, columns: best.columns }
@@ -215,6 +232,9 @@ export function gridRows(grid, header) {
     for (const f of ['num', 'name', 'name2', 'code', 'code2', 'unit', 'qty', 'pack', 'vat', 'vatRate', 'delivery']) if (cols[f]) cells[f] = row[cols[f].index]
     cells.prices = cols.prices.map((c) => row[c.index])
     cells.sums = cols.sums.map((c) => row[c.index])
+    // Строка таблицы на две строки листа (объединённые ячейки, gridFromSheet заполняет обе) — одна строка документа.
+    const prev = out[out.length - 1]
+    if (prev && cellText(cells.name) && JSON.stringify(prev.cells) === JSON.stringify(cells)) continue
     out.push({ cells, row: r + 1 })
   }
   return out
@@ -619,15 +639,28 @@ function widestHole(words, lo, hi) {
 // числовая (слова у края — это наименование, заехавшее из соседней колонки, их не считаем); граница двух текстовых
 // колонок без линии — по самому широкому просвету в данных между началами их надписей (артикул «0805033-М» шире
 // шапки «Артикул», а наименование начинается левее шапки «Наименование» — середина промежутка шапок резала слово).
-function refineZones(header, body) {
+// Шапка колонки ед. изм. не узнана («Изм.», на скане — чепуха), а под ней единицы — это она: без единицы цена не сравнится.
+const UNIT_CELL_RE = /^(теор\.?\s?т|[тt]|тн|тонн\S*|шт|штук\S*|м|мп|м\.п|п\.м|пог\.?\s?м|м2|м3|м²|м³|кг|л|уп|упак\S*|компл\S*|кмп|рул\S*|бухт\S*|пар\S*|набор\S*)\.?$/
+function refineZones(first, body) {
   const words = body.flatMap(({ line }) => lineTokens(line))
   const numeric = new Set()
-  header.cols.forEach((c, i) => {
+  let cols = first.cols
+  const under = (c) => words.filter((w) => (w.x0 + w.x1) / 2 >= c.x0 - c.h && (w.x0 + w.x1) / 2 <= c.x1 + c.h)
+  cols.forEach((c, i) => {
     if (c.field) return
-    const under = words.filter((w) => (w.x0 + w.x1) / 2 >= c.x0 - c.h && (w.x0 + w.x1) / 2 <= c.x1 + c.h)
-    const num = under.filter((w) => parseNum(w.text) != null).length
-    if (num >= 2 && num >= 0.6 * under.length) numeric.add(i)
+    const list = under(c)
+    const num = list.filter((w) => parseNum(w.text) != null).length
+    if (num >= 2 && num >= 0.6 * list.length) numeric.add(i)
   })
+  if (!cols.some((c) => c.field === 'unit')) {
+    const k = cols.findIndex((c, i) => {
+      if (c.field || numeric.has(i)) return false
+      const list = under(c)
+      return list.length >= 1 && list.filter((w) => UNIT_CELL_RE.test(norm(w.text))).length >= 0.6 * list.length
+    })
+    if (k >= 0) cols = cols.map((c, i) => (i === k ? { ...c, field: 'unit' } : c))
+  }
+  const header = { ...first, cols }
   const fixed = new Map(header.fixed)
   const isNum = (i) => NUMERIC_FIELDS.has(header.cols[i].field) || numeric.has(i)
   for (let i = 0; i + 1 < header.cols.length; i++) {

@@ -1,4 +1,4 @@
-// «Договоры и ДС» (/contracts): разделение на ОС и ГО, пять вкладок статуса, «Наши договоры» и «Без тендера» — фильтры в
+// «Реестр по договорам» (/contracts/registry): разделение на ОС и ГО, пять вкладок статуса, «Наши договоры» и «Без тендера» — фильтры в
 // панели, тендер у договора и ДС (03.11). Правила — tests/contracts/registry-tabs.test.mjs.
 // Стенд: 24 документа, 16 договоров и 8 ДС; каждый четвёртый — по объекту ГО; у ctr-2 — тендер, ДС ctr-3 берёт его же.
 import { describe, it, before, after } from 'node:test'
@@ -7,7 +7,7 @@ import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 
 const launch = browserLaunchOptions()
-const BASE = 'route=/contracts&contracts=24&contractsDept=1&latency=0'
+const BASE = 'route=/contracts/registry&contracts=24&contractsDept=1&latency=0'
 
 describe('Договоры и ДС: ОС и ГО, тендер', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
   let stand
@@ -55,7 +55,7 @@ describe('Договоры и ДС: ОС и ГО, тендер', { skip: !launch
       const shownObjects = await page.locator('.contracts-table tbody tr.contract-row td.cell-object').allInnerTexts()
       assert.ok(shownObjects.length > 0 && shownObjects.every((t) => /Гарантийный/.test(t)), shownObjects.join(' | '))
       const tabs = await counts(page, '.status-tab')
-      assert.equal(tabs['Общий реестр'], 6, 'вкладки считают выбранный отдел')
+      assert.equal(tabs['Все'], 6, 'вкладки считают выбранный отдел')
 
       // Объекты в фильтре — только этого отдела.
       await page.locator('.cr-toolbar .fdrop-trigger').first().click()
@@ -71,14 +71,15 @@ describe('Договоры и ДС: ОС и ГО, тендер', { skip: !launch
     } finally { await close() }
   })
 
-  it('вкладок пять; документ «В работе», заявка и ожидание подписания — на одной; «Договоров» как отдельного вида нет', async () => {
+  it('вкладок пять, названия «Общий реестр» нет; документ «В работе», заявка и ожидание подписания — на одной; вид — «Договоры и ДС», «Договоры», «ДС»', async () => {
     const { page, errors, close } = await open()
     try {
       assert.deepEqual(
         await page.locator('.status-tab').evaluateAll((els) => els.map((b) => b.firstChild.textContent.trim())),
-        ['Общий реестр', 'В работе', 'Приостановка', 'Завершено', 'Удаленные'],
+        ['Все', 'В работе', 'Приостановка', 'Завершено', 'Удаленные'],
       )
-      assert.deepEqual(await page.locator('.rf-doc-kind-btn').allInnerTexts(), ['Договоры и ДС', 'ДС'])
+      assert.deepEqual(await page.locator('.rf-doc-kind-btn').allInnerTexts(), ['Договоры и ДС', 'Договоры', 'ДС'])
+      assert.equal(await page.getByText('Общий реестр').count(), 0)
       assert.match(await page.locator('.registry-pagination.is-top .rp-info').innerText(), /договоров · ДС к ним: 8/, 'сколько договоров и ДС — видно над таблицей')
 
       const tabs = await counts(page, '.status-tab')

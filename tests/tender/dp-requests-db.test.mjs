@@ -1,7 +1,7 @@
-// «Заявка на ДП» (миграция 20261227_dp_requests) на слепке схемы прода: заявка не подаётся без понятийного соглашения, документа договора и ответственного;
-// номер и отметки ставит база; создают только с правом создания и только по своим объектам; автор правит свою, пока её не взяли в работу,
-// статус ведёт право работы; файлы — та же граница, последний обязательный файл не убрать; уведомления получателям — только функциями; откат
-// заявки не теряет. Нужны Docker и psql.
+// «Заявка на ДП» (миграции 20261227_dp_requests и 20261231_dp_requests_short_form) на слепке схемы прода: заявка не подаётся только без понятийного
+// соглашения; объект, договор, сумму и ответственного заполняет работающий с заявками, автор их не перепишет; номер и отметки ставит база; создают только
+// с правом создания, объект — только свой; автор правит примечание и файлы своей, пока её не взяли в работу, статус ведёт право работы; последнее
+// соглашение не убрать; уведомления получателям — только функциями; откаты заявки не теряют. Нужны Docker и psql.
 // Второй блок — то же на копии прода, загруженной как база Яндекса (одна учётка, migration/yandex через migrate.sh); нужна проверенная
 // копия прода. Страница — dp-requests.test.mjs.
 import { describe, it, before, after } from 'node:test'
@@ -19,6 +19,11 @@ const MIGRATION = path.join(MIGRATIONS, `${NAME}.sql`)
 const YANDEX = path.join(ROOT, 'migration', 'yandex', `${NAME}.sql`)
 const CHECK = path.join(ROOT, 'migration', 'backup', 'checks', '20261227.sql')
 const ROLLBACK = path.join(ROOT, 'migration', 'rollback', `${NAME}_rollback.sql`)
+const SHORT_NAME = '20261231_dp_requests_short_form'
+const SHORT = path.join(MIGRATIONS, `${SHORT_NAME}.sql`)
+const SHORT_YANDEX = path.join(ROOT, 'migration', 'yandex', `${SHORT_NAME}.sql`)
+const SHORT_CHECK = path.join(ROOT, 'migration', 'backup', 'checks', '20261231.sql')
+const SHORT_ROLLBACK = path.join(ROOT, 'migration', 'rollback', `${SHORT_NAME}_rollback.sql`)
 const skip = skipReason()
 
 const U = {
@@ -31,6 +36,7 @@ const U = {
   contractor: '00000000-0000-4000-8000-0000000d9107',
   admin: '00000000-0000-4000-8000-0000000d9108',
   recipient: '00000000-0000-4000-8000-0000000d9109',  // получатель без права на раздел
+  workerA: '00000000-0000-4000-8000-0000000d910a',    // работает с заявками, привязан к объекту A
 }
 const CP = '00000000-0000-4000-8000-0000000d9201'
 const OBJ_A = '00000000-0000-4000-8000-0000000d9301'
@@ -60,13 +66,16 @@ const FIXTURE = `
     ('${U.none}', 'dp_none', true, false, 'Безразделов Б. Б.', 'n@example.invalid', null, '{}'),
     ('${U.contractor}', 'contractor', true, false, 'Подрядов П. П.', 'c@example.invalid', '${CP}', '{}'),
     ('${U.admin}', 'admin', true, false, 'Админов А. А.', 'ad@example.invalid', null, '{}'),
-    ('${U.recipient}', 'dp_none', true, false, 'Получатель П. П.', 'r@example.invalid', null, '{}');
+    ('${U.recipient}', 'dp_none', true, false, 'Получатель П. П.', 'r@example.invalid', null, '{}'),
+    ('${U.workerA}', 'dp_worker', true, false, 'Работнова А. А.', 'wa@example.invalid', null, array['${OBJ_A}']::uuid[]);
   insert into public.dp_request_alert_recipients (user_id) values ('${U.recipient}'), ('${U.admin}');`
 
 const draftSql = (o = {}) => {
   const f = { object_id: `'${OBJ_A}'`, contract_title: `'Договор'`, amount: 100, reason: `'Причина'`, responsible_name: `'Иванов И. И.'`, responsible_role: `'economist'`, ...o }
   return `insert into public.dp_requests (${Object.keys(f).join(', ')}) values (${Object.values(f).join(', ')}) returning id`
 }
+// Заявка, как её создаёт новая форма: ни объекта, ни договора, ни суммы, ни ответственного.
+const SHORT_DRAFT = `insert into public.dp_requests (reason) values ('Примечание автора') returning id`
 const fileSql = (req, category, name) => `insert into public.s3_documents (owner_type, owner_id, s3_key, file_name, doc_category)
   values ('dp_request', '${req}', 'dp-requests/${req}/' || gen_random_uuid() || '-${name}', '${name}', '${category}') returning id`
 
@@ -91,6 +100,18 @@ describe('Заявка на ДП: файлы миграции', () => {
     assert.equal(seed(b), seed(a))
   })
 
+  it('короткая форма: запреты в обеих базах совпадают; условия правил те же, различается только обёртка', () => {
+    const a = read(SHORT)
+    const b = read(SHORT_YANDEX)
+    for (const name of ['dp_requests_guard', 's3_documents_dp_request_guard']) assert.equal(fn(b, name), fn(a, name))
+    const body = (text) => text.slice(text.indexOf('ALTER TABLE public.dp_requests'), text.indexOf('CREATE OR REPLACE FUNCTION'))
+    assert.equal(body(b), body(a))
+    assert.equal((a.match(/CREATE POLICY/g) || []).length, 3)
+    assert.equal((b.match(/CREATE POLICY/g) || []).length, 3)
+    assert.doesNotMatch(b, /TO authenticated/, 'база Яндекса: одна учётка')
+    assert.match(read(path.join(ROOT, 'tests', 'db', 'baseline', 'candidate-migrations.txt')), new RegExp(`^${SHORT_NAME}\\.sql$`, 'm'))
+  })
+
   it('миграция — в списке кандидатов; список шлюза: уведомления только функциями', () => {
     assert.match(read(path.join(ROOT, 'tests', 'db', 'baseline', 'candidate-migrations.txt')), new RegExp(`^${NAME}\\.sql$`, 'm'))
     const allow = JSON.parse(read(path.join(ROOT, 'server', 'osp-api', 'src', 'data', 'allow.json')))
@@ -110,6 +131,11 @@ describe('Заявка на ДП: файлы миграции', () => {
 describe('Заявка на ДП: база', { skip, timeout: 600000 }, () => {
   let db
   let checkBefore = ''
+  let shortCheckBefore = ''
+  const applyBoth = () => {
+    psqlAt(db.port, null, { file: MIGRATION })
+    psqlAt(db.port, null, { file: SHORT })
+  }
   const sql = (text) => psqlAt(db.port, text)
   const as = (uid, text) => psqlAt(db.port, `begin;
     set local "request.jwt.claims" = '${JSON.stringify({ sub: uid, role: 'authenticated' })}';
@@ -134,40 +160,105 @@ describe('Заявка на ДП: база', { skip, timeout: 600000 }, () => {
     db = startSnapshot()
     for (const m of appliedAfter()) psqlAt(db.port, null, { file: path.join(MIGRATIONS, m) })
     for (const m of candidateMigrations()) {
-      if (m.startsWith(NAME)) continue
+      if (m.startsWith(NAME) || m.startsWith(SHORT_NAME)) continue
       psqlAt(db.port, null, { file: path.join(ROOT, m.includes('/') ? m : path.join('supabase', 'migrations', m)) })
     }
     checkBefore = psqlAt(db.port, null, { file: CHECK })
     psqlAt(db.port, null, { file: MIGRATION })
+    shortCheckBefore = psqlAt(db.port, null, { file: SHORT_CHECK })
+    psqlAt(db.port, null, { file: SHORT })
     sql(FIXTURE)
   })
   after(() => db?.stop())
 
-  it('проверка для прода до миграции — FAIL, а не ошибка; после — все OK; миграция повторяется', () => {
+  it('проверка для прода до миграции — FAIL, а не ошибка; после — все OK; миграции повторяются, по порядку', () => {
     assert.match(checkBefore, /^FAIL /m)
     assert.equal(checkBefore.split('\n').filter((l) => /^(OK|FAIL) /.test(l)).length, 7)
-    psqlAt(db.port, null, { file: MIGRATION })
+    assert.match(shortCheckBefore, /^FAIL /m, 'короткая форма ещё не применена')
+    assert.equal(shortCheckBefore.split('\n').filter((l) => /^(OK|FAIL) /.test(l)).length, 6)
+    applyBoth()
     const out = psqlAt(db.port, null, { file: CHECK })
     assert.doesNotMatch(out, /^FAIL/m, out)
     assert.equal(out.split('\n').filter((l) => l.startsWith('OK ')).length, 7, out)
+    const short = psqlAt(db.port, null, { file: SHORT_CHECK })
+    assert.doesNotMatch(short, /^FAIL/m, short)
+    assert.equal(short.split('\n').filter((l) => l.startsWith('OK ')).length, 6, short)
   })
 
-  it('без понятийного соглашения и документа договора заявка не подаётся: один другого не заменяет; с обоими — подана, номер ставит база', () => {
-    const id = as(U.author, draftSql())
+  it('короткая заявка: подаётся с одним понятийным соглашением, документы, объект, договор, сумма и ответственный не нужны', () => {
+    const id = as(U.author, SHORT_DRAFT)
     assert.throws(() => submit(U.author, id), /без понятийного соглашения/)
-    const contractDoc = as(U.author, fileSql(id, 'dp_contract_doc', 'Договор.docx'))
-    assert.throws(() => submit(U.author, id), /без понятийного соглашения/, 'документ договора соглашение не заменяет')
-    assert.equal(as(U.author, `delete from public.s3_documents where id = '${contractDoc}' returning id`), contractDoc)
-    as(U.author, fileSql(id, 'dp_concept_agreement', 'Понятийка.pdf'))
-    assert.throws(() => submit(U.author, id), /без документа договора/, 'соглашение документ договора не заменяет')
+    const doc = as(U.author, fileSql(id, 'dp_contract_doc', 'Договор.docx'))
+    assert.throws(() => submit(U.author, id), /без понятийного соглашения/, 'документ соглашение не заменяет')
+    assert.equal(as(U.author, `delete from public.s3_documents where id = '${doc}' returning id`), doc)
     assert.equal(sql(`select status || '|' || coalesce(request_number::text, 'нет') from public.dp_requests where id = '${id}'`), 'draft|нет')
-    as(U.author, fileSql(id, 'dp_contract_doc', 'Договор.docx'))
+    as(U.author, fileSql(id, 'dp_concept_agreement', 'Понятийка.pdf'))
     assert.match(submit(U.author, id), /^\d+$/)
     const row = JSON.parse(sql(`select row_to_json(r) from public.dp_requests r where id = '${id}'`))
     assert.equal(row.status, 'new')
     assert.ok(row.request_number > 0)
     assert.equal(row.status_changed_by_name, 'Авторов А. А.')
     assert.ok(row.status_changed_at)
+    for (const f of ['object_id', 'contract_title', 'amount', 'responsible_name']) assert.equal(row[f], null, f)
+    assert.equal(row.reason, 'Примечание автора')
+    const noNote = as(U.author, `insert into public.dp_requests (reason) values ('   ') returning id`)
+    assert.equal(sql(`select coalesce(reason, 'пусто') from public.dp_requests where id = '${noNote}'`), 'пусто', 'примечание необязательно, пробелы — не примечание')
+  })
+
+  it('поля отдела заполняет работающий с заявками, частями; автор не перепишет ни их, ни своей правкой, ни старой вкладкой', () => {
+    const id = as(U.author, SHORT_DRAFT)
+    as(U.author, fileSql(id, 'dp_concept_agreement', 'Понятийка.pdf'))
+    submit(U.author, id)
+    const author = (set) => as(U.author, `update public.dp_requests set ${set} where id = '${id}' returning id`)
+    for (const set of [`object_id = '${OBJ_A}'`, `contract_title = 'Договор автора'`, 'amount = 100', `responsible_contact_id = '${CONTACT}'`,
+      `responsible_name = 'Подделка'`, `responsible_role = 'economist'`]) {
+      assert.throws(() => author(set), /заполняет сотрудник, работающий с заявками/, set)
+    }
+    assert.equal(author(`reason = 'Новое примечание'`), id, 'примечание — автору можно')
+
+    assert.equal(as(U.worker, `update public.dp_requests set contract_title = ' Договор 7 ' where id = '${id}' returning id`), id, 'частями')
+    assert.equal(as(U.worker, `update public.dp_requests set object_id = '${OBJ_A}', amount = 0, responsible_contact_id = '${CONTACT}', responsible_role = 'economist' where id = '${id}' returning id`), id)
+    const row = JSON.parse(sql(`select row_to_json(r) from public.dp_requests r where id = '${id}'`))
+    assert.equal(row.contract_title, 'Договор 7')
+    assert.equal(Number(row.amount), 0)
+    assert.equal(row.responsible_name, 'Экономов Э. Э.', 'ФИО контакта ставит база')
+    assert.equal(row.reason, 'Новое примечание')
+
+    assert.throws(() => author(`amount = 999`), /заполняет сотрудник, работающий с заявками/, 'поверх заполненного отделом')
+    assert.equal(author(`object_id = '${OBJ_A}', contract_title = 'Договор 7', amount = 0`), id, 'старая вкладка шлёт те же значения: не правка')
+    assert.equal(author(`reason = 'Ещё примечание'`), id)
+
+    // Удаление контакта делает сотрудник без права на раздел: заявка не должна этому мешать, ФИО остаётся.
+    assert.equal(as(U.author, `update public.dp_requests set responsible_contact_id = null where id = '${id}' returning id`), id)
+    assert.equal(sql(`select responsible_name from public.dp_requests where id = '${id}'`), 'Экономов Э. Э.')
+  })
+
+  it('старая вкладка с полной формой создаёт заявку как раньше', () => {
+    const id = as(U.author, draftSql())
+    as(U.author, fileSql(id, 'dp_concept_agreement', 'Понятийка.pdf'))
+    assert.match(submit(U.author, id), /^\d+$/)
+    assert.equal(sql(`select contract_title || '|' || amount from public.dp_requests where id = '${id}'`), 'Договор|100.00')
+  })
+
+  it('заявка без объекта: привязка к объектам не мешает автору подать, а работающему — увидеть и заполнить', () => {
+    const id = as(U.otherObj, SHORT_DRAFT)
+    as(U.otherObj, fileSql(id, 'dp_concept_agreement', 'Понятийка.pdf'))
+    submit(U.otherObj, id)
+    const sees = (uid) => as(uid, `select count(*) from public.dp_requests where id = '${id}'`)
+    assert.equal(sees(U.otherObj), '1', 'автор')
+    assert.equal(sees(U.workerA), '1', 'работающий с другого объекта: заявка должна дойти до того, кто её заполнит')
+    assert.equal(sees(U.worker), '1')
+    assert.equal(sees(U.viewer), '1', 'просмотр без привязки к объектам')
+    assert.equal(sees(U.author), '0', 'просмотр с привязкой: заявка ещё ничья')
+    assert.equal(sees(U.none), '0')
+    assert.equal(sees(U.contractor), '0')
+
+    assert.throws(() => as(U.workerA, `update public.dp_requests set object_id = '${OBJ_B}' where id = '${id}'`), /row-level security/, 'чужой объект работающий не поставит')
+    assert.equal(as(U.workerA, `update public.dp_requests set object_id = '${OBJ_A}' where id = '${id}' returning id`), id)
+    assert.equal(sees(U.author), '1', 'теперь это заявка объекта A')
+    assert.equal(sees(U.otherObj), '1', 'автор видит свою, хотя объект не его')
+    assert.equal(as(U.otherObj, `update public.dp_requests set reason = 'Примечание автора' where id = '${id}' returning id`), id, 'и правит примечание')
+    assert.throws(() => as(U.otherObj, `update public.dp_requests set object_id = null where id = '${id}'`), /заполняет сотрудник, работающий с заявками/)
   })
 
   it('заявка рождается черновиком: сразу поданной её не вставить, автора и номер не подделать', () => {
@@ -187,13 +278,12 @@ describe('Заявка на ДП: база', { skip, timeout: 600000 }, () => {
     assert.equal(kept.created_by_name, 'Авторов А. А.')
   })
 
-  it('ответственный: без него не подать; у контакта ФИО ставит база, подделать нельзя; без контакта — ФИО из формы', () => {
+  it('ответственный: у контакта ФИО ставит база, подделать нельзя; без контакта — ФИО из формы', () => {
     const id = as(U.author, draftSql({ responsible_name: 'null', responsible_role: 'null' }))
     attachBoth(U.author, id)
-    assert.throws(() => submit(U.author, id), /Укажите ответственного/)
-    as(U.author, `update public.dp_requests set responsible_contact_id = '${CONTACT}', responsible_name = 'Подделка', responsible_role = 'economist' where id = '${id}'`)
+    assert.match(submit(U.author, id), /^\d+$/, 'без ответственного подать можно')
+    as(U.worker, `update public.dp_requests set responsible_contact_id = '${CONTACT}', responsible_name = 'Подделка', responsible_role = 'economist' where id = '${id}'`)
     assert.equal(sql(`select responsible_name from public.dp_requests where id = '${id}'`), 'Экономов Э. Э.')
-    assert.match(submit(U.author, id), /^\d+$/)
     const self = as(U.author, draftSql({ responsible_name: `' Новиков П. И. '`, responsible_role: `'construction_manager'` }))
     assert.equal(sql(`select responsible_name from public.dp_requests where id = '${self}'`), 'Новиков П. И.')
     assert.throws(() => as(U.author, draftSql({ responsible_role: `'economist_osp'` })), /dp_requests_responsible_role_check/)
@@ -206,15 +296,19 @@ describe('Заявка на ДП: база', { skip, timeout: 600000 }, () => {
     assert.equal(sql(`select coalesce(responsible_contact_id::text, 'нет') || '|' || responsible_name from public.dp_requests where id = '${id}'`), 'нет|Уходящий У. У.')
   })
 
-  it('пустые и неверные поля база не принимает; пробелы по краям убраны', () => {
-    assert.throws(() => as(U.author, draftSql({ contract_title: `'   '` })), /dp_requests_contract_title_check/)
-    assert.throws(() => as(U.author, draftSql({ reason: `'   '` })), /dp_requests_reason_check/)
+  it('неверные поля база не принимает; пустые — это «не заполнено»; пробелы по краям убраны', () => {
     assert.throws(() => as(U.author, draftSql({ amount: -1 })), /dp_requests_amount_check/)
+    const blank = as(U.author, draftSql({ contract_title: `'   '`, reason: `'   '` }))
+    assert.equal(sql(`select coalesce(contract_title, 'пусто') || '|' || coalesce(reason, 'пусто') from public.dp_requests where id = '${blank}'`), 'пусто|пусто')
     const id = as(U.author, draftSql({ contract_title: `'  Договор 5  '`, reason: `'  Нужен  '`, amount: 0 }))
     assert.equal(sql(`select contract_title || '|' || reason || '|' || amount from public.dp_requests where id = '${id}'`), 'Договор 5|Нужен|0.00')
   })
 
-  it('создание: только с правом создания и только по своим объектам; черновик видит только автор', () => {
+  it('создание: только с правом создания, объект — только свой; черновик видит только автор', () => {
+    assert.throws(() => as(U.viewer, SHORT_DRAFT), /row-level security/, 'без объекта право создания всё равно нужно')
+    assert.throws(() => as(U.none, SHORT_DRAFT), /row-level security/)
+    assert.throws(() => as(U.contractor, SHORT_DRAFT), /row-level security/)
+    assert.throws(() => anon(SHORT_DRAFT), /permission denied/)
     assert.throws(() => as(U.viewer, draftSql()), /row-level security/)
     assert.throws(() => as(U.worker, draftSql()), /row-level security/, 'работа с заявками не даёт создавать')
     assert.throws(() => as(U.none, draftSql()), /row-level security/)
@@ -245,18 +339,18 @@ describe('Заявка на ДП: база', { skip, timeout: 600000 }, () => {
     assert.throws(() => anon('select count(*) from public.dp_requests'), /permission denied/)
   })
 
-  it('автор правит свою, пока её не взяли в работу; статус ведёт право работы; чужую нельзя', () => {
+  it('автор правит примечание своей, пока её не взяли в работу; статус ведёт право работы; чужую нельзя', () => {
     const id = filed()
-    const edit = (uid, title) => as(uid, `update public.dp_requests set contract_title = '${title}' where id = '${id}' returning id`)
-    assert.equal(edit(U.author, 'Правка автора'), id)
-    assert.equal(edit(U.author2, 'Чужая правка'), '')
-    assert.equal(edit(U.viewer, 'Правка зрителя'), '')
+    const note = (uid, text) => as(uid, `update public.dp_requests set reason = '${text}' where id = '${id}' returning id`)
+    assert.equal(note(U.author, 'Правка автора'), id)
+    assert.equal(note(U.author2, 'Чужая правка'), '')
+    assert.equal(note(U.viewer, 'Правка зрителя'), '')
     assert.throws(() => as(U.author, `update public.dp_requests set status = 'in_work' where id = '${id}'`), /меняет сотрудник с правом правки/)
 
     assert.equal(as(U.worker, `update public.dp_requests set status = 'in_work' where id = '${id}' returning status_changed_by_name`), 'Работнов Р. Р.')
-    assert.equal(edit(U.author, 'Поздняя правка'), '', 'уже в работе')
-    assert.equal(sql(`select contract_title from public.dp_requests where id = '${id}'`), 'Правка автора')
-    assert.equal(edit(U.worker, 'Правка работника'), id)
+    assert.equal(note(U.author, 'Поздняя правка'), '', 'уже в работе')
+    assert.equal(sql(`select reason from public.dp_requests where id = '${id}'`), 'Правка автора')
+    assert.equal(as(U.worker, `update public.dp_requests set contract_title = 'Правка работника' where id = '${id}' returning id`), id)
     assert.throws(() => as(U.worker, `update public.dp_requests set status = 'draft' where id = '${id}'`), /Недопустимая смена статуса/)
     assert.throws(() => as(U.worker, `update public.dp_requests set status = 'неизвестный' where id = '${id}'`), /dp_requests_status_check/)
   })
@@ -278,19 +372,15 @@ describe('Заявка на ДП: база', { skip, timeout: 600000 }, () => {
     assert.equal(as(U.author, `delete from public.dp_requests where id = '${draft}' returning id`), draft)
   })
 
-  it('файлы: граница как у заявки; последний файл соглашения и договора не убрать, замена — новым файлом', () => {
+  it('файлы: граница как у заявки; последнее соглашение не убрать, замена — новым файлом; документы убираются свободно', () => {
     const id = filed()
     const concept = sql(`select id from public.s3_documents where owner_id = '${id}' and doc_category = 'dp_concept_agreement'`)
     assert.throws(() => as(U.author2, fileSql(id, 'dp_contract_doc', 'Чужой.pdf')), /Нет права менять файлы/)
     assert.throws(() => as(U.viewer, fileSql(id, 'dp_contract_doc', 'Зритель.pdf')), /Нет права менять файлы/)
     const firstDoc = sql(`select id from public.s3_documents where owner_id = '${id}' and doc_category = 'dp_contract_doc'`)
-    assert.throws(() => as(U.author, `delete from public.s3_documents where id = '${firstDoc}'`), /Документ договора обязателен/)
-    assert.throws(() => as(U.worker, `delete from public.s3_documents where id = '${firstDoc}'`), /Документ договора обязателен/, 'и работающему с заявками')
-    assert.throws(() => as(U.author, `update public.s3_documents set doc_category = 'dp_concept_agreement' where id = '${firstDoc}'`), /Документ договора обязателен/, 'сменой категории — тоже')
-    const doc = as(U.author, fileSql(id, 'dp_contract_doc', 'Договор.pdf'))
-    assert.throws(() => as(U.author2, `delete from public.s3_documents where id = '${doc}'`), /Нет права менять файлы/)
-    assert.equal(as(U.author, `delete from public.s3_documents where id = '${firstDoc}' returning id`), firstDoc, 'замена: новый есть, прежний убирается')
-    assert.throws(() => as(U.author, `delete from public.s3_documents where id = '${doc}'`), /Документ договора обязателен/)
+    assert.throws(() => as(U.author2, `delete from public.s3_documents where id = '${firstDoc}'`), /Нет права менять файлы/)
+    assert.equal(as(U.author, `delete from public.s3_documents where id = '${firstDoc}' returning id`), firstDoc, 'последний документ убирается')
+    assert.equal(sql(`select count(*) from public.s3_documents where owner_id = '${id}' and doc_category = 'dp_contract_doc'`), '0')
 
     assert.throws(() => as(U.author, `delete from public.s3_documents where id = '${concept}'`), /Понятийное соглашение обязательно/)
     assert.throws(() => as(U.worker, `delete from public.s3_documents where id = '${concept}'`), /Понятийное соглашение обязательно/, 'и работающему с заявками')
@@ -373,7 +463,7 @@ describe('Заявка на ДП: база', { skip, timeout: 600000 }, () => {
 
   it('права по умолчанию: создают экономист объекта и руководитель строительства, работает с заявками superuser', () => {
     sql(`insert into public.roles (key, label, is_system) values ('economist_object', 'Экономист', false), ('construction_manager', 'Руководитель строительства', false), ('superuser', 'Супер пользователь', false) on conflict (key) do nothing`)
-    psqlAt(db.port, null, { file: MIGRATION })
+    applyBoth()
     const grants = sql(`select string_agg(role || ':' || section || ':' || can_view || ':' || can_edit, ',' order by role, section) from public.role_permissions
       where section like 'dp_requests%' and role in ('economist_object', 'construction_manager', 'superuser')`)
     assert.equal(grants, [
@@ -381,6 +471,33 @@ describe('Заявка на ДП: база', { skip, timeout: 600000 }, () => {
       'economist_object:dp_requests:true:false', 'economist_object:dp_requests_create:true:true',
       'superuser:dp_requests:true:true',
     ].join(','))
+  })
+
+  it('откат короткой формы: снова полная подача; заявки целы; обязательность колонок — только если нет пустых; повторное применение', () => {
+    const shortId = as(U.author, SHORT_DRAFT)
+    as(U.author, fileSql(shortId, 'dp_concept_agreement', 'Понятийка.pdf'))
+    submit(U.author, shortId)
+    const before = sql('select count(*) from public.dp_requests')
+    psqlAt(db.port, null, { file: SHORT_ROLLBACK })
+    psqlAt(db.port, null, { file: SHORT_ROLLBACK })
+    assert.equal(sql('select count(*) from public.dp_requests'), before)
+    assert.equal(sql(`select coalesce(contract_title, 'пусто') from public.dp_requests where id = '${shortId}'`), 'пусто', 'пустые заявки не тронуты')
+    assert.equal(sql(`select is_nullable from information_schema.columns where table_schema = 'public' and table_name = 'dp_requests' and column_name = 'amount'`), 'YES', 'есть пустые — колонки необязательны')
+    assert.match(psqlAt(db.port, null, { file: SHORT_CHECK }), /^FAIL /m)
+    const draft = as(U.author, draftSql())
+    as(U.author, fileSql(draft, 'dp_concept_agreement', 'Понятийка.pdf'))
+    assert.throws(() => submit(U.author, draft), /без документа договора/, 'запреты 20261227 снова действуют')
+    assert.throws(() => as(U.author, draftSql({ object_id: 'null' })), /row-level security/, 'и правила')
+    assert.equal(as(U.author, `update public.dp_requests set contract_title = 'Правка автора' where id = '${draft}' returning id`), draft)
+
+    // Пустых заявок нет — откат возвращает обязательность.
+    sql(`delete from public.dp_requests where object_id is null or contract_title is null or amount is null or reason is null`)
+    psqlAt(db.port, null, { file: SHORT_ROLLBACK })
+    assert.equal(sql(`select is_nullable from information_schema.columns where table_schema = 'public' and table_name = 'dp_requests' and column_name = 'amount'`), 'NO')
+
+    psqlAt(db.port, null, { file: SHORT })
+    assert.doesNotMatch(psqlAt(db.port, null, { file: SHORT_CHECK }), /^FAIL/m)
+    assert.match(as(U.author, SHORT_DRAFT), /^[0-9a-f-]{36}$/)
   })
 
   it('откат: заявки и получатели целы, доступа нет; повторное применение их видит', () => {
@@ -394,7 +511,7 @@ describe('Заявка на ДП: база', { skip, timeout: 600000 }, () => {
     // Запрет на файлы снят: файлы других разделов и заявок работают без функций миграции.
     assert.equal(sql(`select count(*) from pg_trigger where tgname like 's3_documents_dp_request%'`), '0')
     assert.match(psqlAt(db.port, null, { file: CHECK }), /^FAIL /m)
-    psqlAt(db.port, null, { file: MIGRATION })
+    applyBoth()
     sql(`insert into public.role_permissions (role, section, can_view, can_edit) values ('dp_viewer', 'dp_requests', true, false) on conflict do nothing`)
     assert.equal(as(U.viewer, `select count(*) from public.dp_requests where id = '${id}'`), '1')
   })
@@ -426,6 +543,7 @@ describe('Заявка на ДП: база Яндекса (одна учётка
       env: { ...process.env, PROBE_REPORT_DIR: path.join(tmp, 'reports'), BACKUP_OUT_DIR: path.join(tmp, 'exports'), PROBE_CONNECT_TIMEOUT: '5' } })
     assert.equal(res.status, 0, res.stdout + res.stderr)
     assert.match(res.stdout, new RegExp(`OK ${NAME}: применена`))
+    assert.match(res.stdout, new RegExp(`OK ${SHORT_NAME}: применена`))
     internal(FIXTURE)
   })
   after(() => {
@@ -441,15 +559,29 @@ describe('Заявка на ДП: база Яндекса (одна учётка
       internal(`select count(*) from public.roles where key in ('economist_object', 'construction_manager')`))
   })
 
-  it('без понятийного соглашения и документа договора не подаётся; с обоими — номер и уведомления получателям', () => {
-    const id = as(U.author, draftSql())
+  it('без понятийного соглашения не подаётся; с ним — номер и уведомления получателям, остальное можно не заполнять', () => {
+    const id = as(U.author, SHORT_DRAFT)
     assert.throws(() => submit(U.author, id), /без понятийного соглашения/)
     as(U.author, fileSql(id, 'dp_concept_agreement', 'Понятийка.pdf'))
-    assert.throws(() => submit(U.author, id), /без документа договора/)
-    as(U.author, fileSql(id, 'dp_contract_doc', 'Договор.docx'))
     assert.match(submit(U.author, id), /^\d+$/)
     assert.equal(internal(`select count(*) from public.dp_request_alerts where request_id = '${id}' and user_id in ('${U.recipient}', '${U.admin}')`), '2')
     assert.equal(internal(`select created_by || '|' || created_by_name from public.dp_requests where id = '${id}'`), `${U.author}|Авторов А. А.`)
+    assert.equal(internal(`select coalesce(object_id::text, 'пусто') || '|' || coalesce(amount::text, 'пусто') from public.dp_requests where id = '${id}'`), 'пусто|пусто')
+  })
+
+  it('заявка без объекта: работающий с другого объекта видит и заполняет, чужой объект не ставит; автор поля отдела не пишет', () => {
+    const id = as(U.otherObj, SHORT_DRAFT)
+    as(U.otherObj, fileSql(id, 'dp_concept_agreement', 'Понятийка.pdf'))
+    submit(U.otherObj, id)
+    const sees = (uid) => as(uid, `select count(*) from public.dp_requests where id = '${id}'`)
+    assert.equal(sees(U.otherObj), '1')
+    assert.equal(sees(U.workerA), '1')
+    assert.equal(sees(U.author), '0', 'просмотр с привязкой: заявка ещё ничья')
+    assert.throws(() => as(U.otherObj, `update public.dp_requests set amount = 5 where id = '${id}'`), /заполняет сотрудник, работающий с заявками/)
+    assert.throws(() => as(U.workerA, `update public.dp_requests set object_id = '${OBJ_B}' where id = '${id}'`), /row-level security/)
+    assert.equal(as(U.workerA, `update public.dp_requests set object_id = '${OBJ_A}' where id = '${id}' returning id`), id)
+    assert.equal(sees(U.author), '1')
+    assert.equal(as(U.otherObj, `update public.dp_requests set reason = 'Примечание' where id = '${id}' returning id`), id)
   })
 
   it('создание и чтение: право и свои объекты; черновик — только автору; подрядчику, сотруднику без раздела и гостю — ничего', () => {
@@ -466,22 +598,23 @@ describe('Заявка на ДП: база Яндекса (одна учётка
     assert.equal(as(U.author, `delete from public.dp_requests where id = '${draft}' returning id`), draft)
   })
 
-  it('статус и правка: автор — пока не в работе, статус — право работы', () => {
+  it('статус и правка: автор — примечание и пока не в работе, статус и поля отдела — право работы', () => {
     const id = filed()
     assert.throws(() => as(U.author, `update public.dp_requests set status = 'in_work' where id = '${id}'`), /меняет сотрудник с правом правки/)
-    assert.equal(as(U.author, `update public.dp_requests set contract_title = 'Правка' where id = '${id}' returning id`), id)
-    assert.equal(as(U.author2, `update public.dp_requests set contract_title = 'Чужая' where id = '${id}' returning id`), '')
-    assert.equal(as(U.worker, `update public.dp_requests set status = 'in_work' where id = '${id}' returning id`), id)
-    assert.equal(as(U.author, `update public.dp_requests set contract_title = 'Поздняя' where id = '${id}' returning id`), '')
+    assert.equal(as(U.author, `update public.dp_requests set reason = 'Правка' where id = '${id}' returning id`), id)
+    assert.throws(() => as(U.author, `update public.dp_requests set contract_title = 'Правка' where id = '${id}'`), /заполняет сотрудник, работающий с заявками/)
+    assert.equal(as(U.author2, `update public.dp_requests set reason = 'Чужая' where id = '${id}' returning id`), '')
+    assert.equal(as(U.worker, `update public.dp_requests set status = 'in_work', contract_title = 'Правка' where id = '${id}' returning id`), id)
+    assert.equal(as(U.author, `update public.dp_requests set reason = 'Поздняя' where id = '${id}' returning id`), '')
   })
 
-  it('файлы: граница как у заявки, последний файл соглашения и договора не убрать', () => {
+  it('файлы: граница как у заявки, последнее соглашение не убрать, документы убираются', () => {
     const id = filed()
     const concept = internal(`select id from public.s3_documents where owner_id = '${id}' and doc_category = 'dp_concept_agreement'`)
     const contractDoc = internal(`select id from public.s3_documents where owner_id = '${id}' and doc_category = 'dp_contract_doc'`)
     assert.throws(() => as(U.author2, fileSql(id, 'dp_contract_doc', 'Чужой.pdf')), /Нет права менять файлы/)
     assert.throws(() => as(U.author, `delete from public.s3_documents where id = '${concept}'`), /Понятийное соглашение обязательно/)
-    assert.throws(() => as(U.author, `delete from public.s3_documents where id = '${contractDoc}'`), /Документ договора обязателен/)
+    assert.equal(as(U.author, `delete from public.s3_documents where id = '${contractDoc}' returning id`), contractDoc)
     as(U.author, fileSql(id, 'dp_concept_agreement', 'Новая.pdf'))
     assert.equal(as(U.author, `delete from public.s3_documents where id = '${concept}' returning id`), concept)
   })

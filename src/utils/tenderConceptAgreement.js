@@ -44,10 +44,10 @@ const SIGNED_EXTENSIONS = ['pdf', 'doc', 'docx', 'rtf', 'odt', 'png', 'jpg', 'jp
 export const CONCEPT_SIGNED_ACCEPT = SIGNED_EXTENSIONS.map((ext) => `.${ext}`).join(',')
 const SIGNED_MAX_MB = 50
 
-// Подписанный файл: документ или скан. null — подходит, иначе причина.
-export function signedFileProblem(file) {
+// Подписанный файл: документ или скан. null — подходит, иначе причина. extra — другие допустимые расширения и как их назвать в отказе.
+export function signedFileProblem(file, { extra = [], typesText = 'PDF, Word или скан' } = {}) {
   const ext = String(file?.name || '').split('.').pop().toLowerCase()
-  if (!SIGNED_EXTENSIONS.includes(ext)) return 'нужен PDF, Word или скан'
+  if (!SIGNED_EXTENSIONS.includes(ext) && !extra.includes(ext)) return `нужен ${typesText}`
   if (!file.size) return 'файл пустой'
   if (file.size > SIGNED_MAX_MB * 1024 * 1024) return `больше ${SIGNED_MAX_MB} МБ`
   return null

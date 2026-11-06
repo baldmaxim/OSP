@@ -11,13 +11,14 @@ import assert from 'node:assert/strict'
 import * as XLSX from 'xlsx'
 import { chromium } from 'playwright'
 import { browserLaunchOptions } from '../tender/lib/stand.mjs'
-import { classifyHeader, deliveryUnitWithVat, docDateFromText, parseNum, rulingsFromOps, unitPriceWithVat, vatFromText } from '../../src/utils/supplierDoc.js'
+import { classifyHeader, deliveryUnitWithVat, detectGridHeader, docDateFromText, parseNum, rulingsFromOps, unitPriceWithVat, vatFromText } from '../../src/utils/supplierDoc.js'
 import { autoPickRows, offersByGroup, otherUnitIndex, otherUnitPrices, suspectPrice, unplacedLines } from '../../src/utils/supplyAutoPick.js'
 import { parseSupplierPdfPages, parseSupplierWorkbook, readPdfPages, readWorkbookBytes } from '../../src/utils/supplierDocRead.js'
 import { codeTokens, deliveryFactor, docPack, expandName, groupUnitOk, itemCandidates, matchDocItems, mergeSamePositions, offerMatches, offerPrice, positionConfidence, positionGroups, sameMaterial, searchGroups } from '../../src/utils/supplyDocMatch.js'
 import { offerNotesOfDoc } from '../../src/utils/supplyDocPrice.js'
 import { nameDiff } from '../../src/utils/supplyNameDiff.js'
-import { lineForGroup, lineNotForGroup, OFFER_LINES_MAX, offerInRoubles, offerNotes, offerVatMode, offerWithVat, readOffer } from '../../src/utils/supplyOffers.js'
+import { priceInputText, priceSourceLines } from '../../src/utils/supplyPriceOrigin.js'
+import { lineForGroup, lineNotForGroup, OFFER_LINES_MAX, offerInRoubles, offerNeedsReread, offerNotes, offerVatMode, offerWithVat, READER_VERSION, readOffer, unreadableOfferNotes } from '../../src/utils/supplyOffers.js'
 import { normName } from '../../src/utils/supplyRateHelpers.js'
 
 const launch = browserLaunchOptions()
@@ -246,6 +247,92 @@ describe('документ поставщика: Excel', () => {
     assert.deepEqual([...brief(r.items)[0], r.items[0].priceVat], ['Эмаль ПФ-115 серая', 'кг', 20, 312.4, null, 'net'])
     assert.equal(parseSupplierWorkbook(XLSX, workbook([['Лист1', [['просто текст'], ['и ещё']]]])).error, 'no_table')
     assert.equal(parseSupplierWorkbook(XLSX, workbook([['Лист1', [['Наименование', 'Цена'], ['Итого', '']]]])).error, 'empty')
+  })
+})
+
+// Счёт на оплату из 1С, как его отдаёт «Сохранить как .xls» (копия по виду тендера № 902): лист свёрстан объединёнными ячейками, шапка
+// таблицы — в 50-й строке, над ней абзацы условий поставки и реквизиты банка. Файл считался «нет таблицы».
+function oneCInvoice({ headerRow = 49, unit = 'упак', name = '*8x120 БЦ клиновой анкер (75)', price = 737.25, qty = 3, sum = 2211.75 } = {}) {
+  const width = 76
+  const rows = Array.from({ length: headerRow + 22 }, () => new Array(width).fill(''))
+  const merges = []
+  const put = (r, c0, c1, v, r1 = r) => { rows[r][c0] = v; if (c1 > c0 || r1 > r) merges.push({ s: { r, c: c0 }, e: { r: r1, c: c1 } }) }
+  put(10, 17, 74, 'Внимание! Оплата данного счета означает согласие с условиями поставки товара. Уведомление об оплате обязательно, в противном случае не гарантируется наличие товара на складе. Товар отпускается по факту прихода денег на р/с Поставщика, самовывозом, при наличии доверенности и паспорта.')
+  put(14, 17, 74, 'Итого стоимость доставки и условия поставки — по отдельному договору, цена на товар действует пять дней, это длинный абзац условий, а не заголовок колонки таблицы счёта.')
+  put(25, 1, 36, 'Банк получателя')
+  put(25, 37, 42, 'БИК')
+  put(25, 43, 74, '000000000')
+  put(headerRow - 8, 1, 74, 'Счет на оплату № 1234 от 02 ноября 2026 г.')
+  put(headerRow - 6, 1, 12, 'Поставщик:')
+  put(headerRow - 6, 13, 74, 'ООО "Поставщик", ИНН 7700000000, КПП 770000000')
+  for (const [c0, c1, text] of [[1, 4, '№'], [5, 14, 'Артикул'], [15, 48, 'Товары (работы, услуги)'], [49, 54, 'Кол-во'], [55, 58, 'Ед.'], [59, 66, 'Цена'], [67, 74, 'Сумма']]) put(headerRow, c0, c1, text)
+  const row = headerRow + 1
+  for (const [c0, c1, v] of [[1, 4, 1], [5, 14, 'AE5000812034007'], [15, 48, name], [49, 54, qty], [55, 58, unit], [59, 66, price], [67, 74, sum]]) put(row, c0, c1, v)
+  put(row + 2, 37, 60, 'Итого:')
+  put(row + 2, 61, 74, sum)
+  put(row + 4, 37, 60, 'В том числе НДС 22%:')
+  put(row + 4, 61, 74, 398.84)
+  put(row + 6, 37, 60, 'Всего к оплате:')
+  put(row + 6, 61, 74, sum)
+  put(row + 8, 1, 74, `Всего наименований 1, на сумму ${sum} руб.`)
+  put(row + 10, 1, 12, 'Руководитель')
+  put(row + 10, 13, 48, 'Генеральный директор')
+  return { rows, merges }
+}
+
+describe('документ поставщика: счёт из 1С со шапкой глубоко в листе', () => {
+  const readBook = (bookType, data) => {
+    const { rows, merges } = oneCInvoice(data)
+    const ws = XLSX.utils.aoa_to_sheet(rows)
+    ws['!merges'] = merges
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'TDSheet')
+    const bytes = XLSX.write(wb, { type: 'array', bookType })
+    return parseSupplierWorkbook(XLSX, readWorkbookBytes(XLSX, new Uint8Array(bytes), `Заказ.${bookType === 'biff8' ? 'XLS' : 'xlsx'}`))
+  }
+
+  it('.xls: таблица найдена, абзацы условий шапкой не считаются, строка одна, итог сходится, дата и НДС из документа', () => {
+    const r = readBook('biff8')
+    assert.equal(r.kind, 'excel')
+    assert.deepEqual(r.items.map((i) => [i.name, i.code, i.qty, i.unit, i.price, i.sum]), [['*8x120 БЦ клиновой анкер (75)', 'AE5000812034007', 3, 'упак', 737.25, 2211.75]])
+    assert.equal(r.date, '2026-11-02', 'дату не вытеснил абзац условий, повторённый объединением ячеек')
+    assert.equal(r.vat.mode, 'gross')
+    assert.equal(r.vat.rate, 22)
+    assert.deepEqual(r.total, { ok: true, read: 2211.75, doc: 2211.75 })
+  })
+
+  it('шапка и глубже: 150-я строка', () => {
+    assert.equal(readBook('xlsx', { headerRow: 150 }).items.length, 1)
+  })
+
+  it('сверх предела таблицы не ищем, а ответ по-прежнему «нет таблицы»', () => {
+    assert.equal(readBook('xlsx', { headerRow: 260 }).error, 'no_table')
+  })
+
+  it('абзац сам по себе шапкой не считается и настоящую шапку не заслоняет', () => {
+    // «…товара …» в одной строке и «Итого стоимость …» в другой дали бы две колонки: наименование и сумму.
+    const grid = oneCInvoice().rows
+    assert.equal(detectGridHeader(grid).headerRow, 49)
+    assert.equal(detectGridHeader(grid.slice(0, 40)), null)
+  })
+
+  it('слабая шапка из двух колонок не останавливает поиск настоящей', () => {
+    const grid = [['Товар', 'Цена'], [], [], [], [], [], ['Наименование', 'Ед.', 'Кол-во', 'Цена', 'Сумма'], ['Труба', 'м', 2, 10, 20]]
+    const h = detectGridHeader(grid)
+    assert.equal(h.headerRow, 6)
+    assert.equal(h.columns.unit.index, 1)
+  })
+
+  it('строка на две строки листа (объединённые ячейки) — одна строка документа: итог сходится', () => {
+    const { rows, merges } = oneCInvoice()
+    const span = merges.filter((m) => m.s.r === 50).map((m) => ({ ...m, e: { ...m.e, r: 51 } }))
+    const ws = XLSX.utils.aoa_to_sheet(rows)
+    ws['!merges'] = [...merges.filter((m) => m.s.r !== 50), ...span]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'TDSheet')
+    const r = parseSupplierWorkbook(XLSX, readWorkbookBytes(XLSX, new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' })), 'Заказ.xlsx'))
+    assert.equal(r.items.length, 1)
+    assert.equal(r.total.ok, true)
   })
 })
 
@@ -1036,6 +1123,41 @@ describe('одна и та же позиция в разных ВОР', () => {
 })
 
 // Тендер № 821 и № 845 (02.11.2026): те же наименования, у одного м2, у другого м3. Сами не подставляются, в похожих — с пометкой.
+describe('счета металлобазы и крепёж (тендер № 902): трубы, анкер, теоретические тонны', () => {
+  const group = (name, unit, volume = 1) => positionGroups([{ name: 'ВОР', positions: [{ name, unit, volume, k: normName(name) }] }])[0]
+  const match = (item, groups) => matchDocItems([item], groups, { packs: true })[0]
+  const TUBES = () => ['10х10х1 ГОСТ 8639-82', '20х20х2 ГОСТ 8639-82', '40х20х2 ГОСТ 8645-68', '40х40х2 ГОСТ 8639-82', '50х10х2 ГОСТ 8645-68'].map((s) => group(`Труба профильная ${s}`, 'т', 0.05))
+
+  it('теоретические тонны — те же тонны, в любой записи', () => {
+    assert.equal(groupUnitOk('теор.т', group('Труба', 'т')), true)
+    assert.equal(groupUnitOk('теор. т', group('Труба', 'т')), true)
+    assert.equal(groupUnitOk('теор.т', group('Труба', 'кг')), false)
+  })
+
+  it('квадратная труба: «квадрат 20х2» — это 20х20х2, и не 40х40х2', () => {
+    assert.match(expandName('трубы электросварные квадрат 20х2 ГОСТ'), /20×20×2/)
+    assert.equal(match({ name: 'трубы электросварные квадрат 20х2 ГОСТ дл.6000 ГОСТ13663-86,ГОСТ8639-82', unit: 'теор.т', qty: 0.026 }, TUBES()).match.group.name, 'Труба профильная 20х20х2 ГОСТ 8639-82')
+    assert.equal(match({ name: 'трубы электросварные квадрат 40х2 ГОСТ дл.6000 ГОСТ13663-86,ГОСТ8639-82', unit: 'теор.т', qty: 0.056 }, TUBES()).match.group.name, 'Труба профильная 40х40х2 ГОСТ 8639-82')
+    assert.equal(match({ name: 'трубы электросварные прямоуг 40x20x2 ГОСТ дл.6000 ГОСТ13663-86,ГОСТ8645-68', unit: 'теор.т', qty: 0.041 }, TUBES()).match.group.name, 'Труба профильная 40х20х2 ГОСТ 8645-68')
+    // Другая стенка — другая труба: сама не подставляется.
+    assert.equal(match({ name: 'трубы электросварные квадрат 10x1.2 х/к ГОСТ дл.6000', unit: 'теор.т', qty: 0.034 }, TUBES()).match, null)
+    assert.equal(expandName('Труба 40х20х2'), 'Труба 40х20х2', 'прямоугольная — как есть')
+    assert.match(expandName('квадрат 40х20х2'), /40х20х2/)
+    assert.doesNotMatch(expandName('квадрат 40х20х2'), /40×40/, 'три размера уже полные')
+  })
+
+  it('анкер и анкерный болт, «d-8мм, L-120мм» и «8x120»; цена за упаковку из числа в скобках', () => {
+    const bolt = group('Болт анкерный d-8мм, L-120мм с потайной головкой', 'шт', 184)
+    const m = match({ name: '*8x120 БЦ клиновой анкер (75)', unit: 'упак', qty: 3, price: 737.25 }, [bolt, group('Лист-10 ГОСТ 19903-2015', 'м2'), group('Болт анкерный d-10мм, L-100мм', 'шт', 50)])
+    assert.equal(m.match.group, bolt)
+    assert.equal(m.match.pack, 75)
+    assert.equal(docPack({ name: 'Анкер (75)', unit: 'упак' }, 'шт'), 75)
+    assert.equal(docPack({ name: 'Анкер (75)', unit: 'шт' }, 'м'), null, 'число в скобках — только у упаковки')
+    assert.equal(docPack({ name: 'Анкер (75) усиленный', unit: 'упак' }, 'шт'), null, 'только в конце наименования')
+    assert.equal(docPack({ name: 'Анкер (1)', unit: 'упак' }, 'шт'), null)
+  })
+})
+
 describe('цены других тендеров в другой ед. изм.', () => {
   const N50 = 'Минераловатный утеплитель "Rockwool" толщ. 50 мм, плотностью 90 кг/м3'
   const N100 = 'Минераловатный утеплитель "Rockwool" толщ. 100 мм, плотностью 36 кг/м3'
@@ -1071,6 +1193,62 @@ describe('цены других тендеров в другой ед. изм.',
     const near = 'Минераловатный утеплитель "Rockwool" толщ. 50 мм плотность 90 кг/м3'
     const list = otherUnitPrices(pos(N50, 'м2', 10), otherUnitIndex([rate('near', near, 'м3', 8000, '2026-11-03'), rate('same', N50, 'м3', 8198.89), rate('other', 'Кран шаровой Ду15', 'м3', 100)]))
     assert.deepEqual(list.map((x) => [x.rate.id, x.sameName]), [['same', true], ['near', false]])
+  })
+})
+
+describe('файл, отвергнутый прежней версией чтения', () => {
+  const failed = (reason, extra = {}) => readOffer(JSON.stringify({ kind: 'supply_offer', v: 1, at: '2026-11-05T11:18:41Z', failed: reason, lines: [], ...extra }))
+  it('читается заново один раз: скан, «нет таблицы», «нет строк»; новая версия чтения ставит свою отметку', () => {
+    for (const reason of ['scan', 'no_table', 'empty']) assert.equal(offerNeedsReread(failed(reason)), true, reason)
+    assert.equal(offerNeedsReread(readOffer(unreadableOfferNotes('scan'))), false, 'отказ этой версии — окончательный')
+    assert.equal(readOffer(unreadableOfferNotes('scan')).rv, READER_VERSION)
+    assert.equal(readOffer(offerNotes({ lines: [{ name: 'Труба', price: 1 }] })).rv, READER_VERSION)
+  })
+  it('пароль и испорченный файл — заново не читаем: от чтения не зависит; прочитанный — тем более', () => {
+    assert.equal(offerNeedsReread(failed('encrypted')), false)
+    assert.equal(offerNeedsReread(failed('broken')), false)
+    assert.equal(offerNeedsReread(readOffer(JSON.stringify({ kind: 'supply_offer', v: 1, lines: [{ n: 'Труба', p: 1 }] }))), false)
+    assert.equal(offerNeedsReread(null), false)
+  })
+  it('строка со скана без сверки сама не выбирается и не считается «ошибкой» чужой цены', () => {
+    const g = positionGroups([{ name: 'ВОР', positions: [{ name: 'Труба 20х20х2', unit: 'м', volume: 2, k: normName('Труба 20х20х2') }] }])
+    const offer = (unsure) => readOffer(offerNotes({ ocr: true, lines: [{ name: 'Труба 20х20х2', unit: 'м', price: 100, unsure }] }))
+    const doc = { id: 'd', file_name: 'скан.pdf', created_at: '2026-11-05' }
+    const current = () => ({ own: [], copies: 0, empty: 1, ownAt: null })
+    const row = (unsure) => autoPickRows(offersByGroup([{ doc, offer: offer(unsure) }], g), g, { currentOf: current }).rows[0]
+    assert.equal(row(false).auto, true, 'цифры сошлись — отмечена сама')
+    assert.equal(row(true).auto, false, 'нечем сверить — видна, но человек решает сам')
+    assert.equal(row(true).check, true)
+  })
+})
+
+describe('откуда цена из другого тендера: строки файлов исходного тендера', () => {
+  const doc = { id: 'd1', file_name: 'Счёт.pdf' }
+  const offers = (lines) => [{ doc, offer: { lines } }]
+  it('то же наименование и та же цена — первыми; та же цена при другом наименовании — только если похоже', () => {
+    const out = priceSourceLines(offers([
+      { name: 'Раствор М-150', price: 5900 },
+      { name: 'раствор м-150', price: 5760 },
+      { name: 'Раствор кладочный М-150 готовый', price: 5760 },
+      { name: 'Лист стальной', price: 5760 },
+      { name: 'Песок', price: 900 },
+    ]), { name: 'Раствор М-150', price: 5760 })
+    assert.deepEqual(out.map((x) => [x.line.name, x.sameName, x.samePrice]), [
+      ['раствор м-150', true, true],
+      ['Раствор кладочный М-150 готовый', false, true],
+      ['Раствор М-150', true, false],
+    ])
+  })
+  it('строка, выбранная человеком для этой позиции, — тоже наименование', () => {
+    const key = normName('Раствор М-150')
+    assert.equal(priceSourceLines(offers([{ name: 'Смесь растворная', price: 1, k: key }]), { name: 'Раствор М-150', price: 2 }).length, 1)
+    assert.equal(priceSourceLines(offers([{ name: 'Смесь растворная', price: 1, also: [key] }]), { name: 'Раствор М-150', price: 2 }).length, 1)
+  })
+  it('как цена попала в тендер', () => {
+    assert.match(priceInputText('unit'), /вручную/)
+    assert.match(priceInputText('total'), /вручную/)
+    assert.match(priceInputText('import'), /Excel/)
+    assert.match(priceInputText(null), /до 16\.10\.2026/)
   })
 })
 

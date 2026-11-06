@@ -17,7 +17,7 @@ const STATUS_IN_PROGRESS = 'Идет тендерная процедура'
 
 // Выполнить count-запрос. Возвращает 0 при ошибке: индикатор декоративный и не
 // должен ломать страницу, поэтому ошибку только логируем.
-async function runCount(label, query) {
+export async function runCount(label, query) {
   const { count, error } = await query
   if (error) {
     console.error(`Не удалось посчитать «${label}»:`, error.message)

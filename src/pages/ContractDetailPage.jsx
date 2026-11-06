@@ -27,6 +27,7 @@ import SignalLinkCell from '../components/SignalLinkCell'
 import LarixLinkCell from '../components/LarixLinkCell'
 import { LARIX_LINK_LABEL, LARIX_NAME, isInLarix, larixLink } from '../utils/contractLarix'
 import { docTender, tenderTitle } from '../utils/contractTender'
+import { CONTRACTS_REGISTRY_PATH } from '../utils/contractsHub'
 import '../components/ContractRegistry.css'
 
 // Держать в согласии со STATUS_OPTIONS в ContractsPage.jsx.
@@ -321,7 +322,7 @@ function ContractDetailPage() {
       <AccessDenied
         title="Договор недоступен"
         message="Этот договор относится к другому объекту, вне вашего доступа. Обратитесь к администратору, если нужен доступ."
-        backTo="/contracts"
+        backTo={CONTRACTS_REGISTRY_PATH}
       />
     )
   }
@@ -346,7 +347,7 @@ function ContractDetailPage() {
   return (
     <div className="contract-registry contract-detail">
       <div className="registry-header cd-header">
-        <button className="cd-back" onClick={() => navigate('/contracts')} aria-label="Назад к списку">←</button>
+        <button className="cd-back" onClick={() => navigate(CONTRACTS_REGISTRY_PATH)} aria-label="Назад к списку">←</button>
         <div className="cd-header-info">
           <div className="cd-title-row">
             <h2>
@@ -486,7 +487,7 @@ function ContractDetailPage() {
                         className="btn-secondary"
                         disabled={!plan.ok}
                         title={plan.ok ? DOC_TYPE_LABEL[type] : plan.reason}
-                        onClick={() => navigate(`/contracts?ds=${contract.display_id}&ds_type=${type}`)}
+                        onClick={() => navigate(`${CONTRACTS_REGISTRY_PATH}?ds=${contract.display_id}&ds_type=${type}`)}
                       >+ {DOC_TYPE_LABEL[type]}</button>
                     )
                   })}

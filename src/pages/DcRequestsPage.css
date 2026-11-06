@@ -2908,7 +2908,8 @@
    раздела обрезает содержимое) — «Завершено» было не нажать. Пока меню
    последней строки открыто, строка не ниже меню (height у tr — минимальная
    высота): высокую строку это не меняет, короткая подрастает под меню. */
-.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr:last-child:has(.dcr-status-popover:not(.is-up)) { height: 13rem; }
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr:last-child:has(.dcr-status-popover:not(.is-up)),
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr:nth-last-child(2):has(+ .dcr-note-row):has(.dcr-status-popover:not(.is-up)) { height: 13rem; }
 
 /* Дальше — содержимое ячеек; префикс с .table-container, чтобы не задеть
    те же элементы в окнах (карточки файлов в «Результате проверки»). */
@@ -3386,6 +3387,39 @@ body.is-col-resizing .dc-requests-page.ui-work .table-container.is-fit { overflo
   min-width: 0;
 }
 .dc-requests-page .dcr-resp-line .dcr-meta-icon { flex: none; }
+/* С правом правки — тихий выбор, как у ответственного за статус ОКС, но стрелка видна всегда (как у «Материала» и «Типа ДС»):
+   без неё не понять, что ответственного можно выбрать. Сдвиг влево — поля кнопки, значок стоит там же, где без права правки. */
+.dc-requests-page .fdrop.dcr-req-resp-fdrop { display: inline-flex; min-width: 0; max-width: 100%; margin-left: -0.3125rem; }
+.dc-requests-page .fdrop.fdrop.dcr-req-resp-fdrop .fdrop-trigger,
+.dc-requests-page .fdrop.fdrop.dcr-req-resp-fdrop.is-active .fdrop-trigger {
+  max-width: 100%;
+  height: auto;
+  min-height: 1.25rem;
+  gap: 0.25rem;
+  padding: 0.0625rem 0.25rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  box-shadow: none;
+  font-size: inherit;
+  line-height: inherit;
+}
+.dc-requests-page .fdrop.fdrop.dcr-req-resp-fdrop .fdrop-trigger:hover,
+.dc-requests-page .fdrop.fdrop.dcr-req-resp-fdrop.is-open .fdrop-trigger {
+  border-color: rgba(148, 163, 184, 0.45);
+  background: var(--bg-secondary);
+}
+.dc-requests-page .fdrop.fdrop.dcr-req-resp-fdrop .fdrop-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: var(--ui-regular, 400);
+  text-align: left;
+}
+.dc-requests-page .fdrop.fdrop.dcr-req-resp-fdrop .fdrop-arrow { margin-left: 0; opacity: 0.6; }
 .dc-requests-page .dcr-contract-select { padding-right: 1.25rem; }
 .dc-requests-page .dcr-contract-link {
   color: var(--ui-link, var(--primary-color));
@@ -3528,3 +3562,85 @@ body.is-col-resizing .main-content > .dc-requests-page.ui-work.dcr-dense > .tabl
   color: var(--ui-link, var(--primary-color));
   text-decoration: underline;
 }
+
+/* Примечание заявки — выпадающая полоса под строкой (DcRequestNote), на телефоне — в карточке. В таблице полоса
+   продолжает заявку: черта над ней пунктирная, заявки разделяет сплошная под ней. Таблица шире своего блока
+   (прокрутка вбок) — поле стоит на месте и не шире блока, иначе правый край текста уехал бы за край. */
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr:has(+ .dcr-note-row) > td { border-bottom-style: dashed; }
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr.dcr-note-row > td { padding: 0; }
+.dc-requests-page .table-container .dcr-note { position: sticky; left: 0; }
+.dc-requests-page .table-container:not(.is-fit) .dcr-note { max-width: 56rem; }
+.dc-requests-page .dcr-note-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 var(--ui-cell-px, 0.5rem);
+}
+.dc-requests-page .dcr-note-toggle {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  min-width: 0;
+  padding: 0.25rem 0;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--ui-hint, 0.75rem);
+  line-height: var(--ui-hint-lh, 1rem);
+  text-align: left;
+  cursor: pointer;
+}
+.dc-requests-page .dcr-note-toggle:focus-visible { outline: 2px solid var(--ui-link, var(--primary-color)); outline-offset: -2px; }
+.dc-requests-page .dcr-note-title { flex-shrink: 0; font-weight: var(--ui-medium, 500); }
+.dc-requests-page .dcr-note-preview {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dc-requests-page .dcr-note-add { color: var(--ui-link, var(--primary-color)); }
+.dc-requests-page .dcr-note-toggle:hover .dcr-note-add { text-decoration: underline; }
+.dc-requests-page .dcr-note-status {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: var(--ui-hint, 0.75rem);
+  line-height: var(--ui-hint-lh, 1rem);
+}
+.dc-requests-page .dcr-note-status.is-error { color: #b91c1c; font-weight: var(--ui-medium, 500); }
+.dc-requests-page .dcr-note-status.is-warn { color: #92400e; }
+[data-theme='dark'] .dc-requests-page .dcr-note-status.is-error { color: #f87171; }
+[data-theme='dark'] .dc-requests-page .dcr-note-status.is-warn { color: #fbbf24; }
+.dc-requests-page .dcr-note-input {
+  display: block;
+  width: calc(100% - 2 * var(--ui-cell-px, 0.5rem));
+  margin: 0 var(--ui-cell-px, 0.5rem) 0.375rem;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius, 6px);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--ui-th, 0.8125rem);
+  line-height: var(--ui-th-lh, 1.125rem);
+  resize: none;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.dc-requests-page .dcr-note-input:focus { outline: none; border-color: var(--primary-color); }
+.dc-requests-page .dcr-note-text {
+  padding: 0 var(--ui-cell-px, 0.5rem) 0.375rem;
+  color: var(--text-primary);
+  font-size: var(--ui-th, 0.8125rem);
+  line-height: var(--ui-th-lh, 1.125rem);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* На телефоне — блок карточки над нижней строкой; поле — 16px, иначе iOS увеличивает страницу при вводе. */
+.dc-requests-page .mcard .dcr-note { border-top: 1px dashed var(--border-color); margin-top: 0.25rem; padding-top: 0.25rem; }
+.dc-requests-page .mcard .dcr-note-head { padding: 0; }
+.dc-requests-page .mcard .dcr-note-toggle { padding: 0.5rem 0; font-size: 0.8125rem; }
+.dc-requests-page .mcard .dcr-note-input { width: 100%; margin: 0 0 0.5rem; font-size: 1rem; line-height: 1.375rem; }
+.dc-requests-page .mcard .dcr-note-text { padding: 0 0 0.5rem; }

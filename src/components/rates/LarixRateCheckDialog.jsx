@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import PaperclipIcon from '../icons/PaperclipIcon'
 import { IconAlert } from '../icons/ActionIcons'
 import { IconClose } from '../icons/ToolbarIcons'
-import { isPdfFile, isSheetFile } from '../../utils/supplierDocRead'
+import { isImageFile, isPdfFile, isSheetFile } from '../../utils/supplierDocRead'
 import { DOC_ERROR_TEXT, readBidPriceDoc } from '../../utils/bidImport'
 import { DEFAULT_TOLERANCE, VISIBLE_ANALOGS } from '../../utils/kpRateCheck'
 import {
@@ -71,7 +71,7 @@ export default function LarixRateCheckDialog({ canOpenContracts = false, onClose
     setFound(null)
     setChoices(new Map())
     setShownLines(LINES_PAGE)
-    if (!isPdfFile(f.name) && !isSheetFile(f.name)) { fail(DOC_ERROR_TEXT.unsupported); return }
+    if (!isPdfFile(f.name) && !isSheetFile(f.name) && !isImageFile(f.name)) { fail(DOC_ERROR_TEXT.unsupported); return }
     if (f.size > PARSE_MAX_BYTES) { fail(`Файл больше ${PARSE_MAX_BYTES / 1024 / 1024} МБ — такой не распознаём.`); return }
     setPhase('reading')
     let r

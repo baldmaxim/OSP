@@ -65,7 +65,7 @@
   font-size: 0.75rem;
   line-height: 1rem;
 }
-.dpr-empty { color: var(--text-tertiary); }
+.dpr-empty { color: var(--text-tertiary); font-weight: 400; }
 
 .dp-requests-page tr.row-deleted td,
 .dp-requests-page .mcard.row-deleted { opacity: 0.65; }
@@ -203,6 +203,17 @@
 .dpr-dialog-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; }
 
 .dpr-field { display: flex; flex-direction: column; gap: 0.25rem; }
+.dpr-work-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.75rem 0 0;
+  border: 0;
+  border-top: 1px solid var(--border-color);
+}
+.dpr-work-fields legend { padding: 0 0.5rem 0 0; color: var(--text-secondary); font-size: 0.8125rem; font-weight: 600; line-height: 1.125rem; }
 .dpr-label { color: var(--text-secondary); font-size: 0.8125rem; font-weight: 500; line-height: 1.125rem; }
 .dpr-req { color: var(--danger-color); font-weight: 600; }
 .dpr-field > input,

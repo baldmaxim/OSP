@@ -1,4 +1,4 @@
-// «Договоры и ДС» (/contracts): вид раздела — как у других разделов (решение пользователя 29.10.2026).
+// «Реестр по договорам» (/contracts/registry): вид раздела — как у других разделов (решение пользователя 29.10.2026).
 //   • рабочий стиль (workUi.css, класс ui-work) и плотный вариант cr-dense на компьютере;
 //   • шапка — одна строка: название с плиткой, отдел («Все договоры» / ОС / ГО), справа действия;
 //   • панель — одной строкой: вид документа, поиск, фильтры, «Просрочено», «Не в Larix» — одна высота;
@@ -13,7 +13,7 @@ import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 
 const launch = browserLaunchOptions()
-const BASE = 'route=/contracts&contracts=30&contractsDivision=1&latency=0&shell=1'
+const BASE = 'route=/contracts/registry&contracts=30&contractsDivision=1&latency=0&shell=1'
 
 describe('Договоры и ДС: вид раздела', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
   let stand
@@ -49,7 +49,7 @@ describe('Договоры и ДС: вид раздела', { skip: !launch && '
 
       const header = page.locator('.registry-header')
       assert.equal(await header.locator('h2 .ic-tile').count(), 1, 'плитка раздела у названия')
-      assert.match(await header.locator('h2').innerText(), /Договоры и ДС/)
+      assert.match(await header.locator('h2').innerText(), /Реестр по договорам/)
       assert.deepEqual(await header.locator('.registry-scope-btn').evaluateAll((els) => els.map((b) => b.firstChild.textContent.trim())),
         ['Все договоры', 'ОС', 'ГО'])
       assert.match(await header.locator('.cr-header-actions').innerText(), /Путь к общей папке/)

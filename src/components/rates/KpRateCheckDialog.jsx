@@ -3,7 +3,7 @@ import FilterDropdown from '../FilterDropdown'
 import PaperclipIcon from '../icons/PaperclipIcon'
 import { IconAlert } from '../icons/ActionIcons'
 import { IconClose } from '../icons/ToolbarIcons'
-import { isPdfFile, isSheetFile } from '../../utils/supplierDocRead'
+import { isImageFile, isPdfFile, isSheetFile } from '../../utils/supplierDocRead'
 import { DOC_ERROR_TEXT, readBidPriceDoc } from '../../utils/bidImport'
 import {
   CHECK_EXPORT_HEADERS, DEFAULT_TOLERANCE, VERDICT_TEXT, VISIBLE_ANALOGS,
@@ -72,7 +72,7 @@ export default function KpRateCheckDialog({ canAdd = false, onClose, onAdded }) 
     setDoc(null)
     setFound(null)
     setChecked(new Set())
-    if (!isPdfFile(f.name) && !isSheetFile(f.name)) { setReadError(DOC_ERROR_TEXT.unsupported); return }
+    if (!isPdfFile(f.name) && !isSheetFile(f.name) && !isImageFile(f.name)) { setReadError(DOC_ERROR_TEXT.unsupported); return }
     if (f.size > PARSE_MAX_BYTES) { setReadError(`Файл больше ${PARSE_MAX_BYTES / 1024 / 1024} МБ — такой не распознаём.`); return }
     setPhase('reading')
     let r

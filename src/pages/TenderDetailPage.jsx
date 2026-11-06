@@ -540,6 +540,8 @@ function TenderDetailPage() {
   const [kpUploadedAt, setKpUploadedAt] = useState({})
   // Галочка «Свернуть всё» над участниками — общая с реестром тендеров, помнится в браузере.
   const [cpCollapsed, setCpCollapsed] = useParticipantsCollapsed()
+  // «Свернуть всё»: примечание участника — строкой с «…»; id участника, чьё примечание раскрыто для правки.
+  const [noteEditingId, setNoteEditingId] = useState(null)
   // task 427: DnD-перестановка участников
   const [draggedTc, setDraggedTc] = useState(null) // { id }
   const [tcDragOver, setTcDragOver] = useState(null) // { id, position }
@@ -2731,6 +2733,30 @@ function TenderDetailPage() {
                           </td>
                           {!hideNotes && (
                           <td>
+                            {/* «Свернуть всё»: заполненное примечание — одной строкой с «…», полностью — в подсказке;
+                                щелчок (Enter) раскрывает поле для правки. Раньше поле обрезалось по высоте 2rem
+                                и вторая строка текста была видна наполовину (06.11.2026). */}
+                            {cpCollapsed && tc.notes && noteEditingId !== tc.id ? (
+                              <div
+                                className={`tc-note-line${canEditTenders ? ' is-editable' : ''}`}
+                                title={tc.notes}
+                                {...(canEditTenders ? {
+                                  role: 'button',
+                                  tabIndex: 0,
+                                  'aria-label': 'Изменить примечание',
+                                  onClick: () => setNoteEditingId(tc.id),
+                                  onKeyDown: (e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault()
+                                      setNoteEditingId(tc.id)
+                                    }
+                                  },
+                                } : {})}
+                              >
+                                {/* Записи с новой строки — через «·», иначе в одной строке сливаются даты. */}
+                                {tc.notes.trim().split(/\s*\n\s*/).join(' · ')}
+                              </div>
+                            ) : (
                             <textarea
                               className="tc-note-area"
                               value={tc.notes || ''}
@@ -2741,18 +2767,27 @@ function TenderDetailPage() {
                                 e.target.style.height = 'auto'
                                 e.target.style.height = e.target.scrollHeight + 'px'
                               }}
-                              onBlur={(e) => handleUpdateParticipantNotes(tc.id, e.target.value)}
+                              onBlur={(e) => {
+                                if (noteEditingId === tc.id) setNoteEditingId(null)
+                                handleUpdateParticipantNotes(tc.id, e.target.value)
+                              }}
                               ref={(el) => {
                                 if (el && tc.notes) {
                                   el.style.height = 'auto'
                                   el.style.height = el.scrollHeight + 'px'
                                 }
+                                // Раскрыто из строки «Свернуть всё» — сразу в поле, курсор в конце текста.
+                                if (el && noteEditingId === tc.id && document.activeElement !== el) {
+                                  el.focus()
+                                  const end = el.value.length
+                                  el.setSelectionRange(end, end)
+                                }
                               }}
                               placeholder="Даты обзвонов, комментарии..."
-                              title={cpCollapsed && tc.notes ? tc.notes : undefined}
                               readOnly={!canEditTenders}
                               disabled={!canEditTenders}
                             />
+                            )}
                           </td>
                           )}
                         </tr>

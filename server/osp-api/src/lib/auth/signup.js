@@ -32,7 +32,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { Resolver } from 'node:dns/promises'
 import { hashPassword } from './passwords.js'
 import { checkNewPassword, generateTemporaryPassword } from './policy.js'
-import { SIGNUP_CONSENT_VERSION, companyNameKey, digitsOnly, emailDomain, emailProblem, isPublicMailDomain, validateSignup } from '../../shared/contractorSignupRules.js'
+import { SIGNUP_CONSENT_VERSION, companyNameKey, digitsOnly, emailDomain, emailProblem, isPublicMailDomain, phoneMainDigits, validateSignup } from '../../shared/contractorSignupRules.js'
 
 export const SIGNUP_DEFAULTS = {
   confirmTtlHours: 24,
@@ -216,7 +216,7 @@ export function createSignup({ db, box, verifier, blocklist, mail, sessions, pub
         where c.status::text = 'blacklist'`)
     const email = reg.email_norm
     const domain = emailDomain(email)
-    const phone = digitsOnly(reg.phone).slice(-10)
+    const phone = phoneMainDigits(reg.phone)
     const key = companyNameKey(reg.company_name)
     let contactHit = false
     let domainHit = false

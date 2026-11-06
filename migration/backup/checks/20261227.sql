@@ -33,8 +33,8 @@ checks(n, ok, what) as (
   union all
   select 4, (select count(*) from trg where tgenabled = 'O') = 4, 'триггеры заявок и файлов заявок включены'
   union all
-  select 5, coalesce((select prosrc like '%dp_concept_agreement_required%' and prosrc like '%dp_contract_doc_required%' from fn where proname = 'dp_requests_guard'), false),
-         'заявка не подаётся без понятийного соглашения и документа договора'
+  select 5, coalesce((select prosrc like '%dp_concept_agreement_required%' from fn where proname = 'dp_requests_guard'), false),
+         'заявка не подаётся без понятийного соглашения'
   union all
   select 6, (select count(*) from fn where proname in ('dp_requests_guard', 's3_documents_dp_request_guard') and not prosecdef) = 2
             and (select count(*) from fn where proname in ('dp_requests_alert', 'dp_request_scope', 'dp_request_my_alerts', 'dp_request_alerts_ack') and prosecdef) = 4,

@@ -605,6 +605,57 @@ describe('Лента файлов участника: карточка тенд�
     }
   })
 
+  // 06.11.2026 (замечание пользователя «криво отображаются примечания»): в свёрнутом виде поле примечания
+  // обрезалось по высоте 2rem, вторая строка текста была видна наполовину. Теперь — строка с «…».
+  it('«Свернуть всё»: примечание участника — одной строкой с «…», полностью в подсказке; щелчок — поле с текстом целиком', async () => {
+    const { page, errors, close } = await openCard()
+    try {
+      const note = '18.08 предоставили 3 КП, осталось 4\n25.08 прислали ещё два КП, ждём ограждение кровли и козырьки — обещали к пятнице'
+      const one = row(page, 'Подрядчик 01')
+      const area = one.locator('.tc-note-area')
+      await area.fill(note)
+      await area.blur()
+      await page.waitForFunction((text) => window.__fakeDb.tender_counterparties.find((t) => t.id === 'tc-1').notes === text, note)
+      const cellWidth = () => one.locator('td').last().evaluate((td) => Math.round(td.getBoundingClientRect().width))
+      const wide = await cellWidth()
+
+      await page.locator('.participants-section .tcpf-collapse-toggle').click()
+      const line = one.locator('.tc-note-line')
+      await line.waitFor({ timeout: 10000 })
+      assert.equal(await one.locator('.tc-note-area').count(), 0, 'поля нет — только строка')
+      assert.equal(await line.getAttribute('title'), note)
+      const box = await line.evaluate((el) => {
+        const cs = getComputedStyle(el)
+        return { h: el.getBoundingClientRect().height, lh: parseFloat(cs.lineHeight), clipped: el.scrollWidth > el.clientWidth, ellipsis: cs.textOverflow }
+      })
+      assert.ok(box.h < box.lh * 2, `одна строка, а не полторы: ${box.h}px при строке ${box.lh}px`)
+      assert.ok(box.clipped, 'длинное примечание сокращено')
+      assert.equal(box.ellipsis, 'ellipsis')
+      assert.equal(await cellWidth(), wide, 'длинное примечание не распирает колонку')
+
+      // Щелчок — поле с курсором, текст виден целиком; уход из поля — снова строка.
+      await line.click()
+      const editing = one.locator('.tc-note-area')
+      await editing.waitFor({ timeout: 10000 })
+      assert.equal(await editing.evaluate((el) => document.activeElement === el), true)
+      assert.equal(await editing.inputValue(), note)
+      // Подгонка высоты не учитывает рамку (2px): срезается часть нижнего отступа, но не текст.
+      assert.equal(await editing.evaluate((el) => el.scrollHeight - el.clientHeight < parseFloat(getComputedStyle(el).paddingBottom)), true, 'в поле текст не обрезан')
+      await editing.press('End')
+      await editing.type(' (звонил)')
+      await editing.blur()
+      await line.waitFor({ timeout: 10000 })
+      await page.waitForFunction((text) => window.__fakeDb.tender_counterparties.find((t) => t.id === 'tc-1').notes === text, `${note} (звонил)`)
+
+      // Пустое примечание в свёрнутом виде — поле с подсказкой, как раньше.
+      assert.equal(await row(page, 'Подрядчик 02').locator('.tc-note-area').count(), 1)
+      assert.equal(await row(page, 'Подрядчик 02').locator('.tc-note-line').count(), 0)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
   it('без права правки (экономист, инженер): «Свернуть всё» — за заголовком, таблица во всю ширину, справа нет пустой колонки', async () => {
     for (const query of ['&canEdit=0', '']) {
       const card = await openCard(query)

@@ -31,7 +31,8 @@ import {
   DS_TYPE_OPTIONS, MATERIAL_CLASS, MATERIAL_LABEL, MATERIAL_OPTIONS, STATUS_LABEL, STATUS_OPTIONS, SUBMISSION_CLASS,
   SUBMISSION_DEFAULT, SUBMISSION_HINT, SUBMISSION_LABEL, SUBMISSION_OPTIONS, hasSubmissionColumns, hasVerdict,
   matchesRequestNo, submissionNeedsComment, submissionOf, withRequestNumbers,
-  NO_SUBMISSION_RESP, costIncreaseEmployees, hasSubmissionRespColumns, isCostIncreaseRole, submissionRespKey,
+  NO_SUBMISSION_RESP, contactRepresentatives, costIncreaseEmployees, hasSubmissionRespColumns, isCostIncreaseRole,
+  matchPersonOption, responsibleContacts, submissionRespKey,
 } from '../utils/dcRequestOptions'
 import { fetchEmployees } from '../services/employees'
 import { initials } from '../utils/docCheckHelpers'
@@ -40,6 +41,8 @@ import { amendmentLabel, amendmentsOf, autoContractFor, contractChoicesFor, cont
 import { VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION } from '../utils/vorDivisions'
 import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { DC_SCROLL_KEY, groupDocsByRequest, readDcView, sessionStore, writeDcView } from '../utils/dcRequestView'
+import { DC_NOTE_MAX, hasNoteColumn, mergeNote } from '../utils/dcRequestNotes'
+import DcRequestNote from '../components/DcRequestNote'
 import useScrollMemory from '../hooks/useScrollMemory'
 import useColumnWidths from '../hooks/useColumnWidths'
 import ColumnResizeHandle, { ColumnWidthsReset } from '../components/ColumnResizeHandle'
@@ -182,6 +185,7 @@ const AUDIT_FIELD_LABEL = {
   submission_check: 'Статус ОКС',
   submission_comment: 'Комментарий к статусу ОКС',
   submission_resp_user_id: 'Ответственный за статус ОКС',
+  notes: 'Примечание',
 }
 
 function formatDateTime(ts) {
@@ -342,8 +346,8 @@ function DcContractCell({ req, contracts, contractsById, parties, canEdit, onCha
   if (!choices.length && !req.contract_id) {
     return (
       <span className="dcr-contract-none" title={req.object_id
-        ? 'У контрагента заявки нет договоров по этому объекту в реестре «Договоры и ДС»'
-        : 'У контрагента заявки нет договоров в реестре «Договоры и ДС»'}>нет договоров</span>
+        ? 'У контрагента заявки нет договоров по этому объекту в «Реестре по договорам»'
+        : 'У контрагента заявки нет договоров в «Реестре по договорам»'}>нет договоров</span>
     )
   }
   return (
@@ -353,7 +357,7 @@ function DcContractCell({ req, contracts, contractsById, parties, canEdit, onCha
         label={currentText || 'Выбрать'}
         value={req.contract_id || ''}
         onChange={(e) => onChange(e.target.value || null)}
-        title={currentText ? `Договор ${currentText} — нажмите, чтобы сменить` : 'Выбрать договор из реестра «Договоры и ДС»'}
+        title={currentText ? `Договор ${currentText} — нажмите, чтобы сменить` : 'Выбрать договор из «Реестра по договорам»'}
         aria-label="Договор заявки"
       >
         <option value="">Не выбран</option>
@@ -470,6 +474,42 @@ function SubmissionCommentInput({ value, hint, missing, onSave }) {
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) e.currentTarget.blur()
       }}
     />
+  )
+}
+
+const renderResponsibleOption = (o) => (o.value
+  ? <span className="fdrop-option-text">{o.label}</span>
+  : <span className="dcr-resp-option is-muted">{o.label}</span>)
+
+// Ответственный заявки — под статусом: кто ведёт заявку по этапам. С правом правки — выбор с поиском прямо в строке, те же
+// люди, что в форме заявки; без права и в «Удаленных» — только ФИО. value — id контакта, представляющего это ФИО.
+function DcResponsiblePicker({ name, value, options, canEdit, onChange }) {
+  const shown = (
+    <>
+      <span className="dcr-meta-icon" aria-hidden><IconUser size={12} /></span>
+      {name
+        ? <PersonName full={name} titlePrefix="Ответственный" />
+        : <span className="muted-dash">Не назначен</span>}
+    </>
+  )
+  if (!canEdit) return <div className="dcr-resp-line" title="Ответственный">{shown}</div>
+  return (
+    <div className="dcr-resp-line">
+      <FilterDropdown
+        className="dcr-req-resp-fdrop"
+        label=""
+        searchable
+        searchPlaceholder="Поиск сотрудника…"
+        allLabel="Не назначен"
+        value={value}
+        onChange={onChange}
+        options={options}
+        matchOption={matchPersonOption}
+        renderOption={renderResponsibleOption}
+        triggerTitle={name ? `Ответственный: ${name}. Нажмите, чтобы сменить` : 'Назначить ответственного'}
+        formatTrigger={() => shown}
+      />
+    </div>
   )
 }
 
@@ -691,6 +731,8 @@ function DcRequestsPage() {
   const docsEpochRef = useRef(0)
   const docsReadAtRef = useRef(0)
   const [expandedDocs, setExpandedDocs] = useState(() => new Set(savedView.expanded))
+  // Заявки с раскрытым примечанием (полоса под строкой).
+  const [openNotes, setOpenNotes] = useState(() => new Set(savedView.notesOpen))
   // Модалка загрузки документа: { requestId, file, description } | null
   const [docUpload, setDocUpload] = useState(null)
   const [docUploadBusy, setDocUploadBusy] = useState(false)
@@ -726,10 +768,10 @@ function DcRequestsPage() {
     writeDcView({
       tab: activeTab, search: searchQuery, statuses: filterStatuses, objects: filterObjectIds,
       counterparties: filterCounterpartyIds, responsibles: filterResponsibleIds, divisions: filterDivisions,
-      subResps: filterSubResps, expanded: [...expandedDocs],
+      subResps: filterSubResps, expanded: [...expandedDocs], notesOpen: [...openNotes],
     })
   }, [activeTab, searchQuery, filterStatuses, filterObjectIds, filterCounterpartyIds, filterResponsibleIds, filterDivisions,
-    filterSubResps, expandedDocs])
+    filterSubResps, expandedDocs, openNotes])
 
   // Прокрутку возвращаем, когда высота строк окончательная: заявки, их файлы и договоры (подписи договоров).
   // На компьютере прокручивается таблица под закреплённой шапкой, на телефоне — страница.
@@ -1547,6 +1589,36 @@ function DcRequestsPage() {
     }
   }
 
+  // Ответственный заявки правится прямо в строке. Тот же человек другой строкой справочника — не смена. Запись, не задевшая
+  // строку (нет права, заявку удалили), — ошибка, а не молчание.
+  const handleSaveResponsible = async (id, contactId) => {
+    const req = requests.find(r => r.id === id)
+    if (!req) return
+    const next = contactId || null
+    const prevValue = req.responsible_contact_id || null
+    if ((contactRepById[prevValue] || prevValue) === next) return
+    const contact = next ? dedupedContacts.find(c => c.id === next) : null
+    try {
+      const { error } = await db
+        .from('dc_requests')
+        .update({ responsible_contact_id: next, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select('id')
+        .single()
+      if (error) throw error
+      setRequests(prev => prev.map(r => r.id === id ? {
+        ...r,
+        responsible_contact_id: next,
+        responsible: contact ? { id: contact.id, full_name: contact.full_name } : null,
+      } : r))
+      await logFieldChange(id, 'responsible_contact_id', prevValue, next)
+    } catch (err) {
+      alert(err?.code === 'PGRST116'
+        ? 'Ответственный не изменён: заявка удалена или нет права правки.'
+        : `Ошибка назначения ответственного: ${err?.message || err}`)
+    }
+  }
+
   // Путь к папке правится прямо в таблице: открывать форму заявки ради одной
   // строки неудобно, а меняют её чаще, чем остальные поля.
   const handleSaveFolderPath = async (id, value) => {
@@ -1568,6 +1640,47 @@ function DcRequestsPage() {
     } finally {
       setSavingPath(false)
     }
+  }
+
+  // Примечание (миграция 20261230). Реестр сам не перечитывается, поэтому перед записью — текущий текст из базы: то,
+  // что коллега написал после открытия страницы, не стирается (mergeNote). Сравнить в условии самой записи нельзя:
+  // длинный текст не помещается в адрес запроса.
+  const handleSaveNote = async (id, text) => {
+    const req = requests.find(r => r.id === id)
+    if (!req) return { saved: false }
+    const next = text.trim() || null
+    const seen = req.notes ?? null
+    if (next === seen) return { saved: true, text: next }
+    try {
+      const { data: fresh, error: readError } = await db.from('dc_requests').select('notes').eq('id', id).single()
+      if (readError) throw readError
+      const current = fresh.notes ?? null
+      const value = mergeNote(seen, next, current)
+      if (value !== current) {
+        const { error } = await db.from('dc_requests')
+          .update({ notes: value, updated_at: new Date().toISOString() })
+          .eq('id', id)
+          .select('id')
+          .single()
+        if (error) throw error
+        await logFieldChange(id, 'notes', current, value)
+      }
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, notes: value } : r))
+      return { saved: true, text: value }
+    } catch (err) {
+      alert(err?.code === '23514'
+        ? `Примечание не сохранено: длиннее ${DC_NOTE_MAX} знаков.`
+        : `Ошибка сохранения примечания: ${err?.message || err}`)
+      return { saved: false }
+    }
+  }
+
+  const toggleNoteOpen = (id) => {
+    setOpenNotes(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
   }
 
   // Soft-delete: заявка уходит во вкладку «Удаленные» (документы/задачи сохраняются).
@@ -1711,6 +1824,23 @@ function DcRequestsPage() {
   // Ответственный за статус ОКС и фильтр по нему — когда есть и его колонки (миграция 20261117).
   const subRespEnabled = submissionEnabled && hasSubmissionRespColumns(requests)
   const subRespFilterOn = subRespEnabled && filterSubResps.length > 0
+  // Примечание — когда есть колонка (миграция 20261230). Сотруднику, привязанному к объектам, не показывается: это
+  // внутренние заметки, как примечание юриста в реестре договоров (hideNotes в ContractsPage). Пишут те, кто правит
+  // раздел, и «Отдел по удорожанию»: он рассматривает заявки, а права правки раздела у него нет.
+  const notesShown = hasNoteColumn(requests) && scopedObjectIds.length === 0
+  const renderNote = (req) => {
+    const canWrite = (canEditDc || isCostIncreaseUser) && !req.deleted_at
+    if (!notesShown || (!canWrite && !req.notes)) return null
+    return (
+      <DcRequestNote
+        value={req.notes}
+        open={openNotes.has(req.id)}
+        onToggle={() => toggleNoteOpen(req.id)}
+        canEdit={canWrite}
+        onSave={(text) => handleSaveNote(req.id, text)}
+      />
+    )
+  }
 
   // Столбцы таблицы по набору колонок в базе и их ширины (свои — из браузера).
   const tableColumns = useMemo(() => DCR_COLUMNS.filter(c => (
@@ -1779,7 +1909,8 @@ function DcRequestsPage() {
         (r.counterparties?.name || '').toLowerCase().includes(q) ||
         (r.ds_number || '').toLowerCase().includes(q) ||
         (contractsById.get(r.contract_id)?.contract_number || '').toLowerCase().includes(q) ||
-        (r.works_description || '').toLowerCase().includes(q)
+        (r.works_description || '').toLowerCase().includes(q) ||
+        (notesShown && (r.notes || '').toLowerCase().includes(q))
       )
     })
 
@@ -1794,27 +1925,13 @@ function DcRequestsPage() {
 
   // В таблице contacts один сотрудник может встречаться несколько раз
   // (по записи на каждый объект). В UI показываем по одной строке на ФИО.
-  const dedupedContacts = (() => {
-    const seen = new Set()
-    return contacts.filter(c => {
-      const key = (c.full_name || '').trim().toLowerCase()
-      if (!key || seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-  })()
-
-  // Любой id контакта → «представитель» (первый id с тем же ФИО), который и есть в
-  // dedupedContacts. Иначе сохранённый ответственный из non-first дубля не совпадёт
-  // ни с одной опцией селекта и покажется «Не назначен» (хотя в таблице виден).
-  const contactRepById = (() => {
-    const nameToRep = new Map(dedupedContacts.map(c => [(c.full_name || '').trim().toLowerCase(), c.id]))
-    const m = {}
-    for (const c of contacts) {
-      m[c.id] = nameToRep.get((c.full_name || '').trim().toLowerCase()) || c.id
-    }
-    return m
-  })()
+  const dedupedContacts = useMemo(() => responsibleContacts(contacts), [contacts])
+  const contactRepById = useMemo(() => contactRepresentatives(contacts), [contacts])
+  // Один список на все строки реестра и форму заявки.
+  const responsibleOptions = useMemo(() => [
+    { value: '', label: 'Не назначен' },
+    ...dedupedContacts.map(c => ({ value: c.id, label: c.full_name })),
+  ], [dedupedContacts])
 
   // Фильтр ответственных — только те сотрудники, что реально назначены хотя бы на одну заявку.
   const usedResponsibleIds = new Set(
@@ -1884,6 +2001,7 @@ function DcRequestsPage() {
           'Статус ОКС изменил': req.submission_by_name || '',
           'Дата изменения статуса ОКС': formatShortDate(req.submission_at),
         } : {}),
+        ...(notesShown ? { 'Примечание': req.notes || '' } : {}),
         'Создал': req.created_by_name || '',
         'Создано': formatShortDate(req.created_at),
       }
@@ -1900,6 +2018,7 @@ function DcRequestsPage() {
       { wch: 16 }, { wch: 9 }, { wch: 11 }, { wch: 16 },
       { wch: 16 }, { wch: 16 }, { wch: 40 },
       ...(submissionEnabled ? [{ wch: 34 }, ...(subRespEnabled ? [{ wch: 26 }] : []), { wch: 40 }, { wch: 22 }, { wch: 16 }] : []),
+      ...(notesShown ? [{ wch: 50 }] : []),
       { wch: 22 }, { wch: 12 },
     ]
     // Второй лист — задачи и ответы по тем же заявкам: в основной строке для
@@ -2305,6 +2424,7 @@ function DcRequestsPage() {
                       </div>
                     )}
                   </div>
+                  {renderNote(req)}
                   <div className="mcard-foot">
                     {docsCount > 0 && <span className="mcard-chip" aria-label={`Файлов: ${docsCount}`}><PaperclipIcon size={12} /> {docsCount}</span>}
                     <div className="mcard-actions">
@@ -2390,7 +2510,7 @@ function DcRequestsPage() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((req) => {
+                filtered.flatMap((req) => {
                   const currentStatus = req.status || 'in_work'
                   const statusOpt = STATUS_OPTIONS.find(o => o.value === currentStatus)
                   const isStatusOpen = statusPopoverFor === req.id
@@ -2417,7 +2537,7 @@ function DcRequestsPage() {
                   // Статус ОКС, комментарий и ответственный — только «Отдел по удорожанию», не в «Удаленных».
                   const canEditSubmission = isCostIncreaseUser && !isDeletedTab
 
-                  return (
+                  const row = (
                     <tr key={req.id} className={req.deleted_at ? 'row-deleted' : ''}>
                       <td className="ui-rownum" style={{ textAlign: 'center' }}>{req.requestNo}</td>
                       <td>
@@ -2685,13 +2805,13 @@ function DcRequestsPage() {
                             title="Зафиксировать итог проверки по договору"
                           >+ Итог проверки</button>
                         ) : null}
-                        {/* Ответственный — под статусом: кто ведёт заявку по этапам. */}
-                        <div className="dcr-resp-line" title="Ответственный">
-                          <span className="dcr-meta-icon" aria-hidden><IconUser size={12} /></span>
-                          {req.responsible?.full_name
-                            ? <PersonName full={req.responsible.full_name} titlePrefix="Ответственный" />
-                            : <span className="muted-dash">Не назначен</span>}
-                        </div>
+                        <DcResponsiblePicker
+                          name={req.responsible?.full_name}
+                          value={contactRepById[req.responsible_contact_id] || req.responsible_contact_id || ''}
+                          options={responsibleOptions}
+                          canEdit={canEditDc && !isDeletedTab}
+                          onChange={(contactId) => handleSaveResponsible(req.id, contactId)}
+                        />
                       </td>
                       <td className="dcr-cell-docs">
                         {/* Путь к папке в хранилище — первым: с него начинают поиск
@@ -2949,6 +3069,12 @@ function DcRequestsPage() {
                       </td>
                     </tr>
                   )
+                  const note = renderNote(req)
+                  return note ? [row, (
+                    <tr key={`${req.id}-note`} className={`dcr-note-row${req.deleted_at ? ' row-deleted' : ''}`}>
+                      <td colSpan={tableColumns.length}>{note}</td>
+                    </tr>
+                  )] : [row]
                 })
               )}
             </tbody>
@@ -3230,16 +3356,19 @@ function DcRequestsPage() {
 
                 <div className="form-group full-width">
                   <label>Ответственный сотрудник</label>
-                  <select
-                    name="responsible_contact_id"
+                  <FilterDropdown
+                    className="dcr-object-picker"
+                    label=""
                     value={contactRepById[formData.responsible_contact_id] || formData.responsible_contact_id || ''}
-                    onChange={handleInputChange}
-                  >
-                    <option value="">— Не назначен —</option>
-                    {dedupedContacts.map(c => (
-                      <option key={c.id} value={c.id}>{c.full_name}</option>
-                    ))}
-                  </select>
+                    onChange={(contactId) => setFormData(prev => ({ ...prev, responsible_contact_id: contactId || '' }))}
+                    options={responsibleOptions}
+                    matchOption={matchPersonOption}
+                    renderOption={renderResponsibleOption}
+                    searchable
+                    searchPlaceholder="Поиск сотрудника…"
+                    allLabel="Не назначен"
+                    triggerTitle="Ответственный сотрудник"
+                  />
                 </div>
 
                 <div className="form-group full-width">

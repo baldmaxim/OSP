@@ -3,13 +3,17 @@ import DocCheckCardMenu from './DocCheckCardMenu'
 import DocCheckColumn, { SLOT_AT_END } from './DocCheckColumn'
 import { dragCard, panByDrag, pressedScrollbar } from './boardGestures'
 import {
+  COLUMN_SORTS,
   DOC_CHECK_STATUSES,
-  SUMMARY_COLUMN,
   availableStatuses,
   boardColumns,
-  compareForBoard,
-  compareNewestFirst,
+  columnSortOf,
+  datePlaceBefore,
   matchesSummary,
+  nextColumnSort,
+  normalizeColumnSorts,
+  withColumnSort,
+  SUMMARY_COLUMN,
 } from '../../utils/docCheckHelpers'
 
 // Канбан-доска заявок на проверку ДП/ДС — по образцу доски, на которой отдел
@@ -23,12 +27,22 @@ import {
 // Мышью (жесты — boardGestures.js, решение пользователя 03.11.2026): карточку тащат за любое место — за указателем едет
 // её копия, заглушка показывает, куда она встанет, у края окна доска и колонка едут сами, Escape отменяет. Нажать и вести
 // по любому другому месту — прокрутка влево-вправо; так же и по карточке у того, кому менять заявки нельзя.
+//
+// Порядок в колонке (06.11.2026) — кнопка в шапке: свой (как расставили мышью), новые сверху, старые сверху; выбор у каждой
+// колонки свой и хранится в браузере. В колонке, показанной по дате, место решает дата: заглушка стоит там, куда карточка
+// встанет, бросок в ту же колонку ничего не меняет, в другую — меняет колонку, а в своём порядке карточка встаёт наверх (как
+// перенос из меню). Свой порядок при этом не трогается — вернули «Свой порядок», и он прежний.
 
 // Нажатие сюда — действие этого элемента, а не жест. Заголовок карточки — кнопка для клавиатуры, а ссылка на письмо по
 // щелчку открывается, но потянуть карточку за них можно: щелчок от сдвига отличает порог.
 const CONTROLS = 'button:not(.dc-card-title), input, select, textarea, label, .fdrop'
 const SCROLL_KEY = 'docCheckBoardScroll'
+const SORT_KEY = 'docCheckColumnSort'
 const EMPTY = []
+
+function readSorts() {
+  try { return normalizeColumnSorts(JSON.parse(localStorage.getItem(SORT_KEY) || 'null')) } catch { return {} }
+}
 
 const findRequest = (byColumn, id) => {
   for (const list of byColumn.values()) {
@@ -56,6 +70,11 @@ function DocCheckBoard({
   const openMenu = useCallback((r, anchor) => setMenu({ request: r, anchor }), [])
   const boardRef = useRef(null)
   const stopGesture = useRef(null)
+  const [sorts, setSorts] = useState(readSorts)
+  const changeSort = useCallback((column) => setSorts(prev => withColumnSort(prev, column, nextColumnSort(prev, column))), [])
+  useEffect(() => {
+    try { localStorage.setItem(SORT_KEY, JSON.stringify(sorts)) } catch { /* приватный режим */ }
+  }, [sorts])
 
   const statuses = availableStatuses(hasBoardFields)
   const statusOptions = useMemo(() => DOC_CHECK_STATUSES
@@ -73,17 +92,17 @@ function DocCheckBoard({
       map.get(r.status).push(r)
       if (matchesSummary(r, summary)) map.get(SUMMARY_COLUMN).push(r)
     }
-    for (const [value, list] of map) list.sort(value === SUMMARY_COLUMN ? compareNewestFirst : compareForBoard)
+    for (const [value, list] of map) list.sort(COLUMN_SORTS[columnSortOf(sorts, value)].compare)
     const extra = [...map.keys()].filter(k => !columns.some(c => c.value === k))
     return {
       byColumn: map,
       allColumns: [...columns, ...extra.map(value => ({ value, label: value, className: '', kind: 'status' }))],
     }
-  }, [requests, summary, hasBoardFields])
+  }, [requests, summary, hasBoardFields, sorts])
 
   // Пока несут карточку, заявки могли перечитаться: бросок решается по свежим данным.
   const latest = useRef(null)
-  latest.current = { byColumn, onMove }
+  latest.current = { byColumn, onMove, onCardAction, sorts }
 
   const handlePointerDown = useCallback((e) => {
     if (e.button !== 0 || e.pointerType !== 'mouse' || stopGesture.current || e.target.closest(CONTROLS)) return
@@ -105,11 +124,16 @@ function DocCheckBoard({
       onTarget: (target) => setDrag(prev => (prev ? { ...prev, target } : prev)),
       onDrop: (target) => {
         setDrag(null)
-        const { byColumn: columns, onMove: move } = latest.current
+        const { byColumn: columns, onMove: move, onCardAction: cardAction, sorts: current } = latest.current
         const fresh = findRequest(columns, id)
         if (!target || !fresh) return
         const place = placeOf(columns, fresh.status, id)
         if (target.column === place.column && target.beforeId === place.beforeId) return
+        // Колонка по дате: место решает дата, в своём порядке — наверх (moveTo страницы); своя колонка — без изменений.
+        if (columnSortOf(current, target.column) !== 'manual') {
+          if (target.column !== fresh.status) cardAction(fresh, 'status', target.column)
+          return
+        }
         move(fresh, target.column, target.beforeId)
       },
       onCancel: () => setDrag(null),
@@ -141,6 +165,15 @@ function DocCheckBoard({
   }, [])
 
   const slot = drag ? (drag.target || drag.origin) : null
+  const dragged = drag ? findRequest(byColumn, drag.id) : null
+  // Заглушка места: в своём порядке — где указатель, в колонке по дате — где карточка встанет по дате.
+  // Из другой колонки карточка придёт с номером «наверх» (больше всех в колонке): при равной дате он и решает место.
+  const slotIn = (col, mode) => {
+    if (slot?.column !== col.value) return null
+    if (mode === 'manual' || !dragged) return slot.beforeId ?? SLOT_AT_END
+    const arriving = dragged.status === col.value ? dragged : { ...dragged, sort_order: Number.MAX_SAFE_INTEGER }
+    return datePlaceBefore(byColumn.get(col.value) || EMPTY, arriving, COLUMN_SORTS[mode].compare) ?? SLOT_AT_END
+  }
 
   return (
     <div
@@ -151,11 +184,13 @@ function DocCheckBoard({
       onDragStart={(e) => e.preventDefault()}
     >
       {allColumns.map(col => {
-        const hasSlot = slot?.column === col.value
+        const sort = columnSortOf(sorts, col.value)
         return (
           <DocCheckColumn
             key={col.value}
             col={col}
+            sort={sort}
+            onSortChange={changeSort}
             list={byColumn.get(col.value) || EMPTY}
             employees={employees}
             canEdit={canEdit}
@@ -164,7 +199,7 @@ function DocCheckBoard({
             summary={col.kind === 'summary' ? summary : null}
             canAdd={col.kind !== 'summary' && canEdit && statuses.some(s => s.value === col.value)}
             isOver={drag?.target?.column === col.value}
-            slotBefore={hasSlot ? (slot.beforeId ?? SLOT_AT_END) : null}
+            slotBefore={slotIn(col, sort)}
             liftedId={drag?.origin.column === col.value ? drag.id : null}
             sourceId={drag && col.kind === 'summary' ? drag.id : null}
             onSummaryChange={onSummaryChange}

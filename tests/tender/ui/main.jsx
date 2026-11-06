@@ -5,7 +5,7 @@
 //             publicNoContact=1 — колонок ответственного ещё нет, как до миграции 20261101);
 //             /general/departments (отделы; departments=missing — таблицы ещё нет), /tasks?task=task-1 (карточка
 //             задачи с чек-листом; taskChecklist=N — ещё N пунктов, taskList=N — ещё N задач), /stand/dgp (блок ДГП вкладки «Смета» объекта), /reports&dcStats=1 (заявки на ДС),
-//             /contracts&contracts=N (реестр «Договоры и ДС», понятийные соглашения; contractsDivision=1 — колонка
+//             /contracts/registry&contracts=N (реестр договоров, понятийные соглашения; contractsDivision=1 — колонка
 //             подразделения, миграция 20261112, и три ДС у договора ctr-2; contractsEstimat=1 — колонки отметки Estimat,
 //             миграция 20261211), /tenders/other&tendersDept=other
 //             («Тендеры — Прочее»: плотный реестр, тендеры без объекта),
@@ -13,6 +13,7 @@
 //             dcSubmission=1 — столбцы «Статус ОКС» и «Комментарий», миграция 20261108; с dcSubResp=1 —
 //             ответственный за статус ОКС из «Отдела по удорожанию» и фильтр по нему, миграция 20261117;
 //             dcContracts=1 — договор, ДС и подразделение заявок, миграция 20261109;
+//             dcNotes=1 — примечание заявки, миграция 20261230;
 //             dcMany=N — ещё N заявок; dcOldFiles=N — ещё N старых файлов, с maxRows=1000 — потолок строк PostgREST;
 //             /dc-requests?file=<id> — ссылка на файл из выгрузки в Excel),
 //             /kp-review&kpReview=1 («Проверка КП»; kpReviewMany=N — длинный список, kpRole — роль, см. seed.js),
@@ -62,6 +63,7 @@ const DgpStand = lazy(() => import('./dgp-stand.jsx'))
 // Реестр договоров — так же: его стили (ContractRegistry*.css, MobileCards.css) глобальные.
 const ObjectsPage = lazy(() => import('../../../src/pages/ObjectsPage'))
 const ContractsPage = lazy(() => import('../../../src/pages/ContractsPage'))
+const ContractsHubPage = lazy(() => import('../../../src/pages/ContractsHubPage'))
 // «Проверка КП» — так же: стили страницы и рабочего слоя (workUi.css) не должны задеть другие стенды.
 const KpReviewPage = lazy(() => import('../../../src/pages/KpReviewPage'))
 // Реестр заявок на ДС — так же (DcRequestsPage.css, рабочий слой).
@@ -118,7 +120,8 @@ const routes = (
     <Route path="/general/counterparties" element={<CounterpartiesPage />} />
     <Route path="/general/objects" element={<Suspense fallback={null}><ObjectsPage /></Suspense>} />
     <Route path="/general/objects/:objectId" element={<Suspense fallback={null}><ObjectDetailPage /></Suspense>} />
-    <Route path="/contracts" element={<Suspense fallback={null}><ContractsPage /></Suspense>} />
+    <Route path="/contracts" element={<Suspense fallback={null}><ContractsHubPage /></Suspense>} />
+    <Route path="/contracts/registry" element={<Suspense fallback={null}><ContractsPage /></Suspense>} />
     <Route path="/kp-review" element={<Suspense fallback={null}><KpReviewPage /></Suspense>} />
     <Route path="/dc-requests" element={<Suspense fallback={null}><DcRequestsPage /></Suspense>} />
     <Route path="/dp-requests" element={<Suspense fallback={null}><DpStand page /></Suspense>} />

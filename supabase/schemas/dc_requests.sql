@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS dc_requests (
   contract_id UUID REFERENCES contracts(id) ON DELETE SET NULL,
   amendment_id UUID REFERENCES contracts(id) ON DELETE SET NULL,
   division TEXT CHECK (division IS NULL OR division IN ('monolith', 'nvf_spk', 'general', 'hvac_water', 'electrical', 'finishing')),
+  -- Примечание: заметки по ходу рассмотрения ДС (миграция 20261230).
+  notes TEXT CHECK (char_length(notes) <= 5000),
   created_by_name TEXT,
   deleted_at TIMESTAMPTZ,                    -- soft-delete: заявка во вкладке «Удаленные»
   created_at TIMESTAMPTZ DEFAULT NOW(),

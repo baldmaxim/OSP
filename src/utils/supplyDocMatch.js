@@ -91,6 +91,12 @@ const countIn = (name) => {
   const m = /([0-9]+)\s*(?:шт|штук)/.exec(name)
   return m ? Number(m[1]) : null
 }
+// Сколько в упаковке, если единица строки — упаковка, а в наименовании число в скобках в конце: «8x120 клиновой анкер (75)», цена за
+// упак. Только в конце и только при упаковке: в других местах скобки — это что угодно («Кабель (2х1,5)», «Труба (20)»).
+const bareCountIn = (name) => {
+  const m = /\(\s*([0-9]{1,5})\s*\)\s*$/.exec(name)
+  return m && Number(m[1]) > 1 ? Number(m[1]) : null
+}
 const textOf = (name) => String(name || '').toLowerCase().replace(/ё/g, 'е')
 // Толщина из наименования, м: «толщ. 50 мм», «толщиной 100мм», «t=2 мм», «δ=20 мм».
 const THICKNESS_RE = /(?:толщ\S*\s*|(?:^|[^a-zа-я])[tδ]\s*=\s*)([0-9]+(?:[.,][0-9]+)?)\s*мм/
@@ -113,7 +119,7 @@ export function docPack(item, unit, groupName = null) {
   if (scale) return scale
   const name = textOf(item.name)
   let n = null
-  if (to === 'шт' && PACK_UNITS.has(from)) n = item.packQty || countIn(name)
+  if (to === 'шт' && PACK_UNITS.has(from)) n = item.packQty || countIn(name) || bareCountIn(name)
   else if (to === 'м' && ROLL_UNITS.has(from)) n = lastLength(name) || (from === 'шт' ? null : item.packQty)
   else if (PACK_UNITS.has(to) && from === 'шт') {
     const count = countIn(textOf(groupName)) || countIn(name)
@@ -190,6 +196,11 @@ const EXPAND = [
   [/(^|[^a-zа-яё])стяжк/gi, '$1хомут стяжк'],
   [/(^|[^a-zа-яё])рукав металлическ/gi, '$1металлорукав '],
   [/(^|[^a-zа-яё])витая пара/gi, '$1кабель витая пара'],
+  // Трубу квадратного сечения металлобазы пишут сторона × стенка, а смета — обе стороны: «квадрат 20х2» = «20х20х2» (тендер № 902).
+  [/(квадрат[а-яё]*[^0-9]{0,12}?)([0-9]+(?:[.,][0-9]+)?) ?[xх×*] ?([0-9]+(?:[.,][0-9]+)?)(?![0-9]|[.,][0-9]| ?[xх×*] ?[0-9])/gi, '$1$2×$2×$3'],
+  // Анкер и анкерный болт — один материал, и размер пишут по-разному: «d-8мм, L-120мм» = «8x120».
+  [/(^|[^a-zа-яё])d ?[-=]? ?([0-9]+(?:[.,][0-9]+)?) ?(?:мм)?[,; ]+l ?[-=]? ?([0-9]+(?:[.,][0-9]+)?) ?(?:мм)?/gi, '$1$2×$3'],
+  [/(^|[^a-zа-яё])анкер(?=[\s,;.)]|$)/gi, '$1анкерный болт'],
 ]
 export const expandName = (name) => EXPAND.reduce((s, [re, to]) => s.replace(re, to), String(name ?? ''))
 

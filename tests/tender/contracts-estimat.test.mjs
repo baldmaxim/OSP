@@ -1,4 +1,4 @@
-// «Договоры и ДС» (/contracts): плашка «Estimat» рядом с номером договора и в строке ДС — три состояния по кругу, цвет
+// «Реестр по договорам» (/contracts/registry): плашка «Estimat» рядом с номером договора и в строке ДС — три состояния по кругу, цвет
 // меняется, как у «ТГ» в тендерах ОС (миграция 20261211). Стенд: contractsEstimat=1 — колонки есть, ctr-1 загружен, ctr-4 —
 // «не загружать», ctr-3 — ДС договора ctr-2, ctr-7 удалён, ctr-10 с длинным номером. Правила — tests/contracts/contract-estimat.test.mjs.
 import { describe, it, before, after } from 'node:test'
@@ -7,7 +7,7 @@ import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 
 const launch = browserLaunchOptions()
-const BASE = 'route=/contracts&contracts=24&latency=0'
+const BASE = 'route=/contracts/registry&contracts=24&latency=0'
 const ESTIMAT = `${BASE}&contractsEstimat=1`
 const CHIP = '.estimat-chip'
 

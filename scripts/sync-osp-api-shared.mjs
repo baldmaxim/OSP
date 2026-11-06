@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 export const SHARED_FILES = ['vorMaterialsSheet.js', 'vorMaterials.js', 'supplyAutoImport.js', 'supplyRateHelpers.js', 'vorFiles.js', 'fileRename.js',
-  'bidVor.js', 'supplySimilarity.js', 'contractorSignupRules.js']
+  'bidVor.js', 'supplySimilarity.js', 'contractorSignupRules.js', 'phoneFormat.js']
 export const SRC_DIR = path.join(ROOT, 'src', 'utils')
 export const DEST_DIR = path.join(ROOT, 'server', 'osp-api', 'src', 'shared')
 

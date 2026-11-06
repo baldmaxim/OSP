@@ -82,6 +82,7 @@ alter table public.superadmins enable row level security; alter table public.sup
 create policy osp_internal on public.superadmins for all to public using ((select osp_private.bypass())) with check ((select osp_private.bypass()));
 ${fs.readFileSync(path.join(ROOT, 'migration', 'yandex', '20261019_own_auth.sql'), 'utf8')}
 ${fs.readFileSync(path.join(ROOT, 'migration', 'yandex', '20261203_contractor_signup.sql'), 'utf8')}
+${fs.readFileSync(path.join(ROOT, 'migration', 'yandex', '20261229_signup_phone_ext.sql'), 'utf8')}
 `
 
 const jsonHeaders = { 'content-type': 'application/json', origin: ORIGIN, 'sec-fetch-site': 'same-origin' }
@@ -162,7 +163,7 @@ describe('регистрация подрядчика на настоящей б
     return { challenge, answer: solve(challenge, bits) }
   }
   const form = (over = {}) => ({
-    email: 'ivanov@stroy-fresh.ru', companyName: 'ООО «Новая стройка»', inn: INN.fresh, kpp: '770101001',
+    email: 'ivanov@stroy-fresh.ru', legalForm: 'ООО', companyName: '«Новая стройка»', inn: INN.fresh, kpp: '770101001',
     contactName: 'Иванов Иван Иванович', phone: '+7 916 123-45-67', consent: true, ...over,
   })
   const post = (url, payload, headers = {}) => app.inject({ method: 'POST', url, payload, headers: { ...jsonHeaders, ...headers } })
@@ -324,11 +325,21 @@ describe('регистрация подрядчика на настоящей б
     await bad({ inn: '7707083894' }, 'inn')
     await bad({ inn: '0000000000' }, 'inn')
     await bad({ inn: '' }, 'inn')
-    await bad({ inn: INN.ip, kpp: '770101001' }, 'kpp')
+    await bad({ inn: `абв${INN.fresh}` }, 'inn')
+    await bad({ inn: INN.ip }, 'inn')
+    await bad({ legalForm: 'ИП' }, 'inn')
+    await bad({ legalForm: 'ИП', inn: INN.ip, kpp: '770101001' }, 'kpp')
     await bad({ kpp: '12' }, 'kpp')
+    await bad({ kpp: 'AB0101001' }, 'kpp')
     await bad({ email: 'x@yopmail.com' }, 'email')
     await bad({ email: 'x"y@stroy.ru' }, 'email')
+    await bad({ email: 'ivanov.stroy.ru' }, 'email')
+    await bad({ email: `${'a'.repeat(60)}@${'b'.repeat(40)}.ru` }, 'email')
     await bad({ phone: '12345' }, 'phone')
+    await bad({ phone: '+7916123' }, 'phone')
+    await bad({ phone: '+79161234567 доб. 1234567' }, 'phone')
+    await bad({ legalForm: 'XXX' }, 'companyName')
+    await bad({ legalForm: undefined, companyName: 'ООО' }, 'companyName')
     await bad({ companyName: '=HYPERLINK("http://evil","x")' }, 'companyName')
     await bad({ companyName: 'ООО https://evil.ru' }, 'companyName')
     await bad({ companyName: '<img src=x>' }, 'companyName')
@@ -422,9 +433,10 @@ describe('регистрация подрядчика на настоящей б
       { over: { email: 'a1@clean-one.ru', inn: INN.black }, reason: 'inn_blacklisted' },
       { over: { email: 'a2@clean-two.ru', inn: INN.friend }, reason: 'affiliate_blacklisted' },
       { over: { email: 'boss@bad-company.ru', inn: INN.sameMail }, reason: 'contact_blacklisted' },
-      { over: { email: 'a3@clean-three.ru', inn: INN.samePhone, phone: '8 916 555 44 33' }, reason: 'contact_blacklisted' },
+      // С добавочным номером: сверяется сам номер.
+      { over: { email: 'a3@clean-three.ru', inn: INN.samePhone, phone: '8 916 555 44 33 доб. 123' }, reason: 'contact_blacklisted' },
       { over: { email: 'other@bad-company.ru', inn: INN.sameDomain }, reason: 'domain_blacklisted' },
-      { over: { email: 'a4@clean-four.ru', inn: INN.sameName, companyName: 'Плохая компания, АО' }, reason: 'name_blacklisted' },
+      { over: { email: 'a4@clean-four.ru', inn: INN.sameName, companyName: '«Плохая компания»' }, reason: 'name_blacklisted' },
     ]
     for (const { over, reason } of cases) {
       const token = await registerAndGetToken({ phone: '+7 926 000-11-22', ...over })
@@ -590,7 +602,7 @@ describe('регистрация подрядчика на настоящей б
     const zero = '0274062111'
     for (const [written, inn, email] of [[`${INN.fresh2}/770101001`, INN.fresh2, 'a@kpp-case.ru'], [`${INN.fresh}, 7702070139`, INN.fresh, 'a@two-case.ru'], [zero.replace(/^0/, ''), zero, 'a@zero-case.ru']]) {
       asMark('osp:internal', `insert into public.counterparties (name, inn, status) values ('ООО Формат ${email}', '${written}', 'blacklist'); select 1`)
-      assert.deepEqual((await confirm(await registerAndGetToken({ email, inn, phone: `+7 926 000-23-0${email.length}` }))).json(), { status: 'review' }, written)
+      assert.deepEqual((await confirm(await registerAndGetToken({ email, inn, phone: `+7 926 000-23-${email.length}` }))).json(), { status: 'review' }, written)
       assert.match(asMark('osp:auth', `select array_to_string(reasons, ',') from osp_auth.registrations where email_norm = '${email}'`), /inn_blacklisted/, written)
       asMark('osp:internal', `delete from public.counterparties where inn = '${written}'; select 1`)
     }
@@ -614,6 +626,23 @@ describe('регистрация подрядчика на настоящей б
     assert.equal((await change()).statusCode, 400)
     assert.equal((await change()).statusCode, 400)
     assert.equal((await change()).statusCode, 429)
+  })
+
+  it('форма и добавочный: название — с формой, телефон с добавочным проходит ограничение базы и доходит до контакта и учётки', async () => {
+    const email = 'ext@firm-ext.ru'
+    const phone = '+79260003001 доб. 123'
+    const res = await confirm(await registerAndGetToken({ email, legalForm: 'СЗ', companyName: 'Иванов Иван', inn: INN.ip, kpp: null, phone: '926 000-30-01 доб. 123' }))
+    assert.deepEqual(res.json(), { status: 'active' })
+    assert.equal(asMark('osp:auth', `select phone from osp_auth.registrations where email_norm = '${email}'`), phone)
+    assert.equal(asMark('osp:internal', `select name || '|' || coalesce(kpp, 'нет') from public.counterparties where inn = '${INN.ip}'`), 'СЗ Иванов Иван|нет')
+    assert.equal(asMark('osp:internal', `select phone from public.counterparty_contacts where email = '${email}'`), phone)
+    assert.equal(asMark('osp:internal', `select work_phone from public.user_roles where email = '${email}'`), phone)
+
+    // Форма необязательна: не передана — из названия, снятая человеком — название как есть. КПП с буквами проходит ограничение базы.
+    await confirm(await registerAndGetToken({ email: 'ao@firm-ao.ru', legalForm: undefined, companyName: 'ао «Стройка»', inn: INN.fresh, kpp: '7701AB001', phone: '+7 926 000-30-02' }))
+    assert.equal(asMark('osp:internal', `select name || '|' || kpp from public.counterparties where inn = '${INN.fresh}'`), `АО «Стройка»|7701AB001`)
+    await confirm(await registerAndGetToken({ email: 'no@firm-no.ru', legalForm: '', companyName: 'СЗ Инвест', inn: INN.fresh2, kpp: null, phone: '+7 926 000-30-03' }))
+    assert.equal(asMark('osp:internal', `select name from public.counterparties where inn = '${INN.fresh2}'`), 'СЗ Инвест')
   })
 
   it('одновременно: один адрес — одна заявка; один новый ИНН — одна компания', async () => {

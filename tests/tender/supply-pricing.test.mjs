@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
 import * as XLSX from 'xlsx'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
+import { invoiceJpeg, jpegPdf } from '../supply/lib/scan-pdf.mjs'
 
 const launch = browserLaunchOptions()
 const plain = (s) => String(s ?? '').replace(/\s/g, '')
@@ -662,6 +663,86 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
+  // Взять из меню первую похожую цену трубы (Ø12,7 мм, документа у исходной позиции нет) или вторую (Ø15,9, документ — ссылка).
+  const pickOtherTruba = async (page, nth) => {
+    const truba = rowOf(page, TRUBA, TWO)
+    await truba.locator('.sp-similar-btn').click()
+    const menu = page.getByRole('dialog', { name: `Похожие цены: ${TRUBA}` })
+    await menu.locator('li').nth(nth).getByRole('button', { name: /Взять/ }).click()
+    await menu.waitFor({ state: 'detached' })
+    await truba.locator('.sp-origin-open').waitFor()
+    return truba
+  }
+
+  it('откуда цена: нажатие на строку «Похожая цена» — тендер, ВОР и документ; ссылка открывается', async () => {
+    const { page, context, errors } = await openPage('&reuse=1&originDocs=1')
+    try {
+      const truba = await pickOtherTruba(page, 1)
+      await truba.locator('.sp-origin-open', { hasText: 'Похожая цена: Труба медная Ø15,9; №445; ' }).click()
+      const dlg = page.getByRole('dialog', { name: 'Откуда цена' })
+      await dlg.waitFor()
+      const text = await dlg.innerText()
+      assert.match(text, /Исходная позиция\s+Труба медная Ø15,9/)
+      assert.match(text, /№ 445 · ЖК Север/)
+      assert.match(text, /ОВ-2/)
+      assert.match(text, /1\s?100,00\s₽ за м/)
+      assert.equal(await dlg.getByRole('link', { name: 'Открыть документ' }).getAttribute('href'), 'https://disk.example.ru/d/chek-17')
+      assert.equal(await dlg.getByRole('link', { name: '№ 445' }).getAttribute('href'), '/tenders/materials/tender-o/pricing')
+      assert.doesNotMatch(text, /Документа нет/)
+      await page.keyboard.press('Escape')
+      await dlg.waitFor({ state: 'detached' })
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('откуда цена: документа нет — так и сказано, и почему; автор — только администратору', async () => {
+    const { page, context, errors } = await openPage('&reuse=1&originDocs=1')
+    try {
+      const truba = await pickOtherTruba(page, 0)
+      await truba.locator('.sp-origin-open').click()
+      const dlg = page.getByRole('dialog', { name: 'Откуда цена' })
+      await dlg.getByText('Документа нет: цену ввели вручную, документ к ней не прикрепляли.').waitFor()
+      assert.equal(await dlg.getByRole('link', { name: 'Открыть документ' }).count(), 0)
+      assert.match(await dlg.innerText(), /Поставил/, 'администратору')
+      await dlg.getByRole('button', { name: 'Закрыть' }).click()
+      await dlg.waitFor({ state: 'detached' })
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+    // Другая роль: то же окно, но автора нет (как в колонке «Дата цены»).
+    const other = await openPage('&reuse=1&originDocs=1&asRole=supply')
+    try {
+      const truba = await pickOtherTruba(other.page, 0)
+      await truba.locator('.sp-origin-open').click()
+      const dlg = other.page.getByRole('dialog', { name: 'Откуда цена' })
+      await dlg.getByText('Документа нет', { exact: false }).waitFor()
+      assert.doesNotMatch(await dlg.innerText(), /Поставил/)
+      assert.deepEqual(other.errors, [])
+    } finally {
+      await other.context.close()
+    }
+  })
+
+  it('откуда цена: к цене не прикреплено, но в счёте тендера та же строка — файл открывается просмотром', async () => {
+    const { page, context, errors } = await openPage('&reuse=1&originDocs=2')
+    try {
+      const truba = await pickOtherTruba(page, 0)
+      await truba.locator('.sp-origin-open').click()
+      const dlg = page.getByRole('dialog', { name: 'Откуда цена' })
+      await dlg.getByText('в файлах тендера есть похожая строка', { exact: false }).waitFor()
+      assert.match(await dlg.innerText(), /Труба медная Ø12,7 мм \(бухта\) — 980,00 ₽ за м · та же цена/)
+      await dlg.getByRole('button', { name: 'Счёт на трубу.pdf' }).click()
+      await dlg.waitFor({ state: 'detached' })
+      await page.locator('.s3-doc-modal-title', { hasText: 'Счёт на трубу.pdf' }).waitFor()
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
   it('цены из других тендеров без права правки: ничего не подставляется, меню только для просмотра, Esc закрывает', async () => {
     const { page, context, errors } = await openPage('&reuse=1&canEdit=0')
     try {
@@ -906,7 +987,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
     try {
       const docs = await openTenderDocs(page)
       await docs.locator('input[type=file]').setInputFiles({ name: 'скан.pdf', mimeType: 'application/pdf', buffer: scan })
-      await docs.getByText('скан или фото: в PDF нет текста', { exact: false }).waitFor({ timeout: 60000 })
+      await docs.getByText('скан или фото: текст не распознался', { exact: false }).waitFor({ timeout: 60000 })
       await docs.locator('input[type=file]').setInputFiles({ name: 'КП 7.pdf', mimeType: 'application/pdf', buffer: pdf })
       const kran = pickRow(docs, 'Кран шаровой полнопроходной')
       await kran.waitFor({ timeout: 60000 })
@@ -1341,7 +1422,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.ok(JSON.parse(stored['doc-unread']).lines.length >= 3)
       assert.equal(JSON.parse(stored['doc-unread-bad']).lines.length, 0)
       assert.ok(JSON.parse(stored['doc-unread-bad']).failed)
-      assert.equal(stored['doc-photo'], null, 'фото не скачиваем')
+      assert.equal(stored['doc-photo'], null, 'Word не скачиваем')
       await rowOf(page, 'Кран шаровой Ду15', 'ОВ').getByRole('button', { name: /похожие цены: 1|цены поставщиков: 1/i }).waitFor({ timeout: 30000 })
 
       // Окно: прочитанный файл — плашкой, нечитаемый и фото — с причиной; цены применяются без новой загрузки.
@@ -1349,7 +1430,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
       const list = fileChips(docs)
       await list.locator('.sp-td-file', { hasText: 'Счёт старый.xlsx' }).waitFor()
       await list.locator('li', { hasText: 'Испорченный.xlsx' }).getByText('не нашли таблицу', { exact: false }).or(list.locator('li', { hasText: 'Испорченный.xlsx' }).getByText('файл не читается', { exact: false })).waitFor()
-      await list.locator('li', { hasText: 'Чек.jpg' }).getByText('цены из него не прочитать', { exact: false }).waitFor()
+      await list.locator('li', { hasText: 'Чек.docx' }).getByText('цены из него не прочитать', { exact: false }).waitFor()
       await docs.getByRole('button', { name: /^Применить цены:/ }).click()
       await docs.waitFor({ state: 'detached', timeout: 30000 })
       await page.waitForFunction(() => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Кран шаровой Ду15' && l.s3_document_id === 'doc-unread'))
@@ -1364,6 +1445,78 @@ describe('Расценка снабжением: таблица', { skip: !launc
       await page.locator('.sp-table').waitFor({ timeout: 60000 })
       await page.waitForTimeout(800)
       assert.equal(await page.evaluate(() => window.__fakeDb.s3_documents.find((d) => d.id === 'doc-unread').notes), null, 'без права правки — только смотрим')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  // Счёт на оплату из 1С: шапка таблицы глубоко в листе, лист свёрстан объединёнными ячейками (копия по виду тендера № 902).
+  const oneCBook = () => {
+    const width = 76
+    const rows = Array.from({ length: 70 }, () => new Array(width).fill(''))
+    const merges = []
+    const put = (r, c0, c1, v) => { rows[r][c0] = v; if (c1 > c0) merges.push({ s: { r, c: c0 }, e: { r, c: c1 } }) }
+    put(17, 17, 74, 'Внимание! Оплата данного счета означает согласие с условиями поставки товара. Уведомление об оплате обязательно, в противном случае не гарантируется наличие товара на складе.')
+    put(41, 1, 74, 'Счет на оплату № 1234 от 02 ноября 2026 г.')
+    for (const [c0, c1, text] of [[1, 4, '№'], [5, 14, 'Артикул'], [15, 48, 'Товары (работы, услуги)'], [49, 54, 'Кол-во'], [55, 58, 'Ед.'], [59, 66, 'Цена'], [67, 74, 'Сумма']]) put(49, c0, c1, text)
+    for (const [c0, c1, v] of [[1, 4, 1], [5, 14, 'AE500'], [15, 48, 'Хомут монтажный (75)'], [49, 54, 3], [55, 58, 'упак'], [59, 66, 737.25], [67, 74, 2211.75]]) put(50, c0, c1, v)
+    put(52, 37, 60, 'Итого:')
+    put(52, 61, 74, 2211.75)
+    put(54, 37, 60, 'В том числе НДС 22%:')
+    put(54, 61, 74, 398.84)
+    const ws = XLSX.utils.aoa_to_sheet(rows)
+    ws['!merges'] = merges
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'TDSheet')
+    return XLSX.write(wb, { type: 'buffer', bookType: 'biff8' })
+  }
+  const SCAN_INVOICE = `<h2>Счет № 123456 от 2 Ноября 2026 г.</h2><p>Покупатель: ООО "Строительное Управление"</p>
+    <table><tr><th style="width:4%">№</th><th>Товар</th><th>Склад</th><th>Цена с НДС</th><th>Кол-во</th><th>Ед.</th><th>Сумма, руб</th></tr>
+    <tr><td class="c">1</td><td>Кран шаровой Ду15 латунный</td><td class="c">14</td><td class="r">512,50</td><td class="r">48</td><td class="c">шт</td><td class="r">24 600,00</td></tr>
+    <tr><td class="c">2</td><td>Изоляция K-Flex 13×15 ГОСТ</td><td class="c">14</td><td class="r">99,00</td><td class="r">1 100</td><td class="c">м</td><td class="r">108 900,00</td></tr>
+    </table><p style="text-align:right">Итого: 133 500,00 руб.<br>В том числе НДС: 24 073,77 руб.</p>`
+
+  it('скан и счёт 1С, отвергнутые прежним чтением, читаются заново сами: цены — к позициям; пароль заново не читаем', { timeout: 280000 }, async () => {
+    const dataUrl = (buffer) => `data:application/octet-stream;base64,${Buffer.from(buffer).toString('base64')}`
+    const scan = await invoiceJpeg(browser, SCAN_INVOICE, { skew: 0.4 })
+    const init = {
+      fn: (files) => { window.__fakeFiles = files },
+      arg: {
+        'tenders/tender-p/scan.pdf': dataUrl(jpegPdf(scan)),
+        'tenders/tender-p/1c.xls': dataUrl(oneCBook()),
+      },
+    }
+    const { page, context, errors } = await openPage('&supplyRejected=1', { init })
+    try {
+      const notesOf = (id) => page.evaluate((x) => window.__fakeDb.s3_documents.find((d) => d.id === x).notes, id)
+      await page.waitForFunction(() => JSON.parse(window.__fakeDb.s3_documents.find((d) => d.id === 'doc-1c').notes).lines.length > 0, null, { timeout: 60000 })
+      const book = JSON.parse(await notesOf('doc-1c'))
+      assert.equal(book.rv, 2)
+      assert.equal(book.date, '2026-11-02')
+      assert.deepEqual(book.lines.map((l) => [l.n, l.u, l.p]), [['Хомут монтажный (75)', 'упак', 737.25]])
+
+      await page.waitForFunction(() => JSON.parse(window.__fakeDb.s3_documents.find((d) => d.id === 'doc-scan').notes).lines.length > 0, null, { timeout: 240000 })
+      const read = JSON.parse(await notesOf('doc-scan'))
+      assert.equal(read.ocr, true)
+      assert.equal(read.rv, 2)
+      assert.equal(read.date, '2026-11-02')
+      assert.equal(read.total?.ok, true, 'итог сошёлся')
+      const lines = read.lines.map((l) => [l.n.replace(/\s+/g, ' '), l.u, l.q, l.p, l.un ?? 0])
+      assert.deepEqual(lines.map((l) => l.slice(1)), [['шт', 48, 512.5, 0], ['м', 1100, 99, 0]], 'цифры прочитаны верно и сошлись между собой')
+      assert.match(lines[0][0], /Кран шаровой Ду15/)
+      assert.match(JSON.parse(await notesOf('doc-pass')).failed, /encrypted/, 'пароль от версии чтения не зависит')
+
+      // В окне: файл со скана помечен, цены стоят у своих позиций и отмечены сами.
+      const docs = await openTenderDocs(page)
+      await fileChips(docs).locator('li', { hasText: 'Скан счёта.pdf' }).getByText('со скана, итог сошёлся').waitFor()
+      const row = docs.locator('tr', { hasText: 'Кран шаровой Ду15' }).first()
+      await row.getByText('512,50').waitFor()
+      assert.equal(await row.locator('input[type=checkbox]').isChecked(), true)
+      // Цена за упаковку: «(75)» в наименовании, упак → шт.
+      const pack = docs.locator('tr', { hasText: 'Хомут монтажный' }).first()
+      await pack.getByText('1 упак = 75 шт').waitFor()
+      await pack.getByText('9,83').waitFor()
       assert.deepEqual(errors, [])
     } finally {
       await context.close()

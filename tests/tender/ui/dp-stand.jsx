@@ -4,7 +4,7 @@
 //   dpRecipient=0 — вошедший не в списке получателей;
 //   dpAlerts=N    — у вошедшего N непрочитанных уведомлений;
 //   dpFailUpload=1 — загрузка файла падает (заявка не должна появиться).
-// Триггер стенда повторяет запрет базы dp_requests_guard: без понятийного соглашения и документа договора заявка не подаётся.
+// Триггер стенда повторяет запрет базы dp_requests_guard: без понятийного соглашения заявка не подаётся, поля отдела автор не меняет.
 import { lazy, Suspense } from 'react'
 import DpRequestAlert from '../../../src/components/dpRequests/DpRequestAlert'
 
@@ -13,6 +13,8 @@ const DpRequestsPage = lazy(() => import('../../../src/pages/DpRequestsPage'))
 const params = new URLSearchParams(window.location.search)
 const fdb = window.__fakeDb
 const me = params.get('asUser') || 'user-1'
+const canWork = !(params.get('noEdit') || '').split(',').includes('dp_requests')
+const WORK_FIELDS = ['object_id', 'contract_title', 'amount', 'responsible_contact_id', 'responsible_name', 'responsible_role']
 
 const ECON = { full_name: 'Экономов Андрей Петрович', position: 'Экономист' }
 const BOSS = { full_name: 'Строев Борис Иванович', position: 'Руководитель строительства' }
@@ -99,6 +101,10 @@ window.__fakeTriggers = {
       row.deleted_at = null
       return
     }
+    if (!canWork && WORK_FIELDS.some((f) => (row[f] ?? null) !== (old[f] ?? null))) {
+      const refused = { code: '42501', hint: 'dp_work_fields', message: 'Объект, договор, сумму и ответственного заполняет сотрудник, работающий с заявками' }
+      throw refused
+    }
     if (old.status === 'draft' && row.status === 'new') {
       const has = (category) => (fdb.s3_documents || []).some((d) => d.owner_id === row.id && d.doc_category === category)
       const refuse = (hint, what) => {
@@ -107,7 +113,6 @@ window.__fakeTriggers = {
         throw refused
       }
       if (!has('dp_concept_agreement')) refuse('dp_concept_agreement_required', 'понятийного соглашения')
-      if (!has('dp_contract_doc')) refuse('dp_contract_doc_required', 'документа договора')
       row.request_number = nextNumber++
       if (fdb.dp_request_alert_recipients.length) addAlert(row)
     }

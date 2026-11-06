@@ -66,7 +66,8 @@ export function offersByGroup(docs, groups) {
 
 const newer = (a, b) => String(b.date || '').localeCompare(String(a.date || ''))
 const bySimilarity = (a, b) => Number(isSure(b)) - Number(isSure(a)) || b.score - a.score || newer(a, b) || a.price - b.price
-const usable = (o) => o.unitOk && o.price > 0 && !o.line.sumOff && !o.qtyFar
+// Цифры строки со скана не сошлись между собой (unsure) — как цена × кол-во ≠ сумма: видно, но сама не берётся.
+const usable = (o) => o.unitOk && o.price > 0 && !o.line.sumOff && !o.line.unsure && !o.qtyFar
 
 // Цена для позиции (см. начало файла) или null.
 export function bestOffer(offers) {
@@ -206,7 +207,7 @@ export function suspectPrice(own, offers) {
   for (const o of offers) {
     if (o.pack > 1 && Math.abs(own / o.line.price - 1) <= SAME_AS_PACK) return { kind: 'pack', offer: o }
   }
-  const sure = offers.filter((o) => isSure(o) && o.unitOk && !o.line.sumOff)
+  const sure = offers.filter((o) => isSure(o) && o.unitOk && !o.line.sumOff && !o.line.unsure)
   if (!sure.length) return null
   const nearest = [...sure].sort((a, b) => Math.abs(offerPrice(a) - own) - Math.abs(offerPrice(b) - own))[0]
   const p = offerPrice(nearest)

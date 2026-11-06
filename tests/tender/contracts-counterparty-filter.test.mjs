@@ -1,4 +1,4 @@
-// «Договоры и ДС» (/contracts): фильтр «Контрагент» в панели. Правила — tests/contracts/counterparty-filter.test.mjs.
+// «Реестр по договорам» (/contracts/registry): фильтр «Контрагент» в панели. Правила — tests/contracts/counterparty-filter.test.mjs.
 // Стенд: 24 документа (ДС — у каждого третьего), стороны — «Подрядчик 01» … «Подрядчик 10» по кругу, по объекту ГО — каждый
 // четвёртый договор с его ДС.
 import { describe, it, before, after } from 'node:test'
@@ -7,7 +7,7 @@ import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 
 const launch = browserLaunchOptions()
-const BASE = 'route=/contracts&contracts=24&contractsDept=1&latency=0'
+const BASE = 'route=/contracts/registry&contracts=24&contractsDept=1&latency=0'
 
 describe('Договоры и ДС: фильтр по контрагентам', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
   let stand
@@ -123,7 +123,7 @@ describe('Договоры и ДС: фильтр по контрагентам',
     } finally { await close() }
   })
 
-  // С развёрнутым меню панель в одну строку — от 1706 px окна (без этого фильтра было от 1526), уже — переносится.
+  // С развёрнутым меню панель в одну строку — от 1820 px окна (05.11, с третьей кнопкой вида «Договоры»), уже — переносится.
   it('панель — одной строкой на мониторе 1920 с развёрнутым меню, на телефоне фильтр во всю ширину', async () => {
     const wide = await open({ width: 1920, height: 1000 }, '&shell=1&sidebar=1')
     try {

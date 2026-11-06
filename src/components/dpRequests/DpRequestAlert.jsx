@@ -123,17 +123,33 @@ export default function DpRequestAlert() {
                 )}
               </div>
               <dl className="dpa-facts">
-                <dt>Договор</dt>
-                <dd>{a.contract_title}</dd>
-                <dt>Сумма</dt>
-                <dd className="dpa-amount">{formatAmount(Number(a.amount))} ₽</dd>
-                <dt>Ответственный</dt>
-                <dd>
-                  {a.responsible_name || '—'}
-                  {DP_ROLE_LABEL[a.responsible_role] && <small> · {DP_ROLE_LABEL[a.responsible_role]}</small>}
-                </dd>
-                <dt>Причина</dt>
-                <dd className="dpa-reason">{a.reason}</dd>
+                {a.contract_title && (
+                  <>
+                    <dt>Договор</dt>
+                    <dd>{a.contract_title}</dd>
+                  </>
+                )}
+                {a.amount != null && (
+                  <>
+                    <dt>Сумма</dt>
+                    <dd className="dpa-amount">{formatAmount(Number(a.amount))} ₽</dd>
+                  </>
+                )}
+                {a.responsible_name && (
+                  <>
+                    <dt>Ответственный</dt>
+                    <dd>
+                      {a.responsible_name}
+                      {DP_ROLE_LABEL[a.responsible_role] && <small> · {DP_ROLE_LABEL[a.responsible_role]}</small>}
+                    </dd>
+                  </>
+                )}
+                {a.reason && (
+                  <>
+                    <dt>Примечание</dt>
+                    <dd className="dpa-reason">{a.reason}</dd>
+                  </>
+                )}
                 {a.created_by_name && (
                   <>
                     <dt>Создал(а)</dt>

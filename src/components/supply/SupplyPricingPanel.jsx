@@ -32,7 +32,7 @@ import {
 } from '../../utils/supplyAutoImport'
 import { mergeSamePositions, offerMatches, offerPrice, positionGroups } from '../../utils/supplyDocMatch'
 import { autoPickRows, isSure, offersByGroup, otherUnitIndex, otherUnitPrices, suspectPrice } from '../../utils/supplyAutoPick'
-import { lineForGroup, lineNotForGroup, offerInRoubles, offerNotes, offerWithVat, readOffer } from '../../utils/supplyOffers'
+import { lineForGroup, lineNotForGroup, offerInRoubles, offerNotes, offerWithVat, readOffer, scanProgressText } from '../../utils/supplyOffers'
 import {
   carrySuggestions, carryTargets, composeChanges, revisionTitle, unitMismatch, versionQuestions,
 } from '../../utils/supplyVorVersions'
@@ -47,6 +47,7 @@ const SupplyImportDialog = lazy(() => import('./SupplyImportDialog'))
 const loadSheetReader = () => import('../../utils/vorMaterialsSheet')
 // Распознавание счёта / КП поставщика (Excel — xlsx, PDF — pdf.js) — тоже только по требованию.
 const SupplyTenderDocsDialog = lazy(() => import('./SupplyTenderDocsDialog'))
+const SupplyPriceOriginDialog = lazy(() => import('./SupplyPriceOriginDialog'))
 const S3DocumentPreview = lazy(() => import('../S3DocumentPreview'))
 // История версий ВОР (миграция 20261029) — по требованию.
 const SupplyVersionsDialog = lazy(() => import('./SupplyVersionsDialog'))
@@ -419,6 +420,7 @@ export default function SupplyPricingPanel({
   // Файлы-документы позиций (id → строка s3_documents): имя и ключ для просмотра. Файл бывает и другого тендера.
   const [linkDocs, setLinkDocs] = useState(() => new Map())
   const [preview, setPreview] = useState(null) // файл документа в окне просмотра
+  const [originOf, setOriginOf] = useState(null) // окно «Откуда цена»: { name, rate, origin }
   const [tenderDocs, setTenderDocs] = useState(null) // { files, attachTo } — окно «Счета и КП тендера»: файлы, которые уже выбрали, и к каким позициям они
   // Документы поставщиков: [{ doc, offer }] (utils/supplyOffers); null — ещё не загружены.
   const [offerDocs, setOfferDocs] = useState(null)
@@ -744,22 +746,24 @@ export default function SupplyPricingPanel({
     return [...byId.values()]
   }), [])
 
-  // Файлы счетов и КП, которые ещё не читали (прикреплены колонкой «Документ» до 02.11.2026), — по одному, в фоне, у
-  // того, у кого право правки: строки — сразу к позициям ценами поставщиков и навсегда в файл, больше не скачиваем. Не
-  // скачался — в следующий раз; не распознался — причина в файле, снова не читаем.
+  // Файлы счетов и КП, которые ещё не читали (прикреплены колонкой «Документ» до 02.11.2026) или отвергла прежняя версия чтения
+  // (скан, счёт 1С со шапкой глубоко), — по одному, в фоне, у того, у кого право правки: строки — сразу к позициям ценами
+  // поставщиков и навсегда в файл, больше не скачиваем. Не скачался — в следующий раз; не распознался — причина в файле, снова не
+  // читаем. Записываем, только если при файле то же, что было при чтении: скан читается секунды, коллега мог успеть раньше.
   const editableRef = useRef(editable)
   editableRef.current = editable
   const unreadAsked = useRef(new Set())
   const readUnreadDocs = useCallback(async (docs) => {
-    for (const doc of docs) {
+    for (const { notes: was = null, ...doc } of docs) {
       if (unreadAsked.current.has(doc.id)) continue
       unreadAsked.current.add(doc.id)
+      const showProgress = ({ page, pages }) => setOtherDocs((prev) => prev.map((x) => (x.doc.id === doc.id ? { ...x, progress: scanProgressText(page, pages) } : x)))
       try {
-        const { notes, reason } = await readSupplyDocBytes(await fetchSupplyDocBytes(doc), doc.file_name)
+        const { notes, reason } = await readSupplyDocBytes(await fetchSupplyDocBytes(doc), doc.file_name, { onProgress: showProgress })
         const offer = notes ? readOffer(notes) : null
         if (offer?.lines.length) setOfferDocs((prev) => [{ doc, offer }, ...(prev || []).filter((x) => x.doc.id !== doc.id)])
         setOtherDocs((prev) => [...prev.filter((x) => x.doc.id !== doc.id), ...(offer?.lines.length ? [] : [{ doc, failed: reason || 'broken' }])])
-        if (notes) await saveSupplyDocNotes(doc.id, notes, { onlyEmpty: true })
+        if (notes) await saveSupplyDocNotes(doc.id, notes, { onlyIf: was })
       } catch {
         // Следующий раз: файл не скачался или строки не записались.
         setOtherDocs((prev) => prev.map((x) => (x.doc.id === doc.id ? { doc, failed: 'unavailable' } : x)))
@@ -1628,9 +1632,9 @@ export default function SupplyPricingPanel({
     }
   }
   // Файл ко всему тендеру: прочитать (не прочитался — всё равно прикрепить, причина — в окне) и загрузить со строками.
-  const addTenderFile = async (file, attachTo = null) => {
+  const addTenderFile = async (file, attachTo = null, onProgress = null) => {
     const offer = file.size > DOC_READ_MAX_BYTES ? { read: null, notes: null, reason: 'big' }
-      : await readDocOffer(async () => new Uint8Array(await file.arrayBuffer()), file.name)
+      : await readDocOffer(async () => new Uint8Array(await file.arrayBuffer()), file.name, onProgress)
     let doc
     if (filesOn) doc = await uploadSupplyDoc(mainId, file, offer.notes)
     else {
@@ -1722,9 +1726,9 @@ export default function SupplyPricingPanel({
   }
   // Файл-документ заодно читается: счёт или КП — его цены (notes при файле) у позиций. Не прочитался — файл всё равно прикрепляем,
   // причина — в окне файлов.
-  const readDocOffer = async (bytesOf, fileName) => {
+  const readDocOffer = async (bytesOf, fileName, onProgress = null) => {
     try {
-      return await readSupplyDocBytes(await bytesOf(), fileName)
+      return await readSupplyDocBytes(await bytesOf(), fileName, { onProgress })
     } catch {
       return { read: null, notes: null, reason: 'unavailable' }
     }
@@ -1955,6 +1959,7 @@ export default function SupplyPricingPanel({
     dropDoc: (row, file) => openWithFile(file, linkTargets([row])),
     suggest: (row, anchor) => setSuggest((cur) => (cur?.row.key === row.key ? null : { row, anchor })),
     openFile: (doc) => setPreview(doc),
+    openOrigin: (row) => setOriginOf({ name: row.p.name, rate: row.rate, origin: origins.get(row.rate.id) || null }),
     carry: (row) => { const t = row.targets.find((x) => x.carry); if (t) carryPrice(t.carry.rate, t.doc, t.p) },
     dismissCarry: (row) => { const t = row.targets.find((x) => x.carry); if (t) dismissCarry(t.carry.rate, t.key) },
     confirmUnit: (row) => { for (const t of row.targets) if (t.unitOff) confirmUnit(t) },
@@ -2393,6 +2398,12 @@ export default function SupplyPricingPanel({
         <SupplyLinkDialog mainId={mainId} targets={linkDialog.targets} rowCount={linkDialog.rowCount} title={linkDialog.title} busy={linkBusy} error={linkError} filesOn={filesOn}
           onSave={saveLink} onRemove={removeLink} onDeleteFile={deleteFile} onClose={() => { if (!linkBusy) setLinkDialog(null) }} />
       )}
+      {originOf && (
+        <Suspense fallback={null}>
+          <SupplyPriceOriginDialog {...originOf} showAuthor={showAuthor} nameOf={nameOf} onClose={() => setOriginOf(null)}
+            onOpenFile={(doc) => { setOriginOf(null); setPreview(doc) }} />
+        </Suspense>
+      )}
       {preview && (
         <Suspense fallback={null}>
           <S3DocumentPreview doc={preview} onClose={() => setPreview(null)} onRenamed={editable ? fileRenamed : undefined} />
@@ -2544,7 +2555,7 @@ const PriceRow = memo(function PriceRow({
             {editable && <button type="button" className="sp-link-btn" onClick={() => act('unify', row)}>{unifyLabel}</button>}
           </span>
         )}
-        {row.rate?.source_kind && !draft && <OriginHint rate={row.rate} origin={origin} onOpenFile={(doc) => act('openFile', doc)} />}
+        {row.rate?.source_kind && !draft && <OriginHint rate={row.rate} origin={origin} name={p.name} onOpen={() => act('openOrigin', row)} onOpenFile={(doc) => act('openFile', doc)} />}
         {suspect && !draft && (
           <span className="sp-hint is-warn" role="status">
             <IconAlert size={14} />{' '}
@@ -2714,8 +2725,9 @@ function PriceDateCell({ rate, showAuthor, nameOf, origin }) {
 // Откуда цена: скопирована из другого тендера сама (то же наименование) или выбрана из похожих. День расценки —
 // исходной цены; старше 3 месяцев — пометка (такая цена больше никуда сама не подставится). Документ исходной
 // позиции — адрес или файл (миграция 20261025). Выбранная из похожих — строкой «Похожая цена: наименование; №тендера;
-// день.» (решение пользователя 03.11), объект и ВОР — в подсказке.
-function OriginHint({ rate, origin, onOpenFile }) {
+// день.» (решение пользователя 03.11), объект и ВОР — в подсказке. Нажатие на строку — окно «Откуда цена» (решение пользователя 05.11:
+// нажать на цену и посмотреть, из какого она документа; документа нет — окно это и скажет).
+function OriginHint({ rate, origin, name, onOpen, onOpenFile }) {
   const [copied, setCopied] = useState(false)
   const date = rate.price_date
   const pick = rate.source_kind === 'pick'
@@ -2734,13 +2746,11 @@ function OriginHint({ rate, origin, onOpenFile }) {
   }
   return (
     <span className="sp-hint sp-origin" title={title || undefined}>
-      {pick ? (
-        <>Похожая цена{pickLine && `: ${pickLine}`}</>
-      ) : (
-        <>
-          цена из {tender}
-        </>
-      )}
+      {/* Не <button>: кнопка не переносится внутри строки, и хвост «; документ: …» уезжал бы вниз отдельно. */}
+      <span className="sp-origin-open" role="button" tabIndex={0} aria-haspopup="dialog" aria-label={`Откуда цена: ${name}`} onClick={onOpen}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}>
+        {pick ? <>Похожая цена{pickLine && `: ${pickLine}`}</> : <>цена из {tender}</>}
+      </span>
       {date && !isFreshPriceDate(date) && <span className="sp-origin-stale">{sep}старше 3 месяцев</span>}
       {origin?.doc_key ? (
         <>

@@ -11,6 +11,7 @@ import DpRequestAlert from './components/dpRequests/DpRequestAlert'
 import ChunkErrorBoundary from './components/ChunkErrorBoundary'
 import RolePreviewBar from './components/RolePreviewBar'
 import ReloginModal from './components/ReloginModal'
+import { CONTRACTS_REGISTRY_PATH, CONTRACT_SECTION_KEYS, contractsEntry } from './utils/contractsHub'
 import './App.css'
 // Глобальный мобильный слой — импортируется последним, чтобы перебивать базовые
 // правила при равной специфичности (модалки/формы/таблицы/шапки на всех страницах).
@@ -46,9 +47,7 @@ function HomeRedirect() {
   else if (general) to = '/general'
   else if (canView('tenders')) to = '/tenders'
   else if (canView('tasks')) to = '/tasks'
-  else if (canView('contracts')) to = '/contracts'
-  else if (canView('dc_requests')) to = '/dc-requests'
-  else if (canView('dp_requests')) to = '/dp-requests'
+  else if (contractsEntry(canView)) to = contractsEntry(canView)
   else if (canView('reports')) to = '/reports'
   return <Navigate to={to} replace />
 }
@@ -66,6 +65,7 @@ const CostPlansPage = lazy(() => import('./pages/CostPlansPage'))
 const VorsPage = lazy(() => import('./pages/VorsPage'))
 const KpReviewPage = lazy(() => import('./pages/KpReviewPage'))
 const SummaryPage = lazy(() => import('./pages/SummaryPage'))
+const ContractsHubPage = lazy(() => import('./pages/ContractsHubPage'))
 const ContractsPage = lazy(() => import('./pages/ContractsPage'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -162,7 +162,10 @@ function EmployeeLayout() {
             <Route path="/kp-review" element={<PermissionRoute section="tenders"><KpReviewPage /></PermissionRoute>} />
             <Route path="/summary" element={<PermissionRoute section="tenders"><SummaryPage /></PermissionRoute>} />
             <Route path="/analysis-kp" element={<PermissionRoute section="analysis_kp"><BSMPage /></PermissionRoute>} />
-            <Route path="/contracts" element={<PermissionRoute section="contracts"><ContractsPage /></PermissionRoute>} />
+            {/* «Договоры и ДС» — хаб из четырёх блоков: открыт, если доступен хотя бы один, а каждая страница
+                блока гейтится своим правом, как раньше (utils/contractsHub.js). */}
+            <Route path="/contracts" element={<PermissionRoute anyOf={CONTRACT_SECTION_KEYS}><ContractsHubPage /></PermissionRoute>} />
+            <Route path={CONTRACTS_REGISTRY_PATH} element={<PermissionRoute section="contracts"><ContractsPage /></PermissionRoute>} />
             <Route path="/contracts/psdc-batch" element={<PermissionRoute section="contracts"><PsdcBatchPage /></PermissionRoute>} />
             <Route path="/contracts/:contractId" element={<PermissionRoute section="contracts"><ContractDetailPage /></PermissionRoute>} />
             <Route path="/dc-requests" element={<PermissionRoute section="dc_requests"><DcRequestsPage /></PermissionRoute>} />

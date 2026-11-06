@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import FilterDropdown from '../FilterDropdown'
 import DocCheckLabelsInput from './DocCheckLabelsInput'
+import renderCounterpartyOption from './DocCheckCounterpartyOption'
 import { IconObject, IconUser } from '../icons/ToolbarIcons'
 import { safeHttpUrl } from '../../utils/publicTenders'
+import { filterCounterpartyOptions } from '../../utils/counterpartyPicker'
 import {
   DOC_CHECK_COLORS,
   DOC_CHECK_PRIORITIES,
@@ -24,6 +26,9 @@ import {
 // там нечего. Контрагента может не быть (заявка по письму) — тогда нужно
 // примечание: по нему карточку и узнают на доске.
 //
+// Контрагента ищут по названию, ИНН и постоянному номеру реестра контрагентов (06.11.2026; правила — utils/counterpartyPicker.js,
+// опции собирает страница: counterpartyOptions).
+//
 // Статуса в форме нет: новая заявка встаёт в колонку, где нажали «+ Добавить
 // заявку» (по кнопке в шапке — в «Новые заявки»), дальше её двигают по доске.
 // Исполнители, срок, приоритет, цвет и метки — только при колонках 20261113
@@ -37,7 +42,7 @@ const EMPTY = {
 }
 
 export default function DocCheckFormModal({
-  request, status, objects, counterparties, employees, labelSuggestions,
+  request, status, objects, counterpartyOptions, employees, labelSuggestions,
   hasBoardFields, hasCardFields, canEditCreated, onSave, onClose,
 }) {
   const [form, setForm] = useState(() => (request
@@ -169,12 +174,14 @@ export default function DocCheckFormModal({
               <FilterDropdown
                 label=""
                 searchable
-                searchPlaceholder="Поиск контрагента…"
+                searchPlaceholder="Название, ИНН или №"
                 allLabel="Не выбран"
                 icon={<IconUser size={15} />}
                 value={form.counterparty_id}
                 onChange={(v) => set({ counterparty_id: v || '' })}
-                options={counterparties.map(c => ({ value: c.id, label: c.name }))}
+                options={counterpartyOptions}
+                filterOptions={filterCounterpartyOptions}
+                renderOption={renderCounterpartyOption}
               />
             </div>
             <div className="dc-form-row">

@@ -7,8 +7,8 @@ import { offerNotes } from './supplyOffers.js'
 
 // Почему файл не прочитан — для окна файлов тендера.
 export const DOC_READ_PROBLEM = {
-  unsupported: 'файл прикреплён, но цены из него не прочитать: читаются Excel и PDF с текстом. Word сохраните в PDF.',
-  scan: 'скан или фото: в PDF нет текста, цены не прочитать. Попросите у поставщика Excel или PDF из 1С.',
+  unsupported: 'файл прикреплён, но цены из него не прочитать: читаются Excel, PDF и фото счёта. Word сохраните в PDF.',
+  scan: 'скан или фото: текст не распознался, цены не прочитать. Нужен скан получше, Excel или PDF из 1С.',
   no_table: 'не нашли таблицу с ценами: нужна шапка с колонками «Наименование» и «Цена» или «Сумма».',
   empty: 'таблица есть, а строк с ценой нет.',
   encrypted: 'PDF защищён паролем — попросите у поставщика файл без пароля.',
@@ -44,7 +44,7 @@ export function offerNotesOfDoc(r) {
   const { factor } = deliveryFactor(r.items, priceOf)
   const lines = r.items.filter((it) => !it.delivery).map((it) => {
     const { full } = linePrice(it, r.vat, factor, false)
-    return { name: it.name, unit: it.unit, qty: it.qty, code: it.code, price: full, docPrice: docPriceOf(it), docVat: docVatOf(it), sumOff: it.sumOff, packQty: it.packQty }
+    return { name: it.name, unit: it.unit, qty: it.qty, code: it.code, price: full, docPrice: docPriceOf(it), docVat: docVatOf(it), sumOff: it.sumOff, packQty: it.packQty, unsure: it.unsure }
   })
-  return { notes: offerNotes({ source: r.kind, vat: r.vat, delivery: factor, lines, date: r.date, currency: r.currency, total: r.total }), lines: lines.filter((l) => l.price != null).length }
+  return { notes: offerNotes({ source: r.kind, vat: r.vat, delivery: factor, lines, date: r.date, currency: r.currency, total: r.total, ocr: !!r.ocr }), lines: lines.filter((l) => l.price != null).length }
 }

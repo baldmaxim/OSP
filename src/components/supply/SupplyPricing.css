@@ -422,6 +422,25 @@
 .sp-origin { color: #075985; }
 .sp-origin .link, .sp-origin .sp-doc-copy { font-size: inherit; }
 .sp-origin-stale { color: var(--warning-color); }
+/* Строка «Похожая цена: …» — кнопка окна «Откуда цена»: подчёркнута пунктиром, чтобы было видно, что она нажимается. */
+.sp-origin-open {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.sp-origin-open:hover, .sp-origin-open:focus-visible { text-decoration-style: solid; }
+.sp-origin-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.25rem 0.75rem;
+  margin: 0 0 0.75rem;
+}
+.sp-origin-facts dt { color: var(--text-secondary); }
+.sp-origin-facts dd { margin: 0; overflow-wrap: anywhere; }
+.sp-origin-doc-title { margin: 0 0 0.25rem; font-size: var(--ui-text); font-weight: var(--ui-semibold); }
+.sp-origin-none { padding: 0.5rem 0.75rem; border-radius: 6px; background: var(--bg-tertiary, rgba(15, 23, 42, 0.05)); }
+.sp-origin-lines { margin: 0 0 0.5rem; padding: 0; list-style: none; display: grid; gap: 0.375rem; }
+.sp-origin-lines li { display: grid; gap: 0.125rem; justify-items: start; }
 .sp-similar-btn {
   display: inline-flex;
   align-items: center;

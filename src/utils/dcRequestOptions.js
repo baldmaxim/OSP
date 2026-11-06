@@ -76,6 +76,41 @@ export function costIncreaseEmployees(employees, roleLabels = {}) {
 // Ключ заявки для фильтра «Ответственный ОКС»: id сотрудника или «не назначен».
 export const submissionRespKey = (req) => req?.submission_resp_user_id || NO_SUBMISSION_RESP
 
+// Ответственный заявки — контакт справочника contacts. Один человек там бывает несколько раз (строка на объект), а ФИО —
+// с лишними пробелами: на копии 02.11 имя с пробелом в начале стояло в списке выше «А». В выборе — по строке на ФИО,
+// чистое имя, по алфавиту; одно ФИО представляет первая его строка справочника.
+const cleanPersonName = (name) => (name || '').replace(/\s+/g, ' ').trim()
+
+export function responsibleContacts(contacts) {
+  const byName = new Map()
+  for (const c of contacts || []) {
+    const name = cleanPersonName(c.full_name)
+    const key = name.toLowerCase()
+    if (key && !byName.has(key)) byName.set(key, { ...c, full_name: name })
+  }
+  return [...byName.values()].sort((a, b) => a.full_name.localeCompare(b.full_name, 'ru'))
+}
+
+// Любой id контакта → id строки, представляющей то же ФИО: иначе ответственный из второй строки того же человека не совпал
+// бы ни с одним пунктом выбора и выглядел бы как «Не назначен».
+export function contactRepresentatives(contacts) {
+  const repByName = new Map()
+  const reps = {}
+  for (const c of contacts || []) {
+    const key = cleanPersonName(c.full_name).toLowerCase()
+    if (key && !repByName.has(key)) repByName.set(key, c.id)
+    reps[c.id] = (key && repByName.get(key)) || c.id
+  }
+  return reps
+}
+
+// Поиск сотрудника в выборе: слова в любом порядке, «ё» = «е».
+export function matchPersonOption(option, query) {
+  const norm = (s) => String(s).toLowerCase().replace(/ё/g, 'е')
+  const label = norm(option.label)
+  return norm(query).split(/\s+/).every(word => label.includes(word))
+}
+
 // task 370: тип материала по ДС.
 export const MATERIAL_OPTIONS = [
   { value: 'tolling', label: 'Давальческие (М-15)', className: 'material-tolling' },

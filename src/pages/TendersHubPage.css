@@ -99,6 +99,26 @@
   align-items: start;
 }
 
+/* Хаб «Договоры и ДС»: блоки равноправны — одной высоты, название не растягивается. */
+.thub-grid--even {
+  align-items: stretch;
+}
+
+.thub-grid--even .thub-title {
+  flex: none;
+}
+
+.thub-card-counts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.375rem;
+}
+
+/* Значки меню — 18 px; в карточке и шапке хаба они того же размера, что и значки «Тендеров». */
+.contracts-hub .thub-header-icon svg { width: 19px; height: 19px; }
+.contracts-hub .thub-badge svg { width: 20px; height: 20px; }
+
 /* ── Карточка направления ───────────────────────────────── */
 .thub-card {
   position: relative;

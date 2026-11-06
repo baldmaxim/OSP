@@ -16,7 +16,7 @@ import useBodyClass from '../hooks/useBodyClass'
 import { useIsPhone } from '../hooks/useMediaQuery'
 import { formatAmount } from '../utils/money'
 import {
-  DP_ALERTS_EVENT, DP_CONCEPT_CATEGORY, DP_CONTRACT_CATEGORY, DP_CREATED_EVENT, DP_MIGRATION_HINT, DP_REQUEST_PARAM, DP_ROLE_LABEL,
+  DP_ALERTS_EVENT, DP_CONCEPT_CATEGORY, DP_CREATED_EVENT, DP_DOCS_CATEGORY, DP_MIGRATION_HINT, DP_REQUEST_PARAM, DP_ROLE_LABEL,
   DP_STATUS_LABEL, DP_STATUS_OPTIONS, DP_TABS, canChangeDpRequest, countDpTabs, dpErrorText, filterDpRequests, isDpMigrationMissing,
 } from '../utils/dpRequests'
 import {
@@ -29,10 +29,10 @@ import './DpRequestsPage.css'
 import '../styles/fonts.css'
 import '../styles/workUi.css'
 
-// «Заявка на ДП» (миграция 20261227, решения пользователя 05.11.2026). По аналогии с «Заявкой на ДС», только договоры: номер,
-// объект, договор и его документ, понятийное соглашение (оба файла обязательны), сумма, ответственный, причина создания ДП.
-// Создают экономист объекта и руководитель строительства (право dp_requests_create), работают с заявкой — обладатели правки раздела
-// dp_requests. О новой заявке всплывает большое окно (components/dpRequests/DpRequestAlert.jsx — на всех страницах).
+// «Заявка на ДП» (миграции 20261227, 20261231; решения пользователя 05.11.2026). По аналогии с «Заявкой на ДС», только договоры.
+// Подают экономист объекта и руководитель строительства (право dp_requests_create): понятийное соглашение (обязательно), документы и примечание.
+// Объект, договор, сумму и ответственного заполняют те, кто работает с заявками (правка раздела dp_requests).
+// О новой заявке всплывает большое окно (components/dpRequests/DpRequestAlert.jsx — на всех страницах).
 
 const formatDay = (ts) => (ts ? new Date(ts).toLocaleDateString('ru-RU') : '')
 
@@ -105,10 +105,12 @@ export default function DpRequestsPage() {
   const scopeKey = (scopedObjectIds || []).join(',')
   useEffect(() => {
     reload()
+    // Объекты и сотрудники нужны только форме того, кто заполняет заявку: подающий их не выбирает.
+    if (!canWork) return
     loadDpObjects(scopedObjectIds).then(setObjects).catch((err) => setError(`Объекты не загрузились: ${dpErrorText(err)}`))
     loadDpStaff().then(setStaff).catch((err) => setError(`Сотрудники объектов не загрузились: ${dpErrorText(err)}`))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, reload])
+  }, [scopeKey, reload, canWork])
 
   // Заявки коллег — при возврате на вкладку; у получателя — сразу, как только пришло окно.
   useEffect(() => {
@@ -232,9 +234,12 @@ export default function DpRequestsPage() {
     )
   }
 
+  // Поле ещё не заполнено: работающему с заявками — напоминание, остальным — прочерк.
+  const unfilled = <span className="dpr-empty">{canWork ? 'не заполнено' : '—'}</span>
+
   const responsible = (req) => (
     <>
-      {req.responsible_name ? <PersonName full={req.responsible_name} /> : <span className="dpr-empty">—</span>}
+      {req.responsible_name ? <PersonName full={req.responsible_name} /> : unfilled}
       {DP_ROLE_LABEL[req.responsible_role] && <small className="dpr-sub">{DP_ROLE_LABEL[req.responsible_role]}</small>}
     </>
   )
@@ -290,7 +295,7 @@ export default function DpRequestsPage() {
                 type="search"
                 className="dcr-search"
                 placeholder="№, объект, договор, ответственный"
-                aria-label="Поиск по номеру заявки, объекту, договору, ответственному и причине"
+                aria-label="Поиск по номеру заявки, объекту, договору, ответственному и примечанию"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -323,13 +328,13 @@ export default function DpRequestsPage() {
                       <span className="mcard-num">№ {req.request_number}</span>
                       <DpStatus req={req} canWork={canWork} onChange={changeStatus} />
                     </div>
-                    <div className="mcard-title">{req.objects?.name || '—'}</div>
+                    <div className="mcard-title">{req.objects?.name || unfilled}</div>
                     <div className="mcard-rows">
-                      <div className="mcard-row"><span className="mcard-label">Договор</span><span className="mcard-value">{req.contract_title}<DpFileList {...fileProps(req, DP_CONTRACT_CATEGORY)} /></span></div>
+                      <div className="mcard-row"><span className="mcard-label">Договор</span><span className="mcard-value">{req.contract_title || unfilled}<DpFileList {...fileProps(req, DP_DOCS_CATEGORY)} /></span></div>
                       <div className="mcard-row"><span className="mcard-label">Понятийное соглашение</span><span className="mcard-value"><DpFileList {...fileProps(req, DP_CONCEPT_CATEGORY)} /></span></div>
-                      <div className="mcard-row"><span className="mcard-label">Сумма</span><span className="mcard-value dpr-amount">{formatAmount(Number(req.amount))} ₽</span></div>
+                      <div className="mcard-row"><span className="mcard-label">Сумма</span><span className="mcard-value dpr-amount">{req.amount == null ? unfilled : `${formatAmount(Number(req.amount))} ₽`}</span></div>
                       <div className="mcard-row"><span className="mcard-label">Ответственный</span><span className="mcard-value">{responsible(req)}</span></div>
-                      <div className="mcard-row"><span className="mcard-label">Причина</span><span className="mcard-value"><ClampText text={req.reason} lines={4} /></span></div>
+                      <div className="mcard-row"><span className="mcard-label">Примечание</span><span className="mcard-value"><ClampText text={req.reason} lines={4} /></span></div>
                     </div>
                     {created(req)}
                     <div className="dpr-row-actions">{actions(req)}</div>
@@ -355,11 +360,11 @@ export default function DpRequestsPage() {
                   <tr>
                     <th>№</th>
                     <th>Объект</th>
-                    <th>Договор и документ</th>
+                    <th>Договор и документы</th>
                     <th>Понятийное соглашение</th>
                     <th className="dpr-num-cell">Сумма, ₽</th>
                     <th>Ответственный</th>
-                    <th>Комментарий: причина создания ДП</th>
+                    <th>Примечание</th>
                     <th>Статус</th>
                     <th aria-label="Действия" />
                   </tr>
@@ -370,15 +375,15 @@ export default function DpRequestsPage() {
                     <tr key={req.id} ref={(el) => { rowsRef.current.set(req.id, el) }} className={`${req.deleted_at ? 'row-deleted' : ''}${highlightId === req.id ? ' dpr-highlight' : ''}`}>
                       <td className="dpr-number">{req.request_number}</td>
                       <td>
-                        {req.objects?.name || '—'}
+                        {req.objects?.name || unfilled}
                         {created(req)}
                       </td>
                       <td>
-                        <div className="dpr-contract-title">{req.contract_title}</div>
-                        <DpFileList {...fileProps(req, DP_CONTRACT_CATEGORY)} />
+                        <div className="dpr-contract-title">{req.contract_title || unfilled}</div>
+                        <DpFileList {...fileProps(req, DP_DOCS_CATEGORY)} />
                       </td>
                       <td><DpFileList {...fileProps(req, DP_CONCEPT_CATEGORY)} /></td>
-                      <td className="dpr-num-cell dpr-amount">{formatAmount(Number(req.amount))}</td>
+                      <td className="dpr-num-cell dpr-amount">{req.amount == null ? unfilled : formatAmount(Number(req.amount))}</td>
                       <td>{responsible(req)}</td>
                       <td><ClampText text={req.reason} /></td>
                       <td><DpStatus req={req} canWork={canWork} onChange={changeStatus} /></td>
@@ -398,6 +403,7 @@ export default function DpRequestsPage() {
           objects={objects}
           staff={staff}
           me={me}
+          canWork={canWork}
           onClose={() => setFormFor(null)}
           onSaved={onSaved}
         />

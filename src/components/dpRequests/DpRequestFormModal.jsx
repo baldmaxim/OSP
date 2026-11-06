@@ -4,13 +4,14 @@ import { IconAlert, IconTrash } from '../icons/ActionIcons'
 import PaperclipIcon from '../icons/PaperclipIcon'
 import { formatAmount, formatAmountLive } from '../../utils/money'
 import {
-  DP_FILE_ACCEPT, DP_ROLE_LABEL, EMPTY_DP_FORM, dpErrorText, dpFileProblem, dpFormFields, dpFormProblems, pickResponsibleKey, responsibleOptions,
+  DP_CONCEPT_CATEGORY, DP_DOCS_CATEGORY, DP_ROLE_LABEL, EMPTY_DP_FORM, dpErrorText, dpFileAccept, dpFileProblem, dpFormFields, dpFormProblems,
+  pickResponsibleKey, responsibleOptions,
 } from '../../utils/dpRequests'
 import { createDpRequest, updateDpRequest } from '../../services/dpRequests'
 import { SECTION_TEMPLATE_LINK_KEY, fetchTemplateLinks, isWebLink } from '../../services/sectionTemplates'
 
 // Файлы, выбранные в окне новой заявки: на сервер уходят только вместе с заявкой (строки ещё нет).
-function StagedFiles({ id, label, hint, files, onFiles, required, error }) {
+function StagedFiles({ id, label, hint, accept, files, onFiles, required, error }) {
   const inputRef = useRef(null)
   const [dragging, setDragging] = useState(false)
   const add = (list) => onFiles(Array.from(list || []))
@@ -40,31 +41,32 @@ function StagedFiles({ id, label, hint, files, onFiles, required, error }) {
           {files.length ? '+ ещё файл' : 'Выбрать файл'}
         </button>
         <span className="dpr-hint">{hint}</span>
-        <input ref={inputRef} type="file" hidden multiple accept={DP_FILE_ACCEPT} onChange={(e) => { add(e.target.files); e.target.value = '' }} />
+        <input ref={inputRef} type="file" hidden multiple accept={accept} onChange={(e) => { add(e.target.files); e.target.value = '' }} />
       </div>
       {error && <span className="dpr-error-line">{error}</span>}
     </div>
   )
 }
 
-// Окно новой заявки и правки. Поля — по решению пользователя: объект, договор и его документ, понятийное соглашение (без этих двух
-// файлов заявку не создать), сумма, ответственный (экономист объекта или руководитель строительства), причина создания ДП. Файлы уже созданной
-// заявки меняются в её строке, здесь — только при создании. Закрывается только кнопками: щелчок мимо унёс бы заполненное.
-export default function DpRequestFormModal({ request, objects, staff, me, onClose, onSaved }) {
+// Окно новой заявки и правки (решение пользователя 05.11.2026). Подающий заполняет только понятийное соглашение (без него заявку не создать), документы и
+// примечание. Объект, договор, сумму и ответственного (экономист объекта или руководитель строительства) видит и заполняет только тот, кто работает с
+// заявками (canWork); они необязательны: заполняются по мере готовности. Файлы уже созданной заявки меняются в её строке, здесь — только при создании.
+// Закрывается только кнопками: щелчок мимо унёс бы заполненное.
+export default function DpRequestFormModal({ request, objects, staff, me, canWork = false, onClose, onSaved }) {
   const editing = !!request
   const [form, setForm] = useState(() => (editing
     ? {
-      object_id: request.object_id,
-      contract_title: request.contract_title,
-      amount: formatAmount(Number(request.amount)),
+      object_id: request.object_id || '',
+      contract_title: request.contract_title || '',
+      amount: request.amount == null ? '' : formatAmount(Number(request.amount)),
       responsibleKey: request.responsible_contact_id
         ? `${request.responsible_contact_id}:${request.responsible_role}`
         : (request.responsible_name ? 'keep' : ''),
-      reason: request.reason,
+      reason: request.reason || '',
     }
     : EMPTY_DP_FORM))
   const [conceptFiles, setConceptFiles] = useState([])
-  const [contractFiles, setContractFiles] = useState([])
+  const [docFiles, setDocFiles] = useState([])
   const [fileError, setFileError] = useState({})
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -82,7 +84,7 @@ export default function DpRequestFormModal({ request, objects, staff, me, onClos
   const { options, fallback } = useMemo(() => {
     const base = responsibleOptions({ staff, objectId: form.object_id, me })
     // Прежний ответственный заявки мог уйти с объекта или быть без контакта — в окне он остаётся, пока его не сменят.
-    if (editing && request.responsible_name && form.object_id === request.object_id) {
+    if (editing && request.responsible_name && form.object_id === (request.object_id || '')) {
       const key = request.responsible_contact_id ? `${request.responsible_contact_id}:${request.responsible_role}` : 'keep'
       if (!base.options.some((o) => o.key === key)) {
         return {
@@ -105,7 +107,7 @@ export default function DpRequestFormModal({ request, objects, staff, me, onClos
   const set = (name) => (e) => setForm((prev) => ({ ...prev, [name]: e.target.value }))
 
   // Добавить выбранные (проверка типа и размера) или убрать один файл из списка.
-  const changeFiles = (setter, slot) => (list, removed) => {
+  const changeFiles = (setter, category) => (list, removed) => {
     if (removed) {
       setter((prev) => prev.filter((f) => f !== removed))
       return
@@ -113,24 +115,24 @@ export default function DpRequestFormModal({ request, objects, staff, me, onClos
     const problems = []
     const good = []
     for (const file of list) {
-      const problem = dpFileProblem(file)
+      const problem = dpFileProblem(file, category)
       if (problem) problems.push(`${file.name}: ${problem}`)
       else good.push(file)
     }
-    setFileError((prev) => ({ ...prev, [slot]: problems.join('; ') }))
+    setFileError((prev) => ({ ...prev, [category]: problems.join('; ') }))
     setter((prev) => {
       const known = new Set(prev.map((f) => `${f.name}:${f.size}`))
       return [...prev, ...good.filter((f) => !known.has(`${f.name}:${f.size}`))]
     })
   }
 
-  const problems = dpFormProblems(form, editing ? {} : { conceptCount: conceptFiles.length, contractCount: contractFiles.length })
+  const problems = dpFormProblems(form, { canWork, conceptCount: editing ? null : conceptFiles.length })
 
   const submit = async (e) => {
     e.preventDefault()
     if (problems.length || saving) return
     const option = options.find((o) => o.key === form.responsibleKey)
-    const fields = dpFormFields(form, option)
+    const fields = dpFormFields(form, option, { canWork })
     setSaving(true)
     setError('')
     try {
@@ -138,7 +140,7 @@ export default function DpRequestFormModal({ request, objects, staff, me, onClos
         await updateDpRequest(request.id, fields)
         await onSaved()
       } else {
-        const created = await createDpRequest({ fields, conceptFiles, contractFiles })
+        const created = await createDpRequest({ fields, conceptFiles, docFiles })
         await onSaved(created)
       }
     } catch (err) {
@@ -156,78 +158,84 @@ export default function DpRequestFormModal({ request, objects, staff, me, onClos
         </header>
 
         <div className="dpr-dialog-body">
-          <div className="dpr-field">
-            <label className="dpr-label" htmlFor="dpr-f-object">Объект<b className="dpr-req"> *</b></label>
-            <select id="dpr-f-object" value={form.object_id} onChange={set('object_id')} autoFocus={!editing}>
-              <option value="">— Выберите объект —</option>
-              {objects.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-            </select>
-          </div>
-
-          <div className="dpr-field">
-            <label className="dpr-label" htmlFor="dpr-f-contract">Договор<b className="dpr-req"> *</b></label>
-            <input id="dpr-f-contract" type="text" maxLength={500} value={form.contract_title} onChange={set('contract_title')} placeholder="Номер или название договора, подрядчик" />
-          </div>
-
           {!editing && (
             <>
-              <StagedFiles
-                id="dpr-contract-files"
-                label="Документ договора"
-                required
-                hint="Без него заявку не создать. PDF, Word или скан, до 50 МБ. Можно перетащить сюда."
-                files={contractFiles}
-                onFiles={changeFiles(setContractFiles, 'contract')}
-                error={fileError.contract}
-              />
               <StagedFiles
                 id="dpr-concept-files"
                 label="Понятийное соглашение"
                 required
                 hint="Без него заявку не создать. PDF, Word или скан, до 50 МБ. Можно перетащить сюда."
+                accept={dpFileAccept(DP_CONCEPT_CATEGORY)}
                 files={conceptFiles}
-                onFiles={changeFiles(setConceptFiles, 'concept')}
-                error={fileError.concept}
+                onFiles={changeFiles(setConceptFiles, DP_CONCEPT_CATEGORY)}
+                error={fileError[DP_CONCEPT_CATEGORY]}
               />
               {isWebLink(templateLink) && (
                 <a className="dpr-template-link" href={templateLink} target="_blank" rel="noopener noreferrer">Открыть шаблон понятийного соглашения</a>
               )}
+              <StagedFiles
+                id="dpr-doc-files"
+                label="Документы (необязательно)"
+                hint="PDF, Word, Excel или скан, до 50 МБ. Можно перетащить сюда."
+                accept={dpFileAccept(DP_DOCS_CATEGORY)}
+                files={docFiles}
+                onFiles={changeFiles(setDocFiles, DP_DOCS_CATEGORY)}
+                error={fileError[DP_DOCS_CATEGORY]}
+              />
             </>
           )}
 
           <div className="dpr-field">
-            <label className="dpr-label" htmlFor="dpr-f-amount">Сумма, ₽<b className="dpr-req"> *</b></label>
-            <input
-              id="dpr-f-amount"
-              type="text"
-              inputMode="decimal"
-              className="dpr-amount-input"
-              value={form.amount}
-              onChange={(e) => setForm((prev) => ({ ...prev, amount: formatAmountLive(e.target.value) }))}
-              placeholder="0,00"
-            />
+            <label className="dpr-label" htmlFor="dpr-f-reason">Примечание</label>
+            <textarea id="dpr-f-reason" rows={4} maxLength={4000} value={form.reason} onChange={set('reason')} />
           </div>
 
-          <div className="dpr-field">
-            <label className="dpr-label" htmlFor="dpr-f-resp">Ответственный<b className="dpr-req"> *</b></label>
-            <select id="dpr-f-resp" value={form.responsibleKey} onChange={set('responsibleKey')} disabled={!form.object_id}>
-              <option value="">{form.object_id ? '— Выберите ответственного —' : 'Сначала выберите объект'}</option>
-              {options.map((o) => <option key={o.key} value={o.key}>{o.name} · {DP_ROLE_LABEL[o.role] || 'ответственный'}</option>)}
-            </select>
-            {fallback && (
-              <span className="dpr-hint">
-                В карточке объекта не указаны экономист и руководитель строительства — показаны такие сотрудники других объектов.
-              </span>
-            )}
-            {form.object_id && !options.length && (
-              <span className="dpr-error-line">Нет ни одного экономиста или руководителя строительства: их указывают в карточке объекта.</span>
-            )}
-          </div>
+          {canWork && (
+            <fieldset className="dpr-work-fields">
+              <legend>Заполняет отдел</legend>
+              <div className="dpr-field">
+                <label className="dpr-label" htmlFor="dpr-f-object">Объект</label>
+                <select id="dpr-f-object" value={form.object_id} onChange={set('object_id')}>
+                  <option value="">— Выберите объект —</option>
+                  {objects.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                </select>
+              </div>
 
-          <div className="dpr-field">
-            <label className="dpr-label" htmlFor="dpr-f-reason">Комментарий: причина создания ДП<b className="dpr-req"> *</b></label>
-            <textarea id="dpr-f-reason" rows={4} maxLength={4000} value={form.reason} onChange={set('reason')} placeholder="Зачем нужен договор подряда" />
-          </div>
+              <div className="dpr-field">
+                <label className="dpr-label" htmlFor="dpr-f-contract">Договор</label>
+                <input id="dpr-f-contract" type="text" maxLength={500} value={form.contract_title} onChange={set('contract_title')} placeholder="Номер или название договора, подрядчик" />
+              </div>
+
+              <div className="dpr-field">
+                <label className="dpr-label" htmlFor="dpr-f-amount">Сумма, ₽</label>
+                <input
+                  id="dpr-f-amount"
+                  type="text"
+                  inputMode="decimal"
+                  className="dpr-amount-input"
+                  value={form.amount}
+                  onChange={(e) => setForm((prev) => ({ ...prev, amount: formatAmountLive(e.target.value) }))}
+                  placeholder="0,00"
+                />
+              </div>
+
+              <div className="dpr-field">
+                <label className="dpr-label" htmlFor="dpr-f-resp">Ответственный</label>
+                <select id="dpr-f-resp" value={form.responsibleKey} onChange={set('responsibleKey')} disabled={!form.object_id}>
+                  <option value="">{form.object_id ? '— Выберите ответственного —' : 'Сначала выберите объект'}</option>
+                  {options.map((o) => <option key={o.key} value={o.key}>{o.name} · {DP_ROLE_LABEL[o.role] || 'ответственный'}</option>)}
+                </select>
+                {fallback && (
+                  <span className="dpr-hint">
+                    В карточке объекта не указаны экономист и руководитель строительства — показаны такие сотрудники других объектов.
+                  </span>
+                )}
+                {form.object_id && !options.length && (
+                  <span className="dpr-error-line">Нет ни одного экономиста или руководителя строительства: их указывают в карточке объекта.</span>
+                )}
+              </div>
+            </fieldset>
+          )}
         </div>
 
         <footer className="dpr-dialog-foot">

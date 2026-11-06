@@ -193,10 +193,63 @@
 .login-resend-btn:disabled { opacity: 0.6; cursor: default; }
 
 /* Регистрация подрядчика (ContractorSignupPage). */
+/* Контакт для связи — под заголовком, отступ заголовка снизу (2rem) здесь уже не нужен целиком. */
+.login-contact {
+  margin: -1rem 0 1.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  text-align: center;
+  color: var(--text-secondary);
+}
+.login-contact a { font-weight: 600; color: var(--primary-color, #0891b2); white-space: nowrap; }
+.login-contact a:hover { text-decoration: underline; }
+.login-channels { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; margin-top: 1.25rem; }
+.login-channel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3125rem 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-decoration: none;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+.login-channel svg { flex: none; }
+.login-channel:hover { color: var(--text-primary); background: var(--bg-tertiary); }
 .login-field-hint { color: var(--text-tertiary); font-size: 0.75rem; }
 .login-field-error { color: #dc2626; font-size: 0.75rem; line-height: 1rem; }
 .form-field input[aria-invalid='true'] { border-color: #dc2626; }
 .login-trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+/* Поле из частей: форма организации и название; «+7», номер и добавочный. Части вплотную, общая рамка. */
+.login-input-group { display: flex; align-items: stretch; min-width: 0; }
+.form-field .login-input-group > * { margin-left: -1px; border-radius: 0; }
+.form-field .login-input-group > :first-child { margin-left: 0; border-radius: 6px 0 0 6px; }
+.form-field .login-input-group > :last-child { border-radius: 0 6px 6px 0; }
+.form-field .login-input-group input { flex: 1 1 0; width: auto; min-width: 0; }
+.form-field .login-input-group select { flex: none; width: 5.5rem; }
+.form-field .login-input-group input:focus,
+.form-field .login-input-group select:focus { position: relative; z-index: 1; }
+.form-field .login-input-group input[aria-invalid='true'] { position: relative; z-index: 1; }
+.form-field .login-input-affix {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 0 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+}
+/* Телефон: номер и добавочный в строку, а если номеру тесно — добавочный ниже. */
+.login-phone { display: flex; flex-wrap: wrap; gap: 0.375rem 0.5rem; }
+.login-phone-number { flex: 1 1 11rem; }
+.login-phone-ext { flex: none; }
+.form-field .login-phone-ext input { flex: none; width: 5rem; }
 .login-consent { display: flex; align-items: flex-start; gap: 0.5rem; color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.125rem; cursor: pointer; }
 .login-consent input { flex: none; margin-top: 0.15rem; }
 .login-actions { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.75rem; }

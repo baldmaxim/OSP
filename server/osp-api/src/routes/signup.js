@@ -32,6 +32,8 @@ const TOKEN = z.string().regex(/^[A-Za-z0-9_-]{43}$/)
 const POW = { challenge: z.string().max(200), answer: z.string().max(20) }
 export const REGISTER_BODY = z.object({
   email: z.string().trim().min(3).max(254),
+  // Форма организации: код; '' — без формы; нет поля — по названию. Проверяют правила полей: отказ приходит с именем поля.
+  legalForm: z.string().max(40).optional(),
   companyName: z.string().max(1000),
   inn: z.string().max(40),
   kpp: z.string().max(40).nullable().optional(),

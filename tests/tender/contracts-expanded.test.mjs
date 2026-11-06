@@ -1,4 +1,4 @@
-// «Договоры и ДС» (/contracts), решения пользователя 29.10.2026:
+// «Реестр по договорам» (/contracts/registry), решения пользователя 29.10.2026:
 //   • раскрытый договор — две области под строкой: «Работа юриста» (юрист, сроки, примечание, приложения) и
 //     «Дополнительные соглашения» — выпадающий список ДС; ДС больше не раскрываются полными строками таблицы;
 //     позже в тот же день («рабочая область юриста слишком маленькая») — области одна под другой во всю
@@ -13,7 +13,7 @@ import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 
 const launch = browserLaunchOptions()
-const BASE = 'route=/contracts&contracts=30&latency=0'
+const BASE = 'route=/contracts/registry&contracts=30&latency=0'
 
 describe('Договоры и ДС: раскрытый договор и подразделение', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
   let stand

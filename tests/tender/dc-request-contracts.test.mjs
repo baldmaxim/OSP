@@ -407,7 +407,7 @@ describe('Договоры в заявках на ДС и у контраген�
     try {
       const table = await openCard(onlyRequests.page)
       const section = onlyRequests.page.locator('.cpg-contracts')
-      await section.getByText('нет доступа к разделу «Договоры и ДС»').waitFor()
+      await section.getByText('нет доступа к разделу «Реестр по договорам»').waitFor()
       assert.equal(await table.locator('tr.is-req').count(), 5)
       assert.equal(await table.locator('tr.is-ds').count(), 0)
       assert.equal(await table.locator('thead select.cpg-child-view').count(), 0)

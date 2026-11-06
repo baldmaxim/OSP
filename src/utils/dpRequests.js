@@ -1,17 +1,24 @@
-// «Заявка на ДП» (миграция 20261227, решения пользователя 05.11.2026): правила без обращения к серверу. Те же границы держат
+// «Заявка на ДП» (миграции 20261227, 20261231; решения пользователя 05.11.2026): правила без обращения к серверу. Те же границы держат
 // правила по строкам и триггеры базы (dp_requests_guard, s3_documents_dp_request_guard): меняете здесь — меняйте и там.
+// Подающий заполняет только понятийное соглашение, документы и примечание; объект, договор, сумму и ответственного — тот, кто работает с заявками.
 import { parseAmount } from './money.js'
 import { CONCEPT_SIGNED_ACCEPT, signedFileProblem } from './tenderConceptAgreement.js'
 
 export const DP_OWNER_TYPE = 'dp_request'
-// Без файла каждой из этих категорий заявка не подаётся (триггер базы), последний файл поданной заявки не убрать.
+// Без файла понятийного соглашения заявка не подаётся (триггер базы), последний его файл поданной заявки не убрать.
 export const DP_CONCEPT_CATEGORY = 'dp_concept_agreement'
-export const DP_CONTRACT_CATEGORY = 'dp_contract_doc'
-const REQUIRED_CATEGORIES = new Set([DP_CONCEPT_CATEGORY, DP_CONTRACT_CATEGORY])
+// Документы заявки, необязательные. Категория прежняя (до 20261231 — обязательный «документ договора»): уже загруженные файлы остаются на месте.
+export const DP_DOCS_CATEGORY = 'dp_contract_doc'
 
-// Документы — PDF, Word или скан, до 50 МБ: как у подписанного понятийного соглашения тендера.
-export const DP_FILE_ACCEPT = CONCEPT_SIGNED_ACCEPT
-export const dpFileProblem = signedFileProblem
+// Понятийное соглашение — PDF, Word или скан, до 50 МБ, как подписанное соглашение тендера. Документы — ещё и Excel: к заявке прикладывают и расчёты.
+const DOC_EXTRA_EXTENSIONS = ['xls', 'xlsx']
+const fileAccept = { [DP_CONCEPT_CATEGORY]: CONCEPT_SIGNED_ACCEPT, [DP_DOCS_CATEGORY]: `${CONCEPT_SIGNED_ACCEPT},${DOC_EXTRA_EXTENSIONS.map((e) => `.${e}`).join(',')}` }
+export const dpFileAccept = (category) => fileAccept[category] || CONCEPT_SIGNED_ACCEPT
+
+// Проверка типа и размера файла этой категории: null — подходит, иначе причина.
+export const dpFileProblem = (file, category) => signedFileProblem(file, category === DP_DOCS_CATEGORY
+  ? { extra: DOC_EXTRA_EXTENSIONS, typesText: 'PDF, Word, Excel или скан' }
+  : {})
 
 // Статус draft на странице не встречается: черновик живёт секунды, пока грузятся файлы, и виден только автору.
 export const DP_STATUS_OPTIONS = [
@@ -81,30 +88,31 @@ export function pickResponsibleKey({ options, current, myName }) {
 
 export const EMPTY_DP_FORM = { object_id: '', contract_title: '', amount: '', responsibleKey: '', reason: '' }
 
-// Что мешает создать заявку или сохранить правку: пусто — можно. Счётчики файлов null — файлы правятся не в этом окне.
-export function dpFormProblems(form, { conceptCount = null, contractCount = null } = {}) {
+// Что мешает создать заявку или сохранить правку: пусто — можно. conceptCount null — файлы правятся не в этом окне.
+// Обязательно только понятийное соглашение: работающий с заявками заполняет остальное по мере готовности, проверяется лишь введённая сумма.
+export function dpFormProblems(form, { canWork = false, conceptCount = null } = {}) {
   const out = []
-  if (!form.object_id) out.push('выберите объект')
-  if (!String(form.contract_title || '').trim()) out.push('укажите договор')
-  const amount = parseAmount(form.amount)
-  if (amount == null || amount < 0) out.push('укажите сумму')
-  if (!form.responsibleKey) out.push('выберите ответственного')
-  if (!String(form.reason || '').trim()) out.push('напишите причину создания ДП')
-  if (contractCount === 0) out.push('загрузите документ договора')
   if (conceptCount === 0) out.push('загрузите понятийное соглашение')
+  if (canWork && String(form.amount || '').trim()) {
+    const amount = parseAmount(form.amount)
+    if (amount == null || amount < 0) out.push('проверьте сумму')
+  }
   return out
 }
 
-// Поля строки заявки из формы. ФИО у контакта базы всё равно поставит триггер: страница шлёт его ради ответственного без контакта.
-export function dpFormFields(form, option) {
+// Поля строки заявки из формы. Подающему — только примечание: остальное заполняет работающий с заявками, запись поверх его данных отклонит база.
+// ФИО у контакта база всё равно поставит триггером: страница шлёт его ради ответственного без контакта.
+export function dpFormFields(form, option, { canWork = false } = {}) {
+  const reason = String(form.reason || '').trim() || null
+  if (!canWork) return { reason }
   return {
-    object_id: form.object_id,
-    contract_title: String(form.contract_title).trim(),
+    object_id: form.object_id || null,
+    contract_title: String(form.contract_title || '').trim() || null,
     amount: parseAmount(form.amount),
     responsible_contact_id: option?.contactId || null,
     responsible_name: option?.name || null,
     responsible_role: option?.role || null,
-    reason: String(form.reason).trim(),
+    reason,
   }
 }
 
@@ -114,9 +122,9 @@ export function canChangeDpRequest(req, { canWork, canCreate, userId }) {
   return !!canCreate && !!userId && req?.created_by === userId && (req?.status === 'new' || req?.status === 'draft')
 }
 
-// Последний файл понятийного соглашения и документа договора поданной заявки нельзя убрать, только заменить.
+// Последний файл понятийного соглашения поданной заявки нельзя убрать, только заменить. Документы необязательны.
 // sameCategory — файлы заявки этой же категории.
-export const isLastRequiredFile = (doc, sameCategory) => REQUIRED_CATEGORIES.has(doc?.doc_category) && (sameCategory || []).length <= 1
+export const isLastRequiredFile = (doc, sameCategory) => doc?.doc_category === DP_CONCEPT_CATEGORY && (sameCategory || []).length <= 1
 
 // Поиск: «12» и «№ 12» — номер заявки, иначе подстрока всех слов в любом поле.
 export function matchesDpSearch(req, query) {
@@ -150,10 +158,12 @@ export function countDpTabs(requests, { query = '', objectIds = [] } = {}) {
 // Причина отказа базы — словами страницы; остальное — как есть.
 const HINT_TEXT = {
   dp_concept_agreement_required: 'Заявку нельзя создать без понятийного соглашения: загрузите его файл.',
-  dp_contract_doc_required: 'Заявку нельзя создать без документа договора: загрузите его файл.',
-  dp_responsible_required: 'Укажите ответственного: экономиста объекта или руководителя строительства.',
+  dp_work_fields: 'Объект, договор, сумму и ответственного заполняет сотрудник, работающий с заявками. Обновите страницу: автор меняет только примечание и файлы.',
 }
-export const dpErrorText = (err) => HINT_TEXT[err?.hint] || err?.message || String(err)
+// 23502 — база ещё требует поля, которые заполняет отдел: страницу выложили раньше миграции.
+export const dpErrorText = (err) => HINT_TEXT[err?.hint]
+  || (err?.code === '23502' ? 'Заявка не создана: не применена миграция 20261231_dp_requests_short_form.' : '')
+  || err?.message || String(err)
 
 // База ещё без миграции: таблицы или функции нет.
 export function isDpMigrationMissing(err) {

@@ -23,7 +23,7 @@ import { counterpartySearchIndex, searchCounterparties } from '../utils/counterp
 import CounterpartyGeneralTab from '../components/counterparty/CounterpartyGeneralTab'
 import { loadCounterpartyContractSummary, loadCounterpartySiteAccounts } from '../services/counterpartyContracts'
 import {
-  compareCounterparties, counterpartyFacets, counterpartyNumbers, filterCounterparties, isMissingSiteAccounts,
+  compareByNumber, counterpartyFacets, counterpartyNumbers, filterCounterparties, isMissingSiteAccounts,
 } from '../utils/counterpartyFilters'
 import CounterpartyVatSelect from '../components/counterparty/CounterpartyVatSelect'
 import VorDivisionChip from '../components/VorDivisionChip'
@@ -1247,8 +1247,7 @@ function CounterpartiesPage() {
       return status || ''
     }
 
-    // Порядок берём как есть: filteredCounterparties уже отсортирован так же —
-    // активные сверху, чёрный список снизу, внутри по имени.
+    // Порядок берём как есть: filteredCounterparties уже отсортирован по «№».
     const rows = []
     exportList.forEach((cp) => {
       const baseRow = [
@@ -1530,8 +1529,8 @@ function CounterpartiesPage() {
   )
   // Сортировка — один раз на выборку, а не на каждую букву поиска.
   const filteredBeforeSearch = useMemo(
-    () => filterCounterparties(counterparties, filters).sort(compareCounterparties),
-    [counterparties, filters],
+    () => filterCounterparties(counterparties, filters).sort(compareByNumber(numbersById)),
+    [counterparties, filters, numbersById],
   )
   const { items: filteredCounterparties, fix: searchFix } = useMemo(
     () => searchIn(filteredBeforeSearch),
@@ -2085,7 +2084,7 @@ function CounterpartiesPage() {
             </>
           ) : (
             <div className="table-wrapper">
-              <table className="compact-table">
+              <table className="compact-table cp-registry-table">
                 <thead>
                   <tr>
                     <th className="col-num">№</th>

@@ -11,7 +11,7 @@ import { chromium } from 'playwright'
 import * as XLSX from 'xlsx'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import {
-  compareCounterparties, counterpartyFacets, counterpartyNumbers, counterpartyTab, filterCounterparties, isMissingSiteAccounts,
+  compareByNumber, compareCounterparties, counterpartyFacets, counterpartyNumbers, counterpartyTab, filterCounterparties, isMissingSiteAccounts,
 } from '../../src/utils/counterpartyFilters.js'
 import { counterpartySearchIndex, searchCounterparties } from '../../src/utils/counterpartySearch.js'
 
@@ -45,6 +45,13 @@ describe('Реестр контрагентов: правила номера и 
     assert.deepEqual([...counterpartyNumbers(legacy)], [['2', 1], ['1', 2], ['4', 3], ['3', 4]])
     assert.deepEqual([...legacy].sort(compareCounterparties).map((c) => c.id), ['2', '1', '4', '3'])
     assert.deepEqual([...counterpartyNumbers(null)], [])
+  })
+
+  it('строки — по «№» от меньшего к большему, не по названию; номера без колонки — порядком названий, те же строки', () => {
+    const order = (items) => [...items].sort(compareByNumber(counterpartyNumbers(items))).map((c) => c.id).join('')
+    assert.equal(order(LIST), 'hgfedcba')
+    const legacy = [{ id: '3', name: 'Удалённая', deleted_at: '2026-01-01' }, { id: '1', name: 'Бета' }, { id: '2', name: 'альфа' }]
+    assert.equal(order(legacy), '213')
   })
 
   it('вкладка: удаление важнее статуса', () => {
@@ -175,7 +182,10 @@ describe('Реестр контрагентов: страница', { skip: !lau
     const got = [...document.querySelectorAll('table.compact-table tbody tr.table-row .company-name')].map((e) => e.textContent.trim())
     return JSON.stringify(got) === JSON.stringify(list)
   }, expected, { timeout: 15000 })
-  const p = (...n) => n.map((i) => `Подрядчик 0${i}`)
+  // Названия в порядке строк: на стенде номера убывают вместе с названием (100, 97, …), строки идут по «№» от меньшего к большему.
+  const p = (...n) => [...n].sort((x, y) => y - x).map((i) => `Подрядчик 0${i}`)
+  // Колонки номера нет: номера считаются порядком названий, и строки идут так же.
+  const byName = (...n) => n.map((i) => `Подрядчик 0${i}`)
 
   it('номер закреплён: фильтры, поиск и вкладки его не меняют, новый столбец — не по порядку строк', async () => {
     const { page, errors, close } = await open()
@@ -185,12 +195,12 @@ describe('Реестр контрагентов: страница', { skip: !lau
         for (const [name, no] of Object.entries(await shown(page))) assert.equal(no, NUMBERS[name], name)
       }
       await check()
-      assert.deepEqual(await names(page), p(1, 2, 3, 4, 5, 6))
+      assert.deepEqual(await names(page), p(6, 5, 4, 3, 2, 1), 'по № от меньшего к большему')
       await contractBtn(page).click()
-      await waitNames(page, p(1, 2, 4, 6))
+      await waitNames(page, p(6, 4, 2, 1))
       await check()
       await siteBtn(page).click()
-      await waitNames(page, p(1, 4))
+      await waitNames(page, p(4, 1))
       await check()
       await page.getByPlaceholder('Поиск...').fill('Подрядчик 04')
       await waitNames(page, p(4))
@@ -198,7 +208,7 @@ describe('Реестр контрагентов: страница', { skip: !lau
       await page.getByPlaceholder('Поиск...').fill('')
       await contractBtn(page).click()
       await siteBtn(page).click()
-      await waitNames(page, p(1, 2, 3, 4, 5, 6))
+      await waitNames(page, p(6, 5, 4, 3, 2, 1))
       await button(page, /Чёрный список/).click()
       await waitNames(page, p(7))
       await check()
@@ -208,6 +218,56 @@ describe('Реестр контрагентов: страница', { skip: !lau
       assert.deepEqual(errors, [])
     } finally {
       await close()
+    }
+  })
+
+  it('узкое окно с развёрнутым меню: столбцы не сжимаются и не наезжают друг на друга, прокручивается таблица, кнопки не закрывают фильтры', async () => {
+    for (const width of [1280, 1366, 1536]) {
+      const { page, errors, close } = await open('&shell=1&sidebar=1', { width, height: 800 })
+      try {
+        await waitLoaded(page)
+        const table = page.locator('table.cp-registry-table')
+        await table.locator('.worktype-tag').first().waitFor()
+        await page.locator('.layout .sidebar, aside').first().waitFor()
+        const got = await table.evaluate((t) => {
+          const crossing = []
+          const rem = parseFloat(getComputedStyle(document.documentElement).fontSize)
+          for (const cell of t.querySelectorAll('th, td')) {
+            const box = cell.getBoundingClientRect()
+            // Текст подписи: у ячейки, которая клипует содержимое, вылезти за край он не может, в шапке — может.
+            const range = document.createRange()
+            range.selectNodeContents(cell)
+            const r = range.getBoundingClientRect()
+            if (r.width && cell.tagName === 'TH' && (r.right > box.right + 1 || r.left < box.left - 1)) crossing.push(cell.className)
+          }
+          const wrap = t.closest('.table-wrapper')
+          return {
+            crossing,
+            work: t.querySelector('th.col-worktype').getBoundingClientRect().width / rem,
+            scrolls: wrap.scrollWidth > wrap.clientWidth,
+            wrapScroll: getComputedStyle(wrap).overflowX,
+            page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          }
+        })
+        assert.deepEqual(got.crossing, [], `подписи за краем столбца при ${width}`)
+        assert.ok(got.work >= 9.5, `«Вид работ» не уже 9,5rem при ${width}: ${got.work}`)
+        assert.ok(got.scrolls && got.wrapScroll === 'auto', `таблица прокручивается в своём блоке при ${width}`)
+        assert.equal(got.page, 0, 'страница целиком не прокручивается вбок')
+        // Слово не рвётся по буквам: высота плашки с двумя короткими словами — не больше двух строк.
+        const tagLines = await table.locator('.worktype-tag').first().evaluate((el) => el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight))
+        assert.ok(tagLines < 3, `строк в плашке вида работ: ${tagLines}`)
+        // Панель над таблицей: фильтры и кнопки не пересекаются.
+        const overlaps = await page.locator('.counterparties-toolbar').evaluate((bar) => {
+          const rect = (el) => el.getBoundingClientRect()
+          const filters = [...bar.querySelectorAll('.toolbar-center > *')].map(rect)
+          const actions = [...bar.querySelectorAll('.toolbar-actions > *')].map(rect)
+          return filters.flatMap((f) => actions.filter((a) => f.left < a.right && a.left < f.right && f.top < a.bottom && a.top < f.bottom)).length
+        })
+        assert.equal(overlaps, 0, `кнопки закрывают фильтры при ${width}`)
+        assert.deepEqual(errors, [])
+      } finally {
+        await close()
+      }
     }
   })
 
@@ -240,7 +300,7 @@ describe('Реестр контрагентов: страница', { skip: !lau
       const before = await shown(page)
       assert.deepEqual(Object.values(before), ['1', '2', '3', '4', '5', '6'])
       await contractBtn(page).click()
-      await waitNames(page, p(1, 2, 4, 6))
+      await waitNames(page, byName(1, 2, 4, 6))
       const after = await shown(page)
       for (const name of Object.keys(after)) assert.equal(after[name], before[name], name)
       // Чёрный список и удалённые считаются после действующих — номера те же, что без фильтра.
@@ -402,7 +462,7 @@ describe('Реестр контрагентов: страница', { skip: !lau
       const table = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { header: 1 })
       const start = table.findIndex((r) => r[0] === '№')
       assert.ok(start >= 0, 'заголовок «№»')
-      assert.deepEqual(table.slice(start + 1).filter((r) => r[1]).map((r) => [r[0], r[1]]), [[100, 'Подрядчик 01'], [94, 'Подрядчик 03'], [91, 'Подрядчик 04']])
+      assert.deepEqual(table.slice(start + 1).filter((r) => r[1]).map((r) => [r[0], r[1]]), [[91, 'Подрядчик 04'], [94, 'Подрядчик 03'], [100, 'Подрядчик 01']], 'в том же порядке, что на экране')
 
       await rows(page).filter({ hasText: 'Подрядчик 03' }).locator('.company-name').click()
       await page.locator('.cp-detail-title', { hasText: '№ 94' }).waitFor()

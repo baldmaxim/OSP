@@ -101,6 +101,7 @@ describe('Учётка с регистрации на сайте: база (ко
     assert.match(res.stdout, /OK 20261203_contractor_signup: применена/)
     assert.match(res.stdout, /OK 20261204_contractor_self_access: применена/)
     assert.match(res.stdout, /OK 20261226_contractor_org_card_vor_file: применена/)
+    assert.match(res.stdout, /OK 20261229_signup_phone_ext: применена/)
     sql(SEED)
     as(U.self, `select public.bid_request('${T.open}')`)
     sql(`insert into public.tender_bid_rates (tender_id, counterparty_id, kind, item_key, unit_key, name, unit, volume, price, total) values

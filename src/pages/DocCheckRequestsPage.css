@@ -1072,6 +1072,30 @@
   color: var(--danger-color);
 }
 
+/* Список контрагентов в форме: название и под ним «№ · ИНН». Список рисуется в document.body — без корня страницы. */
+.dc-cp-option { display: flex; flex-direction: column; min-width: 0; }
+.dc-cp-option-name, .dc-cp-option-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dc-cp-option-meta {
+  font-size: var(--ui-hint, 0.75rem);
+  line-height: var(--ui-hint-lh, 1rem);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+.fdrop-option.is-current .dc-cp-option-meta { color: inherit; opacity: 0.75; }
+
+/* Порядок карточек колонки (кнопка в шапке, сразу за названием): по дате — заметно, свой порядок — тихим значком.
+   Название сжимается до многоточия, кнопка не уезжает; счётчик и остальные кнопки — у правого края. */
+.dc-column-top > .dc-column-title { flex: 0 1 auto; }
+.dc-column-top > .dc-sort-btn { margin-right: auto; }
+.dc-sort-btn { width: auto; min-width: 1.5rem; gap: 0.1875rem; padding: 0 0.25rem; }
+.dc-sort-btn.is-by-date {
+  border-color: color-mix(in srgb, var(--ui-link) 35%, transparent);
+  background: color-mix(in srgb, var(--ui-link) 8%, transparent);
+  color: var(--ui-link);
+}
+.dc-sort-btn-text { font-size: var(--ui-hint); line-height: 1; font-weight: var(--ui-medium); white-space: nowrap; }
+
 /* На компьютере раздел вплотную к меню, без полей вокруг (раньше 2rem + 1,25rem слева), а доска — на всю высоту окна: своей
    прокрутки у страницы нет, полоса доски всегда на экране, бросить можно в любое место колонки, а не только на карточку.
    На телефоне .main-content оставляет место под полосой меню, и страница прокручивается целиком. */

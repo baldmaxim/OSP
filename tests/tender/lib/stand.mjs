@@ -33,6 +33,8 @@ export async function startStand(srcRoot) {
   const server = await createServer({
     configFile: false,
     root: UI,
+    // Файлы сайта: языки распознавателя (public/ocr).
+    publicDir: path.join(srcRoot, 'public'),
     logLevel: 'error',
     plugins: [react(), {
       name: 'tender-stand',
@@ -51,7 +53,7 @@ export async function startStand(srcRoot) {
     resolve: { dedupe: ['react', 'react-dom', 'react-router-dom'] },
     server: { host: '127.0.0.1', port, strictPort: true, fs: { allow: [REPO, srcRoot] } },
     // pdf.js — сразу: иначе Vite находит его при первом распознавании PDF и перезагружает страницу посреди теста.
-    optimizeDeps: { include: ['react', 'react-dom/client', 'react-router-dom', 'xlsx', 'pizzip', 'file-saver', 'pdfjs-dist/legacy/build/pdf.mjs'] },
+    optimizeDeps: { include: ['react', 'react-dom/client', 'react-router-dom', 'xlsx', 'pizzip', 'file-saver', 'pdfjs-dist/legacy/build/pdf.mjs', 'tesseract.js/dist/tesseract.esm.min.js'] },
   })
   await server.listen()
   return { server, url: `http://127.0.0.1:${port}/index.html` }

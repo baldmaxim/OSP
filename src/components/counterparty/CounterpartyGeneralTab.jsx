@@ -226,7 +226,7 @@ export default function CounterpartyGeneralTab({
           ? <CounterpartyContracts key={cp.id} counterpartyId={cp.id} isPhone={isPhone} canEdit={canEdit}
               isAdmin={isAdmin} canViewContracts={canViewContracts} canViewDcRequests={canViewDcRequests}
               onLinkChange={onContractLinkChange} />
-          : <div className="cpg-muted">Нет доступа к разделу «Договоры и ДС».</div>}
+          : <div className="cpg-muted">Нет доступа к разделу «Реестр по договорам».</div>}
       </section>
     </div>
   )

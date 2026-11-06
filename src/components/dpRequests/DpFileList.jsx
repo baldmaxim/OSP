@@ -2,11 +2,11 @@ import { useRef, useState } from 'react'
 import { downloadS3File } from '../FileDownload'
 import { IconDownload, IconTrash } from '../icons/ActionIcons'
 import PaperclipIcon from '../icons/PaperclipIcon'
-import { DP_FILE_ACCEPT, dpErrorText, dpFileProblem, isLastRequiredFile } from '../../utils/dpRequests'
+import { DP_CONCEPT_CATEGORY, dpErrorText, dpFileAccept, dpFileProblem, isLastRequiredFile } from '../../utils/dpRequests'
 import { addDpFile, removeDpFile, replaceDpFiles } from '../../services/dpRequests'
 
-// Файлы заявки одной категории (понятийное соглашение, документ договора): имя — просмотр, значок — скачивание. Кто может менять
-// заявку — добавляет и удаляет сразу из ячейки. Оба вида файлов обязательны: последний не удаляется, а заменяется.
+// Файлы заявки одной категории (понятийное соглашение, документы): имя — просмотр, значок — скачивание. Кто может менять
+// заявку — добавляет и удаляет сразу из ячейки. Понятийное соглашение обязательно: последний файл не удаляется, а заменяется.
 export default function DpFileList({ requestId, docs, category, canChange, onChanged, onPreview, onError }) {
   const inputRef = useRef(null)
   const replaceRef = useRef(false)
@@ -21,7 +21,7 @@ export default function DpFileList({ requestId, docs, category, canChange, onCha
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    const problem = dpFileProblem(file)
+    const problem = dpFileProblem(file, category)
     if (problem) { onError(`${file.name}: ${problem}`); return }
     setBusy(true)
     try {
@@ -74,7 +74,7 @@ export default function DpFileList({ requestId, docs, category, canChange, onCha
           )}
         </div>
       ))}
-      {docs.length === 0 && <span className="dpr-file-missing">нет файла</span>}
+      {docs.length === 0 && category === DP_CONCEPT_CATEGORY && <span className="dpr-file-missing">нет файла</span>}
       {canChange && (
         <div className="dpr-file-actions">
           <button type="button" className="dpr-file-add" disabled={busy} onClick={() => pick(false)}>{busy ? 'Загрузка…' : '+ файл'}</button>
@@ -83,7 +83,7 @@ export default function DpFileList({ requestId, docs, category, canChange, onCha
           )}
         </div>
       )}
-      <input ref={inputRef} type="file" hidden accept={DP_FILE_ACCEPT} onChange={onFile} />
+      <input ref={inputRef} type="file" hidden accept={dpFileAccept(category)} onChange={onFile} />
     </div>
   )
 }

@@ -119,7 +119,7 @@ function AttachPicker({ excludeIds, onPick, onClose }) {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
           placeholder="№ договора, предмет, объект или контрагент"
-          aria-label="Поиск договора в реестре «Договоры и ДС»"
+          aria-label="Поиск договора в «Реестре по договорам»"
           disabled={busy}
           autoFocus
         />
@@ -132,7 +132,7 @@ function AttachPicker({ excludeIds, onPick, onClose }) {
           {!choices ? (
             <li className="cpg-muted cpg-search-empty">Загрузка реестра договоров…</li>
           ) : found.length === 0 ? (
-            <li className="cpg-muted cpg-search-empty">Не найдено в реестре «Договоры и ДС»</li>
+            <li className="cpg-muted cpg-search-empty">Не найдено в «Реестре по договорам»</li>
           ) : found.map((c) => {
             const t = docTitle(c)
             return (
@@ -515,7 +515,7 @@ export default function CounterpartyContracts({
 
   const detach = async (doc) => {
     const t = docTitle(doc)
-    if (!window.confirm(`Открепить договор ${t.num} от контрагента? Сам договор останется в реестре «Договоры и ДС».`)) return
+    if (!window.confirm(`Открепить договор ${t.num} от контрагента? Сам договор останется в «Реестре по договорам».`)) return
     try {
       await detachContract(counterpartyId, doc.id)
     } catch (err) {
@@ -591,7 +591,7 @@ export default function CounterpartyContracts({
       </div>
       {picking && <AttachPicker excludeIds={shownIds} onPick={attach} onClose={() => setPicking(false)} />}
       {!canViewContracts && (
-        <div className="cpg-muted cpg-attach-note cpg-tree-note">Договоры показаны только подписью: нет доступа к разделу «Договоры и ДС».</div>
+        <div className="cpg-muted cpg-attach-note cpg-tree-note">Договоры показаны только подписью: нет доступа к разделу «Реестр по договорам».</div>
       )}
       {reqState.error && (
         <div className="cpg-muted cpg-attach-note cpg-tree-note">

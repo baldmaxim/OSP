@@ -45,6 +45,9 @@ export default function FilterDropdown({
   // Необязательно: свой поиск по списку (опция, набранный текст) → подходит ли.
   // По умолчанию — вхождение текста в label.
   matchOption = null,
+  // Необязательно: свой поиск целиком (опции, набранный текст как есть) → список в нужном порядке. Важнее matchOption:
+  // нужен, когда найденное надо переставить (контрагент с набранным номером — первым).
+  filterOptions = null,
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -79,8 +82,9 @@ export default function FilterDropdown({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return options
+    if (filterOptions) return filterOptions(options, query)
     return options.filter(o => (matchOption ? matchOption(o, q) : String(o.label).toLowerCase().includes(q)))
-  }, [options, query, matchOption])
+  }, [options, query, matchOption, filterOptions])
 
   const isActive = multiple
     ? selectedValues.length > 0

@@ -113,8 +113,8 @@ describe('Вкладка «Права доступа»', { skip: !launch && 'Н�
   it('права: галочки сохраняются сразу; редактирование включает просмотр', async () => {
     const { page, errors, close } = await open()
     try {
-      const view = page.getByLabel('Договоры: просмотр')
-      const edit = page.getByLabel('Договоры: редактирование')
+      const view = page.getByLabel('Реестр по договорам: просмотр')
+      const edit = page.getByLabel('Реестр по договорам: редактирование')
       await view.waitFor()
       assert.equal(await page.getByLabel('Тендеры: просмотр').isChecked(), true, 'прежние права на месте')
       assert.equal(await edit.isChecked(), false)

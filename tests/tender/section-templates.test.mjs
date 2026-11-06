@@ -170,7 +170,7 @@ describe('Шаблоны разделов в «Документах» тенде
 
   it('договоры: «Документы» в шапке — та же ссылка «Понятийного соглашения» и своя ссылка «Шаблон ДП»', async () => {
     const templates = [...TEMPLATES, { id: 'tpl-dgp', code: 'contracts_dgp', title: 'Шаблон ДГП' }]
-    const { page, errors, dialogs, close } = await openPage('route=/contracts&contracts=6&latency=0', '.contracts-table tbody tr.contract-row', { templates })
+    const { page, errors, dialogs, close } = await openPage('route=/contracts/registry&contracts=6&latency=0', '.contracts-table tbody tr.contract-row', { templates })
     try {
       await page.evaluate(() => window.__fakeDb.app_settings.push({ key: 'concept_agreement_template_link', value: 'https://docs.example.invalid/pc.docx' }))
       const header = page.locator('.registry-header')
@@ -223,7 +223,7 @@ describe('Шаблоны разделов в «Документах» тенде
     const templates = [...TEMPLATES, { id: 'tpl-dgp', code: 'contracts_dgp', title: 'Шаблон ДГП' }]
     const files = [{ id: 'f-dgp', owner_type: 'general', owner_id: 'tpl-dgp', doc_category: 'section_template',
       s3_key: 'general/tpl-dgp/1-ДГП.docx', file_name: 'ДГП.docx', size_bytes: 10240, created_at: '2026-10-27T08:00:00Z' }]
-    const { page, errors, close } = await openPage('route=/contracts&contracts=3&latency=0', '.contracts-table tbody tr.contract-row', { templates, files })
+    const { page, errors, close } = await openPage('route=/contracts/registry&contracts=3&latency=0', '.contracts-table tbody tr.contract-row', { templates, files })
     try {
       await page.evaluate(() => window.__fakeDb.app_settings.push({ key: 'contracts_dp_template_link', value: '\\\\192.168.5.55\\SharA_Tender\\Шаблоны\\ДП.docx' }))
       await page.locator('.registry-header').getByRole('button', { name: 'Документы' }).click()
@@ -238,7 +238,7 @@ describe('Шаблоны разделов в «Документах» тенде
   })
 
   it('договоры: базы шаблонов ещё нет — ссылка «Шаблон ДП» работает, подсказки про миграцию нет', async () => {
-    const { page, errors, close } = await openPage('route=/contracts&contracts=3&latency=0', '.contracts-table tbody tr.contract-row', { missingTable: true })
+    const { page, errors, close } = await openPage('route=/contracts/registry&contracts=3&latency=0', '.contracts-table tbody tr.contract-row', { missingTable: true })
     try {
       await page.locator('.registry-header').getByRole('button', { name: 'Документы' }).click()
       const dp = card(page, 'contracts_dgp')

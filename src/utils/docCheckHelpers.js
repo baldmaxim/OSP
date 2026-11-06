@@ -319,6 +319,52 @@ export function compareForBoard(a, b) {
 export function compareNewestFirst(a, b) {
   return (new Date(b.created_at) - new Date(a.created_at)) || (b.sort_order - a.sort_order)
 }
+export function compareOldestFirst(a, b) {
+  return (new Date(a.created_at) - new Date(b.created_at)) || (a.sort_order - b.sort_order)
+}
+
+// Порядок карточек колонки — кнопка в шапке колонки, нажатие переключает по кругу (06.11.2026, просьба пользователя):
+// свой порядок → новые сверху → старые сверху → свой порядок. «Свой» — как расставили мышью (sort_order в базе), поэтому
+// переживает обновление страницы и не теряется, пока колонка показана по дате: по дате только сортируется показ, в базу
+// ничего не пишется. «Сводка» своего порядка не имеет (номера разных колонок несравнимы) — только по дате, по умолчанию
+// новые сверху. Дата — добавления заявки (created_at), та, что на карточке. Выбор — у каждой колонки свой, в браузере.
+export const COLUMN_SORTS = {
+  manual: { label: 'Свой порядок', short: '', compare: compareForBoard },
+  newest: { label: 'Новые сверху', short: 'Новые', compare: compareNewestFirst },
+  oldest: { label: 'Старые сверху', short: 'Старые', compare: compareOldestFirst },
+}
+const sortCycle = (column) => (column === SUMMARY_COLUMN ? ['newest', 'oldest'] : ['manual', 'newest', 'oldest'])
+
+// Порядок колонки по сохранённому выбору: нет выбора или он колонке не подходит — по умолчанию.
+export function columnSortOf(sorts, column) {
+  const cycle = sortCycle(column)
+  return cycle.includes(sorts?.[column]) ? sorts[column] : cycle[0]
+}
+export function nextColumnSort(sorts, column) {
+  const cycle = sortCycle(column)
+  return cycle[(cycle.indexOf(columnSortOf(sorts, column)) + 1) % cycle.length]
+}
+// Сохранённый выбор из браузера: только известные значения; порядок по умолчанию не хранится.
+export function normalizeColumnSorts(raw) {
+  const out = {}
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+  for (const [column, mode] of Object.entries(raw)) {
+    if (sortCycle(column).includes(mode) && mode !== sortCycle(column)[0]) out[column] = mode
+  }
+  return out
+}
+export function withColumnSort(sorts, column, mode) {
+  const next = { ...sorts }
+  if (mode === sortCycle(column)[0]) delete next[column]
+  else next[column] = mode
+  return next
+}
+
+// Куда встанет карточка в колонке, показанной по дате: перед первой, что должна идти после неё (null — в конец). list — колонка
+// в порядке показа; сама карточка в ней может быть — её пропускаем.
+export function datePlaceBefore(list, request, compare) {
+  return list.find(r => r.id !== request.id && compare(request, r) < 0)?.id ?? null
+}
 
 // Место карточки в колонке: её номер и какие соседи сдвигаются. rows — вся колонка в порядке доски, без самой карточки,
 // вместе с теми, кого сейчас скрывает фильтр (иначе новые номера совпали бы с номерами скрытых, и порядок рассыпался бы);

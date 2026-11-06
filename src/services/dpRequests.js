@@ -1,7 +1,7 @@
-// Запросы раздела «Заявка на ДП» (миграция 20261227). Правила — utils/dpRequests.js, запреты — в базе.
+// Запросы раздела «Заявка на ДП» (миграции 20261227, 20261231). Правила — utils/dpRequests.js, запреты — в базе.
 import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
-import { DP_CONCEPT_CATEGORY, DP_CONTRACT_CATEGORY, DP_OWNER_TYPE, isDpMigrationMissing } from '../utils/dpRequests'
+import { DP_CONCEPT_CATEGORY, DP_DOCS_CATEGORY, DP_OWNER_TYPE, isDpMigrationMissing } from '../utils/dpRequests'
 import { deleteDocument, uploadFile } from './s3'
 
 const unwrap = ({ data, error }) => {
@@ -50,12 +50,12 @@ const uploadDpFile = (requestId, file, category) => uploadFile({
 // шаге проверяет понятийное соглашение, ставит номер и заводит уведомления. Сбой — черновик и загруженное убираются: заявка либо
 // создана целиком, либо её нет, и форма остаётся заполненной для повтора. Вкладку закрыли в эти секунды — черновик остаётся
 // невидимым для всех, кроме автора, и в реестр не попадает.
-export async function createDpRequest({ fields, conceptFiles, contractFiles }) {
+export async function createDpRequest({ fields, conceptFiles, docFiles }) {
   const draft = unwrap(await db.from('dp_requests').insert(fields).select('id').single())
   const uploaded = []
   try {
     for (const file of conceptFiles) uploaded.push(await uploadDpFile(draft.id, file, DP_CONCEPT_CATEGORY))
-    for (const file of contractFiles) uploaded.push(await uploadDpFile(draft.id, file, DP_CONTRACT_CATEGORY))
+    for (const file of docFiles) uploaded.push(await uploadDpFile(draft.id, file, DP_DOCS_CATEGORY))
     const rows = unwrap(await db.from('dp_requests').update({ status: 'new' }).eq('id', draft.id).select('id, request_number'))
     if (!rows?.length) throw new Error('Заявка не подана: нет права')
     return rows[0]

@@ -89,3 +89,16 @@ export const IconArchive = ({ size }) => (
 export const IconSliders = ({ size }) => (
   <AiSvg size={size}><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12" /><circle cx="16" cy="6" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="18" r="2" /></AiSvg>
 )
+// Порядок списка: свой (ручка перетаскивания), по дате — новые сверху (стрелка вниз), старые сверху (стрелка вверх).
+export const IconSortManual = ({ size }) => (
+  <AiSvg size={size}>
+    <circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle cx="9" cy="12" r="1" />
+    <circle cx="15" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle cx="15" cy="18" r="1" />
+  </AiSvg>
+)
+export const IconSortNewest = ({ size }) => (
+  <AiSvg size={size}><path d="M7 4v16" /><path d="m3 16 4 4 4-4" /><path d="M13 6h8M13 12h6M13 18h4" /></AiSvg>
+)
+export const IconSortOldest = ({ size }) => (
+  <AiSvg size={size}><path d="M7 20V4" /><path d="m3 8 4-4 4 4" /><path d="M13 6h4M13 12h6M13 18h8" /></AiSvg>
+)

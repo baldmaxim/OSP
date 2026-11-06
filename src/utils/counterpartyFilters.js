@@ -8,7 +8,8 @@ const collator = new Intl.Collator('ru')
 // Вкладка, на которой показан контрагент. Удаление важнее статуса: удалённый из чёрного списка — в «Удалённых».
 export const counterpartyTab = (cp) => (cp.deleted_at ? 'deleted' : cp.status === 'blacklist' ? 'blacklist' : 'active')
 
-// Порядок реестра: удалённые внизу, в каждой части чёрный список ниже остальных, внутри — по названию.
+// Порядок, которым расставлены номера (миграция 20261225): удалённые внизу, в каждой части чёрный список ниже остальных,
+// внутри — по названию. Строки реестра идут не им, а по номеру (compareByNumber).
 const isBlacklist = (cp) => cp.status === 'blacklist'
 export const compareCounterparties = (a, b) => Boolean(a.deleted_at) - Boolean(b.deleted_at)
   || isBlacklist(a) - isBlacklist(b)
@@ -23,6 +24,10 @@ export function counterpartyNumbers(list) {
   const byOrder = [...items].sort((a, b) => compareCounterparties(a, b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   return new Map(byOrder.map((cp, i) => [cp.id, cp.counterparty_number ?? i + 1]))
 }
+
+// Строки реестра на всех вкладках — по «№», от меньшего к большему (05.11.2026, решение пользователя: по названию номера шли
+// вразнобой). numbers — Map из counterpartyNumbers.
+export const compareByNumber = (numbers) => (a, b) => numbers.get(a.id) - numbers.get(b.id) || compareCounterparties(a, b)
 
 // Функции ещё нет (база раньше миграции, шлюз её не знает): фильтра нет, страница работает как раньше.
 export function isMissingSiteAccounts(err) {

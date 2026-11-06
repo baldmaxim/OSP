@@ -2,25 +2,32 @@
 // (текст страниц со словами и координатами). Сам разбор таблицы — utils/supplierDoc.js. Обе библиотеки тяжёлые и
 // подгружаются только здесь, по требованию: таблица расценки открывается без них.
 //
-// Ответ readSupplierDoc: { kind: 'excel' | 'pdf', items, vat, date, currency, total, sheetName | pages } или { error, message }
-// (date — дата документа, currency — цены не в рублях, total — сверка с итогом документа, supplierDoc.totalsCheck):
-//  unsupported — не Excel и не PDF; broken — файл не читается; encrypted — PDF под паролем; scan — в PDF нет текста
-//  (скан, фото): распознать нечем; no_table — не нашли шапку (наименование и цена / сумма); empty — шапка есть, а
-//  строк с ценой нет.
+// Скан и фото — распознаванием в браузере (utils/supplierOcr, подгружается только для них): файл никуда не уходит.
+//
+// Ответ readSupplierDoc: { kind: 'excel' | 'pdf' | 'image', items, vat, date, currency, total, ocr, sheetName | pages } или { error, message }
+// (date — дата документа, currency — цены не в рублях, total — сверка с итогом документа, supplierDoc.totalsCheck; ocr — строки
+// со скана: у них unsure, если цифры не сошлись между собой):
+//  unsupported — не Excel, не PDF и не картинка; broken — файл не читается; encrypted — PDF под паролем; scan — текст не
+//  распознался (пустая страница, плохое качество); no_table — не нашли шапку (наименование и цена / сумма); empty — шапка есть, а
+//  строк с ценой нет; ocr_failed — распознаватель не загрузился (сбой сети, браузера): файл не виноват, прочитаем в следующий раз.
 import {
   cellText, currencyFromText, detectGridHeader, detectLinesHeader, docDateFromText, gridRows, gridTotals, itemsFromRows, linesFromWords, pdfRows,
   rulingsFromOps, totalsCheck, vatFromText, wordsFromTextItems,
 } from './supplierDoc.js'
+import { ocrChecked } from './supplierOcrPage.js'
 
-export const SUPPLIER_DOC_ACCEPT = '.xlsx,.xlsm,.xlsb,.xls,.ods,.csv,.pdf'
+export const SUPPLIER_DOC_ACCEPT = '.xlsx,.xlsm,.xlsb,.xls,.ods,.csv,.pdf,.jpg,.jpeg,.png,.webp'
 export const isPdfFile = (name) => /\.pdf$/i.test(String(name || ''))
 export const isSheetFile = (name) => /\.(xlsx|xlsm|xlsb|xls|ods|csv)$/i.test(String(name || ''))
+export const isImageFile = (name) => /\.(jpe?g|png|webp)$/i.test(String(name || ''))
 // Больше — не разбираем: столько страниц / листов у счёта не бывает, а разбор подвесил бы страницу.
 export const PDF_MAX_PAGES = 40
 const SHEETS_MAX = 12
 const VAT_TEXT_MAX = 200000
+// Объединённые ячейки заполняются там, где может быть шапка (supplierDoc.HEADER_SCAN_ROWS и её три строки).
+const MERGE_FILL_ROWS = 204
 
-// Лист Excel → сетка значений (строки × колонки, от A1); объединённые ячейки в первых 60 строках (шапка) получают
+// Лист Excel → сетка значений (строки × колонки, от A1); объединённые ячейки там, где может быть шапка, получают
 // значение левой верхней — «Цена» над «без НДС» и «с НДС» относится к обеим.
 export function gridFromSheet(XLSX, ws) {
   if (!ws?.['!ref']) return []
@@ -34,7 +41,7 @@ export function gridFromSheet(XLSX, ws) {
   })
   for (let r = 0; r < grid.length; r++) if (!grid[r]) grid[r] = []
   for (const m of ws['!merges'] || []) {
-    if (m.s.r > 60) continue
+    if (m.s.r > MERGE_FILL_ROWS) continue
     const v = grid[m.s.r]?.[m.s.c]
     if (v == null || v === '') continue
     for (let r = m.s.r; r <= Math.min(m.e.r, m.s.r + 5); r++) {
@@ -70,7 +77,11 @@ export function parseSupplierWorkbook(XLSX, wb) {
   let text = ''
   for (const name of (visible.length ? visible : names).slice(0, SHEETS_MAX)) {
     const grid = gridFromSheet(XLSX, wb.Sheets[name])
-    if (text.length < VAT_TEXT_MAX) text += ` ${grid.map((row) => (row || []).map(cellText).filter(Boolean).join(' ')).join(' ')}`
+    // Текст листа для даты и НДС. Объединённая ячейка — один раз: иначе абзац условий над таблицей, повторённый по всей ширине,
+    // вытеснил бы дату «Счёт № … от …» за предел, где её ищут.
+    if (text.length < VAT_TEXT_MAX) {
+      text += ` ${grid.map((row) => (row || []).map(cellText).filter((v, i, all) => v && v !== all[i - 1]).join(' ')).join(' ')}`
+    }
     const header = detectGridHeader(grid)
     if (!header) continue
     anyHeader = true
@@ -139,7 +150,7 @@ export function parseSupplierPdfPages(pages) {
 }
 
 // Текст страниц PDF и линии рамок таблиц: pdfjs — модуль pdf.js (в браузере — с отдельным потоком разбора, в тестах —
-// как есть). Линии (команды рисования страницы) — только если в файле есть текст: у скана читать их незачем.
+// как есть). Линии (команды рисования страницы) — только если в файле есть текст: у скана линий нет, они в самой картинке.
 export async function readPdfPages(pdfjs, bytes) {
   const task = pdfjs.getDocument({ data: bytes, isEvalSupported: false, disableFontFace: true, useSystemFonts: false })
   const doc = await task.promise
@@ -152,10 +163,13 @@ export async function readPdfPages(pdfjs, bytes) {
       pages.push({ page, items: content.items, height })
     }
     const hasText = pages.some((p) => p.items.some((it) => String(it.str || '').trim()))
+    const imageOps = new Set([pdfjs.OPS.paintImageXObject, pdfjs.OPS.paintInlineImageXObject, pdfjs.OPS.paintImageMaskXObject].filter((op) => op != null))
     for (const p of pages) {
       if (hasText) {
         try {
-          p.rulings = rulingsFromOps(await p.page.getOperatorList(), pdfjs.OPS, { pageHeight: p.height })
+          const ops = await p.page.getOperatorList()
+          p.rulings = rulingsFromOps(ops, pdfjs.OPS, { pageHeight: p.height })
+          p.images = ops.fnArray.filter((fn) => imageOps.has(fn)).length
         } catch {
           p.rulings = null // рисунок страницы не прочитался — разбор по одному тексту
         }
@@ -187,8 +201,32 @@ function loadPdfjs() {
   return pdfjsPromise
 }
 
-// Файл (байты и имя) → распознанные строки.
-export async function readSupplierDoc(bytes, fileName) {
+// Скан и фото: тот же разбор, что у PDF с текстом, но цифрам со скана доверия меньше (ocrChecked). Распознаватель тяжёлый (10 МБ,
+// секунды на страницу) — только для них, по требованию. Не загрузился — ocr_failed, а не «файл не читается»: прочитаем в следующий
+// раз. onProgress({ page, pages }).
+async function readScan(bytes, fileName, kind, onProgress) {
+  let pages
+  try {
+    const ocr = await import('./supplierOcr.js')
+    pages = kind === 'image'
+      ? await ocr.readScanImage(bytes, fileName, { onProgress })
+      : await ocr.readScanPdf(await loadPdfjs(), bytes.slice(), { onProgress })
+  } catch (e) {
+    return { error: 'ocr_failed', message: String(e?.message || e) }
+  }
+  try {
+    const r = parseSupplierPdfPages(pages)
+    if (r.error) return r
+    return { ...r, kind, ocr: true, items: ocrChecked(r.items), date: r.date || docDateFromText(fileName) }
+  } catch (e) {
+    return { error: 'broken', message: String(e?.message || e) }
+  }
+}
+
+// Файл (байты и имя) → распознанные строки. PDF: текст есть и таблица в нём нашлась — как есть; иначе, если на страницах есть
+// картинки, — распознаём их: скан целиком или скан с текстовым колонтитулом. opts.onProgress — ход распознавания.
+export async function readSupplierDoc(bytes, fileName, { onProgress = null } = {}) {
+  if (isImageFile(fileName)) return readScan(bytes, fileName, 'image', onProgress)
   if (isPdfFile(fileName)) {
     const pdfjs = await loadPdfjs()
     let pages
@@ -198,12 +236,18 @@ export async function readSupplierDoc(bytes, fileName) {
       if (e?.name === 'PasswordException') return { error: 'encrypted' }
       return { error: 'broken', message: String(e?.message || e) }
     }
+    let r
     try {
-      const r = parseSupplierPdfPages(pages)
-      return r.error || r.date ? r : { ...r, date: docDateFromText(fileName) }
+      r = parseSupplierPdfPages(pages)
     } catch (e) {
       return { error: 'broken', message: String(e?.message || e) }
     }
+    if (r.error === 'scan' || ((r.error === 'no_table' || r.error === 'empty') && pages.some((p) => p.images > 0))) {
+      const scan = await readScan(bytes, fileName, 'pdf', onProgress)
+      // В тексте таблицы нет и на картинках не нашлось — причина прежняя, но уже после попытки.
+      return scan.error && scan.error !== 'ocr_failed' && r.error !== 'scan' ? r : scan
+    }
+    return r.error || r.date ? r : { ...r, date: docDateFromText(fileName) }
   }
   if (isSheetFile(fileName)) {
     const XLSX = await import('xlsx')

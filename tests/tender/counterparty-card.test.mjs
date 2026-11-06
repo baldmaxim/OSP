@@ -269,7 +269,7 @@ describe('Карточка контрагента: «Общая информац
     const { page, errors, close } = await openPage(`${BASE}&cpCard=1&noView=contracts,dc_requests`)
     try {
       await openCard(page, 'Подрядчик 01')
-      await page.locator('.cpg-contracts', { hasText: 'Нет доступа к разделу «Договоры и ДС»' }).waitFor()
+      await page.locator('.cpg-contracts', { hasText: 'Нет доступа к разделу «Реестр по договорам»' }).waitFor()
       assert.equal(await page.locator('table.cpg-contracts-table').count(), 0)
       assert.deepEqual(errors, [])
     } finally { await close() }

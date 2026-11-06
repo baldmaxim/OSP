@@ -5,6 +5,7 @@ import { useNotifications } from '../contexts/NotificationsContext'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import ThemeToggle from './ThemeToggle'
 import BrandLogo from './BrandLogo'
+import { contractsEntry, isContractsPath } from '../utils/contractsHub'
 import {
   IconGeneral,
   IconTasks,
@@ -13,9 +14,6 @@ import {
   IconMaterials,
   IconAnalysis,
   IconContracts,
-  IconDcRequest,
-  IconDpRequest,
-  IconDocCheck,
   IconRates,
   IconReports,
   IconAdmin,
@@ -228,38 +226,14 @@ function Sidebar() {
       visible: canView('analysis_kp'),
     },
     {
+      // Реестр и три вида заявок — один пункт; виден, если открыт хотя бы один блок (право у каждого своё).
       key: 'contracts',
-      to: '/contracts',
+      to: contractsEntry(canView) || '/contracts',
       label: 'Договоры и ДС',
       tone: 'sand',
       Icon: IconContracts,
-      visible: canView('contracts'),
-    },
-    {
-      key: 'dc-requests',
-      to: '/dc-requests',
-      label: 'Заявка на ДС',
-      tone: 'coral',
-      Icon: IconDcRequest,
-      // task 333: гейтим через canView('dc_requests'), чтобы права из админки управляли пунктом.
-      visible: isEmployee && canView('dc_requests'),
-    },
-    {
-      key: 'dp-requests',
-      to: '/dp-requests',
-      label: 'Заявка на ДП',
-      tone: 'coral',
-      Icon: IconDpRequest,
-      visible: isEmployee && canView('dp_requests'),
-    },
-    {
-      key: 'doc-check',
-      to: '/doc-check-requests',
-      label: 'Заявки на проверку ДП/ДС',
-      tone: 'violet',
-      Icon: IconDocCheck,
-      // Проверка договоров и ДС канбаном вместо переписки по почте.
-      visible: isEmployee && canView('doc_check_requests'),
+      visible: isEmployee && contractsEntry(canView) !== null,
+      forceActive: isContractsPath(location.pathname),
     },
     {
       key: 'rates',

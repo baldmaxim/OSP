@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import BrandLogo from '../components/BrandLogo'
+import { GlobeIcon, MaxLogo, TelegramLogo } from '../components/icons/ChannelIcons'
 import { contractorSignup, signupManual, signupOpen } from '../api'
-import { SIGNUP_LIMITS, digitsOnly, validateSignup } from '../utils/contractorSignupRules'
+import { TENDER_MAILBOX } from '../utils/siteContacts'
+import {
+  PHONE_PROBLEM, SIGNUP_LIMITS, cleanKppInput, digitsOnly, emailProblem, guessLegalForm, legalFormOf, legalFormsForInn, normalizePhone, parsePhoneInput,
+  splitLegalForm, validateSignup,
+} from '../utils/contractorSignupRules'
+import { PHONE_EXT_MAX, formatPhone, joinPhoneExt } from '../utils/phoneFormat'
 import './LoginPage.css'
 
 // Регистрация подрядчика на сайте и всё, что к ней относится: заявка, подтверждение почты, подтверждение с почты компании,
@@ -27,6 +33,13 @@ function takeToken() {
 
 const passwordLength = (s) => [...String(s).normalize('NFC')].length
 
+// Каналы СУ-10 (05.11.2026, решение пользователя). Подпись короткая: все три должны встать в одну строку карточки.
+const CHANNELS = [
+  { href: 'https://max.ru/id7736255508_biz', label: 'MAX', title: 'Канал СУ-10 в MAX', Icon: MaxLogo },
+  { href: 'https://t.me/su10official', label: 'Telegram', title: 'Канал СУ-10 в Telegram', Icon: TelegramLogo },
+  { href: 'https://su10.ru', label: 'Сайт su10.ru', title: 'Официальный сайт СУ-10', Icon: GlobeIcon },
+]
+
 function Shell({ subtitle, children, footer = true }) {
   return (
     <div className="login-page">
@@ -35,7 +48,20 @@ function Shell({ subtitle, children, footer = true }) {
           <BrandLogo className="brand-logo-lg" />
           <p>{subtitle}</p>
         </div>
+        {/* Почта — над формой: форма длинная, а написать может понадобиться, ещё не дойдя до её конца. */}
+        <p className="login-contact">
+          Контакт для связи:{' '}
+          <a href={`mailto:${TENDER_MAILBOX}?subject=${encodeURIComponent('Регистрация подрядчика')}`}>{TENDER_MAILBOX}</a>
+        </p>
         {children}
+        <nav className="login-channels" aria-label="Каналы СУ-10">
+          {CHANNELS.map(({ href, label, title, Icon }) => (
+            <a key={href} className="login-channel" href={href} target="_blank" rel="noopener noreferrer" title={title} aria-label={title}>
+              <Icon />
+              {label}
+            </a>
+          ))}
+        </nav>
         {footer && (
           <div className="login-footer">
             <Link className="login-link login-link-muted" to="/partner">Вход для подрядчиков →</Link>
@@ -54,34 +80,89 @@ const friendly = (err) => {
   return err?.message || 'Не удалось выполнить действие'
 }
 
+// Показать в поле очищенное значение, не сдвигая курсор: он остаётся после того же по счёту значимого знака (иначе правка в середине
+// номера уносила бы его в конец). Значение записывается сразу: React видит то же, что в состоянии, и поле не трогает.
+function showKeepingCaret(el, shown, clean) {
+  const before = clean(el.value.slice(0, el.selectionStart)).length
+  el.value = shown
+  let pos = 0
+  for (let seen = 0; seen < before && pos < shown.length; pos += 1) if (/[\dA-Z]/.test(shown[pos])) seen += 1
+  el.setSelectionRange(pos, pos)
+}
+
+// В поле — номер без кода страны: «+7» стоит перед полем.
+const shownPhone = (digits) => formatPhone(`7${digits}`).slice(2)
+
+// Человек убрал форму в списке («—»): название остаётся как есть и сама форма больше не подставляется.
+const NO_FORM = 'нет'
+
 // ── Заявка ───────────────────────────────────────────────────────────────────────────────────────────
 function RegisterView() {
-  const [form, setForm] = useState({ companyName: '', inn: '', kpp: '', contactName: '', phone: '', email: '', consent: false, website: '' })
+  const [form, setForm] = useState({ companyName: '', inn: '', kpp: '', contactName: '', phone: '', phoneExt: '', email: '', consent: false, website: '' })
+  // Форма, которую назвал сам человек: словом в названии или в списке. Пусто — определяется по ИНН.
+  const [namedForm, setNamedForm] = useState('')
   const [errors, setErrors] = useState({})
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [sentTo, setSentTo] = useState('')
   const manual = signupManual()
-  const set = (key) => (e) => {
-    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value
+  const setField = (key, value) => {
     setForm((f) => ({ ...f, [key]: value }))
     setErrors((x) => (x[key] ? { ...x, [key]: '' } : x))
   }
-  const isOrg = digitsOnly(form.inn).length !== 12
+  const set = (key) => (e) => setField(key, e.target.type === 'checkbox' ? e.target.checked : e.target.value)
+  // Без maxLength: он обрезал бы вставленное «ИНН 7707083893» до очистки. Предел держит сама очистка.
+  const setCleaned = (key, clean) => (e) => {
+    const value = clean(e.target.value)
+    showKeepingCaret(e.target, value, clean)
+    setField(key, value)
+  }
+  const digitsUpTo = (limit) => (text) => digitsOnly(text).slice(0, limit)
+  const legal = legalFormOf(namedForm || guessLegalForm(form.inn))
+  const isOrg = legal ? legal.innLength === 10 : form.inn.length !== 12
+  // ИНН ограничивает только форма, названная человеком: догадка сама идёт от ИНН и его 12 цифр не обрежет.
+  const innLength = legalFormOf(namedForm)?.innLength
+  const formOptions = legalFormsForInn(form.inn)
+
+  const onLegalForm = (e) => {
+    setNamedForm(e.target.value || NO_FORM)
+    setErrors((x) => ({ ...x, companyName: '', inn: '', kpp: '' }))
+  }
+  const onCompanyName = (e) => {
+    const text = e.target.value
+    // Форму из слова берём, только пока её никто не назвал: иначе у «ООО СЗ Инвест» вторым словом сменилась бы форма.
+    const found = namedForm ? null : splitLegalForm(text)
+    if (found) setNamedForm(found.form)
+    else if (!text.trim()) setNamedForm('')
+    setField('companyName', found ? found.name : text)
+  }
+  const onPhone = (e) => {
+    const { number, ext } = parsePhoneInput(e.target.value)
+    showKeepingCaret(e.target, shownPhone(number), digitsOnly)
+    setField('phone', number)
+    if (ext) setField('phoneExt', ext)
+  }
+  const onPhoneBlur = () => {
+    if (form.phone && !normalizePhone(`+7${form.phone}`)) setErrors((x) => ({ ...x, phone: PHONE_PROBLEM }))
+  }
+  const onEmailBlur = () => {
+    const problem = form.email.trim() && emailProblem(form.email)
+    if (problem) setErrors((x) => ({ ...x, email: problem }))
+  }
 
   const submit = async (e) => {
     e.preventDefault()
     setError('')
-    const checked = validateSignup(form)
-    const found = {}
-    if (!checked.ok) found[checked.field] = checked.message
-    if (Object.keys(found).length) { setErrors(found); return }
+    const request = {
+      legalForm: legal?.code ?? '', companyName: form.companyName, inn: form.inn, kpp: isOrg ? (form.kpp || null) : null, contactName: form.contactName,
+      phone: form.phone ? joinPhoneExt(`+7${form.phone}`, form.phoneExt) : '',
+      email: form.email.trim(), consent: form.consent, ...(form.website ? { website: form.website } : {}),
+    }
+    const checked = validateSignup(request)
+    if (!checked.ok) { setErrors({ [checked.field]: checked.message }); return }
     setBusy(true)
     try {
-      await contractorSignup.register({
-        companyName: form.companyName, inn: form.inn, kpp: isOrg ? (form.kpp || null) : null, contactName: form.contactName, phone: form.phone,
-        email: form.email.trim(), consent: form.consent, ...(form.website ? { website: form.website } : {}),
-      })
+      await contractorSignup.register(request)
       setSentTo(form.email.trim())
     } catch (err) {
       if (err.field) setErrors({ [err.field]: err.message })
@@ -97,7 +178,6 @@ function RegisterView() {
         <div className="login-success" role="status">
           Заявка принята. Отдел сопровождения подрядчиков проверит её и свяжется с вашей организацией: передаст временный пароль для входа с почтой {sentTo}.
         </div>
-        <p className="login-note">Вопросы — на tender.osp@su10.ru.</p>
       </Shell>
     )
   }
@@ -126,12 +206,58 @@ function RegisterView() {
     <Shell subtitle={manual ? 'Заявка на регистрацию' : 'Регистрация подрядчика'}>
       {error && <div className="login-error" role="alert">{error}</div>}
       <form onSubmit={submit} className="login-form" noValidate>
-        {field('companyName', 'Организация *', { type: 'text', required: true, autoFocus: true, autoComplete: 'organization', maxLength: SIGNUP_LIMITS.company, placeholder: 'ООО «Подрядчик»' })}
-        {field('inn', 'ИНН *', { type: 'text', required: true, inputMode: 'numeric', autoComplete: 'off', maxLength: 12, placeholder: '10 цифр у организации, 12 у ИП' })}
-        {isOrg && field('kpp', 'КПП', { type: 'text', inputMode: 'numeric', autoComplete: 'off', maxLength: 9 })}
+        <div className="form-field">
+          <label htmlFor="signup-companyName">Организация *</label>
+          <div className="login-input-group">
+            {/* Выбирать не нужно: форма встаёт сама. Список — только поправить, при известном ИНН в нём лишь подходящие формы. */}
+            <select aria-label="Форма организации" value={legal?.code ?? ''} onChange={onLegalForm}>
+              <option value="">—</option>
+              {legal && !formOptions.includes(legal) && <option value={legal.code}>{legal.code}</option>}
+              {formOptions.map((f) => <option key={f.code} value={f.code}>{f.code}</option>)}
+            </select>
+            <input
+              id="signup-companyName" type="text" required autoFocus autoComplete="organization" maxLength={SIGNUP_LIMITS.company}
+              value={form.companyName} onChange={onCompanyName} aria-invalid={errors.companyName ? 'true' : undefined}
+              placeholder="Например, ООО Ромашка"
+            />
+          </div>
+          {errors.companyName
+            ? <small className="login-field-error" role="alert">{errors.companyName}</small>
+            : (
+              <small className="login-field-hint">
+                {form.companyName.trim()
+                  ? `В заявке: ${legal ? `${legal.code} ` : ''}${form.companyName.trim()}`
+                  : legal ? `Форма: ${legal.code}` : 'Форма определится сама — из названия или по ИНН'}
+                {legal && !namedForm && ' · определена по ИНН, если не так — выберите другую'}
+                {legal?.code === 'СЗ' && ' · СЗ — самозанятый'}
+              </small>
+            )}
+        </div>
+        {field('inn', 'ИНН *', { type: 'text', required: true, inputMode: 'numeric', autoComplete: 'off', onChange: setCleaned('inn', digitsUpTo(innLength ?? 12)), placeholder: innLength ? `${innLength} цифр` : '10 или 12 цифр' })}
+        {isOrg && field('kpp', 'КПП', { type: 'text', autoComplete: 'off', autoCapitalize: 'characters', onChange: setCleaned('kpp', cleanKppInput), placeholder: `${SIGNUP_LIMITS.kpp} знаков` })}
         {field('contactName', 'Контактное лицо *', { type: 'text', required: true, autoComplete: 'name', maxLength: SIGNUP_LIMITS.person, placeholder: 'Фамилия Имя Отчество' })}
-        {field('phone', 'Контактный телефон *', { type: 'tel', required: true, autoComplete: 'tel', maxLength: SIGNUP_LIMITS.phoneRaw, placeholder: '+7 ___ ___-__-__' })}
-        {field('email', 'Рабочая почта *', { type: 'email', required: true, autoComplete: 'email', maxLength: SIGNUP_LIMITS.email, placeholder: 'ivanov@company.ru' })}
+        <div className="form-field">
+          <label htmlFor="signup-phone">Контактный телефон *</label>
+          <div className="login-phone">
+            <div className="login-input-group login-phone-number">
+              <span className="login-input-affix" aria-hidden="true">+7</span>
+              <input
+                id="signup-phone" type="tel" inputMode="numeric" required autoComplete="tel-national"
+                value={shownPhone(form.phone)} onChange={onPhone} onBlur={onPhoneBlur} aria-invalid={errors.phone ? 'true' : undefined}
+                placeholder="(916)123-45-67"
+              />
+            </div>
+            <div className="login-input-group login-phone-ext">
+              <label className="login-input-affix" htmlFor="signup-phoneExt">доб.</label>
+              <input
+                id="signup-phoneExt" type="tel" inputMode="numeric" autoComplete="off"
+                value={form.phoneExt} onChange={setCleaned('phoneExt', digitsUpTo(PHONE_EXT_MAX))}
+              />
+            </div>
+          </div>
+          {errors.phone && <small className="login-field-error" role="alert">{errors.phone}</small>}
+        </div>
+        {field('email', 'Рабочая почта *', { type: 'email', required: true, autoComplete: 'email', maxLength: SIGNUP_LIMITS.email, onBlur: onEmailBlur, placeholder: 'ivanov@company.ru' })}
         {/* Ловушка для ботов: человек этого поля не видит. */}
         <div className="login-trap" aria-hidden="true">
           <label htmlFor="signup-website">Сайт</label>

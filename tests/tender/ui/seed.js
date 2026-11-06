@@ -224,7 +224,18 @@ if (params.get('supplyUnread') === '1') {
   window.__fakeDb.s3_documents.push(
     { ...old, id: 'doc-unread', file_name: 'Счёт старый.xlsx', s3_key: 'tenders/tender-p/unread.xlsx' },
     { ...old, id: 'doc-unread-bad', file_name: 'Испорченный.xlsx', s3_key: 'tenders/tender-p/unread-bad.xlsx' },
-    { ...old, id: 'doc-photo', file_name: 'Чек.jpg', s3_key: 'tenders/tender-p/photo.jpg' },
+    { ...old, id: 'doc-photo', file_name: 'Чек.docx', s3_key: 'tenders/tender-p/photo.docx' },
+  )
+}
+// supplyRejected=1 — скан и счёт 1С, которые прежняя версия чтения отвергла («failed» при файле): новая читает их заново сама;
+// содержимое — window.__fakeFiles из теста.
+if (params.get('supplyRejected') === '1') {
+  const old = { owner_type: 'tender', owner_id: 'tender-p', doc_category: 'supply_doc', created_at: '2026-11-02T09:00:00Z', uploaded_by_name: 'Снабженцев С. С.', size_bytes: 9000 }
+  const failed = (reason) => JSON.stringify({ kind: 'supply_offer', v: 1, at: '2026-11-05T11:18:41.325Z', failed: reason, lines: [] })
+  window.__fakeDb.s3_documents.push(
+    { ...old, id: 'doc-scan', file_name: 'Скан счёта.pdf', s3_key: 'tenders/tender-p/scan.pdf', notes: failed('scan') },
+    { ...old, id: 'doc-1c', file_name: 'Заказ покупателя.XLS', s3_key: 'tenders/tender-p/1c.xls', notes: failed('no_table') },
+    { ...old, id: 'doc-pass', file_name: 'Под паролем.pdf', s3_key: 'tenders/tender-p/pass.pdf', notes: failed('encrypted') },
   )
 }
 // brokenFile=1 — третий файл ВОР, который не скачивается (хранилища в стенде нет): автозагрузка покажет причину.
@@ -384,6 +395,20 @@ const similarRates = (name, unit) => {
   const w = new Set(nameWords(name))
   return OTHER_RATES.filter((o) => o.unit === unit && freshRate(o) && nameWords(o.material_name).some((x) => w.has(x)))
     .sort((a, b) => b.price_date.localeCompare(a.price_date))
+}
+// originDocs=1 — исходные цены тендера № 445 есть в таблице (окно «Откуда цена»); =2 — и файл счёта с той же ценой в этом тендере.
+if (params.get('originDocs')) {
+  window.__fakeDb.tenders.push({ id: 'tender-o', tender_type: 'main', department: 'warranty', public_tender_number: 445, status: 'Завершен', work_description: 'Другой тендер',
+    object_id: 'obj-1', objects: objects[0], deleted_at: null, parent_tender_id: null })
+  for (const o of OTHER_RATES) {
+    window.__fakeDb.tender_vor_supply_rates.push({ id: o.id, tender_id: 'tender-o', estimate_name: o.estimate_name, material_name: o.material_name, material_key: o.k, unit: o.unit,
+      supply_price: o.unit_price, supply_price_exact: null, price_input: 'unit', price_date: o.price_date, source_rate_id: null, source_kind: null })
+  }
+  if (params.get('originDocs') === '2') {
+    window.__fakeDb.s3_documents.push({ id: 'doc-origin', owner_type: 'tender', owner_id: 'tender-o', doc_category: 'supply_doc', file_name: 'Счёт на трубу.pdf', s3_key: 'tenders/tender-o/schet.pdf',
+      created_at: '2026-10-01T09:00:00Z', uploaded_by_name: 'Снабженцев С. С.', size_bytes: 900,
+      notes: JSON.stringify({ kind: 'supply_offer', v: 1, at: '2026-10-01T09:00:00Z', lines: [{ n: 'Труба медная Ø12,7 мм (бухта)', u: 'м', p: 980 }, { n: 'Изоляция', u: 'м', p: 99 }] }) })
+  }
 }
 if (params.get('reuse') === '1') {
   // Колонки 20261023 у прежней цены: день расценки и кто поставил; сам пользователь стенда — в справочнике ФИО.
@@ -964,6 +989,26 @@ if (params.get('dcStats') === '1') {
       }
     } }
   }
+  // ?dcResp=1 — справочник ответственных как на сайте: длинный, у одного ФИО две строки (Архипов: у d2 — вторая), одно имя
+  // с пробелом в начале. У d1 ответственный — первая строка Архипова, у d3 нет ответственного.
+  if (params.get('dcResp') === '1') {
+    const surnames = ['Абдуллаев', 'Агарков', 'Алюшева', 'Баранский', 'Белякова', 'Бойцов', 'Волков', 'Гусев', 'Дёмин', 'Егоров']
+    window.__fakeDb.contacts = [
+      { id: 'c-sur', full_name: ' Сурова Екатерина Ивановна' },
+      ...surnames.flatMap((surname, i) => [1, 2, 3, 4].map((n) => ({ id: `c-${i}-${n}`, full_name: `${surname} Сотрудник ${n}` }))),
+      { id: 'c-arh-1', full_name: 'Архипов Антон Михайлович' },
+      { id: 'c-arh-2', full_name: 'Архипов  Антон Михайлович' },
+    ]
+    const arh = (contactId) => ({ responsible_contact_id: contactId, responsible: { id: contactId, full_name: 'Архипов Антон Михайлович' } })
+    Object.assign(window.__fakeDb.dc_requests.find((r) => r.id === 'd1'), arh('c-arh-1'))
+    Object.assign(window.__fakeDb.dc_requests.find((r) => r.id === 'd2'), arh('c-arh-2'))
+  }
+  // ?dcNotes=1 — колонка примечания (миграция 20261230): у d2 примечание в две строки, у удалённой d6 — одной строкой.
+  if (params.get('dcNotes') === '1') {
+    for (const r of window.__fakeDb.dc_requests) r.notes = null
+    window.__fakeDb.dc_requests.find((r) => r.id === 'd2').notes = 'Ждём письмо заказчика\nСрок — до 15.11'
+    window.__fakeDb.dc_requests.find((r) => r.id === 'd6').notes = 'Заявку сняли'
+  }
   // ?dcContracts=1 — договор, ДС и подразделение заявок (миграция 20261109): у «Подрядчика 01» по «ЖК Альфа» один
   // договор П-15/26 (с ДС №3), по «ЖК Бета» — два, и Б/Н-1 без объекта; договоры другого объекта и другого подрядчика
   // не предлагаются. d2 — договор выбран, в ДС не отмечена (её «ДС-3» совпадает с ДС №3 договора); d4 — занесена в
@@ -1031,7 +1076,7 @@ if (params.get('dcStats') === '1') {
   }
 }
 
-// ?contracts=N — реестр «Договоры и ДС» (route=/contracts): N договоров, у каждого третьего — ДС, у каждого седьмого —
+// ?contracts=N — реестр «Договоры и ДС» (route=/contracts/registry): N договоров, у каждого третьего — ДС, у каждого седьмого —
 // понятийное соглашение (s3_documents, doc_category='concept_agreement'). &contractsMixed=1 — каждый второй договор
 // с ДС «Завершено», его ДС — «В работе» (вкладки и счётчики «Договоров и ДС»).
 const CONTRACTS = Number(params.get('contracts') || 0)
@@ -1323,6 +1368,32 @@ if (params.get('docCheck') === '1') {
     dated('dcr-2', '2026-10-23T09:00:00Z')
     dated('dcr-6', '2026-10-25T09:00:00Z')
     dated('dcr-7', '2026-09-30T09:00:00Z', { sort_order: 50 })
+  }
+  // dcSortDates=1 — в «В работе» три заявки, у которых свой порядок, новые сверху и старые сверху — три разных порядка
+  // (кнопка порядка в шапке колонки): свой — dcr-10, dcr-3, dcr-2; по дате добавления — dcr-2 (23.10), dcr-10 (22.10), dcr-3 (20.10).
+  if (params.get('dcSortDates') === '1') {
+    Object.assign(fdb.doc_check_requests.find((r) => r.id === 'dcr-2'), { created_at: '2026-10-23T09:00:00Z' })
+    const extra = req('dcr-10', { status: 'in_progress', counterparty_id: 'cp-2', doc_number: '10', sort_order: 3,
+      created_at: '2026-10-22T09:00:00Z' })
+    embed(extra)
+    fdb.doc_check_requests.push(extra)
+  }
+  // dcCpSearch=1 — у контрагентов разные ИНН и постоянные номера (поиск контрагента в форме и фильтре — по названию, ИНН и №);
+  // Подрядчик 03 — «Малые суммы», 04 — чёрный список, 05 — удалён: предлагаются, как во вкладке «Активные», только первые.
+  // dcCpSearch=legacy — то же без колонки номера (миграция 20261225 не применена): номер считается по всему реестру.
+  if (params.get('dcCpSearch')) {
+    fdb.counterparties.forEach((c, i) => { c.counterparty_number = 200 + i; c.deleted_at = null })
+    const cp = (id, o) => Object.assign(fdb.counterparties.find((c) => c.id === id), o)
+    cp('cp-1', { inn: '7708203762', counterparty_number: 101 })
+    cp('cp-2', { inn: '7701000012', counterparty_number: 12 })
+    cp('cp-3', { inn: '501234567890', counterparty_number: 7, status: 'limited' })
+    cp('cp-4', { inn: '7708999999', counterparty_number: 13, status: 'blacklist' })
+    cp('cp-5', { inn: '7708555555', counterparty_number: 14, deleted_at: '2026-10-01T09:00:00Z' })
+    cp('cp-6', { name: 'ООО «СУ-10 Монтаж»', inn: '7712000000' })
+    if (params.get('dcCpSearch') === 'legacy') {
+      for (const c of fdb.counterparties) delete c.counterparty_number
+      window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}), counterparties: ['counterparty_number'] }
+    }
   }
   // Встраивание objects(...) / counterparties(...) после записи — как PostgREST (стенд встраивания не разбирает).
   // Дату добавления ставит база (значение колонки по умолчанию).

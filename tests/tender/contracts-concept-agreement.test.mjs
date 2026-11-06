@@ -1,4 +1,4 @@
-// «Договоры и ДС» (/contracts): понятийное соглашение под номером договора.
+// «Реестр по договорам» (/contracts/registry): понятийное соглашение под номером договора.
 //   • после загрузки и удаления файла перечитываются только файлы этого договора: реестр не пропадает под
 //     «Загрузка...» и не запрашивается заново (раньше — весь реестр, приложения и файлы: на тысячах договоров
 //     больше сотни запросов и полная перерисовка, браузер на секунды переставал отвечать);
@@ -9,7 +9,7 @@ import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 
 const launch = browserLaunchOptions()
-const BASE = 'route=/contracts&contracts=600&cps=6&items=20&latency=20'
+const BASE = 'route=/contracts/registry&contracts=600&cps=6&items=20&latency=20'
 
 describe('Договоры и ДС: понятийное соглашение', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 600000 }, () => {
   let stand
@@ -20,7 +20,7 @@ describe('Договоры и ДС: понятийное соглашение', 
     browser = await chromium.launch({ ...launch, headless: true })
     // Прогрев: первая загрузка компилирует модули dev-сервером.
     const page = await browser.newPage()
-    await page.goto(`${stand.url}?route=/contracts&contracts=20&latency=0`)
+    await page.goto(`${stand.url}?route=/contracts/registry&contracts=20&latency=0`)
     await page.locator('.contracts-table tbody tr.contract-row').first().waitFor({ timeout: 120000 })
     await page.close()
   })
