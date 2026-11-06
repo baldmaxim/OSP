@@ -75,9 +75,10 @@ export function unseal(sealedText, privateKeyPem) {
   if (keyFingerprint(priv) !== s.key) throw new Error('файл запечатан другим ключом переноса')
   const dataKey = crypto.privateDecrypt({ key: priv, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
     Buffer.from(s.wrappedKey, 'base64'))
-  const decipher = crypto.createDecipheriv('aes-256-gcm', dataKey, Buffer.from(s.iv, 'base64'))
-  decipher.setAuthTag(Buffer.from(s.tag, 'base64'))
+  // Длина тега задана явно: без неё GCM принял бы укороченный тег из файла.
+  const decipher = crypto.createDecipheriv('aes-256-gcm', dataKey, Buffer.from(s.iv, 'base64'), { authTagLength: 16 })
   try {
+    decipher.setAuthTag(Buffer.from(String(s.tag ?? ''), 'base64'))
     return gunzipSync(Buffer.concat([decipher.update(Buffer.from(s.data, 'base64')), decipher.final()])).toString('utf8')
   } catch {
     throw new Error('запечатанный файл повреждён')

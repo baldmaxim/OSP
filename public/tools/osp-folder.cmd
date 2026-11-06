@@ -87,9 +87,15 @@ function endsWith(text, tail) {
 
 function serverAllowed(host) {
   var h = String(host).toLowerCase()
-  if (/^[a-z0-9_][a-z0-9_-]*$/.test(h)) return true
+  // Имя одним словом - только с буквой и не в записи 0x...: число одним куском (\\134744072) и 0x08080808 Windows
+  // понимает как адрес IPv4 в интернете.
+  if (/^[a-z0-9_][a-z0-9_-]*$/.test(h)) return /[a-z_]/.test(h) && !/^0x[0-9a-f]+$/.test(h)
   var ip = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h)
   if (ip) {
+    // Только обычная десятичная запись: \\010.8.8.8 Windows читает как 8.8.8.8 (восьмеричное 010), а проверка видела бы 10.
+    for (var k = 1; k <= 4; k++) {
+      if (!/^(0|[1-9]\d{0,2})$/.test(ip[k]) || Number(ip[k]) > 255) return false
+    }
     var a = Number(ip[1])
     var b = Number(ip[2])
     return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)

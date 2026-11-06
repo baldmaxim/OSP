@@ -172,6 +172,13 @@ export function registerRates(app, { config, getServiceClient, limiters, db, gat
     reply.headers(CORS_HEADERS)
     const provided = providedKey(request)
     let found = null
+    // Неизвестный ключ — запрос к базе: с одного адреса не больше лимита неверных ключей и cookie (authFailPerIp),
+    // иначе поток случайных ключей занимал бы все подключения службы к базе.
+    const failLimit = limiters.authFail
+    if (provided && failLimit?.blocked(request.ip)) {
+      reply.code(429).header('retry-after', '60').send({ error: 'Слишком много запросов с неверным ключом — повторите через минуту' })
+      return false
+    }
     if (provided) {
       try {
         found = await apiKeys.resolve(provided)
@@ -183,11 +190,13 @@ export function registerRates(app, { config, getServiceClient, limiters, db, gat
       }
     }
     if (!found) {
+      if (provided) failLimit?.take(request.ip)
       reply.code(401).send({ error: 'Неверный или отсутствующий ключ доступа (X-API-Key)' })
       return false
     }
     request.apiCall = { key: found.key }
     if (!found.ok) {
+      failLimit?.take(request.ip)
       request.apiCall.reason = found.reason
       reply.code(401).send({ error: REFUSALS[found.reason], code: `OSP_API_KEY_${found.reason.toUpperCase()}` })
       return false

@@ -5,7 +5,7 @@ import PaperclipIcon from '../icons/PaperclipIcon'
 import { formatAmount, formatAmountLive } from '../../utils/money'
 import {
   DP_CONCEPT_CATEGORY, DP_DOCS_CATEGORY, DP_ROLE_LABEL, EMPTY_DP_FORM, dpErrorText, dpFileAccept, dpFileProblem, dpFormFields, dpFormProblems,
-  pickResponsibleKey, responsibleOptions,
+  ownObjectChoice, pickResponsibleKey, responsibleOptions,
 } from '../../utils/dpRequests'
 import { createDpRequest, updateDpRequest } from '../../services/dpRequests'
 import { SECTION_TEMPLATE_LINK_KEY, fetchTemplateLinks, isWebLink } from '../../services/sectionTemplates'
@@ -51,8 +51,13 @@ function StagedFiles({ id, label, hint, accept, files, onFiles, required, error 
 // Окно новой заявки и правки (решение пользователя 05.11.2026). Подающий заполняет только понятийное соглашение (без него заявку не создать), документы и
 // примечание. Объект, договор, сумму и ответственного (экономист объекта или руководитель строительства) видит и заполняет только тот, кто работает с
 // заявками (canWork); они необязательны: заполняются по мере готовности. Файлы уже созданной заявки меняются в её строке, здесь — только при создании.
+// Исключение — объект подающего, привязанного к объектам в «Ролях» (06.11.2026): ownObjects — его объекты (null — читаются, undefined —
+// привязки нет или он сам работает с заявками). Один — стоит серым, несколько — выбор обязателен (ownObjectChoice). Только при создании:
+// объект поданной заявки меняет отдел (запрет базы), автор при правке по-прежнему видит одно примечание.
 // Закрывается только кнопками: щелчок мимо унёс бы заполненное.
-export default function DpRequestFormModal({ request, objects, staff, me, canWork = false, onClose, onSaved }) {
+export default function DpRequestFormModal({
+  request, objects, staff, me, canWork = false, ownObjects, ownObjectsFailed = false, onClose, onSaved,
+}) {
   const editing = !!request
   const [form, setForm] = useState(() => (editing
     ? {
@@ -126,13 +131,16 @@ export default function DpRequestFormModal({ request, objects, staff, me, canWor
     })
   }
 
-  const problems = dpFormProblems(form, { canWork, conceptCount: editing ? null : conceptFiles.length })
+  const ownChoice = !canWork && !editing && ownObjects !== undefined
+    ? ownObjectChoice({ ownObjects, failed: ownObjectsFailed, objectId: form.object_id })
+    : null
+  const problems = dpFormProblems(form, { canWork, conceptCount: editing ? null : conceptFiles.length, objectProblem: ownChoice?.problem })
 
   const submit = async (e) => {
     e.preventDefault()
     if (problems.length || saving) return
     const option = options.find((o) => o.key === form.responsibleKey)
-    const fields = dpFormFields(form, option, { canWork })
+    const fields = dpFormFields(form, option, { canWork, ownObjectId: ownChoice?.objectId })
     setSaving(true)
     setError('')
     try {
@@ -153,11 +161,32 @@ export default function DpRequestFormModal({ request, objects, staff, me, canWor
     <div className="dpr-overlay">
       <form className="dpr-dialog" role="dialog" aria-modal="true" aria-labelledby="dpr-form-title" onSubmit={submit}>
         <header className="dpr-dialog-head">
-          <h3 id="dpr-form-title">{editing ? `Заявка на ДП № ${request.request_number}` : 'Новая заявка на ДП'}</h3>
+          <h3 id="dpr-form-title">{editing ? `Заявка на заключение ДП № ${request.request_number}` : 'Новая заявка на заключение ДП'}</h3>
           <button type="button" className="dpr-x" aria-label="Закрыть" disabled={saving} onClick={onClose}><IconClose size={18} /></button>
         </header>
 
         <div className="dpr-dialog-body">
+          {ownChoice && !(ownObjects && ownObjects.length === 0) && (
+            <div className="dpr-field">
+              <label className="dpr-label" htmlFor="dpr-f-own-object">
+                Объект{!ownChoice.single && <b className="dpr-req" title="Обязательно"> *</b>}
+              </label>
+              {ownChoice.single ? (
+                <select id="dpr-f-own-object" value={ownChoice.single.id} disabled title="Ваш объект в «Ролях» — выбирать не нужно">
+                  <option value={ownChoice.single.id}>{ownChoice.single.name}</option>
+                </select>
+              ) : ownObjects?.length ? (
+                <select id="dpr-f-own-object" value={ownChoice.objectId} onChange={set('object_id')}>
+                  <option value="">— Выберите объект —</option>
+                  {ownObjects.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                </select>
+              ) : (
+                <select id="dpr-f-own-object" value="" disabled>
+                  <option value="">{ownObjectsFailed ? 'Объекты не загрузились' : 'Загрузка объектов…'}</option>
+                </select>
+              )}
+            </div>
+          )}
           {!editing && (
             <>
               <StagedFiles

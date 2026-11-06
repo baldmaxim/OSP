@@ -1,4 +1,4 @@
-// «Заявка на ДП» (миграции 20261227_dp_requests и 20261231_dp_requests_short_form) на слепке схемы прода: заявка не подаётся только без понятийного
+// «Заявка на заключение ДП» (миграции 20261227_dp_requests и 20261231_dp_requests_short_form) на слепке схемы прода: заявка не подаётся только без понятийного
 // соглашения; объект, договор, сумму и ответственного заполняет работающий с заявками, автор их не перепишет; номер и отметки ставит база; создают только
 // с правом создания, объект — только свой; автор правит примечание и файлы своей, пока её не взяли в работу, статус ведёт право работы; последнее
 // соглашение не убрать; уведомления получателям — только функциями; откаты заявки не теряют. Нужны Docker и psql.
@@ -79,7 +79,7 @@ const SHORT_DRAFT = `insert into public.dp_requests (reason) values ('Приме
 const fileSql = (req, category, name) => `insert into public.s3_documents (owner_type, owner_id, s3_key, file_name, doc_category)
   values ('dp_request', '${req}', 'dp-requests/${req}/' || gen_random_uuid() || '-${name}', '${name}', '${category}') returning id`
 
-describe('Заявка на ДП: файлы миграции', () => {
+describe('Заявка на заключение ДП: файлы миграции', () => {
   const read = (p) => fs.readFileSync(p, 'utf8')
   const fn = (text, name) => {
     const m = text.match(new RegExp(`CREATE OR REPLACE FUNCTION public\\.${name}\\(\\)[\\s\\S]*?\\n\\$\\$;`))
@@ -128,7 +128,7 @@ describe('Заявка на ДП: файлы миграции', () => {
   })
 })
 
-describe('Заявка на ДП: база', { skip, timeout: 600000 }, () => {
+describe('Заявка на заключение ДП: база', { skip, timeout: 600000 }, () => {
   let db
   let checkBefore = ''
   let shortCheckBefore = ''
@@ -517,7 +517,7 @@ describe('Заявка на ДП: база', { skip, timeout: 600000 }, () => {
   })
 })
 
-describe('Заявка на ДП: база Яндекса (одна учётка)', { skip: skipReason({ needCopy: true }), timeout: 30 * 60 * 1000 }, () => {
+describe('Заявка на заключение ДП: база Яндекса (одна учётка)', { skip: skipReason({ needCopy: true }), timeout: 30 * 60 * 1000 }, () => {
   let db
   let tmp
   const internal = (text) => db.sql(text, { appName: 'osp:internal' })

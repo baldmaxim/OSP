@@ -59,8 +59,9 @@ const placeOf = (byColumn, status, id) => {
   return { column: status, beforeId: at >= 0 ? (list[at + 1]?.id ?? null) : null }
 }
 
+// addOnly — колонка, куда может добавлять тот, у кого нет права правки, а есть право создания (20270102: только «Новые заявки»).
 function DocCheckBoard({
-  requests, employees, canEdit, hasBoardFields, summary, onSummaryChange,
+  requests, employees, canEdit, addOnly = null, hasBoardFields, summary, onSummaryChange,
   onOpen, onMove, onAdd, onToggleDone, onCardAction, onArchiveDone,
 }) {
   // { id, origin: { column, beforeId }, target: { column, beforeId } | null }
@@ -197,7 +198,7 @@ function DocCheckBoard({
             hasBoardFields={hasBoardFields}
             statusOptions={statusOptions}
             summary={col.kind === 'summary' ? summary : null}
-            canAdd={col.kind !== 'summary' && canEdit && statuses.some(s => s.value === col.value)}
+            canAdd={col.kind !== 'summary' && (canEdit ? statuses.some(s => s.value === col.value) : addOnly === col.value)}
             isOver={drag?.target?.column === col.value}
             slotBefore={slotIn(col, sort)}
             liftedId={drag?.origin.column === col.value ? drag.id : null}

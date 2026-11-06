@@ -138,7 +138,7 @@ window.__fakeDb = {
     { id: `rd-${i}-1`, tender_id: t.id, code: `2026-${t.public_tender_number}-АР`, title: 'Архитектурные решения', sort_order: 10 },
     { id: `rd-${i}-2`, tender_id: t.id, code: `2026-${t.public_tender_number}-КЖ`, title: 'Конструкции железобетонные', sort_order: 20 },
   ]),
-  tender_counterparties: [...registry.slice(1, 9).map((t, i) => ({ id: `tch-${i}`, tender_id: t.id, counterparty_id: 'cp-1', status: i % 3 === 0 ? 'declined' : 'proposal_provided', sort_order: 0, tenders: { id: t.id, work_description: t.work_description, tender_start_date: t.tender_start_date, tender_end_date: t.tender_end_date, objects: t.objects ? { name: t.objects.name } : null } })), ...counterparties.map((cp, i) => ({ id: `tc-${i + 1}`, tender_id: 'tender-1', counterparty_id: cp.id, status: 'proposal_provided', sort_order: i, invited_at: '2026-08-01', counterparties: { ...cp, counterparty_contacts: CP_CONTACTS ? participantContacts(i) : [] } }))],
+  tender_counterparties: [...registry.slice(1, 9).map((t, i) => ({ id: `tch-${i}`, tender_id: t.id, counterparty_id: 'cp-1', status: i % 3 === 0 ? 'declined' : 'proposal_provided', sort_order: 0, tenders: { id: t.id, public_tender_number: t.public_tender_number, parent_tender_id: null, work_description: t.work_description, tender_start_date: t.tender_start_date, tender_end_date: t.tender_end_date, objects: t.objects ? { name: t.objects.name } : null } })), ...counterparties.map((cp, i) => ({ id: `tc-${i + 1}`, tender_id: 'tender-1', counterparty_id: cp.id, status: 'proposal_provided', sort_order: i, invited_at: '2026-08-01', counterparties: { ...cp, counterparty_contacts: CP_CONTACTS ? participantContacts(i) : [] } }))],
   // ?cpContacts=1 — у контрагентов есть контакты с телефонами, третий — в чёрном списке (реестр контрагентов на телефоне);
   // &phoneExt=1 — у первого номера добавочный («… доб. 123»).
   counterparties: counterparties.map((cp, i) => ({
@@ -1009,6 +1009,27 @@ if (params.get('dcStats') === '1') {
     window.__fakeDb.dc_requests.find((r) => r.id === 'd2').notes = 'Ждём письмо заказчика\nСрок — до 15.11'
     window.__fakeDb.dc_requests.find((r) => r.id === 'd6').notes = 'Заявку сняли'
   }
+  // ?dcHeads=1 — одноимённые «ООО «Мастер»» с разными ИНН и руководители в контактах (06.11.2026): в выборе контрагента
+  // формы рядом с ИНН — гендиректор. У первого «Мастера» ещё и «Директор» (показывается гендиректор), у второго —
+  // «Генеральный Директор » с пробелом и прописной, у третьего ИНН нет, но есть «Директор?»; у четвёртого только
+  // коммерческий директор и «Нет контакта» — подписи нет.
+  if (params.get('dcHeads') === '1') {
+    const fdb = window.__fakeDb
+    fdb.counterparties.push(
+      { id: 'cp-m1', name: 'ООО «Мастер»', inn: '5042017037', status: 'active', deleted_at: null },
+      { id: 'cp-m2', name: 'ООО «Мастер»', inn: '7708203762', status: 'active', deleted_at: null },
+      { id: 'cp-m3', name: 'ООО «МАСТЕР»', inn: null, status: 'active', deleted_at: null },
+      { id: 'cp-m4', name: 'ООО «Мастер Плюс»', inn: '7701000000', status: 'active', deleted_at: null },
+    )
+    fdb.counterparty_contacts = [
+      { id: 'h-1', counterparty_id: 'cp-m1', full_name: 'Петров Пётр Петрович', position: 'Директор', updated_at: '2026-10-01T10:00:00Z' },
+      { id: 'h-2', counterparty_id: 'cp-m1', full_name: 'Иванов Иван Иванович', position: 'Генеральный директор', updated_at: '2026-09-01T10:00:00Z' },
+      { id: 'h-3', counterparty_id: 'cp-m2', full_name: 'Русев Иван Сергеевич', position: 'Генеральный Директор ', updated_at: '2026-09-01T10:00:00Z' },
+      { id: 'h-4', counterparty_id: 'cp-m3', full_name: 'Сидоров Сергей', position: 'Директор?', updated_at: '2026-09-01T10:00:00Z' },
+      { id: 'h-5', counterparty_id: 'cp-m4', full_name: 'Кирик Денис', position: 'Коммерческий директор', updated_at: '2026-09-01T10:00:00Z' },
+      { id: 'h-6', counterparty_id: 'cp-m4', full_name: 'Нет контакта', position: 'Генеральный директор', updated_at: '2026-09-01T10:00:00Z' },
+    ]
+  }
   // ?dcContracts=1 — договор, ДС и подразделение заявок (миграция 20261109): у «Подрядчика 01» по «ЖК Альфа» один
   // договор П-15/26 (с ДС №3), по «ЖК Бета» — два, и Б/Н-1 без объекта; договоры другого объекта и другого подрядчика
   // не предлагаются. d2 — договор выбран, в ДС не отмечена (её «ДС-3» совпадает с ДС №3 договора); d4 — занесена в
@@ -1484,5 +1505,23 @@ if (params.get('cpFilters') === '1') {
       : site === 'error'
         ? { data: null, error: { code: '500', message: 'сбой' } }
         : { data: accounts.map(([counterparty_id, n]) => ({ counterparty_id, accounts: n })), error: null }),
+  }
+}
+
+// restartBl=1 (06.11.2026) — статус «Перезапуск» и плашка «ЧС» в «Тендерах»: tender-2 (№ 199) перезапущен, срок процедуры
+// прошёл (просрочкой не считается); участник cp-2 тендера tender-1 и победитель tender-5 (№ 196, «Завершен») — в чёрном списке.
+if (params.get('restartBl') === '1') {
+  const fdb = window.__fakeDb
+  const t2 = fdb.tenders.find(t => t.id === 'tender-2')
+  if (t2) Object.assign(t2, { status: 'Перезапуск', tender_end_date: '2026-09-05' })
+  const cp2 = fdb.counterparties.find(c => c.id === 'cp-2')
+  if (cp2) cp2.status = 'blacklist'
+  for (const tc of fdb.tender_counterparties) {
+    if (tc.counterparty_id === 'cp-2' && tc.counterparties) tc.counterparties = { ...tc.counterparties, status: 'blacklist' }
+  }
+  const t5 = fdb.tenders.find(t => t.id === 'tender-5')
+  if (t5 && cp2) {
+    t5.status = 'Завершен'
+    t5.tender_winners = [{ counterparty_id: 'cp-2', scope_note: '', counterparties: { id: 'cp-2', name: cp2.name, status: 'blacklist' } }]
   }
 }

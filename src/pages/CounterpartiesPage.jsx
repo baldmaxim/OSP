@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useDeferredValue, useTransition, useCallback } from 'react'
 import { db } from '../api'
 import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
+import { chunkList } from '../utils/inChunks'
 import * as XLSX from 'xlsx'
 import { formatPhone, formatPhoneEntry, joinPhoneExt, phoneHref, splitPhoneExt, PHONE_EXT_MAX } from '../utils/phoneFormat'
 import { generateUUID } from '../utils/uuid'
@@ -320,7 +321,7 @@ function CounterpartiesPage() {
   const [relations, setRelations] = useState([]) // [{id, counterparty_id, related_counterparty_id}]
 
   // task 196: история участия в тендерах — лениво грузим при раскрытии строки
-  const [tenderHistoryMap, setTenderHistoryMap] = useState({}) // { counterpartyId: [{tender_id, status, work_description, tender_start_date, tender_end_date, object_name}] }
+  const [tenderHistoryMap, setTenderHistoryMap] = useState({}) // { counterpartyId: [{tender_id, tender_number, status, work_description, tender_start_date, tender_end_date, object_name}] }
   const [tenderHistoryLoadingId, setTenderHistoryLoadingId] = useState(null)
 
   // task 197: вкладка «Активные» / «Удалённые»
@@ -1585,13 +1586,24 @@ function CounterpartiesPage() {
     try {
       const { data, error } = await db
         .from('tender_counterparties')
-        .select('status, tenders(id, work_description, tender_start_date, tender_end_date, objects(name))')
+        .select('status, tenders(id, public_tender_number, parent_tender_id, work_description, tender_start_date, tender_end_date, objects(name))')
         .eq('counterparty_id', counterpartyId)
       if (error) throw error
+      // «№» — номер тендера (06.11.2026, решение пользователя; раньше — номер строки). Тендер на материалы показывает
+      // номер основного, как в реестре; участники на 02.11 есть только у основных — это страховка.
+      const parentIds = [...new Set((data || []).map(r => r.tenders?.parent_tender_id).filter(Boolean))]
+      const parentNumbers = new Map()
+      for (const ids of chunkList(parentIds)) {
+        const { data: parents, error: pErr } = await db.from('tenders').select('id, public_tender_number').in('id', ids)
+        if (pErr) throw pErr
+        for (const p of parents || []) parentNumbers.set(p.id, p.public_tender_number)
+      }
       const list = (data || [])
         .filter(r => r.tenders)
         .map(r => ({
           tender_id: r.tenders.id,
+          tender_number: (r.tenders.parent_tender_id ? parentNumbers.get(r.tenders.parent_tender_id) : null)
+            ?? r.tenders.public_tender_number ?? null,
           status: r.status,
           work_description: r.tenders.work_description,
           tender_start_date: r.tenders.tender_start_date,
@@ -2495,7 +2507,10 @@ function CounterpartiesPage() {
                         <li key={h.tender_id}>
                           <a href={`/tenders/${h.tender_id}`} className="cp-history-card">
                             <div className="cp-history-card-head">
-                              <span className="cp-history-card-obj">{h.object_name || '—'}</span>
+                              <span className="cp-history-card-obj">
+                                {h.tender_number != null && <span className="cp-history-card-no">№ {h.tender_number}</span>}
+                                {h.object_name || '—'}
+                              </span>
                               <span className={`tender-history-status status-${status}`}>
                                 <span className="tender-history-status-dot" aria-hidden />
                                 {TENDER_STATUS_LABEL[status] || status}
@@ -2518,7 +2533,7 @@ function CounterpartiesPage() {
                     <table className="tender-history-table">
                       <thead>
                         <tr>
-                          <th className="th-num">№</th>
+                          <th className="th-num" title="Номер тендера">№</th>
                           <th className="th-obj">Объект</th>
                           <th className="th-desc">Описание работ</th>
                           <th className="th-status">Статус</th>
@@ -2526,13 +2541,15 @@ function CounterpartiesPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {tenderHistoryMap[detailCp.id].map((h, i) => {
+                        {tenderHistoryMap[detailCp.id].map((h) => {
                           const status = h.status || 'request_sent'
                           const startDate = fmtRuDate(h.tender_start_date)
                           const endDate = fmtRuDate(h.tender_end_date)
                           return (
                             <tr key={h.tender_id}>
-                              <td className="tender-history-num">{i + 1}</td>
+                              <td className="tender-history-num" title={h.tender_number != null ? `Тендер № ${h.tender_number}` : undefined}>
+                                {h.tender_number ?? '—'}
+                              </td>
                               <td className="tender-history-obj">{h.object_name}</td>
                               <td>
                                 <a

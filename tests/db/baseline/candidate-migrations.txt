@@ -45,3 +45,4 @@
 20261228_doc_check_created_guard.sql
 20261231_dp_requests_short_form.sql
 20270101_doc_check_object_scope.sql
+20270102_doc_check_create.sql

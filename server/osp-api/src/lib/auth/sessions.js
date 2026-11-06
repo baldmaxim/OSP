@@ -21,6 +21,9 @@ export function createSessions({ db, now = Date.now, idleMs = SESSION_DEFAULTS.i
   if (!db) throw new Error('osp-api: сессии своего входа хранятся в базе — подключение не задано')
   if (!(idleMs > 0 && absoluteMs >= idleMs)) throw new Error('osp-api: срок сессии без активности должен быть не больше общего')
   const cache = new Map() // id_hash → { value, at }
+  // Ненайденные сессии — отдельно и короче: поток случайных cookie не вытесняет из памяти сессии работающих.
+  const misses = new Map() // id_hash → at
+  const MISS_MAX = 1000
 
   // Внутри транзакции вызывающего (отметка internal уже стоит). → { token, csrf, maxAgeSec }
   async function createInTx(tx, { userId, mustChange = false }) {
@@ -39,6 +42,8 @@ export function createSessions({ db, now = Date.now, idleMs = SESSION_DEFAULTS.i
     const hit = cache.get(idHash)
     const t = now()
     if (hit && t - hit.at < cacheMs) return valid(hit.value, t)
+    const missAt = misses.get(idHash)
+    if (missAt !== undefined && t - missAt < cacheMs) return null
     const row = await db.read(null, async (tx) => {
       const { rows } = await tx.query(`select s.user_id, u.email, s.csrf, s.must_change, s.last_used_at, s.idle_expires_at,
           s.absolute_expires_at, s.revoked_at
@@ -51,8 +56,14 @@ export function createSessions({ db, now = Date.now, idleMs = SESSION_DEFAULTS.i
       absoluteExpiresAt: new Date(row.absolute_expires_at).getTime(), revoked: Boolean(row.revoked_at),
     } : null
     cache.delete(idHash)
-    cache.set(idHash, { value, at: t })
-    while (cache.size > maxEntries) cache.delete(cache.keys().next().value)
+    misses.delete(idHash)
+    if (value) {
+      cache.set(idHash, { value, at: t })
+      while (cache.size > maxEntries) cache.delete(cache.keys().next().value)
+    } else {
+      misses.set(idHash, t)
+      while (misses.size > MISS_MAX) misses.delete(misses.keys().next().value)
+    }
     const live = valid(value, t)
     if (live && t - value.lastUsedAt >= touchMs) touch(value, t)
     return live
@@ -88,5 +99,12 @@ export function createSessions({ db, now = Date.now, idleMs = SESSION_DEFAULTS.i
       where user_id = $1 and revoked_at is null and ($3::text is null or id_hash <> $3)`, [userId, reason, keepHash])
   }
 
-  return { createInTx, lookup, revoke, revokeAllInTx, forget: (idHash) => cache.delete(idHash), size: () => cache.size }
+  // Действующая сессия уже в памяти — проверка без обращения к базе (её не задевает лимит неверных cookie).
+  function cached(token) {
+    const hit = cache.get(tokenHash(token))
+    const t = now()
+    return Boolean(hit && t - hit.at < cacheMs && valid(hit.value, t))
+  }
+
+  return { createInTx, lookup, cached, revoke, revokeAllInTx, forget: (idHash) => cache.delete(idHash), size: () => cache.size }
 }

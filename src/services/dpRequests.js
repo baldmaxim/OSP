@@ -1,4 +1,4 @@
-// Запросы раздела «Заявка на ДП» (миграции 20261227, 20261231). Правила — utils/dpRequests.js, запреты — в базе.
+// Запросы раздела «Заявка на заключение ДП» (миграции 20261227, 20261231). Правила — utils/dpRequests.js, запреты — в базе.
 import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { DP_CONCEPT_CATEGORY, DP_DOCS_CATEGORY, DP_OWNER_TYPE, isDpMigrationMissing } from '../utils/dpRequests'

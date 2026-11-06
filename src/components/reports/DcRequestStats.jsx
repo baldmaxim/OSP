@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { db } from '../../api'
 import { fetchAllRows } from '../../utils/fetchAllRows'
 import { DS_TYPE_LABEL, STATUS_LABEL } from '../../utils/dcRequestOptions'
+import { isMissingColumnError } from '../../utils/dcRequestAmounts'
 import { KP_GRANULARITY, formatDuration, periodStarts } from '../../utils/kpStats'
 import {
   DC_DUE_SOON_DAYS, buildDcDynamics, completionTimes, computeDcStats, filterDcRequests,
@@ -14,8 +15,9 @@ import { BarChart, ProgressBar, StatusDonut } from './ReportCharts'
 // материалам и контрагентам. Расчёт — utils/dcRequestStats.js. Данные грузит сам, при первом открытии
 // вкладки: заявки и журнал смен статуса нужны только здесь.
 
-const SELECT = `id, object_id, counterparty_id, responsible_contact_id, ds_number, status, check_status, checked_at,
-  ds_type, material_type, amount_before, amount_after, expected_approval_date, created_at, deleted_at,
+// Суммы ВОР (миграция 20270104) входят в «Было подано» / «Утверждено» (requestTotals); колонок ещё нет — без них.
+const selectFields = (vor) => `id, object_id, counterparty_id, responsible_contact_id, ds_number, status, check_status, checked_at,
+  ds_type, material_type, amount_before, amount_after,${vor ? ' vor_amount_before, vor_amount_after,' : ''} expected_approval_date, created_at, deleted_at,
   objects(id, name, status),
   counterparties(id, name),
   responsible:contacts!responsible_contact_id(id, full_name),
@@ -140,12 +142,13 @@ function DcRequestStats({ scopedObjectIds = [], canOpenRegistry = false }) {
     setError(null)
     try {
       // Постранично: без .range() PostgREST отдаёт первые 1000 строк — числа отчёта врали бы.
+      const loadRequests = (vor) => fetchAllRows((from, to) => {
+        let q = db.from('dc_requests').select(selectFields(vor))
+        if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
+        return q.order('created_at', { ascending: true }).order('id', { ascending: true }).range(from, to)
+      })
       const [requests, statusEvents] = await Promise.all([
-        fetchAllRows((from, to) => {
-          let q = db.from('dc_requests').select(SELECT)
-          if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
-          return q.order('created_at', { ascending: true }).order('id', { ascending: true }).range(from, to)
-        }),
+        loadRequests(true).catch((err) => (isMissingColumnError(err) ? loadRequests(false) : Promise.reject(err))),
         // Только смены статуса: по ним — дата завершения заявки. Журнал читает тот, кто видит заявки.
         fetchAllRows((from, to) => db
           .from('dc_request_audit_log')

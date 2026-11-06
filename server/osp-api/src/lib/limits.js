@@ -19,6 +19,30 @@ export function createRateLimit({ max, windowMs, now = Date.now }) {
       e.n += 1
       return true
     },
+    // Предел по ключу уже исчерпан в текущем окне — без траты попытки.
+    blocked(key) {
+      const e = hits.get(key)
+      return Boolean(e && now() - e.start < windowMs && e.n >= max)
+    },
+  }
+}
+
+// Сколько байт одновременно держат в памяти тела запросов. acquire(n) → функция освобождения или null, если не помещается.
+export function createByteBudget(total) {
+  let used = 0
+  return {
+    acquire(n) {
+      const size = Math.max(0, Number(n) || 0)
+      if (used + size > total) return null
+      used += size
+      let released = false
+      return () => {
+        if (released) return
+        released = true
+        used -= size
+      }
+    },
+    used: () => used,
   }
 }
 
@@ -62,6 +86,14 @@ export const DEFAULT_LIMITS = {
   dbRestrictedConcurrentTotal: 30,
   // Шлюз данных без входа: публичной странице хватает пары запросов на просмотр.
   dbAnonPerIp: { max: 300, windowMs: 60_000 },
+  // Неверные cookie сессии и токены с одного адреса: каждая такая попытка — запрос к базе (или к Supabase). Сверх предела
+  // адрес до конца окна получает 429 без обращения к базе; сессии, уже найденные в памяти, работают как обычно.
+  authFailPerIp: { max: 60, windowMs: 60_000 },
+  // Большие тела шлюза держатся в памяти целиком (пик — около двух размеров тела): всего не больше бюджета и одно большое
+  // тело на пользователя (без входа — на адрес). Без этого два параллельных тела по 46 МБ роняли службу (384 МБ).
+  dbBodyBudgetBytes: 64 * 1024 * 1024,
+  dbLargeBodyBytes: 1024 * 1024,
+  dbLargeBodyPerKey: 1,
   aiPerUser: { max: 6, windowMs: 60_000 }, // платный ИИ: 6 запросов в минуту на пользователя
   aiConcurrentPerUser: 1,
   aiConcurrentTotal: 4,

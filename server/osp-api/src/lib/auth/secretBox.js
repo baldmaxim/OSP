@@ -60,7 +60,8 @@ export function createSecretBox(spec) {
     if (!key) throw Object.assign(new Error(`secret: ключа ${m[1]} нет в OSP_AUTH_KEYS`), { code: 'OSP_AUTH_KEY_UNKNOWN' })
     const raw = Buffer.from(m[2], 'base64')
     if (raw.length < IV_BYTES + TAG_BYTES + 1) throw new Error('secret: строка короче допустимой')
-    const decipher = createDecipheriv('aes-256-gcm', key, raw.subarray(0, IV_BYTES))
+    // Длина тега задана явно: без неё GCM принял бы и укороченный тег (сейчас тег и так режется ровно по TAG_BYTES).
+    const decipher = createDecipheriv('aes-256-gcm', key, raw.subarray(0, IV_BYTES), { authTagLength: TAG_BYTES })
     decipher.setAAD(Buffer.from(String(aad), 'utf8'))
     decipher.setAuthTag(raw.subarray(raw.length - TAG_BYTES))
     try {

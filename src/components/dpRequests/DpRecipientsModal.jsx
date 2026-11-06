@@ -68,7 +68,7 @@ export default function DpRecipientsModal({ roleLabels, onClose }) {
         <div className="dpr-dialog-body">
           <p className="dpr-hint">
             Окно всплывает на любой странице сайта и закрывается только кнопкой. Новому получателю оно придёт о заявках, созданных после
-            добавления. Чтобы открыть заявку из окна, его роли нужен просмотр раздела «Заявка на ДП» (в «Правах доступа»).
+            добавления. Чтобы открыть заявку из окна, его роли нужен просмотр раздела «Заявка на заключение ДП» (в «Правах доступа»).
           </p>
           {error && <p className="dpr-error" role="alert">{error}</p>}
           {recipients == null ? <p className="dpr-empty">Загрузка…</p> : (

@@ -32,7 +32,7 @@ export const CONTRACT_SECTIONS = [
   {
     section: 'dp_requests',
     to: '/dp-requests',
-    title: 'Заявка на ДП',
+    title: 'Заявка на заключение ДП',
     desc: 'Заявки на договор подряда: понятийное соглашение, документы, примечание',
     action: 'Перейти к заявкам',
     tone: 'violet',

@@ -108,7 +108,7 @@ export default function DpRequestAlert() {
         <header className="dpa-head">
           <span className="dpa-icon"><IconDpRequest /></span>
           <div>
-            <h2 id="dpa-title">{alerts.length === 1 ? 'Новая заявка на ДП' : `Заявки на ДП: ${newRequestsLabel(alerts.length)}`}</h2>
+            <h2 id="dpa-title">{alerts.length === 1 ? 'Новая заявка на заключение ДП' : `Заявки на заключение ДП: ${newRequestsLabel(alerts.length)}`}</h2>
             <p>Создана заявка на договор подряда.</p>
           </div>
         </header>

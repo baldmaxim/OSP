@@ -1270,129 +1270,9 @@
   color: #93c5fd;
 }
 
-/* ===== task 370: столбец «Сумма» («Было подано» / «Утверждено») с инлайн-вводом ===== */
+/* Сумма ДС — блок DcRequestAmounts (свои стили, components/DcRequestAmounts.css). */
 .dcr-cell-amount {
   font-variant-numeric: tabular-nums;
-}
-
-.dcr-amount {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.dcr-amount-row {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-/* Подписи «Было подано» / «Утверждено» — фиксированная колонка слева, без переноса */
-.dcr-amount-label {
-  flex-shrink: 0;
-  width: 72px;
-  font-size: 0.625rem;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  color: var(--text-tertiary);
-}
-
-.dcr-amount-input {
-  width: 100%;
-  min-width: 0;
-  padding: 0.1875rem 0.375rem;
-  font-size: 0.75rem;
-  text-align: right;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: rgba(148, 163, 184, 0.08);
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-  transition: border-color 0.12s, background 0.12s;
-  -moz-appearance: textfield;
-}
-
-.dcr-amount-input::-webkit-outer-spin-button,
-.dcr-amount-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.dcr-amount-input:hover {
-  border-color: var(--border-color);
-}
-
-.dcr-amount-input:focus {
-  outline: none;
-  border-color: var(--primary-color, #2563eb);
-  background: var(--bg-secondary);
-}
-
-.dcr-amount-value {
-  width: 100%;
-  text-align: right;
-  font-size: 0.75rem;
-  color: var(--text-primary);
-}
-
-/* Разница: абсолютная сумма + процент изменения (от «Было подано») */
-.dcr-amount-diff {
-  display: flex;
-  align-items: baseline;
-  justify-content: flex-end;
-  gap: 0.3125rem;
-  flex-wrap: wrap;
-  margin-top: 0.0625rem;
-  text-align: right;
-  font-size: 0.6875rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  min-height: 0.875rem;
-  white-space: nowrap;
-}
-
-/* Процент — на мягкой плашке в цвет направления изменения */
-.dcr-amount-diff .dcr-diff-pct {
-  padding: 0.0625rem 0.25rem;
-  border-radius: 4px;
-  font-size: 0.625rem;
-}
-
-.dcr-amount-diff.is-cheaper .dcr-diff-pct {
-  background: rgba(21, 128, 61, 0.12);
-}
-
-.dcr-amount-diff.is-pricier .dcr-diff-pct {
-  background: rgba(220, 38, 38, 0.12);
-}
-
-[data-theme='dark'] .dcr-amount-diff.is-cheaper .dcr-diff-pct {
-  background: rgba(74, 222, 128, 0.16);
-}
-
-[data-theme='dark'] .dcr-amount-diff.is-pricier .dcr-diff-pct {
-  background: rgba(248, 113, 113, 0.16);
-}
-
-.dcr-amount-diff.is-cheaper {
-  color: #15803d;
-}
-
-.dcr-amount-diff.is-pricier {
-  color: #dc2626;
-}
-
-.dcr-amount-diff.is-zero {
-  color: var(--text-tertiary);
-  font-weight: 500;
-}
-
-[data-theme='dark'] .dcr-amount-diff.is-cheaper {
-  color: #4ade80;
-}
-
-[data-theme='dark'] .dcr-amount-diff.is-pricier {
-  color: #f87171;
 }
 
 /* ===== task 370: кнопка экспорта в Excel ===== */
@@ -2700,30 +2580,6 @@
 /* № ДС: целиком, перенос только после разделителей (BreakableId). */
 .dc-requests-page.ui-work .dcr-cell-dsnum { font-variant-numeric: tabular-nums; }
 
-/* Суммы: подпись («Было подано», «Утверждено») — строкой над значением, значение
-   на всю ширину колонки, вправо, моноширинными цифрами. Рядом с подписью сумма
-   от 10 млрд уже не помещалась в поле. Исходная сумма, утверждённая и разница —
-   отдельными строками; знак и направление изменения (↓/↑, −/+) не скрываются. */
-.dc-requests-page.ui-work .dcr-amount { gap: 0.25rem; }
-.dc-requests-page.ui-work .dcr-amount-row { flex-direction: column; align-items: stretch; gap: 0; }
-.dc-requests-page.ui-work .dcr-amount-label {
-  width: auto;
-  font-size: var(--ui-hint);
-  line-height: var(--ui-hint-lh);
-  letter-spacing: normal;
-  color: var(--text-secondary);
-}
-.dc-requests-page.ui-work :is(.dcr-amount-input, .dcr-amount-value) {
-  font-size: var(--ui-text);
-  line-height: var(--ui-text-lh);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-.dc-requests-page.ui-work .dcr-amount-input { padding: 0.0625rem 0.375rem; }
-.dc-requests-page.ui-work .dcr-amount-diff { font-size: var(--ui-hint); line-height: var(--ui-hint-lh); font-weight: var(--ui-medium); }
-.dc-requests-page.ui-work .dcr-amount-diff .dcr-diff-pct { font-size: var(--ui-hint); }
-.dc-requests-page.ui-work .dcr-amount-diff.is-zero { font-weight: var(--ui-regular); color: var(--text-secondary); }
-
 /* Статус и итог проверки. */
 .dc-requests-page.ui-work .dcr-status-chip {
   padding: 0.125rem 0.375rem 0.125rem 0.5rem;
@@ -2824,16 +2680,12 @@
 .dc-requests-page.ui-work .dcr-status-chip.status-contract-check { color: #92400e; }
 .dc-requests-page.ui-work .dcr-status-chip.status-completed { color: #166534; }
 .dc-requests-page.ui-work .dcr-material-select.material-tolling { color: #92400e; }
-.dc-requests-page.ui-work .dcr-amount-diff.is-cheaper { color: #166534; }
-.dc-requests-page.ui-work .dcr-amount-diff.is-pricier { color: #b91c1c; }
 .dc-requests-page.ui-work .dcr-tasks-pill-done .dcr-tasks-pill-counter { color: #166534; }
 .dc-requests-page.ui-work .dcr-final-docs-count { background: #15803d; }
 .dc-requests-page.ui-work :is(.dcr-meta-sep, .dcr-tasks-pill-sep) { opacity: 1; color: var(--text-secondary); }
 [data-theme='dark'] .dc-requests-page.ui-work .dcr-status-chip.status-contract-check { color: #fcd34d; }
 [data-theme='dark'] .dc-requests-page.ui-work .dcr-status-chip.status-completed { color: #86efac; }
 [data-theme='dark'] .dc-requests-page.ui-work .dcr-material-select.material-tolling { color: #fcd34d; }
-[data-theme='dark'] .dc-requests-page.ui-work .dcr-amount-diff.is-cheaper { color: #86efac; }
-[data-theme='dark'] .dc-requests-page.ui-work .dcr-amount-diff.is-pricier { color: #fca5a5; }
 [data-theme='dark'] .dc-requests-page.ui-work .dcr-tasks-pill-done .dcr-tasks-pill-counter { color: #86efac; }
 .dc-requests-page.ui-work .dcr-material-select.is-empty,
 .dc-requests-page.ui-work .dcr-docs-chev { color: var(--text-secondary); }
@@ -2943,38 +2795,6 @@
 .dc-requests-page.ui-work.dcr-dense .table-container .dcr-wrap-select .dcr-material-select.is-empty { background: none; }
 .dc-requests-page.ui-work.dcr-dense .table-container .dcr-wrap-select-chev { right: 0.125rem; }
 .dc-requests-page.ui-work.dcr-dense .table-container :is(.dcr-material-badge, .dcr-tag) { margin-top: 0.1875rem; line-height: var(--ui-hint-lh); }
-
-/* Сумма: подпись и значение в строку, поля одной ширины и по правому краю —
-   значения читаются столбиком. Поле растёт по содержимому (field-sizing);
-   если значение с подписью не помещается (суммы от 1 млрд), поле уходит
-   строкой ниже — целиком, без обрезки. Без field-sizing — раскладка
-   столбиком, как раньше. */
-.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount { gap: 0.25rem; }
-.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-row {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0 0.375rem;
-}
-.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-input {
-  flex: 0 1 auto;
-  width: auto;
-  min-width: 7.125rem;        /* 114px — «999 999 999,99» */
-  max-width: 100%;
-  margin-left: auto;
-  padding: 0 0.25rem;
-  field-sizing: content;
-}
-.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-input::placeholder { color: var(--text-secondary); opacity: 1; }
-@supports not (field-sizing: content) {
-  .dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-input { flex-basis: 100%; }
-}
-.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-value { width: auto; margin-left: auto; }
-/* Разница и процент — одной группой справа, под значениями. */
-.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-diff { margin-top: 0; gap: 0 0.25rem; min-height: 0; }
-.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-diff .dcr-diff-pct { padding: 0 0.25rem; }
-.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-diff:empty { display: none; }
 
 /* Статус и итог проверки: плашки 12/16, итог — по содержимому, дата строкой
    ниже. Текст итога — на ступень темнее (было 4,3:1). */
@@ -3539,6 +3359,12 @@ body.is-col-resizing .dc-requests-page.ui-work .table-container.is-fit { overflo
   flex: 0 1 auto;
   min-height: 12rem;
   overflow: auto;
+  /* Непрозрачный фон обязателен (06.11.2026: «очень сильно лагает окно прокрутки»). У прозрачного блока Chrome на
+     мониторе с масштабом 100 % не выносит прокрутку в свой слой (бережёт субпиксельное сглаживание текста) и на каждом
+     кадре заново растеризует всю видимую таблицу: на стенде с 400 заявками — 95 мс на кадр, с фоном — 17–21 мс.
+     Цвет — как у карточки раздела (.contract-registry), на вид ничего не меняется. will-change не годится: даёт
+     свой слой каждой залипающей полосе примечания (158 слоёв вместо 8). Сторожит тест в dc-request-amounts.test.mjs. */
+  background-color: var(--bg-secondary);
 }
 /* Таблица помещается в своё место — горизонтальной прокрутки нет, а микропере-
    полнение ячеек обрезается, как прежде делал clip («Сетка реестра»). */
@@ -3644,3 +3470,6 @@ body.is-col-resizing .main-content > .dc-requests-page.ui-work.dcr-dense > .tabl
 .dc-requests-page .mcard .dcr-note-toggle { padding: 0.5rem 0; font-size: 0.8125rem; }
 .dc-requests-page .mcard .dcr-note-input { width: 100%; margin: 0 0 0.5rem; font-size: 1rem; line-height: 1.375rem; }
 .dc-requests-page .mcard .dcr-note-text { padding: 0 0 0.5rem; }
+
+/* Суммы на телефоне — блоком DcRequestAmounts между строками карточки. */
+.dc-requests-page .mcard .mcard-amounts { margin: 0.25rem 0; }

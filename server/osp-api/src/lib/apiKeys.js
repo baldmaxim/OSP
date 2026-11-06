@@ -36,6 +36,8 @@ export const REFUSALS = {
 // Нет таблиц (миграция не применена): проверяем снова не раньше чем через 5 минут, без перезапуска.
 const MISSING_CODES = new Set(['42P01', '3F000'])
 const RECHECK_MS = 5 * 60_000
+const MISS_TTL_MS = 60_000
+const MISS_MAX = 5000
 // Записей журнала в работе одновременно: больше — новые пропускаются (ответ API важнее журнала).
 const MAX_PENDING = 20
 
@@ -139,11 +141,16 @@ export function createApiKeyStore({ db, envEntries = [], log = null, isReadOnly 
 
   // Ключ из запроса → { ok: true, key } | { ok: false, key, reason } | null (неизвестен). Бросает, только если база
   // не ответила, а в настройках сервера такого ключа нет: вызывающий отвечает 503.
+  // Неизвестные отпечатки — минуту в памяти: повтор того же неверного ключа не идёт в базу. Новый ключ выпускается случайным,
+  // в этом списке его быть не может.
+  const misses = new Map() // отпечаток → время
   async function resolve(provided) {
     const hash = hashKey(provided)
     const fromEnv = envKey(hash)
     const fallback = fromEnv ? { ok: true, key: fromEnv } : null
     if (!db || tableMissing()) return fallback
+    const missAt = misses.get(hash)
+    if (!fromEnv && missAt !== undefined && now() - missAt < MISS_TTL_MS) return null
     let row
     try {
       row = await db.read(null, async (tx) => (await tx.query(LOOKUP_SQL, [hash])).rows[0] || null)
@@ -154,7 +161,14 @@ export function createApiKeyStore({ db, envEntries = [], log = null, isReadOnly 
       }
       throw err
     }
-    if (!row) return fallback
+    if (!row) {
+      if (!fromEnv) {
+        misses.delete(hash)
+        misses.set(hash, now())
+        while (misses.size > MISS_MAX) misses.delete(misses.keys().next().value)
+      }
+      return fallback
+    }
     const key = { id: row.id, limitKey: row.id, name: row.name, source: row.source }
     if (row.revoked) return { ok: false, key, reason: 'revoked' }
     if (row.source === 'env') {

@@ -9,6 +9,8 @@
 import * as XLSX from 'xlsx'
 import { cleanNumeric } from './parseProposalExcel.js'
 
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
+
 // Заголовок столбца-якоря. Ищем по подстроке «не изменя» — так же, как парсер
 // сотрудника, чтобы файл, выгруженный там, читался и здесь.
 export const ANCHOR_HEADER = 'ID (не изменять)'
@@ -45,7 +47,8 @@ export function buildProposalWorkbook(estimateItems, { tenderName = 'Тенде�
       '', // Цена материалов — заполняет подрядчик
       '', // Цена работ — заполняет подрядчик
       { f: `I${rowNum}+J${rowNum}` },
-      { f: `I${rowNum}*G${rowNum}` },
+      // Материалы — на общий расход (H), работы — на объём по виду работ (G): как у разбора КП сотрудником (parseProposalExcel).
+      { f: `I${rowNum}*H${rowNum}` },
       { f: `J${rowNum}*G${rowNum}` },
       { f: `L${rowNum}+M${rowNum}` },
       { f: `N${rowNum}` },
@@ -118,16 +121,21 @@ export function matchProposalRows(excelData, estimateItems) {
     // иначе усекается parseFloat'ом и искажает цену.
     const unitPriceMaterials = cleanNumeric(row[COL.priceMaterials])
     const unitPriceWorks = cleanNumeric(row[COL.priceWorks])
+    // Объём — как у разбора КП сотрудником (parseProposalExcel): материалы — на общий расход, работы — на объём по виду работ.
+    // Раньше обе суммы считались от объёма работ, а у строк материалов он пуст: материалы в КП из кабинета давали 0.
     const workVolume = Number(item.work_volume) || 0
+    const materialVolume = Number(item.material_consumption) || 0
+    const totalMaterials = round2(unitPriceMaterials * materialVolume)
+    const totalWorks = round2(unitPriceWorks * workVolume)
 
     rows.push({
       estimate_item_id: item.id,
       unit_price_materials: unitPriceMaterials,
       unit_price_works: unitPriceWorks,
       total_unit_price: unitPriceMaterials + unitPriceWorks,
-      total_materials: unitPriceMaterials * workVolume,
-      total_works: unitPriceWorks * workVolume,
-      total_cost: unitPriceMaterials * workVolume + unitPriceWorks * workVolume,
+      total_materials: totalMaterials,
+      total_works: totalWorks,
+      total_cost: round2(totalMaterials + totalWorks),
       participant_note: row[COL.note] || '',
     })
   }

@@ -156,7 +156,9 @@ export async function loadCounterpartySiteAccounts() {
 // Заявки на ДС контрагента для «Общей информации» карточки (миграция 20261109): по его договорам — какие
 // отработаны, какие занесены в ДС. → { requests, docs: Map(id → договор / ДС), linked }; linked=false — колонок
 // договора в базе ещё нет (заявки без группировки по договору). Без постоянного «№» (20261106) — без номера.
+// Суммы ВОР (20270104) — в сумме заявки (requestTotals); колонок нет — следующий вариант.
 const DC_REQUEST_FIELDS = [
+  'id, request_number, ds_number, works_description, status, amount_before, amount_after, vor_amount_before, vor_amount_after, created_at, object_id, objects(name), contract_id, amendment_id',
   'id, request_number, ds_number, works_description, status, amount_before, amount_after, created_at, object_id, objects(name), contract_id, amendment_id',
   'id, request_number, ds_number, works_description, status, amount_before, amount_after, created_at, object_id, objects(name)',
   'id, ds_number, works_description, status, amount_before, amount_after, created_at, object_id, objects(name)',
@@ -174,7 +176,7 @@ export async function loadCounterpartyDcRequests(counterpartyId) {
       .eq('counterparty_id', counterpartyId)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
-    if (!error) { rows = data || []; linked = i === 0; break }
+    if (!error) { rows = data || []; linked = i <= 1; break }
     if (!isMissingColumn(error) || i === DC_REQUEST_FIELDS.length - 1) throw error
   }
   const ids = [...new Set(rows.flatMap(r => [r.contract_id, r.amendment_id]).filter(Boolean))]

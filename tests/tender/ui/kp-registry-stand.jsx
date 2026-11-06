@@ -112,6 +112,8 @@ fdb.larix_rates_registry = [
   larixRow('Монтаж лотка перфорированного 100х50', 'м', null, 300, cpA, prA, 505, 'Д-4', 'Договор', daysAgo(300)),
   larixRow('Герметик силиконовый', 'шт', 500, null, cpC, prB, 504, 'Д-3', 'Договор', daysAgo(80)),
 ]
+// Подвкладки «Материалы» / «Работы» — отбор по наличию цены (.not(…, 'is', null)); позиция с обеими ценами — в обеих.
+window.__fakeNotNull = [...(window.__fakeNotNull || []), 'larix_rates_registry']
 for (let i = 0; i < Number(params.get('larixMany') || 0); i++) {
   fdb.larix_rates_registry.push(larixRow(`Позиция заполнения ${i}`, 'шт', 10 + i, null, cpC, prB, 600 + (i % 7), 'Д-9', 'Договор', daysAgo(30)))
 }

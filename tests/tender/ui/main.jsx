@@ -68,7 +68,7 @@ const ContractsHubPage = lazy(() => import('../../../src/pages/ContractsHubPage'
 const KpReviewPage = lazy(() => import('../../../src/pages/KpReviewPage'))
 // Реестр заявок на ДС — так же (DcRequestsPage.css, рабочий слой).
 const DcRequestsPage = lazy(() => import('../../../src/pages/DcRequestsPage'))
-// «Заявка на ДП» и большое окно о новой заявке — так же, со своими данными (dp-stand.jsx).
+// «Заявка на заключение ДП» и большое окно о новой заявке — так же, со своими данными (dp-stand.jsx).
 const DpStand = lazy(() => import('./dp-stand.jsx'))
 // «Заявки на проверку ДП/ДС» — так же (DocCheckRequestsPage.css, рабочий слой).
 const DocCheckRequestsPage = lazy(() => import('../../../src/pages/DocCheckRequestsPage'))

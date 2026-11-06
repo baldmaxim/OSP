@@ -10,6 +10,10 @@ export const fmtMoney = (n) => {
   return MONEY_FMT.format(n)
 }
 
+// Число строк и позиций — с разрядами: «46 323», а не «46323» (счётчики подвкладок, «1–100 из 46 323»).
+const COUNT_FMT = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 })
+export const fmtCount = (n) => COUNT_FMT.format(Number(n) || 0)
+
 // Дата без времени (колонка date: «2025-01-20») показывается как есть, без сдвига часового пояса:
 // new Date('2025-01-20') — полночь UTC, и западнее Гринвича это был бы предыдущий день.
 const DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/

@@ -6,10 +6,20 @@
 // Остальные направления (ГО, совместные, прочее) статус сохраняют.
 export const TENDER_REQUEST_STATUS = 'Заявка на тендер'
 export const VOR_PREP_STATUS = 'Подготовка ВОР'
+// «Перезапуск» (решение пользователя 06.11.2026): тендер перезапущен новым тендером — например, у № 984 в описании
+// «перезапуск тендера №40», значит у № 40 этот статус. Процедура по нему закончена, как у «Завершен»: сроки не горят,
+// уведомлений нет; победителя и понятийного соглашения не требует. Уже перезапущенные отмечает разовый скрипт
+// migration/data/20261106_tenders_restart_status.sql.
+export const RESTART_STATUS = 'Перезапуск'
+export const COMPLETED_MAIN_STATUS = 'Завершен'
 
 const MAIN_STATUSES = [
-  TENDER_REQUEST_STATUS, VOR_PREP_STATUS, 'Идет тендерная процедура', 'Подведение итогов', 'Завершен', 'Приостановка тендера',
+  TENDER_REQUEST_STATUS, VOR_PREP_STATUS, 'Идет тендерная процедура', 'Подведение итогов', COMPLETED_MAIN_STATUS,
+  'Приостановка тендера', RESTART_STATUS,
 ]
+
+// Процедура основного тендера закончена: завершён или перезапущен другим тендером.
+export const isClosedMainStatus = (status) => status === COMPLETED_MAIN_STATUS || status === RESTART_STATUS
 
 const isConstruction = (department) => (department || 'construction') === 'construction'
 

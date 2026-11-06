@@ -12,7 +12,7 @@ import { SECTIONS } from '../../src/contexts/roleConstants.js'
 
 const launch = browserLaunchOptions()
 const SHOTS = process.env.CONTRACTS_HUB_SHOTS || ''
-const TITLES = ['Реестр по договорам', 'Заявка на ДС', 'Заявка на ДП', 'Заявки на проверку ДП/ДС']
+const TITLES = ['Реестр по договорам', 'Заявка на ДС', 'Заявка на заключение ДП', 'Заявки на проверку ДП/ДС']
 const DATA = 'contracts=12&contractsMixed=1&dcStats=1&docCheck=1&latency=0'
 const canViewOnly = (...open) => (section) => open.includes(section)
 
@@ -31,7 +31,7 @@ describe('Договоры и ДС: правила блоков', () => {
     assert.equal(contractsEntry(canViewOnly('dp_requests')), '/dp-requests')
     assert.equal(contractsEntry(canViewOnly('doc_check_requests')), '/doc-check-requests')
     assert.equal(contractsEntry(canViewOnly('tenders')), null, 'чужой раздел не открывает пункт')
-    // «Заявка на ДП: создание» без просмотра реестра заявок страницу не открывает — как раньше.
+    // «Заявка на заключение ДП: создание» без просмотра реестра заявок страницу не открывает — как раньше.
     assert.equal(contractsEntry(canViewOnly('dp_requests_create')), null)
   })
 
@@ -142,8 +142,8 @@ describe('Договоры и ДС: страница-хаб', { skip: !launch &&
       await page.locator('.contracts-hub').waitFor()
       await page.waitForFunction(() => document.querySelectorAll('.contracts-hub .thub-count').length >= 4)
       assert.ok(dp.new > 0 && dp.work > 0)
-      assert.equal(await badge(page, 'Заявка на ДП', 'нов'), dp.new)
-      assert.equal(await badge(page, 'Заявка на ДП', 'в работе'), dp.work)
+      assert.equal(await badge(page, 'Заявка на заключение ДП', 'нов'), dp.new)
+      assert.equal(await badge(page, 'Заявка на заключение ДП', 'в работе'), dp.work)
 
       const shown = {
         registry: await badge(page, 'Реестр по договорам', 'в работе'),
@@ -252,7 +252,7 @@ describe('Договоры и ДС: страница-хаб', { skip: !launch &&
       await page.locator('.sidebar .nav-item').first().waitFor({ timeout: 120000 })
       const labels = await page.locator('.sidebar-nav .nav-item').evaluateAll((els) => els.map((a) => a.getAttribute('title')))
       assert.equal(labels.filter((l) => l === 'Договоры и ДС').length, 1)
-      for (const old of ['Заявка на ДС', 'Заявка на ДП', 'Заявки на проверку ДП/ДС']) assert.ok(!labels.includes(old), old)
+      for (const old of ['Заявка на ДС', 'Заявка на заключение ДП', 'Заявки на проверку ДП/ДС']) assert.ok(!labels.includes(old), old)
       const item = page.locator('.sidebar-nav .nav-item[title="Договоры и ДС"]')
       assert.equal(await item.getAttribute('href'), '/contracts')
       for (const path of ['/contracts', '/contracts/registry', '/dc-requests', '/doc-check-requests']) {

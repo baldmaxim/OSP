@@ -93,8 +93,9 @@ describe('Карточка заявки на проверку ДП/ДС: баз�
   before(() => {
     db = startSnapshot()
     for (const m of appliedAfter()) psqlAt(db.port, null, { file: path.join(MIGRATIONS, m) })
-    for (const m of candidateMigrations()) {
-      if (m.startsWith(NAME)) continue
+    // Только кандидаты до этой миграции: более поздние (20270101 и дальше) правят её таблицы и без неё не применяются.
+    const candidates = candidateMigrations()
+    for (const m of candidates.slice(0, candidates.findIndex((c) => c.startsWith(NAME)))) {
       psqlAt(db.port, null, { file: path.join(ROOT, m.includes('/') ? m : path.join('supabase', 'migrations', m)) })
     }
     checkBefore = psqlAt(db.port, null, { file: CHECK })

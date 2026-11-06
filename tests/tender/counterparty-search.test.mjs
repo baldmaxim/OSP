@@ -4,11 +4,14 @@
 //   • слова запроса — в любом порядке и в любых полях; телефон — цифрами, с 8 или 7 в начале;
 //   • ничего не нашлось — другая раскладка, затем опечатки (в названии и ФИО контактов); над списком — чем заменён запрос;
 //   • поиск — внутри вкладки и фильтров, как раньше.
+// 06.11.2026: «АБ ц» не находил «ООО АБ Ц» среди 185 строк — форма организации (ООО, ИП…) теперь не часть названия
+// для поиска, а только порядок; слово короче 3 знаков — с начала слова; найденное — по совпадению, затем по «№».
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
-import { counterpartySearchIndex, searchCounterparties, searchKey, switchLayout, typoDistance } from '../../src/utils/counterpartySearch.js'
+import { SEARCH_LEGAL_FORMS, counterpartySearchIndex, searchCounterparties, searchKey, switchLayout, typoDistance } from '../../src/utils/counterpartySearch.js'
+import { LEGAL_FORMS } from '../../src/utils/contractorSignupRules.js'
 
 const launch = browserLaunchOptions()
 const BASE = 'route=/general/counterparties&cps=8&cpContacts=1&cpSearch=1&items=20&latency=0'
@@ -56,11 +59,13 @@ describe('Поиск контрагентов: правила', () => {
   })
 
   it('без пробелов, словами в любом порядке, с формой собственности', () => {
-    assert.deepEqual(find('проматомстрой').ids, [1, 2])
-    assert.deepEqual(find('ПРОМАТОМСТРОЙ').ids, [1, 2])
-    assert.deepEqual(find('пром атом строй').ids, [1, 2])
+    // «ПромАтомСтрой» — название целиком, «Пром Атом Строй (ПАС)» только начинается с запроса.
+    assert.deepEqual(find('проматомстрой').ids, [2, 1])
+    assert.deepEqual(find('ПРОМАТОМСТРОЙ').ids, [2, 1])
+    assert.deepEqual(find('пром атом строй').ids, [2, 1])
     assert.deepEqual(find('атом пром').ids, [1, 2])
-    assert.deepEqual(find('ооо проматомстрой').ids, [1])
+    // Форма в запросе не отбирает: «ПромАтомСтрой» без ООО — тоже, и название у него точнее.
+    assert.deepEqual(find('ооо проматомстрой').ids, [2, 1])
     assert.deepEqual(find('альпинистэксперт').ids, [3])
     assert.deepEqual(find('альпинист эксперт').ids, [3])
     assert.deepEqual(find('строиальп').ids, [6], 'й = и')
@@ -82,7 +87,7 @@ describe('Поиск контрагентов: правила', () => {
   })
 
   it('другая раскладка и опечатки — только когда набранное не нашлось', () => {
-    assert.deepEqual(find('ghjvfnjvcnhjq'), { ids: [1, 2], fix: { kind: 'layout', query: 'проматомстрой' } })
+    assert.deepEqual(find('ghjvfnjvcnhjq'), { ids: [2, 1], fix: { kind: 'layout', query: 'проматомстрой' } })
     assert.deepEqual(find('ыщаашееш'), { ids: [4], fix: { kind: 'layout', query: 'soffitti' } })
     assert.deepEqual(find('праматомстрой'), { ids: [1, 2], fix: { kind: 'typo' } })
     assert.deepEqual(find('сопаров'), { ids: [1], fix: { kind: 'typo' } }, 'ФИО контакта')
@@ -90,6 +95,59 @@ describe('Поиск контрагентов: правила', () => {
     assert.deepEqual(find('сибур'), { ids: [], fix: null })
     // Ближайшие — первыми: «ПромОтомСтрой» — две опечатки, «ПромАтомСтрой» — одна.
     assert.deepEqual(find('праматомстрой', [{ id: 'x', name: 'ПромОтомСтрой' }, LIST[1]]), { ids: [2, 'x'], fix: { kind: 'typo' } })
+  })
+
+  it('форма организации — не название: «АБ ц» и «абц» — «ООО АБ Ц», а не всё с «аб» и «ц» внутри', () => {
+    const list = [
+      { id: 'w', name: 'ООО "Работы под ключ"', work_type: 'Электромонтажные работы', legal_address: 'г. Москва, ул. Центральная' },
+      { id: 'l', name: 'ООО АБ «ЦЛП»', work_type: 'Проектирование' },
+      { id: 'a', name: ' ООО АБ Ц ', work_type: 'Проектирование', inn: '7743207456' },
+      { id: 'd', name: 'Абдурахмонов Улугбек', work_type: 'Отделка' },
+      { id: 'f', name: 'Общество с ограниченной ответственностью «Оптима Фасад»', work_type: 'Фасад' },
+      { id: 's', name: 'ООО "ГОРФОКС" (ИП Сорокин В. П.)', work_type: 'Кровля' },
+      { id: 'i', name: 'ИП Набиев Кирилл Юрьевич', work_type: 'Шпунт' },
+      { id: 'p', name: 'ПАО «Абсолют»', work_type: 'Монолит', notes: 'бывшее ООО «Абсолют Строй»' },
+    ]
+    const index = new Map(list.map((cp) => [cp.id, counterpartySearchIndex(cp)]))
+    const ids = (query) => searchCounterparties(list, query, (cp) => index.get(cp.id)).items.map((cp) => cp.id).join('')
+
+    assert.deepEqual(counterpartySearchIndex(list[2]).core, 'абц', 'в указателе название — без формы')
+    assert.deepEqual(counterpartySearchIndex(list[2]).forms, ['ООО'])
+    assert.deepEqual(counterpartySearchIndex(list[4]).forms, ['ООО'], 'форма целиком')
+    assert.deepEqual(counterpartySearchIndex(list[5]).forms, ['ООО', 'ИП'], 'форма в скобках')
+    assert.deepEqual(counterpartySearchIndex(list[7]).forms, ['ПАО'], 'ПАО, а не АО')
+
+    // Название целиком — первым; «аб» и «ц» не ищутся внутри «Работы» и «Центральной».
+    assert.equal(ids('АБ ц'), 'al')
+    assert.equal(ids('абц'), 'al')
+    assert.equal(ids('аб-ц'), 'al')
+    assert.equal(ids('ООО «АБ Ц»'), 'al', 'форма и кавычки в запросе')
+    assert.equal(ids('оооабц'), 'al', 'форма слитно с названием — тоже находится')
+    // Короткое слово — с начала слова: целыми словами («АБ …») — выше, чем начало слова («Абдурахмонов», «Абсолют»);
+    // при равных — порядок списка (на странице — «№»).
+    assert.equal(ids('аб'), 'ladp')
+    // Форма — не условие: «ип набиев» и «набиев» — одно; «ооо набиев» тоже находит ИП.
+    assert.equal(ids('набиев'), 'i')
+    assert.equal(ids('ооо набиев'), 'i')
+    assert.equal(ids('ип сорокин'), 's')
+    // ...а порядок: при той же оценке с названной формой — выше.
+    assert.equal(ids('абсолют'), 'p')
+    assert.equal(ids('ооо оптима'), 'f')
+    assert.equal(ids('пао абсолют'), 'p')
+    // Одна форма — все контрагенты с ней, где бы она ни стояла в названии.
+    assert.equal(ids('ип'), 'si')
+    assert.equal(ids('ооо'), 'wlafs')
+    assert.equal(ids('общество с ограниченной ответственностью'), 'wlafs')
+    assert.equal(ids('пао'), 'p')
+    // Форма в других полях («бывшее ООО …») ничего не находит: в запросе она не слово.
+    assert.equal(ids('ооо строй'), 'p', 'нашлось по «строй» в примечании')
+    // С опечатками — тоже без формы: «ооо праматомстрой» не мешает «ООО».
+    assert.equal(ids('ооо оптема фасад'), 'f')
+  })
+
+  it('формы организации — те же, что у регистрации подрядчика', () => {
+    const codes = SEARCH_LEGAL_FORMS.map((f) => f.code)
+    for (const f of LEGAL_FORMS) assert.ok(codes.includes(f.code), `форма ${f.code} есть в поиске`)
   })
 
   it('пустой запрос и одни знаки — весь список', () => {
@@ -142,14 +200,15 @@ describe('Поиск в реестре контрагентов', { skip: !launc
   it('без пробелов и словами; другая раскладка и опечатки — с пояснением над списком', async () => {
     const { page, errors, close } = await openPage()
     try {
+      // Название целиком — первым, дальше то, что с него начинается.
       await search(page, 'проматомстрой', 2)
-      assert.deepEqual(await names(page), ['ООО Пром Атом Строй (ПАС)', 'ПромАтомСтрой'])
+      assert.deepEqual(await names(page), ['ПромАтомСтрой', 'ООО Пром Атом Строй (ПАС)'])
       await search(page, 'атом пром', 2)
       await search(page, 'альпинистэксперт', 1)
       assert.deepEqual(await names(page), ['ООО "Альпинист-эксперт"'])
 
       await search(page, 'ghjvfnjvcnhjq', 2, 'Показаны результаты по запросу «проматомстрой» — набран в другой раскладке')
-      assert.deepEqual(await names(page), ['ООО Пром Атом Строй (ПАС)', 'ПромАтомСтрой'])
+      assert.deepEqual(await names(page), ['ПромАтомСтрой', 'ООО Пром Атом Строй (ПАС)'])
       await search(page, 'праматомстрой', 2, 'Точных совпадений нет — показаны похожие названия')
 
       // Телефон контакта с 8 в начале: контакты — у 1-го, 5-го и 7-го (3-й — в чёрном списке).

@@ -18,6 +18,7 @@ import { NO_VOR_DIVISION } from './vorDivisions.js'
 import { WORK_TYPE_DIVISIONS, WORK_TYPE_DIVISION_LABEL, matchesDivisions, workTypesDivisions } from './workTypeDivisions.js'
 import { counterpartySearchIndex, searchCounterparties } from './counterpartySearch.js'
 import { totalRub } from './reportCurrency.js'
+import { reportAmounts } from './contractAmendments.js'
 
 const isClosedTender = (t) => t?.status === 'Завершен'
 const MLN = 1_000_000
@@ -72,14 +73,16 @@ function winnersOf(tender, winnersByTender) {
 }
 
 // Договоры по контрагенту — как прежний отчёт «Победители».
+// Сумма — по дереву договора (reportAmounts): ДС на изменение ВОР хранит полную сумму ветки и не должна складываться с договором.
 function contractsByCounterparty(contracts) {
   const acc = new Map()
+  const amountOf = reportAmounts(contracts || [])
   for (const c of contracts || []) {
     const id = c.counterparty_id
     if (!id) continue
     if (!acc.has(id)) acc.set(id, { total: 0, signed: 0, totalByCur: {}, signedByCur: {} })
     const s = acc.get(id)
-    const amount = Number(c.contract_amount) || 0
+    const amount = amountOf.get(c.id) || 0
     const cur = c.currency || 'RUB'
     s.total += 1
     s.totalByCur[cur] = (s.totalByCur[cur] || 0) + amount

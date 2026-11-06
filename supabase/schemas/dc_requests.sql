@@ -21,8 +21,12 @@ CREATE TABLE IF NOT EXISTS dc_requests (
   -- Путь к папке с документами в файловом хранилище (миграция 20260828).
   folder_path TEXT,
   -- task 370: суммы ДС с НДS 22% (Было/Стало) и тип материала.
-  amount_before NUMERIC(14, 2),
-  amount_after  NUMERIC(14, 2),
+  amount_before NUMERIC(14, 2),     -- «Было ПСДЦ» (до 06.11.2026 — «Было подано»)
+  amount_after  NUMERIC(14, 2),     -- «Согласовано ДС ОСП» (до 06.11.2026 — «Утверждено»)
+  -- Блок сумм из двух частей (миграция 20270104): «ДС подрядчика» в верхней части, суммы ВОР — в нижней.
+  amount_contractor NUMERIC(14, 2), -- «ДС подрядчика»
+  vor_amount_before NUMERIC(14, 2), -- «Было ВОР подрядчик»
+  vor_amount_after  NUMERIC(14, 2), -- «Стало ВОР ОСП»
   material_type TEXT CHECK (material_type IN ('tolling', 'realization')),
   -- «Статус ОКС» — подаётся ли ДС заказчику, и комментарий к нему; кто и когда сменил — триггер
   -- dc_requests_submission_stamp (миграция 20261108).

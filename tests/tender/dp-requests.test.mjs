@@ -1,4 +1,4 @@
-// «Заявка на ДП» (миграции 20261227, 20261231): правила (без браузера) и страница в Chromium (стенд tests/tender/ui/dp-stand.jsx).
+// «Заявка на заключение ДП» (миграции 20261227, 20261231): правила (без браузера) и страница в Chromium (стенд tests/tender/ui/dp-stand.jsx).
 //   • подающий заполняет только понятийное соглашение (без него кнопка неактивна, причина написана, а отказ базы виден словами), документы и примечание;
 //   • объект, договор, сумму и ответственного заполняет работающий с заявками, по мере готовности; незаполненное не притворяется нулём;
 //   • сбой загрузки: заявка не появляется, черновик убран, заполненная форма на месте;
@@ -14,7 +14,7 @@ import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import {
   accountResponsibleRole, canChangeDpRequest, countDpTabs, dpErrorText, dpFileAccept, dpFileProblem, dpFormFields, dpFormProblems, filterDpRequests, isDpMigrationMissing,
-  isLastRequiredFile, matchesDpSearch, newRequestsLabel, pickResponsibleKey, responsibleOptions,
+  isLastRequiredFile, matchesDpSearch, newRequestsLabel, ownObjectChoice, pickResponsibleKey, responsibleOptions,
 } from '../../src/utils/dpRequests.js'
 
 const STAFF = [
@@ -25,7 +25,7 @@ const STAFF = [
   { object_id: 'a', contact_id: 'c-noname', staff_role: 'economist', sort_order: 2, contacts: null },
 ]
 
-describe('Заявка на ДП: правила без базы', () => {
+describe('Заявка на заключение ДП: правила без базы', () => {
   it('ответственный: люди объекта, экономисты первыми', () => {
     const { options, fallback } = responsibleOptions({ staff: STAFF, objectId: 'a' })
     assert.equal(fallback, false)
@@ -71,6 +71,24 @@ describe('Заявка на ДП: правила без базы', () => {
     assert.deepEqual(dpFormFields({ ...empty, reason: '  Срочно ' }), { reason: 'Срочно' })
     assert.deepEqual(dpFormFields({ object_id: 'a', contract_title: 'Договор', amount: '5', responsibleKey: 'me', reason: 'x' }, { contactId: 'c-1', name: 'И. И.', role: 'economist' }), { reason: 'x' },
       'поля отдела подающий не пишет, что бы ни оказалось в форме')
+  })
+
+  it('объект подающего с привязкой: один — стоит сам, несколько — выбор обязателен; в запись — только свой объект', () => {
+    const A = { id: 'a', name: 'Объект А' }
+    const B = { id: 'b', name: 'Объект Б' }
+    assert.deepEqual(ownObjectChoice({ ownObjects: [A], objectId: '' }), { objectId: 'a', single: A, problem: null })
+    assert.deepEqual(ownObjectChoice({ ownObjects: [A], objectId: 'b' }), { objectId: 'a', single: A, problem: null }, 'выбирать нечего')
+    assert.deepEqual(ownObjectChoice({ ownObjects: [A, B], objectId: '' }), { objectId: '', single: null, problem: 'выберите объект' })
+    assert.deepEqual(ownObjectChoice({ ownObjects: [A, B], objectId: 'b' }), { objectId: 'b', single: null, problem: null })
+    assert.equal(ownObjectChoice({ ownObjects: [A, B], objectId: 'чужой' }).problem, 'выберите объект', 'не из своих — не выбор')
+    assert.match(ownObjectChoice({ ownObjects: null }).problem, /дождитесь/)
+    assert.match(ownObjectChoice({ ownObjects: null, failed: true }).problem, /не загрузился/)
+    assert.deepEqual(ownObjectChoice({ ownObjects: [] }), { objectId: '', single: null, problem: null }, 'объектов привязки в базе нет — объект поставит отдел')
+
+    const form = { object_id: 'b', contract_title: 'Договор', amount: '5', responsibleKey: '', reason: ' x ' }
+    assert.deepEqual(dpFormFields(form, null, { ownObjectId: 'b' }), { object_id: 'b', reason: 'x' })
+    assert.deepEqual(dpFormFields(form, null, { ownObjectId: '' }), { reason: 'x' }, 'без привязки объект не пишется')
+    assert.deepEqual(dpFormProblems(form, { conceptCount: 1, objectProblem: 'выберите объект' }), ['выберите объект'])
   })
 
   it('форма работающего с заявками: всё необязательно, проверяется только введённая сумма', () => {
@@ -159,7 +177,7 @@ const CONTRACT = { name: 'Договор.docx', mimeType: 'application/vnd.openx
 // Экономист объекта: создаёт, но не работает с заявками.
 const ECONOMIST = 'asRole=economist_object&asUser=econ-1&asName=Экономов%20Андрей%20Петрович&noEdit=dp_requests,admin&dpRecipient=0'
 
-describe('Заявка на ДП: страница', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
+describe('Заявка на заключение ДП: страница', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
   let stand
   let browser
 
@@ -300,6 +318,69 @@ describe('Заявка на ДП: страница', { skip: !launch && 'Нет 
       const docs = await page.evaluate(() => window.__fakeDb.s3_documents
         .filter((d) => d.owner_type === 'dp_request' && /Понятийное|Договор\.docx|Расчёт/.test(d.file_name)).map((d) => [d.file_name, d.doc_category]))
       assert.deepEqual(docs.sort(), [['Договор.docx', 'dp_contract_doc'], ['Понятийное.pdf', 'dp_concept_agreement'], ['Расчёт.xlsx', 'dp_contract_doc']])
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('подающий с двумя объектами в «Ролях»: выбирает объект, без выбора заявку не создать; чужих объектов в списке нет', async () => {
+    const { page, errors, close } = await open(`${ECONOMIST}&scope=obj-1,obj-2`)
+    try {
+      await row(page, 1).waitFor()
+      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      const d = dialog(page)
+      const select = d.getByLabel('Объект')
+      await select.locator('option', { hasText: 'Бизнес-центр' }).waitFor({ state: 'attached' })
+      assert.deepEqual(await d.locator('.dpr-label').allTextContents(), ['Объект *', 'Понятийное соглашение *', 'Документы (необязательно)', 'Примечание'])
+      assert.equal(await select.isDisabled(), false)
+      assert.deepEqual(await select.locator('option').allTextContents(), ['— Выберите объект —', 'Бизнес-центр «Нурлы»', 'ЖК «Северный квартал»'], 'по алфавиту')
+      const objectReads = await page.evaluate(() => window.__supabaseStats.requests.filter((r) => r.table === 'objects'))
+      assert.ok(objectReads.length > 0)
+      for (const r of objectReads) assert.deepEqual(r.ids, ['obj-1', 'obj-2'], 'только свои объекты, отбор — в запросе')
+
+      await attachConcept(page)
+      const submit = d.getByRole('button', { name: 'Создать заявку' })
+      assert.equal(await submit.isDisabled(), true, 'объект не выбран')
+      assert.match(await d.locator('.dpr-problems').innerText(), /выберите объект/)
+      await select.selectOption({ label: 'Бизнес-центр «Нурлы»' })
+      assert.equal(await submit.isDisabled(), false)
+      await submit.click()
+      await d.waitFor({ state: 'detached' })
+
+      const created = row(page, 100)
+      await created.waitFor()
+      assert.match(await created.innerText(), /Бизнес-центр «Нурлы»/)
+      const saved = await page.evaluate(() => window.__fakeDb.dp_requests.find((r) => r.request_number === 100))
+      assert.equal(saved.object_id, 'obj-2')
+      for (const field of ['contract_title', 'amount', 'responsible_contact_id', 'responsible_name']) assert.equal(saved[field] ?? null, null, field)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('подающий с одним объектом: объект стоит сам, серым, выбирать нечего; в заявку идёт он', async () => {
+    const { page, errors, close } = await open('asRole=construction_manager&asUser=boss-1&asName=Строев%20Борис%20Иванович&noEdit=dp_requests,admin&dpRecipient=0&scope=obj-2')
+    try {
+      await row(page, 2).waitFor()
+      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      const d = dialog(page)
+      const select = d.getByLabel('Объект')
+      await select.locator('option', { hasText: 'Бизнес-центр «Нурлы»' }).waitFor({ state: 'attached' })
+      assert.equal(await select.isDisabled(), true)
+      assert.deepEqual(await select.locator('option').allTextContents(), ['Бизнес-центр «Нурлы»'])
+      assert.equal(await d.locator('.dpr-label').first().innerText(), 'Объект', 'не обязательное поле: выбирать нечего')
+      const look = await select.evaluate((el) => {
+        const s = getComputedStyle(el)
+        const field = getComputedStyle(el.closest('.dpr-dialog').querySelector('textarea'))
+        return { bg: s.backgroundColor, fieldBg: field.backgroundColor }
+      })
+      assert.notEqual(look.bg, look.fieldBg, 'серое, а не как поле ввода')
+
+      await attachConcept(page)
+      await d.getByRole('button', { name: 'Создать заявку' }).click()
+      await d.waitFor({ state: 'detached' })
+      await row(page, 100).waitFor()
+      const saved = await page.evaluate(() => window.__fakeDb.dp_requests.find((r) => r.request_number === 100))
+      assert.equal(saved.object_id, 'obj-2')
+      assert.match(await row(page, 100).innerText(), /Бизнес-центр «Нурлы»/)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
@@ -533,7 +614,7 @@ describe('Заявка на ДП: страница', { skip: !launch && 'Нет 
     try {
       const alert = page.locator('.dpa-dialog')
       const text = await alert.innerText()
-      assert.match(text, /Новая заявка на ДП/)
+      assert.match(text, /Новая заявка на заключение ДП/)
       assert.match(text, /№ 1/)
       assert.match(text, /ЖК «Северный квартал»/)
       assert.match(text, /Договор № 1/)
@@ -689,6 +770,15 @@ describe('Заявка на ДП: страница', { skip: !launch && 'Нет 
       const card = page.locator('.mcard', { hasText: '№ 50' })
       assert.doesNotMatch(await card.innerText(), /0,00/, 'незаполненная сумма на телефоне — тоже не ноль')
       assert.match(await card.innerText(), /не заполнено/)
+      // Вкладки — одной строкой (рабочий слой переносил их в три ряда), статус — по ширине текста, файл — во всю ширину.
+      const tabsY = await page.locator('.status-tab').evaluateAll((els) => [...new Set(els.map((el) => Math.round(el.getBoundingClientRect().top)))])
+      assert.equal(tabsY.length, 1, `вкладки в ${tabsY.length} ряда`)
+      const status = await page.locator('.mcard .dpr-status-select').first().boundingBox()
+      assert.ok(status.width < 200, `статус: ${status.width}px`)
+      const file = await card.locator('.dpr-file-name').first().boundingBox()
+      assert.ok(file.width > 250, `имя файла: ${file.width}px`)
+      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      assert.equal(await dialog(page).getByLabel('Примечание').evaluate((el) => getComputedStyle(el).fontSize), '16px')
     } finally { await close() }
   })
 })

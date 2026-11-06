@@ -35,7 +35,7 @@ const HORIZON_DAYS = 5
 const REVIEW_LOOKBACK_DAYS = 14
 
 // Завершённые статусы, по которым не уведомляем.
-const TENDER_DONE = new Set(['Завершен', 'Завершён', 'Принято в работу'])
+const TENDER_DONE = new Set(['Завершен', 'Завершён', 'Принято в работу', 'Перезапуск'])
 const CONTRACT_DONE = new Set(['completed'])
 
 function todayMidnight() {

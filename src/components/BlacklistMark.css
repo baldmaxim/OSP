@@ -1,0 +1,16 @@
+/* «ЧС» рядом с названием контрагента — как .cpg-bl-badge карточки контрагента */
+.bl-mark {
+  display: inline-block;
+  margin-left: 0.375rem;
+  padding: 0 0.3125rem;
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  vertical-align: 0.0625rem;
+  color: var(--danger-color, #dc2626);
+  border: 1px solid currentColor;
+  border-radius: 4px;
+}

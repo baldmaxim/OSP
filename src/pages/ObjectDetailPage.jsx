@@ -627,6 +627,8 @@ function ObjectDetailPage() {
   // отмене понять, какие записи были загружены в этой сессии и подчистить их.
   const [docFiles, setDocFiles] = useState({ signed: null, editable: null })
   const [docFilesOriginalIds, setDocFilesOriginalIds] = useState({ signed: null, editable: null })
+  // Файлы, привязанные к документу до открытия формы: заменённый или убранный удаляется только после сохранения.
+  const [docFilesOriginal, setDocFilesOriginal] = useState({ signed: null, editable: null })
   const [docFilesUploading, setDocFilesUploading] = useState({ signed: false, editable: false })
   // Превью S3-файла в полноэкранной модалке.
   const [previewDoc, setPreviewDoc] = useState(null)
@@ -901,6 +903,7 @@ function ObjectDetailPage() {
     })
     setDocFiles({ signed: null, editable: null })
     setDocFilesOriginalIds({ signed: null, editable: null })
+    setDocFilesOriginal({ signed: null, editable: null })
     setShowDocumentModal(true)
   }
 
@@ -919,6 +922,7 @@ function ObjectDetailPage() {
       signed: doc.signed_s3_document_id || null,
       editable: doc.editable_s3_document_id || null,
     })
+    setDocFilesOriginal({ signed: doc.signed || null, editable: doc.editable || null })
     setShowDocumentModal(true)
   }
 
@@ -1091,6 +1095,17 @@ function ObjectDetailPage() {
     }
   }, [docFiles, docFilesOriginalIds])
 
+  // Замена и удаление файла в форме: загруженный в этой же форме и уже не нужный — удаляется сразу; привязанный к документу
+  // до открытия формы — только после сохранения (handleSubmitDocument), при «Отмене» он остаётся на месте.
+  const handleDocFileUploaded = (slot, s3doc, previous) => {
+    if (previous && previous.id !== docFilesOriginalIds[slot]) deleteDocument(previous).catch(() => {})
+    setDocFiles(prev => ({ ...prev, [slot]: s3doc }))
+  }
+  const handleDocFileRemoved = (slot, previous) => {
+    if (previous && previous.id !== docFilesOriginalIds[slot]) deleteDocument(previous).catch(() => {})
+    setDocFiles(prev => ({ ...prev, [slot]: null }))
+  }
+
   const handleSubmitDocument = async (e) => {
     e.preventDefault()
     if (parentDocumentId) {
@@ -1120,6 +1135,12 @@ function ObjectDetailPage() {
         const { error } = await db.from('object_documents').insert([dataToSave])
         if (error) throw error
       }
+
+      // Документ сохранён с новыми файлами: прежние, которые заменили или убрали, больше ни к чему не привязаны.
+      const replaced = ['signed', 'editable']
+        .map((slot) => docFilesOriginal[slot])
+        .filter((orig, i) => orig && docFiles[['signed', 'editable'][i]]?.id !== orig.id)
+      if (replaced.length) await Promise.allSettled(replaced.map((d) => deleteDocument(d)))
 
       // Файлы уже привязаны — закрываем без cleanup-а, иначе только что
       // сохранённые записи будут удалены.
@@ -2659,16 +2680,16 @@ function ObjectDetailPage() {
                   slot="signed"
                   currentDoc={docFiles.signed}
                   ownerId={objectId}
-                  onUploaded={(s3doc) => setDocFiles(prev => ({ ...prev, signed: s3doc }))}
-                  onRemoved={() => setDocFiles(prev => ({ ...prev, signed: null }))}
+                  onUploaded={(s3doc, previous) => handleDocFileUploaded('signed', s3doc, previous)}
+                  onRemoved={(previous) => handleDocFileRemoved('signed', previous)}
                   onUploadingChange={(v) => setDocFilesUploading(prev => ({ ...prev, signed: v }))}
                 />
                 <ObjectDocumentFileSlot
                   slot="editable"
                   currentDoc={docFiles.editable}
                   ownerId={objectId}
-                  onUploaded={(s3doc) => setDocFiles(prev => ({ ...prev, editable: s3doc }))}
-                  onRemoved={() => setDocFiles(prev => ({ ...prev, editable: null }))}
+                  onUploaded={(s3doc, previous) => handleDocFileUploaded('editable', s3doc, previous)}
+                  onRemoved={(previous) => handleDocFileRemoved('editable', previous)}
                   onUploadingChange={(v) => setDocFilesUploading(prev => ({ ...prev, editable: v }))}
                 />
               </div>

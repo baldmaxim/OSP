@@ -1,4 +1,4 @@
-// «Заявка на ДП» (миграции 20261227, 20261231; решения пользователя 05.11.2026): правила без обращения к серверу. Те же границы держат
+// «Заявка на заключение ДП» (миграции 20261227, 20261231; решения пользователя 05.11.2026): правила без обращения к серверу. Те же границы держат
 // правила по строкам и триггеры базы (dp_requests_guard, s3_documents_dp_request_guard): меняете здесь — меняйте и там.
 // Подающий заполняет только понятийное соглашение, документы и примечание; объект, договор, сумму и ответственного — тот, кто работает с заявками.
 import { parseAmount } from './money.js'
@@ -88,10 +88,18 @@ export function pickResponsibleKey({ options, current, myName }) {
 
 export const EMPTY_DP_FORM = { object_id: '', contract_title: '', amount: '', responsibleKey: '', reason: '' }
 
+// Объект подающего (06.11.2026, решение пользователя): рукстрой и экономист объекта, привязанные к объектам в «Ролях», сами указывают,
+// по какому объекту заявка — правило общее с «Заявками на проверку ДП/ДС» (ownObjectChoice.js). Без привязки — как раньше: объект
+// ставит работающий с заявками (объектов в привязке нет в базе — тоже). Менять объект поданной заявки автору нельзя (запрет базы
+// dp_work_fields), поэтому выбор — только при создании.
+export { ownObjectChoice } from './ownObjectChoice.js'
+
 // Что мешает создать заявку или сохранить правку: пусто — можно. conceptCount null — файлы правятся не в этом окне.
-// Обязательно только понятийное соглашение: работающий с заявками заполняет остальное по мере готовности, проверяется лишь введённая сумма.
-export function dpFormProblems(form, { canWork = false, conceptCount = null } = {}) {
+// Обязательно понятийное соглашение и — у подающего с несколькими объектами — объект (objectProblem из ownObjectChoice): работающий с
+// заявками заполняет остальное по мере готовности, проверяется лишь введённая сумма.
+export function dpFormProblems(form, { canWork = false, conceptCount = null, objectProblem = null } = {}) {
   const out = []
+  if (objectProblem) out.push(objectProblem)
   if (conceptCount === 0) out.push('загрузите понятийное соглашение')
   if (canWork && String(form.amount || '').trim()) {
     const amount = parseAmount(form.amount)
@@ -100,11 +108,12 @@ export function dpFormProblems(form, { canWork = false, conceptCount = null } = 
   return out
 }
 
-// Поля строки заявки из формы. Подающему — только примечание: остальное заполняет работающий с заявками, запись поверх его данных отклонит база.
+// Поля строки заявки из формы. Подающему — примечание и при создании свой объект (ownObjectId; правило вставки пропускает только объекты
+// из привязки): остальное заполняет работающий с заявками, запись поверх его данных отклонит база.
 // ФИО у контакта база всё равно поставит триггером: страница шлёт его ради ответственного без контакта.
-export function dpFormFields(form, option, { canWork = false } = {}) {
+export function dpFormFields(form, option, { canWork = false, ownObjectId = '' } = {}) {
   const reason = String(form.reason || '').trim() || null
-  if (!canWork) return { reason }
+  if (!canWork) return ownObjectId ? { object_id: ownObjectId, reason } : { reason }
   return {
     object_id: form.object_id || null,
     contract_title: String(form.contract_title || '').trim() || null,

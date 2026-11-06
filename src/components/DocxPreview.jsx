@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { renderAsync } from 'docx-preview'
+import { parseAsync, renderDocument } from 'docx-preview'
+import { sanitizeDocxModel, SAFE_DOCX_OPTIONS } from '../utils/docxSafe'
 import { requestDownloadUrl } from '../services/s3'
 import './DocxPreview.css'
 
@@ -35,13 +36,19 @@ function DocxPreview({ s3Key, containerRef, highlights = [], onParagraphs }) {
         const blob = await resp.blob()
         if (cancelled) return
         bodyEl.innerHTML = ''
-        await renderAsync(blob, bodyEl, styleEl, {
+        // Разбор и отрисовка — раздельно: между ними модель чистится от того, что библиотека перенесла бы в страницу
+        // как разметку или ссылку javascript: (utils/docxSafe.js).
+        const options = {
           inWrapper: true,
           breakPages: false,
           ignoreHeight: true,
           ignoreLastRenderedPageBreak: true,
           className: 'docx',
-        })
+          ...SAFE_DOCX_OPTIONS,
+        }
+        const doc = sanitizeDocxModel(await parseAsync(blob, options))
+        if (cancelled) return
+        await renderDocument(doc, bodyEl, styleEl, options)
         if (!cancelled) {
           // Отдаём наверх порядок абзацев — по нему протокол сортируется хронологически.
           if (onParagraphsRef.current) {

@@ -20,8 +20,11 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 const err = (status, code, message, clear = false) => ({ kind: 'error', status, code, message, clear })
 // База не ответила — это не «прав нет»: клиент повторит.
 const unavailable = () => err(503, 'OSP_UNAVAILABLE', 'Сервис временно недоступен, повторите запрос')
+const tooMany = () => err(429, 'OSP_RATE_LIMIT', 'Слишком много запросов — повторите через минуту')
 
-export function createPrincipalResolver({ mode, verifyBearer, sessions, userStatus, isSuperadmin, pilotIds = [] }) {
+// failLimit — лимит неверных cookie и токенов по адресу клиента (src/lib/limits.js, authFailPerIp): каждая такая попытка — запрос
+// к базе или к Supabase, и без лимита поток случайных cookie занимал бы подключения к базе всего портала.
+export function createPrincipalResolver({ mode, verifyBearer, sessions, userStatus, isSuperadmin, pilotIds = [], failLimit = null }) {
   if (!AUTH_MODES.includes(mode)) throw new Error(`osp-api: неизвестный режим входа ${mode}`)
 
   // → { kind: 'anon' } | { kind: 'user', source, user: { id, email }, session? } | { kind: 'error', status, code, message, clear }
@@ -29,9 +32,13 @@ export function createPrincipalResolver({ mode, verifyBearer, sessions, userStat
     const header = request.headers.authorization
     if (header) {
       if (mode === 'own') return err(401, 'OSP_AUTH_MODE', 'Вход изменился — обновите страницу')
+      if (failLimit?.blocked(request.ip)) return tooMany()
       const token = bearerToken(header)
       const user = token ? await verifyBearer(token) : null
-      if (!user) return err(401, 'PGRST301', 'JWT expired or invalid')
+      if (!user) {
+        failLimit?.take(request.ip)
+        return err(401, 'PGRST301', 'JWT expired or invalid')
+      }
       // Заблокированный не проходит и с ещё живым токеном Supabase.
       let row
       try { row = await userStatus.get(user.id) } catch { return unavailable() }
@@ -42,9 +49,13 @@ export function createPrincipalResolver({ mode, verifyBearer, sessions, userStat
     const cookie = readToken(request.headers.cookie, SESSION_COOKIE)
     if (cookie.duplicate) return err(400, 'OSP_COOKIE_DUPLICATE', 'Повреждённые cookie входа — войдите заново', true)
     if (!cookie.value) return { kind: 'anon' }
+    if (failLimit?.blocked(request.ip) && !sessions.cached?.(cookie.value)) return tooMany()
     let session
     try { session = await sessions.lookup(cookie.value) } catch { return unavailable() }
-    if (!session) return err(401, 'OSP_SESSION_REVOKED', 'Сессия завершена — войдите заново', true)
+    if (!session) {
+      failLimit?.take(request.ip)
+      return err(401, 'OSP_SESSION_REVOKED', 'Сессия завершена — войдите заново', true)
+    }
     if (mode === 'both' && !pilotIds.includes(session.userId)) {
       return err(401, 'OSP_SESSION_REVOKED', 'Вход через портал пока только для проверки', true)
     }

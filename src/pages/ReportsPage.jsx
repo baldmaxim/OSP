@@ -6,6 +6,7 @@ import { vorResponsibleName, withStoColumns } from '../services/stoEmployees'
 import { isConstructionTender } from '../utils/tenderDepartments'
 import { isMissingVorRequestsTable } from '../services/vorRequests'
 import { RATE_NOTE, currencyEntries, fmtCur, fmtInt, toRub, totalRub } from '../utils/reportCurrency'
+import { reportAmounts } from '../utils/contractAmendments'
 import EngineersActivity from '../components/reports/EngineersActivity'
 import KpStats from '../components/reports/KpStats'
 import DcRequestStats from '../components/reports/DcRequestStats'
@@ -265,7 +266,8 @@ function ReportsPage() {
       const contractsQuery = (from, to) => {
         let q = db
           .from('contracts')
-          .select('id, object_id, status, contract_amount, currency, counterparty_id, responsible_contact_id, deleted_at, objects(id, name, status), responsible:contacts!responsible_contact_id(id, full_name)')
+          // record_type … psdc_total — для сумм по дереву договора (reportAmounts): ДС не складываются с договором ещё раз.
+          .select('id, object_id, status, contract_amount, psdc_total, currency, counterparty_id, responsible_contact_id, deleted_at, record_type, parent_contract_id, display_id, changed_fields, objects(id, name, status), responsible:contacts!responsible_contact_id(id, full_name)')
           .is('deleted_at', null)   // удалённые (soft-delete) в отчёт не входят
         if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
         return q.order('id', { ascending: true }).range(from, to)
@@ -315,11 +317,13 @@ function ReportsPage() {
 
       const unassignedCount = (rows) => rows.filter(x => !x.responsible_contact_id).length
 
+      // Суммы — по дереву договора (договор с его ДС и ПСДЦ), а не по строкам: ДС на изменение ВОР хранит полную сумму ветки.
+      const amountOf = reportAmounts(contracts || [])
       // Суммы по валютам: { RUB: n, CNY: n, ... } — только ненулевые.
       const sumByCurrency = (rows) => {
         const acc = {}
         for (const r of rows) {
-          const amt = Number(r.contract_amount) || 0
+          const amt = amountOf.get(r.id) || 0
           if (!amt) continue
           const cur = r.currency || 'RUB'
           acc[cur] = (acc[cur] || 0) + amt
@@ -341,7 +345,7 @@ function ReportsPage() {
           }
           const row = map.get(id)
           row.total += 1
-          const amt = Number(x.contract_amount) || 0
+          const amt = amountOf.get(x.id) || 0
           if (amt) {
             const cur = x.currency || 'RUB'
             row.amountByCur[cur] = (row.amountByCur[cur] || 0) + amt

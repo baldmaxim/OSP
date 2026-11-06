@@ -98,7 +98,7 @@ BSMContractorRatesPage, BSMRatesPage, BSMComparisonPage, BSMSelectionPage, Contr
 | dp_requests (20261227, 20261231) | DpRequestsPage | **в базе:** читает V(dp_requests) в пределах своих объектов (`dp_request_scope`), заявку без объекта — E(dp_requests) и автор, черновик — только автор; создаёт E(dp_requests_create), с объектом — только своим; правит E(dp_requests), автор с E(dp_requests_create) — в своей заявке, пока статус «Новая», только примечание (объект, договор, сумму и ответственного держит триггер, `dp_work_fields`); статус — E(dp_requests); насовсем удаляется только свой черновик; подача без файла понятийного соглашения — отказ триггера |
 | dp_request_alert_recipients (20261227) | DpRecipientsModal | **в базе:** читает сам получатель и E(admin); добавляет и убирает E(admin); UPDATE не выдан |
 | dp_request_alerts (20261227) | DpRequestAlert | вошедшим не выдана: заводит триггер при подаче заявки, читает и гасит только сам получатель через `dp_request_my_alerts` и `dp_request_alerts_ack` |
-| doc_check_requests, doc_check_request_audit_log | DocCheckRequestsPage | E(doc_check_requests); **в базе (20270101):** любой сотрудник, с привязкой к объектам — только заявки своих объектов (`doc_check_scope()`; без объекта — не видна), и чтение, и запись |
+| doc_check_requests, doc_check_request_audit_log | DocCheckRequestsPage | E(doc_check_requests); создание — ещё E(doc_check_requests_create), только в «Новые заявки». **В базе (20270101):** любой сотрудник, с привязкой к объектам — только заявки своих объектов (`doc_check_scope()`; без объекта — не видна), и чтение, и запись; **запись заявок (20270102, триггер `doc_check_requests_write_guard`):** менять и удалять — E(doc_check_requests), вставка — E или E(doc_check_requests_create) со статусом `new`, не в архиве и не удалённая (исполнителей, срок, приоритет, цвет и метки автора триггер снимает). История — как в 20270101 |
 | doc_check_request_comments (20261124) | DocCheckDetailModal → «Обсуждение» | **в базе:** читает и пишет `osp_can('doc_check_requests', 'view')`, с привязкой к объектам — по заявкам своих объектов (20270101); автор и время — триггер; правки и удаления нет (ни правила, ни выдачи) |
 | doc_check_request_steps (20261124) | DocCheckDetailModal → «Шаги» | **в базе:** читает V(doc_check_requests); добавляет, удаляет E(doc_check_requests); меняет E или исполнитель заявки (`assignee_ids`) — ему триггер оставляет только отметку `is_done`; с привязкой к объектам — всё по заявкам своих объектов (20270101) |
 | kp_/supply_rates_registry и фильтры | — (чтение) | раздел rates_registry; `refresh_rates_registry` — **любой зритель реестра** |
@@ -118,7 +118,7 @@ BSMContractorRatesPage, BSMRatesPage, BSMComparisonPage, BSMSelectionPage, Contr
 | counterparty | E(counterparties) |
 | dc_request | E(dc_requests) |
 | dp_request | E(dp_requests) или E(dp_requests_create) в osp-api; **какую заявку можно менять, решает триггер базы** `s3_documents_dp_request_guard`: E(dp_requests) — любую, автор — свою, пока статус «Новая» |
-| doc_check_request | E(doc_check_requests) |
+| doc_check_request | E(doc_check_requests) или E(doc_check_requests_create) в osp-api; **какую заявку можно, решает триггер базы** `s3_documents_doc_check_guard` (20270102): E(doc_check_requests) — любую, автор с правом создания — свою, пока она в «Новых заявках» |
 | general_document | E(general_documents) |
 | task | **любой зритель задачи** |
 | general (заявки на ВОР, ПСДЦ) | E(tenders\|vors); ПСДЦ — contracts |

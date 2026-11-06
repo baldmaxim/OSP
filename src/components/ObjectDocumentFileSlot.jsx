@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { deleteDocument, uploadFile } from '../services/s3'
+import { uploadFile } from '../services/s3'
 import { downloadS3File } from './FileDownload'
 import './ObjectDocumentFileSlot.css'
 
@@ -8,9 +8,10 @@ import './ObjectDocumentFileSlot.css'
 // Файл сразу заливается в S3 — родитель получает s3_documents-запись через
 // onUploaded и сам решает, когда привязать её FK к object_documents.
 //
-// При замене файла предыдущая S3-запись удаляется тут же.
-// Удаление при отмене формы — обязанность родителя (он знает, какие записи
-// были pending, а какие уже были привязаны до открытия формы).
+// Слот сам ничего не удаляет: при замене и удалении он сообщает родителю прежнюю запись
+// (onUploaded(новая, прежняя), onRemoved(прежняя)). Родитель знает, какие записи загружены в этой
+// форме, а какие уже привязаны к документу: привязанный файл удаляется только после сохранения формы,
+// иначе «Заменить» и затем «Отмена» оставляли документ без файла (прежний удалялся сразу, новый — при отмене).
 
 function formatBytes(bytes) {
   if (bytes == null) return ''
@@ -26,8 +27,8 @@ export default function ObjectDocumentFileSlot({
   slot,                  // 'signed' | 'editable' — для подписей/стилей
   currentDoc,            // s3_documents запись или null
   ownerId,               // object_id
-  onUploaded,            // (newS3Doc) => void
-  onRemoved,             // () => void — после успешного удаления
+  onUploaded,            // (newS3Doc, previousS3Doc | null) => void
+  onRemoved,             // (previousS3Doc) => void — файл убран из формы (удаляет родитель)
   onUploadingChange,     // (bool) => void — родителю, чтобы дизейблить Save
   disabled = false,
 }) {
@@ -63,13 +64,8 @@ export default function ObjectDocumentFileSlot({
       return
     }
 
-    // Если был старый файл — удаляем его (после успешной загрузки нового).
-    if (currentDoc) {
-      try { await deleteDocument(currentDoc) } catch { /* лучшее усилие */ }
-    }
-
     setUploading(false)
-    onUploaded(newDoc)
+    onUploaded(newDoc, currentDoc || null)
   }
 
   const handleDownload = async () => {
@@ -81,19 +77,11 @@ export default function ObjectDocumentFileSlot({
     }
   }
 
-  const handleRemove = async () => {
+  const handleRemove = () => {
     if (!currentDoc || disabled || uploading) return
-    if (!window.confirm(`Удалить файл «${currentDoc.file_name}»?`)) return
-    setUploading(true)
+    if (!window.confirm(`Убрать файл «${currentDoc.file_name}» из документа? Файл удалится при сохранении.`)) return
     setError(null)
-    try {
-      await deleteDocument(currentDoc)
-      onRemoved()
-    } catch (err) {
-      setError(err.message || 'Ошибка удаления')
-    } finally {
-      setUploading(false)
-    }
+    onRemoved(currentDoc)
   }
 
   return (

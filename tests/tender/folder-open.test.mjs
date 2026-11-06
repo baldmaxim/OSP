@@ -103,6 +103,11 @@ describe('Помощник «Открыть папку» (public/tools/osp-folde
     const bad = [
       'osp-folder:' + encodeURIComponent('\\\\evil.example.com\\share'),
       'osp-folder:' + encodeURIComponent('\\\\8.8.8.8\\share'),
+      // Адрес в интернете в других записях, которые Windows понимает как IPv4: одним числом, шестнадцатеричной, с восьмеричным 010.
+      'osp-folder:' + encodeURIComponent('\\\\134744072\\share'),
+      'osp-folder:' + encodeURIComponent('\\\\0x08080808\\share'),
+      'osp-folder:' + encodeURIComponent('\\\\010.8.8.8\\share'),
+      'osp-folder:' + encodeURIComponent('//134744072/share'),
       'osp-folder:' + encodeURIComponent('\\\\host@SSL@443\\dav'),
       'osp-folder:' + encodeURIComponent('\\\\?\\C:\\Windows'),
       'osp-folder:' + encodeURIComponent('\\\\.\\pipe\\x'),

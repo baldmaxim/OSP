@@ -660,8 +660,9 @@ function ContractorCabinetPage() {
                   </section>
                   )}
 
-                  {/* Состав сметы — первые позиции, чтобы понять объём работ */}
-                  {pricedItems.length > 0 && (
+                  {/* Состав сметы — первые позиции, чтобы понять объём работ. Только без расценки на сайте:
+                      с ней тот же ВОР целиком — во вкладке «Структура КП» (лист «КП» файла ВОР), второй показ был дублем. */}
+                  {!bidsEnabled && pricedItems.length > 0 && (
                     <section className="cab-section">
                       <h3>Состав работ</h3>
                       <div className="cab-table-wrap">

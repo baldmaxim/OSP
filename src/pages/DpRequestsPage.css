@@ -1,4 +1,4 @@
-/* «Заявка на ДП». Общее — ContractRegistry.css и workUi.css (класс ui-work на корне); здесь сетка реестра и свои окна. Окна на своих
+/* «Заявка на заключение ДП». Общее — ContractRegistry.css и workUi.css (класс ui-work на корне); здесь сетка реестра и свои окна. Окна на своих
    стилях: основа .modal меняется от того, какие разделы уже открывали (см. «Окна доски» в CLAUDE.md). */
 .dp-requests-page .dpr-title-icon { margin-right: 0.5rem; vertical-align: middle; }
 .dp-requests-page .registry-header h2 { display: flex; align-items: center; }
@@ -231,6 +231,8 @@
   line-height: 1.25rem;
 }
 .dpr-field > textarea { resize: vertical; }
+/* Выбирать нечего (единственный объект подающего, объект поданной заявки) — поле серое. */
+.dpr-field > select:disabled { background: var(--bg-tertiary); color: var(--text-secondary); cursor: default; opacity: 1; }
 .dpr-field > :is(input, select, textarea):focus { border-color: var(--primary-color); outline: 2px solid color-mix(in srgb, var(--primary-color) 25%, transparent); }
 .dpr-amount-input { font-variant-numeric: tabular-nums; }
 .dpr-hint { color: var(--text-tertiary); font-size: 0.75rem; line-height: 1rem; }
@@ -295,4 +297,19 @@ p.dpr-hint { margin: 0; }
   .dp-requests-page .status-tab { flex: none; padding: 0.625rem 0.75rem; }
   .dpr-overlay { align-items: stretch; padding: 0.5rem; }
   .dp-requests-page .mcard .dpr-row-actions { justify-content: flex-end; }
+  /* Вкладки — одной строкой с прокруткой: рабочий слой (workUi) переносил их в три ряда, над карточками терялось 120 px. */
+  .dp-requests-page.ui-work.ui-work .status-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .dp-requests-page.ui-work.ui-work .status-tabs::-webkit-scrollbar { display: none; }
+  .dp-requests-page.ui-work.ui-work .status-tab { flex: none; white-space: nowrap; }
+  /* Статус в шапке карточки — по ширине текста, а не на всю карточку. */
+  .dp-requests-page .mcard-head .dpr-status-select { width: auto; max-width: 60%; min-height: 2.25rem; font-size: 16px; }
+  /* Поля — 16px: мельче Safari при касании увеличивает страницу. */
+  .dpr-field > :is(input, select, textarea),
+  .dp-requests-page .ui-search input { font-size: 16px; }
+  /* Палец: кнопки действий и файлов — не меньше 36–40 px. */
+  .dp-requests-page .mcard .dpr-row-actions .btn-icon { width: 2.5rem; height: 2.5rem; }
+  .dp-requests-page .mcard .dpr-file-btn { width: 2.25rem; height: 2.25rem; }
+  .dp-requests-page .mcard .dpr-file-add { min-height: 2.25rem; }
+  .dp-requests-page .mcard-row.dpr-mrow-stack { flex-direction: column; gap: 0.125rem; }
+  .dp-requests-page .mcard-row.dpr-mrow-stack > .mcard-label { flex: none; max-width: none; }
 }

@@ -1046,6 +1046,9 @@
     "current_counterparty_id": [
       "authenticated"
     ],
+    "doc_check_scope": [
+      "authenticated"
+    ],
     "dp_request_alerts_ack": [
       "authenticated"
     ],

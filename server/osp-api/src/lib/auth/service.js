@@ -109,7 +109,7 @@ export function createAuthService({ db, box, verifier, sessions, blocklist, mode
           values ($1, 1, now(), $2)
         on conflict (email_norm) do update set failures = f.failures + 1, last_at = now(), account_exists = excluded.account_exists,
           locked_until = case when f.failures + 1 >= ${LOCK_AFTER}
-            then now() + least(interval '15 minutes', interval '1 minute' * power(2, f.failures + 1 - ${LOCK_AFTER}))
+            then now() + least(interval '15 minutes', interval '1 minute' * power(2, least(f.failures + 1 - ${LOCK_AFTER}, 10)))
             else f.locked_until end
         returning failures, locked_until`, [norm, accountExists])
       return rows[0]
@@ -134,8 +134,14 @@ export function createAuthService({ db, box, verifier, sessions, blocklist, mode
         throw err
       }
       if (!verdict.ok) {
-        const f = await recordFailure(acc.norm, Boolean(acc.id))
-        if (acc.id) await db.write(null, async (tx) => { await tx.mark('auth'); await event(tx, acc.id, 'login_failed', {}) })
+        // Сбой записи счётчика не превращает неверный пароль в 500: вход всё равно не удался.
+        let f = null
+        try {
+          f = await recordFailure(acc.norm, Boolean(acc.id))
+          if (acc.id) await db.write(null, async (tx) => { await tx.mark('auth'); await event(tx, acc.id, 'login_failed', {}) })
+        } catch (err) {
+          logger?.error({ code: err?.code, msg: String(err?.message || err).slice(0, 120) }, 'auth: неудачная попытка входа не записана')
+        }
         if (f?.locked_until && new Date(f.locked_until).getTime() > Date.now()) return fail('locked', { retryAfterSec: retryAfter(f.locked_until) })
         return fail('invalid')
       }

@@ -21,3 +21,8 @@ export function loadYandexMaps() {
   })
   return loading
 }
+
+// Подписи меток карты Яндекс.Карты показывают как HTML: данные объектов (название, адрес, описание) — только экранированными.
+export function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
+}

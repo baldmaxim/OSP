@@ -29,8 +29,9 @@ import './DpRequestsPage.css'
 import '../styles/fonts.css'
 import '../styles/workUi.css'
 
-// «Заявка на ДП» (миграции 20261227, 20261231; решения пользователя 05.11.2026). По аналогии с «Заявкой на ДС», только договоры.
-// Подают экономист объекта и руководитель строительства (право dp_requests_create): понятийное соглашение (обязательно), документы и примечание.
+// «Заявка на заключение ДП» (миграции 20261227, 20261231; решения пользователя 05.11.2026). По аналогии с «Заявкой на ДС», только договоры.
+// Подают экономист объекта и руководитель строительства (право dp_requests_create): понятийное соглашение (обязательно), документы и примечание;
+// привязанный к объектам в «Ролях» — и свой объект (один — стоит сам, несколько — выбирает).
 // Объект, договор, сумму и ответственного заполняют те, кто работает с заявками (правка раздела dp_requests).
 // О новой заявке всплывает большое окно (components/dpRequests/DpRequestAlert.jsx — на всех страницах).
 
@@ -69,6 +70,8 @@ export default function DpRequestsPage() {
   const [requests, setRequests] = useState(null)
   const [docs, setDocs] = useState([])
   const [objects, setObjects] = useState([])
+  const [ownObjects, setOwnObjects] = useState(null)
+  const [ownObjectsFailed, setOwnObjectsFailed] = useState(false)
   const [staff, setStaff] = useState([])
   const [missing, setMissing] = useState(false)
   const [error, setError] = useState('')
@@ -103,14 +106,29 @@ export default function DpRequestsPage() {
   }, [])
 
   const scopeKey = (scopedObjectIds || []).join(',')
+  // Подающий, привязанный к объектам в «Ролях» (рукстрой, экономист объекта), указывает свой объект сам (06.11.2026, решение
+  // пользователя): форме нужны названия его объектов. Работающий с заявками выбирает объект в своём блоке формы.
+  const pickOwnObject = !canWork && canCreate && scopeKey !== ''
   useEffect(() => {
     reload()
-    // Объекты и сотрудники нужны только форме того, кто заполняет заявку: подающий их не выбирает.
-    if (!canWork) return
-    loadDpObjects(scopedObjectIds).then(setObjects).catch((err) => setError(`Объекты не загрузились: ${dpErrorText(err)}`))
-    loadDpStaff().then(setStaff).catch((err) => setError(`Сотрудники объектов не загрузились: ${dpErrorText(err)}`))
+    let alive = true
+    if (pickOwnObject) {
+      setOwnObjects(null)
+      setOwnObjectsFailed(false)
+      loadDpObjects(scopedObjectIds).then((rows) => { if (alive) setOwnObjects(rows) }).catch((err) => {
+        if (!alive) return
+        setOwnObjectsFailed(true)
+        setError(`Ваши объекты не загрузились: ${dpErrorText(err)}`)
+      })
+    }
+    // Все объекты и сотрудники — только форме того, кто заполняет заявку.
+    if (canWork) {
+      loadDpObjects(scopedObjectIds).then(setObjects).catch((err) => setError(`Объекты не загрузились: ${dpErrorText(err)}`))
+      loadDpStaff().then(setStaff).catch((err) => setError(`Сотрудники объектов не загрузились: ${dpErrorText(err)}`))
+    }
+    return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, reload, canWork])
+  }, [scopeKey, reload, canWork, pickOwnObject])
 
   // Заявки коллег — при возврате на вкладку; у получателя — сразу, как только пришло окно.
   useEffect(() => {
@@ -255,7 +273,7 @@ export default function DpRequestsPage() {
       <div className="registry-header">
         <h2>
           <IconTile tone="coral" className="dpr-title-icon"><IconDpRequest /></IconTile>
-          Заявка на ДП
+          Заявка на заключение ДП
         </h2>
         <div className="dpr-header-actions">
           {canManageRecipients && !missing && (
@@ -330,8 +348,9 @@ export default function DpRequestsPage() {
                     </div>
                     <div className="mcard-title">{req.objects?.name || unfilled}</div>
                     <div className="mcard-rows">
-                      <div className="mcard-row"><span className="mcard-label">Договор</span><span className="mcard-value">{req.contract_title || unfilled}<DpFileList {...fileProps(req, DP_DOCS_CATEGORY)} /></span></div>
-                      <div className="mcard-row"><span className="mcard-label">Понятийное соглашение</span><span className="mcard-value"><DpFileList {...fileProps(req, DP_CONCEPT_CATEGORY)} /></span></div>
+                      {/* Строки с файлами — столбцом: в правой части карточки имя файла обрезалось до «Договор 4.d…». */}
+                      <div className="mcard-row dpr-mrow-stack"><span className="mcard-label">Договор и документы</span><span className="mcard-value">{req.contract_title || unfilled}<DpFileList {...fileProps(req, DP_DOCS_CATEGORY)} /></span></div>
+                      <div className="mcard-row dpr-mrow-stack"><span className="mcard-label">Понятийное соглашение</span><span className="mcard-value"><DpFileList {...fileProps(req, DP_CONCEPT_CATEGORY)} /></span></div>
                       <div className="mcard-row"><span className="mcard-label">Сумма</span><span className="mcard-value dpr-amount">{req.amount == null ? unfilled : `${formatAmount(Number(req.amount))} ₽`}</span></div>
                       <div className="mcard-row"><span className="mcard-label">Ответственный</span><span className="mcard-value">{responsible(req)}</span></div>
                       <div className="mcard-row"><span className="mcard-label">Примечание</span><span className="mcard-value"><ClampText text={req.reason} lines={4} /></span></div>
@@ -404,6 +423,8 @@ export default function DpRequestsPage() {
           staff={staff}
           me={me}
           canWork={canWork}
+          ownObjects={pickOwnObject ? ownObjects : undefined}
+          ownObjectsFailed={ownObjectsFailed}
           onClose={() => setFormFor(null)}
           onSaved={onSaved}
         />

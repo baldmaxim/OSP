@@ -254,8 +254,18 @@
 /* ===== Sub-tabs (Материалы / Работы) ===== */
 .rr-sub-tabs {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.4375rem;
   margin-bottom: 0.875rem;
+}
+/* Пояснение к счётчикам подвкладок (Larix: позиция с обеими ценами — в обеих подвкладках) */
+.rr-sub-note {
+  margin-left: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 .rr-sub-tab {
   display: inline-flex;

@@ -8,7 +8,7 @@ import DocCheckAvatars from '../components/doccheck/DocCheckAvatars'
 import DocCheckCardCounts from '../components/doccheck/DocCheckCardCounts'
 import FilterDropdown from '../components/FilterDropdown'
 import IconTile from '../components/IconTile'
-import { IconObject, IconSearch, IconUser } from '../components/icons/ToolbarIcons'
+import { IconFilter, IconObject, IconSearch, IconUser } from '../components/icons/ToolbarIcons'
 import { IconArchive, IconCalendar, IconFlag, IconRestore, IconTrash } from '../components/icons/ActionIcons'
 import { IconDocCheck } from '../components/icons/NavIcons'
 import { fetchAllRows } from '../utils/fetchAllRows'
@@ -18,7 +18,9 @@ import { fetchPickerCounterparties } from '../services/counterpartyPicker'
 import { chunkList } from '../utils/inChunks'
 import { employeeName, employeesById, fetchEmployees } from '../services/employees'
 import { fetchCardCounts as readCardCounts, fetchDeletions } from '../services/docCheckCard'
+import { uploadFile } from '../services/s3'
 import useBodyClass from '../hooks/useBodyClass'
+import { useIsPhone } from '../hooks/useMediaQuery'
 import {
   DEADLINE_FILTERS,
   DOC_CHECK_PRIORITIES,
@@ -101,6 +103,14 @@ export default function DocCheckRequestsPage() {
   useBodyClass('ui-work-portal')
   const { canEdit, role, userProfile, user, isAdmin, isSuperAdmin, scopedObjectIds } = useRole()
   const canEditSection = canEdit('doc_check_requests')
+  // Право только создавать (20270102, по умолчанию — руководитель строительства и экономист объекта): новая заявка — только в
+  // «Новые заявки», менять её потом — право правки раздела. То же держит база (doc_check_requests_write_guard).
+  const createOnly = !canEditSection && canEdit('doc_check_requests_create')
+  const canCreate = canEditSection || createOnly
+  // Телефон: фильтры, «Архив» и «Удалённые» — по кнопке «Фильтры» (шапка над доской — три низкие строки вместо половины
+  // экрана), реестр — карточками вместо таблицы.
+  const isPhone = useIsPhone()
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const myId = user?.id || null
   // Сотрудник с привязкой к объектам (руководитель строительства, экономист объекта) видит заявки только своих объектов
   // (06.11.2026, решение пользователя); заявки без объекта ему не видны. Пусто — все объекты (администратор, офис). То же
@@ -110,6 +120,7 @@ export default function DocCheckRequestsPage() {
 
   const [requests, setRequests] = useState([])
   const [objects, setObjects] = useState([])
+  const [objectsState, setObjectsState] = useState('loading') // loading | ready | failed
   const [counterparties, setCounterparties] = useState([])
   const [employees, setEmployees] = useState(() => new Map())
   const [docCounts, setDocCounts] = useState(() => new Map())
@@ -248,9 +259,14 @@ export default function DocCheckRequestsPage() {
     // Объекты обоих отделов и контрагенты — для формы и фильтров. С привязкой к объектам — только свои.
     let objectsQuery = db.from('objects').select('id, name, status')
     if (scopeIds.length) objectsQuery = objectsQuery.in('id', scopeIds)
+    setObjectsState('loading')
     objectsQuery
       .order('status', { ascending: true }).order('name', { ascending: true })
-      .then(({ data, error: e }) => { if (!e) setObjects(data || []) })
+      .then(({ data, error: e }) => {
+        if (e) { setObjectsState('failed'); return }
+        setObjects(data || [])
+        setObjectsState('ready')
+      }, () => setObjectsState('failed'))
     fetchPickerCounterparties()
       .then(setCounterparties)
       .catch(err => console.warn('Не удалось загрузить контрагентов:', err.message))
@@ -312,14 +328,16 @@ export default function DocCheckRequestsPage() {
     event_type: 'status_changed', field_name: 'status', old_value: request.status, new_value: status,
   })
 
-  const handleSave = async (payload) => {
+  // files — файлы новой заявки создателя: строки ещё нет, поэтому сначала заявка, затем файлы (база пускает автора к файлам
+  // своей заявки, пока она в «Новых»). Файл не загрузился — заявка остаётся, причина — сообщением, остальные файлы грузятся.
+  const handleSave = async (payload, files = []) => {
     try {
       if (formFor?.request) {
         const prev = formFor.request
         const ok = await patchRequest(prev, payload, fieldEvents(prev, payload))
         if (!ok) return
       } else {
-        const status = formFor?.status || 'new'
+        const status = createOnly ? 'new' : (formFor?.status || 'new')
         const { data, error: e } = await db
           .from('doc_check_requests')
           .insert({ ...payload, status, sort_order: nextSortOrder(requests, status), created_by_name: author })
@@ -327,6 +345,16 @@ export default function DocCheckRequestsPage() {
           .single()
         if (e) throw e
         await logEvent(data.id, { event_type: 'created', description: 'Заявка создана' })
+        const failed = []
+        for (const file of files) {
+          try {
+            await uploadFile({ file, ownerType: 'doc_check_request', ownerId: data.id })
+          } catch (err) {
+            failed.push(`${file.name}: ${err.message || err}`)
+          }
+        }
+        if (files.length) fetchDocCounts()
+        if (failed.length) alert(`Заявка создана, но не все файлы загрузились:\n${failed.join('\n')}`)
       }
       setFormFor(null)
       // Объект и контрагент приходят из базы встраиванием — перечитываем.
@@ -445,7 +473,7 @@ export default function DocCheckRequestsPage() {
   const actionsRef = useRef(null)
   actionsRef.current = {
     onMove: handleMove,
-    onAdd: (status) => setFormFor({ request: null, status }),
+    onAdd: (status) => setFormFor({ request: null, status: createOnly ? 'new' : status }),
     onToggleDone: handleToggleDone,
     onCardAction: handleCardAction,
     onArchiveDone: handleArchiveDone,
@@ -522,9 +550,10 @@ export default function DocCheckRequestsPage() {
   }, [counterparties])
 
   const detail = detailId ? withCounts.find(r => r.id === detailId) : null
-  const hasFilters = filterObjectIds.length > 0 || filterCounterpartyIds.length > 0 || filterTypes.length > 0
-    || filterAssignees.length > 0 || filterPriorities.length > 0
-    || !!filterDeadline || search.trim() !== ''
+  // Сколько фильтров панели выбрано (поиск — в шапке, не считается): число на кнопке «Фильтры» телефона.
+  const activeFilters = [filterObjectIds, filterCounterpartyIds, filterTypes, filterAssignees, filterPriorities]
+    .filter(list => list.length > 0).length + (filterDeadline ? 1 : 0)
+  const hasFilters = activeFilters > 0 || search.trim() !== ''
   const resetFilters = () => {
     setSearch(''); setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterTypes([])
     setFilterAssignees([]); setFilterPriorities([]); setFilterDeadline('')
@@ -534,7 +563,65 @@ export default function DocCheckRequestsPage() {
   const showBoard = view === 'board' && mode === 'active'
 
   // Реестр — тем же значением, пока не изменились его данные: окно заявки сотни строк не перерисовывает.
-  const listTable = useMemo(() => (
+  const listTable = useMemo(() => (isPhone ? (
+      <div className="mcard-list dc-mcards">
+        {listRows.map(r => (
+          <div
+            key={r.id}
+            role="button"
+            tabIndex={0}
+            className={`mcard is-tappable dc-mcard${r.color ? ` has-color dc-c-${r.color}` : ''}`}
+            onClick={() => setDetailId(r.id)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailId(r.id) } }}
+          >
+            <div className="mcard-head">
+              <span className="mcard-title dc-row-title">{cardTitle(r)}</span>
+              <span className={`dc-status-chip ${DOC_CHECK_STATUS_CLASS[r.status] || ''}`}>
+                {DOC_CHECK_STATUS_LABEL[r.status] || r.status}
+              </span>
+            </div>
+            {r.notes && <div className="mcard-desc">{r.notes}</div>}
+            <div className="mcard-rows">
+              <div className="mcard-row"><span className="mcard-label">Объект</span><span className="mcard-value">{r.objects?.name || '—'}</span></div>
+              {hasBoardFields && r.assignee_ids.length > 0 && (
+                <div className="mcard-row"><span className="mcard-label">Исполнители</span><span className="mcard-value"><RowAssignees request={r} employees={employees} /></span></div>
+              )}
+              {hasBoardFields && r.due_date && (
+                <div className="mcard-row">
+                  <span className="mcard-label">Срок</span>
+                  <span className={`mcard-value ui-num dc-due-text is-${dueState(r)}`}>{fmtDocDate(r.due_date)}</span>
+                </div>
+              )}
+              <div className="mcard-row">
+                <span className="mcard-label">Создал</span>
+                <span className="mcard-value">{r.created_by_name || '—'} · <span className="ui-num">{fmtDocDate(r.created_at)}</span></span>
+              </div>
+              {mode === 'deleted' && (
+                <div className="mcard-row">
+                  <span className="mcard-label">Удалил</span>
+                  <span className="mcard-value">
+                    {deletions ? (deletions.get(r.id)?.name || 'не записано') : '…'} · <span className="ui-num">{fmtDocDateTime(r.deleted_at)}</span>
+                  </span>
+                </div>
+              )}
+            </div>
+            {(hasBoardFields && r.labels.length > 0) && (
+              <span className="dc-card-chips">{r.labels.map(l => <span key={l} className="dc-chip dc-chip--label">{l}</span>)}</span>
+            )}
+            <div className="mcard-foot">
+              <span className="dc-row-counts"><DocCheckCardCounts request={r} /></span>
+              {mode !== 'active' && canEditSection && (
+                <button
+                  type="button"
+                  className="dc-restore"
+                  onClick={(e) => { e.stopPropagation(); if (mode === 'deleted') actions.onRestore(r); else actions.onUnarchive(r) }}
+                ><IconRestore size={14} />{mode === 'deleted' ? 'Восстановить' : 'Вернуть'}</button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+  ) : (
       <div className="table-container dc-table-wrap">
         <table className="data-table dc-table">
           <thead>
@@ -601,7 +688,27 @@ export default function DocCheckRequestsPage() {
           </tbody>
         </table>
       </div>
-  ), [listRows, employees, hasBoardFields, mode, canEditSection, actions, deletions])
+  )), [isPhone, listRows, employees, hasBoardFields, mode, canEditSection, actions, deletions])
+
+  // «Архив» и «Удалённые»: на компьютере — в шапке, на телефоне — в панели фильтров.
+  const modeButtons = (
+    <>
+      {hasBoardFields && (
+        <button
+          type="button"
+          className={`dc-mode-toggle${mode === 'archive' ? ' is-active' : ''}`}
+          aria-pressed={mode === 'archive'}
+          onClick={() => setMode(m => (m === 'archive' ? 'active' : 'archive'))}
+        ><IconArchive size={15} />Архив{archivedCount > 0 ? ` (${archivedCount})` : ''}</button>
+      )}
+      <button
+        type="button"
+        className={`dc-mode-toggle dc-mode-toggle--deleted${mode === 'deleted' ? ' is-active' : ''}`}
+        aria-pressed={mode === 'deleted'}
+        onClick={() => setMode(m => (m === 'deleted' ? 'active' : 'deleted'))}
+      ><IconTrash size={15} />Удалённые{deletedCount > 0 ? ` (${deletedCount})` : ''}</button>
+    </>
+  )
 
   if (loading) return <div className="loading">Загрузка...</div>
 
@@ -633,28 +740,23 @@ export default function DocCheckRequestsPage() {
             type="search"
             className="dc-search"
             aria-label="Поиск заявок: контрагент, номер, объект, метка, примечание, исполнитель"
-            placeholder="Поиск: контрагент, номер, объект…"
+            placeholder={isPhone ? 'Поиск заявок' : 'Поиск: контрагент, номер, объект…'}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <div className="dc-header-actions">
-          {hasBoardFields && (
+          {!isPhone && modeButtons}
+          {isPhone && (
             <button
               type="button"
-              className={`dc-mode-toggle${mode === 'archive' ? ' is-active' : ''}`}
-              aria-pressed={mode === 'archive'}
-              onClick={() => setMode(m => (m === 'archive' ? 'active' : 'archive'))}
-            ><IconArchive size={15} />Архив{archivedCount > 0 ? ` (${archivedCount})` : ''}</button>
+              className={`dc-mode-toggle dc-filters-btn${filtersOpen ? ' is-active' : ''}`}
+              aria-expanded={filtersOpen}
+              onClick={() => setFiltersOpen(o => !o)}
+            ><IconFilter size={15} />Фильтры{activeFilters > 0 ? ` (${activeFilters})` : ''}</button>
           )}
-          <button
-            type="button"
-            className={`dc-mode-toggle dc-mode-toggle--deleted${mode === 'deleted' ? ' is-active' : ''}`}
-            aria-pressed={mode === 'deleted'}
-            onClick={() => setMode(m => (m === 'deleted' ? 'active' : 'deleted'))}
-          ><IconTrash size={15} />Удалённые{deletedCount > 0 ? ` (${deletedCount})` : ''}</button>
-          {canEditSection && (
-            <button className="btn-primary" onClick={() => setFormFor({ request: null, status: 'new' })}>
+          {canCreate && (
+            <button className="btn-primary dc-new-btn" onClick={() => setFormFor({ request: null, status: 'new' })}>
               + Новая заявка
             </button>
           )}
@@ -680,7 +782,9 @@ export default function DocCheckRequestsPage() {
         </div>
       )}
 
+      {(!isPhone || filtersOpen) && (
       <div className="dc-toolbar">
+        {isPhone && <div className="dc-toolbar-modes">{modeButtons}</div>}
         {hasBoardFields && (
           <>
             <FilterDropdown
@@ -728,6 +832,7 @@ export default function DocCheckRequestsPage() {
           <button type="button" className="dc-reset" onClick={resetFilters}>Сбросить</button>
         )}
       </div>
+      )}
 
       {mode !== 'active' && (
         <div className="dc-mode-banner">
@@ -742,6 +847,7 @@ export default function DocCheckRequestsPage() {
           requests={visible}
           employees={employees}
           canEdit={canEditSection}
+          addOnly={createOnly ? 'new' : null}
           hasBoardFields={hasBoardFields}
           summary={summary}
           onSummaryChange={actions.onSummaryChange}
@@ -758,7 +864,7 @@ export default function DocCheckRequestsPage() {
             : mode === 'deleted' ? 'Удалённых заявок нет'
               : mode === 'archive' ? 'В архиве пусто'
                 : scopeIds.length ? 'По вашим объектам заявок пока нет.'
-                  : canEditSection ? 'Заявок пока нет. Создайте первую — она попадёт в колонку «Новые заявки».'
+                  : canCreate ? 'Заявок пока нет. Создайте первую — она попадёт в колонку «Новые заявки».'
                     : 'Заявок пока нет.'}
         </div>
       ) : (
@@ -776,6 +882,9 @@ export default function DocCheckRequestsPage() {
           hasBoardFields={hasBoardFields}
           hasCardFields={hasCardFields}
           canEditCreated={isAdmin || isSuperAdmin}
+          creatorOnly={createOnly}
+          ownObjects={scopeIds.length ? (objectsState === 'loading' ? null : objects) : undefined}
+          ownObjectsFailed={objectsState === 'failed'}
           onSave={handleSave}
           onClose={() => setFormFor(null)}
         />

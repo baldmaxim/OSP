@@ -1,4 +1,4 @@
-// Стенд «Заявки на ДП» (route=/dp-requests) и большого окна на посторонней странице (route=/stand/dp-alert: стилей реестра нет).
+// Стенд «Заявки на заключение ДП» (route=/dp-requests) и большого окна на посторонней странице (route=/stand/dp-alert: стилей реестра нет).
 // Данные — здесь, а не в seed.js: подгружаются вместе со стендом, другим страницам не мешают. Люди и объекты вымышленные.
 //   dpMissing=1   — базы без миграции 20261227 (таблицы и функций нет);
 //   dpRecipient=0 — вошедший не в списке получателей;
@@ -95,6 +95,12 @@ window.__fakeTriggers = {
   dp_requests: (row, old) => {
     row.objects = objectRef(row.object_id)
     if (!old) {
+      // Правило вставки dp_requests_insert: объект — пусто или из привязки вошедшего (?scope).
+      const scope = (params.get('scope') || '').split(',').filter(Boolean)
+      if (scope.length && row.object_id && !scope.includes(row.object_id)) {
+        const refused = { code: '42501', message: 'new row violates row-level security policy for table "dp_requests"' }
+        throw refused
+      }
       row.status = 'draft'
       row.created_by = me
       row.created_by_name = params.get('asName') || 'Тест'

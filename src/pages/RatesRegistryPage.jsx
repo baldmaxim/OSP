@@ -6,7 +6,7 @@ import FilterDropdown from '../components/FilterDropdown'
 import KpRateDocCell from '../components/rates/KpRateDocCell'
 import LarixRegistrySection from './LarixRegistrySection'
 import {
-  fmtMoney, fmtDate, fmtRefreshed, describeRegistryError, PAGE_SIZES, useDebounced,
+  fmtMoney, fmtCount, fmtDate, fmtRefreshed, describeRegistryError, PAGE_SIZES, useDebounced,
   applyInFilter, fetchAllRows, downloadXlsx, todayStamp, moscowDayStart, moscowDayEnd, fmtMoscowDate,
 } from '../utils/ratesRegistry'
 import { SOURCE_FILTER_OPTIONS, SOURCE_KINDS } from '../utils/kpRegistrySources'
@@ -387,7 +387,7 @@ function SupplyRegistrySection() {
           </div>
 
           <div className="rr-pagination">
-            <div className="rr-pagination-info">{fromRow}–{toRow} из {totalCount}</div>
+            <div className="rr-pagination-info">{fmtCount(fromRow)}–{fmtCount(toRow)} из {fmtCount(totalCount)}</div>
             <div className="rr-pagination-controls">
               <label className="rr-page-size">
                 На странице:
@@ -934,12 +934,12 @@ function RatesRegistryPage() {
               <button type="button" role="tab" aria-selected={kindTab === 'materials'}
                 className={`rr-sub-tab ${kindTab === 'materials' ? 'active' : ''}`}
                 onClick={() => setKindTab('materials')}>
-                Материалы<span className="rr-sub-count">{counts.materials}</span>
+                Материалы<span className="rr-sub-count">{countsFailed ? '—' : fmtCount(counts.materials)}</span>
               </button>
               <button type="button" role="tab" aria-selected={kindTab === 'works'}
                 className={`rr-sub-tab ${kindTab === 'works' ? 'active' : ''}`}
                 onClick={() => setKindTab('works')}>
-                Работы<span className="rr-sub-count">{counts.works}</span>
+                Работы<span className="rr-sub-count">{countsFailed ? '—' : fmtCount(counts.works)}</span>
               </button>
             </div>
             {sourcesEnabled && (
@@ -1049,7 +1049,7 @@ function RatesRegistryPage() {
               {/* Пагинация */}
               <div className="rr-pagination">
                 <div className="rr-pagination-info">
-                  {fromRow}–{toRow} из {totalCount}
+                  {fmtCount(fromRow)}–{fmtCount(toRow)} из {fmtCount(totalCount)}
                 </div>
                 <div className="rr-pagination-controls">
                   <label className="rr-page-size">

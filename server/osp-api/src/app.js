@@ -28,7 +28,7 @@ import { bearerToken } from './lib/keys.js'
 import { createDb, dbUnavailable, DB_UNAVAILABLE, DB_UNAVAILABLE_TEXT } from './lib/db.js'
 import { createTokenVerifier } from './lib/token.js'
 import { createUserStatus, STATUS_DEFAULTS } from './lib/userStatus.js'
-import { createRateLimit, createConcurrency, DEFAULT_LIMITS } from './lib/limits.js'
+import { createRateLimit, createConcurrency, createByteBudget, DEFAULT_LIMITS } from './lib/limits.js'
 import { access, installAccess } from './lib/access.js'
 import { OPEN_ROUTES } from './open-routes.js'
 import { registerS3Presign } from './routes/s3Presign.js'
@@ -141,6 +141,18 @@ function bodyIsObject(request) {
   return Boolean(body) && typeof body === 'object' && !Array.isArray(body)
 }
 
+// Путь запроса (без строки параметров) содержит сегмент «.» или «..» — в том числе закодированный (%2e) — или «//».
+export function hasDotSegments(rawUrl) {
+  const path = String(rawUrl || '').split('?', 1)[0]
+  if (path.includes('//')) return true
+  for (const segment of path.split('/')) {
+    let s = segment
+    try { s = decodeURIComponent(segment) } catch { /* битая кодировка — сравниваем как есть */ }
+    if (s === '.' || s === '..' || s.includes('/') || s.includes('\\')) return true
+  }
+  return false
+}
+
 function withTimeout(promise, ms) {
   let timer
   return Promise.race([
@@ -159,6 +171,16 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     // Адрес клиента (лимиты входа) — из X-Forwarded-For только от непосредственного соседа: до osp-api не
     // достаёт никто, кроме своего прокси, а он перезаписывает заголовок одним адресом клиента (config.js).
     trustProxy: config.trustProxy === 'peer' ? (address, hop) => hop === 0 : false,
+  })
+
+  // Адрес с «.» / «..» (и закодированными %2e) или «//»: nginx раскрывает такой путь и выбирает location по нему, а сюда
+  // передаёт исходный — запрос шёл бы по одному адресу с лимитами другого (/api/rates/kp/../../db/x — мимо лимита /api/).
+  // Порталу такие адреса не нужны: 404, как любой неизвестный адрес (тело понятно и шлюзу, и прочим маршрутам).
+  app.addHook('onRequest', async (request, reply) => {
+    if (hasDotSegments(request.raw.url)) {
+      const text = 'Недопустимый адрес запроса'
+      return reply.code(404).send({ error: text, code: 'OSP_BAD_PATH', message: text, details: null, hint: null })
+    }
   })
 
   // Своё подключение к базе — если задано. Неверная настройка (нет сертификата, не та строка)
@@ -229,8 +251,11 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     if (superadminCache.size > 2000) superadminCache.delete(superadminCache.keys().next().value)
     return value
   } : null
+  // Неверные cookie и токены по адресу клиента — общий лимит для «кто это» и шлюза (src/lib/limits.js, authFailPerIp).
+  const authFail = createRateLimit(limits.authFailPerIp || DEFAULT_LIMITS.authFailPerIp)
   const principal = ownAuth ? createPrincipalResolver({
     mode: authMode, verifyBearer: verifyUserToken, sessions, userStatus, isSuperadmin, pilotIds: config.auth.pilotIds || [],
+    failLimit: authFail,
   }) : null
   const refuse = (reply, p) => {
     if (p.clear) clearSessionCookies(reply)
@@ -428,6 +453,10 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     dbSelf: createRateLimit(limits.dbSelfRegisteredPerUser || DEFAULT_LIMITS.dbSelfRegisteredPerUser),
     dbRestrictedKey: createConcurrency(limits.dbRestrictedConcurrentPerKey || DEFAULT_LIMITS.dbRestrictedConcurrentPerKey),
     dbRestrictedTotal: createConcurrency(limits.dbRestrictedConcurrentTotal || DEFAULT_LIMITS.dbRestrictedConcurrentTotal),
+    authFail,
+    dbBodyBudget: createByteBudget(limits.dbBodyBudgetBytes || DEFAULT_LIMITS.dbBodyBudgetBytes),
+    dbLargeBodyKey: createConcurrency(limits.dbLargeBodyPerKey || DEFAULT_LIMITS.dbLargeBodyPerKey),
+    dbLargeBodyBytes: limits.dbLargeBodyBytes || DEFAULT_LIMITS.dbLargeBodyBytes,
     signupIp: createRateLimit(limits.signupPerIp || DEFAULT_LIMITS.signupPerIp),
     signupTotal: createRateLimit(limits.signupTotal || DEFAULT_LIMITS.signupTotal),
     signupChallenge: createRateLimit(limits.signupChallengePerIp || DEFAULT_LIMITS.signupChallengePerIp),

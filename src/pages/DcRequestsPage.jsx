@@ -25,7 +25,9 @@ import PaperclipIcon from '../components/icons/PaperclipIcon'
 import { useIsPhone } from '../hooks/useMediaQuery'
 import useBodyClass from '../hooks/useBodyClass'
 import { copyToClipboard } from '../utils/clipboard'
-import { parseAmount, formatAmount, formatAmountLive, amountChange } from '../utils/money'
+import { parseAmount, formatAmount } from '../utils/money'
+import { AMOUNT_FIELDS, AMOUNT_LABEL, NEW_AMOUNT_FIELDS, amountExportCells, hasAmountColumns } from '../utils/dcRequestAmounts'
+import DcRequestAmounts, { AMOUNT_INPUT_HINT } from '../components/DcRequestAmounts'
 import {
   CHECK_STATUS_CLASS, CHECK_STATUS_LABEL, CHECK_STATUS_OPTIONS, CHECK_STATUS_SHORT, DS_TYPE_CLASS, DS_TYPE_LABEL,
   DS_TYPE_OPTIONS, MATERIAL_CLASS, MATERIAL_LABEL, MATERIAL_OPTIONS, STATUS_LABEL, STATUS_OPTIONS, SUBMISSION_CLASS,
@@ -40,6 +42,7 @@ import { DC_FILE_PARAM, DOC_SECTIONS, SPECIAL_DOC_CATEGORIES, dcRequestDocRows, 
 import { amendmentLabel, amendmentsOf, autoContractFor, contractChoicesFor, contractLabel, matchAmendment } from '../utils/dcRequestContracts'
 import { VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION } from '../utils/vorDivisions'
 import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
+import { counterpartyHeads, HEAD_POSITION_FILTER } from '../utils/counterpartyHead'
 import { DC_SCROLL_KEY, groupDocsByRequest, readDcView, sessionStore, writeDcView } from '../utils/dcRequestView'
 import { DC_NOTE_MAX, hasNoteColumn, mergeNote } from '../utils/dcRequestNotes'
 import DcRequestNote from '../components/DcRequestNote'
@@ -78,6 +81,9 @@ const EMPTY_FORM = {
   expected_approval_date: '', // task 365
   amount_before: '', // task 370
   amount_after: '', // task 370
+  amount_contractor: '', // миграция 20270104
+  vor_amount_before: '',
+  vor_amount_after: '',
   material_type: '', // task 370
   ds_type: '',
   // Миграция 20261109: договор реестра «Договоры и ДС», ДС, в которое занесена заявка, подразделение.
@@ -92,6 +98,17 @@ const EMPTY_FORM = {
 
 // Сколько контрагентов показывать в выпадающем поиске за раз (список большой — 1000+).
 const CP_SEARCH_LIMIT = 50
+
+// Вторая строка пункта в выборе контрагента: ИНН слева, руководитель справа — тем же серым (одноимённые «ООО Мастер»).
+function CpSearchMeta({ inn, head }) {
+  if (!inn && !head) return null
+  return (
+    <div className="cp-search-inn cp-search-meta">
+      {inn && <span>ИНН: {inn}</span>}
+      {head && <span className="cp-search-head" title={`${head.label}: ${head.name}`}>{head.label}: {head.name}</span>}
+    </div>
+  )
+}
 
 // Высота меню статуса (четыре этапа) с отступом, px: меньше места под чипом — меню открывается вверх.
 const STATUS_POPOVER_SPACE = 180
@@ -173,8 +190,12 @@ const AUDIT_FIELD_LABEL = {
   folder_path: 'Путь к папке',
   status: 'Статус',
   expected_approval_date: 'Срок согласования',
-  amount_before: 'Было подано',
-  amount_after: 'Утверждено',
+  // Суммы — блок из двух частей (utils/dcRequestAmounts.js); amount_contractor и vor_* — миграция 20270104.
+  amount_before: AMOUNT_LABEL.amount_before,
+  amount_contractor: AMOUNT_LABEL.amount_contractor,
+  amount_after: AMOUNT_LABEL.amount_after,
+  vor_amount_before: AMOUNT_LABEL.vor_amount_before,
+  vor_amount_after: AMOUNT_LABEL.vor_amount_after,
   material_type: 'Материал',
   check_status: 'Итог проверки',
   check_result_notes: 'Заключение по проверке',
@@ -202,20 +223,6 @@ function formatShortDate(iso) {
   const dd = String(d.getDate()).padStart(2, '0')
   const mm = String(d.getMonth() + 1).padStart(2, '0')
   return `${dd}.${mm}.${d.getFullYear()}`
-}
-
-// Процент изменения суммы: «5,6» (1 знак после запятой; для мелких изменений — 2).
-const PERCENT_FORMATTER = new Intl.NumberFormat('ru-RU', {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-})
-const PERCENT_FORMATTER_SMALL = new Intl.NumberFormat('ru-RU', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
-function formatPercent(num) {
-  if (num == null || !Number.isFinite(num)) return ''
-  return num < 0.1 ? PERCENT_FORMATTER_SMALL.format(num) : PERCENT_FORMATTER.format(num)
 }
 
 // task 365 + 366: маленький popover для быстрого редактирования ориентировочного
@@ -416,33 +423,6 @@ function formatBytes(bytes) {
   return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
-// task 371: инлайн-ввод суммы с красивым форматированием.
-//   В фокусе — «сырое» число для редактирования, вне фокуса — «1 000 000,00».
-//   Сумма может быть отрицательной (ДС на уменьшение стоимости): минус первым символом.
-const AMOUNT_INPUT_HINT = 'Уменьшение стоимости — со знаком минус'
-const liveAmount = (raw) => formatAmountLive(raw, { allowNegative: true })
-function AmountCellInput({ value, disabled, onSave }) {
-  const [focused, setFocused] = useState(false)
-  const [draft, setDraft] = useState('')
-  // Вне фокуса — с фикс. 2 знаками; в фокусе — «живой» формат (разряды пробелами).
-  const display = focused ? draft : (value != null ? formatAmount(value) : '')
-  return (
-    <input
-      type="text"
-      inputMode="decimal"
-      className="dcr-amount-input"
-      value={display}
-      disabled={disabled}
-      placeholder="—"
-      title={AMOUNT_INPUT_HINT}
-      onFocus={() => { setFocused(true); setDraft(value != null ? liveAmount(String(value)) : '') }}
-      onChange={(e) => setDraft(liveAmount(e.target.value))}
-      onBlur={() => { setFocused(false); onSave(draft) }}
-      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-    />
-  )
-}
-
 // «Комментарий» к статусу ОКС: правится прямо в ячейке, сохраняется при уходе из поля (Ctrl+Enter — тоже),
 // Esc — отменить правку. Пока запись идёт, в поле — записываемый текст, а не прежний.
 // missing — у проверки нужен комментарий (номер письма, срок…), а его нет: поле подсвечено.
@@ -636,6 +616,8 @@ function DcRequestsPage() {
   const [requests, setRequests] = useState([])
   const [objects, setObjects] = useState([])
   const [counterparties, setCounterparties] = useState([])
+  // Руководитель контрагента (гендиректор из контактов карточки) — подпись в выборе контрагента рядом с ИНН.
+  const [cpHeads, setCpHeads] = useState(() => new Map())
   const [contacts, setContacts] = useState([])
   const [loading, setLoading] = useState(false)
   // Заявки хоть раз загружены: «Загрузка…» вместо таблицы — только до этого. Перечитывание после правки таблицу
@@ -700,6 +682,8 @@ function DcRequestsPage() {
   const contractsById = useMemo(() => new Map((contracts || []).map(c => [c.id, c])), [contracts])
   // Колонки договора, ДС и подразделения — когда они есть в базе (миграция 20261109): select * их отдаёт.
   const linkEnabled = requests.some(r => r.contract_id !== undefined)
+  // Колонки «ДС подрядчика» и сумм ВОР (миграция 20270104): без них — только верхняя часть блока сумм.
+  const amountColumns = hasAmountColumns(requests)
 
   // task 310 — статус в виде клик-попапа. statusPopoverUp — открыть вверх: внизу блока таблицы меню не помещается
   // (таблица прокручивается в своём блоке под закреплённой шапкой).
@@ -754,6 +738,7 @@ function DcRequestsPage() {
     fetchRequests()
     fetchObjects()
     fetchCounterparties()
+    fetchCounterpartyHeads()
     fetchContacts()
     fetchAllDocs()
     fetchExternalLink()
@@ -909,6 +894,21 @@ function DcRequestsPage() {
     }
   }
 
+  // Отдельно от списка контрагентов: не прочитались — список работает, только без подписи руководителя.
+  const fetchCounterpartyHeads = async () => {
+    try {
+      const rows = await fetchAllRows((from, to) => db
+        .from('counterparty_contacts')
+        .select('id, counterparty_id, full_name, position, updated_at')
+        .or(HEAD_POSITION_FILTER)
+        .order('id', { ascending: true })
+        .range(from, to))
+      setCpHeads(counterpartyHeads(rows))
+    } catch (error) {
+      console.error('Ошибка загрузки руководителей контрагентов:', error?.message || error)
+    }
+  }
+
   const fetchContacts = async () => {
     const { data, error } = await db
       .from('contacts')
@@ -1060,6 +1060,7 @@ function DcRequestsPage() {
       expected_approval_date: req.expected_approval_date || '', // task 365
       amount_before: req.amount_before != null ? String(req.amount_before) : '', // task 370
       amount_after: req.amount_after != null ? String(req.amount_after) : '', // task 370
+      ...Object.fromEntries(NEW_AMOUNT_FIELDS.map(f => [f, req[f] != null ? String(req[f]) : ''])),
       material_type: req.material_type || '', // task 370
       ds_type: req.ds_type || '',
       contract_id: req.contract_id || '',
@@ -1162,6 +1163,9 @@ function DcRequestsPage() {
         return formatShortDate(value) || String(value)
       case 'amount_before':
       case 'amount_after':
+      case 'amount_contractor':
+      case 'vor_amount_before':
+      case 'vor_amount_after':
         return `${formatAmount(Number(value))} ₽`
       default:
         return String(value)
@@ -1217,6 +1221,8 @@ function DcRequestsPage() {
         expected_approval_date: formData.expected_approval_date || null, // task 365
         amount_before: parseAmount(formData.amount_before), // task 370
         amount_after: parseAmount(formData.amount_after), // task 370
+        // Без колонок 20270104 их в записи нет: PostgREST отказал бы всей правке.
+        ...(amountColumns ? Object.fromEntries(NEW_AMOUNT_FIELDS.map(f => [f, parseAmount(formData[f])])) : {}),
         material_type: formData.material_type || null, // task 370
         ds_type: formData.ds_type || null,
         // Колонки договора и подразделения — только если они уже есть в базе (миграция 20261109).
@@ -1410,8 +1416,8 @@ function DcRequestsPage() {
     }
   }
 
-  // task 370: инлайн-сохранение суммы (Было/Стало) прямо из ячейки таблицы.
-  // field ∈ 'amount_before' | 'amount_after'. Пустая строка → null.
+  // task 370: инлайн-сохранение суммы прямо из блока сумм. field — колонка суммы (AMOUNT_LABEL: «Было ПСДЦ»,
+  // «ДС подрядчика», «Согласовано ДС ОСП», «Было ВОР подрядчик», «Стало ВОР ОСП»). Пустая строка → null.
   const handleSaveAmount = async (id, field, rawValue) => {
     const num = parseAmount(rawValue)
     const current = requests.find(r => r.id === id)
@@ -1961,9 +1967,6 @@ function DcRequestsPage() {
       const [generalCount, reportCount, finalCount] = DOC_SECTIONS.map(sec => allDocs.filter(sec.has).length)
       const tasks = req.dc_request_tasks || []
       const done = tasks.filter(t => t.is_completed).length
-      const before = req.amount_before
-      const after = req.amount_after
-      const { diff, pct } = amountChange(before, after)
       return {
         '№': req.requestNo,
         'Объект': req.objects?.name || '',
@@ -1977,10 +1980,8 @@ function DcRequestsPage() {
           'Подразделение': VOR_DIVISION_LABEL[req.division] || '',
         } : {}),
         'Описание ДС': req.works_description || '',
-        'Было подано, ₽ (с НДС 22%)': before != null ? before : '',
-        'Утверждено, ₽ (с НДС 22%)': after != null ? after : '',
-        'Разница, ₽': diff != null ? diff : '',
-        'Изменение, %': pct != null ? Number(pct.toFixed(2)) : '',
+        // Суммы — колонками обеих частей блока: ПСДЦ, ДС подрядчика, ДС ОСП и ВОР подрядчика / ВОР ОСП.
+        ...amountExportCells(req),
         'Статус': STATUS_LABEL[req.status || 'in_work'] || '',
         'Итог проверки': hasVerdict(req) ? (CHECK_STATUS_LABEL[req.check_status] || '') : '',
         'Заключение по проверке': req.check_result_notes || '',
@@ -2013,7 +2014,9 @@ function DcRequestsPage() {
       ...(linkEnabled ? [{ wch: 26 }] : []),
       { wch: 16 },
       ...(linkEnabled ? [{ wch: 26 }, { wch: 22 }] : []),
-      { wch: 40 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 14 },
+      { wch: 40 },
+      { wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, // ПСДЦ, ДС подрядчика, ДС ОСП, дельта к ПСДЦ
+      { wch: 20 }, { wch: 18 }, { wch: 16 }, { wch: 12 }, // ВОР подрядчика, ВОР ОСП, дельта ОСП
       { wch: 22 }, { wch: 26 }, { wch: 50 }, { wch: 22 }, { wch: 14 },
       { wch: 16 }, { wch: 9 }, { wch: 11 }, { wch: 16 },
       { wch: 16 }, { wch: 16 }, { wch: 40 },
@@ -2359,13 +2362,9 @@ function DcRequestsPage() {
                         <span className="mcard-value">{MATERIAL_LABEL[req.material_type] || '—'}</span>
                       </div>
                     )}
-                    <div className="mcard-row">
-                      <span className="mcard-label">Сумма, руб.</span>
-                      <span className="mcard-value">
-                        {req.amount_before != null ? formatAmount(req.amount_before) : '—'}
-                        {' → '}
-                        {req.amount_after != null ? formatAmount(req.amount_after) : '—'}
-                      </span>
+                    {/* Суммы — тем же блоком, что в таблице (две части), только просмотр. */}
+                    <div className="mcard-amounts">
+                      <DcRequestAmounts req={req} columns={amountColumns} />
                     </div>
                     <div className="mcard-row">
                       <span className="mcard-label">Ответственный</span>
@@ -2526,13 +2525,6 @@ function DcRequestsPage() {
                     || (canEditDc && currentStatus !== 'contract_check')
                   const docsOpen = expandedDocs.has(req.id)
 
-                  // task 370: разница сумм («Было подано» − «Утверждено»). >0 → удешевление.
-                  // Процент — от модуля поданной суммы (суммы бывают отрицательными), со знаком
-                  // изменения: < 0 — утверждено меньше поданного. «Было подано» пусто или 0 — без процента.
-                  const amountBefore = req.amount_before
-                  const amountAfter = req.amount_after
-                  const { diff: amountDiff, pct: amountPct } = amountChange(amountBefore, amountAfter)
-
                   const submission = submissionOf(req)
                   // Статус ОКС, комментарий и ответственный — только «Отдел по удорожанию», не в «Удаленных».
                   const canEditSubmission = isCostIncreaseUser && !isDeletedTab
@@ -2692,51 +2684,15 @@ function DcRequestsPage() {
                           </div>
                         )}
                       </td>
-                      {/* task 370: сумма ДС («Было подано» / «Утверждено») с инлайн-редактированием + разница */}
+                      {/* Суммы ДС одним блоком из двух частей: «Было ПСДЦ / ДС подрядчика / Согласовано ДС ОСП» и под двойной
+                          чертой «Было ВОР подрядчик / Стало ВОР ОСП» (06.11.2026); правятся прямо в ячейке. */}
                       <td className="dcr-cell-amount">
-                        <div className="dcr-amount">
-                          <div className="dcr-amount-row">
-                            <span className="dcr-amount-label">Было подано</span>
-                            {canEditDc ? (
-                              <AmountCellInput
-                                value={amountBefore}
-                                disabled={!canEditDc}
-                                onSave={(v) => handleSaveAmount(req.id, 'amount_before', v)}
-                              />
-                            ) : (
-                              <span className="dcr-amount-value">{amountBefore != null ? formatAmount(amountBefore) : '—'}</span>
-                            )}
-                          </div>
-                          <div className="dcr-amount-row">
-                            <span className="dcr-amount-label">Утверждено</span>
-                            {canEditDc ? (
-                              <AmountCellInput
-                                value={amountAfter}
-                                disabled={!canEditDc}
-                                onSave={(v) => handleSaveAmount(req.id, 'amount_after', v)}
-                              />
-                            ) : (
-                              <span className="dcr-amount-value">{amountAfter != null ? formatAmount(amountAfter) : '—'}</span>
-                            )}
-                          </div>
-                          {amountDiff != null && amountDiff !== 0 ? (
-                            <div
-                              className={`dcr-amount-diff ${amountDiff > 0 ? 'is-cheaper' : 'is-pricier'}`}
-                              title={amountDiff > 0 ? 'Удешевление относительно поданной суммы' : 'Удорожание относительно поданной суммы'}
-                            >
-                              <span className="dcr-diff-abs">{amountDiff > 0 ? '↓' : '↑'} {formatAmount(Math.abs(amountDiff))} ₽</span>
-                              {amountPct != null && (
-                                <span className="dcr-diff-pct">
-                                  {amountPct < 0 ? '−' : '+'}{formatPercent(Math.abs(amountPct))}%
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="dcr-amount-diff is-zero">
-                              {amountDiff === 0 ? 'без изменений' : ''}
-                            </div>
-                          )}
-                        </div>
+                        <DcRequestAmounts
+                          req={req}
+                          columns={amountColumns}
+                          canEdit={canEditDc}
+                          onSave={(field, v) => handleSaveAmount(req.id, field, v)}
+                        />
                       </td>
                       <td>
                         <div className="dcr-status-wrap">
@@ -3189,7 +3145,7 @@ function DcRequestsPage() {
                                 onMouseDown={() => handleSelectCp(cp)}
                               >
                                 <div className="cp-search-name">{cp.name}</div>
-                                {cp.inn && <div className="cp-search-inn">ИНН: {cp.inn}</div>}
+                                <CpSearchMeta inn={cp.inn} head={cpHeads.get(cp.id)} />
                               </button>
                             ))}
                             <div className="cp-search-hint">
@@ -3314,34 +3270,24 @@ function DcRequestsPage() {
                     проверку по договору, а дальше статус двигают чипом в таблице
                     реестра — одно место управления вместо двух. */}
 
-                {/* task 370: суммы ДС (с НДС 22%) — «Было подано» / «Утверждено» */}
-                <div className="form-group">
-                  <label>Было подано, ₽ (с НДС 22%)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    inputMode="decimal"
-                    name="amount_before"
-                    value={formData.amount_before}
-                    onChange={handleInputChange}
-                    placeholder="0"
-                    title={AMOUNT_INPUT_HINT}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Утверждено, ₽ (с НДС 22%)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    inputMode="decimal"
-                    name="amount_after"
-                    value={formData.amount_after}
-                    onChange={handleInputChange}
-                    placeholder="0"
-                    title={AMOUNT_INPUT_HINT}
-                  />
-                </div>
+                {/* task 370: суммы ДС (с НДС 22%) — те же поля, что в блоке сумм реестра: «Было ПСДЦ», «ДС подрядчика»,
+                    «Согласовано ДС ОСП», «Было ВОР подрядчик», «Стало ВОР ОСП». Без колонок 20270104 — только первая и третья. */}
+                {(amountColumns ? AMOUNT_FIELDS : ['amount_before', 'amount_after']).map((field) => (
+                  <div className="form-group" key={field}>
+                    <label htmlFor={`dcr-form-${field}`}>{AMOUNT_LABEL[field]}, ₽ (с НДС 22%)</label>
+                    <input
+                      id={`dcr-form-${field}`}
+                      type="number"
+                      step="0.01"
+                      inputMode="decimal"
+                      name={field}
+                      value={formData[field]}
+                      onChange={handleInputChange}
+                      placeholder="0"
+                      title={AMOUNT_INPUT_HINT}
+                    />
+                  </div>
+                ))}
 
                 {/* task 365: ориентировочный срок согласования */}
                 <div className="form-group full-width">

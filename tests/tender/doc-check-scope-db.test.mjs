@@ -26,6 +26,7 @@ const U = {
   economist: '00000000-0000-4000-8000-0000000dd203',  // экономист объекта, объект B
   engineer: '00000000-0000-4000-8000-0000000dd204',   // инженер ОСП без привязки — все
   office: '00000000-0000-4000-8000-0000000dd205',     // руководитель строительства без привязки — все (как на странице)
+  both: '00000000-0000-4000-8000-0000000dd206',       // руководитель строительства, объекты A и B — заявки обоих, а не первого
 }
 const R = { a: '00000000-0000-4000-8000-0000000dd301', b: '00000000-0000-4000-8000-0000000dd302', none: '00000000-0000-4000-8000-0000000dd303' }
 const IN = `(${Object.values(R).map((id) => `'${id}'`).join(',')})`
@@ -49,7 +50,8 @@ const SEED = `
     ('${U.manager}', 'construction_manager', true, false, 'Стройкин С. С.', 'dd-m@example.invalid', array['${O.a}']::uuid[]),
     ('${U.economist}', 'economist_object', true, false, 'Сметова Е. Е.', 'dd-e@example.invalid', array['${O.b}']::uuid[]),
     ('${U.engineer}', 'engineer', true, false, 'Инженеров И. И.', 'dd-i@example.invalid', '{}'),
-    ('${U.office}', 'construction_manager', true, false, 'Офисов О. О.', 'dd-o@example.invalid', '{}');
+    ('${U.office}', 'construction_manager', true, false, 'Офисов О. О.', 'dd-o@example.invalid', '{}'),
+    ('${U.both}', 'construction_manager', true, false, 'Двоеобъектов Д. Д.', 'dd-b@example.invalid', array['${O.b}', '${O.a}']::uuid[]);
   insert into public.doc_check_requests (id, object_id, doc_type, created_by_name) values
     ('${R.a}', '${O.a}', 'ds', 'Тест'), ('${R.b}', '${O.b}', 'dp', 'Тест'), ('${R.none}', null, 'ds', 'Тест');
   insert into public.doc_check_request_audit_log (request_id, event_type, description)
@@ -141,6 +143,7 @@ describe('Заявки на проверку по объектам: база', {
   it('с привязкой — заявки, история, обсуждение и шаги только своих объектов; заявки без объекта не видно', () => {
     assert.equal(as(U.manager, `select ${SEEN}`), seen(R.a))
     assert.equal(as(U.economist, `select ${SEEN}`), seen(R.b))
+    assert.equal(as(U.both, `select ${SEEN}`), seen([R.a, R.b].join(',')), 'два объекта — заявки обоих')
   })
 
   it('без привязки и администратору — как раньше, все заявки', () => {
@@ -205,6 +208,7 @@ describe('Заявки на проверку по объектам — база 
   it('с привязкой — только свои объекты; без привязки и администратору — все', () => {
     assert.equal(as(U.manager, `select ${SEEN}`), seen(R.a))
     assert.equal(as(U.economist, `select ${SEEN}`), seen(R.b))
+    assert.equal(as(U.both, `select ${SEEN}`), seen([R.a, R.b].join(',')), 'два объекта — заявки обоих')
     assert.equal(as(U.office, `select ${SEEN}`), seen(ALL))
     assert.equal(as(U.admin, `select ${SEEN}`), seen(ALL))
   })
@@ -213,6 +217,7 @@ describe('Заявки на проверку по объектам — база 
     assert.equal(as(U.manager, COMMENT_ON(R.a)), 'Вопрос по заявке')
     assert.throws(() => as(U.manager, COMMENT_ON(R.b)), /row-level security/)
     assert.equal(as(U.manager, NOTE_ON_B), '')
-    assert.throws(() => as(U.manager, MOVE_A_TO_B), /row-level security/)
+    // Здесь накатаны все миграции Яндекса: с 20270102 правку без права правки раздела раньше правила объектов отклоняет триггер.
+    assert.throws(() => as(U.manager, MOVE_A_TO_B), /row-level security|только сотрудник с правом правки/)
   })
 })

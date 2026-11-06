@@ -96,6 +96,31 @@ describe('Заявки на проверку ДП/ДС: только свои о
     }
   })
 
+  it('два объекта в «Ролях»: заявки обоих, а не только первого; в запросе и фильтре — оба', async () => {
+    // obj-1: dcr-1, dcr-3, dcr-4, dcr-7 на доске (dcr-8 — в архиве, dcr-9 — удалена); obj-2 — OWN.
+    const { page, errors, close } = await openBoard('&scope=obj-1,obj-2&canEdit=0&asRole=economist_object')
+    try {
+      assert.deepEqual(await cards(page), ['dcr-1', 'dcr-2', 'dcr-3', 'dcr-4', 'dcr-5', 'dcr-6', 'dcr-7'])
+      const reads = await docCheckReads(page)
+      assert.ok(reads.length > 0)
+      for (const r of reads) assert.deepEqual(r.ids, ['obj-1', 'obj-2'])
+      await page.locator('.dc-toolbar .fdrop-trigger', { hasText: 'Объект' }).click()
+      const options = await page.locator('.fdrop-panel .fdrop-option').allInnerTexts()
+      assert.equal(options.filter((t) => /Северный квартал/.test(t)).length, 1, options.join(' | '))
+      assert.equal(options.filter((t) => /Бизнес-центр/.test(t)).length, 1, options.join(' | '))
+      await page.keyboard.press('Escape')
+      // Второй объект первым — то же самое: порядок привязки ни на что не влияет.
+      const second = await openBoard('&scope=obj-2,obj-1&canEdit=0&asRole=construction_manager')
+      try {
+        assert.deepEqual(await cards(second.page), await cards(page))
+        assert.deepEqual(second.errors, [])
+      } finally { await second.close() }
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
   it('без привязки — как раньше: все объекты, запрос без отбора', async () => {
     const { page, errors, close } = await openBoard('&canEdit=0')
     try {

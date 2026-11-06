@@ -1,10 +1,13 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import FilterDropdown from '../FilterDropdown'
 import DocCheckLabelsInput from './DocCheckLabelsInput'
 import renderCounterpartyOption from './DocCheckCounterpartyOption'
+import PaperclipIcon from '../icons/PaperclipIcon'
+import { IconTrash } from '../icons/ActionIcons'
 import { IconObject, IconUser } from '../icons/ToolbarIcons'
 import { safeHttpUrl } from '../../utils/publicTenders'
 import { filterCounterpartyOptions } from '../../utils/counterpartyPicker'
+import { ownObjectChoice } from '../../utils/ownObjectChoice'
 import {
   DOC_CHECK_COLORS,
   DOC_CHECK_PRIORITIES,
@@ -35,15 +38,62 @@ import {
 // (hasBoardFields); без них форма прежняя. Ссылка на письмо — только при колонках
 // 20261124 (hasCardFields). Исполнителем выбирают только юриста ОСП. Дату создания и
 // автора заявки меняет только администратор, у созданной заявки (canEditCreated).
+//
+// Объект новой заявки у сотрудника, привязанного к объектам в «Ролях» (ownObjects — его объекты; null — читаются; undefined —
+// привязки нет): один — стоит серым, несколько — выбор обязателен (ownObjectChoice, как в «Заявке на заключение ДП»; без объекта
+// такую заявку не примет и база). creatorOnly — право только создавать (20270102, руководитель строительства, экономист объекта):
+// исполнителей, срока, приоритета, цвета и меток нет (их ставит отдел, база их у автора снимает), зато сразу — файлы на проверку:
+// после создания автор их не меняет.
 
 const EMPTY = {
   object_id: '', counterparty_id: '', doc_type: 'ds', doc_number: '', doc_date: '', notes: '',
   assignee_ids: [], due_date: '', priority: '', color: '', labels: [], email_link: '',
 }
 
+// Файлы новой заявки: уходят на сервер вместе с ней (строки ещё нет).
+function StagedFiles({ files, onFiles }) {
+  const inputRef = useRef(null)
+  const [dragging, setDragging] = useState(false)
+  const add = (list) => {
+    const known = new Set(files.map((f) => `${f.name}:${f.size}`))
+    onFiles([...files, ...Array.from(list || []).filter((f) => !known.has(`${f.name}:${f.size}`))])
+  }
+  return (
+    <div className="dc-form-row">
+      <span className="dc-form-label" id="dc-files-label">Документы на проверку</span>
+      <div
+        className={`dc-drop${dragging ? ' is-over' : ''}`}
+        data-testid="dc-files"
+        onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); add(e.dataTransfer?.files) }}
+      >
+        {files.map((file) => (
+          <div key={`${file.name}:${file.size}`} className="dc-drop-file">
+            <PaperclipIcon size={14} />
+            <span className="dc-drop-name" title={file.name}>{file.name}</span>
+            <button
+              type="button"
+              className="dc-icon-btn"
+              aria-label={`Убрать ${file.name}`}
+              title="Убрать"
+              onClick={() => onFiles(files.filter((f) => f !== file))}
+            ><IconTrash size={14} /></button>
+          </div>
+        ))}
+        <button type="button" className="dc-drop-add" aria-labelledby="dc-files-label" onClick={() => inputRef.current?.click()}>
+          {files.length ? '+ ещё файл' : 'Выбрать файл'}
+        </button>
+        <span className="dc-drop-hint">ДП или ДС, приложения. Можно перетащить сюда. После создания файлы меняет отдел.</span>
+        <input ref={inputRef} type="file" hidden multiple onChange={(e) => { add(e.target.files); e.target.value = '' }} />
+      </div>
+    </div>
+  )
+}
+
 export default function DocCheckFormModal({
   request, status, objects, counterpartyOptions, employees, labelSuggestions,
-  hasBoardFields, hasCardFields, canEditCreated, onSave, onClose,
+  hasBoardFields, hasCardFields, canEditCreated, creatorOnly = false, ownObjects, ownObjectsFailed = false, onSave, onClose,
 }) {
   const [form, setForm] = useState(() => (request
     ? {
@@ -65,10 +115,20 @@ export default function DocCheckFormModal({
     : EMPTY))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [files, setFiles] = useState([])
   const set = (patch) => { setForm(f => ({ ...f, ...patch })); setError('') }
+  const showWorkFields = hasBoardFields && !creatorOnly
+  const ownChoice = !request && ownObjects !== undefined
+    ? ownObjectChoice({ ownObjects, failed: ownObjectsFailed, objectId: form.object_id })
+    : null
+  const ownPick = ownChoice && !(ownObjects && ownObjects.length === 0)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (ownChoice?.problem) {
+      setError(ownChoice.problem[0].toUpperCase() + ownChoice.problem.slice(1))
+      return
+    }
     if (!form.counterparty_id && !form.notes.trim()) {
       setError('Укажите контрагента или опишите заявку в примечании')
       return
@@ -86,14 +146,14 @@ export default function DocCheckFormModal({
     setSaving(true)
     try {
       const payload = {
-        object_id: form.object_id || null,
+        object_id: (ownChoice ? ownChoice.objectId : form.object_id) || null,
         counterparty_id: form.counterparty_id || null,
         doc_type: form.doc_type,
         doc_number: form.doc_number.trim() || null,
         doc_date: form.doc_date || null,
         notes: form.notes.trim() || null,
       }
-      if (hasBoardFields) {
+      if (showWorkFields) {
         Object.assign(payload, {
           assignee_ids: assigneeIdsToSave(request?.assignee_ids, form.assignee_ids, employees),
           due_date: form.due_date || null,
@@ -106,7 +166,7 @@ export default function DocCheckFormModal({
         payload.email_link = emailLink || null
       }
       Object.assign(payload, created.patch)
-      await onSave(payload)
+      await onSave(payload, creatorOnly && !request ? files : [])
     } finally {
       setSaving(false)
     }
@@ -184,19 +244,39 @@ export default function DocCheckFormModal({
                 renderOption={renderCounterpartyOption}
               />
             </div>
-            <div className="dc-form-row">
-              <span className="dc-form-label">Объект</span>
-              <FilterDropdown
-                label=""
-                searchable
-                searchPlaceholder="Поиск объекта…"
-                allLabel="Не выбран"
-                icon={<IconObject size={15} />}
-                value={form.object_id}
-                onChange={(v) => set({ object_id: v || '' })}
-                options={objects.map(o => ({ value: o.id, label: o.name }))}
-              />
-            </div>
+            {ownPick ? (
+              <div className="dc-form-row">
+                <label htmlFor="dc-own-object">Объект{!ownChoice.single && <b className="dc-form-req" title="Обязательно"> *</b>}</label>
+                {ownChoice.single ? (
+                  <select id="dc-own-object" className="dc-form-select" value={ownChoice.single.id} disabled title="Ваш объект в «Ролях» — выбирать не нужно">
+                    <option value={ownChoice.single.id}>{ownChoice.single.name}</option>
+                  </select>
+                ) : ownObjects?.length ? (
+                  <select id="dc-own-object" className="dc-form-select" value={ownChoice.objectId} onChange={(e) => set({ object_id: e.target.value })}>
+                    <option value="">— Выберите объект —</option>
+                    {ownObjects.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                ) : (
+                  <select id="dc-own-object" className="dc-form-select" value="" disabled>
+                    <option value="">{ownObjectsFailed ? 'Объекты не загрузились' : 'Загрузка объектов…'}</option>
+                  </select>
+                )}
+              </div>
+            ) : (
+              <div className="dc-form-row">
+                <span className="dc-form-label">Объект</span>
+                <FilterDropdown
+                  label=""
+                  searchable
+                  searchPlaceholder="Поиск объекта…"
+                  allLabel="Не выбран"
+                  icon={<IconObject size={15} />}
+                  value={form.object_id}
+                  onChange={(v) => set({ object_id: v || '' })}
+                  options={objects.map(o => ({ value: o.id, label: o.name }))}
+                />
+              </div>
+            )}
           </div>
 
           <div className="dc-form-row">
@@ -224,7 +304,9 @@ export default function DocCheckFormModal({
             </div>
           )}
 
-          {hasBoardFields && (
+          {creatorOnly && !request && <StagedFiles files={files} onFiles={setFiles} />}
+
+          {showWorkFields && (
             <>
               <div className="dc-form-grid">
                 <div className="dc-form-row">

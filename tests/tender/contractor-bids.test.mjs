@@ -293,4 +293,26 @@ describe('Шаблон КП: чужой файл не читается', () => {
     assert.equal(anchored.matchedBy, 'anchor')
     assert.equal(anchored.rows[0].unit_price_materials, 100)
   })
+
+  it('суммы — как у КП, загруженного сотрудником: материалы на общий расход, работы на объём по виду работ', () => {
+    // У строки материала объём работ пуст, количество — в общем расходе: раньше сумма материалов выходила 0.
+    const vorItems = [
+      { id: 'w1', row_number: 1, cost_name: 'Прокладка кабеля', work_volume: 4000, material_consumption: null, estimate_name: 'Основная смета' },
+      { id: 'm1', row_number: 2, cost_name: 'Кабель ВВГнг 3x2,5', work_volume: null, material_consumption: 4000, estimate_name: 'Основная смета' },
+    ]
+    const anchorCol = TEMPLATE_HEADERS.indexOf(ANCHOR_HEADER)
+    const line = (id, mat, work) => {
+      const r = Array(TEMPLATE_HEADERS.length).fill('')
+      r[8] = mat
+      r[9] = work
+      r[anchorCol] = id
+      return r
+    }
+    const res = matchProposalRows([TEMPLATE_HEADERS, line('w1', '', 150), line('m1', 95, '')], vorItems)
+    const byId = Object.fromEntries(res.rows.map((r) => [r.estimate_item_id, r]))
+    assert.equal(byId.w1.total_works, 600000)
+    assert.equal(byId.w1.total_cost, 600000)
+    assert.equal(byId.m1.total_materials, 380000)
+    assert.equal(byId.m1.total_cost, 380000)
+  })
 })

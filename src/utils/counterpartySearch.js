@@ -4,23 +4,83 @@
 //    («проматомстрой» = «Пром Атом Строй» = «Пром-Атом-Строй» = «ПромАтомСтрой»);
 //  • латинские буквы, похожие на русские (A, B, C, E, H, K, M, O, P, T, X, Y), считаются русскими: в названиях
 //    бывает «OOO» или «CK» латиницей;
-//  • слова запроса — в любом порядке и в любых полях («атом пром», «ооо проматомстрой» при «ПромАтомСтрой, ООО»,
-//    «сапаров фасад» — контакт и вид работ);
+//  • слова запроса — в любом порядке и в любых полях («атом пром», «сапаров фасад» — контакт и вид работ);
 //  • телефон — цифрами, с 8 или 7 в начале («89104614571» = «+7(910)461-45-71»);
 //  • ничего не нашлось — запрос в другой раскладке («ghjvfnjv» = «проматом»), затем названия и ФИО контактов
 //    с опечатками (одна на 6–9 букв, две — от 10: «праматомстрой»); чем заменён запрос — пишет страница.
 // Поля карточки разделены переводом строки: совпадение не склеивается из конца одного поля и начала другого.
+//
+// 06.11.2026: «АБ ц» не находил «ООО АБ Ц» — точнее, находил среди 185 строк: слова «аб» и «ц» искались кусками
+// в любом поле («р-аб-оты», «-ц-ентр», адреса, примечания), а найденное шло по «№». Решение пользователя: форма
+// организации (ООО, ИП, АО…) — не главное ни в поиске, ни в указателе. Теперь:
+//  • форма — отдельно от названия: «ООО АБ Ц» ищется как «АБ Ц», «ООО» в запросе ничего не отбирает, а только
+//    ставит выше контрагентов с этой формой; запрос из одной формы («ип») — все контрагенты с ней;
+//  • слово короче 3 знаков — только с начала слова («аб» — «АБ Ц», «Абсолют», но не «работы»);
+//  • найденное — по совпадению, внутри одного уровня — по «№»: название целиком → название начинается с запроса →
+//    запрос внутри названия → все слова в названии → в других полях (ИНН, контакты, вид работ, адреса).
 import { splitPhoneExt } from './phoneFormat.js'
 
 const LATIN_AS_CYRILLIC = { a: 'а', b: 'в', c: 'с', e: 'е', h: 'н', k: 'к', m: 'м', o: 'о', p: 'р', t: 'т', x: 'х', y: 'у' }
 
+// Строчные, ё = е, й = и, латиница, похожая на кириллицу, — кириллицей; знаки остаются (делят слова). camel — «ПромАтомСтрой»
+// тремя словами: «Пром», «Атом», «Строй» (для поиска с начала слова; только у названия и запроса).
+const normalize = (value, camel = false) => {
+  let s = String(value ?? '')
+  if (camel) s = s.replace(/(\p{Ll})(\p{Lu})/gu, '$1 $2')
+  return s.toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/й/g, 'и')
+    .replace(/[abcehkmoptxy]/g, (ch) => LATIN_AS_CYRILLIC[ch])
+}
+const NOT_WORD = /[^\p{L}\p{N}]+/u
+const NOT_WORD_ALL = /[^\p{L}\p{N}]+/gu
+
 // Ключ поиска: только буквы и цифры, строчные, ё = е, й = и, латиница, похожая на кириллицу, — кириллицей.
-export const searchKey = (value) => String(value ?? '')
-  .toLowerCase()
-  .replace(/ё/g, 'е')
-  .replace(/й/g, 'и')
-  .replace(/[^\p{L}\p{N}]+/gu, '')
-  .replace(/[abcehkmoptxy]/g, (ch) => LATIN_AS_CYRILLIC[ch])
+export const searchKey = (value) => normalize(value).replace(NOT_WORD_ALL, '')
+
+// Слова текста ключами.
+const wordKeys = (value, camel = false) => normalize(value, camel).split(NOT_WORD).filter(Boolean)
+
+// Формы организации — те же, что у регистрации подрядчика (LEGAL_FORMS в contractorSignupRules.js; совпадение сторожит
+// tests/tender/counterparty-search.test.mjs), и ТОО. Сокращением или целиком, в любом месте названия: на копии
+// реестра 02.11 форму пишут и в скобках («ООО "ГОРФОКС" (ИП Сорокин В. П.)»). Слова — ключами: й = и.
+export const SEARCH_LEGAL_FORMS = [
+  { code: 'ООО', phrases: ['ооо', 'общество с ограниченной ответственностью'] },
+  { code: 'ИП', phrases: ['ип', 'индивидуальный предприниматель'] },
+  { code: 'СЗ', phrases: ['сз', 'самозанятый', 'самозанятая'] },
+  { code: 'АО', phrases: ['ао', 'акционерное общество'] },
+  { code: 'ПАО', phrases: ['пао', 'публичное акционерное общество'] },
+  { code: 'ЗАО', phrases: ['зао', 'закрытое акционерное общество'] },
+  { code: 'ОАО', phrases: ['оао', 'открытое акционерное общество'] },
+  { code: 'НАО', phrases: ['нао', 'непубличное акционерное общество'] },
+  { code: 'АНО', phrases: ['ано', 'автономная некоммерческая организация'] },
+  { code: 'ГУП', phrases: ['гуп', 'государственное унитарное предприятие'] },
+  { code: 'МУП', phrases: ['муп', 'муниципальное унитарное предприятие'] },
+  { code: 'ФГУП', phrases: ['фгуп', 'федеральное государственное унитарное предприятие'] },
+  { code: 'ГБУ', phrases: ['гбу', 'государственное бюджетное учреждение'] },
+  { code: 'ТОО', phrases: ['тоо', 'товарищество с ограниченной ответственностью'] },
+]
+// Длинные первыми: «публичное акционерное общество» — ПАО, а не «публичное» + АО.
+const FORM_PHRASES = SEARCH_LEGAL_FORMS
+  .flatMap((f) => f.phrases.map((p) => ({ code: f.code, words: wordKeys(p) })))
+  .sort((a, b) => b.words.length - a.words.length)
+
+// Слова (ключами) → { words: без форм, forms: коды форм }.
+function splitForms(tokens) {
+  const words = []
+  const forms = []
+  for (let i = 0; i < tokens.length;) {
+    const hit = FORM_PHRASES.find((p) => p.words.every((w, k) => tokens[i + k] === w))
+    if (hit) {
+      if (!forms.includes(hit.code)) forms.push(hit.code)
+      i += hit.words.length
+    } else {
+      words.push(tokens[i])
+      i += 1
+    }
+  }
+  return { words, forms }
+}
 
 // Клавиши: латинская раскладка ↔ русская (ЙЦУКЕН).
 const EN_KEYS = "qwertyuiop[]asdfghjkl;'zxcvbnm,.`"
@@ -46,28 +106,102 @@ function phoneKeys(phone) {
   return keys
 }
 
-// Что ищется у контрагента — один раз на загрузку списка: text — все поля карточки и контактов, names — название
-// и ФИО контактов (для поиска с опечатками), no — постоянный номер.
+// Что ищется у контрагента — один раз на загрузку списка:
+//   core — название без формы организации одним ключом («ООО АБ Ц» → «абц»), главное для поиска;
+//   full — название вместе с формой («оооабц»): набранное слитно с формой целиком — тоже название целиком;
+//   cuts — где в core начинаются и кончаются слова ({0, 2, 3}): совпадение целыми словами — выше;
+//   nameStarts — начала слов этого названия («\nаб\nц»), для коротких слов запроса;
+//   forms — коды форм из названия (['ООО']);
+//   text — название целиком и остальные поля карточки и контактов, по полю на строку; starts — начала их слов;
+//   names — название без формы и ФИО контактов (для поиска с опечатками); no — постоянный номер.
 export function counterpartySearchIndex(cp, no = null) {
+  const tokens = wordKeys(cp.name, true)
+  const named = splitForms(tokens)
+  const nameWords = named.words.length ? named.words : tokens
+  const core = nameWords.join('')
   const fields = [cp.name, cp.work_type, cp.inn, cp.kpp, cp.legal_address, cp.actual_address, cp.website, cp.notes]
-  const names = [cp.name]
+  const names = [core]
   for (const ct of cp.counterparty_contacts || []) {
     fields.push(ct.full_name, ct.position, ct.email, ...phoneKeys(ct.phone))
-    names.push(ct.full_name)
+    names.push(searchKey(ct.full_name))
+  }
+  const cuts = new Set([0])
+  nameWords.reduce((at, w) => { cuts.add(at + w.length); return at + w.length }, 0)
+  // Каждое поле нормализуется один раз: и ключом для text, и словами для starts.
+  const keys = []
+  const starts = []
+  for (const field of fields) {
+    const n = normalize(field)
+    const key = n.replace(NOT_WORD_ALL, '')
+    if (!key) continue
+    keys.push(key)
+    for (const w of n.split(NOT_WORD)) if (w) starts.push(w)
   }
   return {
-    text: fields.map(searchKey).filter(Boolean).join('\n'),
-    names: names.map(searchKey).filter(Boolean),
+    core,
+    full: tokens.join(''),
+    cuts,
+    nameStarts: `\n${nameWords.join('\n')}`,
+    forms: named.forms,
+    text: keys.join('\n'),
+    starts: `\n${starts.join('\n')}`,
+    names: names.filter(Boolean),
     no,
   }
 }
 
-// Совпадение: запрос целиком (без пробелов) — в одном поле, или каждое слово запроса — в каком-нибудь поле.
+// Короче — только с начала слова: иначе «аб» и «ц» найдутся почти в каждой карточке.
+const SHORT = 3
+
+// Запрос внутри названия с начала слова: 2 — целыми словами («пас» в «Пром Атом Строй (ПАС)»), 1 — с начала слова
+// («пас» в «ИСЛ Паскаль»), 0 — нет («ром» в «Пром Атом Строй»).
+function wordAligned(ix, whole) {
+  let best = 0
+  for (let at = ix.core.indexOf(whole); at >= 0 && best < 2; at = ix.core.indexOf(whole, at + 1)) {
+    if (ix.cuts.has(at)) best = ix.cuts.has(at + whole.length) ? 2 : 1
+  }
+  return best
+}
+
+// Запрос → оценка совпадения: число (меньше — лучше) или -1, если не подходит; null — запрос пустой.
+// Уровни: 0 — название целиком; 1 — название начинается с запроса целыми словами («аб» — «АБ Ц»); 2 — просто начинается
+// («аб» — «Абсолют»); 3 — внутри названия целыми словами; 4 — внутри с начала слова; 5 — внутри слова (от 3 знаков);
+// 6 — все слова запроса в названии; 7 — в других полях. Форма из запроса — не условие, а порядок: с ней — выше внутри уровня.
 function textMatcher(query) {
-  const whole = searchKey(query)
-  if (!whole) return null
-  const words = String(query ?? '').split(/\s+/).map(searchKey).filter(Boolean)
-  return (text) => text.includes(whole) || (words.length > 1 && words.every((w) => text.includes(w)))
+  const tokens = wordKeys(query, true)
+  if (!tokens.length) return null
+  const { words, forms } = splitForms(tokens)
+  const hasForms = (ix) => forms.every((f) => ix.forms.includes(f))
+  if (!words.length) return (ix) => (hasForms(ix) ? 0 : -1)
+
+  const whole = words.join('')
+  const inName = (ix, w) => (w.length >= SHORT ? ix.core.includes(w) : ix.nameStarts.includes(`\n${w}`))
+  const inAny = (ix, w) => inName(ix, w) || (w.length >= SHORT ? ix.text.includes(w) : ix.starts.includes(`\n${w}`))
+  const level = (ix) => {
+    if (ix.core === whole || ix.full === whole) return 0
+    if (ix.core.startsWith(whole)) return ix.cuts.has(whole.length) ? 1 : 2
+    const aligned = wordAligned(ix, whole)
+    if (aligned) return 5 - aligned
+    if (whole.length >= SHORT && ix.core.includes(whole)) return 5
+    if (words.every((w) => inName(ix, w))) return 6
+    if ((whole.length >= SHORT && ix.text.includes(whole)) || words.every((w) => inAny(ix, w))) return 7
+    return -1
+  }
+  return (ix) => {
+    const l = level(ix)
+    return l < 0 || !forms.length ? l : l * 2 + (hasForms(ix) ? 0 : 1)
+  }
+}
+
+// Подходящие — по оценке, при равной — в прежнем порядке.
+function ranked(list, match, indexOf) {
+  const scored = []
+  list.forEach((cp, i) => {
+    const score = match(indexOf(cp))
+    if (score >= 0) scored.push({ cp, score, i })
+  })
+  scored.sort((a, b) => a.score - b.score || a.i - b.i)
+  return scored.map((s) => s.cp)
 }
 
 // Сколько опечаток допускается: короткий запрос — только точно, иначе к нему подходили бы чужие названия
@@ -96,7 +230,7 @@ export function typoDistance(query, text) {
   return best
 }
 
-// Поиск по уже отобранному списку, порядок сохраняется (с опечатками — сначала ближайшие).
+// Поиск по уже отобранному списку: сначала лучшие совпадения, при равных — порядок списка (с опечатками — сначала ближайшие).
 // fix: null — найдено как набрано; { kind: 'layout', query } — в другой раскладке; { kind: 'typo' } — с опечатками.
 // Постоянный номер: «№ 12» — ровно этот контрагент; просто «12» — он первым, дальше совпадения в ИНН, телефонах и других полях.
 export function searchCounterparties(list, query, indexOf) {
@@ -106,17 +240,19 @@ export function searchCounterparties(list, query, indexOf) {
   const no = numbered ? Number(numbered[2]) : null
   const hasNo = (cp) => no != null && indexOf(cp).no === no
   if (numbered?.[1]) return { items: list.filter(hasNo), fix: null }
-  const found = list.filter((cp) => hasNo(cp) || match(indexOf(cp).text))
-  if (found.length) return { items: [...found.filter(hasNo), ...found.filter((cp) => !hasNo(cp))], fix: null }
+  const byNo = list.filter(hasNo)
+  const found = ranked(list, match, indexOf).filter((cp) => !hasNo(cp))
+  if (byNo.length || found.length) return { items: [...byNo, ...found], fix: null }
 
   const switched = switchLayout(query).trim()
   const matchSwitched = searchKey(switched) !== searchKey(query) && textMatcher(switched)
   if (matchSwitched) {
-    const items = list.filter((cp) => matchSwitched(indexOf(cp).text))
+    const items = ranked(list, matchSwitched, indexOf)
     if (items.length) return { items, fix: { kind: 'layout', query: switched } }
   }
 
-  const key = searchKey(query)
+  // С опечатками — без формы организации: «ооо праматомстрой» ищет «праматомстрой».
+  const key = splitForms(wordKeys(query, true)).words.join('') || searchKey(query)
   const limit = typoLimit(key.length)
   if (!limit) return { items: [], fix: null }
   const near = []

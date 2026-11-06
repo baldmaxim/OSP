@@ -16,6 +16,8 @@
 // названа, отвечает PGRST200, как PostgREST.
 // window.__fakeUnique[таблица] — колонки уникального ключа: вставка дубля отвечает 23505, как база.
 // window.__fakeAfter[таблица](op, строка, прежняя) — триггер «после записи» (журнал расценок).
+// window.__fakeNotNull — таблицы, у которых .not(колонка, 'is', null) отбирает строки (у остальных .not() по-прежнему
+// пропускается: от этого зависят другие стенды); нужно подвкладкам «Договорных расценок (Larix)».
 // window.__fakeTouch(таблица) — строки таблицы тест поменял прямо в __fakeDb после того, как страница её уже читала
 // (правка «в другом разделе»): выборки перестают отдавать прежний ответ, как после записи через API.
 // window.__fakeGenerated[таблица](строка) — вычисляемые колонки (GENERATED): считаются до проверки ключа.
@@ -81,6 +83,7 @@ function applyFilters(rows, filters) {
   return rows.filter((r) => filters.every((f) => {
     if (f.op === 'eq') return String(r[f.col]) === String(f.val)
     if (f.op === 'is') return f.val === null ? r[f.col] == null : r[f.col] === f.val
+    if (f.op === 'notnull') return r[f.col] != null
     if (f.op === 'in') return f.val.map(String).includes(String(r[f.col]))
     if (f.op === 'gt') return r[f.col] > f.val
     if (f.op === 'gte') return r[f.col] >= f.val
@@ -160,7 +163,10 @@ function builder(table) {
     gte(col, val) { q.filters.push({ op: 'gte', col, val }); return self },
     ilike(col, val) { q.filters.push({ op: 'ilike', col, val }); return self },
     neq() { return self },
-    not() { return self },
+    not(col, op, val) {
+      if (op === 'is' && val === null && window.__fakeNotNull?.includes(table)) q.filters.push({ op: 'notnull', col })
+      return self
+    },
     // Таймаут запроса (окно «ВОРы и РД») — стенд отвечает сам, отменять нечего.
     abortSignal() { return self },
     // Логическое дерево — parseCond выше; условие с незнакомым оператором пропускается целиком.

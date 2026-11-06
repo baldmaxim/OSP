@@ -129,7 +129,7 @@ describe('Кабинет подрядчика: расценка на сайте'
     }
   })
 
-  it('файл ВОР — главная кнопка, шаблон — маленькая; файл не того вида не стирает КП; у «Состава работ» нет числа; отказ убирает тендер', async () => {
+  it('файл ВОР — главная кнопка, шаблон — маленькая; файл не того вида не стирает КП; «Состава работ» рядом с расценкой нет; отказ убирает тендер', async () => {
     const { page, errors, close } = await open('&legacyItems=1')
     try {
       await openTender(page, 905)
@@ -144,7 +144,9 @@ describe('Кабинет подрядчика: расценка на сайте'
       const height = (loc) => loc.evaluate((el) => el.getBoundingClientRect().height)
       assert.ok(await height(template) < await height(vorBtn), 'шаблон заметно меньше кнопки ВОР')
 
-      assert.equal((await page.locator('.cab-section h3', { hasText: 'Состав работ' }).textContent()).trim(), 'Состав работ')
+      // Смета во вкладке «ВОР» есть, но рядом расценка: тот же ВОР — во вкладке «Структура КП», второго показа нет.
+      await page.locator('.cab-section h3', { hasText: 'Расценка' }).waitFor()
+      assert.equal(await page.locator('.cab-section h3', { hasText: 'Состав работ' }).count(), 0)
 
       // Заполненный файл ВОР в загрузку шаблона: столбцы другие — отказ с подсказкой, КП не трогаем.
       const wb = XLSX.utils.book_new()

@@ -4,6 +4,7 @@ import { formatMoney } from '../../utils/estimateImport'
 import { effectiveDocumentAmount } from '../../utils/contractAmendments'
 import { buildObjectTree, docTitle, searchContractChoices } from '../../utils/counterpartyDocs'
 import { amendmentLabel, dcWorkState, summarizeDcRequests } from '../../utils/dcRequestContracts'
+import { requestTotals } from '../../utils/dcRequestAmounts'
 import {
   attachContract, detachContract, loadContractChoices, loadCounterpartyDcRequests, loadCounterpartyDocs,
 } from '../../services/counterpartyContracts'
@@ -190,13 +191,12 @@ const requestNo = (req) => (req.request_number != null ? `Заявка № ${req
 
 const requestDsLabel = (req) => (req.ds_number ? amendmentLabel({ contract_number: req.ds_number }) : 'без № ДС')
 
-// Сумма заявки: утверждённая, а пока её нет — поданная.
+// Сумма заявки: утверждённая, а пока её нет — поданная. Обе части блока сумм реестра: ПСДЦ / ДС ОСП и ВОР
+// (requestTotals: суммы «ДС по тендеру» с 20270104 лежат в ВОР).
 function requestAmount(req) {
-  const num = (v) => (v != null && v !== '' ? Number(v) : null)
-  const approved = num(req.amount_after)
-  if (approved != null) return { value: approved, label: 'утверждено' }
-  const submitted = num(req.amount_before)
-  return submitted != null ? { value: submitted, label: 'подано' } : null
+  const { before, after } = requestTotals(req)
+  if (after != null) return { value: after, label: 'утверждено' }
+  return before != null ? { value: before, label: 'подано' } : null
 }
 
 function RequestAmount({ req }) {

@@ -1,13 +1,16 @@
 // Победители тендера для показа: строки tender_winners (несколько — при разделении по корпусам и системам), а если их
 // нет — основной победитель tenders.winner_counterparty_id. Выборка — TENDER_WINNERS_SELECT.
+// status контрагента — для плашки «ЧС» (BlacklistMark), если выборка его взяла.
 export const TENDER_WINNERS_SELECT = 'winner_counterparty_id, winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name))'
 
 export function tenderWinnersOf(tender) {
   const rows = tender?.tender_winners || []
   if (rows.length > 0) {
-    return rows.map(w => ({ id: w.counterparty_id, name: w.counterparties?.name || '—', scope: w.scope_note || '' }))
+    return rows.map(w => ({
+      id: w.counterparty_id, name: w.counterparties?.name || '—', scope: w.scope_note || '', status: w.counterparties?.status || null,
+    }))
   }
-  return tender?.winner ? [{ id: tender.winner.id, name: tender.winner.name, scope: '' }] : []
+  return tender?.winner ? [{ id: tender.winner.id, name: tender.winner.name, scope: '', status: tender.winner.status || null }] : []
 }
 
 // База без таблицы победителей или связи с ней: выборка без них, страница работает.

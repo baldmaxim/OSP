@@ -65,7 +65,7 @@ import {
   IconJoint, IconOther, IconFolderTree, IconDocsStack, IconSearch,
 } from '../components/icons/ToolbarIcons'
 import { departmentConfig, objectDeptBadge, tenderObjectName, isConstructionTender } from '../utils/tenderDepartments'
-import { mainTenderStatuses, initialMainTenderStatus, shownMainTenderStatus } from '../utils/tenderStatuses'
+import { mainTenderStatuses, initialMainTenderStatus, shownMainTenderStatus, isClosedMainStatus } from '../utils/tenderStatuses'
 import { weekKey } from '../utils/weeks'
 import { TENDER_DUTY_NAMES, DUTY_OVERRIDE_KEY, parseDutyOverride, currentDuty } from '../utils/tenderDuty'
 import TenderCallReminder from '../components/TenderCallReminder'
@@ -81,6 +81,7 @@ import useBodyClass from '../hooks/useBodyClass'
 import ClampText from '../components/ClampText'
 import PersonName from '../components/PersonName'
 import { tenderWinnersOf } from '../utils/tenderWinners'
+import BlacklistMark from '../components/BlacklistMark'
 import { IconPencil, IconTrash, IconRestore, IconLetter, IconDownload, IconTrophy } from '../components/icons/ActionIcons'
 import '../components/Tenders.css'
 import '../components/TendersRegistryPolish.css'
@@ -140,7 +141,7 @@ const HistoryIcon = () => (
 )
 
 // Поля тендера для реестра и формы редактирования.
-const TENDER_LIST_SELECT = '*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, summary_proposal_link, cost_plan_status, cost_plan_link, materials_proposal_deadline, materials_proposal_link)'
+const TENDER_LIST_SELECT = '*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name, status), tender_winners(counterparty_id, scope_note, counterparties(id, name, status)), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, summary_proposal_link, cost_plan_status, cost_plan_link, materials_proposal_deadline, materials_proposal_link)'
 
 function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const isMaterialsView = tenderType === 'materials'
@@ -449,10 +450,10 @@ ${ATTACHMENT_BLOCK}
   const currentStatusOptions = isMaterialsView ? materialsStatusOptions : statusOptions
   // Для тендеров на материалы «завершённые» — это «Завершён» и «Не требуется»
   // (а также старое значение «Не нужно» — для обратной совместимости).
-  // Для основных тендеров — только «Завершен».
+  // Для основных тендеров — «Завершен» и «Перезапуск» (процедура закончена, тендер перезапущен другим).
   const isCompletedStatus = (status) => isMaterialsView
     ? (status === 'Завершён' || status === 'Не требуется' || status === 'Не нужно')
-    : (status === 'Завершен')
+    : isClosedMainStatus(status)
   const initialStatusValue = isMaterialsView ? 'Не начат' : initialMainTenderStatus(department)
 
   const getCounterpartyStatusLabel = participantStatusLabel
@@ -946,6 +947,7 @@ ${ATTACHMENT_BLOCK}
             name,
             work_type,
             inn,
+            status,
             counterparty_contacts(
               id,
               full_name,
@@ -2610,6 +2612,7 @@ ${ATTACHMENT_BLOCK}
       'Подведение итогов': 'status-summarizing',
       'Завершен': 'status-completed',
       'Приостановка тендера': 'status-suspended',
+      'Перезапуск': 'status-restarted',
       // Статусы тендеров на материалы
       'Не начат': 'status-not-started',
       'В работе': 'status-in-progress',
@@ -3996,6 +3999,7 @@ ${ATTACHMENT_BLOCK}
                                   <span className="winner-icon" aria-hidden><IconTrophy size={14} /></span>
                                   <span className="winner-name">
                                     {w.name}
+                                    <BlacklistMark status={w.status} />
                                     {w.scope && (
                                       <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>
                                         {' '}— {w.scope}
@@ -4548,6 +4552,7 @@ ${ATTACHMENT_BLOCK}
                                       {/* ИНН — в подсказке названия: в строке он почти не нужен, а место занимал. */}
                                       <div className="tc-company-name" title={tc.counterparties?.inn ? `ИНН ${tc.counterparties.inn}` : undefined}>
                                         {tc.counterparties?.name}
+                                        <BlacklistMark status={tc.counterparties?.status} />
                                       </div>
                                       {tc.counterparties?.work_type && (
                                         <div className="tc-company-sub" title={tc.counterparties.work_type}>
@@ -5649,6 +5654,7 @@ ${ATTACHMENT_BLOCK}
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>
                                 {tc.counterparties?.name}
+                                <BlacklistMark status={tc.counterparties?.status} />
                               </div>
                               {tc.counterparties?.work_type && (
                                 <div style={{ fontSize: '0.875rem', opacity: 0.7 }}>

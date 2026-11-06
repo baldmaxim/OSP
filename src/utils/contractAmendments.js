@@ -244,6 +244,21 @@ export function contractActualAmount(contract, index) {
   return total
 }
 
+// Сумма каждой строки реестра для сводных отчётов (сумма по валютам, по объектам, по подрядчикам) → Map id → сумма.
+// Договор — актуальная сумма всего дерева (contractActualAmount: последнее завершённое состояние ветки, ПСДЦ, завершённые доп.
+// работы); ДС — 0: её сумма уже в договоре (ДС на изменение ВОР хранит полную новую сумму ветки, и простое сложение строк
+// считало договор ещё раз на каждое такое ДС); ДС, чей договор не попал в выборку, — своя сумма.
+// Строкам нужны record_type, parent_contract_id, display_id, status, changed_fields, contract_amount, psdc_total, deleted_at.
+export function reportAmounts(rows = []) {
+  const index = buildDocIndex(rows)
+  const out = new Map()
+  for (const row of rows) {
+    if (!isAmendment(row)) out.set(row.id, contractActualAmount(row, index))
+    else out.set(row.id, row.parent_contract_id && index.byId.has(row.parent_contract_id) ? 0 : (effectiveDocumentAmount(row) ?? 0))
+  }
+  return out
+}
+
 // Исходная сумма договора — сумма самого договора (его ПСДЦ или ручная), без ДС.
 export function contractOriginalAmount(contract) {
   return effectiveDocumentAmount(contract) ?? 0

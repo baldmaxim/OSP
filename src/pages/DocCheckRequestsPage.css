@@ -640,6 +640,37 @@
   font-family: inherit;
 }
 .dc-form-row .fdrop, .dc-form-row .fdrop-trigger { width: 100%; max-width: 100%; }
+/* Объект сотрудника с привязкой к объектам (20270102): один — серым, без выбора; несколько — выбор обязателен. */
+.dc-form-select {
+  width: 100%;
+  min-height: var(--ui-control-h, 2.25rem);
+  padding: 0.4375rem 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--ui-text);
+  font-family: inherit;
+}
+.dc-form-select:disabled { background: var(--bg-tertiary); color: var(--text-secondary); cursor: default; opacity: 1; }
+.dc-form-req { color: var(--danger-color); font-weight: var(--ui-semibold); }
+/* Файлы новой заявки создателя: список, «Выбрать файл», перетаскивание. */
+.dc-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px dashed var(--border-color-dark, var(--border-color));
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+}
+.dc-drop.is-over { border-color: var(--primary-color); background: color-mix(in srgb, var(--primary-color) 6%, var(--bg-secondary)); }
+.dc-drop-file { display: flex; align-items: center; gap: 0.375rem; max-width: 100%; color: var(--text-primary); font-size: var(--ui-th); }
+.dc-drop-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dc-drop-add { padding: 0; border: 0; background: none; color: var(--ui-link); font: inherit; font-size: var(--ui-text); cursor: pointer; }
+.dc-drop-add:hover { text-decoration: underline; }
+.dc-drop-hint { color: var(--text-tertiary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh, 1rem); }
 .dc-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 0.75rem; }
 /* Приоритет (четыре кнопки) — по своей ширине, цвет — в остаток строки. */
 .dc-form-grid--wide { grid-template-columns: auto 1fr; gap: 0 1.5rem; }
@@ -1122,8 +1153,35 @@
 
 @media (max-width: 640px) {
   .dc-toolbar { padding-left: 0.75rem; padding-right: 0.75rem; }
-  .dc-search-wrap { flex-basis: 100%; order: 3; max-width: none; }
-  .doc-check-page.ui-work.ui-work .dc-head > :last-child:not(h2) { margin-left: 0; justify-content: flex-start; }
+  /* Шапка — три низкие строки (06.11.2026, было около 290 px над доской): название; «Доска / Реестр» и «Фильтры»; поиск и
+     «+ Новая заявка». Фильтры, «Архив» и «Удалённые» — в панели под кнопкой «Фильтры». Высота кнопок — 38 px, под палец. */
+  .doc-check-page .dc-head, .doc-check-page .dc-toolbar { --ui-control-h: 2.375rem; }
+  /* !important — против общего слоя телефона (mobile.css: .page-header — столбцом, тоже !important). */
+  .doc-check-page.ui-work.ui-work .dc-head {
+    flex-direction: row !important;
+    flex-wrap: wrap;
+    align-items: center !important;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+  }
+  .doc-check-page.ui-work.ui-work .dc-head h2 { flex: 1 1 100%; white-space: normal; }
+  .doc-check-page .dc-head .dc-header-actions { display: contents; }
+  .doc-check-page .dc-head .dc-view-switch { order: 1; }
+  .doc-check-page .dc-head .dc-filters-btn { order: 2; margin-left: auto; }
+  .dc-search-wrap { order: 3; flex: 1 1 10rem; min-width: 0; max-width: none; }
+  .doc-check-page .dc-head .dc-new-btn { order: 4; height: var(--ui-control-h); }
+  .dc-search { font-size: 16px; }
+  .dc-toolbar-modes { display: flex; flex: 1 1 100%; gap: 0.375rem; }
+  .dc-toolbar .fdrop-trigger { max-width: none; }
+  /* Реестр — карточками. */
+  .dc-mcards { padding: 0.75rem; }
+  .dc-mcard .mcard-head { align-items: flex-start; }
+  .dc-mcard .dc-status-chip { flex: none; white-space: nowrap; }
+  .dc-mcard.has-color { border-left: 4px solid var(--dcc); }
+  .dc-mcard .mcard-foot:empty { display: none; }
+  .dc-mcard .dc-restore { min-height: 2.25rem; }
+  .dc-form-select { min-height: 2.5rem; font-size: 16px; }
+  .dc-drop-add { min-height: 2.25rem; }
   .dc-board { padding: 0.75rem; scroll-snap-type: x mandatory; }
   .dc-column { flex-basis: 85vw; max-height: none; scroll-snap-align: start; }
   .dc-table-wrap, .dc-empty, .dc-error, .dc-note, .dc-mode-banner { margin-left: 0.75rem; margin-right: 0.75rem; }

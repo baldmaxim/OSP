@@ -1501,7 +1501,7 @@
   background: var(--bg-secondary);
 }
 
-.tender-history-table .th-num    { width: 48px; }
+.tender-history-table .th-num    { width: 64px; } /* номер тендера, до 4 цифр */
 .tender-history-table .th-obj    { width: 22%; }
 .tender-history-table .th-desc   { width: auto; }
 .tender-history-table .th-status { width: 170px; }
@@ -1553,8 +1553,9 @@
 .tender-history-num {
   text-align: center;
   font-weight: 600;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .tender-history-obj {
@@ -1672,6 +1673,7 @@
 .cp-history-card:active { border-color: var(--primary-color, #2563eb); }
 .cp-history-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
 .cp-history-card-obj { font-weight: 600; font-size: 0.875rem; color: var(--text-primary); min-width: 0; overflow-wrap: anywhere; }
+.cp-history-card-no { margin-right: 0.375rem; color: var(--text-tertiary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cp-history-card-head .tender-history-status { flex-shrink: 0; white-space: nowrap; }
 .cp-history-card-desc { font-size: 0.8125rem; line-height: 1.35; color: var(--text-secondary); overflow-wrap: anywhere; }
 .cp-history-card-foot { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.75rem; color: var(--text-tertiary); }

@@ -91,10 +91,12 @@ export const WRITE_RULES = {
   objects: [['objects', 'edit']],
   counterparties: [['counterparties', 'edit']],
   dc_requests: [['dc_requests', 'edit']],
-  // Заявка на ДП (20261227): автор — право создания, остальные — работа с заявками. Какую заявку можно менять, решает
+  // Заявка на заключение ДП (20261227): автор — право создания, остальные — работа с заявками. Какую заявку можно менять, решает
   // триггер базы s3_documents_dp_request_guard: здесь нет разницы между своей заявкой и чужой.
   dp_requests: [['dp_requests', 'edit'], ['dp_requests_create', 'edit']],
-  doc_check_requests: [['doc_check_requests', 'edit']],
+  // Заявки на проверку ДП/ДС: право правки раздела; право создания (20270102) — автору, к своей заявке, пока она в «Новых»:
+  // какую заявку можно, решает триггер базы s3_documents_doc_check_guard, как у заявки на ДП.
+  doc_check_requests: [['doc_check_requests', 'edit'], ['doc_check_requests_create', 'edit']],
   general_documents: [['general_documents', 'edit']],
   tasks: [],
   psdc: [['contracts', 'edit']],
@@ -122,6 +124,9 @@ const rulesFor = (table, category) => {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+// Ключ операции — только UUIDv7 (его выдаёт портал, src/utils/uuid.js): ключи файлов прежнего портала содержат UUIDv4,
+// и с v4 в operation_id можно было собрать ключ чужого файла и получить ссылку на перезапись его содержимого.
+const UUID_V7_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const SHA256_RE = /^[0-9a-f]{64}$/
 const CATEGORY_RE = /^[a-z0-9_]{1,64}$/
 // Что должно совпасть у повтора с тем же operation_id.
@@ -155,7 +160,7 @@ function readFile(body) {
   // owner_id — только uuid: ни составных значений, ни «путей» в ключе бакета.
   if (!UUID_RE.test(ownerId)) return { error: 'Invalid owner_id' }
   const operationId = String(body.operation_id || '').toLowerCase()
-  if (!UUID_RE.test(operationId)) return { error: 'Нет ключа операции (operation_id) — обновите страницу' }
+  if (!UUID_V7_RE.test(operationId)) return { error: 'Нет ключа операции (operation_id) — обновите страницу' }
   if (!Number.isSafeInteger(body.size_bytes) || body.size_bytes < 0) return { error: 'Invalid size_bytes' }
   const sha256 = optional(body.sha256)?.toLowerCase() ?? null
   if (sha256 !== null && !SHA256_RE.test(sha256)) return { error: 'Invalid sha256' }
@@ -203,7 +208,36 @@ export const PRESIGN_BODY = z.object({
 const WRITE_ACTIONS = new Set(['upload', 'confirm', 'delete', 'rename', 'describe'])
 const DOC_NOTE_MAX = 500
 
-export function registerS3Presign(app, { config, getS3, gatewayOn = false, isReadOnly = () => false, loadStatus = null }) {
+export function registerS3Presign(app, { config, getS3, gatewayOn = false, isReadOnly = () => false, loadStatus = null, db = null, getServiceClient = null }) {
+  // Есть ли владелец вообще — без правил по строкам: «не виден пользователю» и «удалён» — разные случаи. Своя база —
+  // служебной операцией, иначе — служебным клиентом. Проверить не удалось — считаем, что есть: отказ лучше, чем открыть.
+  const ownerExists = async (ownerType, ownerId, log) => {
+    const tables = OWNER_TABLES[ownerType] || []
+    try {
+      if (db) {
+        return await db.read(null, async (tx) => {
+          await tx.mark('internal')
+          for (const t of tables) {
+            if ((await tx.query(`select 1 from public.${t} where id = $1`, [ownerId])).rows.length) return true
+          }
+          return false
+        })
+      }
+      const service = getServiceClient ? getServiceClient() : null
+      if (service) {
+        for (const t of tables) {
+          const { data, error } = await service.from(t).select('id').eq('id', ownerId).maybeSingle()
+          if (error) throw error
+          if (data) return true
+        }
+        return false
+      }
+    } catch (err) {
+      log?.warn({ code: err?.code, msg: String(err?.message || err).slice(0, 120) }, 's3-presign owner check')
+    }
+    return true
+  }
+
   app.route({ method: 'POST', url: '/api/fn/s3-presign', config: {
     // Вошедший, одобренный и не заблокированный: сотрудник или подрядчик. Что именно ему можно с
     // конкретным файлом (чужой договор, право раздела) — ниже, по данным записи.
@@ -255,12 +289,25 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
       }
       return results.some(({ data }) => data === true)
     }
-    // Право на существующий файл (удаление, переименование): по таблице владельца и категории. Владельца уже нет —
-    // достаточно права любой его таблицы.
+    // Право на существующий файл (удаление, переименование, описание): по таблице владельца и категории.
+    //   • ключ объекта не в каталоге своего владельца — строку переставили на другого владельца (строки s3_documents
+    //     меняет любой сотрудник через шлюз): только администратор;
+    //   • владелец есть, но не виден пользователю — отказ (раньше считался удалённым, и у задачи правил не было вовсе);
+    //   • владельца правда нет — право любой его таблицы, а если правил нет (задача) — администратор.
+    const DENY = null
     const rulesForDoc = async (doc) => {
       if (!Object.hasOwn(OWNER_TABLES, doc.owner_type)) return UNKNOWN_OWNER_RULES
+      const prefix = `${FOLDER_BY_OWNER[doc.owner_type]}/${String(doc.owner_id || '').toLowerCase()}/`
+      if (!String(doc.s3_key || '').startsWith(prefix)) return UNKNOWN_OWNER_RULES
       const table = await ownerTable(doc.owner_type, doc.owner_id)
-      return table ? rulesFor(table, doc.doc_category) : OWNER_TABLES[doc.owner_type].flatMap((t) => rulesFor(t, doc.doc_category))
+      if (table) return rulesFor(table, doc.doc_category)
+      if (await ownerExists(doc.owner_type, doc.owner_id, request.log)) return DENY
+      const union = OWNER_TABLES[doc.owner_type].flatMap((t) => rulesFor(t, doc.doc_category))
+      return union.length ? union : UNKNOWN_OWNER_RULES
+    }
+    const mayChangeDoc = async (doc) => {
+      const rules = await rulesForDoc(doc)
+      return rules !== DENY && allowed(rules)
     }
     // Загрузка и подтверждение: владелец виден и есть право его раздела (или категории). Иначе — [код, ответ].
     const uploadDenied = async (file, category) => {
@@ -377,13 +424,13 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           if (!s3Key) return reply.code(400).send({ error: 'Missing s3_key' })
           const { data: doc, error } = await supabase
             .from('s3_documents')
-            .select('id, owner_type, owner_id, doc_category, created_at')
+            .select('id, owner_type, owner_id, doc_category, created_at, s3_key')
             .eq('s3_key', s3Key)
             .maybeSingle()
           if (error) throw error
           // Строки нет (или не видна): повтор удаления — уже сделано; объект без строки не трогаем.
           if (!doc) return { ok: true, already: true }
-          if (!await allowed(await rulesForDoc(doc))) return reply.code(403).send({ error: NO_RIGHT })
+          if (!await mayChangeDoc(doc)) return reply.code(403).send({ error: NO_RIGHT })
 
           // Перенос данных: решаем до удаления строки, остаётся ли объект в хранилище. Документ пришёл с
           // данными прежнего портала — объект его, пока тот работает (в репетиции — всегда).
@@ -430,12 +477,12 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           if (!s3Key) return reply.code(400).send({ error: 'Missing s3_key' })
           const { data: doc, error } = await supabase
             .from('s3_documents')
-            .select('id, owner_type, owner_id, doc_category, file_name')
+            .select('id, owner_type, owner_id, doc_category, file_name, s3_key')
             .eq('s3_key', s3Key)
             .maybeSingle()
           if (error) throw error
           if (!doc) return reply.code(404).send({ error: 'Файл не найден' })
-          if (!await allowed(await rulesForDoc(doc))) return reply.code(403).send({ error: NO_RIGHT })
+          if (!await mayChangeDoc(doc)) return reply.code(403).send({ error: NO_RIGHT })
           let patch
           if (body.action === 'rename') {
             const fileName = String(body.file_name ?? '')

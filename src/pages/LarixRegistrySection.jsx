@@ -5,7 +5,7 @@ import { useRole } from '../contexts/RoleContext'
 import FilterDropdown from '../components/FilterDropdown'
 import { larixContractUrl, LARIX_NAME } from '../utils/contractLarix'
 import {
-  fmtMoney, fmtDate, fmtRefreshed, describeRegistryError, PAGE_SIZES, useDebounced,
+  fmtMoney, fmtCount, fmtDate, fmtRefreshed, describeRegistryError, PAGE_SIZES, useDebounced,
   applyInFilter, fetchAllRows, downloadXlsx, todayStamp,
 } from '../utils/ratesRegistry'
 import '../components/rates/KpRates.css'
@@ -50,7 +50,8 @@ const RUN_REASON = {
   shrink: 'позиций стало намного меньше, чем в прошлый раз, — нужна проверка.',
 }
 
-const fmtCount = (n) => Number(n || 0).toLocaleString('ru-RU')
+// «у 1 позиции», «у 21 позиции», «у 2 / 5 / 11 позиций».
+const positionsGen = (n) => (n % 10 === 1 && n % 100 !== 11 ? 'позиции' : 'позиций')
 const fmtVat = (v) => (v == null || v === '' || isNaN(v) ? '—' : `${fmtMoney(v)} %`)
 
 function ExternalIcon() {
@@ -132,7 +133,8 @@ export default function LarixRegistrySection() {
   const [pageSize, setPageSize] = useState(100)
 
   const [rows, setRows] = useState([])
-  const [counts, setCounts] = useState({ all: 0, materials: 0, works: 0 })
+  // Счётчики подвкладок и число позиций с обеими ценами; null — ещё считаются (не «0») или подсчёт не удался.
+  const [counts, setCounts] = useState(null)
   const [countsFailed, setCountsFailed] = useState(false)
   const [lastPageSize, setLastPageSize] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -250,29 +252,40 @@ export default function LarixRegistrySection() {
     return () => { cancelled = true }
   }, [kindTab, page, pageSize, ordered, applyFilters, applyKind])
 
-  // Счётчики подвкладок — только при смене фильтров, не при листании.
+  // Счётчики подвкладок — только при смене фильтров, не при листании. Подвкладка — фильтр по наличию цены, поэтому
+  // позиция с ценой материалов и ценой работ есть и в «Материалах», и в «Работах»: их сумма больше «Всех позиций»
+  // (06.11.2026 на сайте 27 341 + 29 326 при 46 323). Таких позиций — отдельный подсчёт (both), его число стоит
+  // рядом с подвкладками, иначе счётчики выглядят ошибкой.
   useEffect(() => {
     let cancelled = false
     const run = async () => {
       try {
-        const mk = (kind) => applyKind(applyFilters(db.from(VIEW).select('id', { count: 'exact', head: true })), kind)
-        const res = await Promise.all(KINDS.map(k => mk(k.key)))
+        const head = () => applyFilters(db.from(VIEW).select('id', { count: 'exact', head: true }))
+        const res = await Promise.all([
+          ...KINDS.map(k => applyKind(head(), k.key)),
+          applyKind(applyKind(head(), 'materials'), 'works'),
+        ])
         if (cancelled) return
         const failed = res.find(r => r.error)
         if (failed) throw failed.error
-        setCounts(Object.fromEntries(KINDS.map((k, i) => [k.key, res[i].count || 0])))
+        setCounts({
+          ...Object.fromEntries(KINDS.map((k, i) => [k.key, res[i].count || 0])),
+          both: res[KINDS.length].count || 0,
+        })
         setCountsFailed(false)
       } catch {
-        if (!cancelled) setCountsFailed(true)
+        if (cancelled) return
+        setCounts(null)
+        setCountsFailed(true)
       }
     }
     run()
     return () => { cancelled = true }
   }, [applyFilters, applyKind])
 
-  const totalCount = countsFailed
-    ? page * pageSize + lastPageSize + (lastPageSize === pageSize ? pageSize : 0)
-    : (counts[kindTab] || 0)
+  const totalCount = counts
+    ? (counts[kindTab] || 0)
+    : page * pageSize + lastPageSize + (lastPageSize === pageSize ? pageSize : 0)
 
   const resetFilters = () => {
     setSearch(''); setProjectIds([]); setContractorIds([]); setContractIds([]); setStates([])
@@ -411,9 +424,18 @@ export default function LarixRegistrySection() {
           {KINDS.map(k => (
             <button key={k.key} type="button" role="tab" aria-selected={kindTab === k.key}
               className={`rr-sub-tab ${kindTab === k.key ? 'active' : ''}`} onClick={() => setKindTab(k.key)}>
-              {k.label}<span className="rr-sub-count">{counts[k.key]}</span>
+              {k.label}
+              <span className="rr-sub-count" title={counts ? undefined : (countsFailed ? 'Не удалось посчитать' : 'Считаем…')}>
+                {counts ? fmtCount(counts[k.key]) : (countsFailed ? '—' : '…')}
+              </span>
             </button>
           ))}
+          {counts?.both > 0 && (
+            <span className="rr-sub-note"
+              title="Подвкладка «Материалы» — позиции с ценой материалов, «Работы» — с ценой работ. Позиция с обеими ценами есть в обеих, поэтому их сумма больше «Всех позиций».">
+              у {fmtCount(counts.both)} {positionsGen(counts.both)} обе цены — они и в «Материалах», и в «Работах»
+            </span>
+          )}
         </div>
         {!error && (
           <div className="kpr-actions">
@@ -495,7 +517,7 @@ export default function LarixRegistrySection() {
           </div>
 
           <div className="rr-pagination">
-            <div className="rr-pagination-info">{fromRow}–{toRow} из {totalCount}</div>
+            <div className="rr-pagination-info">{fmtCount(fromRow)}–{fmtCount(toRow)} из {fmtCount(totalCount)}</div>
             <div className="rr-pagination-controls">
               <label className="rr-page-size">
                 На странице:

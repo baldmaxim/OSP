@@ -13,7 +13,7 @@
 | «Тендеры — Прочее» | `/tenders/other` | то же, с 29.10.2026; плотный вариант ОС (см. ниже) |
 | «Тендеры на материалы» | `/tenders/materials` | то же, `tenderType="materials"` |
 | «Заявка на ДС» | `/dc-requests` | `DcRequestsPage.jsx`: корень `dc-requests-page contract-registry ui-work` |
-| «Заявка на ДП» | `/dp-requests` | `DpRequestsPage.jsx`: корень `dp-requests-page contract-registry ui-work`, сетка `.dpr-col-*` — `DpRequestsPage.css` |
+| «Заявка на заключение ДП» | `/dp-requests` | `DpRequestsPage.jsx`: корень `dp-requests-page contract-registry ui-work`, сетка `.dpr-col-*` — `DpRequestsPage.css` |
 | «Проверка КП» | `/kp-review` | `KpReviewPage.jsx`: корень `kprv-page ui-work`, сетка — `KpReviewPage.css` |
 | «Реестр по договорам» | `/contracts/registry` | `ContractsPage.jsx`: корень `contract-registry contracts-page-v2 ui-work` (+ `cr-dense` на компьютере), с 29.10.2026 |
 | «ВОРы и РД» | `/vors` | этап 1, свой файл `VorsTypography.css` (те же токены, см. ниже) |

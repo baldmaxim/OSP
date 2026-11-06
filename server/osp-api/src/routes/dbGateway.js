@@ -205,9 +205,17 @@ export function registerDbGateway(app, ctx) {
         who = { role: 'authenticated', user: p.user, selfRegistered: p.roleRow?.self_registered === true }
       }
     } else if (request.headers.authorization) {
+      // Неверный токен — та же цена, что запрос без входа (проверка у Supabase): лимит неверных токенов по адресу.
+      const failLimit = ctx.limiters?.authFail
+      if (failLimit?.blocked(request.ip)) {
+        return send(reply.header('retry-after', '60'), 429, pgError('OSP_RATE_LIMIT', 'Слишком много запросов — повторите через минуту'))
+      }
       const token = bearerToken(request.headers.authorization)
       const user = token ? await verifyUserToken(token) : null
-      if (!user) return send(reply, 401, pgError('PGRST301', 'JWT expired or invalid'))
+      if (!user) {
+        failLimit?.take(request.ip)
+        return send(reply, 401, pgError('PGRST301', 'JWT expired or invalid'))
+      }
       who = { role: 'authenticated', user }
     }
     // Без входа — лимит по адресу: вошедшие из одного офиса под него не попадают.
@@ -242,18 +250,39 @@ export function registerDbGateway(app, ctx) {
     if (isReadOnly() && (kind === 'rpc' ? method === 'POST' : method !== 'GET' && method !== 'HEAD')) {
       return send(reply, 503, pgError(READONLY_CODE, READONLY_TEXT))
     }
-    // Одновременные запросы — последней проверкой: отказу выше место занимать незачем. Освобождает onResponse.
-    let release = null
+    // Одновременные запросы и память под тела — последней проверкой: отказу выше место занимать незачем.
+    // Освобождение — при закрытии соединения ('close' бывает и после ответа, и при обрыве клиентом: onResponse при обрыве
+    // не вызывается, и места оставались бы занятыми до перезапуска службы) и в onResponse; освободить дважды нельзя.
+    const releases = []
+    const releaseAll = () => { while (releases.length) releases.pop()() }
+    const busy = (text) => {
+      releaseAll()
+      return send(reply.header('retry-after', '5'), 429, pgError('OSP_RATE_LIMIT', text))
+    }
     if (restricted && ctx.limiters?.dbRestrictedKey) {
       const own = ctx.limiters.dbRestrictedKey.acquire(who.user?.id || request.ip)
-      const all = own && ctx.limiters.dbRestrictedTotal.acquire('all')
-      if (!all) {
-        own?.()
-        return send(reply.header('retry-after', '5'), 429, pgError('OSP_RATE_LIMIT', 'Слишком много одновременных запросов — повторите через несколько секунд'))
-      }
-      release = () => { all(); own() }
+      if (!own) return busy('Слишком много одновременных запросов — повторите через несколько секунд')
+      releases.push(own)
+      const all = ctx.limiters.dbRestrictedTotal.acquire('all')
+      if (!all) return busy('Слишком много одновременных запросов — повторите через несколько секунд')
+      releases.push(all)
     }
-    request.dbCall = { kind, name, rawQuery, who, release }
+    // Большое тело держится в памяти целиком: одно на пользователя (без входа — на адрес) и всего не больше бюджета.
+    // Тело без объявленной длины считается самым большим из допустимых.
+    if (method !== 'GET' && method !== 'HEAD' && ctx.limiters?.dbBodyBudget) {
+      const declared = request.headers['content-length']
+      const size = declared !== undefined ? Number(declared) || 0 : request.headers['transfer-encoding'] ? GATEWAY_BODY_LIMIT : 0
+      if (size > (ctx.limiters.dbLargeBodyBytes || 0)) {
+        const one = ctx.limiters.dbLargeBodyKey.acquire(who.user?.id || request.ip)
+        if (!one) return busy('Предыдущая большая загрузка ещё идёт — повторите через несколько секунд')
+        releases.push(one)
+        const bytes = ctx.limiters.dbBodyBudget.acquire(Math.min(size, GATEWAY_BODY_LIMIT))
+        if (!bytes) return busy('Сервер занят загрузкой больших данных — повторите через несколько секунд')
+        releases.push(bytes)
+      }
+    }
+    if (releases.length) reply.raw.once('close', releaseAll)
+    request.dbCall = { kind, name, rawQuery, who, release: releases.length ? releaseAll : null }
   }
 
   const handler = async (request, reply) => {

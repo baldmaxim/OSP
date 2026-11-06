@@ -15,11 +15,11 @@ const launch = browserLaunchOptions()
 describe('Статусы основного тендера по направлениям', () => {
   it('у ОС «Заявки на тендер» нет, новый тендер — «Подготовка ВОР»; у остальных — как было', () => {
     assert.deepEqual(mainTenderStatuses('construction'),
-      ['Подготовка ВОР', 'Идет тендерная процедура', 'Подведение итогов', 'Завершен', 'Приостановка тендера'])
+      ['Подготовка ВОР', 'Идет тендерная процедура', 'Подведение итогов', 'Завершен', 'Приостановка тендера', 'Перезапуск'])
     assert.equal(initialMainTenderStatus('construction'), VOR_PREP_STATUS)
     for (const dept of ['warranty', 'joint', 'other']) {
       assert.equal(mainTenderStatuses(dept)[0], TENDER_REQUEST_STATUS, dept)
-      assert.equal(mainTenderStatuses(dept).length, 6, dept)
+      assert.equal(mainTenderStatuses(dept).length, 7, dept)
       assert.equal(initialMainTenderStatus(dept), TENDER_REQUEST_STATUS, dept)
     }
   })

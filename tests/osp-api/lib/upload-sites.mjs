@@ -28,6 +28,8 @@ export const UPLOAD_SITES = [
   { file: 'src/components/ObjectDgpFiles.jsx', calls: 1, owner: 'object', table: 'objects' }, // ДГП во вкладке «Смета»
   { file: 'src/components/CounterpartyCardChip.jsx', calls: 1, owner: 'counterparty', table: 'counterparties' },
   { file: 'src/pages/DcRequestsPage.jsx', calls: 1, owner: 'dc_request', table: 'dc_requests' },
+  // Файлы новой заявки на проверку ДП/ДС от того, у кого право только создавать (20270102): id из вставки doc_check_requests.
+  { file: 'src/pages/DocCheckRequestsPage.jsx', calls: 1, owner: 'doc_check_request', table: 'doc_check_requests' },
   { file: 'src/services/dpRequests.js', calls: 1, owner: 'dp_request', table: 'dp_requests' }, // понятийное соглашение и документ договора (20261227)
   { file: 'src/components/ConceptAgreementCell.jsx', calls: 1, owner: 'contract', table: 'contracts' },
   { file: 'src/components/ContractClausesTab.jsx', calls: 1, owner: 'contract', table: 'contracts' },

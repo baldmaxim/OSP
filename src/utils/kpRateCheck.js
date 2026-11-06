@@ -17,7 +17,9 @@ import { unitPriceWithVat } from './supplierDoc.js'
 export const TOLERANCE_STEPS = [10, 15, 20, 30]
 export const DEFAULT_TOLERANCE = 15
 // Сколько наименований за один вызов kp_rates_lookup (база: до 300; ~30 мс на наименование).
-export const LOOKUP_CHUNK = 25
+// Функция отдаёт до 60 строк на наименование, а шлюз и Supabase — не больше 1000 строк на запрос: 16 × 60 = 960. При 25
+// наименованиях ответ молча обрезался, и строки 17–25 каждой порции получали «нет аналогов».
+export const LOOKUP_CHUNK = 16
 // Сколько аналогов показывать у строки сразу.
 export const VISIBLE_ANALOGS = 5
 

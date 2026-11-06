@@ -7,7 +7,8 @@ import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
 import { loadObjectsExportData } from '../services/objectsExport'
 import { buildObjectsExportSheets, buildObjectsWorkbook } from '../utils/objectsExport'
-import { loadYandexMaps } from '../utils/yandexMaps'
+import { loadYandexMaps, escapeHtml } from '../utils/yandexMaps'
+import { safeHttpUrl } from '../utils/publicTenders'
 import '../components/GeneralInfo.css'
 
 // Глобальная переменная для хранения экземпляра карты
@@ -154,17 +155,19 @@ function ObjectsPage() {
             continue
           }
 
+          // Подписи метки карта показывает как HTML: поля объекта — только экранированными, ссылка — только http(s).
+          const mapLink = safeHttpUrl(object.map_link)
           const placemark = new window.ymaps.Placemark(
             [lat, lon],
             {
-              balloonContentHeader: `<strong>${object.name || 'Без названия'}</strong>`,
+              balloonContentHeader: `<strong>${escapeHtml(object.name || 'Без названия')}</strong>`,
               balloonContentBody: `
-                <p><strong>Адрес:</strong> ${object.address || 'Не указан'}</p>
-                ${object.description ? `<p><strong>Описание:</strong> ${object.description}</p>` : ''}
+                <p><strong>Адрес:</strong> ${escapeHtml(object.address || 'Не указан')}</p>
+                ${object.description ? `<p><strong>Описание:</strong> ${escapeHtml(object.description)}</p>` : ''}
                 <p><strong>Статус:</strong> ${(object.status || 'main_construction') === 'warranty_service' ? 'Гарантийное обслуживание' : 'Основное строительство'}</p>
-                ${object.map_link ? `<p><a href="${object.map_link}" target="_blank" rel="noopener noreferrer">Открыть в Яндекс.Картах</a></p>` : ''}
+                ${mapLink ? `<p><a href="${escapeHtml(mapLink)}" target="_blank" rel="noopener noreferrer">Открыть в Яндекс.Картах</a></p>` : ''}
               `,
-              hintContent: object.name || 'Объект',
+              hintContent: escapeHtml(object.name || 'Объект'),
               iconContent: String(i + 1)
             },
             {

@@ -1,8 +1,9 @@
 // Статистика «Заявок на ДС»: «Отчёты → Заявки на ДС».
 //
 // Строка — заявка (dc_requests) с объектом, контрагентом, ответственным и задачами. Удалённые (deleted_at)
-// в статистику не входят — только счётчиком «в корзине». Суммы — «Было подано» (amount_before) и
-// «Утверждено» (amount_after), в рублях с НДС, как в реестре.
+// в статистику не входят — только счётчиком «в корзине». Суммы — «Было подано» и «Утверждено», в рублях с НДС:
+// с 06.11.2026 (миграция 20270104) — обе части блока сумм реестра: «Было ПСДЦ» + «Было ВОР подрядчик» и
+// «Согласовано ДС ОСП» + «Стало ВОР ОСП» (requestTotals); суммы «ДС по тендеру» с тех пор лежат в ВОР.
 //
 // События во времени:
 //  • создана — created_at;
@@ -15,6 +16,7 @@
 // по местному времени браузера; у столбцов графика те же границы.
 import { DS_TYPE_LABEL, DS_TYPE_OPTIONS, MATERIAL_LABEL, MATERIAL_OPTIONS, STATUS_OPTIONS } from './dcRequestOptions.js'
 import { KP_PERIODS, bucketStart, makeBuckets, median, periodStarts } from './kpStats.js'
+import { requestTotals } from './dcRequestAmounts.js'
 
 export const DC_STATUSES = STATUS_OPTIONS.map(o => o.value)
 // Срок утверждения ближе этого числа дней — «скоро срок».
@@ -26,11 +28,6 @@ const time = (iso) => {
   if (!iso) return null
   const t = new Date(iso).getTime()
   return Number.isNaN(t) ? null : t
-}
-const amount = (v) => {
-  if (v == null || v === '') return null
-  const n = Number(v)
-  return Number.isFinite(n) ? n : null
 }
 const jsonText = (v) => (v == null ? null : typeof v === 'string' ? v : String(v))
 
@@ -73,8 +70,9 @@ function addToGroup(g, r, overdue) {
   g.total += 1
   if (g[r.status] != null) g[r.status] += 1
   if (overdue) g.overdue += 1
-  g.submitted += amount(r.amount_before) || 0
-  g.approved += amount(r.amount_after) || 0
+  const { before, after } = requestTotals(r)
+  g.submitted += before || 0
+  g.approved += after || 0
 }
 
 const byTotal = (a, b) => (b.total - a.total) || a.name.localeCompare(b.name, 'ru')
@@ -116,8 +114,7 @@ export function computeDcStats(rows, completed = new Map(), now = new Date()) {
     const isDone = status === 'completed'
     verdicts[r.check_status && verdicts[r.check_status] != null ? r.check_status : 'not_checked'] += 1
 
-    const before = amount(r.amount_before)
-    const after = amount(r.amount_after)
+    const { before, after } = requestTotals(r)
     if (before != null) amounts.submitted += before
     if (after != null) amounts.approved += after
     if (before != null && after != null) {

@@ -146,6 +146,19 @@
   border: 1px solid #a5f3fc;
 }
 
+/* «Перезапуск» — тендер перезапущен другим тендером (06.11.2026) */
+.status-restarted {
+  background-color: #fdf2f8;
+  color: #9d174d;
+  border: 1px solid #fbcfe8;
+}
+
+[data-theme='dark'] .status-restarted {
+  background-color: #500724;
+  color: #fbcfe8;
+  border-color: #9d174d;
+}
+
 [data-theme='dark'] .status-summarizing {
   background-color: #164e63;
   color: #a5f3fc;

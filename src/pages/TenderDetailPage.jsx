@@ -23,6 +23,7 @@ import VorDocsModal from '../components/VorDocsModal'
 import VirtualTableBody from '../components/VirtualTableBody'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import { IconTrophy } from '../components/icons/ActionIcons'
+import BlacklistMark from '../components/BlacklistMark'
 import { vorStartDate } from '../utils/vorDates'
 import AccessDenied from '../components/AccessDenied'
 import FilterDropdown from '../components/FilterDropdown'
@@ -1470,7 +1471,7 @@ function TenderDetailPage() {
     try {
       const { data: tenderData, error: tenderError } = await db
         .from('tenders')
-        .select('*, objects(name, status, address, map_link), responsible_contact:contacts!responsible_contact_id(id, full_name, position, phone), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, materials_proposal_deadline, materials_proposal_link, responsible_contact:contacts!responsible_contact_id(id, full_name))')
+        .select('*, objects(name, status, address, map_link), responsible_contact:contacts!responsible_contact_id(id, full_name, position, phone), winner:counterparties!winner_counterparty_id(id, name, status), tender_winners(counterparty_id, scope_note, counterparties(id, name, status)), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, materials_proposal_deadline, materials_proposal_link, responsible_contact:contacts!responsible_contact_id(id, full_name))')
         .eq('id', tenderId)
         .single()
 
@@ -1494,6 +1495,7 @@ function TenderDetailPage() {
             name,
             work_type,
             inn,
+            status,
             counterparty_contacts(id, full_name, position, phone, email)
           )
         `)
@@ -1679,6 +1681,7 @@ function TenderDetailPage() {
       'Подведение итогов': 'status-summarizing',
       'Завершен': 'status-completed',
       'Приостановка тендера': 'status-suspended',
+      'Перезапуск': 'status-restarted',
       'Не начат': 'status-not-started',
       'Ожидание ВОР': 'status-waiting-vor',
       'Принято в работу': 'status-completed'
@@ -2000,9 +2003,10 @@ function TenderDetailPage() {
     ? tender.tender_winners.map(w => ({
         id: w.counterparty_id,
         name: w.counterparties?.name || '—',
-        scope: w.scope_note || ''
+        scope: w.scope_note || '',
+        status: w.counterparties?.status || null
       }))
-    : (tender.winner ? [{ id: tender.winner.id, name: tender.winner.name, scope: '' }] : [])
+    : (tender.winner ? [{ id: tender.winner.id, name: tender.winner.name, scope: '', status: tender.winner.status || null }] : [])
   const winnerIds = new Set(winnersList.map(w => w.id))
 
   // task 245: блок статусов/сроков/ответственных показываем для основного строительства
@@ -2138,7 +2142,7 @@ function TenderDetailPage() {
               <span className="info-value winner-name">
                 {winnersList.map((w) => (
                   <span key={w.id} style={{ display: 'block' }}>
-                    <span className="winner-icon" aria-hidden><IconTrophy size={14} /></span> {w.name}{w.scope ? ` — ${w.scope}` : ''}
+                    <span className="winner-icon" aria-hidden><IconTrophy size={14} /></span> {w.name}<BlacklistMark status={w.status} />{w.scope ? ` — ${w.scope}` : ''}
                   </span>
                 ))}
               </span>
@@ -2696,6 +2700,7 @@ function TenderDetailPage() {
                             <div className="tc-company-name">
                               {isWinner && <span className="winner-icon" title="Победитель" style={{ marginRight: '0.25rem' }}><IconTrophy size={14} /></span>}
                               {tc.counterparties?.name}
+                              <BlacklistMark status={tc.counterparties?.status} />
                               {isWinner && winnerScope && (
                                 <span className="tc-company-scope">— {winnerScope}</span>
                               )}
