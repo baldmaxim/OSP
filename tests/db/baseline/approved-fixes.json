@@ -4988,5 +4988,115 @@
     "to": "no",
     "why": "сотрудник без права правки менял заявку на проверку ДП/ДС прямым запросом («только просмотр» держала страница); теперь менять — только с правом правки раздела",
     "candidate": "20270102_doc_check_create.sql"
+  },
+  {
+    "release": "20270105",
+    "class": "admin",
+    "table": "tender_supply_comments",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комментарии к расценкам позиций снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20270105_supply_rate_comments.sql"
+  },
+  {
+    "release": "20270105",
+    "class": "employee_full",
+    "table": "tender_supply_comments",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комментарии к расценкам позиций снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20270105_supply_rate_comments.sql"
+  },
+  {
+    "release": "20270105",
+    "class": "employee_none",
+    "table": "tender_supply_comments",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комментарии к расценкам позиций снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20270105_supply_rate_comments.sql"
+  },
+  {
+    "release": "20270105",
+    "class": "vors_only",
+    "table": "tender_supply_comments",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комментарии к расценкам позиций снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20270105_supply_rate_comments.sql"
+  },
+  {
+    "release": "20270105",
+    "class": "contractor_own",
+    "table": "tender_supply_comments",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комментарии к расценкам позиций снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20270105_supply_rate_comments.sql"
+  },
+  {
+    "release": "20270105",
+    "class": "contractor_noorg",
+    "table": "tender_supply_comments",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комментарии к расценкам позиций снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20270105_supply_rate_comments.sql"
+  },
+  {
+    "release": "20270105",
+    "class": "unapproved",
+    "table": "tender_supply_comments",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комментарии к расценкам позиций снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20270105_supply_rate_comments.sql"
+  },
+  {
+    "release": "20270105",
+    "class": "blocked",
+    "table": "tender_supply_comments",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комментарии к расценкам позиций снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20270105_supply_rate_comments.sql"
+  },
+  {
+    "release": "20270105",
+    "class": "no_user_roles",
+    "table": "tender_supply_comments",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комментарии к расценкам позиций снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20270105_supply_rate_comments.sql"
+  },
+  {
+    "release": "20270105",
+    "class": "anon",
+    "table": "tender_supply_comments",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: комментарии к расценкам позиций снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20270105_supply_rate_comments.sql"
+  },
+  {
+    "release": "20270105",
+    "class": "service_role",
+    "table": "tender_supply_comments",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комментарии к расценкам позиций снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20270105_supply_rate_comments.sql"
   }
 ]

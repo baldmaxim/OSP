@@ -12,7 +12,6 @@ import {
   IconTenders,
   IconVors,
   IconMaterials,
-  IconAnalysis,
   IconContracts,
   IconRates,
   IconReports,
@@ -106,7 +105,10 @@ function Sidebar() {
   // панель, там не сворачивается.
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const isCollapsed = collapsed && !isMobileNav
+  // Край меню едет только после нажатия на шеврон, не при загрузке страницы (Sidebar.css, «Свёрнутое меню»).
+  const [animate, setAnimate] = useState(false)
   const toggleCollapsed = () => {
+    setAnimate(true)
     setCollapsed(prev => {
       const next = !prev
       try { localStorage.setItem(COLLAPSED_KEY, next ? '1' : '0') } catch { /* приватный режим */ }
@@ -218,14 +220,6 @@ function Sidebar() {
       visible: !canView('tenders') && canView('vors'),
     },
     {
-      key: 'analysis',
-      to: '/analysis-kp',
-      label: 'Анализ ВОР/КП',
-      tone: 'sky',
-      Icon: IconAnalysis,
-      visible: canView('analysis_kp'),
-    },
-    {
       // Реестр и три вида заявок — один пункт; виден, если открыт хотя бы один блок (право у каждого своё).
       key: 'contracts',
       to: contractsEntry(canView) || '/contracts',
@@ -297,7 +291,12 @@ function Sidebar() {
           aria-hidden
         />
       )}
-      <aside className={`sidebar ${open ? 'is-open' : ''} ${isCollapsed ? 'is-collapsed' : ''}`}>
+      {/* Место меню в раскладке и «тень» для сворачивания. Ширина распорки меняется сразу, а не анимацией: рабочая
+          область меняет ширину один раз, а не на каждом кадре (06.11.2026: «долго закрывается» в «Заявках на ДС» —
+          каждая смена ширины перерисовывала всю таблицу). Едет только край меню — сдвигом слоёв (Sidebar.css). */}
+      {!isMobileNav && <div className={`sidebar-spacer${isCollapsed ? ' is-collapsed' : ''}`} aria-hidden />}
+      {!isMobileNav && <div className={`sidebar-ghost${isCollapsed ? ' is-collapsed' : ''}${animate ? ' is-anim' : ''}`} aria-hidden />}
+      <aside className={`sidebar ${open ? 'is-open' : ''} ${isCollapsed ? 'is-collapsed' : ''}${animate ? ' is-anim' : ''}`}>
       <div className="sidebar-header">
         <div className="sidebar-brand">
           <div className="sidebar-brand-inner">

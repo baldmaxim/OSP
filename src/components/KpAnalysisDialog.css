@@ -1,0 +1,104 @@
+/* Окно «Анализ ВОР/КП» поверх «Проверки КП» (KpAnalysisDialog). Внутри — прежняя разметка страницы
+   (.bsm-*, BSMPage.css); здесь только рамка окна, кнопка «Закрыть» и подсказка при перетаскивании.
+   z-index 1260 — выше полосы меню телефона (1250), иначе она закрывала бы шапку окна. */
+.kpa-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1260;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.kpa-dialog {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1800px;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+}
+
+.kpa-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* Окно шире прежней страницы: ограничение 1400px снято, поля — как у окна. */
+.kpa-dialog .bsm-page {
+  max-width: none;
+  padding: 0 1.25rem 1.5rem;
+}
+
+/* Шапка с кнопками стоит, таблицы прокручиваются под ней. */
+.kpa-dialog .bsm-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 1rem 0 0.75rem;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.kpa-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-left: 0.25rem;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.kpa-close:hover {
+  color: var(--text-primary);
+  background: var(--hover-bg);
+}
+.kpa-close:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+/* Перетаскивание поверх уже загруженного анализа. Не ловит указатель: иначе под ним
+   срабатывал бы dragleave окна и подсказка мигала. */
+.kpa-drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 2px dashed var(--primary-color);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
+  color: var(--primary-color);
+  font-size: 1rem;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+/* Телефон: окно во весь экран; шапка (название, пояснение, кнопки — до трети экрана) не закреплена,
+   «Закрыть» — в правом верхнем углу, а не последней в переносящемся ряду кнопок. */
+@media (max-width: 640px) {
+  .kpa-overlay { padding: 0; }
+  .kpa-dialog { border-radius: 0; border: 0; }
+  .kpa-dialog .bsm-page { padding: 0 0.75rem 1rem; }
+  .kpa-dialog .bsm-header { position: relative; padding: 0.75rem 0 0.5rem; }
+  .kpa-dialog .bsm-header-text { padding-right: 2.75rem; }
+  .kpa-close { position: absolute; top: 0.75rem; right: 0; margin-left: 0; }
+}

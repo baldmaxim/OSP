@@ -246,6 +246,16 @@ describe('Заявка на заключение ДП: страница', { skip
       assert.deepEqual(heads.slice(0, 8), ['№', 'Объект', 'Договор и документы', 'Понятийное соглашение', 'Сумма, ₽', 'Ответственный', 'Примечание', 'Статус'])
       const first = row(page, 1)
       assert.match(await first.innerText(), /ЖК «Северный квартал»[\s\S]*Договор № 1[\s\S]*Договор 1\.docx[\s\S]*Понятийка 1\.pdf[\s\S]*1\s000\s001,00[\s\S]*Экономов[\s\S]*[\s\S]*Экономист объекта[\s\S]*Причина заявки 1/)
+      // Столбцы разделены вертикальными линиями (09.11.2026): в строках — рамкой справа, в закреплённой шапке — тенью; у последнего — нет.
+      const lines = await page.evaluate(() => {
+        const cells = (sel) => [...document.querySelectorAll(sel)].map((el) => getComputedStyle(el))
+        return {
+          td: cells('.dpr-table tbody tr:first-child > td').map((s) => s.borderRightWidth),
+          th: cells('.dpr-table thead th').map((s) => /-1px 0px 0px 0px inset/.test(s.boxShadow)),
+        }
+      })
+      assert.deepEqual(lines.td, [...Array(8).fill('1px'), '0px'])
+      assert.deepEqual(lines.th, [...Array(8).fill(true), false])
       await page.locator('.status-tab', { hasText: 'В работе' }).click()
       assert.equal(await page.locator('.dpr-table tbody tr').count(), 1)
       await page.locator('.status-tab', { hasText: 'Удалённые' }).click()

@@ -14,6 +14,7 @@ import { IconShieldCheck } from '../components/icons/TenderHubIcons'
 import IconTile from '../components/IconTile'
 import KpReviewBadge from '../components/KpReviewBadge'
 import KpReviewModal from '../components/KpReviewModal'
+import KpAnalysisDrop from '../components/KpAnalysisDrop'
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import VirtualTableBody from '../components/VirtualTableBody'
 import PersonName from '../components/PersonName'
@@ -1241,6 +1242,9 @@ function KpReviewPage() {
             <b>{shownCount}</b> КП · <b>{groups.length}</b> {plural(groups.length, 'тендер', 'тендера', 'тендеров')}
           </span>
         )}
+        {/* «Анализ ВОР/КП» (до 09.11.2026 — отдельный пункт меню): бросить файл — откроется окно анализа.
+            Без правки раздела в прежней странице нельзя было загрузить файл — кнопки нет. */}
+        {canEdit('analysis_kp') && <KpAnalysisDrop />}
       </div>
 
       {body}

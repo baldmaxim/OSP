@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import { COLUMN_WIDTH_MIN, dragWidths, readColumnWidths, writeColumnWidths } from '../utils/columnWidths'
 
 // Ширины столбцов таблицы, которые человек меняет сам (utils/columnWidths.js — расчёт и хранение).
@@ -6,7 +6,7 @@ import { COLUMN_WIDTH_MIN, dragWidths, readColumnWidths, writeColumnWidths } fro
 // Возвращает:
 //   tableRef — ref для <table> (место под таблицу — её родитель);
 //   tableStyle / colStyle(key) — min-width таблицы и ширины <col data-col={key}>;
-//   fits — таблица помещается в своё место (горизонтальная прокрутка не нужна);
+//   (класс is-fit у места под таблицу хук ставит сам: таблица помещается, горизонтальная прокрутка не нужна);
 //   subscribe / isCustomized / resetAll — для ColumnWidthsReset: есть ли свои ширины и сброс всех;
 //   handle(key) — для ColumnResizeHandle: ширина, начало перетаскивания, шаг клавишами, сброс границы.
 //
@@ -43,6 +43,7 @@ function placeRem(box) {
 // стили всей таблицы (0,4 с на 400 заявок), заминка дольше прежней. Каждая смена трогает только свои строки: высоты —
 // inline у распорок, не переменной на tbody (наследуется — пересчитывались бы все видимые строки).
 // Таблица сменила строки (React: данные, вкладка, сортировка) — показывается всё сразу (flush).
+const FIT_CLASS = 'is-fit'
 const FROZEN_MARGIN_PX = 200
 const FROZEN_ATTR = 'data-col-frozen' // у строки: hidden | spacer; у tbody — пока есть скрытые
 const THAW_CHUNK = 15 // строк выше и ниже видимых за одну порцию
@@ -223,13 +224,16 @@ export default function useColumnWidths(storageKey, columns) {
   }, [])
 
   // Помещается ли таблица: место под неё меряем при каждом изменении размера (окно, свёрнутое меню), сумму —
-  // при каждой смене ширин.
+  // при каждой смене ширин. Ответ — класс is-fit у места под таблицу, прямо в DOM, а не состояние React: смена
+  // состояния перерисовывала бы всю страницу (06.11.2026: в «Заявках на ДС» при окне ~1780px таблица начинает
+  // помещаться при каждом сворачивании меню — 400 заявок, лишние 0,4 с). Страница класс не задаёт; если React сам
+  // перепишет className места под таблицу, класс вернётся после её перерисовки (эффект ниже).
   const tableEl = useRef(null)
   const observer = useRef(null)
   const place = useRef(null)
-  const [fits, setFits] = useState(false)
   const checkFits = useCallback(() => {
-    if (place.current != null) setFits(place.current >= totalOf() - 0.01)
+    const box = tableEl.current?.parentElement
+    if (box && place.current != null) box.classList.toggle(FIT_CLASS, place.current >= totalOf() - 0.01)
   }, [totalOf])
 
   const measure = useCallback(() => {
@@ -259,7 +263,7 @@ export default function useColumnWidths(storageKey, columns) {
       observer.current.observe(box)
     }
   }, [measure])
-  useEffect(() => { checkFits() }, [total, checkFits])
+  useLayoutEffect(() => { checkFits() })
 
   // Новые ширины — сразу в таблицу, без перерисовки страницы.
   const commit = useCallback((next) => {
@@ -410,7 +414,6 @@ export default function useColumnWidths(storageKey, columns) {
     tableRef,
     tableStyle: { minWidth: `${total}rem` },
     colStyle: (key) => ({ width: `${widthOf(key)}rem` }),
-    fits,
     subscribe,
     isCustomized,
     resetAll,

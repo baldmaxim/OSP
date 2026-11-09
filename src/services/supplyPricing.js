@@ -17,6 +17,7 @@ import { VOR_STATEMENT_CATEGORY, LEGACY_VOR_CATEGORY, isNetworkError } from './t
 import { isWorkbookFileName } from '../utils/vorFiles'
 import { offerNeedsReread, readOffer, unreadableOfferNotes } from '../utils/supplyOffers'
 import { isFreshPriceDate } from '../utils/supplyRateHelpers'
+import { mergeNote } from '../utils/dcRequestNotes'
 // Библиотека Excel (vorMaterialsSheet → xlsx, 430 КБ) — только по требованию: сервис импортирует и реестр
 // тендеров (прогресс расценки), которому она не нужна.
 
@@ -140,13 +141,13 @@ export async function loadPricingContext(id) {
 }
 
 // Всё для таблицы расценки по основному тендеру — одновременно: файлы ВОР, списки позиций, цены, последний
-// номер журнала, непросмотренные версии ВОР и (если карточка их не дала) строки вкладки «ВОР».
+// номер журнала, непросмотренные версии ВОР, комментарии к расценкам и (если карточка их не дала) строки вкладки «ВОР».
 export async function loadPricingData(mainId, { withItems = false } = {}) {
-  const [files, sources, rates, logId, links, importState, revisions, items] = await Promise.all([
+  const [files, sources, rates, logId, links, importState, revisions, items, comments] = await Promise.all([
     loadVorFiles(mainId), loadSources(mainId), loadRates(mainId), loadLogMarker(mainId), loadLinks(mainId), loadImportState(mainId),
-    loadRevisions(mainId), withItems ? loadEstimateItems(mainId) : null,
+    loadRevisions(mainId), withItems ? loadEstimateItems(mainId) : null, loadComments(mainId),
   ])
-  return { files, sources, rates, logId, links, importState, revisions, items }
+  return { files, sources, rates, logId, links, importState, revisions, items, comments }
 }
 
 // Открытие таблицы за два шага к серверу вместо цепочки: тендер, затем всё остальное разом. ctx уже есть
@@ -540,6 +541,69 @@ export async function removeLinks(ids) {
     const { error } = await db.from('tender_supply_links').delete().in('id', chunk)
     if (error) fail(error)
   }
+}
+
+// ── Комментарии к расценкам позиций (миграция 20270105) ─────────────────────────────────────────────
+// Один комментарий на позицию тендера — (основной тендер, ключ наименования), без имени ВОР: в таблице одна строка на
+// позицию всех ВОР. Живёт отдельно от цены, как документ позиции; пустой не хранится. Права и закрытие — как у цен.
+export const COMMENT_COLUMNS = 'id, tender_id, material_name, material_key, comment, updated_by, updated_at'
+export const SUPPLY_COMMENT_MAX = 2000 // ограничение в базе
+
+// Комментарии тендера. Таблицы ещё нет (миграция не применена) или на неё нет прав (откат) — null: колонки
+// «Комментарий» нет, остальное работает как раньше.
+export async function loadComments(mainId) {
+  try {
+    return await fetchAllRows((from, to) => db.from('tender_supply_comments').select(COMMENT_COLUMNS)
+      .eq('tender_id', mainId).order('id', { ascending: true }).range(from, to))
+  } catch (e) {
+    if (['missing', 'forbidden'].includes(classifyError(e)?.kind)) return null
+    fail(e)
+  }
+}
+
+// Признак «комментарии менялись»: сколько их и когда последняя правка (удаление меняет число, правка — время).
+export async function loadCommentsMarker(mainId) {
+  const [cnt, last] = await Promise.all([
+    db.from('tender_supply_comments').select('id', { count: 'exact', head: true }).eq('tender_id', mainId),
+    db.from('tender_supply_comments').select('updated_at').eq('tender_id', mainId).order('updated_at', { ascending: false }).limit(1),
+  ])
+  if (cnt.error) fail(cnt.error)
+  if (last.error) fail(last.error)
+  return `${cnt.count ?? 0}|${last.data?.[0]?.updated_at || ''}`
+}
+
+// Записать комментарий позиции. positions — [{ k, name }] всех её записей: строка таблицы бывает сложена из разных
+// записей одной позиции в разных ВОР, комментарий пишется каждой (как цена — каждому ВОР). seen — текст, который человек
+// видел, когда начал писать: таблица комментарии коллег подхватывает раз в 20 с, и запись поверх стёрла бы чужой текст —
+// тогда сохраняются оба (как примечание заявки на ДС, mergeNote). Пустой — строки удаляются.
+// Ответ: { rows — записанные строки, keys — ключи позиции, text — что теперь в базе ('' — комментария нет) }.
+export async function saveComment(mainId, positions, { seen, text }) {
+  const byKey = new Map()
+  for (const p of positions) if (p?.k && !byKey.has(p.k)) byKey.set(p.k, p.name)
+  const keys = [...byKey.keys()]
+  if (!keys.length) fail({ code: '22023', message: 'У позиции нет наименования — комментарий не записать' })
+  const { data: now, error } = await db.from('tender_supply_comments').select(COMMENT_COLUMNS)
+    .eq('tender_id', mainId).in('material_key', keys)
+  if (error) fail(error)
+  const current = keys.map((k) => (now || []).find((r) => r.material_key === k)?.comment).find(Boolean) || ''
+  const merged = String(mergeNote(seen || '', text || '', current) ?? '').trim()
+  if (!merged) {
+    if (!now?.length) return { rows: [], keys, text: '' }
+    const { data: gone, error: e2 } = await db.from('tender_supply_comments').delete()
+      .eq('tender_id', mainId).in('material_key', keys).select('id')
+    if (e2) fail(e2)
+    // Правило по строкам молча не удаляет чужое — без права правки строки остаются: это отказ, а не успех.
+    if (!gone?.length) fail({ code: '42501', message: 'permission denied' })
+    return { rows: [], keys, text: '' }
+  }
+  if (merged.length > SUPPLY_COMMENT_MAX) {
+    fail({ code: '23514', message: `Комментарий длиннее ${SUPPLY_COMMENT_MAX} знаков${current ? ' вместе с текстом коллеги' : ''} — сократите его` })
+  }
+  const { data, error: e3 } = await db.from('tender_supply_comments')
+    .upsert(keys.map((k) => ({ tender_id: mainId, material_name: byKey.get(k), comment: merged })), { onConflict: 'tender_id,material_key' })
+    .select(COMMENT_COLUMNS)
+  if (e3) fail(e3)
+  return { rows: data || [], keys, text: merged }
 }
 
 // ── Цены из других тендеров (миграция 20261023) ─────────────────────────────────────────────────────

@@ -30,6 +30,13 @@
 /* Отступ .table-container приходит из стилей других разделов (TenderDetail.css), если их открывали раньше. */
 .dp-requests-page > .table-container { padding: 0; }
 
+/* Вертикальные разделители столбцов (09.11.2026, просьба пользователя: без них столбцы «сливались в кашу»). Цвет — темнее линий между
+   строками, а не бледнее, как в других реестрах: в ячейках по нескольку строк и файлов, и бледная линия столбцы не разделяла.
+   В шапке — тенью, по той же причине, что линия под ней (закреплённая ячейка при border-collapse свою рамку не несёт). */
+.dp-requests-page { --dpr-col-line: var(--border-color-dark); }
+.dp-requests-page.ui-work table.dpr-table > thead > tr > th:not(:last-child) { box-shadow: inset -1px 0 0 var(--dpr-col-line); }
+.dp-requests-page.ui-work table.dpr-table > tbody > tr > td:not(:last-child):not([colspan]) { border-right: 1px solid var(--dpr-col-line); }
+
 /* Закреплённая шапка, как в «Заявке на ДС»: страница не выше окна, таблица прокручивается в своём блоке, заголовки столбцов стоят.
    Линия под заголовками — тенью: при border-collapse рамка осталась бы у таблицы и уехала со строками. */
 @media (min-width: 641px) {
@@ -48,9 +55,11 @@
     position: sticky;
     top: 0;
     z-index: 3;
-    box-shadow: inset 0 -1px 0 var(--border-color);
+    box-shadow: inset -1px 0 0 var(--dpr-col-line), inset 0 -1px 0 var(--border-color);
   }
+  .main-content > .dp-requests-page.ui-work table.dpr-table > thead > tr > th:last-child { box-shadow: inset 0 -1px 0 var(--border-color); }
 }
+
 
 .dp-requests-page .dpr-table td { vertical-align: top; overflow-wrap: anywhere; }
 .dpr-number,

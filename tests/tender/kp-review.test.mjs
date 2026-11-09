@@ -6,10 +6,12 @@
 //     «№ тендера_контрагент_тендер_объект»; даты — «дд.мм.гг», ФИО — «Фамилия И. О.» (полностью — в подсказке);
 //   • план затрат — мини-кнопка «ПЗ» со ссылкой или стадия («ПЗ: нет ссылки», «ПЗ: ожидание КП»);
 //   • этапы и направления (ОС / ГО / Проч. / Совм.) отбирают КП, счётчики сходятся; отметки «В сводной» и
-//     «Подрядчику» переводят КП по маршруту; без прав — только состояние; суперпользователь ставит этап вручную.
+//     «Подрядчику» переводят КП по маршруту; без прав — только состояние; суперпользователь ставит этап вручную;
+//   • «Анализ ВОР/КП» — кнопка в панели: брошенный на неё Excel открывает окно анализа (раньше — страница /analysis-kp).
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
+import * as XLSX from 'xlsx'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import { kpDownloadName } from '../../src/utils/kpDownloadName.js'
 
@@ -601,6 +603,115 @@ describe('Проверка КП: группы по тендеру, компак�
       // Конец списка тоже дорисовывается.
       await page.evaluate(() => { const w = document.querySelector('.kprv-table-wrap'); w.scrollTop = w.scrollHeight })
       await page.locator('.kprv-group[data-tender="ktm-0"]').waitFor()
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  // Книга по раскладке анализа по умолчанию: A №, B КОД, C наименование, D ед. изм., E объём работ,
+  // F объём материалов, G цена материалов, H цена работ.
+  const analysisBook = (rows) => {
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ['№', 'КОД', 'Наименование', 'Ед. изм.', 'Объём работ', 'Объём мат.', 'Цена мат.', 'Цена работ'],
+      ...rows,
+    ]), 'ВОР')
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }).toString('base64')
+  }
+  // Перетаскивание файлов на элемент: dragenter и dragover, бросок — отдельным вызовом (drop), чтобы между
+  // ними проверить подсветку. Возвращает, отменил ли кто-то действие браузера (иначе он открыл бы файл).
+  const dragFiles = (page, selector, files, phase) => page.evaluate(({ selector, files, phase }) => {
+    if (phase !== 'drop') {
+      const dt = new DataTransfer()
+      for (const f of files) {
+        const bytes = Uint8Array.from(atob(f.b64), (c) => c.charCodeAt(0))
+        dt.items.add(new File([bytes], f.name))
+      }
+      window.__dt = dt
+    }
+    const el = document.querySelector(selector)
+    const fire = (type) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: window.__dt }))
+    if (phase === 'drop') return !fire('drop')
+    fire('dragenter')
+    return !fire('dragover')
+  }, { selector, files, phase })
+
+  it('«Анализ ВОР/КП»: файл на кнопку — окно анализа, ещё файл — в окно, не Excel — причина у кнопки', async () => {
+    const { context, page, errors } = await open()
+    try {
+      const button = page.locator('.kprv-toolbar .kpa-drop')
+      assert.equal(await button.textContent(), 'Анализ ВОР/КП')
+      const first = {
+        name: 'КП Электромонтаж.xlsx',
+        b64: analysisBook([
+          [1, 'мат.', 'Кабель ВВГнг 3х2,5', 'м', 0, 100, 50, 0],
+          [2, 'мат.', 'Кабель ВВГнг 3х2,5', 'м', 0, 20, 55, 0],
+          [3, 'Р', 'Прокладка кабеля', 'м', 120, 0, 0, 30],
+        ]),
+      }
+      // Файл над кнопкой — подсвечена, бросок принят.
+      assert.equal(await dragFiles(page, '.kpa-drop', [first], 'over'), true)
+      await page.locator('.kpa-drop.is-armed.is-over').waitFor()
+      assert.equal(await dragFiles(page, '.kpa-drop', [first], 'drop'), true)
+      const dialog = page.locator('.kpa-dialog[role="dialog"]')
+      await dialog.waitFor()
+      await dialog.locator('.bsm-doc-card').first().waitFor()
+      assert.match(await dialog.locator('.bsm-file-chip').textContent(), /КП Электромонтаж\.xlsx$/)
+      // Материалы: одно наименование с двумя ценами — сумма 100×50 + 20×55.
+      const summary = dialog.locator('.bsm-table tbody tr')
+      assert.equal(await summary.count(), 1)
+      assert.match(await summary.first().textContent(), /Кабель ВВГнг 3х2,5.*разные цены/)
+      assert.equal(await dialog.locator('.bsm-tab-sub', { hasText: 'Разные цены' }).locator('.bsm-tab-count').textContent(), '1')
+      assert.match(await dialog.locator('.bsm-stat-accent .bsm-stat-value').textContent(), /6\s100,00\s₽/)
+      // Фокус — на «Закрыть», а не в таблице под окном.
+      assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('kpa-close')), true)
+
+      // Ещё файл — в само окно: добавляется вторым документом, не Excel из того же броска назван в ошибке.
+      const second = { name: 'КП Второй.xlsx', b64: analysisBook([[1, 'мат.', 'Лоток 100х50', 'м', 0, 10, 300, 0]]) }
+      const stray = { name: 'письмо.pdf', b64: btoa('%PDF-1.4') }
+      await dragFiles(page, '.kpa-overlay', [second, stray], 'over')
+      await page.locator('.kpa-drop-hint').waitFor()
+      assert.equal(await dragFiles(page, '.kpa-overlay', [second, stray], 'drop'), true)
+      await dialog.locator('.bsm-doc-card').nth(1).waitFor()
+      assert.match(await dialog.locator('.bsm-error').textContent(), /не Excel: письмо\.pdf/)
+      assert.equal(await dialog.locator('.bsm-table tbody tr').count(), 2)
+
+      // Закрыть — окно исчезает, фокус возвращается на кнопку.
+      await dialog.locator('.kpa-close').click()
+      await dialog.waitFor({ state: 'detached' })
+      assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('kpa-drop')), true)
+
+      // Только не Excel — окно не открывается, причина рядом с кнопкой.
+      await dragFiles(page, '.kpa-drop', [stray], 'over')
+      await dragFiles(page, '.kpa-drop', [stray], 'drop')
+      assert.match(await page.locator('.kpa-drop-msg').textContent(), /«письмо\.pdf» — не Excel/)
+      assert.equal(await dialog.count(), 0)
+
+      // Брошенный мимо кнопки файл браузер не открывает: действие отменено, окна нет.
+      assert.equal(await dragFiles(page, '.kprv-table', [first], 'over'), true)
+      await page.locator('.kpa-drop.is-armed:not(.is-over)').waitFor()
+      assert.equal(await dragFiles(page, '.kprv-table', [first], 'drop'), true)
+      await page.locator('.kpa-drop:not(.is-armed)').waitFor()
+      assert.equal(await dialog.count(), 0)
+
+      // Нажатие — выбор файла.
+      const [chooser] = await Promise.all([page.waitForEvent('filechooser'), button.click()])
+      assert.equal(chooser.isMultiple(), true)
+      await chooser.setFiles({ name: second.name, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(second.b64, 'base64') })
+      await dialog.locator('.bsm-doc-card').waitFor()
+      assert.match(await dialog.locator('.bsm-table tbody tr').first().textContent(), /Лоток 100х50/)
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('«Анализ ВОР/КП»: без права правки раздела кнопки нет', async () => {
+    const { context, page, errors } = await open({ extra: '&noEdit=analysis_kp' })
+    try {
+      await page.locator('.kprv-shown').waitFor()
+      assert.equal(await page.locator('.kpa-drop').count(), 0)
       assert.deepEqual(errors, [])
     } finally {
       await context.close()

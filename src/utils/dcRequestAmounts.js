@@ -41,10 +41,11 @@ export function amountDelta(base, value) {
 }
 
 // Части блока сверху вниз: [{ key: 'psdc' | 'vor', rows }]. Строка:
-//   head  — заголовок части («было», полосой);
-//   value — сумма (field — колонка, которую правят прямо в блоке; null — только показ);
+//   value — сумма (field — колонка, которую правят прямо в блоке; null — только показ); main — основная сумма:
+//           полосой и полужирным, это «ДС подрядчика» и «Согласовано ДС ОСП» (решение пользователя 06.11.2026,
+//           позже: прежде полосой шли «Было ПСДЦ» и «Было ВОР подрядчик»), остальные — обычные;
 //   delta — дельта (tone: 'contractor' — подрядчика к ПСДЦ, 'osp' — решение ОСП);
-//   total — итог «Дельта к ПСДЦ» (полужирный).
+//   total — итог «Дельта к ПСДЦ» (тонкой чертой от строк выше).
 // Дельта, которую не из чего посчитать, в список не попадает: с «ДС подрядчика» появятся, когда сумму внесут.
 export function amountSections(req, { columns = true } = {}) {
   const v = (field) => num(req?.[field])
@@ -53,10 +54,10 @@ export function amountSections(req, { columns = true } = {}) {
   const contractor = columns ? v('amount_contractor') : null
   const after = v('amount_after')
   const psdc = rows([
-    { kind: 'head', label: AMOUNT_LABEL.amount_before, field: 'amount_before', value: before },
-    { kind: 'value', label: AMOUNT_LABEL.amount_contractor, field: columns ? 'amount_contractor' : null, value: contractor },
+    { kind: 'value', label: AMOUNT_LABEL.amount_before, field: 'amount_before', value: before },
+    { kind: 'value', main: true, label: AMOUNT_LABEL.amount_contractor, field: columns ? 'amount_contractor' : null, value: contractor },
     { kind: 'delta', tone: 'contractor', label: 'Дельта к ПСДЦ', delta: amountDelta(before, contractor) },
-    { kind: 'value', label: AMOUNT_LABEL.amount_after, field: 'amount_after', value: after },
+    { kind: 'value', main: true, label: AMOUNT_LABEL.amount_after, field: 'amount_after', value: after },
     { kind: 'delta', tone: 'osp', label: 'Дельта ОСП', delta: amountDelta(contractor, after) },
     { kind: 'total', label: 'Дельта к ПСДЦ', delta: amountDelta(before, after) },
   ])
@@ -64,7 +65,7 @@ export function amountSections(req, { columns = true } = {}) {
   const vorBefore = v('vor_amount_before')
   const vorAfter = v('vor_amount_after')
   const vor = rows([
-    { kind: 'head', label: AMOUNT_LABEL.vor_amount_before, field: 'vor_amount_before', value: vorBefore },
+    { kind: 'value', label: AMOUNT_LABEL.vor_amount_before, field: 'vor_amount_before', value: vorBefore },
     { kind: 'value', label: AMOUNT_LABEL.vor_amount_after, field: 'vor_amount_after', value: vorAfter },
     { kind: 'delta', tone: 'osp', label: 'Дельта ОСП', delta: amountDelta(vorBefore, vorAfter) },
   ])

@@ -57,7 +57,7 @@ describe('Доставка позиции в расценке снабжение
     db = startSnapshot()
     for (const m of appliedAfter()) psqlAt(db.port, null, { file: path.join(MIGRATIONS, m) })
     for (const m of candidateMigrations()) {
-      if (/^2026(102[02359]|1120)_/.test(m)) continue
+      if (/^(2026(102[02359]|1120)|20270105)_/.test(m)) continue
       psqlAt(db.port, null, { file: path.join(MIGRATIONS, m) })
     }
     for (const m of SUPPLY) psqlAt(db.port, null, { file: path.join(MIGRATIONS, m) })

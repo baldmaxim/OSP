@@ -16,7 +16,7 @@
 | tenders | TendersHubPage, TendersPage (стройка/гарантия/совместные/прочие), TenderDetailPage, CostPlansPage, KpReviewPage, SummaryPage |
 | tenders **или** tenders_materials | TendersPage — тендеры на материалы |
 | tenders **или** vors | VorsPage |
-| analysis_kp | BSMPage (к базе не обращается) |
+| analysis_kp | окно «Анализ ВОР/КП» в «Проверке КП» — KpAnalysisDialog (к базе не обращается) |
 | contracts | ContractsPage, PsdcBatchPage, ContractDetailPage |
 | dc_requests | DcRequestsPage |
 | doc_check_requests | DocCheckRequestsPage |
@@ -70,7 +70,7 @@ BSMContractorRatesPage, BSMRatesPage, BSMComparisonPage, BSMSelectionPage, Contr
 | tender_counterparty_proposals | TenderDetailPage, TenderProposalUploadModal, TenderProposalsCompare; кабинет (свои) | E(tenders) |
 | tender_proposal_files | TenderCounterpartyFiles и др. | вставка/удаление — canEditTenders; **проверка КП — роль** admin/суперадмин/economist; замечания — admin/суперадмин/engineer; стадия — **суперадмин** |
 | tender_estimate_items, tender_winners, tender_docs, tender_doc_links | TenderDetailPage, TendersPage | E(tenders) / canEditTenders |
-| tender_vor_supply_rates, tender_supply_sources, tender_supply_links (20261022) | TenderDetailPage (импорт Excel), SupplyPricingPanel (цены, позиции, ссылки на документы) | **в базе (20261020):** E(tenders) **или** E(tenders_materials); тендер на материалы «Завершён» — триггер отказывает всем |
+| tender_vor_supply_rates, tender_supply_sources, tender_supply_links (20261022), tender_supply_comments (20270105) | TenderDetailPage (импорт Excel), SupplyPricingPanel (цены, позиции, ссылки на документы, комментарии) | **в базе (20261020):** E(tenders) **или** E(tenders_materials); тендер на материалы «Завершён» — триггер отказывает всем |
 | tender_supply_import_state (20261024) | TendersPage (статус расценки в реестре материалов), SupplyPricingPanel (причины отказов файлов) | читает сотрудник; пишет только служба osp-api (supplyImport, osp:internal) |
 | supply_autofill, supply_suggestion_counts, supply_rate_suggestions, supply_rate_origins (20261023; подбор похожих и файл документа — 20261025) | SupplyPricingPanel, SupplySuggestMenu (цены из других тендеров) | функции с правами вызывающего: читают и пишут через правила по строкам цен; подстановка — только при `supply_can_edit()` и незакрытом тендере |
 | s3_documents `doc_category='supply_doc'` (20261025) | SupplyPricingPanel, SupplyLinkDialog, SupplyDocImportDialog (файл счёта / КП поставщика к позициям) | загрузка — `owner_type='tender'`, основной тендер (право раздела тендеров, WRITE_RULES); читает сотрудник, подрядчику категория закрыта; документ позиции — `tender_supply_links.s3_document_id`, права ссылок |

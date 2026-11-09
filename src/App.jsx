@@ -74,7 +74,6 @@ const LoginPage = lazy(() => import('./pages/LoginPage'))
 // рабочими: по ним приходят ссылки из писем и закладки подрядчиков.
 const ContractorCabinetPage = lazy(() => import('./pages/ContractorCabinetPage'))
 const ContractorSignupPage = lazy(() => import('./pages/ContractorSignupPage'))
-const BSMPage = lazy(() => import('./pages/BSMPage'))
 const GeneralInfoPage = lazy(() => import('./pages/GeneralInfoPage'))
 const GeneralDocumentsPage = lazy(() => import('./pages/GeneralDocumentsPage'))
 const DepartmentsPage = lazy(() => import('./pages/DepartmentsPage'))
@@ -161,7 +160,8 @@ function EmployeeLayout() {
             <Route path="/vors" element={<PermissionRoute anyOf={['tenders', 'vors']}><VorsPage /></PermissionRoute>} />
             <Route path="/kp-review" element={<PermissionRoute section="tenders"><KpReviewPage /></PermissionRoute>} />
             <Route path="/summary" element={<PermissionRoute section="tenders"><SummaryPage /></PermissionRoute>} />
-            <Route path="/analysis-kp" element={<PermissionRoute section="analysis_kp"><BSMPage /></PermissionRoute>} />
+            {/* «Анализ ВОР/КП» — окно в «Проверке КП» (09.11.2026); прежний адрес — для закладок. */}
+            <Route path="/analysis-kp" element={<Navigate to="/kp-review" replace />} />
             {/* «Договоры и ДС» — хаб из четырёх блоков: открыт, если доступен хотя бы один, а каждая страница
                 блока гейтится своим правом, как раньше (utils/contractsHub.js). */}
             <Route path="/contracts" element={<PermissionRoute anyOf={CONTRACT_SECTION_KEYS}><ContractsHubPage /></PermissionRoute>} />

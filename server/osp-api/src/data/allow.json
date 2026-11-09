@@ -878,6 +878,14 @@
         "update"
       ]
     },
+    "tender_supply_comments": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
     "tender_supply_import_state": {
       "authenticated": [
         "select"

@@ -1,4 +1,8 @@
-﻿import { useMemo, useRef, useState } from 'react'
+﻿// «Анализ ВОР/КП» — окно поверх «Проверки КП» (до 09.11.2026 — отдельная страница /analysis-kp и пункт меню).
+// Открывает его кнопка-приёмник в панели «Проверки КП» (KpAnalysisDrop): брошенные на неё файлы приходят
+// в initialFiles. В базу ничего не пишет: файлы читаются в браузере, анализ живёт, пока окно открыто.
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import * as XLSX from 'xlsx'
 import { useRole } from '../contexts/RoleContext'
 import {
@@ -7,8 +11,11 @@ import {
   IconDownload,
   IconFileSpreadsheet,
   IconColumns,
-} from '../components/icons/BsmIcons'
-import './BSMPage.css'
+} from './icons/BsmIcons'
+import { IconClose } from './icons/ToolbarIcons'
+import { ANALYSIS_FILE_ACCEPT, dragHasFiles, isAnalysisFile } from '../utils/kpAnalysisFiles'
+import '../pages/BSMPage.css'
+import './KpAnalysisDialog.css'
 
 // Поля, которые подтягиваются из Excel. Пользователь сам выбирает столбец для каждого
 // в панели «Столбцы» (внутри карточки документа). Дефолтная раскладка — A/B/C/D/E/F/G/H/L.
@@ -269,7 +276,7 @@ function docRange(doc) {
   return { from, to }
 }
 
-function BSMPage() {
+function KpAnalysisDialog({ initialFiles = [], onClose }) {
   const { canEdit } = useRole()
   const canEditKp = canEdit('analysis_kp')
 
@@ -329,16 +336,21 @@ function BSMPage() {
 
   const openFilePicker = (mode, id = null) => {
     pendingAction.current = { mode, id }
-    fileInputRef.current?.click()
+    const input = fileInputRef.current
+    if (!input) return
+    // Добавить можно несколько сразу, заменить — одним файлом.
+    input.multiple = mode !== 'replace'
+    input.click()
   }
 
   const handleFileInput = async (event) => {
-    const file = event.target.files?.[0]
+    const files = Array.from(event.target.files || [])
     const { mode, id } = pendingAction.current
     try {
-      if (file) {
-        if (mode === 'replace' && id != null) await replaceDocumentFile(id, file)
-        else await addDocument(file)
+      if (files.length) {
+        setError(null)
+        if (mode === 'replace' && id != null) await replaceDocumentFile(id, files[0])
+        else await addFiles(files)
       }
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -392,12 +404,43 @@ function BSMPage() {
     setError(null)
   }
 
-  // ----- Drag & drop (только для пустого состояния) -----
+  // Несколько файлов — по одному и по порядку: каждый следующий наследует раскладку столбцов предыдущего.
+  // Не Excel — пропускаем и называем в ошибке.
+  const addFiles = async (files) => {
+    const list = Array.from(files || [])
+    const skipped = list.filter(f => !isAnalysisFile(f))
+    for (const file of list) {
+      if (isAnalysisFile(file)) await addDocument(file)
+    }
+    if (skipped.length) {
+      setError(`Пропущено — не Excel: ${skipped.map(f => f.name).join(', ')}. Поддерживаются файлы .xlsx и .xls.`)
+    }
+  }
+
+  // Файлы, брошенные на кнопку «Проверки КП» до открытия окна. Ref, а не пустые зависимости:
+  // StrictMode в разработке запускает эффект дважды — файлы добавились бы по два раза.
+  const initialTaken = useRef(false)
+  useEffect(() => {
+    if (initialTaken.current) return
+    initialTaken.current = true
+    if (initialFiles.length) addFiles(initialFiles)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Фокус — на «Закрыть»: окно поверх страницы, Tab не должен уходить в таблицу под ним с первого нажатия.
+  const closeRef = useRef(null)
+  useEffect(() => { closeRef.current?.focus() }, [])
+
+  // ----- Drag & drop: в любое место окна -----
 
   const handleDragOver = (e) => {
-    if (!canEditKp) return
-    if (!e.dataTransfer?.types?.includes('Files')) return
+    if (!dragHasFiles(e)) return
+    // Без права — файл не принимаем, но и браузер не уводим со страницы.
     e.preventDefault()
+    if (!canEditKp) {
+      e.dataTransfer.dropEffect = 'none'
+      return
+    }
     if (!isDragActive) setIsDragActive(true)
   }
 
@@ -407,16 +450,12 @@ function BSMPage() {
   }
 
   const handleDrop = (e) => {
-    if (!canEditKp) return
+    if (!dragHasFiles(e)) return
     e.preventDefault()
     setIsDragActive(false)
-    const file = e.dataTransfer?.files?.[0]
-    if (!file) return
-    if (!/\.(xlsx|xls)$/i.test(file.name)) {
-      setError('Поддерживаются только файлы .xlsx и .xls.')
-      return
-    }
-    addDocument(file)
+    if (!canEditKp) return
+    setError(null)
+    addFiles(e.dataTransfer.files)
   }
 
   // ----- Объединённый датасет по всем документам -----
@@ -649,16 +688,26 @@ function BSMPage() {
     XLSX.writeFile(wb, outName)
   }
 
-  return (
+  // Окно — в <body>: рабочий слой «Проверки КП» (ui-work) не перекрашивает таблицы анализа,
+  // а полоса меню телефона не закрывает его шапку.
+  return createPortal(
+    <div
+      className="kpa-overlay"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+    <div className="kpa-dialog" role="dialog" aria-modal="true" aria-labelledby="kpa-title">
+    <div className="kpa-scroll">
     <div className="bsm-page">
       <header className="bsm-header">
         <div className="bsm-header-text">
           <div className="bsm-header-titlerow">
             <span className="bsm-header-icon" aria-hidden><IconBarChart size={20} /></span>
-            <h2>Анализ ВОР/КП</h2>
+            <h2 id="kpa-title">Анализ ВОР/КП</h2>
           </div>
           <p className="bsm-subtitle">
-            Загрузите один или несколько Excel-файлов с расценками, для каждого задайте лист, столбцы и диапазон строк — получите общую сводную таблицу по наименованиям.
+            Один или несколько Excel-файлов с расценками: для каждого задайте лист, столбцы и диапазон строк — получите общую сводную таблицу по наименованиям. Ещё файл — перетащите в это окно.
           </p>
         </div>
 
@@ -666,7 +715,8 @@ function BSMPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".xlsx,.xls"
+            accept={ANALYSIS_FILE_ACCEPT}
+            multiple
             onChange={handleFileInput}
             style={{ display: 'none' }}
           />
@@ -694,6 +744,17 @@ function BSMPage() {
               )}
             </>
           )}
+          {/* Закрывается только этой кнопкой: Escape и щелчок мимо окна стёрли бы разобранные файлы. */}
+          <button
+            ref={closeRef}
+            type="button"
+            className="kpa-close"
+            onClick={onClose}
+            aria-label="Закрыть анализ"
+            title="Закрыть анализ. Загруженные файлы никуда не сохраняются."
+          >
+            <IconClose size={18} />
+          </button>
         </div>
       </header>
 
@@ -701,12 +762,7 @@ function BSMPage() {
 
       {!hasDocuments && (
         <div className="bsm-card">
-          <div
-            className={`bsm-dropzone${isDragActive ? ' is-drag' : ''}`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
+          <div className={`bsm-dropzone${isDragActive ? ' is-drag' : ''}`}>
             <span className="bsm-dropzone-icon" aria-hidden>
               {isDragActive ? <IconUpload size={30} /> : <IconFileSpreadsheet size={30} />}
             </span>
@@ -918,6 +974,18 @@ function BSMPage() {
         </>
       )}
     </div>
+    </div>
+    {/* Поверх анализа, не внутри прокрутки: видно, где бы ни стояла таблица. Без документов
+        подсказку показывает сама область «Нет данных». */}
+    {isDragActive && hasDocuments && (
+      <div className="kpa-drop-hint" aria-hidden>
+        <IconUpload size={28} />
+        <span>Отпустите — файл добавится в анализ</span>
+      </div>
+    )}
+    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -1367,4 +1435,4 @@ function RowGroup({ group, priceField, unitsField }) {
   )
 }
 
-export default BSMPage
+export default KpAnalysisDialog

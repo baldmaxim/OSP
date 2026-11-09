@@ -1,7 +1,6 @@
 .sidebar {
-  /* Токены сайдбара — тёмная тема фиксированная (не зависит от светлой/тёмной темы контента). */
-  --sb-bg: #0f1728;
-  --sb-border: rgba(148, 163, 184, 0.12);
+  /* Токены сайдбара — тёмная тема фиксированная (не зависит от светлой/тёмной темы контента).
+     Фон и черта — в общем блоке ниже: они нужны и «тени» меню. */
   --sb-text: #e7ecf4;
   --sb-text-muted: #97a5ba;
   --sb-hover: rgba(51, 94, 145, 0.16);
@@ -9,23 +8,84 @@
   --sb-active-ind: #3b82f6;
   --sb-focus: rgba(59, 130, 246, 0.55);
 
-  /* Свёрнутое меню (.is-collapsed) — колонка иконок; ширина меняется быстрой анимацией. */
-  --sb-width: 200px;
-  --sb-width-collapsed: 52px;
-  --sb-anim: 180ms cubic-bezier(0.2, 0, 0, 1);
-
   width: var(--sb-width);
-  flex-shrink: 0;
   background: var(--sb-bg);
   color: var(--sb-text);
   display: flex;
   flex-direction: column;
   box-shadow: 1px 0 0 rgba(0, 0, 0, 0.2);
-  height: 100vh;
-  position: sticky;
+  /* Меню закреплено у левого края, место в раскладке держит .sidebar-spacer. Со страницей оно не пересекается;
+     z-index — чтобы при сворачивании «тень» меню (ниже) шла поверх страницы, но под меню, и чтобы браузер, проверяя,
+     что под мышью, смотрел сначала меню, а не тысячи элементов таблицы. Окна страниц (от 900, в том же порядке —
+     позже меню) и меню выбора, подсказки, уведомления (от 1300) — выше меню, как и раньше. */
+  position: fixed;
+  z-index: 900;
   top: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
   border-right: 1px solid var(--sb-border);
-  transition: width var(--sb-anim);
+}
+
+/* Свёрнутое меню (.is-collapsed) — колонка иконок.
+   06.11.2026, «Заявки на ДС»: меню «долго закрывается». Раньше меню стояло в раскладке, и анимировалась его ширина:
+   на каждом кадре рабочая область становилась шире на несколько пикселей, и браузер заново раскладывал и
+   перерисовывал страницу целиком — на стенде с 400 заявками 150–370 мс на кадр, а пока меню шло, ещё и проверял по
+   всей таблице, что под мышью. Теперь:
+   • место меню в раскладке держит распорка (.sidebar-spacer), её ширина меняется сразу: страница перестраивается
+     один раз, в момент нажатия;
+   • меню (fixed) тоже сразу становится нужной ширины, а движение края — только сдвиг слоёв (transform), его ведёт
+     видеокарта без пересчёта страницы: сворачивание — из-под уже узкого меню влево уезжает его «тень» во всю ширину
+     (.sidebar-ghost), разворачивание — меню выезжает из-под левого края, а его содержимое стоит на месте (рамка
+     меню сдвинута влево, содержимое — на столько же вправо, лишнее обрезает overflow: hidden).
+   Подписи, логотип и шеврон меняются сразу, без плавного перехода: любое изменение внутри меню по ходу анимации —
+   снова перерисовка всей страницы на каждом кадре. Анимации — только после нажатия (.is-anim), не при загрузке. */
+.sidebar,
+.sidebar-spacer,
+.sidebar-ghost {
+  --sb-bg: #0f1728;
+  --sb-border: rgba(148, 163, 184, 0.12);
+  --sb-width: 200px;
+  --sb-width-collapsed: 52px;
+  --sb-anim: 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+.sidebar-spacer {
+  flex: none;
+  width: var(--sb-width);
+}
+.sidebar-spacer.is-collapsed { width: var(--sb-width-collapsed); }
+/* «Тень» — пустая панель во всю ширину меню. В покое — под меню, правым краем у края узкого меню (свёрнутое или
+   развёрнутое меню её закрывает целиком); при сворачивании уезжает туда из положения «во всю ширину». */
+.sidebar-ghost {
+  position: fixed;
+  z-index: 899;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--sb-width);
+  background: var(--sb-bg);
+  border-right: 1px solid var(--sb-border);
+  box-shadow: 1px 0 0 rgba(0, 0, 0, 0.2);
+  transform: translateX(calc(var(--sb-width-collapsed) - var(--sb-width)));
+  pointer-events: none;
+}
+/* Сдвиги в keyframes — числом (200 − 52 = 148px), не через var(): так анимацию наверняка ведёт видеокарта. */
+@media (min-width: 769px) {
+  .sidebar-ghost.is-collapsed.is-anim { animation: sb-ghost-away var(--sb-anim); }
+  .sidebar.is-anim:not(.is-collapsed) { animation: sb-frame-in var(--sb-anim); }
+  .sidebar.is-anim:not(.is-collapsed) > * { animation: sb-content-hold var(--sb-anim); }
+}
+@keyframes sb-ghost-away {
+  from { transform: translateX(0); }
+  to { transform: translateX(-148px); }
+}
+@keyframes sb-frame-in {
+  from { transform: translateX(-148px); }
+  to { transform: translateX(0); }
+}
+@keyframes sb-content-hold {
+  from { transform: translateX(148px); }
+  to { transform: translateX(0); }
 }
 
 /* ── Шапка ─────────────────────────────────────────────── */
@@ -38,12 +98,11 @@
   overflow: hidden;
 }
 
-/* Логотип, подпись и роль: при сворачивании высота плавно уходит в ноль (grid 1fr → 0fr), без скачка меню. */
+/* Логотип, подпись и роль: в свёрнутом меню высота — ноль (grid 1fr → 0fr), сразу, без перехода (см. выше). */
 .sidebar-brand {
   display: grid;
   grid-template-rows: 1fr;
   padding-right: 1.75rem; /* место под кнопку сворачивания */
-  transition: grid-template-rows var(--sb-anim), opacity 120ms ease;
 }
 .sidebar-brand-inner { min-height: 0; overflow: hidden; }
 
@@ -63,7 +122,7 @@
   background: transparent;
   color: var(--sb-text-muted);
   cursor: pointer;
-  transition: right var(--sb-anim), background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 .sidebar-collapse-btn:hover {
   background: var(--sb-hover);
@@ -74,7 +133,6 @@
   outline: 2px solid var(--sb-focus);
   outline-offset: 1px;
 }
-.sidebar-collapse-btn svg { transition: transform var(--sb-anim); }
 
 .sidebar-title {
   /* Обёртка для BrandLogo — размер логотипа задаём здесь (цвет — из BrandLogo, не менять). */
@@ -169,7 +227,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: opacity 120ms ease;
 }
 
 /* Счётчик непрочитанных уведомлений */
@@ -277,8 +334,9 @@
 
 /* ── Свёрнутое меню: только иконки ───────────────────────
    Иконки стоят на тех же местах, что в развёрнутом (отступы пунктов не
-   меняются) — при анимации двигается только правый край, подписи гаснут.
-   Название пункта — в подсказке (title). Счётчик — кружком на иконке. */
+   меняются) — при анимации двигается только правый край (см. «Свёрнутое меню»
+   вверху), подписи убираются сразу. Название пункта — в подсказке (title).
+   Счётчик — кружком на иконке. */
 .sidebar.is-collapsed { width: var(--sb-width-collapsed); }
 .sidebar.is-collapsed .sidebar-brand { grid-template-rows: 0fr; opacity: 0; visibility: hidden; }
 .sidebar.is-collapsed .sidebar-collapse-btn { right: calc((var(--sb-width-collapsed) - 26px - 1px) / 2); }
@@ -305,10 +363,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sidebar,
-  .sidebar-brand,
-  .sidebar-collapse-btn,
-  .sidebar-collapse-btn svg,
-  .nav-label { transition: none; }
+  .sidebar > *,
+  .sidebar-ghost { animation: none !important; }
 }
 
 /* ── Мобильный слим-топбар (виден только на телефоне) ───── */
@@ -411,7 +467,7 @@
   border-radius: 6px;
 }
 .sidebar .theme-icon { font-size: 0.875rem; }
-.sidebar .theme-label { white-space: nowrap; overflow: hidden; transition: opacity 120ms ease; }
+.sidebar .theme-label { white-space: nowrap; overflow: hidden; }
 
 /* ── Мобильная раскладка: сайдбар = выезжающий слева drawer ─ */
 @media (max-width: 768px) {
@@ -419,6 +475,9 @@
   .nav-item { height: 42px; font-size: 0.84rem; }
   .nav-ic { width: 28px; height: 28px; }
   .nav-ic svg { width: 18px; height: 18px; }
+  /* Меню — поверх страницы, места в раскладке ему не нужно; «тени» сворачивания нет. */
+  .sidebar-spacer,
+  .sidebar-ghost { display: none; }
   .sidebar {
     position: fixed;
     inset: 0 auto 0 0;         /* top:0 right:auto bottom:0 left:0 */

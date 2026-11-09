@@ -1,0 +1,66 @@
+/* Кнопка «Анализ ВОР/КП» в панели «Проверки КП» (KpAnalysisDrop): высота — как у поиска и направлений
+   (2rem), пунктирная рамка — сюда можно бросить файл. Справа в панели: после «N КП · M тендеров», а пока
+   его нет (загрузка, ошибка) — сама уходит вправо. */
+.kpa-drop {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex: 0 0 auto;
+  height: 2rem;
+  margin: 0 0 0 auto;
+  padding: 0 0.625rem;
+  border: 1px dashed var(--border-color-dark, var(--border-color));
+  border-radius: var(--ui-radius, 6px);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--ui-th, 0.8125rem);
+  line-height: var(--ui-th-lh, 1.125rem);
+  font-weight: var(--ui-medium, 500);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.kprv-shown + .kpa-drop { margin-left: 0; }
+.kpa-drop:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  background: var(--hover-bg);
+}
+/* Файл несут над страницей — показываем, куда бросать. */
+.kpa-drop.is-armed {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 8%, var(--bg-secondary));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
+}
+.kpa-drop.is-over {
+  border-style: solid;
+  background: color-mix(in srgb, var(--primary-color) 16%, var(--bg-secondary));
+}
+
+/* Брошен не Excel — причина рядом с кнопкой, сама пропадает. */
+.kpa-drop-msg {
+  flex: 0 1 auto;
+  font-size: var(--ui-hint, 0.75rem);
+  line-height: var(--ui-hint-lh, 1rem);
+  color: var(--danger-color, #b91c1c);
+}
+
+/* Пока грузится окно анализа (библиотека Excel) — заглушка на его месте. */
+.kpa-drop-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 1260;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  /* Телефон: файл не перетащить, кнопка — выбор файла; поле рядом со счётчиком. */
+  .kpa-drop-msg { flex-basis: 100%; }
+}

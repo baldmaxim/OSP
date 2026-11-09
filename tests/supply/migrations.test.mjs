@@ -11,7 +11,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8')
 // Пары миграций: расценка (20261020), ссылки на документы к позициям (20261022, переопределяет перенос ВОР), цены
 // из других тендеров (20261023, переопределяет расчёт и пересобирает реестр СУ-10 — у Яндекса он в osp_private) и
-// состояние разбора позиций службой osp-api (20261024), доставка позиции (20261120).
+// состояние разбора позиций службой osp-api (20261024), доставка позиции (20261120), комментарии к расценкам (20270105).
 const PAIRS = [
   { name: '20261020_supply_pricing', functions: 8, revoke: /REVOKE ALL ON TABLE public\.tender_supply_sources, public\.tender_supply_rate_log, public\.tender_supply_progress\s+FROM PUBLIC, anon, authenticated;/ },
   { name: '20261022_supply_links', functions: 2, revoke: /REVOKE ALL ON TABLE public\.tender_supply_links FROM PUBLIC, anon, authenticated;/ },
@@ -24,6 +24,8 @@ const PAIRS = [
   { name: '20261029_supply_vor_versions', functions: 7, revoke: /REVOKE ALL ON TABLE public\.tender_supply_revisions FROM PUBLIC, anon, authenticated;/ },
   // Доставка позиции: расчёт цены с доставкой и журнал цен (переопределены); новых прав нет.
   { name: '20261120_supply_rate_delivery', functions: 2, revoke: null },
+  // Комментарий к расценке позиции: таблица и триггер «кто изменил».
+  { name: '20270105_supply_rate_comments', functions: 1, revoke: /REVOKE ALL ON TABLE public\.tender_supply_comments FROM PUBLIC, anon, authenticated;/ },
 ]
 
 // Без комментариев и с одинаковыми пробелами — сравниваются только сами команды.

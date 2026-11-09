@@ -87,16 +87,76 @@ describe('Боковое меню: свернуть до иконок', { skip: 
     } finally { await close() }
   })
 
-  it('анимация быстрая: меню свёрнуто меньше чем за 0,3 с', async () => {
+  // 06.11.2026: «долго закрывается» в «Заявках на ДС». Раньше анимировалась ширина меню в раскладке: на каждом кадре
+  // рабочая область становилась шире на несколько пикселей и страница перерисовывалась целиком (400 заявок — до 0,37 с
+  // на кадр). Теперь рабочая область и меню меняют ширину один раз, в момент нажатия, а край меню едет только сдвигом
+  // слоёв (transform — его ведёт видеокарта, без пересчёта страницы); при загрузке страницы ничего не едет.
+  it('край меню едет сдвигом слоёв, а рабочая область меняет ширину один раз, сразу', async () => {
     const { page, errors, close } = await open()
     try {
-      const ms = await page.evaluate(() => new Promise((resolve) => {
+      // Анимации меню и его «тени» (у страницы свои — индикаторы загрузки и т. п.).
+      await page.evaluate(() => {
+        window.__menuAnimations = () => document.getAnimations().filter((a) => {
+          const t = a.effect?.target
+          return t && (t.matches('.sidebar, .sidebar-ghost') || t.closest('.sidebar'))
+        })
+      })
+      assert.equal(await page.evaluate(() => window.__menuAnimations().length), 0, 'при загрузке ничего не едет')
+      const mainBefore = (await box(page, '.main-content')).w
+      // По кадрам с нажатия, пока идут анимации: ширины рабочей области и меню, правый край меню на экране,
+      // положение иконки; какие анимации шли и что в них меняется.
+      const watch = () => page.evaluate(() => new Promise((resolve) => {
+        const main = document.querySelector('.main-content')
         const sb = document.querySelector('.sidebar')
+        const ghost = document.querySelector('.sidebar-ghost')
+        const icon = document.querySelector('.sidebar-nav .nav-ic')
         const t0 = performance.now()
-        sb.addEventListener('transitionend', (e) => { if (e.target === sb && e.propertyName === 'width') resolve(performance.now() - t0) })
+        const s = { mainW: new Set(), sbW: new Set(), edge: new Set(), iconX: new Set(), props: new Set(), durations: new Set(), ms: 0 }
+        const sample = () => {
+          s.mainW.add(main.getBoundingClientRect().width)
+          s.sbW.add(sb.offsetWidth)
+          s.edge.add(Math.round(Math.max(sb.getBoundingClientRect().right, ghost.getBoundingClientRect().right)))
+          s.iconX.add(Math.round(icon.getBoundingClientRect().x * 10) / 10)
+        }
+        // Нажатие обрабатывает React (обновление — в микрозадаче), поэтому мерим с ближайшего кадра.
         document.querySelector('.sidebar-collapse-btn').click()
+        let first = true
+        const tick = () => {
+          if (first) {
+            first = false
+            for (const a of window.__menuAnimations()) {
+              s.durations.add(a.effect.getTiming().duration)
+              for (const k of a.effect.getKeyframes()) for (const p of Object.keys(k)) if (!['offset', 'easing', 'composite', 'computedOffset'].includes(p)) s.props.add(p)
+            }
+          }
+          sample()
+          if (window.__menuAnimations().length) requestAnimationFrame(tick)
+          else {
+            s.ms = performance.now() - t0
+            resolve(Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v instanceof Set ? [...v] : v])))
+          }
+        }
+        requestAnimationFrame(tick)
       }))
-      assert.ok(ms > 100 && ms < 300, `${Math.round(ms)} мс`)
+
+      const down = await watch()
+      assert.deepEqual(down.mainW, [mainBefore + 148], 'свернули: рабочая область сразу шире на 148px, без промежуточных')
+      assert.deepEqual(down.sbW, [52], 'меню сразу узкое')
+      assert.deepEqual(down.props, ['transform'], 'анимируется только сдвиг')
+      assert.deepEqual(down.durations, [180])
+      assert.ok(down.edge.length > 2 && down.edge.includes(52), `край едет: ${down.edge.join(', ')}`)
+      assert.ok(down.edge.every(x => x >= 52 && x <= 200), down.edge.join(', '))
+      assert.ok(down.ms < 400, `${Math.round(down.ms)} мс`)
+      assert.equal(down.iconX.length, 1, 'иконка стоит')
+
+      const up = await watch()
+      assert.deepEqual(up.mainW, [mainBefore], 'развернули: рабочая область сразу прежней ширины')
+      assert.deepEqual(up.sbW, [200], 'меню сразу широкое')
+      assert.deepEqual(up.props, ['transform'], 'анимируется только сдвиг')
+      assert.ok(up.edge.length > 2 && up.edge.includes(200), `край едет: ${up.edge.join(', ')}`)
+      assert.ok(up.edge.every(x => x >= 52 && x <= 200), up.edge.join(', '))
+      assert.ok(up.ms < 400, `${Math.round(up.ms)} мс`)
+      assert.equal(up.iconX.length, 1, `содержимое меню стоит, едет только край: ${up.iconX.join(', ')}`)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })

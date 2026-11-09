@@ -61,16 +61,6 @@ export const IconTenders = () => (
   </NavSvg>
 )
 
-// Анализ ВОР/КП — столбчатый график
-export const IconAnalysis = () => (
-  <NavSvg>
-    <path d="M3 3v18h18" />
-    <path d="M18 17V9" />
-    <path d="M13 17V5" />
-    <path d="M8 17v-3" />
-  </NavSvg>
-)
-
 // Договоры и ДС — документ с текстом
 export const IconContracts = () => (
   <NavSvg>

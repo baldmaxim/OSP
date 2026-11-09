@@ -165,7 +165,7 @@
 }
 .ui-work.ui-work .sp-table-wrap.is-virtual .sp-table > tfoot > tr > td { background: var(--bg-secondary); }
 .sp-table tr.vt-spacer > td { background: transparent; }
-.ui-work.ui-work .sp-table { table-layout: fixed; width: 100%; min-width: 58.5rem; border-collapse: collapse; }
+.ui-work.ui-work .sp-table { table-layout: fixed; width: 100%; min-width: calc(58.5rem + var(--sp-comment-w, 0rem)); border-collapse: collapse; }
 .sp-table .sp-c-num { width: 3rem; }
 .sp-table .sp-c-unit { width: 5rem; }
 .sp-table .sp-c-vol { width: 8rem; }
@@ -174,22 +174,25 @@
 .sp-table .sp-c-state { width: 6rem; }
 .sp-table .sp-c-sel { width: 2.25rem; }
 .sp-table .sp-c-doc { width: 8rem; }
-.ui-work.ui-work .sp-table.has-links { min-width: 66.75rem; }
+/* «Комментарий» (миграция 20270105) — справа, 12rem; на столько же шире таблица при любом наборе колонок. */
+.sp-table .sp-c-comment { width: 12rem; }
+.sp-table.has-comments { --sp-comment-w: 12rem; }
+.ui-work.ui-work .sp-table.has-links { min-width: calc(66.75rem + var(--sp-comment-w, 0rem)); }
 /* «Дата цены» (миграция 20261023): 6,5rem под «19.10.2026», у администратора — ещё ФИО того, кто поставил цену. */
 .sp-table .sp-c-date { width: 6.5rem; }
 .sp-table.has-authors .sp-c-date { width: 9.5rem; }
 @media (min-width: 641px) {
-  .ui-work.ui-work .sp-table.has-dates { min-width: 65rem; }
-  .ui-work.ui-work .sp-table.has-dates.has-links { min-width: 73.25rem; }
-  .ui-work.ui-work .sp-table.has-authors { min-width: 68rem; }
-  .ui-work.ui-work .sp-table.has-authors.has-links { min-width: 76.25rem; }
+  .ui-work.ui-work .sp-table.has-dates { min-width: calc(65rem + var(--sp-comment-w, 0rem)); }
+  .ui-work.ui-work .sp-table.has-dates.has-links { min-width: calc(73.25rem + var(--sp-comment-w, 0rem)); }
+  .ui-work.ui-work .sp-table.has-authors { min-width: calc(68rem + var(--sp-comment-w, 0rem)); }
+  .ui-work.ui-work .sp-table.has-authors.has-links { min-width: calc(76.25rem + var(--sp-comment-w, 0rem)); }
   /* «Доставка» (миграция 20261120) — ещё 11rem: поле «12 345,00» и «на позицию». */
-  .ui-work.ui-work .sp-table.has-delivery { min-width: 69.5rem; }
-  .ui-work.ui-work .sp-table.has-delivery.has-links { min-width: 77.75rem; }
-  .ui-work.ui-work .sp-table.has-delivery.has-dates { min-width: 76rem; }
-  .ui-work.ui-work .sp-table.has-delivery.has-dates.has-links { min-width: 84.25rem; }
-  .ui-work.ui-work .sp-table.has-delivery.has-authors { min-width: 79rem; }
-  .ui-work.ui-work .sp-table.has-delivery.has-authors.has-links { min-width: 87.25rem; }
+  .ui-work.ui-work .sp-table.has-delivery { min-width: calc(69.5rem + var(--sp-comment-w, 0rem)); }
+  .ui-work.ui-work .sp-table.has-delivery.has-links { min-width: calc(77.75rem + var(--sp-comment-w, 0rem)); }
+  .ui-work.ui-work .sp-table.has-delivery.has-dates { min-width: calc(76rem + var(--sp-comment-w, 0rem)); }
+  .ui-work.ui-work .sp-table.has-delivery.has-dates.has-links { min-width: calc(84.25rem + var(--sp-comment-w, 0rem)); }
+  .ui-work.ui-work .sp-table.has-delivery.has-authors { min-width: calc(79rem + var(--sp-comment-w, 0rem)); }
+  .ui-work.ui-work .sp-table.has-delivery.has-authors.has-links { min-width: calc(87.25rem + var(--sp-comment-w, 0rem)); }
 }
 /* Доставка: поле суммы и «за ед. / на позицию» в одну строку, под ними — та же доставка другим видом; под ценой —
    цена с доставкой (она идёт в карточку, «Сравнение КП» и реестр). */
@@ -345,6 +348,43 @@
 .sp-money-input:focus { outline: 2px solid var(--primary-color); outline-offset: 0; color: var(--text-primary); border-style: solid; }
 .sp-money-input:disabled { background: transparent; border-color: transparent; color: var(--text-primary); opacity: 1; cursor: default; }
 .sp-money-input:disabled::placeholder { color: var(--text-tertiary); }
+
+/* Комментарий к расценке: поле растёт по тексту (field-sizing; где его нет — прокрутка внутри), не выше шести строк.
+   Пустое — пунктиром, как поле, которое можно заполнить; без права правки — просто текст. */
+.sp-comment-input {
+  display: block;
+  width: 100%;
+  min-height: 1.875rem;
+  max-height: 7.5rem;
+  padding: 0.3125rem 0.5rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  resize: none;
+  overflow-y: auto;
+  field-sizing: content;
+}
+.sp-comment-input:placeholder-shown { border-style: dashed; background: transparent; }
+.sp-comment-input:focus { outline: 2px solid var(--primary-color); outline-offset: 0; border-style: solid; background: var(--bg-secondary); }
+.sp-comment-input.is-invalid { border-color: var(--danger-color); border-style: solid; }
+.sp-comment-input[readonly] { color: var(--text-secondary); }
+.sp-comment-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sp-comment-note { display: block; margin-top: 0.125rem; color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.sp-comment-note.is-error { color: var(--danger-color); }
+.sp-comment-note.is-warn { color: var(--warning-color); }
 
 /* Три постоянных места: значок состояния, «объём изменился» / «отменить ввод», история — значки не
    прыгают при сохранении. Галочка остаётся, пока у позиции есть сохранённая цена. */
@@ -672,6 +712,7 @@
   }
   .sp-table td.sp-state { grid-column: 1 / -1; }
   .sp-table td.sp-doc { grid-column: 1 / -1; }
+  .sp-table td.sp-comment { grid-column: 1 / -1; }
   /* Отметка нескольких позиций — на компьютере; на телефоне ссылка прикладывается к позиции в её карточке. */
   .sp-table :is(th, td).sp-sel, .sp-sel-bar { display: none; }
   /* Значков нет (позиция не расценена) — пустой полосы под карточкой тоже нет. */

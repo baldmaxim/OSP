@@ -548,6 +548,25 @@ if (params.get('noLinks') === '1') {
   window.__fakeErrors = { ...(window.__fakeErrors || {}), tender_supply_links: { code: '42P01', message: 'relation "public.tender_supply_links" does not exist' } }
 }
 
+// Комментарии к расценкам (миграция 20270105): один на позицию тендера — (тендер, ключ наименования), без имени ВОР.
+//   noComments=1 — таблицы нет (миграция не применена): колонки «Комментарий» нет, остальное работает;
+//   seedComment=1 — у изоляции уже есть комментарий коллеги (просмотр без права правки, опрос).
+window.__fakeDb.tender_supply_comments = params.get('seedComment') === '1'
+  ? [{ id: 'cmt-p-3', tender_id: 'tender-p', material_name: 'Изоляция K-Flex 13×15', material_key: normName('Изоляция K-Flex 13×15'),
+    comment: 'Цена с сайта поставщика, без доставки', updated_by: 'user-2', updated_at: '2026-11-08T09:00:00Z', created_at: '2026-11-08T09:00:00Z' }]
+  : []
+window.__fakeUnique.tender_supply_comments = ['tender_id', 'material_key']
+window.__fakeGenerated.tender_supply_comments = (r) => ({ material_key: normName(r.material_name) })
+// Как tender_supply_comments_touch: текст без пробелов по краям, кто и когда.
+window.__fakeTriggers.tender_supply_comments = (row) => {
+  row.comment = String(row.comment ?? '').trim()
+  row.updated_by = 'user-1'
+  row.updated_at = new Date().toISOString()
+}
+if (params.get('noComments') === '1') {
+  window.__fakeErrors = { ...(window.__fakeErrors || {}), tender_supply_comments: { code: '42P01', message: 'relation "public.tender_supply_comments" does not exist' } }
+}
+
 // Версии ВОР (миграция 20261029). Таблица версий есть всегда (пустая — изменений не было); noVersions=1 — её нет, как
 // до миграции. vorChanges=1 — сметный отдел обновил ВОР «ОВ»: у крана объём 40 → 48 (и цена за «компл», а в ВОР «шт»),
 // у изоляции ед. изм. «м2» → «м», хомут — новая позиция, «Труба медная Ø12,7 (бухта)» убрана, её цена 950 ₽ осталась —

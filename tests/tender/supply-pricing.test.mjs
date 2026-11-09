@@ -19,6 +19,7 @@ const plain = (s) => String(s ?? '').replace(/\s/g, '')
 const vorText = (vor) => (vor.startsWith('ВОР:') ? vor : `ВОР «${vor}»`)
 const price = (name, vor) => `Цена за единицу: ${name} (${vorText(vor)})`
 const sum = (name, vor) => `Сумма: ${name} (${vorText(vor)})`
+const commentOf = (name, vor) => `Комментарий: ${name} (${vorText(vor)})`
 // Труба есть в обоих ВОР стенда; имя строки — как в первом ВОР таблицы (по алфавиту: «ВК» раньше «ОВ»).
 const TRUBA = 'труба медная ∅12.7'
 const TWO = 'ВОР: 2'
@@ -252,7 +253,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
   // Цены, позиции и ссылки грузит только таблица расценки — на странице снабжения или во вкладке карточки, когда её
   // открыли. Реестр — одно число «N из M» из базы (tender_supply_progress); карточка до вкладки — только счётчик.
   it('цены грузятся только в расценке: реестр и карточка без строк цен; повторное открытие — без скачивания файлов ВОР и записи', async () => {
-    const ROW_TABLES = ['tender_vor_supply_rates', 'tender_supply_sources', 'tender_supply_links', 'tender_supply_rate_log']
+    const ROW_TABLES = ['tender_vor_supply_rates', 'tender_supply_sources', 'tender_supply_links', 'tender_supply_rate_log', 'tender_supply_comments']
     const settle = async (page) => {
       await page.waitForFunction(() => window.__supabaseStats.active === 0)
       await page.waitForTimeout(500)
@@ -519,6 +520,101 @@ describe('Расценка снабжением: таблица', { skip: !launc
     try {
       assert.equal(await old.page.getByRole('columnheader', { name: 'Документ' }).count(), 0)
       assert.equal(await old.page.locator('.sp-select').count(), 0)
+      await enter(old.page.getByLabel(price('Кран шаровой Ду15', 'ОВ')), '321')
+      await old.page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Кран шаровой Ду15' && r.supply_price === 321))
+      assert.deepEqual(old.errors, [])
+    } finally {
+      await old.context.close()
+    }
+  })
+
+  // Комментарий к расценке (миграция 20270105; просьба пользователя 09.11.2026): поле крайней справа колонки, один комментарий на
+  // позицию тендера — по наименованию, без имени ВОР (строка таблицы — позиция всех ВОР). Отдельно от цены.
+  it('комментарий: поле справа; уход из поля и Enter сохраняют, Shift+Enter — новая строка, Esc отменяет, пустой удаляется; текст коллеги не стирается', async () => {
+    const { page, context, errors } = await openPage()
+    const comments = () => page.evaluate(() => window.__fakeDb.tender_supply_comments.map((c) => ({ name: c.material_name, comment: c.comment })))
+    try {
+      const heads = await page.locator('.sp-table thead th').evaluateAll((ths) => ths.map((th) => th.textContent.trim()))
+      assert.deepEqual(heads.slice(-2), ['Комментарий', 'Состояние'], 'крайняя справа колонка — перед значками состояния')
+
+      // Уход из поля — запись; пробелы по краям база убирает.
+      const kran = page.getByLabel(commentOf('Кран шаровой Ду15', 'ОВ'))
+      await kran.fill('  Цена по счёту ЭТМ, доставка отдельно  ')
+      await kran.press('Tab')
+      await page.waitForFunction(() => window.__fakeDb.tender_supply_comments.length === 1)
+      assert.deepEqual(await comments(), [{ name: 'Кран шаровой Ду15', comment: 'Цена по счёту ЭТМ, доставка отдельно' }])
+      assert.equal(await page.evaluate(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Кран шаровой Ду15')), false,
+        'комментарий — без цены')
+      // По наименованию: тот же кран в ВК (другая ед. изм., своя строка) показывает тот же комментарий.
+      assert.equal(await page.getByLabel(commentOf('Кран шаровой Ду15', 'ВК')).inputValue(), 'Цена по счёту ЭТМ, доставка отдельно')
+
+      // Строка из двух ВОР — один комментарий; Enter — запись и поле строки ниже, Shift+Enter — новая строка.
+      const pipe = page.getByLabel(commentOf(TRUBA, TWO))
+      await pipe.focus()
+      await page.keyboard.type('Медь — только у Мегастрой')
+      await page.keyboard.press('Shift+Enter')
+      await page.keyboard.type('срок 2 дня')
+      await page.keyboard.press('Enter')
+      await page.waitForFunction(() => window.__fakeDb.tender_supply_comments.length === 2)
+      assert.equal((await comments()).find((c) => /Мегастрой/.test(c.comment)).comment, 'Медь — только у Мегастрой\nсрок 2 дня')
+      const next = await page.evaluate(() => document.activeElement?.dataset.spCell || '')
+      const pipeCell = await pipe.getAttribute('data-sp-cell')
+      assert.equal(next, `comment-${Number(pipeCell.split('-')[1]) + 1}`, 'Enter ведёт в поле строки ниже')
+
+      // Esc — правка не записывается, в поле прежний текст.
+      await kran.focus()
+      await kran.fill('не то')
+      await kran.press('Escape')
+      await page.waitForTimeout(200)
+      assert.equal(await kran.inputValue(), 'Цена по счёту ЭТМ, доставка отдельно')
+      assert.equal((await comments()).find((c) => c.name === 'Кран шаровой Ду15').comment, 'Цена по счёту ЭТМ, доставка отдельно')
+
+      // Коллега изменил комментарий, пока писали: его текст остаётся, своё дописывается, под полем пометка.
+      await pipe.focus()
+      await page.evaluate(() => {
+        const c = window.__fakeDb.tender_supply_comments.find((x) => /Мегастрой/.test(x.comment))
+        Object.assign(c, { comment: 'Коллега: проверить НДС', updated_by: 'user-2', updated_at: new Date().toISOString() })
+      })
+      await page.keyboard.press('Control+End')
+      await page.keyboard.press('Shift+Enter')
+      await page.keyboard.type('самовывоз')
+      await pipe.press('Tab')
+      await page.getByText('Коллега изменил комментарий, пока вы писали: сохранены оба текста').waitFor()
+      assert.equal((await comments()).find((c) => /НДС/.test(c.comment)).comment, 'Коллега: проверить НДС\nсамовывоз')
+      assert.equal(await pipe.inputValue(), 'Коллега: проверить НДС\nсамовывоз')
+
+      // Пустой — строка удаляется (у обеих строк крана — один комментарий).
+      await kran.fill('')
+      await kran.press('Tab')
+      await page.waitForFunction(() => window.__fakeDb.tender_supply_comments.length === 1)
+      assert.equal(await page.getByLabel(commentOf('Кран шаровой Ду15', 'ВК')).inputValue(), '')
+
+      // Комментарий коллеги приходит тем же опросом, что цены (здесь — возврат на вкладку браузера).
+      await page.evaluate(() => {
+        const k = window.__fakeDb.tender_supply_sources.flatMap((x) => x.positions).find((p) => p.name === 'Хомут монтажный').k
+        window.__fakeDb.tender_supply_comments.push({ id: 'cmt-x', tender_id: 'tender-p', material_name: 'Хомут монтажный', material_key: k,
+          comment: 'Хомуты — со склада объекта', updated_by: 'user-2', updated_at: new Date(Date.now() + 1000).toISOString(), created_at: new Date().toISOString() })
+      })
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+      await page.waitForFunction((l) => document.querySelector(`[aria-label="${l}"]`)?.value === 'Хомуты — со склада объекта', commentOf('Хомут монтажный', 'ОВ'))
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('комментарий без права правки — текстом, без поля; без таблицы комментариев — колонки нет, цены вводятся', async () => {
+    const viewer = await openPage('&canEdit=0&seedComment=1')
+    try {
+      await viewer.page.getByText('Цена с сайта поставщика, без доставки').waitFor()
+      assert.equal(await viewer.page.getByLabel(/^Комментарий:/).count(), 0, 'поля нет')
+      assert.deepEqual(viewer.errors, [])
+    } finally {
+      await viewer.context.close()
+    }
+    const old = await openPage('&noComments=1')
+    try {
+      assert.equal(await old.page.getByRole('columnheader', { name: 'Комментарий' }).count(), 0)
       await enter(old.page.getByLabel(price('Кран шаровой Ду15', 'ОВ')), '321')
       await old.page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Кран шаровой Ду15' && r.supply_price === 321))
       assert.deepEqual(old.errors, [])

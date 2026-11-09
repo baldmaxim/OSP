@@ -20,7 +20,7 @@ import {
   loadEstimateItems, loadLinks, loadLinksMarker, loadPricingBundle, loadPricingContext, loadPricingData, loadRateOrigins, loadRates,
   loadRatesByIds, loadRevisions, loadRevisionsMarker, loadSources, loadSuggestionCounts, loadVorFiles, markSeparate, removeLinks,
   fetchSupplyDocBytes, loadOtherTenderRates, loadSupplyOffers, readSupplyDocBytes, renameEstimate, reviewRevisions, saveLinks, saveRate, saveSource, saveSupplyDocNotes,
-  sourcesSignature, SUGGEST_BATCH, uploadSupplyDoc,
+  sourcesSignature, SUGGEST_BATCH, uploadSupplyDoc, loadCommentsMarker, loadComments, saveComment, SUPPLY_COMMENT_MAX,
 } from '../../services/supplyPricing'
 import { fmtPriceDate, isFreshPriceDate, normName, rateUnitPrice } from '../../utils/supplyRateHelpers'
 import { formatAmount, parseAmount, roundMoney } from '../../utils/money'
@@ -82,6 +82,11 @@ const DOC_READ_MAX_BYTES = 30 * 1024 * 1024
 // (адрес, сетевой путь) или файл в хранилище документов тендера (миграция 20261025; без неё — только ссылка). Таблицы
 // ссылок ещё нет в базе — колонки нет, остальное работает как раньше.
 //
+// Колонка «Комментарий» — крайняя справа (tender_supply_comments, миграция 20270105; просьба пользователя 09.11.2026): поле прямо в
+// строке, один комментарий на позицию тендера (строка таблицы — позиция всех ВОР), отдельно от цены. Пишет тот, кто вводит цены;
+// остальные читают. Комментарии коллег — тем же опросом раз в 20 с; написали своё, пока вы писали, — сохраняются оба текста.
+// Таблицы ещё нет в базе — колонки нет.
+//
 // «Счета и КП» (SupplyTenderDocsDialog): закинули документ — строки с ценами сами находят позиции, человек сравнивает и применяет; цены
 // пишутся как ввод руками — той же очередью записей с версией строки, файл становится документом позиций. Файл, загруженный к позиции
 // (ячейка «Документ»), сразу открывает это окно. Строки хранятся вместе с файлом (utils/supplyOffers), у позиций — ещё и «цены
@@ -125,6 +130,8 @@ const splitKeyOf = (mainId) => `supply-split:${mainId}`
 const linkLabel = (link, docs) => (!link ? '' : link.s3_document_id ? `файл: ${docs.get(link.s3_document_id)?.file_name || 'загружен на сайт'}` : link.url || '')
 // Признак «ссылки менялись» — как loadLinksMarker: сколько их и время последней правки.
 const linksMarker = (list) => `${list.length}|${list.reduce((m, l) => (String(l.updated_at || '') > m ? String(l.updated_at) : m), '')}`
+// Признак «комментарии менялись» — как loadCommentsMarker; тот же расчёт, что у ссылок.
+const commentsMarker = linksMarker
 
 const ACTIVE_STATUSES = new Set(['saving', 'queued', 'error', 'conflict'])
 const VIRTUALIZE_FROM = 150
@@ -417,6 +424,8 @@ export default function SupplyPricingPanel({
   const [linkBusy, setLinkBusy] = useState(false)
   const [linkError, setLinkError] = useState('')
   const linksMarkerRef = useRef(null)
+  const [comments, setComments] = useState(null) // null — таблицы комментариев ещё нет в базе (миграция 20270105)
+  const commentsMarkerRef = useRef(null)
   // Файлы-документы позиций (id → строка s3_documents): имя и ключ для просмотра. Файл бывает и другого тендера.
   const [linkDocs, setLinkDocs] = useState(() => new Map())
   const [preview, setPreview] = useState(null) // файл документа в окне просмотра
@@ -495,6 +504,8 @@ export default function SupplyPricingPanel({
     setRates(d.rates)
     setLinks(d.links ?? null)
     linksMarkerRef.current = d.links ? linksMarker(d.links) : null
+    setComments(d.comments ?? null)
+    commentsMarkerRef.current = d.comments ? commentsMarker(d.comments) : null
     setImportState(d.importState ?? null)
     setRevisions(d.revisions ?? null)
     revisionsMarkerRef.current = d.revisions ? d.revisions.map((r) => r.id).join(',') : null
@@ -712,6 +723,9 @@ export default function SupplyPricingPanel({
     return m
   }, [links])
   const linksOn = linksByKey !== null
+  // Комментарии по ключу наименования (одна строка на позицию тендера); null — колонки «Комментарий» нет.
+  const commentsByKey = useMemo(() => (comments ? new Map(comments.map((c) => [c.material_key, c])) : null), [comments])
+  const commentsOn = commentsByKey !== null
   const selectable = linksOn && editable
   // Документ-файл к позиции (миграция 20261025): колонка s3_document_id есть в базе.
   const filesOn = linksOn && linkFilesEnabled()
@@ -1330,6 +1344,13 @@ export default function SupplyPricingPanel({
             setLinks(fresh)
           }
         }
+        if (commentsMarkerRef.current != null && await loadCommentsMarker(mainId) !== commentsMarkerRef.current) {
+          const fresh = await loadComments(mainId)
+          if (fresh) {
+            commentsMarkerRef.current = commentsMarker(fresh)
+            setComments(fresh)
+          }
+        }
       } catch { /* сеть — следующий раз */ } finally {
         busy = false
       }
@@ -1664,7 +1685,7 @@ export default function SupplyPricingPanel({
     const used = new Set()
     for (const d of docViews) {
       const aoa = [['№', 'Наименование', 'Ед. изм.', 'Объём', 'Цена за ед. с доставкой и НДС, ₽', ...(deliveryOn ? ['В т. ч. доставка за ед., ₽'] : []), 'Итого с НДС, ₽',
-        ...(datesOn ? ['Дата цены'] : []), ...(datesOn && showAuthor ? ['Цену поставил'] : []), ...(linksOn ? ['Документ'] : [])]]
+        ...(datesOn ? ['Дата цены'] : []), ...(datesOn && showAuthor ? ['Цену поставил'] : []), ...(linksOn ? ['Документ'] : []), ...(commentsOn ? ['Комментарий'] : [])]]
       d.positions.forEach((p, i) => {
         const rate = ratesByKey.get(posKey(d.name, p.k))?.[0] || null
         const v = rowView(p, rate, null)
@@ -1673,12 +1694,13 @@ export default function SupplyPricingPanel({
           v.fullPrice != null ? roundMoney(v.fullPrice) : '', ...(deliveryOn ? [v.deliveryUnit != null ? roundMoney(v.deliveryUnit) : ''] : []), v.total ?? '',
           ...(datesOn ? [fmtPriceDate(rate?.price_date)] : []),
           ...(datesOn && showAuthor ? [rate ? authorText(rate, origins.get(rate.id), nameOf) : ''] : []),
-          ...(linksOn ? [linkLabel(linksByKey.get(posKey(d.name, p.k)), linkDocs)] : [])])
+          ...(linksOn ? [linkLabel(linksByKey.get(posKey(d.name, p.k)), linkDocs)] : []),
+          ...(commentsOn ? [commentsByKey.get(p.k)?.comment || ''] : [])])
       })
       aoa.push(['', 'Итого', '', '', '', ...(deliveryOn ? [''] : []), d.total])
       const ws = XLSX.utils.aoa_to_sheet(aoa)
       ws['!cols'] = [{ wch: 6 }, { wch: 60 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, ...(deliveryOn ? [{ wch: 14 }] : []), { wch: 18 },
-        ...(datesOn ? [{ wch: 12 }] : []), ...(datesOn && showAuthor ? [{ wch: 28 }] : []), { wch: 40 }]
+        ...(datesOn ? [{ wch: 12 }] : []), ...(datesOn && showAuthor ? [{ wch: 28 }] : []), ...(linksOn ? [{ wch: 40 }] : []), ...(commentsOn ? [{ wch: 50 }] : [])]
       let name = (docViews.length === 1 ? 'Материалы' : `Материалы ${d.name}`).replace(/[\\/:*?[\]]/g, ' ').slice(0, 31)
       for (let i = 2; used.has(name); i++) name = `${name.slice(0, 27)} (${i})`
       used.add(name)
@@ -1937,6 +1959,23 @@ export default function SupplyPricingPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rates: currentOf читает цены из ссылки, пересчёт — при их смене
   }, [editable, offerDocs, pickByGroup, tenderGroups, currentOf, rates])
 
+  // Комментарий позиции (миграция 20270105) — всем записям строки (строка бывает сложена из разных записей одной позиции в
+  // разных ВОР). Ответ ячейке: { ok: true, text — что теперь в базе } или { ok: false, message }.
+  const saveRowComment = useCallback(async (row, { seen, text }) => {
+    try {
+      const res = await saveComment(mainId, row.targets.map((t) => t.p), { seen, text })
+      const keys = new Set(res.keys)
+      setComments((prev) => {
+        const next = [...(prev || []).filter((c) => !keys.has(c.material_key)), ...res.rows]
+        commentsMarkerRef.current = commentsMarker(next)
+        return next
+      })
+      return { ok: true, text: res.text }
+    } catch (e) {
+      return { ok: false, message: e.message || 'Комментарий не сохранился' }
+    }
+  }, [mainId])
+
   // Действия строк — через одну стабильную функцию: строки таблицы (memo) перерисовываются только когда
   // меняются их собственные данные, а не при каждом сохранении в соседней строке.
   const actionsRef = useRef(null)
@@ -1965,6 +2004,7 @@ export default function SupplyPricingPanel({
     confirmUnit: (row) => { for (const t of row.targets) if (t.unitOff) confirmUnit(t) },
     split: splitRow,
     unify: unifyRow,
+    saveComment: saveRowComment,
   }
   const act = useCallback((name, ...args) => actionsRef.current[name](...args), [])
 
@@ -1980,12 +2020,12 @@ export default function SupplyPricingPanel({
     ? 'Тендер на материалы завершён — расценки только для чтения. Чтобы изменить, верните тендеру на материалы прежний статус.'
     : !canEditRole ? 'Только просмотр: вводить цены могут снабжение и тендерный отдел (право правки раздела).' : ''
 
-  // Колонки: [отметка] № · наименование · ед. · объём · цена · [доставка] · итог · [дата цены] · [документ] · состояние.
+  // Колонки: [отметка] № · наименование · ед. · объём · цена · [доставка] · итог · [дата цены] · [документ] · [комментарий] · состояние.
   // «Дата цены» — день расценки (миграция 20261023); колонок ещё нет в базе — нет и её, и фильтра по дате.
   // «Доставка» — миграция 20261120; видна, если у какой-то цены она есть или её открыли кнопкой: у большинства позиций её нет.
   const datesOn = rates.length ? rates.some((r) => 'price_date' in r) : !reuseOff
   const deliveryShown = deliveryOn && (deliveryOpen || rates.some((r) => rateDelivery(r)))
-  const colCount = 7 + (linksOn ? 1 : 0) + (selectable ? 1 : 0) + (datesOn ? 1 : 0) + (deliveryShown ? 1 : 0)
+  const colCount = 7 + (linksOn ? 1 : 0) + (commentsOn ? 1 : 0) + (selectable ? 1 : 0) + (datesOn ? 1 : 0) + (deliveryShown ? 1 : 0)
   const shownKeys = rows.map((r) => r.key)
   const shownSelected = shownKeys.filter((k) => selected.has(k)).length
   const tenderDocCount = (offerDocs?.length || 0) + otherDocs.length
@@ -2072,6 +2112,7 @@ export default function SupplyPricingPanel({
     )
   }
   const linkDocOf = (link) => (link?.s3_document_id ? (linkDocs.get(link.s3_document_id) || null) : null)
+  const commentOf = (row) => (commentsByKey ? row.targets.map((t) => commentsByKey.get(t.p.k)).find(Boolean) || null : null)
   const renderRow = (row) => {
     if (!reuseOff) noteSimilar(row)
     const link = linksByKey ? row.targets.map((t) => linksByKey.get(t.key)).find(Boolean) || null : null
@@ -2080,7 +2121,7 @@ export default function SupplyPricingPanel({
       <PriceRow key={row.key} row={row} flash={row.targets.map((t) => flash[t.key]).find(Boolean)} editable={editable} nameOf={nameOf} act={act}
         offerCount={otherOffers(rowOffers, row.rate)} fileDrop={editable && filesOn}
         suspect={suspectPrice(ownPriceOf(row.rate), rowOffers)}
-        linksOn={linksOn} link={link} linkDoc={linkDocOf(link)}
+        linksOn={linksOn} link={link} linkDoc={linkDocOf(link)} commentsOn={commentsOn} comment={commentOf(row)}
         selectable={selectable} selected={selected.has(row.key)}
         origin={row.rate?.source_kind ? (origins.get(row.rate.id) || null) : null} datesOn={datesOn} showAuthor={showAuthor} deliveryOn={deliveryShown}
         similar={(!reuseOff && wantsSimilar(row) ? similarOthers(row, similar.get(row.key) || 0) : 0) + otherUnitFor(row).length}
@@ -2268,13 +2309,14 @@ export default function SupplyPricingPanel({
           </div>
 
           <div ref={tableWrapRef} className={`table-container sp-table-wrap${virtual ? ' is-virtual' : ''}`}>
-            <table className={`data-table sp-table${linksOn ? ' has-links' : ''}${datesOn ? (showAuthor ? ' has-dates has-authors' : ' has-dates') : ''}${deliveryShown ? ' has-delivery' : ''}`}>
+            <table className={`data-table sp-table${linksOn ? ' has-links' : ''}${commentsOn ? ' has-comments' : ''}${datesOn ? (showAuthor ? ' has-dates has-authors' : ' has-dates') : ''}${deliveryShown ? ' has-delivery' : ''}`}>
               <colgroup>
                 {selectable && <col className="sp-c-sel" />}
                 <col className="sp-c-num" /><col className="sp-c-name" /><col className="sp-c-unit" /><col className="sp-c-vol" />
                 <col className="sp-c-price" />{deliveryShown && <col className="sp-c-delivery" />}<col className="sp-c-total" />
                 {datesOn && <col className="sp-c-date" />}
                 {linksOn && <col className="sp-c-doc" />}
+                {commentsOn && <col className="sp-c-comment" />}
                 <col className="sp-c-state" />
               </colgroup>
               <thead>
@@ -2301,6 +2343,10 @@ export default function SupplyPricingPanel({
                     </th>
                   )}
                   {linksOn && <th title="Ссылка на чек, счёт или КП поставщика">Документ</th>}
+                  {commentsOn && (
+                    <th title={editable ? 'Комментарий к расценке позиции: виден всем, кто открывает расценку. Enter — сохранить, Shift+Enter — новая строка, Esc — отменить'
+                      : 'Комментарий к расценке позиции'}>Комментарий</th>
+                  )}
                   <th><span className="ui-sr-only">Состояние</span></th>
                 </tr>
               </thead>
@@ -2315,6 +2361,7 @@ export default function SupplyPricingPanel({
                   <td className="ui-money"><b>{formatAmount(shownDoc ? shownDoc.total : grand.total)}</b></td>
                   {datesOn && <td />}
                   {linksOn && <td />}
+                  {commentsOn && <td />}
                   <td />
                 </tr>
               </tfoot>
@@ -2460,6 +2507,7 @@ const samePriceRow = (a, b) => a.row.p === b.row.p && a.row.group === b.row.grou
   && a.row.targets.every((t, i) => sameTarget(t, b.row.targets[i]))
   && a.flash === b.flash && a.editable === b.editable && a.nameOf === b.nameOf && a.act === b.act
   && a.linksOn === b.linksOn && a.link === b.link && a.linkDoc === b.linkDoc && a.selectable === b.selectable && a.selected === b.selected
+  && a.commentsOn === b.commentsOn && a.comment === b.comment
   && a.origin === b.origin && a.similar === b.similar && a.suggestOpen === b.suggestOpen
   && a.offerCount === b.offerCount && a.fileDrop === b.fileDrop
   && a.datesOn === b.datesOn && a.showAuthor === b.showAuthor && a.deliveryOn === b.deliveryOn
@@ -2467,7 +2515,7 @@ const samePriceRow = (a, b) => a.row.p === b.row.p && a.row.group === b.row.grou
 
 const PriceRow = memo(function PriceRow({
   row, flash, editable, nameOf, act, linksOn, link, linkDoc, selectable, selected, origin, similar, suggestOpen, datesOn, showAuthor,
-  offerCount = 0, fileDrop = false, deliveryOn = false, suspect = null,
+  offerCount = 0, fileDrop = false, deliveryOn = false, suspect = null, commentsOn = false, comment = null,
 }) {
   const { p, draft, view, index, gi, change, vorLabel } = row
   const [dropping, setDropping] = useState(false)
@@ -2634,6 +2682,11 @@ const PriceRow = memo(function PriceRow({
             onEdit={() => act('editLink', row)} onOpenFile={(d) => act('openFile', d)} />
         </td>
       )}
+      {commentsOn && (
+        <td className="sp-comment" data-label="Комментарий">
+          <CommentCell row={row} comment={comment} editable={editable && row.targets.some((t) => t.p.k)} act={act} />
+        </td>
+      )}
       <td className="sp-state" data-label="">
         <RowState row={row} flash={flash} editable={editable} nameOf={nameOf} act={act} />
       </td>
@@ -2686,6 +2739,107 @@ function DeliveryCell({ row, editable, act }) {
       </div>
       {other && <span className="sp-hint ui-num">{other}</span>}
     </td>
+  )
+}
+
+// Комментарий к расценке позиции (миграция 20270105): поле прямо в строке. Сохраняется при уходе из поля и по Enter (следом —
+// поле строки ниже; Shift+Enter — новая строка), Esc отменяет правку. Не сохранилось — текст остаётся в поле с красной рамкой,
+// повтор — при следующем уходе из поля. Коллега успел написать своё, пока вы писали, — сохраняются оба текста, под полем пометка.
+// Без права правки — просто текст (до 4 строк, целиком — в подсказке).
+function CommentCell({ row, comment, editable, act }) {
+  const value = comment?.comment || ''
+  const [focused, setFocused] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [unsaved, setUnsaved] = useState(null) // текст, который не записался (или пишется сейчас)
+  const [status, setStatus] = useState(null) // null | 'saving' | 'merged' | { error }
+  const seen = useRef('') // что было в поле, когда начали писать (для склейки с текстом коллеги)
+  const live = useRef({ draft: '', dirty: false })
+  const cancel = useRef(false)
+  const rowRef = useRef(row)
+  rowRef.current = row
+  const actRef = useRef(act)
+  actRef.current = act
+
+  const save = async (text) => {
+    setUnsaved(text)
+    setStatus('saving')
+    const res = await actRef.current('saveComment', rowRef.current, { seen: seen.current, text })
+    if (res.ok) {
+      setUnsaved(null)
+      setStatus(res.text !== text.trim() ? 'merged' : null)
+    } else {
+      setStatus({ error: res.message })
+    }
+  }
+  // Строка ушла из таблицы (прокрутка длинного списка, закрыли вкладку карточки) с набранным текстом — сохранить.
+  useEffect(() => () => {
+    if (live.current.dirty) actRef.current('saveComment', rowRef.current, { seen: seen.current, text: live.current.draft })
+  }, [])
+
+  if (!editable) {
+    return value ? <div className="sp-comment-text" title={value}>{value}</div> : <span className="sp-muted">—</span>
+  }
+  const shown = focused ? draft : (unsaved ?? value)
+  const error = status?.error || ''
+  const name = row.p.name
+  return (
+    <>
+      <textarea
+        className={`sp-comment-input${error ? ' is-invalid' : ''}`}
+        rows={1}
+        maxLength={SUPPLY_COMMENT_MAX}
+        value={shown}
+        readOnly={status === 'saving'}
+        placeholder="—"
+        aria-label={`Комментарий: ${name} (${row.vorLabel})`}
+        aria-invalid={error ? true : undefined}
+        title={error ? `Не сохранено: ${error}` : undefined}
+        data-sp-cell={`comment-${row.gi}`}
+        onFocus={() => {
+          if (unsaved == null) seen.current = value
+          if (status === 'merged') setStatus(null)
+          const text = unsaved ?? value
+          live.current = { draft: text, dirty: false }
+          setDraft(text)
+          setFocused(true)
+        }}
+        onChange={(e) => {
+          live.current = { draft: e.target.value, dirty: true }
+          setDraft(e.target.value)
+        }}
+        onBlur={() => {
+          setFocused(false)
+          const text = live.current.draft
+          live.current = { draft: '', dirty: false }
+          if (cancel.current) {
+            cancel.current = false
+            setUnsaved(null)
+            setStatus(null)
+            return
+          }
+          if (text.trim() === value.trim()) {
+            if (unsaved != null) { setUnsaved(null); setStatus(null) }
+            return
+          }
+          save(text)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            cancel.current = true
+            e.currentTarget.blur()
+          } else if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault()
+            const el = e.currentTarget
+            el.blur()
+            const next = el.closest('table')?.querySelector(`[data-sp-cell="comment-${row.gi + 1}"]`)
+            if (next && !next.readOnly) requestAnimationFrame(() => next.focus())
+          }
+        }}
+      />
+      {status === 'saving' && <span className="sp-comment-note">Сохраняем…</span>}
+      {error && <span className="sp-comment-note is-error">Не сохранено: {error}</span>}
+      {status === 'merged' && <span className="sp-comment-note is-warn">Коллега изменил комментарий, пока вы писали: сохранены оба текста</span>}
+    </>
   )
 }
 

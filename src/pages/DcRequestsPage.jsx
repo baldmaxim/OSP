@@ -2459,7 +2459,8 @@ function DcRequestsPage() {
           </div>
         )
       ) : (
-        <div className={`table-container${colWidths.fits ? ' is-fit' : ''}`}>
+        <div className="table-container">
+          {/* is-fit (таблица помещается без прокрутки) ставит useColumnWidths прямо в DOM, без перерисовки страницы. */}
           <table
             ref={colWidths.tableRef}
             style={colWidths.tableStyle}
@@ -2480,8 +2481,9 @@ function DcRequestsPage() {
                 <th>Контрагент{resizer('cp')}</th>
                 <th>{linkEnabled ? 'Договор и № ДС' : '№ ДС'}{resizer(linkEnabled ? 'contract' : 'dsnum')}</th>
                 <th>Описание ДС{resizer('desc')}</th>
-                {/* task 370: сумма ДС («Было подано» / «Утверждено») с НДС 22% перед статусом */}
-                <th style={{ textAlign: 'right' }}>Сумма, руб. с НДС 22%{resizer('amount')}</th>
+                {/* task 370: суммы ДС с НДС 22% перед статусом; заголовок — по левому краю, как у остальных столбцов и
+                    подписей блока сумм (06.11.2026: справа над ним оставалось пустое место) */}
+                <th>Сумма, руб. с НДС 22%{resizer('amount')}</th>
                 <th>Статус и ответственный{resizer('status')}</th>
                 <th>Документы{resizer('docs')}</th>
                 {/* Статус ОКС — подаётся ли ДС заказчику; под ним пояснение (номер письма, срок…).

@@ -4,7 +4,8 @@ import { amountSections, deltaText } from '../utils/dcRequestAmounts'
 import './DcRequestAmounts.css'
 
 // Суммы заявки на ДС: один блок из двух частей — «Было ПСДЦ → ДС подрядчика → Согласовано ДС ОСП» и под двойной чертой
-// «Было ВОР подрядчик → Стало ВОР ОСП» (правила — utils/dcRequestAmounts.js). Ячейка «Сумма, руб. с НДС 22%» реестра и
+// «Было ВОР подрядчик → Стало ВОР ОСП» (правила — utils/dcRequestAmounts.js). Полосой — только основные суммы
+// («ДС подрядчика», «Согласовано ДС ОСП»), остальное — обычными строками. Ячейка «Сумма, руб. с НДС 22%» реестра и
 // карточка на телефоне. canEdit — суммы правятся прямо в блоке (onSave(field, raw) при уходе из поля); columns=false —
 // в базе нет колонок 20270104: только верхняя часть, «ДС подрядчика» не вводится.
 
@@ -47,35 +48,27 @@ function Delta({ row }) {
 }
 
 export default function DcRequestAmounts({ req, canEdit = false, onSave, columns = true }) {
-  const value = (row, head) => {
-    const cls = head ? 'dca-head-value' : 'dca-value'
+  const value = (row) => {
     if (canEdit && row.field) {
-      return <AmountInput value={row.value} label={row.label} className={`dca-input ${cls}`} onSave={(raw) => onSave(row.field, raw)} />
+      return <AmountInput value={row.value} label={row.label} className="dca-input dca-value" onSave={(raw) => onSave(row.field, raw)} />
     }
     return (
-      <span className={`${cls}${row.value == null ? ' is-empty' : ''}`}>
+      <span className={`dca-value${row.value == null ? ' is-empty' : ''}`}>
         {row.value != null ? formatAmount(row.value) : '—'}
       </span>
     )
   }
+  // Основные суммы («ДС подрядчика», «Согласовано ДС ОСП») — полосой и полужирным (is-main), остальное — обычными строками.
   return (
     <div className="dca">
-      {amountSections(req, { columns }).map(({ key, rows: [head, ...body] }) => (
+      {amountSections(req, { columns }).map(({ key, rows }) => (
         <div key={key} className={`dca-part dca-part--${key}`}>
-          <div className="dca-head">
-            <span className="dca-head-label">{head.label}</span>
-            {value(head, true)}
-          </div>
-          {body.length > 0 && (
-            <div className="dca-body">
-              {body.map((row) => (row.kind === 'value' ? (
-                <div key={row.label} className="dca-row">
-                  <span className="dca-label">{row.label}</span>
-                  {value(row, false)}
-                </div>
-              ) : <Delta key={`${row.kind}-${row.tone || ''}`} row={row} />))}
+          {rows.map((row) => (row.kind === 'value' ? (
+            <div key={row.label} className={`dca-row${row.main ? ' is-main' : ''}`}>
+              <span className="dca-label">{row.label}</span>
+              {value(row)}
             </div>
-          )}
+          ) : <Delta key={`${row.kind}-${row.tone || ''}`} row={row} />))}
         </div>
       ))}
     </div>

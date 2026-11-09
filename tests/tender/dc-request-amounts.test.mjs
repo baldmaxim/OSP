@@ -28,7 +28,8 @@ const text = (delta) => {
   const t = deltaText(delta)
   return t && { dir: t.dir, abs: plain(t.abs), pct: t.pct }
 }
-const shape = (sections) => sections.map(s => [s.key, s.rows.map(r => [r.kind, r.label, r.field ?? null, r.tone ?? null])])
+// Основная сумма (полосой и полужирным) — «main» вместо «value».
+const shape = (sections) => sections.map(s => [s.key, s.rows.map(r => [r.main ? 'main' : r.kind, r.label, r.field ?? null, r.tone ?? null])])
 
 describe('Суммы заявки на ДС: правила', () => {
   it('числа образца: дельты «стало − было», процент от «было», два знака', () => {
@@ -51,22 +52,22 @@ describe('Суммы заявки на ДС: правила', () => {
     assert.equal(deltaText(null), null)
   })
 
-  it('две части у каждой заявки, как на образце; тип ДС ничего не переносит', () => {
+  it('две части у каждой заявки, как на образце; основные — «ДС подрядчика» и «Согласовано ДС ОСП»; тип ДС ничего не переносит', () => {
     const full = {
       amount_before: 28177624, amount_contractor: 32793854.75, amount_after: 31958042.66,
       vor_amount_before: 500000, vor_amount_after: 450000,
     }
     const picture = [
       ['psdc', [
-        ['head', 'Было ПСДЦ', 'amount_before', null],
-        ['value', 'ДС подрядчика', 'amount_contractor', null],
+        ['value', 'Было ПСДЦ', 'amount_before', null],
+        ['main', 'ДС подрядчика', 'amount_contractor', null],
         ['delta', 'Дельта к ПСДЦ', null, 'contractor'],
-        ['value', 'Согласовано ДС ОСП', 'amount_after', null],
+        ['main', 'Согласовано ДС ОСП', 'amount_after', null],
         ['delta', 'Дельта ОСП', null, 'osp'],
         ['total', 'Дельта к ПСДЦ', null, null],
       ]],
       ['vor', [
-        ['head', 'Было ВОР подрядчик', 'vor_amount_before', null],
+        ['value', 'Было ВОР подрядчик', 'vor_amount_before', null],
         ['value', 'Стало ВОР ОСП', 'vor_amount_after', null],
         ['delta', 'Дельта ОСП', null, 'osp'],
       ]],
@@ -83,13 +84,13 @@ describe('Суммы заявки на ДС: правила', () => {
   it('пустой «ДС подрядчика» — без своих дельт; пустая часть — только суммы', () => {
     assert.deepEqual(shape(amountSections({ amount_before: 1, amount_after: 2 })), [
       ['psdc', [
-        ['head', 'Было ПСДЦ', 'amount_before', null],
-        ['value', 'ДС подрядчика', 'amount_contractor', null],
-        ['value', 'Согласовано ДС ОСП', 'amount_after', null],
+        ['value', 'Было ПСДЦ', 'amount_before', null],
+        ['main', 'ДС подрядчика', 'amount_contractor', null],
+        ['main', 'Согласовано ДС ОСП', 'amount_after', null],
         ['total', 'Дельта к ПСДЦ', null, null],
       ]],
       ['vor', [
-        ['head', 'Было ВОР подрядчик', 'vor_amount_before', null],
+        ['value', 'Было ВОР подрядчик', 'vor_amount_before', null],
         ['value', 'Стало ВОР ОСП', 'vor_amount_after', null],
       ]],
     ])
@@ -100,7 +101,7 @@ describe('Суммы заявки на ДС: правила', () => {
     assert.equal(hasAmountColumns([{ id: 'a', vor_amount_before: null }]), true)
     assert.equal(hasAmountColumns([]), false)
     assert.deepEqual(shape(amountSections({ amount_before: 1, amount_contractor: 5 }, { columns: false })), [
-      ['psdc', [['head', 'Было ПСДЦ', 'amount_before', null], ['value', 'ДС подрядчика', null, null], ['value', 'Согласовано ДС ОСП', 'amount_after', null]]],
+      ['psdc', [['value', 'Было ПСДЦ', 'amount_before', null], ['main', 'ДС подрядчика', null, null], ['main', 'Согласовано ДС ОСП', 'amount_after', null]]],
     ])
   })
 
@@ -255,17 +256,14 @@ describe('Реестр заявок на ДС: суммы и прокрутка'
   // Блок как текст: части через «‖», в части — «подпись = сумма» и дельты строками; сумма — из поля или надписи.
   const blockOf = (scope) => scope.locator('.dca').evaluate((el) => {
     const val = (row) => {
-      const v = row.querySelector('input, .dca-value, .dca-head-value')
+      const v = row.querySelector('input, .dca-value')
       return (v?.tagName === 'INPUT' ? (v.value || '—') : v?.textContent || '').trim()
     }
-    return [...el.querySelectorAll('.dca-part')].map((part) => {
-      const lines = [`${part.querySelector('.dca-head-label').textContent} = ${val(part.querySelector('.dca-head'))}`]
-      for (const row of part.querySelectorAll('.dca-body > *')) {
-        if (row.classList.contains('dca-row')) lines.push(`${row.querySelector('.dca-label').textContent} = ${val(row)}`)
-        else lines.push(`${row.querySelector('.dca-label').textContent}: ${row.querySelector('.dca-delta-val').textContent}`)
-      }
-      return lines.join('\n')
-    }).join('\n‖\n').replace(/[\u00a0\u202f]/g, ' ')
+    return [...el.querySelectorAll('.dca-part')].map((part) => [...part.children].map((row) => (
+      row.classList.contains('dca-row')
+        ? `${row.querySelector('.dca-label').textContent} = ${val(row)}`
+        : `${row.querySelector('.dca-label').textContent}: ${row.querySelector('.dca-delta-val').textContent}`
+    )).join('\n')).join('\n‖\n').replace(/[\u00a0\u202f]/g, ' ')
   })
   const row = (page, ds) => page.locator('.dcr-table tbody tr', { hasText: `ДС-${ds}` }).first()
   const PICTURE = [
@@ -294,6 +292,56 @@ describe('Реестр заявок на ДС: суммы и прокрутка'
       assert.equal(split, 'double')
       const colors = await page.evaluate(() => ['.is-up', '.is-down'].map(s => getComputedStyle(document.querySelector(`.dca-delta${s} .dca-delta-val`)).color))
       assert.notEqual(colors[0], colors[1])
+      // Полосой и полужирным — только «ДС подрядчика» и «Согласовано ДС ОСП»; «Было ПСДЦ», ВОР и все дельты — обычным
+      // начертанием, без полосы, дельты — одного вида, подпись цветом блока (06.11.2026, решения пользователя).
+      const looks = await row(page, 'd4').locator('.dca').evaluate((el) => [...el.querySelectorAll('.dca-row, .dca-delta')].map((r) => {
+        const cs = getComputedStyle(r)
+        const label = getComputedStyle(r.querySelector('.dca-label'))
+        const band = cs.backgroundColor !== 'rgba(0, 0, 0, 0)'
+        return `${r.querySelector('.dca-label').textContent}|${band ? 'полоса' : '-'}|${cs.fontWeight}|${label.fontWeight}`
+      }))
+      assert.deepEqual(looks, [
+        'Было ПСДЦ|-|400|400', 'ДС подрядчика|полоса|700|700', 'Дельта к ПСДЦ|-|400|400', 'Согласовано ДС ОСП|полоса|700|700',
+        'Дельта ОСП|-|400|400', 'Дельта к ПСДЦ|-|400|400', 'Было ВОР подрядчик|-|400|400', 'Стало ВОР ОСП|-|400|400', 'Дельта ОСП|-|400|400',
+      ])
+      const deltaLabels = await page.evaluate(() => [...document.querySelectorAll('.dca-delta .dca-label')].map((el) => {
+        const cs = getComputedStyle(el)
+        return `${cs.fontSize} ${cs.color}`
+      }))
+      assert.ok(deltaLabels.length > 2)
+      assert.equal(new Set(deltaLabels).size, 1, deltaLabels.join('\n'))
+      // Заголовок столбца — по левому краю, как у соседних (раньше — по правому, слева над ним было пусто).
+      const aligns = await page.locator('.dcr-table thead th').evaluateAll((ths) => ths
+        .filter((th) => /^(Сумма, руб\. с НДС 22%|Статус и ответственный)/.test(th.textContent.trim()))
+        .map((th) => getComputedStyle(th).textAlign))
+      assert.equal(aligns.length, 2)
+      assert.equal(aligns[0], aligns[1])
+      assert.notEqual(aligns[0], 'right')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  // Столбец самой малой ширины (окно 1440, 13.25rem): переносится подпись, а не сумма — суммы не вылезают за блок,
+  // обычная сумма стоит в строке своей подписи, подпись дельты — не больше двух строк («Дельта / к / ПСДЦ» — было).
+  it('узкий столбец: суммы в строке подписи и в пределах блока', async () => {
+    const { page, errors, close } = await open('', { width: 1440 })
+    try {
+      const report = await row(page, 'd4').locator('.dca').evaluate((el) => {
+        const box = el.getBoundingClientRect()
+        const out = []
+        for (const r of el.querySelectorAll('.dca-row, .dca-delta')) {
+          const label = r.querySelector('.dca-label')
+          const val = r.querySelector('input, .dca-value, .dca-delta-val')
+          const lb = label.getBoundingClientRect()
+          const vb = val.getBoundingClientRect()
+          const lines = Math.round(lb.height / parseFloat(getComputedStyle(label).lineHeight))
+          if (vb.right > box.right + 0.5 || vb.left < box.left - 0.5) out.push(`${label.textContent}: сумма за блоком`)
+          if (r.classList.contains('dca-delta') && lines > 2) out.push(`${label.textContent}: подпись в ${lines} строки`)
+          if (r.matches('.dca-row:not(.is-main)') && vb.top >= lb.bottom - 1) out.push(`${label.textContent}: сумма под подписью`)
+        }
+        return out
+      })
+      assert.deepEqual(report, [])
       assert.deepEqual(errors, [])
     } finally { await close() }
   })

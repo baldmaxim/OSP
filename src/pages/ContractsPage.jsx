@@ -60,7 +60,7 @@ import {
   indentUpdates,
   outdentUpdates,
 } from '../utils/appendixTree'
-import { useIsPhone, useElementWidth } from '../hooks/useMediaQuery'
+import { useIsPhone, useElementNarrowerThan } from '../hooks/useMediaQuery'
 import '../components/ContractRegistry.css'
 // Оформление реестра — отдельным файлом и ПОСЛЕ базовых стилей: при равной
 // специфичности перекрывает их (шапка, выравнивание, ширины колонок).
@@ -2003,10 +2003,9 @@ function ContractRegistry() {
   // таблицы table-layout: fixed с <colgroup>, и скрытая через CSS ячейка
   // оставляет колонку — шапка и данные разъезжаются на одну позицию.
   const tableAreaRef = useRef(null)
-  const tableAreaWidth = useElementWidth(tableAreaRef)
-  // null — ещё не измерили (первый кадр): показываем полный набор, чтобы на
-  // широком экране не мигало.
-  const narrowView = tableAreaWidth != null && tableAreaWidth < 1240
+  // Пока не измерили (первый кадр) — полный набор, чтобы на широком экране не
+  // мигало.
+  const narrowView = useElementNarrowerThan(tableAreaRef, 1240)
   // Кнопка «Скрыть столбцы» в шапке: убирает «Юрист», «Принят в работу» и
   // «План. подписания» — место отдаётся договору, контрагенту и работам.
   // Выбор запоминается в браузере.
