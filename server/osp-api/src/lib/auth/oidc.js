@@ -53,7 +53,6 @@ export function safeReturnUrl(raw) {
   if (u.origin !== 'https://portal.invalid') return '/'
   const out = `${u.pathname}${u.search}${u.hash}`
   if (out === '/api' || out.startsWith('/api/') || out.startsWith('/api?')) return '/'
-  // eslint-disable-next-line no-control-regex
   if (Buffer.byteLength(out) > RETURN_URL_MAX || !/^[\u0021-\u007e]+$/.test(out)) return '/'
   return out
 }
