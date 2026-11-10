@@ -269,9 +269,30 @@ export function createAuthService({ db, box, verifier, sessions, blocklist, mode
     return temp.password
   }
 
+  // Новая учётка с одобренной ролью — без пароля. Общая для «Добавить пользователя» (здесь, затем временный пароль) и
+  // «Создать пользователя» по заявке СУ-10 (src/lib/auth/identity.js: пароль ведёт Keycloak). Отметка internal уже стоит.
+  // → { ok: true, user: { id, email } } | { ok: false, … }
+  async function createUserTx(tx, { email, fullName, role, counterpartyId = null, objectIds = [] }) {
+    if (role === 'contractor' && !counterpartyId) {
+      return { ok: false, status: 400, code: 'counterparty_required', message: 'Для подрядчика нужна организация' }
+    }
+    if (await roleUnknown(tx, role)) return { ok: false, status: 400, code: 'role_unknown', message: 'Такой роли нет' }
+    const { rows } = await tx.query(`insert into auth.users (id, aud, role, email, email_confirmed_at, created_at, updated_at, raw_user_meta_data)
+        values (gen_random_uuid(), 'authenticated', 'authenticated', btrim($1), now(), now(), now(), jsonb_build_object('full_name', $2::text))
+      returning id, email`, [email, fullName || null])
+    const user = rows[0]
+    await tx.query(`insert into public.user_roles (user_id, email, role, is_approved, full_name, counterparty_id, object_ids)
+        values ($1, $2, $3, true, $4, $5, $6::uuid[])`, [user.id, user.email, role, fullName || null, counterpartyId, objectIds])
+    return { ok: true, user: { id: user.id, email: user.email } }
+  }
+
   // Учётка от администратора: почта подтверждена (её подтвердил администратор), заявка одобрена,
-  // временный пароль показывается один раз. → { ok: true, user, temporaryPassword } | { ok: false, … }
+  // временный пароль показывается один раз. Роль «Администратор» — только суперадминистратор (решение 10.11.2026;
+  // запись здесь служебная, поэтому проверка — тут, триггер базы её не видит). → { ok: true, user, temporaryPassword } | { ok: false, … }
   async function adminCreateUser({ actorId, email, fullName, role, counterpartyId = null, objectIds = [] }) {
+    if (role === 'admin' && !(await isSuperadmin(actorId))) {
+      return { ok: false, status: 403, code: 'superadmin_only', message: 'Роль «Администратор» выдаёт только суперадминистратор' }
+    }
     const temp = await temporaryPassword()
     if (!temp) return fail('busy')
     try {
@@ -279,18 +300,10 @@ export function createAuthService({ db, box, verifier, sessions, blocklist, mode
         await tx.mark('internal')
         const taken = (await tx.query('select 1 from auth.users where osp_private.email_norm(email) = osp_private.email_norm($1)', [email])).rows.length > 0
         if (taken) return { ok: false, status: 409, code: 'email_taken', message: 'Учётная запись с такой почтой уже есть' }
-        if (role === 'contractor' && !counterpartyId) {
-          return { ok: false, status: 400, code: 'counterparty_required', message: 'Для подрядчика нужна организация' }
-        }
-        if (await roleUnknown(tx, role)) return { ok: false, status: 400, code: 'role_unknown', message: 'Такой роли нет' }
-        const { rows } = await tx.query(`insert into auth.users (id, aud, role, email, email_confirmed_at, created_at, updated_at, raw_user_meta_data)
-            values (gen_random_uuid(), 'authenticated', 'authenticated', btrim($1), now(), now(), now(), jsonb_build_object('full_name', $2::text))
-          returning id, email`, [email, fullName || null])
-        const user = rows[0]
-        await tx.query(`insert into public.user_roles (user_id, email, role, is_approved, full_name, counterparty_id, object_ids)
-            values ($1, $2, $3, true, $4, $5, $6::uuid[])`, [user.id, user.email, role, fullName || null, counterpartyId, objectIds])
-        const password = await setTemporaryPasswordTx(tx, user.id, actorId, 'admin_created', temp)
-        return { ok: true, user: { id: user.id, email: user.email }, temporaryPassword: password }
+        const created = await createUserTx(tx, { email, fullName, role, counterpartyId, objectIds })
+        if (!created.ok) return created
+        const password = await setTemporaryPasswordTx(tx, created.user.id, actorId, 'admin_created', temp)
+        return { ok: true, user: created.user, temporaryPassword: password }
       })
     } catch (err) {
       if (err?.code === '23505') return { ok: false, status: 409, code: 'email_taken', message: 'Учётная запись с такой почтой уже есть' }
@@ -346,10 +359,29 @@ export function createAuthService({ db, box, verifier, sessions, blocklist, mode
     await db.read(null, async (tx) => {
       await tx.mark('auth')
       const canary = (await tx.query("select value from osp_auth.meta where key = 'canary'")).rows[0]
-      if (!canary) throw new Error('нет канарейки ключа — сначала перенос учёток (accounts-sync)')
-      if (box.decrypt(canary.value, CANARY_AAD) !== CANARY_TEXT) throw new Error('канарейка не совпала')
+      // Вход через СУ-10 паролей не читает: канарейки может не быть (своего входа ещё не включали), но если она есть — ключ должен
+      // её расшифровать (тем же ключом шифруются токены Keycloak).
+      if (!canary && mode !== 'keycloak') throw new Error('нет канарейки ключа — сначала перенос учёток (accounts-sync)')
+      if (canary && box.decrypt(canary.value, CANARY_AAD) !== CANARY_TEXT) throw new Error('канарейка не совпала')
       const { rows } = await tx.query("select distinct split_part(secret, ':', 2) as key_id from osp_auth.credentials")
-      const missing = rows.map((r) => r.key_id).filter((id) => !box.hasKey(id))
+      const keyIds = rows.map((r) => r.key_id)
+      // Вход через СУ-10: связи на месте (миграция 20270112), токены действующих сессий расшифровываются ключами окружения.
+      if (mode === 'keycloak') {
+        const { rows: t } = await tx.query("select to_regclass('osp_auth.identity_links') is not null as ok")
+        if (!t[0].ok) throw new Error('нет таблиц входа через СУ-10 — сначала миграция 20270112 (deploy-server.sh migrate)')
+      }
+      await tx.mark('internal')
+      const { rows: c } = await tx.query(`select exists (select 1 from information_schema.columns
+        where table_schema = 'osp_session' and table_name = 'sessions' and column_name = 'kc_refresh_enc') as ok`)
+      if (c[0].ok) {
+        const { rows: kc } = await tx.query(`select distinct split_part(v, ':', 2) as key_id from osp_session.sessions,
+            lateral (values (kc_refresh_enc), (kc_id_token_enc)) as x(v)
+          where revoked_at is null and v is not null`)
+        keyIds.push(...kc.map((r) => r.key_id))
+      } else if (mode === 'keycloak') {
+        throw new Error('нет колонок сессий СУ-10 — сначала миграция 20270112 (deploy-server.sh migrate)')
+      }
+      const missing = [...new Set(keyIds)].filter((id) => !box.hasKey(id))
       if (missing.length) throw new Error(`в OSP_AUTH_KEYS нет ключей: ${missing.join(', ')}`)
     })
   }
@@ -381,5 +413,5 @@ export function createAuthService({ db, box, verifier, sessions, blocklist, mode
     })
   }
 
-  return { login, changePassword, logoutAll, adminCreateUser, adminResetPassword, adminDeleteUser, readyCheck, cleanup, isSuperadmin }
+  return { login, changePassword, logoutAll, adminCreateUser, createUserTx, adminResetPassword, adminDeleteUser, readyCheck, cleanup, isSuperadmin }
 }

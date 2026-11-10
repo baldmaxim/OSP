@@ -84,6 +84,8 @@ BSMContractorRatesPage, BSMRatesPage, BSMComparisonPage, BSMSelectionPage, Contr
 |---|---|---|
 | contracts | ContractsPage, ContractDetailPage, ContractsImportModal | E(contracts); **окончательное удаление — isAdmin** |
 | contract_counterparties, contract_appendices, contract_advance_schedule | ContractsPage, ContractDetailPage | E(contracts) |
+| contract_number_counters (20270110) | — (ContractsPage, ContractNumberingModal только читают) | читает сотрудник; пишет только триггер договоров `contracts_number_counter`; номер по схеме у договоров не повторяется (`contracts_scheme_number_uniq`) |
+| objects.contract_code (20270110) | ContractNumberingModal | **в базе:** меняет только `is_admin()` (триггер `objects_contract_code_guard`) |
 | contract_attachments | — (только чтение) | — |
 | contract_audit_log | ContractsPage, ContractDetailPage | пишется при правках |
 | contract_clause_disputes | ContractClausesTab | сотрудник — E(contracts); подрядчик — свои, только `counterparty_text` |

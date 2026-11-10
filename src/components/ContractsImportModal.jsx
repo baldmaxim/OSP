@@ -14,6 +14,7 @@ import {
 } from '../utils/contractsImport'
 import { DOC_TYPES, buildDocIndex } from '../utils/contractAmendments'
 import { LARIX_LINK_FIELD, LARIX_LINK_LABEL } from '../utils/contractLarix'
+import { isSchemeNumberTaken, parseContractNumber } from '../utils/contractNumbering'
 import './ContractsImportModal.css'
 
 const CHUNK = 200
@@ -311,7 +312,13 @@ function ContractsImportModal({ counterparties = [], objects = [], contacts = []
           // Изолируем сбойную строку — вставляем по одной, остальные из чанка сохраняются.
           for (const x of chunk) {
             const { data: d, error: e } = await db.from('contracts').insert(x.result.payload).select('id, counterparty_id').single()
-            if (e) { x.saveError = e.message; failed.push(x) }
+            if (e) {
+              // Номер по схеме КОД-ДП-ГГ-NNN не повторяется (миграция 20270110) — понятная причина вместо имени индекса.
+              x.saveError = x.result.payload.record_type === 'dp' && parseContractNumber(x.result.payload.contract_number) && isSchemeNumberTaken(e)
+                ? `Номер ${x.result.payload.contract_number} уже есть у другого договора: номера по схеме не повторяются`
+                : e.message
+              failed.push(x)
+            }
             else { created++; if (d.counterparty_id) junction.push({ contract_id: d.id, counterparty_id: d.counterparty_id, sort_order: 0 }) }
           }
         }

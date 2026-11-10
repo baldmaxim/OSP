@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { db } from '../api'
+import { db, identityAdmin } from '../api'
 import { useRole, SECTIONS } from '../contexts/RoleContext'
 import FilterDropdown from '../components/FilterDropdown'
 import RoleBadge from '../components/admin/RoleBadge'
@@ -11,6 +11,7 @@ import UserEditDrawer from '../components/admin/UserEditDrawer'
 import ApiKeysTab from '../components/admin/ApiKeysTab'
 import AccessRightsTab from '../components/admin/AccessRightsTab'
 import ContractorSignupsTab from '../components/admin/ContractorSignupsTab'
+import IdentityRequestsTab from '../components/admin/IdentityRequestsTab'
 import { fetchAllActiveCounterparties } from '../utils/fetchAllRows'
 import './AdminPage.css'
 
@@ -31,7 +32,7 @@ function formatDateTime(ts) {
 function AdminPage() {
   const {
     isAdmin, isSuperAdmin, availableRoles, roleLabels,
-    userProfile, ownAuth, adminResetPassword,
+    userProfile, ownAuth, ssoAuth, ssoLinks, adminResetPassword,
   } = useRole()
   // Свой вход (tender.su10.ru): учётки и временные пароли выдаёт администратор.
   const [addUserOpen, setAddUserOpen] = useState(false)
@@ -39,7 +40,28 @@ function AdminPage() {
   const [activeTab, setActiveTab] = useState('users')
 
   const employeeRoleKeys = availableRoles.filter(r => r.key !== 'contractor').map(r => r.key)
-  const roleOptionsForForm = availableRoles.filter(r => r.key !== 'contractor').map(r => ({ key: r.key, label: r.label }))
+  // Роль «Администратор» выдаёт только суперадминистратор (решение 10.11.2026; так же проверяют сервер и база — триггер
+  // user_roles_admin_guard). Обычному администратору её нет в выборе; у пользователя, который уже администратор, она остаётся.
+  const roleOptionsForForm = availableRoles.filter(r => r.key !== 'contractor' && (isSuperAdmin || r.key !== 'admin')).map(r => ({ key: r.key, label: r.label }))
+  const roleOptionsFor = (u) => (u?.role === 'admin' && !roleOptionsForForm.some(r => r.key === 'admin')
+    ? [{ key: 'admin', label: roleLabels.admin || 'Администратор' }, ...roleOptionsForForm]
+    : roleOptionsForForm)
+
+  // Вход через СУ-10: связи пользователей с учётками СУ-10 (пометка в таблице, «Отвязать») и число заявок на вкладке.
+  const [ssoLinked, setSsoLinked] = useState(() => new Set())
+  const [pendingRequests, setPendingRequests] = useState(0)
+  const loadSsoLinks = useCallback(async () => {
+    if (!ssoAuth) return
+    try {
+      const { links } = await identityAdmin.links()
+      setSsoLinked(new Set((links || []).map((l) => l.userId)))
+    } catch { /* без пометок — таблица работает */ }
+  }, [ssoAuth])
+  useEffect(() => { loadSsoLinks() }, [loadSsoLinks])
+  useEffect(() => {
+    if (!ssoAuth) return
+    identityAdmin.list('pending').then((d) => setPendingRequests(d.pending || 0)).catch(() => {})
+  }, [ssoAuth])
 
   // --- Users ---
   const [userRoles, setUserRoles] = useState([])
@@ -223,6 +245,18 @@ function AdminPage() {
       notify('ok', 'Почта подтверждена — пользователь может войти')
     } catch (err) {
       notify('err', 'Ошибка: ' + err.message)
+    }
+  }
+
+  // Отвязать от СУ-10: связь снята, сессии СУ-10 закрыты сразу; следующий вход — снова заявка.
+  const handleUnlinkSso = async (u) => {
+    if (!window.confirm(`Отвязать ${u.full_name || u.email} от учётки СУ-10? Вход закроется, следующий вход придёт заявкой.`)) return
+    try {
+      await identityAdmin.unlink(u.user_id)
+      notify('ok', 'Связь с СУ-10 снята')
+      loadSsoLinks()
+    } catch (err) {
+      notify('err', err.message || 'Не удалось отвязать')
     }
   }
 
@@ -424,8 +458,15 @@ function AdminPage() {
           <p className="admin-subtitle">Управление пользователями, ролями и доступом к системе</p>
         </div>
         <div className="admin-topbar-actions">
-          {ownAuth && (
+          {ownAuth && !ssoAuth && (
             <button type="button" className="btn-primary" onClick={() => setAddUserOpen(true)}>Добавить пользователя</button>
+          )}
+          {ssoAuth && (
+            <span className="admin-sso-hint">
+              Учётки и пароли — {ssoLinks?.manageUrl
+                ? <a href={ssoLinks.manageUrl} target="_blank" rel="noopener noreferrer">auth.su10.ru/manage</a>
+                : 'auth.su10.ru/manage'}
+            </span>
           )}
           <a className="btn-ghost" href="/public/tenders" target="_blank" rel="noopener noreferrer"
             title="Открыть публичную страницу тендеров в новой вкладке">
@@ -453,14 +494,30 @@ function AdminPage() {
         <div className="admin-tabs">
           <button className={`admin-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>Пользователи</button>
           <button className={`admin-tab ${activeTab === 'permissions' ? 'active' : ''}`} onClick={() => setActiveTab('permissions')}>Права доступа</button>
+          {ssoAuth && (isAdmin || isSuperAdmin) && (
+            <button className={`admin-tab ${activeTab === 'requests' ? 'active' : ''}`} onClick={() => setActiveTab('requests')}>
+              Заявки на доступ{pendingRequests > 0 && <span className="admin-tab-count">{pendingRequests}</span>}
+            </button>
+          )}
           {/* Ключи выдаёт только администратор — так же проверяет сервер (server/osp-api/src/routes/apiKeys.js). */}
           {(isAdmin || isSuperAdmin) && (
             <button className={`admin-tab ${activeTab === 'api' ? 'active' : ''}`} onClick={() => setActiveTab('api')}>Доступ к API</button>
           )}
-          {(isAdmin || isSuperAdmin) && (
+          {(isAdmin || isSuperAdmin) && !ssoAuth && (
             <button className={`admin-tab ${activeTab === 'signups' ? 'active' : ''}`} onClick={() => setActiveTab('signups')}>Регистрации подрядчиков</button>
           )}
         </div>
+
+        {/* ===== Заявки на доступ (вход через СУ-10) ===== */}
+        {activeTab === 'requests' && ssoAuth && (isAdmin || isSuperAdmin) && (
+          <div className="admin-tabpane">
+            <IdentityRequestsTab
+              roleOptions={roleOptionsForForm} objectOptions={objectsList} counterpartyOptions={counterpartiesList}
+              onNeedCounterparties={ensureCounterparties} users={userRoles} isSuperAdmin={isSuperAdmin} notify={notify}
+              onChanged={() => { fetchUsers({ silent: true }); loadSsoLinks() }} onPendingCount={setPendingRequests}
+            />
+          </div>
+        )}
 
         {/* ===== Доступ к API ===== */}
         {activeTab === 'api' && (isAdmin || isSuperAdmin) && (
@@ -470,7 +527,7 @@ function AdminPage() {
         )}
 
         {/* ===== Регистрации подрядчиков ===== */}
-        {activeTab === 'signups' && (isAdmin || isSuperAdmin) && (
+        {activeTab === 'signups' && (isAdmin || isSuperAdmin) && !ssoAuth && (
           <div className="admin-tabpane">
             <ContractorSignupsTab notify={notify} />
           </div>
@@ -578,6 +635,12 @@ function AdminPage() {
                                 <span className="user-cell-name">{u.full_name || <span className="muted">Без имени</span>}</span>
                                 <span className="user-cell-contact">{u.email || '—'}</span>
                                 {u.work_phone && <span className="user-cell-contact">{u.work_phone}</span>}
+                                {ssoAuth && (
+                                  <span className={`user-cell-sso ${ssoLinked.has(u.user_id) ? 'is-linked' : ''}`}
+                                    title={ssoLinked.has(u.user_id) ? 'Входит через СУ-10' : 'Не связан с учёткой СУ-10 — войти не сможет, пока заявку не привяжут'}>
+                                    СУ-10: {ssoLinked.has(u.user_id) ? 'связан' : 'нет'}
+                                  </span>
+                                )}
                                 {u.email_confirmed_at === null && (
                                   <span className="user-cell-unconfirmed" title="Пользователь не перешёл по ссылке из письма (или ссылка не сработала). Подтвердить можно в меню «Ещё».">
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>
@@ -601,7 +664,8 @@ function AdminPage() {
                                 onEdit={() => setEditUser(u)}
                                 onSetStatus={(next) => setUserStatus(u, next)}
                                 onConfirmEmail={u.email_confirmed_at === null ? () => handleConfirmEmail(u) : null}
-                                onResetPassword={ownAuth ? () => handleResetPassword(u) : null}
+                                onResetPassword={ownAuth && !ssoAuth ? () => handleResetPassword(u) : null}
+                                onUnlinkSso={ssoAuth && ssoLinked.has(u.user_id) && (isSuperAdmin || u.role !== 'admin') ? () => handleUnlinkSso(u) : null}
                                 onDelete={() => handleDeleteUser(u)}
                               />
                             </div>
@@ -649,7 +713,7 @@ function AdminPage() {
       {editUser && (
         <UserEditDrawer
           user={editUser}
-          roleOptions={roleOptionsForForm}
+          roleOptions={roleOptionsFor(editUser)}
           objectOptions={objectsList}
           counterpartyOptions={counterpartiesList}
           onClose={() => setEditUser(null)}

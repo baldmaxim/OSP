@@ -5098,5 +5098,115 @@
     "to": "empty",
     "why": "новая таблица: комментарии к расценкам позиций снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
     "candidate": "20270105_supply_rate_comments.sql"
+  },
+  {
+    "release": "20270110",
+    "class": "admin",
+    "table": "contract_number_counters",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: счётчик номеров договоров по схеме КОД-ДП-ГГ-NNN (на копии пусто); читает сотрудник, пишет только триггер договоров",
+    "candidate": "20270110_contract_number_scheme.sql"
+  },
+  {
+    "release": "20270110",
+    "class": "employee_full",
+    "table": "contract_number_counters",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: счётчик номеров договоров по схеме КОД-ДП-ГГ-NNN (на копии пусто); читает сотрудник, пишет только триггер договоров",
+    "candidate": "20270110_contract_number_scheme.sql"
+  },
+  {
+    "release": "20270110",
+    "class": "employee_none",
+    "table": "contract_number_counters",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: счётчик номеров договоров по схеме КОД-ДП-ГГ-NNN (на копии пусто); читает сотрудник, пишет только триггер договоров",
+    "candidate": "20270110_contract_number_scheme.sql"
+  },
+  {
+    "release": "20270110",
+    "class": "vors_only",
+    "table": "contract_number_counters",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: счётчик номеров договоров по схеме КОД-ДП-ГГ-NNN (на копии пусто); читает сотрудник, пишет только триггер договоров",
+    "candidate": "20270110_contract_number_scheme.sql"
+  },
+  {
+    "release": "20270110",
+    "class": "contractor_own",
+    "table": "contract_number_counters",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: счётчик номеров договоров по схеме КОД-ДП-ГГ-NNN (на копии пусто); читает сотрудник, пишет только триггер договоров",
+    "candidate": "20270110_contract_number_scheme.sql"
+  },
+  {
+    "release": "20270110",
+    "class": "contractor_noorg",
+    "table": "contract_number_counters",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: счётчик номеров договоров по схеме КОД-ДП-ГГ-NNN (на копии пусто); читает сотрудник, пишет только триггер договоров",
+    "candidate": "20270110_contract_number_scheme.sql"
+  },
+  {
+    "release": "20270110",
+    "class": "unapproved",
+    "table": "contract_number_counters",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: счётчик номеров договоров по схеме КОД-ДП-ГГ-NNN (на копии пусто); читает сотрудник, пишет только триггер договоров",
+    "candidate": "20270110_contract_number_scheme.sql"
+  },
+  {
+    "release": "20270110",
+    "class": "blocked",
+    "table": "contract_number_counters",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: счётчик номеров договоров по схеме КОД-ДП-ГГ-NNN (на копии пусто); читает сотрудник, пишет только триггер договоров",
+    "candidate": "20270110_contract_number_scheme.sql"
+  },
+  {
+    "release": "20270110",
+    "class": "no_user_roles",
+    "table": "contract_number_counters",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: счётчик номеров договоров по схеме КОД-ДП-ГГ-NNN (на копии пусто); читает сотрудник, пишет только триггер договоров",
+    "candidate": "20270110_contract_number_scheme.sql"
+  },
+  {
+    "release": "20270110",
+    "class": "anon",
+    "table": "contract_number_counters",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: счётчик номеров договоров по схеме КОД-ДП-ГГ-NNN (на копии пусто); читает сотрудник, пишет только триггер договоров",
+    "candidate": "20270110_contract_number_scheme.sql"
+  },
+  {
+    "release": "20270110",
+    "class": "service_role",
+    "table": "contract_number_counters",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: счётчик номеров договоров по схеме КОД-ДП-ГГ-NNN (на копии пусто); читает сотрудник, пишет только триггер договоров",
+    "candidate": "20270110_contract_number_scheme.sql"
   }
 ]

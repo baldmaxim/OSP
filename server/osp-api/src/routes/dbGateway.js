@@ -28,6 +28,7 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import { Readable } from 'node:stream'
 import { SignJWT } from 'jose'
+import { parseUpstream, upstreamFetch } from '../lib/upstreamFetch.js'
 import { access } from '../lib/access.js'
 import { bearerToken } from '../lib/keys.js'
 import { csrfProblem, clearSessionCookies } from '../lib/principal.js'
@@ -163,8 +164,10 @@ export function createInternalTokens({ secret, dbRole }) {
 
 export function registerDbGateway(app, ctx) {
   const { config, verifyUserToken, allow, mint } = ctx
-  const upstream = String(config.dbGateway?.upstream || '').replace(/\/+$/, '')
-  const fetchImpl = ctx.fetch || fetch
+  // По сети или по сокету в общем томе (src/lib/upstreamFetch.js).
+  const target = parseUpstream(config.dbGateway?.upstream)
+  const upstream = target?.base || ''
+  const fetchImpl = ctx.fetch || upstreamFetch(target)
 
   // Барьер записи — общий с маршрутом файлов (src/lib/writeBarrier.js).
   const isReadOnly = ctx.isReadOnly || (() => false)
@@ -197,7 +200,7 @@ export function registerDbGateway(app, ctx) {
         return send(reply, p.status, pgError(p.code, p.message))
       }
       if (p.kind === 'user') {
-        if (p.source === 'own') {
+        if (p.session) {
           if (p.session.mustChange) return send(reply, 403, pgError('OSP_PASSWORD_CHANGE_REQUIRED', 'Смените временный пароль'))
           const bad = csrfProblem(request, p, ctx.config.auth?.publicOrigin)
           if (bad) return send(reply, 403, pgError('OSP_CSRF', bad))

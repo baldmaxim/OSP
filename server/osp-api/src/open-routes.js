@@ -5,6 +5,7 @@
 import { GATEWAY_METHODS, GATEWAY_URL, GATEWAY_REASON } from './routes/dbGateway.js'
 import { COVERS_OPEN_REASON, COVER_THUMBS_OPEN_REASON } from './routes/covers.js'
 import { AUTH_CONFIG_REASON, AUTH_LOGIN_REASON, AUTH_LOGOUT_REASON } from './routes/auth.js'
+import { OIDC_LOGIN_REASON, OIDC_CALLBACK_REASON } from './routes/oidc.js'
 import { SIGNUP_CHALLENGE_REASON, SIGNUP_REGISTER_REASON, SIGNUP_PREVIEW_REASON, SIGNUP_CONFIRM_REASON, SIGNUP_CLAIM_REASON, PASSWORD_FORGOT_REASON, PASSWORD_RESET_REASON } from './routes/signup.js'
 
 export const OPEN_ROUTES = [
@@ -36,6 +37,9 @@ export const OPEN_ROUTES = [
   { method: 'GET', url: '/api/auth/config', kind: 'open', reason: AUTH_CONFIG_REASON },
   { method: 'POST', url: '/api/auth/login', kind: 'open', reason: AUTH_LOGIN_REASON },
   { method: 'POST', url: '/api/auth/logout', kind: 'open', reason: AUTH_LOGOUT_REASON },
+  // Вход через СУ-10 (src/routes/oidc.js): до входа сессии нет; в режимах, кроме keycloak, — 404.
+  { method: 'GET', url: '/api/auth/oidc/login', kind: 'open', reason: OIDC_LOGIN_REASON },
+  { method: 'GET', url: '/api/auth/oidc/callback', kind: 'open', reason: OIDC_CALLBACK_REASON },
   // Регистрация подрядчика (src/routes/signup.js): пока регистрация закрыта, адреса отвечают 404.
   { method: 'GET', url: '/api/auth/register/challenge', kind: 'open', reason: SIGNUP_CHALLENGE_REASON },
   { method: 'POST', url: '/api/auth/register', kind: 'open', reason: SIGNUP_REGISTER_REASON },

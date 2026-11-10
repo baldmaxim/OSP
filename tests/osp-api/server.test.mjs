@@ -184,7 +184,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
   it('health: что настроено — да/нет, без значений секретов', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/health' })
     assert.equal(res.statusCode, 200)
-    assert.deepEqual(res.json(), { ok: true, service: 'osp-api', configured: { supabase: true, supabaseService: true, s3: true, anthropic: true, rates: true, db: false, token: false, gateway: false, larix: false, auth: false } })
+    assert.deepEqual(res.json(), { ok: true, service: 'osp-api', configured: { supabase: true, supabaseService: true, s3: true, anthropic: true, rates: true, db: false, token: false, gateway: false, larix: false, auth: false, oidc: false, accessSync: false, webGate: false } })
     for (const secret of ['anon-test-key', 'service-test-key', 'secret-test', 'anthropic-test-key', 'rk-one']) {
       assert.ok(!res.body.includes(secret), secret)
     }

@@ -7,7 +7,8 @@ import { useState, useRef, useEffect } from 'react'
 // ни разу не входил, было нельзя.
 // onConfirmEmail — только у тех, кто не подтвердил почту (иначе null).
 // onResetPassword — свой вход (tender.su10.ru): временный пароль от администратора (иначе null).
-export default function UserActionsMenu({ status, onEdit, onSetStatus, onDelete, onConfirmEmail = null, onResetPassword = null }) {
+// onUnlinkSso — вход через СУ-10: снять связь с учёткой СУ-10 (иначе null).
+export default function UserActionsMenu({ status, onEdit, onSetStatus, onDelete, onConfirmEmail = null, onResetPassword = null, onUnlinkSso = null }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
 
@@ -60,6 +61,12 @@ export default function UserActionsMenu({ status, onEdit, onSetStatus, onDelete,
             <button type="button" role="menuitem" className="adm-menu-item" onClick={() => run(onResetPassword)}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
               Сбросить пароль
+            </button>
+          )}
+          {onUnlinkSso && (
+            <button type="button" role="menuitem" className="adm-menu-item" onClick={() => run(onUnlinkSso)}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 17H7A5 5 0 0 1 7 7h2" /><path d="M15 7h2a5 5 0 0 1 4 8" /><path d="M2 2l20 20" /></svg>
+              Отвязать от СУ-10
             </button>
           )}
           {status === 'pending' && (

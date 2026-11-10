@@ -106,7 +106,7 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
   }
   const card = (page, id) => page.locator(`.dc-column[data-status="in_progress"] .dc-card[data-id="${id}"]`)
   const openCard = async (page, id, tab) => {
-    await page.locator(`.dc-column:not(.dc-column--summary) .dc-card[data-id="${id}"]`).first().click()
+    await page.locator(`.dc-column .dc-card[data-id="${id}"]`).first().click()
     const modal = page.locator('.dc-detail-modal')
     await modal.waitFor()
     if (tab) await modal.getByRole('tab', { name: new RegExp(`^${tab}`) }).click()
@@ -210,7 +210,7 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
       assert.match(await modal.locator('.dc-detail-sub .dc-status-chip').innerText(), /В работе/)
       assert.match(await modal.locator('.dc-detail-sub').innerText(), /Договор подряда/)
       assert.equal(await modal.locator('.dc-status-opt.is-current').count(), 1)
-      assert.equal(await modal.locator('.dc-status-opt').count(), 8, 'каждая колонка доски — отдельной строкой')
+      assert.equal(await modal.locator('.dc-status-opt').count(), 7, 'каждая колонка доски — отдельной строкой (без убранной «Проверки документов»)')
 
       const height = (await modal.boundingBox()).height
       for (const tab of ['Шаги', 'Обсуждение', 'Документы', 'История', 'Заявка']) {

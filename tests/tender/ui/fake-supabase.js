@@ -6,8 +6,9 @@
 // искусственную «сетевую» задержку и учитывается в window.__supabaseStats.
 // window.__fakeTriggers[таблица](строка, прежняя) — подмена триггера «до записи» (расчёт в базе);
 // window.__fakeErrors[таблица] — ответ ошибкой на любой запрос к таблице (например, «таблицы нет»).
-// window.__fakeHold({ table, op, filters }) → { delay?, error?, stale? } — задержать или уронить отдельный запрос
-// (например, одну из двух частей очереди «Проверки КП»); stale — выборка со строками на момент запроса.
+// window.__fakeHold({ table, op, filters, payload, patch }) → { delay?, error?, stale? } — задержать или уронить отдельный запрос
+// (например, одну из двух частей очереди «Проверки КП»); stale — выборка со строками на момент запроса; payload / patch —
+// что пишется (уникальность по вычисляемому ключу, как индекс базы).
 // ?maxRows=N — потолок строк на ответ, как PGRST_DB_MAX_ROWS у PostgREST (у Supabase и шлюза — 1000): выборка без
 // страниц получает первые N строк, count — по-прежнему все.
 // window.__fakeMissingColumns[таблица] — колонок ещё нет (миграция не применена): выборка, где они названы,
@@ -203,7 +204,7 @@ async function run(q) {
   // ids — сколько значений в фильтре .in(...): по нему видно, перечитан один тендер или все.
   const inFilter = q.filters.find((f) => f.op === 'in')
   stats.requests.push({ table: q.table, op: q.op, range: q.range || null, count: q.count, ids: inFilter ? inFilter.val.map(String) : null })
-  const hold = window.__fakeHold?.({ table: q.table, op: q.op, filters: q.filters }) || {}
+  const hold = window.__fakeHold?.({ table: q.table, op: q.op, filters: q.filters, payload: q.payload, patch: q.patch }) || {}
   // hold.stale — выборка отвечает строками на момент запроса (база отдала снимок, задержалась сеть): записанное
   // за время задержки в ответ не попадёт.
   const snapshot = hold.stale && q.op === 'select' ? tableRows(q.table).map((r) => ({ ...r })) : null

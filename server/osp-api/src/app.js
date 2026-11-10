@@ -13,7 +13,11 @@
 //
 // Свой вход (AUTH_MODE): supabase — как раньше; both — пилот своего входа (OSP_AUTH_PILOT_IDS); own — только
 // свой вход: учётки и пароли в базе Яндекса, сессия в httpOnly-cookie, Supabase не нужен (src/lib/auth/,
-// src/lib/principal.js, src/routes/auth.js). Переключение и откат — одной строкой окружения и перезапуском.
+// src/lib/principal.js, src/routes/auth.js); keycloak — единый вход СУ-10 (OIDC, src/lib/auth/oidc.js): пароли ведёт
+// Keycloak, учётки, роли и права — по-прежнему база портала. Переключение и откат — одной строкой окружения и перезапуском.
+//
+// Замок сайта (OSP_WEB_GATE=1, сервер corp): osp-api в общей сети сервера, поэтому без жетона X-OSP-Web от osp-web — 403;
+// изнутри контейнера (loopback, без X-Forwarded-For) — пропуск. Проверка — первым хуком, до всего остального.
 //
 // Журнал: метод, ШАБЛОН маршрута, код, время. Ни адреса с параметрами (в ?key= ключ rates-api), ни
 // заголовков, ни тел запросов (в них текст договоров) в журнал не попадает. Ответы не кешируются.
@@ -23,8 +27,8 @@ import { createClient } from '@supabase/supabase-js'
 import { PostgrestClient } from '@supabase/postgrest-js'
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import Anthropic from '@anthropic-ai/sdk'
-import { configuredParts, checkOwnAuthConfig, READY_PARTS, READY_OPTIONAL } from './config.js'
-import { bearerToken } from './lib/keys.js'
+import { configuredParts, checkOwnAuthConfig, isSessionMode, READY_PARTS, READY_OPTIONAL } from './config.js'
+import { bearerToken, safeEqual } from './lib/keys.js'
 import { createDb, dbUnavailable, DB_UNAVAILABLE, DB_UNAVAILABLE_TEXT } from './lib/db.js'
 import { createTokenVerifier } from './lib/token.js'
 import { createUserStatus, STATUS_DEFAULTS } from './lib/userStatus.js'
@@ -58,6 +62,14 @@ import { createProofOfWork } from './lib/auth/proofOfWork.js'
 import { createMailOutbox, createSmtpTransport } from './lib/auth/mailOutbox.js'
 import { registerSignup } from './routes/signup.js'
 import { createBidPositions } from './lib/bidPositions.js'
+import { parseUpstream, upstreamFetch } from './lib/upstreamFetch.js'
+import { createOidc } from './lib/auth/oidc.js'
+import { createRecheck } from './lib/auth/oidcRecheck.js'
+import { createIdentity } from './lib/auth/identity.js'
+import { createKcAdmin } from './lib/auth/kcAdmin.js'
+import { createAccessSync } from './lib/auth/accessSync.js'
+import { registerOidc, rewriteOidcUrl } from './routes/oidc.js'
+import { registerIdentityAdmin } from './routes/identityAdmin.js'
 
 // Список разрешённого шлюзу данных — выдача прав прода как есть (scripts/build-db-allow.mjs).
 const ALLOW = JSON.parse(fs.readFileSync(new URL('./data/allow.json', import.meta.url), 'utf8'))
@@ -133,6 +145,20 @@ export function buildLarixTargets(config, { db, deps = defaultDeps }) {
 
 export const larixSecrets = (config) => [config.larix.password, config.larix.username, config.supabaseServiceKey]
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
+// В журнал не попадают: заголовки входа, cookie, жетон сайта и любые токены (ответы Keycloak и Admin API в журнал не пишутся,
+// это страховка на случай ошибки в коде).
+export const LOG_REDACT = ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-osp-csrf"]', 'req.headers["x-osp-web"]',
+  'req.headers["x-osp-activity"]', 'res.headers["set-cookie"]', '*.access_token', '*.refresh_token', '*.id_token', '*.code_verifier',
+  '*.client_secret', '*.password', '*.authorization', '*.cookie']
+function withLogSafety(logger) {
+  if (!logger || typeof logger !== 'object' || typeof logger.child === 'function') return logger
+  return {
+    ...logger,
+    redact: { paths: LOG_REDACT, censor: '[скрыто]' },
+    // Адрес — только путь: строка запроса (в /api/rates бывает ?key=, у возврата из СУ-10 её снимает rewriteUrl) не пишется.
+    serializers: { req: (req) => ({ method: req.method, url: String(req.url || '').split('?', 1)[0] }), ...logger.serializers },
+  }
+}
 
 // Тело — объект JSON (как ждали Edge Functions); у запросов без тела (GET /api/auth/me) не проверяется.
 function bodyIsObject(request) {
@@ -165,13 +191,27 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   // Свой вход с неполными настройками не запускается (ключи, адрес портала, база, шлюз).
   checkOwnAuthConfig(config)
   const app = Fastify({
-    logger,
+    logger: withLogSafety(logger),
     logController: new LogController({ disableRequestLogging: true }),
     bodyLimit: BODY_LIMIT,
     // Адрес клиента (лимиты входа) — из X-Forwarded-For только от непосредственного соседа: до osp-api не
-    // достаёт никто, кроме своего прокси, а он перезаписывает заголовок одним адресом клиента (config.js).
+    // достаёт никто, кроме своего прокси, а он перезаписывает заголовок одним адресом клиента (config.js). На corp сосед с
+    // чужим X-Forwarded-For не пройдёт замок сайта (ниже).
     trustProxy: config.trustProxy === 'peer' ? (address, hop) => hop === 0 : false,
+    // Возврат из СУ-10: code и state — до маршрута в закрытое поле запроса (src/routes/oidc.js).
+    rewriteUrl: rewriteOidcUrl,
   })
+
+  // Замок сайта — первым: без жетона osp-web запрос не доходит ни до проверок, ни до базы.
+  if (config.webGate?.enabled) {
+    const webToken = config.webGate.token
+    app.addHook('onRequest', async (request, reply) => {
+      const header = request.headers['x-osp-web']
+      if (typeof header === 'string' && safeEqual(header, webToken)) return
+      if (!request.headers['x-forwarded-for'] && LOOPBACK.has(request.socket.remoteAddress)) return
+      return reply.code(403).send({ error: 'Доступ только через сайт портала', code: 'OSP_WEB_GATE' })
+    })
+  }
 
   // Адрес с «.» / «..» (и закодированными %2e) или «//»: nginx раскрывает такой путь и выбирает location по нему, а сюда
   // передаёт исходный — запрос шёл бы по одному адресу с лимитами другого (/api/rates/kp/../../db/x — мимо лимита /api/).
@@ -216,23 +256,26 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   // Какая копия данных за шлюзом: репетиция переноса или рабочая. У репетиции хранилище файлов и вход
   // общие с рабочим порталом — пока копия не рабочая, сервер их не меняет (src/lib/loadStatus.js).
   const loadStatus = deps.createLoadStatus ? deps.createLoadStatus({ db }) : createLoadStatus({ db, logger: app.log })
-  const dataClient = (who) => new PostgrestClient(config.dbGateway.upstream.replace(/\/+$/, ''), {
+  // PostgREST — по сети или по сокету в общем томе, тем же путём, что у шлюза (src/lib/upstreamFetch.js).
+  const pgrst = gatewayOn ? parseUpstream(config.dbGateway.upstream) : null
+  const pgrstFetch = upstreamFetch(pgrst)
+  const dataClient = (who) => new PostgrestClient(pgrst.base, {
     fetch: async (input, init = {}) => {
       const headers = new Headers(init.headers)
       headers.set('authorization', `Bearer ${await mint(who)}`)
-      return fetch(input, { ...init, headers })
+      return pgrstFetch(input, { ...init, headers })
     },
   })
 
   // Свой вход: сессии, пароли, единая проверка «кто это» для маршрутов, шлюза и /api/auth.
   const authMode = config.authMode || 'supabase'
   const ownAuth = authMode !== 'supabase'
-  const sessions = ownAuth ? createSessions({
-    db, logger: app.log,
-    idleMs: (config.auth.idleDays ?? 14) * DAY_MS, absoluteMs: (config.auth.absoluteDays ?? 30) * DAY_MS,
-    cacheMs: config.auth.sessionCacheMs ?? SESSION_DEFAULTS.cacheMs,
-  }) : null
   const authBox = ownAuth ? createSecretBox(config.auth.keys) : null
+  const sessions = ownAuth ? createSessions({
+    db, box: authBox, logger: app.log,
+    idleMs: (config.auth.idleDays ?? 14) * DAY_MS, absoluteMs: (config.auth.absoluteDays ?? 30) * DAY_MS,
+    cacheMs: config.auth.sessionCacheMs ?? SESSION_DEFAULTS.cacheMs, ...deps.sessionOptions,
+  }) : null
   const passwordVerifier = ownAuth ? (deps.createPasswordVerifier ? deps.createPasswordVerifier() : createPasswordVerifier()) : null
   const passwordBlocklist = ownAuth ? (deps.blocklist || loadBlocklist()) : null
   const authService = ownAuth ? createAuthService({
@@ -253,9 +296,47 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   } : null
   // Неверные cookie и токены по адресу клиента — общий лимит для «кто это» и шлюза (src/lib/limits.js, authFailPerIp).
   const authFail = createRateLimit(limits.authFailPerIp || DEFAULT_LIMITS.authFailPerIp)
+
+  // Вход через Keycloak su10 (AUTH_MODE=keycloak): поток входа, перепроверка сессий, связи и заявки, сверка группы.
+  // fetch к Keycloak — подменяемый (тесты: свой Keycloak в памяти, адреса https — без послаблений в коде службы).
+  const keycloak = authMode === 'keycloak'
+  const kcFetch = deps.oidcFetch || globalThis.fetch
+  const oidc = keycloak ? createOidc({ oidc: config.oidc, publicOrigin: config.auth.publicOrigin, box: authBox, fetch: kcFetch, log: app.log }) : null
+  const o = config.oidc || {}
+  const recheck = keycloak ? createRecheck({
+    db, oidc, sessions, box: authBox, log: app.log,
+    recheckMs: (o.recheckSec ?? 300) * 1000, activityWindowMs: (o.activityWindowSec ?? 1800) * 1000, maxOfflineMs: (o.maxOfflineSec ?? 3600) * 1000,
+    ...deps.recheckOptions,
+  }) : null
+  const identity = keycloak ? createIdentity({
+    db, issuer: o.issuer, linkByEmail: Boolean(o.linkByEmail), sessions, createUserTx: authService.createUserTx, isSuperadmin, log: app.log,
+  }) : null
+  const accessSync = keycloak && o.admin ? createAccessSync({
+    db, identity, sessions, issuer: o.issuer, linkByEmail: Boolean(o.linkByEmail), log: app.log,
+    kcAdmin: (deps.createKcAdmin || createKcAdmin)({ issuer: o.issuer, admin: o.admin, fetch: kcFetch }), options: deps.accessSyncOptions,
+  }) : null
+  if (keycloak && !o.admin) app.log.warn({}, 'kc access sync: KC_ADMIN_* не заданы — сверка группы СУ-10 выключена, заявки — только от входа')
+  if (oidc) {
+    // Discovery при запуске: Keycloak недоступен — служба всё равно работает (вход подождёт); issuer не тот — это настройка,
+    // а не сбой: служба не запускается (выкладка откатится).
+    app.addHook('onReady', async () => {
+      try {
+        await oidc.ready()
+      } catch (err) {
+        if (err?.code === 'OSP_OIDC_ISSUER') throw err
+        app.log.warn({ code: err?.detail || err?.code }, 'oidc: discovery при запуске не прошёл — повтор при первом входе')
+      }
+    })
+  }
+  if (accessSync) app.decorate('accessSync', accessSync)
+  if (accessSync && config.accessSyncTimer !== false) {
+    const stopSync = accessSync.start((o.admin.syncIntervalSec ?? 300) * 1000)
+    app.addHook('onClose', async () => stopSync())
+  }
+
   const principal = ownAuth ? createPrincipalResolver({
     mode: authMode, verifyBearer: verifyUserToken, sessions, userStatus, isSuperadmin, pilotIds: config.auth.pilotIds || [],
-    failLimit: authFail,
+    failLimit: authFail, recheck,
   }) : null
   const refuse = (reply, p) => {
     if (p.clear) clearSessionCookies(reply)
@@ -278,7 +359,7 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
         who: { userId: p.user.id, email: p.user.email || '' } }
     }
     if (!authHeader) { reply.code(401).send({ error: 'Unauthorized' }); return null }
-    if (authMode === 'own') return refuse(reply, { status: 401, code: 'OSP_AUTH_MODE', message: 'Вход изменился — обновите страницу' })
+    if (isSessionMode(authMode)) return refuse(reply, { status: 401, code: 'OSP_AUTH_MODE', message: 'Вход изменился — обновите страницу' })
     if (!config.supabaseUrl || !config.supabaseAnonKey) {
       reply.code(500).send({ error: 'Supabase env not configured' }); return null
     }
@@ -461,6 +542,7 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     signupTotal: createRateLimit(limits.signupTotal || DEFAULT_LIMITS.signupTotal),
     signupChallenge: createRateLimit(limits.signupChallengePerIp || DEFAULT_LIMITS.signupChallengePerIp),
     signupToken: createRateLimit(limits.signupTokenPerIp || DEFAULT_LIMITS.signupTokenPerIp),
+    oidcPerIp: createRateLimit(limits.oidcPerIp || DEFAULT_LIMITS.oidcPerIp),
     aiRate: createRateLimit(limits.aiPerUser),
     aiUser: createConcurrency(limits.aiConcurrentPerUser),
     aiTotal: createConcurrency(limits.aiConcurrentTotal),
@@ -567,7 +649,12 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     // рабочего портала защищены), final — рабочая, unknown — отметка не читается (защита включена).
     const data = gatewayOn ? { data: (await loadStatus.current())?.status || 'unknown' } : {}
     const recovery = db ? { inRecovery: db.recovery() } : {}
-    return reply.code(ok ? 200 : 503).send({ ok, checks, required, ...data, ...recovery })
+    // Вход через СУ-10 — справочно, вне готовности: сбой Keycloak не должен откатывать выкладку (работающие продолжают час).
+    let sso = {}
+    if (oidc) {
+      try { await withTimeout(oidc.check(), READY_TIMEOUT_MS); sso = { oidc: 'ok' } } catch { sso = { oidc: oidc.status() === 'issuer_mismatch' ? 'issuer_mismatch' : 'unavailable' } }
+    }
+    return reply.code(ok ? 200 : 503).send({ ok, checks, required, ...data, ...recovery, ...sso })
   } })
 
   // Очистка своего входа: просроченные сессии, давние неудачи, старый журнал (src/lib/auth/service.js).
@@ -640,8 +727,11 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
 
   const ctx = { signup, signupAdmin, pow, config, getS3, getAnthropic, getServiceClient, limiters, db,
     verifyUserToken, allow: deps.allow || ALLOW, mint, beforeGateway, gatewayOn, isReadOnly, loadStatus,
-    principal, authService, sessions, isSuperadmin, apiKeys, coverThumbs: deps.coverThumbs, coverThumbWaitMs: deps.coverThumbWaitMs }
+    principal, authService, sessions, isSuperadmin, apiKeys, coverThumbs: deps.coverThumbs, coverThumbWaitMs: deps.coverThumbWaitMs,
+    oidc, identity, accessSync }
   registerAuth(app, ctx)
+  registerOidc(app, ctx)
+  registerIdentityAdmin(app, ctx)
   registerSignup(app, ctx)
   registerDbGateway(app, ctx)
   registerS3Presign(app, ctx)

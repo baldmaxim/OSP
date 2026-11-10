@@ -4,25 +4,21 @@ import DocCheckColumn, { SLOT_AT_END } from './DocCheckColumn'
 import { dragCard, panByDrag, pressedScrollbar } from './boardGestures'
 import {
   COLUMN_SORTS,
-  DOC_CHECK_STATUSES,
   availableStatuses,
   boardColumns,
   columnSortOf,
   datePlaceBefore,
-  matchesSummary,
+  extraColumn,
   nextColumnSort,
   normalizeColumnSorts,
   withColumnSort,
-  SUMMARY_COLUMN,
 } from '../../utils/docCheckHelpers'
 
 // Канбан-доска заявок на проверку ДП/ДС — по образцу доски, на которой отдел
 // вёл проверку до сайта: колонки статусов с цветной полосой сверху и счётчиком,
-// «+» в каждой, карточки с цветом, метками и исполнителями.
-//
-// «Сводка по ДП» — колонка-выборка: те же заявки из других колонок по отбору
-// (тип документа, статусы), с подписью статуса на карточке. Бросить в неё
-// нельзя — это не статус; вытащить карточку из неё в колонку можно.
+// «+» в каждой, карточки с цветом, метками и исполнителями. «Сводки по ДП» и «Проверки документов (исключение налоговой
+// оговорки)» нет с 10.11.2026 (решение пользователя): заявка с убранным статусом стоит в своей колонке без «+», бросить
+// туда нельзя, вытащить — можно (docCheckHelpers, RETIRED_DOC_CHECK_STATUSES).
 //
 // Мышью (жесты — boardGestures.js, решение пользователя 03.11.2026): карточку тащат за любое место — за указателем едет
 // её копия, заглушка показывает, куда она встанет, у края окна доска и колонка едут сами, Escape отменяет. Нажать и вести
@@ -61,7 +57,7 @@ const placeOf = (byColumn, status, id) => {
 
 // addOnly — колонка, куда может добавлять тот, у кого нет права правки, а есть право создания (20270102: только «Новые заявки»).
 function DocCheckBoard({
-  requests, employees, canEdit, addOnly = null, hasBoardFields, summary, onSummaryChange,
+  requests, employees, canEdit, addOnly = null, hasBoardFields,
   onOpen, onMove, onAdd, onToggleDone, onCardAction, onArchiveDone,
 }) {
   // { id, origin: { column, beforeId }, target: { column, beforeId } | null }
@@ -78,28 +74,24 @@ function DocCheckBoard({
   }, [sorts])
 
   const statuses = availableStatuses(hasBoardFields)
-  const statusOptions = useMemo(() => DOC_CHECK_STATUSES
-    .filter(s => hasBoardFields || !s.board)
-    .map(s => ({ value: s.value, label: s.label })), [hasBoardFields])
 
   // Раскладка считается заново только при новых заявках: перетаскивание меняет лишь подсветку.
   const { byColumn, allColumns } = useMemo(() => {
     const columns = boardColumns(hasBoardFields)
     const map = new Map(columns.map(c => [c.value, []]))
     for (const r of requests) {
-      // Статус вне справочника (например, после ручной правки в БД) не должен
+      // Статус вне справочника (убранная колонка, ручная правка в БД) не должен
       // прятать заявку — заводим для него колонку на лету.
       if (!map.has(r.status)) map.set(r.status, [])
       map.get(r.status).push(r)
-      if (matchesSummary(r, summary)) map.get(SUMMARY_COLUMN).push(r)
     }
     for (const [value, list] of map) list.sort(COLUMN_SORTS[columnSortOf(sorts, value)].compare)
     const extra = [...map.keys()].filter(k => !columns.some(c => c.value === k))
     return {
       byColumn: map,
-      allColumns: [...columns, ...extra.map(value => ({ value, label: value, className: '', kind: 'status' }))],
+      allColumns: [...columns, ...extra.map(extraColumn)],
     }
-  }, [requests, summary, hasBoardFields, sorts])
+  }, [requests, hasBoardFields, sorts])
 
   // Пока несут карточку, заявки могли перечитаться: бросок решается по свежим данным.
   const latest = useRef(null)
@@ -196,14 +188,10 @@ function DocCheckBoard({
             employees={employees}
             canEdit={canEdit}
             hasBoardFields={hasBoardFields}
-            statusOptions={statusOptions}
-            summary={col.kind === 'summary' ? summary : null}
-            canAdd={col.kind !== 'summary' && (canEdit ? statuses.some(s => s.value === col.value) : addOnly === col.value)}
+            canAdd={col.kind === 'status' && (canEdit ? statuses.some(s => s.value === col.value) : addOnly === col.value)}
             isOver={drag?.target?.column === col.value}
             slotBefore={slotIn(col, sort)}
             liftedId={drag?.origin.column === col.value ? drag.id : null}
-            sourceId={drag && col.kind === 'summary' ? drag.id : null}
-            onSummaryChange={onSummaryChange}
             onOpen={onOpen}
             onAdd={onAdd}
             onToggleDone={onToggleDone}

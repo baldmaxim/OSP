@@ -72,6 +72,8 @@ export const DEFAULT_LIMITS = {
   loginPerIp: { max: 60, windowMs: 10 * 60_000 },
   authAdminPerUser: { max: 30, windowMs: 60_000 },
   authPasswordPerUser: { max: 10, windowMs: 10 * 60_000 },
+  // Вход через СУ-10: начало входа и возврат с одного адреса (весь офис — за одним адресом, поэтому мягко).
+  oidcPerIp: { max: 120, windowMs: 10 * 60_000 },
   // Регистрация подрядчика (src/routes/signup.js). С одного адреса — мало: заявку подают разово. Общий предел — до расчёта
   // отпечатка пароля: поток заявок не занимает процессор, на котором работает вход сотрудников.
   signupPerIp: { max: 10, windowMs: 60 * 60_000 },

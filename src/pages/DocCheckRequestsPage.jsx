@@ -46,7 +46,6 @@ import {
   mergeRequestCounts,
   nextSortOrder,
   normalizeRequest,
-  normalizeSummary,
   placeInColumn,
   shownAssigneeIds,
 } from '../utils/docCheckHelpers'
@@ -58,10 +57,10 @@ import './DocCheckRequestsPage.css'
 //
 // Раньше проверка договоров и допсоглашений шла письмами, потом — на внешней
 // доске задач. Здесь та же доска на сайте (решение пользователя 29.10.2026 —
-// «примерно такую же, как на фото»): колонки от «Новых заявок» до «Проверки
-// документов (исключение налоговой оговорки)», «Сводка по ДП», карточки с
-// цветом, метками, сроком и исполнителями, фильтры по исполнителю, сроку,
-// приоритету и объекту, архив.
+// «примерно такую же, как на фото»): колонки от «Новых заявок» до «Ожидаем скан»,
+// карточки с цветом, метками, сроком и исполнителями, фильтры по исполнителю,
+// сроку, приоритету и объекту, архив. «Сводку по ДП» и «Проверку документов
+// (исключение налоговой оговорки)» убрали 10.11.2026 (решение пользователя).
 //
 // Заявка НЕ привязана к записи реестра «Договоры и ДС»: проверка идёт до того,
 // как договор туда заводят, поэтому объект, контрагент, тип, № и дата вводятся
@@ -71,7 +70,6 @@ import './DocCheckRequestsPage.css'
 // полей и работает как раньше: без исполнителей, сроков, меток, цвета и архива.
 // Без миграции 20261124 — без обсуждения, шагов и ссылки на письмо.
 
-const SUMMARY_KEY = 'docCheckSummary'
 const VIEW_KEY = 'docCheckView'
 const QUIET_RELOAD_MS = 30000
 
@@ -139,14 +137,12 @@ export default function DocCheckRequestsPage() {
   const [filterAssignees, setFilterAssignees] = useState([])
   const [filterDeadline, setFilterDeadline] = useState('')
   const [filterPriorities, setFilterPriorities] = useState([])
-  const [summary, setSummary] = useState(() => normalizeSummary(readStored(SUMMARY_KEY, null)))
 
   const [formFor, setFormFor] = useState(null)   // { request, status } | null
   const [detailId, setDetailId] = useState(null)
   const [detailRefresh, setDetailRefresh] = useState(0)
 
   useEffect(() => { writeStored(VIEW_KEY, view) }, [view])
-  const changeSummary = (next) => { setSummary(next); writeStored(SUMMARY_KEY, next) }
 
   // Имя в истории — и «кто удалил» в «Удалённых»: без ФИО в профиле — почта, а не безликое «Пользователь».
   const author = userProfile?.full_name || user?.email || 'Пользователь'
@@ -477,7 +473,6 @@ export default function DocCheckRequestsPage() {
     onToggleDone: handleToggleDone,
     onCardAction: handleCardAction,
     onArchiveDone: handleArchiveDone,
-    onSummaryChange: changeSummary,
     onRestore: handleRestore,
     onUnarchive: unarchive,
   }
@@ -771,7 +766,7 @@ export default function DocCheckRequestsPage() {
       )}
       {!error && !hasBoardFields && isAdmin && (
         <div className="dc-note">
-          Исполнители, сроки, приоритет, метки, цвет карточек, архив и колонка «Проверка документов» появятся после
+          Исполнители, сроки, приоритет, метки, цвет карточек и архив появятся после
           миграции <code>20261113_doc_check_board</code>. До неё доска работает как раньше.
         </div>
       )}
@@ -849,8 +844,6 @@ export default function DocCheckRequestsPage() {
           canEdit={canEditSection}
           addOnly={createOnly ? 'new' : null}
           hasBoardFields={hasBoardFields}
-          summary={summary}
-          onSummaryChange={actions.onSummaryChange}
           onOpen={setDetailId}
           onMove={actions.onMove}
           onAdd={actions.onAdd}

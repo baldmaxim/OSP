@@ -3,7 +3,9 @@
 --   • схемы своего входа есть, канарейка ключа на месте (её расшифровку проверяет /api/ready службы);
 --   • каждый пользователь портала (user_roles) и каждый id в колонках-владельцах (migration/inventory.md, §3)
 --     есть в auth.users — иначе после переключения его записи «ничьи»;
---   • у одобренных пользователей есть пароли (без пароля войти нельзя — нужен временный от администратора);
+--   • у одобренных пользователей есть пароли (без пароля войти нельзя — нужен временный от администратора). Кто
+--     заведён через вход СУ-10 (связь osp_auth.identity_links, миграция 20270112), пароля ОСП не имеет по устройству:
+--     это не FAIL, а INFO с числом — при переходе в own им нужен временный пароль («Сбросить пароль»);
 --   • отпечаток последнего переноса (сверить с описью свежей выгрузки) и состояние паролей сейчас.
 -- Отметки меняются внутри одного блока: учётки — osp:internal, пароли — osp:auth.
 \set ON_ERROR_STOP on
@@ -13,6 +15,7 @@ DO $check$
 DECLARE
   r record;
   n bigint;
+  v_links boolean;
   v_dangling text := '';
   v_approved uuid[];
   v_all uuid[];
@@ -45,8 +48,21 @@ BEGIN
 
   PERFORM set_config('application_name', 'osp:auth', true);
   PERFORM set_config('osp_check.canary', (EXISTS (SELECT 1 FROM osp_auth.meta WHERE key = 'canary'))::text, true);
-  PERFORM set_config('osp_check.approved_nopass', (SELECT count(*) FROM unnest(coalesce(v_approved, '{}')) a(id)
-    WHERE NOT EXISTS (SELECT 1 FROM osp_auth.credentials k WHERE k.user_id = a.id))::text, true);
+  v_links := to_regclass('osp_auth.identity_links') IS NOT NULL;
+  IF v_links THEN
+    EXECUTE $q$SELECT count(*) FROM unnest(coalesce($1, '{}'::uuid[])) a(id)
+      WHERE NOT EXISTS (SELECT 1 FROM osp_auth.credentials k WHERE k.user_id = a.id)
+        AND NOT EXISTS (SELECT 1 FROM osp_auth.identity_links l WHERE l.user_id = a.id)$q$ INTO n USING v_approved;
+    PERFORM set_config('osp_check.approved_nopass', n::text, true);
+    EXECUTE $q$SELECT count(*) FROM unnest(coalesce($1, '{}'::uuid[])) a(id)
+      WHERE NOT EXISTS (SELECT 1 FROM osp_auth.credentials k WHERE k.user_id = a.id)
+        AND EXISTS (SELECT 1 FROM osp_auth.identity_links l WHERE l.user_id = a.id)$q$ INTO n USING v_approved;
+    PERFORM set_config('osp_check.approved_sso_only', n::text, true);
+  ELSE
+    PERFORM set_config('osp_check.approved_nopass', (SELECT count(*) FROM unnest(coalesce(v_approved, '{}')) a(id)
+      WHERE NOT EXISTS (SELECT 1 FROM osp_auth.credentials k WHERE k.user_id = a.id))::text, true);
+    PERFORM set_config('osp_check.approved_sso_only', '0', true);
+  END IF;
   PERFORM set_config('osp_check.all_nopass', (SELECT count(*) FROM unnest(coalesce(v_all, '{}')) a(id)
     WHERE NOT EXISTS (SELECT 1 FROM osp_auth.credentials k WHERE k.user_id = a.id))::text, true);
   PERFORM set_config('osp_check.stats', (SELECT 'из Supabase — ' || count(*) FILTER (WHERE source = 'supabase') || ', свои — '
@@ -73,6 +89,8 @@ SELECT CASE WHEN current_setting('osp_check.approved_nopass') = '0' THEN 'OK ' E
        || 'у одобренных пользователей есть пароли'
        || CASE WHEN current_setting('osp_check.approved_nopass') = '0' THEN ''
                ELSE ': без пароля — ' || current_setting('osp_check.approved_nopass') || ' (временный пароль от администратора)' END;
+SELECT 'INFO заведены через СУ-10 и без пароля ОСП (для входа «через Яндекс» — временный пароль от администратора): '
+       || current_setting('osp_check.approved_sso_only');
 SELECT 'INFO учёток без пароля всего: ' || current_setting('osp_check.all_nopass');
 SELECT 'INFO паролей: ' || current_setting('osp_check.stats');
 SELECT 'INFO последний перенос: ' || current_setting('osp_check.last_sync');

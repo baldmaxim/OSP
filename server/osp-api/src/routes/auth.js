@@ -10,6 +10,8 @@
 //   POST /api/auth/admin/reset-password  — администратор выдаёт временный пароль.
 // Сотрудникам учётки заводит администратор. Регистрация подрядчика на сайте — отдельно: src/routes/signup.js.
 // В режиме supabase маршруты, кроме config и me, отвечают 404: вход и учётки — в Supabase Auth.
+// В режиме keycloak вход, пароли и учётки ведёт СУ-10 (auth.su10.ru): парольные маршруты отвечают 410 OSP_SSO_ONLY (код
+// парольного входа и пароли остаются — это путь возврата в own), выход возвращает адрес выхода из СУ-10 (endSessionUrl).
 // Тела запросов в журнал не попадают (app.js пишет только метод, шаблон маршрута, код и время).
 import { z } from 'zod'
 import { access } from '../lib/access.js'
@@ -33,11 +35,19 @@ const CREATE_BODY = z.object({
 const RESET_BODY = z.object({ userId: z.string().uuid() })
 
 const isJson = (request) => /^application\/json(\s*;|$)/i.test(String(request.headers['content-type'] || ''))
+export const SSO_ONLY = { status: 410, code: 'OSP_SSO_ONLY', message: 'Вход и пароли — через СУ-10 (auth.su10.ru)' }
+export const ssoOnly = (reply) => reply.code(SSO_ONLY.status).send({ error: SSO_ONLY.message, code: SSO_ONLY.code })
 
 export function registerAuth(app, ctx) {
-  const { config, authService, sessions, isSuperadmin, limiters } = ctx
+  const { config, authService, sessions, isSuperadmin, limiters, oidc } = ctx
   const mode = config.authMode || 'supabase'
   const own = mode !== 'supabase'
+  const sso = mode === 'keycloak'
+  // Ссылки СУ-10 для страницы: профиль (смена пароля) и управление доступом.
+  const ssoLinks = sso && config.oidc?.issuer ? (() => {
+    const issuer = new URL(config.oidc.issuer)
+    return { accountUrl: `${config.oidc.issuer}/account`, manageUrl: `${issuer.origin}/manage` }
+  })() : null
   const maxAgeSec = Math.floor((config.auth?.absoluteDays ?? 30) * 86400)
   const notFound = (reply) => reply.code(404).send({ error: 'Not found' })
   const refuse = (reply, r) => {
@@ -52,7 +62,11 @@ export function registerAuth(app, ctx) {
     method: 'GET', url: '/api/auth/config',
     config: { access: access.open(AUTH_CONFIG_REASON) },
     // signup — только когда регистрация подрядчиков действительно открыта (src/routes/signup.js).
-    handler: async () => ({ mode, ownLogin: mode === 'own', ...(ctx.signup && ctx.pow ? { signup: true, signupMode: ctx.signup.mode } : {}) }),
+    handler: async () => ({
+      mode, ownLogin: mode === 'own',
+      ...(ssoLinks ? { sso: ssoLinks } : {}),
+      ...(ctx.signup && ctx.pow ? { signup: true, signupMode: ctx.signup.mode } : {}),
+    }),
   })
 
   app.route({
@@ -60,6 +74,7 @@ export function registerAuth(app, ctx) {
     config: { access: access.open(AUTH_LOGIN_REASON), body: LOGIN_BODY },
     handler: async (request, reply) => {
       if (!own) return notFound(reply)
+      if (sso) return ssoOnly(reply)
       if (!isJson(request)) return reply.code(415).send({ error: 'Только JSON' })
       const bad = originProblem(request, config.auth.publicOrigin)
       if (bad) return reply.code(403).send({ error: bad, code: 'OSP_ORIGIN' })
@@ -79,16 +94,29 @@ export function registerAuth(app, ctx) {
     handler: async (request, reply) => {
       if (!own) return notFound(reply)
       const cookie = readToken(request.headers.cookie, SESSION_COOKIE)
+      let endSessionUrl = null
       if (cookie.value) {
         const session = await sessions.lookup(cookie.value)
         if (session) {
-          const bad = csrfProblem(request, { source: 'own', session }, config.auth.publicOrigin)
+          const bad = csrfProblem(request, { source: session.authSource, session }, config.auth.publicOrigin)
           if (bad) return reply.code(403).send({ error: bad, code: 'OSP_CSRF' })
-          if (request.body?.all) await authService.logoutAll(session.userId)
+          if (session.authSource === 'keycloak') {
+            // id_token — до отзыва (отзыв его затирает); «выйти везде» — все сессии портала и выход из СУ-10 в этой вкладке.
+            const idToken = await sessions.revokeForLogout(cookie.value, { all: Boolean(request.body?.all), userId: session.userId })
+            if (request.body?.all) await authService.logoutAll(session.userId)
+            if (oidc) endSessionUrl = await oidc.endSessionUrl(idToken)
+          } else if (request.body?.all) await authService.logoutAll(session.userId)
           else await sessions.revoke(cookie.value, 'logout')
         }
       }
-      clearSessionCookies(reply).code(204)
+      clearSessionCookies(reply)
+      // Вход через СУ-10: адрес выхода из СУ-10 (страница переходит по нему). Без сессии или без id_token — с client_id:
+      // Keycloak спросит подтверждение; СУ-10 недоступен — null (страница уйдёт на /login без автоперехода).
+      if (sso) {
+        if (!endSessionUrl && oidc) endSessionUrl = await oidc.endSessionUrl(null)
+        return reply.code(200).send({ endSessionUrl })
+      }
+      reply.code(204)
       return reply.send()
     },
   })
@@ -99,6 +127,7 @@ export function registerAuth(app, ctx) {
     config: { access: access.user({ require: 'signedIn', deny: 'Нет доступа', allowMustChange: true, rate: { limiter: 'authPassword', deny: 'Слишком много попыток смены пароля — повторите позже' } }), body: PASSWORD_BODY },
     handler: async (request, reply) => {
       if (!own) return notFound(reply)
+      if (sso) return ssoOnly(reply)
       const { session } = request.auth
       if (!session) return reply.code(400).send({ error: 'Пароль меняется в своём входе портала', code: 'OSP_AUTH_MODE' })
       const result = await authService.changePassword({
@@ -127,6 +156,7 @@ export function registerAuth(app, ctx) {
         user: { id: user.id, email: user.email || '' },
         isSuperadmin: isSuperadmin ? await isSuperadmin(user.id) : false,
         mustChange: Boolean(session?.mustChange),
+        ...(session ? { authSource: session.authSource || 'password' } : {}),
       }
     },
   })
@@ -139,6 +169,7 @@ export function registerAuth(app, ctx) {
     },
     handler: async (request, reply) => {
       if (!own) return notFound(reply)
+      if (sso) return ssoOnly(reply)
       const b = request.body
       const result = await authService.adminCreateUser({
         actorId: request.auth.user.id, email: b.email, fullName: b.fullName, role: b.role,
@@ -157,6 +188,7 @@ export function registerAuth(app, ctx) {
     },
     handler: async (request, reply) => {
       if (!own) return notFound(reply)
+      if (sso) return ssoOnly(reply)
       const result = await authService.adminResetPassword({ actorId: request.auth.user.id, userId: request.body.userId })
       if (!result.ok) return refuse(reply, result)
       return { temporaryPassword: result.temporaryPassword }

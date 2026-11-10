@@ -5,6 +5,7 @@ import BrandLogo from '../components/BrandLogo'
 import ChangePasswordForm from '../components/ChangePasswordForm'
 import { takeAuthRedirectResult } from '../utils/authRedirect'
 import { signupManual, signupOpen } from '../api'
+import { SsoLogin } from './SsoScreens'
 import './LoginPage.css'
 
 // Приём заявок подрядчиков на доступ в кабинет. Временно остановлен (2026-09-18):
@@ -14,7 +15,13 @@ const CONTRACTOR_SIGNUP_OPEN = false
 
 // variant: 'employee' — вход для сотрудников (+ регистрация); 'contractor' — вход для
 // подрядчиков (выбор организации). Экран выбора роли убран, у каждого входа свой URL.
-function LoginPage({ variant = 'employee' }) {
+// Вход через СУ-10 (AUTH_MODE=keycloak) — своя страница: форм пароля нет, переход на auth.su10.ru (SsoScreens.jsx).
+function LoginPage(props) {
+  const { ssoAuth } = useRole()
+  return ssoAuth ? <SsoLogin variant={props.variant} /> : <PasswordLoginPage {...props} />
+}
+
+function PasswordLoginPage({ variant = 'employee' }) {
   const navigate = useNavigate()
   const { loginWithPassword, loginAsContractor, signUp, resendConfirmation, isLoggedIn, isEmployee,
     ownAuth, mustChangePassword } = useRole()

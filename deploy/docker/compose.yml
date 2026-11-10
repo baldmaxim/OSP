@@ -2,9 +2,11 @@
 #
 #   osp-web        — nginx с сайтом и правилами /api (deploy/docker/web). К нему обращается только
 #                    общий nginx сервера — по внешней сети OSP_PROXY_NETWORK, под именем osp-web:8080.
-#   osp-api        — свой API. Только во внутренней сети проекта: наружу и соседям недоступен.
-#   osp-postgrest  — PostgREST за шлюзом osp-api. Только во внутренней сети; запрос без внутреннего
-#                    токена шлюза отклоняет.
+#   osp-api        — свой API. Во внутренней сети проекта и в общей сети сервера: вход через Keycloak su10 ходит на
+#                    https://auth.su10.ru (у общего nginx в общей сети имя auth.su10.ru). Соседям по общей сети он не
+#                    отвечает: без жетона сайта X-OSP-Web (OSP_WEB_TOKEN, ставит osp-web) — 403 (OSP_WEB_GATE).
+#   osp-postgrest  — PostgREST за шлюзом osp-api. Слушает не сеть, а unix-сокет в общем томе pgrst-sock: имени в сети,
+#                    которое мог бы занять соседний контейнер, у него нет; запрос без внутреннего токена шлюза отклоняет.
 #
 # Имена служб — с приставкой osp-, и это не украшение. Docker делает имя службы именем в каждой сети,
 # куда она подключена, а сайт подключён к общей сети сервера. Служба с именем «web» или «api» получила
@@ -41,6 +43,7 @@ services:
     cpus: 0.25
     tmpfs: ["/tmp:size=64m,mode=1777"]
     # Жетон адреса клиента от общего nginx (web/nginx.conf): OSP_EDGE_TOKEN. Файла нет — адрес соединения.
+    # Жетон сайта для замка API (web/entrypoint.sh): OSP_WEB_TOKEN — без него выкладка не начнётся (deploy.sh).
     env_file:
       - path: ./secrets/osp-web.env
         required: false
@@ -63,18 +66,22 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: "8787"
-      # Адреса внутри проекта задаются здесь, а не в файле секретов.
-      OSP_PGRST_URL: http://osp-postgrest:3001
+      # Адреса внутри проекта задаются здесь, а не в файле секретов. PostgREST — по сокету в общем томе.
+      OSP_PGRST_URL: unix:/run/osp-pgrst/pgrst.sock
       OSP_DB_CA_FILE: /etc/ssl/osp/yandex-root.crt
       OSP_DB_READONLY_FILE: /var/lib/osp-api/db-readonly
-      # Адрес клиента (лимиты входа) — из X-Forwarded-For только от непосредственного соседа: до osp-api
-      # достаёт лишь osp-web (внутренняя сеть), а он перезаписывает заголовок одним адресом клиента.
+      # Замок сайта: без жетона X-OSP-Web — 403 (жетон OSP_WEB_TOKEN — в secrets/osp-api.env и secrets/osp-web.env,
+      # scripts/deploy-server.sh web-token-init). Изнутри контейнера (проверка живости, deploy.sh) — без жетона.
+      OSP_WEB_GATE: "1"
+      # Адрес клиента (лимиты входа) — из X-Forwarded-For только от непосредственного соседа: до osp-api с жетоном
+      # достаёт лишь osp-web, а он перезаписывает заголовок одним адресом клиента.
       OSP_TRUST_PROXY: peer
     volumes:
       - ./certs/yandex-root.crt:/etc/ssl/osp/yandex-root.crt:ro
       # Барьер записи: файл state/db-readonly на сервере — «только чтение». Службе достаточно его видеть.
       - ./state:/var/lib/osp-api:ro
-    networks: [internal]
+      - pgrst-sock:/run/osp-pgrst:ro
+    networks: [internal, proxy]
     depends_on:
       osp-postgrest: { condition: service_started }
 
@@ -87,10 +94,12 @@ services:
     cpus: 0.3
     env_file: ./secrets/postgrest.env
     environment:
-      PGRST_SERVER_HOST: 0.0.0.0
-      PGRST_SERVER_PORT: "3001"
+      # Сокет вместо порта: читает и пишет только владелец и группа (пользователь 1000 — у PostgREST и у osp-api).
+      PGRST_SERVER_UNIX_SOCKET: /run/osp-pgrst/pgrst.sock
+      PGRST_SERVER_UNIX_SOCKET_MODE: "660"
     volumes:
       - ./certs/yandex-root.crt:/etc/ssl/osp/yandex-root.crt:ro
+      - pgrst-sock:/run/osp-pgrst
     networks: [internal]
 
 networks:
@@ -101,3 +110,7 @@ networks:
 
 volumes:
   www: {}
+  # Сокет PostgREST: в памяти, каталог — только пользователю 1000 (PostgREST и osp-api).
+  pgrst-sock:
+    driver: local
+    driver_opts: { type: tmpfs, device: tmpfs, o: "size=1m,uid=1000,gid=1000,mode=0750" }

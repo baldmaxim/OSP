@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import { uuidv4Manual } from './utils/uuid'
 import { applyFeatureParam, loadRuntimeConfig, getRuntimeConfig, isFeatureEnabled, forceFeatures } from './config/runtime'
-import { loadAuthMode, setAuthMode, isOwnAuth, OWN_AUTH_FEATURES } from './api/authMode'
+import { loadAuthMode, setAuthMode, isSessionAuth, OWN_AUTH_FEATURES } from './api/authMode'
 import { installChunkRecovery, isChunkLoadError, reloadOnceForThisBuild } from './utils/chunkRecovery'
 
 // Полифил crypto.randomUUID — на http:// и в старых браузерах метод отсутствует,
@@ -36,7 +36,7 @@ async function start() {
   if (getRuntimeConfig().authServer) {
     try {
       setAuthMode(await loadAuthMode({ fetchImpl: (url, init) => fetch(url, init) }), isFeatureEnabled)
-      if (isOwnAuth()) forceFeatures(OWN_AUTH_FEATURES)
+      if (isSessionAuth()) forceFeatures(OWN_AUTH_FEATURES)
     } catch (err) {
       console.error('Режим входа не получен:', err)
       root.textContent = 'Сервер портала недоступен. Обновите страницу через минуту.'

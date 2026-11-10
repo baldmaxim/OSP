@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import BrandLogo from '../components/BrandLogo'
 import { GlobeIcon, MaxLogo, TelegramLogo } from '../components/icons/ChannelIcons'
-import { contractorSignup, signupManual, signupOpen } from '../api'
+import { auth, contractorSignup, signupManual, signupOpen } from '../api'
 import { TENDER_MAILBOX } from '../utils/siteContacts'
 import {
   PHONE_PROBLEM, SIGNUP_LIMITS, cleanKppInput, digitsOnly, emailProblem, guessLegalForm, legalFormOf, legalFormsForInn, normalizePhone, parsePhoneInput,
@@ -522,6 +522,17 @@ export default function ContractorSignupPage({ view = 'register' }) {
   useEffect(() => {
     document.title = 'Регистрация подрядчика — СУ-10'
   }, [])
+  // Вход через СУ-10: регистрации и паролей на сайте нет — учётку заводит администратор доступа СУ-10.
+  if (auth.isSso) {
+    return (
+      <Shell subtitle="Регистрация подрядчика">
+        <p className="login-note">
+          Учётку подрядчику заводит администратор доступа СУ-10 — обратитесь к контактному лицу в ОСП ({TENDER_MAILBOX}).
+          Забыли пароль — временный выдаёт тот же администратор.
+        </p>
+      </Shell>
+    )
+  }
   // Без писем восстановить пароль самому нельзя: временный выдаёт отдел.
   if (view === 'forgot' && signupManual()) {
     return (

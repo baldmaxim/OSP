@@ -1,0 +1,171 @@
+/* «Нумерация договоров» (ContractNumberingModal): каркас окна — tdm-* из TenderDocsModal.css, здесь — правила и таблица кодов.
+   Свои классы cnum-*: окно открывается из реестра договоров, но не должно зависеть от его стилей. */
+.tdm-modal.tdm-modal--fit.cnum-modal { width: min(56rem, calc(100vw - 3rem)); }
+
+.cnum-body { display: flex; flex-direction: column; gap: 0.9rem; }
+
+.cnum-rules {
+  margin: 0;
+  padding: 0.75rem 1rem 0.75rem 2rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.cnum-rules li + li { margin-top: 0.3rem; }
+.cnum-rules b { color: var(--text-primary); font-weight: 600; }
+
+.cnum-mono {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.cnum-muted { color: var(--text-tertiary); }
+
+.cnum-note {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warning-color, #d97706) 10%, transparent);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+.cnum-summary { margin: 0; font-size: 0.8125rem; color: var(--text-secondary); }
+
+.cnum-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 10px; }
+.cnum-table {
+  width: 100%;
+  min-width: 40rem;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+.cnum-col-code { width: 15rem; }
+.cnum-col-num { width: 10.5rem; }
+.cnum-table th {
+  position: sticky;
+  top: 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: left;
+}
+.cnum-table td {
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+.cnum-table tbody tr:last-child td { border-bottom: none; }
+.cnum-table tr.is-editing td { background: color-mix(in srgb, var(--primary-color, #2563eb) 5%, transparent); }
+
+.cnum-obj { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.cnum-obj-name { min-width: 0; overflow-wrap: break-word; color: var(--text-primary); }
+.cnum-dept {
+  flex: none;
+  padding: 0 0.3rem;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.35rem;
+}
+.cnum-dept.is-os { background: color-mix(in srgb, var(--primary-color, #2563eb) 10%, transparent); color: #0e7490; }
+.cnum-dept.is-go { background: color-mix(in srgb, #7c3aed 12%, transparent); color: #6d28d9; }
+
+.cnum-code-view { display: inline-flex; align-items: center; gap: 0.35rem; }
+.cnum-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.cnum-icon-btn:hover, .cnum-icon-btn:focus-visible { border-color: var(--border-color); color: var(--primary-color, #2563eb); }
+
+/* .cnum-modal впереди — сильнее .modal form { padding: 2rem } из ContractRegistry.css (форма документа реестра). */
+.cnum-modal .cnum-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin: 0; padding: 0; }
+/* Поле — во всю ширину ячейки, «Сохранить» и «Отмена» — строкой под ним, причина отказа — ниже. */
+.cnum-edit input {
+  flex: 1 1 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+}
+.cnum-edit input[aria-invalid='true'] { border-color: var(--danger-color, #dc2626); }
+.cnum-btn {
+  height: 30px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+/* Цвет — как у .btn-primary в обеих темах: белый текст на #0e7490 — контраст 5,4:1 (--primary-color тёмной темы светлый). */
+.cnum-btn.is-primary { border-color: #0e7490; background: #0e7490; color: #fff; }
+.cnum-btn:disabled { opacity: 0.6; cursor: default; }
+.cnum-error { flex-basis: 100%; color: var(--danger-color, #dc2626); font-size: 0.75rem; }
+
+[data-theme='dark'] .cnum-dept.is-go { color: #c4b5fd; }
+/* Тёмная тема: светлый --primary-color на тёмном фоне читается, #0e7490 — нет. */
+[data-theme='dark'] .cnum-dept.is-os, [data-theme='dark'] .cnum-apply { color: var(--primary-color); }
+
+/* Поле «№ договора» в форме договора (ContractsPage): номер по схеме и кнопка «Подставить …» справа от поля. */
+/* Номер не обрезается: не помещается рядом — кнопка уходит под поле. */
+.cnum-field { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0.4rem; }
+.cnum-field input { flex: 1 1 10rem; min-width: 10rem; font-variant-numeric: tabular-nums; }
+.cnum-apply {
+  flex: none;
+  min-height: 2.25rem;
+  padding: 0 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--primary-color, #2563eb) 45%, var(--border-color));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 8%, var(--bg-primary));
+  color: #0e7490;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cnum-apply:hover, .cnum-apply:focus-visible { background: color-mix(in srgb, var(--primary-color, #2563eb) 14%, var(--bg-primary)); }
+
+/* Телефон: окно во всю ширину, строки — карточками (объект сверху, под ним код и номера с подписями), поле ввода —
+   16px (иначе iOS увеличивает страницу). */
+@media (max-width: 640px) {
+  .tdm-modal.tdm-modal--fit.cnum-modal { width: calc(100vw - 1rem); }
+  .cnum-table-wrap { overflow: visible; border: none; }
+  .cnum-table, .cnum-table tbody, .cnum-table tr, .cnum-table td { display: block; width: auto; min-width: 0; }
+  .cnum-table colgroup, .cnum-table thead { display: none; }
+  .cnum-table tr { margin-bottom: 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: 10px; }
+  .cnum-table td { padding: 0.2rem 0; border: none; }
+  .cnum-table td[data-label] { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+  .cnum-table td[data-label]::before { content: attr(data-label); color: var(--text-tertiary); font-size: 0.75rem; }
+  .cnum-table td.cnum-code { flex-wrap: wrap; }
+  .cnum-table tr.is-editing td.cnum-code { display: block; }
+  .cnum-table tr.is-editing td.cnum-code::before { display: block; margin-bottom: 0.25rem; }
+  .cnum-table td.cnum-cell-obj { padding-bottom: 0.35rem; font-weight: 600; }
+  .cnum-edit input { font-size: 16px; height: 36px; }
+  .cnum-btn { height: 36px; }
+}

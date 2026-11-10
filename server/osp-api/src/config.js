@@ -13,10 +13,15 @@ export const READY_PARTS = ['supabase', 's3', 'anthropic']
 // Настроенная и не ответившая — отказ готовности и без OSP_API_REQUIRE; в списке обязательных —
 // «не настроено» тоже отказ.
 export const READY_OPTIONAL = ['db', 'token', 'gateway', 'auth']
-// Свой вход (AUTH_MODE both | own): без пароля-канарейки, базы и шлюза данных он не работает — эти проверки
-// обязательны всегда. В режиме own Supabase не нужен вовсе: из обязательных он убирается.
-export const AUTH_MODES = ['supabase', 'both', 'own']
+// Свой вход (AUTH_MODE both | own | keycloak): без пароля-канарейки, базы и шлюза данных он не работает — эти проверки
+// обязательны всегда. В режимах own и keycloak Supabase не нужен вовсе: из обязательных он убирается.
+//   own      — учётки и пароли в базе Яндекса (вход «через Яндекс»);
+//   keycloak — единый вход СУ-10 (auth.su10.ru, OIDC): пароли ведёт Keycloak, учётки и права — по-прежнему здесь.
+// Переключение own ⇄ keycloak — строкой окружения и перезапуском (scripts/deploy-server.sh auth-mode).
+export const AUTH_MODES = ['supabase', 'both', 'own', 'keycloak']
 const OWN_AUTH_REQUIRED = ['auth', 'db', 'gateway']
+// Режимы, где кто вошёл — только своя сессия (cookie), без Supabase.
+export const isSessionMode = (mode) => mode === 'own' || mode === 'keycloak'
 
 export function parseRequired(raw, authMode = 'supabase') {
   const names = String(raw ?? '').split(',').map((s) => s.trim()).filter(Boolean)
@@ -26,7 +31,7 @@ export function parseRequired(raw, authMode = 'supabase') {
     throw new Error(`OSP_API_REQUIRE: неизвестные зависимости ${unknown.join(', ')} (допустимы ${known.join(', ')})`)
   }
   let chosen = names.length ? names : [...READY_PARTS]
-  if (authMode === 'own') chosen = [...chosen.filter((n) => n !== 'supabase'), ...OWN_AUTH_REQUIRED]
+  if (isSessionMode(authMode)) chosen = [...chosen.filter((n) => n !== 'supabase'), ...OWN_AUTH_REQUIRED]
   else if (!chosen.includes('supabase')) throw new Error('OSP_API_REQUIRE: supabase обязателен — без него не работает ни один маршрут')
   if (authMode === 'both') chosen = [...chosen, ...OWN_AUTH_REQUIRED]
   return known.filter((n) => chosen.includes(n))
@@ -76,6 +81,76 @@ function parseTrustProxy(raw) {
   throw new Error('OSP_TRUST_PROXY: допустимо только peer (или пусто)')
 }
 
+// Замок между сайтом и API (сервер corp): osp-api в общей сети сервера, и без замка до него достал бы любой соседний
+// контейнер. OSP_WEB_GATE=1 — без верного жетона X-OSP-Web (его ставит osp-web) ответ 403; изнутри контейнера (loopback,
+// без X-Forwarded-For) — пропуск: проверка живости, deploy.sh auth-config, ready. Жетон — секрет (OSP_WEB_TOKEN).
+export const WEB_TOKEN_RE = /^[A-Za-z0-9]{32,128}$/
+export function parseWebGate(env) {
+  const enabled = env.OSP_WEB_GATE === '1'
+  const token = String(env.OSP_WEB_TOKEN || '')
+  if (env.OSP_WEB_GATE && !['0', '1'].includes(env.OSP_WEB_GATE)) throw new Error('OSP_WEB_GATE: 1 или 0')
+  if (enabled && !WEB_TOKEN_RE.test(token)) {
+    throw new Error('OSP_WEB_GATE=1: OSP_WEB_TOKEN не задан или негоден (латиница и цифры, 32–128 знаков; scripts/deploy-server.sh web-token-init)')
+  }
+  return { enabled, token: enabled ? token : '' }
+}
+
+// Вход через Keycloak su10 (AUTH_MODE=keycloak). Значения проверяются всегда, когда заданы (переключение в own их не
+// стирает — и обратно в keycloak они должны остаться годными); обязательны — только в режиме keycloak (checkOwnAuthConfig).
+export const OIDC_CALLBACK_PATH = '/api/auth/oidc/callback'
+const SECONDS = (raw, fallback, min, max, name) => {
+  if (raw === undefined || raw === '') return fallback
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < min || n > max) throw new Error(`${name}: целое число секунд от ${min} до ${max}`)
+  return n
+}
+function httpsUrl(raw, name) {
+  let u
+  try { u = new URL(raw) } catch { throw new Error(`${name}: не адрес`) }
+  if (u.protocol !== 'https:' || u.username || u.password || u.search || u.hash) {
+    throw new Error(`${name}: только https://…, без логина, строки запроса и фрагмента`)
+  }
+  return u
+}
+export function parseOidc(env) {
+  const str = (v) => String(v ?? '').trim()
+  const oidc = {
+    issuer: str(env.OIDC_ISSUER).replace(/\/+$/, ''),
+    clientId: str(env.OIDC_CLIENT_ID),
+    clientSecret: String(env.OIDC_CLIENT_SECRET || ''),
+    redirectUri: str(env.OIDC_REDIRECT_URI),
+    postLogoutRedirectUri: str(env.OIDC_POST_LOGOUT_REDIRECT_URI),
+    scopes: str(env.OIDC_SCOPES) || 'openid email profile',
+    linkByEmail: false,
+    recheckSec: SECONDS(env.OIDC_RECHECK_SEC, 300, 60, 3600, 'OIDC_RECHECK_SEC'),
+    activityWindowSec: SECONDS(env.OIDC_ACTIVITY_WINDOW_SEC, 1800, 300, 86400, 'OIDC_ACTIVITY_WINDOW_SEC'),
+    maxOfflineSec: SECONDS(env.OIDC_MAX_OFFLINE_SEC, 3600, 0, 86400, 'OIDC_MAX_OFFLINE_SEC'),
+    admin: null,
+  }
+  const link = str(env.OIDC_LINK_BY_EMAIL)
+  if (!['', 'true', 'false'].includes(link)) throw new Error('OIDC_LINK_BY_EMAIL: true или false')
+  oidc.linkByEmail = link === 'true'
+  if (oidc.issuer) httpsUrl(oidc.issuer, 'OIDC_ISSUER')
+  if (oidc.clientId && !/^[A-Za-z0-9._-]{1,100}$/.test(oidc.clientId)) throw new Error('OIDC_CLIENT_ID: латиница, цифры, «.», «_», «-»')
+  if (!/^[A-Za-z0-9 _.:-]{6,200}$/.test(oidc.scopes) || !oidc.scopes.split(' ').includes('openid')) {
+    throw new Error('OIDC_SCOPES: через пробел, с openid')
+  }
+  // Сверка группы — всё или ничего: половина настроек — ошибка, а не тихо выключенная сверка.
+  const adminId = str(env.KC_ADMIN_CLIENT_ID)
+  const adminSecret = String(env.KC_ADMIN_CLIENT_SECRET || '')
+  if (Boolean(adminId) !== Boolean(adminSecret)) throw new Error('KC_ADMIN_CLIENT_ID и KC_ADMIN_CLIENT_SECRET: задайте оба или ни одного')
+  if (adminId) {
+    if (!/^[A-Za-z0-9._-]{1,100}$/.test(adminId)) throw new Error('KC_ADMIN_CLIENT_ID: латиница, цифры, «.», «_», «-»')
+    const group = str(env.KC_ACCESS_GROUP) || 'osp-access'
+    if (!/^[A-Za-z0-9._-]{1,100}$/.test(group)) throw new Error('KC_ACCESS_GROUP: латиница, цифры, «.», «_», «-»')
+    oidc.admin = {
+      clientId: adminId, clientSecret: adminSecret, group,
+      syncIntervalSec: SECONDS(env.KC_ACCESS_SYNC_INTERVAL_SEC, 300, 60, 3600, 'KC_ACCESS_SYNC_INTERVAL_SEC'),
+    }
+  }
+  return oidc
+}
+
 // Проверка настроек своего входа — до запуска: служба с неполными настройками не стартует.
 export function checkOwnAuthConfig(config) {
   if (config.authMode === 'supabase' || !config.authMode) return
@@ -84,10 +159,31 @@ export function checkOwnAuthConfig(config) {
   if (!config.auth?.publicOrigin) missing.push('OSP_PUBLIC_ORIGIN')
   if (!config.db?.url) missing.push('OSP_DB_URL')
   if (!config.dbGateway?.upstream || !config.dbGateway?.secret || !config.dbGateway?.dbRole) missing.push('шлюз данных (OSP_PGRST_*)')
+  if (config.authMode === 'keycloak') {
+    const o = config.oidc || {}
+    for (const [key, name] of [['issuer', 'OIDC_ISSUER'], ['clientId', 'OIDC_CLIENT_ID'], ['clientSecret', 'OIDC_CLIENT_SECRET'],
+      ['redirectUri', 'OIDC_REDIRECT_URI'], ['postLogoutRedirectUri', 'OIDC_POST_LOGOUT_REDIRECT_URI']]) {
+      if (!o[key]) missing.push(name)
+    }
+  }
   if (missing.length) throw new Error(`AUTH_MODE=${config.authMode}: не заданы ${missing.join(', ')}`)
+  if (config.authMode === 'keycloak') checkOidcAddresses(config)
   if (config.authMode === 'both' && !(config.auth.pilotIds || []).length) {
     throw new Error('AUTH_MODE=both: свой вход — только пилоту, задайте OSP_AUTH_PILOT_IDS')
   }
+}
+
+// Адреса возврата из Keycloak — только сам портал: тот же источник, ровно свой путь, без строки запроса и фрагмента.
+// Сравнение разобранных адресов, а не начала строки: «https://tender.su10.ru.evil/…» с началом совпало бы.
+function checkOidcAddresses(config) {
+  const origin = config.auth.publicOrigin
+  if (!origin.startsWith('https://')) throw new Error('AUTH_MODE=keycloak: OSP_PUBLIC_ORIGIN — только https://')
+  const redirect = httpsUrl(config.oidc.redirectUri, 'OIDC_REDIRECT_URI')
+  if (redirect.origin !== origin || redirect.pathname !== OIDC_CALLBACK_PATH) {
+    throw new Error(`OIDC_REDIRECT_URI: ровно ${origin}${OIDC_CALLBACK_PATH}`)
+  }
+  const after = httpsUrl(config.oidc.postLogoutRedirectUri, 'OIDC_POST_LOGOUT_REDIRECT_URI')
+  if (after.origin !== origin) throw new Error(`OIDC_POST_LOGOUT_REDIRECT_URI: адрес портала ${origin}`)
 }
 
 // Загрузка договорных расценок из Larix.CPM (src/lib/larixSync.js). Выключена, пока не задано LARIX_SYNC=1:
@@ -178,8 +274,10 @@ export function loadConfig(env = process.env) {
     // «Расценка: N из M» в реестре тендеров на материалы — у всех тендеров, без открытия расценки.
     supplyImport: parseSupplyImport(env),
     larix: parseLarix(env, { dbUrl: env.OSP_DB_URL || '', supabaseUrl: env.SUPABASE_URL || '', supabaseServiceKey: env.SUPABASE_SERVICE_ROLE_KEY || '' }),
-    // Вход: supabase — как раньше; both — пилот своего входа; own — только свой вход (src/lib/auth/).
+    // Вход: supabase — как раньше; both — пилот своего входа; own — только свой вход (src/lib/auth/); keycloak — единый вход СУ-10.
     authMode: parseAuthMode(env.AUTH_MODE),
+    oidc: parseOidc(env),
+    webGate: parseWebGate(env),
     auth: {
       // Ключи шифрования паролей «id:base64,…», первый — текущий (src/lib/auth/secretBox.js). Секрет.
       keys: env.OSP_AUTH_KEYS || '',
@@ -218,5 +316,8 @@ export function configuredParts(config) {
     gateway: Boolean(config.dbGateway?.upstream && config.dbGateway?.secret && config.dbGateway?.dbRole),
     larix: Boolean(config.larix?.sync && config.larix.username && config.larix.password),
     auth: Boolean(config.auth?.keys && config.authMode && config.authMode !== 'supabase'),
+    oidc: config.authMode === 'keycloak' && Boolean(config.oidc?.issuer),
+    accessSync: config.authMode === 'keycloak' && Boolean(config.oidc?.admin),
+    webGate: Boolean(config.webGate?.enabled),
   }
 }

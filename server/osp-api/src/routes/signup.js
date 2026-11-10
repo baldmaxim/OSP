@@ -17,6 +17,7 @@
 // процессор, на котором работает вход сотрудников. Тела в журнал не попадают.
 import { z } from 'zod'
 import { access } from '../lib/access.js'
+import { ssoOnly } from './auth.js'
 import { originProblem } from '../lib/principal.js'
 import { READONLY_CODE, READONLY_TEXT } from '../lib/writeBarrier.js'
 
@@ -62,6 +63,8 @@ const isJson = (request) => /^application\/json(\s*;|$)/i.test(String(request.he
 export function registerSignup(app, ctx) {
   const { config, signup, pow, limiters, isReadOnly = () => false } = ctx
   const open = Boolean(signup && pow)
+  // Вход через СУ-10: самостоятельной регистрации в контуре нет — учётку заводит администратор доступа на auth.su10.ru/manage.
+  const sso = config.authMode === 'keycloak'
   // Ссылки из писем и письмо о пароле — только когда портал отправляет письма.
   const mailFlow = open && signup.mode === 'email'
   const publicOrigin = config.auth?.publicOrigin
@@ -77,6 +80,7 @@ export function registerSignup(app, ctx) {
   }
   // → true, если запрос остановлен.
   const gate = (request, reply, limiter) => {
+    if (sso) { ssoOnly(reply); return true }
     if (!open) { notFound(reply); return true }
     if (!isJson(request)) { reply.code(415).send({ error: 'Только JSON' }); return true }
     const bad = originProblem(request, publicOrigin)
@@ -90,6 +94,7 @@ export function registerSignup(app, ctx) {
     method: 'GET', url: '/api/auth/register/challenge',
     config: { access: access.open(SIGNUP_CHALLENGE_REASON) },
     handler: async (request, reply) => {
+      if (sso) return ssoOnly(reply)
       if (!open) return notFound(reply)
       if (!limiters.signupChallenge.take(ipOf(request))) return tooMany(reply)
       return pow.issue()
@@ -121,6 +126,7 @@ export function registerSignup(app, ctx) {
     method: 'POST', url: '/api/auth/register/preview', bodyLimit: SIGNUP_BODY_LIMIT,
     config: { access: access.open(SIGNUP_PREVIEW_REASON), body: PREVIEW_BODY },
     handler: async (request, reply) => {
+      if (sso) return ssoOnly(reply)
       if (!mailFlow) return notFound(reply)
       if (gate(request, reply, limiters.signupToken)) return reply
       const { ok, ...data } = await signup.preview({ token: request.body.token, kind: request.body.kind })
@@ -133,6 +139,7 @@ export function registerSignup(app, ctx) {
     method: 'POST', url: '/api/auth/register/confirm', bodyLimit: SIGNUP_BODY_LIMIT,
     config: { access: access.open(SIGNUP_CONFIRM_REASON), body: CONFIRM_BODY },
     handler: async (request, reply) => {
+      if (sso) return ssoOnly(reply)
       if (!mailFlow) return notFound(reply)
       if (gate(request, reply, limiters.signupToken)) return reply
       const result = await signup.confirm({ token: request.body.token, password: request.body.password })
@@ -145,6 +152,7 @@ export function registerSignup(app, ctx) {
     method: 'POST', url: '/api/auth/register/claim', bodyLimit: SIGNUP_BODY_LIMIT,
     config: { access: access.open(SIGNUP_CLAIM_REASON), body: CLAIM_BODY },
     handler: async (request, reply) => {
+      if (sso) return ssoOnly(reply)
       if (!mailFlow) return notFound(reply)
       if (gate(request, reply, limiters.signupToken)) return reply
       const result = await signup.decideClaim({ token: request.body.token, decision: request.body.decision })
@@ -157,6 +165,7 @@ export function registerSignup(app, ctx) {
     method: 'POST', url: '/api/auth/password/forgot', bodyLimit: SIGNUP_BODY_LIMIT,
     config: { access: access.open(PASSWORD_FORGOT_REASON), body: FORGOT_BODY },
     handler: async (request, reply) => {
+      if (sso) return ssoOnly(reply)
       if (!mailFlow) return notFound(reply)
       if (gate(request, reply, limiters.signupIp)) return reply
       const b = request.body
@@ -171,6 +180,7 @@ export function registerSignup(app, ctx) {
     method: 'POST', url: '/api/auth/password/reset', bodyLimit: SIGNUP_BODY_LIMIT,
     config: { access: access.open(PASSWORD_RESET_REASON), body: RESET_BODY },
     handler: async (request, reply) => {
+      if (sso) return ssoOnly(reply)
       if (!mailFlow) return notFound(reply)
       if (gate(request, reply, limiters.signupToken)) return reply
       const result = await signup.resetPassword({ token: request.body.token, newPassword: request.body.newPassword })
@@ -208,6 +218,7 @@ export function registerSignup(app, ctx) {
     config: { access: access.user(WRITE), body: DECISION_BODY },
     handler: async (request, reply) => {
       if (!service) return notFound(reply)
+      if (sso) return ssoOnly(reply)
       if (!UUID.test(request.params.id)) return reply.code(404).send({ error: 'Заявка не найдена', code: 'OSP_SIGNUP_NOT_FOUND' })
       if (isReadOnly()) return reply.code(503).send({ error: READONLY_TEXT, code: READONLY_CODE })
       try {

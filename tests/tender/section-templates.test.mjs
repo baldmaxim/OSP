@@ -181,7 +181,8 @@ describe('Шаблоны разделов в «Документах» тенде
       const modal = page.getByRole('dialog', { name: 'Документы раздела' })
       await modal.waitFor({ timeout: 10000 })
       assert.deepEqual(await modal.locator('.tdm-cards > .tdm-card .tdm-card-title').allTextContents(),
-        ['Понятийное соглашение', 'Шаблон ДП', 'Структура хранения документов', 'Стандартные приложения', 'Импорт из Excel', 'Загрузка ПСДЦ'])
+        ['Понятийное соглашение', 'Шаблон ДП', 'Структура хранения документов', 'Стандартные приложения', 'Нумерация договоров',
+          'Импорт из Excel', 'Загрузка ПСДЦ'])
       const pc = card(page, 'tenders_concept_agreement')
       assert.equal(await pc.getByRole('link', { name: 'Открыть' }).getAttribute('href'), 'https://docs.example.invalid/pc.docx')
 

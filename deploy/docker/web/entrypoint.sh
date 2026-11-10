@@ -35,6 +35,8 @@ fi
 # не считает) — остаются лимиты osp-api по пользователю.
 token_ok=0
 [[ "${OSP_EDGE_TOKEN:-}" =~ ^[A-Za-z0-9]{32,128}$ ]] && token_ok=1
+web_ok=0
+[[ "${OSP_WEB_TOKEN:-}" =~ ^[A-Za-z0-9]{32,128}$ ]] && web_ok=1
 {
   echo 'map $http_x_osp_edge $osp_client_ip {'
   echo '    default $remote_addr;'
@@ -43,8 +45,16 @@ token_ok=0
   echo 'map $http_x_osp_edge $osp_api_limit_key {'
   if [ "$token_ok" = 1 ]; then echo '    default $osp_client_ip;'; else echo '    default "";'; fi
   echo '}'
+  # Жетон сайта для замка osp-api (X-OSP-Web, OSP_WEB_TOKEN — тот же, что в secrets/osp-api.env). Нет или негодный —
+  # заголовок пустой, и API с замком (OSP_WEB_GATE=1) отвечает 403: выкладка это увидит и откатится (deploy.sh healthy).
+  echo 'map $host $osp_web_token {'
+  if [ "$web_ok" = 1 ]; then echo "    default \"$OSP_WEB_TOKEN\";"; else echo '    default "";'; fi
+  echo '}'
 } > /tmp/osp-edge.conf
 if [ "$token_ok" != 1 ]; then
   echo "osp-web: OSP_EDGE_TOKEN не задан — адрес клиента не известен, лимит /api/ по адресу выключен (deploy-server.sh edge-token-init)" >&2
+fi
+if [ "$web_ok" != 1 ]; then
+  echo "osp-web: OSP_WEB_TOKEN не задан — API с замком сайта не ответит (deploy-server.sh web-token-init)" >&2
 fi
 exec nginx -g 'daemon off;'

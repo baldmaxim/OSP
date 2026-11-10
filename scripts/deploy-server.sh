@@ -14,10 +14,13 @@
 # Свой вход tender.su10.ru (учётки и пароли в базе Яндекса; migration/CUTOVER.md, «Свой вход tender.su10.ru»):
 #   bash scripts/deploy-server.sh auth-key-init              # ключ шифрования паролей (один раз, значение не выводится)
 #   bash scripts/deploy-server.sh edge-token-init            # жетон адреса клиента для общего nginx (один раз)
+#   bash scripts/deploy-server.sh web-token-init             # жетон сайта для замка API (один раз, до выпуска с замком)
 #   bash scripts/deploy-server.sh transfer-key-init          # ключ переноса паролей из Supabase; печатает открытый ключ
 #   bash scripts/deploy-server.sh accounts-sync --users <файл> --credentials <файл> [--manifest <файл>] [--restore <uuid>] [--yes]
 #   bash scripts/deploy-server.sh accounts-check             # готов ли свой вход (только чтение)
-#   bash scripts/deploy-server.sh auth-mode supabase|both|own  # переключить вход без сборки; не прошло — прежний
+#   bash scripts/deploy-server.sh auth-mode supabase|both|own|keycloak  # переключить вход без сборки; не прошло — прежний
+#   bash scripts/deploy-server.sh identity export-users | links-apply <файл> [--apply] [--partial id,…] | links-report | sync [--force]
+#                                                          # связи учёток с СУ-10 (вход через Keycloak); файлы — 600
 #   bash scripts/deploy-server.sh transfer-key-destroy       # после переноса: удалить ключ переноса и файлы выгрузок
 #
 # Если меняется и база: сначала migrate, потом backend или both (список шлюза — в образе API).
@@ -88,11 +91,13 @@ usage() {
   Свой вход tender.su10.ru:
   auth-key-init         ключ шифрования паролей в secrets/osp-api.env (один раз)
   edge-token-init       жетон адреса клиента (secrets/osp-web.env); затем запись общего nginx и frontend
+  web-token-init        жетон сайта для замка API (secrets/osp-web.env и osp-api.env), до выпуска с замком
   transfer-key-init     ключ переноса паролей из Supabase; печатает открытый ключ
   accounts-sync --users <файл> --credentials <файл> [--manifest <файл>] [--restore <uuid>] [--yes]
                         перенос учёток и паролей (файлы — в $ACCOUNTS_IN); без --yes — с вопросом
   accounts-check        готов ли свой вход (только чтение)
-  auth-mode <режим>     supabase | both | own — без сборки; не прошло — возвращается прежний
+  auth-mode <режим>     supabase | both | own | keycloak — без сборки; не прошло — возвращается прежний
+  identity <команда>    связи с СУ-10: export-users | links-apply <файл> [--apply] | links-report | sync [--force]
   transfer-key-destroy  удалить ключ переноса и файлы выгрузок
 
 Если меняется и база: сначала migrate, потом backend или both.
@@ -401,6 +406,24 @@ do_edge_token_init() {
   echo "Дальше: запись общего nginx заново — bash $OSP_HOME/current/infra-nginx/install.sh tender.su10.ru; затем frontend"
 }
 
+# Жетон сайта для замка osp-api (X-OSP-Web): один и тот же в osp-web.env и osp-api.env. Уже есть в одном файле — копируется во
+# второй; есть в обоих и совпадает — ничего не делается. Значение не выводится.
+web_token_of() { grep -m 1 -E '^OSP_WEB_TOKEN=' "$1" 2>/dev/null | cut -d= -f2- || true; }
+do_web_token_init() {
+  local web="$OSP_HOME/secrets/osp-web.env" a b token
+  [ -f "$API_ENV" ] || fail "нет $API_ENV"
+  a="$(web_token_of "$API_ENV")"; b="$(web_token_of "$web")"
+  if [ -n "$a" ] && [ "$a" = "$b" ]; then ok "жетон сайта уже есть в обоих файлах"; return 0; fi
+  [ -z "$a" ] || [ -z "$b" ] || fail "OSP_WEB_TOKEN в osp-api.env и osp-web.env разный — уберите строку из одного файла и повторите"
+  token="${a:-$b}"
+  [ -n "$token" ] || token="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  [[ "$token" =~ ^[A-Za-z0-9]{32,128}$ ]] || fail "OSP_WEB_TOKEN негодный (латиница и цифры, 32–128 знаков) — уберите строку и повторите"
+  [ -n "$a" ] || set_env_line OSP_WEB_TOKEN "$token"
+  if [ -z "$b" ]; then (umask 077; printf 'OSP_WEB_TOKEN=%s\n' "$token" >> "$web"); chmod 600 "$web"; fi
+  ok "жетон сайта записан в osp-api.env и osp-web.env (значение не выводится)"
+  echo "Дальше: выкладка both (сайт и API вместе) — выпуск с замком API"
+}
+
 do_transfer_key_init() {
   command -v openssl >/dev/null || fail "нет openssl"
   [ ! -e "$TRANSFER_KEY" ] || fail "ключ переноса уже есть: $TRANSFER_KEY"
@@ -466,9 +489,51 @@ do_accounts_sync() {
 
 auth_mode_now() { bash "$OSP_HOME/deploy.sh" auth-config 2>/dev/null | grep -o '"mode":"[a-z]*"' | cut -d'"' -f4; }
 
+# Связи учёток с СУ-10 (server/osp-api/src/identity-cli.js в образе выложенного выпуска). Файлы — только здесь, 600, каталог 700.
+readonly IDENTITY_DIR="$OSP_HOME/identity"
+do_identity() {
+  local cmd="${1:-}" file rc=0
+  mkdir -p "$IDENTITY_DIR"; chmod 700 "$IDENTITY_DIR"
+  case "$cmd" in
+    export-users)
+      file="$IDENTITY_DIR/osp-users-$(date -u +%Y%m%d-%H%M%S).csv"
+      (umask 077; bash "$OSP_HOME/deploy.sh" identity export-users > "$file.tmp") || { rm -f -- "$file.tmp"; fail "выгрузка не выполнена"; }
+      mv -f "$file.tmp" "$file"
+      ok "пользователи для команды auth: $file — передать вручную, не через git и не в открытых каналах"
+      ;;
+    links-apply)
+      file="${2:-}"
+      [ -n "$file" ] && [ -f "$file" ] || fail "укажите файл связей от auth: identity links-apply <файл> [--apply] [--partial id,…]"
+      bash "$OSP_HOME/deploy.sh" identity links-apply "${@:3}" < "$file" || rc=$?
+      [ "$rc" = 0 ] || fail "файл связей не применён (код $rc) — замечания выше"
+      ;;
+    links-report | sync | revoke-sessions)
+      bash "$OSP_HOME/deploy.sh" identity "$@" || rc=$?
+      [ "$rc" = 0 ] || [ "$rc" = 3 ] || fail "identity $cmd: сбой (код $rc)"
+      [ "$rc" = 0 ] || warn "identity $cmd: есть замечания (код 3) — см. выше"
+      ;;
+    *) fail "identity: export-users | links-apply <файл> [--apply] [--partial id,…] | links-report | sync [--force] | revoke-sessions --kind keycloak|password" ;;
+  esac
+}
+
+# Discovery Keycloak изнутри контейнера API (сеть edge, имя auth.su10.ru — общий nginx): 200 и тот же issuer.
+oidc_discovery_ok() {
+  local issuer="$1" cur
+  cur="$(readlink "$OSP_HOME/current" 2>/dev/null || true)"; [ -n "$cur" ] || return 1
+  docker compose -p "$PROJECT" exec -T osp-api node -e '
+    const iss = process.argv[1]
+    fetch(iss + "/.well-known/openid-configuration", { signal: AbortSignal.timeout(8000) })
+      .then(async (r) => { const j = await r.json(); process.exit(r.status === 200 && j.issuer === iss ? 0 : 3) })
+      .catch(() => process.exit(4))' "$issuer" >/dev/null 2>&1
+}
+
+# Привязка по почте (OIDC_LINK_BY_EMAIL=true) — только после письменного подтверждения команды auth, что почту в Keycloak
+# меняет администратор, а не сам пользователь. Подтверждение записано в migration/CUTOVER.md строкой с датой.
+sso_email_confirmed() { grep -qE '^- \*\*Почта в Keycloak — подтверждение auth:\*\* [0-9]{2}\.[0-9]{2}\.[0-9]{4}' "$SRC/migration/CUTOVER.md" 2>/dev/null; }
+
 do_auth_mode() {
-  local mode="${1:-}" prev
-  case "$mode" in supabase | both | own) ;; *) usage; fail "режим входа: supabase | both | own" ;; esac
+  local mode="${1:-}" prev other v
+  case "$mode" in supabase | both | own | keycloak) ;; *) usage; fail "режим входа: supabase | both | own | keycloak" ;; esac
   [ -f "$API_ENV" ] || fail "нет $API_ENV"
   prev="$(env_value AUTH_MODE)"; prev="${prev:-supabase}"
   if [ "$mode" != supabase ]; then
@@ -476,6 +541,17 @@ do_auth_mode() {
     [ -n "$(env_value OSP_PUBLIC_ORIGIN)" ] || fail "в $API_ENV не задан OSP_PUBLIC_ORIGIN (https://tender.su10.ru)"
   fi
   [ "$mode" != both ] || [ -n "$(env_value OSP_AUTH_PILOT_IDS)" ] || fail "для both нужен OSP_AUTH_PILOT_IDS (кто проверяет свой вход)"
+  if [ "$mode" = keycloak ]; then
+    for v in OIDC_ISSUER OIDC_CLIENT_ID OIDC_CLIENT_SECRET OIDC_REDIRECT_URI OIDC_POST_LOGOUT_REDIRECT_URI OSP_WEB_TOKEN; do
+      [ -n "$(env_value "$v")" ] || fail "в $API_ENV не задан $v — вход через СУ-10 не настроен (значения не выводятся)"
+    done
+    oidc_discovery_ok "$(env_value OIDC_ISSUER)" || fail "discovery СУ-10 изнутри контейнера API не отвечает или issuer не тот — сеть edge и OIDC_ISSUER"
+    if [ "$(env_value OIDC_LINK_BY_EMAIL)" = true ] && ! sso_email_confirmed; then
+      fail "OIDC_LINK_BY_EMAIL=true без подтверждения команды auth в migration/CUTOVER.md — привязка по почте запрещена"
+    fi
+    log "связи с СУ-10 (для сведения):"
+    do_identity links-report || true
+  fi
   if [ "$mode" = own ]; then
     log "свежая проверка готовности своего входа"
     do_accounts_check || fail "свой вход не готов — режим не меняется"
@@ -484,6 +560,11 @@ do_auth_mode() {
   set_env_line AUTH_MODE "$mode"
   if bash "$OSP_HOME/deploy.sh" api-restart && [ "$(auth_mode_now)" = "$mode" ]; then
     ok "вход переключён: $mode"
+    # Сессии другого вида новый режим и так не принимает (OSP_AUTH_MODE) — закрываем, чтобы не висели до срока.
+    case "$mode" in keycloak) other=password ;; own | both) other=keycloak ;; *) other="" ;; esac
+    if [ -n "$other" ] && [ "$prev" != "$mode" ]; then
+      do_identity revoke-sessions --kind "$other" || warn "сессии вида $other не закрыты — их всё равно не примет режим $mode"
+    fi
     return 0
   fi
   warn "API в режиме $mode не прошёл проверку — возвращаю $prev"
@@ -546,6 +627,11 @@ main() {
     status)               preflight; bash "$OSP_HOME/deploy.sh" status ;;
     auth-key-init)        preflight; do_auth_key_init ;;
     edge-token-init)      preflight; do_edge_token_init ;;
+    web-token-init)       preflight; do_web_token_init ;;
+    identity)
+      preflight
+      exec 9>"$OSP_HOME/.deploy-server.lock"; flock -n 9 || fail "уже идёт другая выкладка или миграция"
+      shift; do_identity "$@" ;;
     transfer-key-init)    preflight; do_transfer_key_init ;;
     transfer-key-destroy) preflight; do_transfer_key_destroy ;;
     accounts-check)       preflight; do_accounts_check ;;

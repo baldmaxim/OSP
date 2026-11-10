@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS contracts (
   record_type TEXT NOT NULL DEFAULT 'dp' CHECK (record_type IN ('dp', 'ds')),
   -- Родительский договор для будущих ДС (не является ID самого ДС).
   parent_contract_id UUID REFERENCES contracts(id) ON DELETE SET NULL,
-  contract_number VARCHAR(100),             -- необязателен и НЕ уникален: допускается второй ДП с тем же № (уникальность даёт display_id)
+  contract_number VARCHAR(100),             -- необязателен и НЕ уникален: допускается второй ДП с тем же № (уникальность даёт display_id);
+                                            -- исключение — номер по схеме КОД-ДП-ГГ-NNN (20270110, contract_number_counters.sql)
   contract_date DATE,                       -- необязательна (можно завести договор без даты)
   counterparty_id UUID REFERENCES counterparties(id) ON DELETE SET NULL,
   object_id UUID REFERENCES objects(id) ON DELETE SET NULL,

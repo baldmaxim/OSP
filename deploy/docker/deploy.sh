@@ -139,8 +139,21 @@ save_service_logs() {
 
 save_api_logs() { save_service_logs "$1" osp-api; }
 
+# Замок сайта (OSP_WEB_GATE в compose выпуска): жетон OSP_WEB_TOKEN — годный и одинаковый в secrets/osp-web.env и
+# secrets/osp-api.env, иначе API отвечал бы сайту 403. Значение не читается в вывод и не сравнивается вслух.
+web_token_ready() { # web_token_ready <метка>
+  local compose="$OSP_HOME/releases/$1/compose.yml" a b
+  grep -qE '^[[:space:]]*OSP_WEB_GATE:[[:space:]]*"1"' "$compose" 2>/dev/null || return 0
+  a="$(grep -m 1 -E '^OSP_WEB_TOKEN=' "$OSP_HOME/secrets/osp-api.env" 2>/dev/null | cut -d= -f2-)"
+  b="$(grep -m 1 -E '^OSP_WEB_TOKEN=' "$OSP_HOME/secrets/osp-web.env" 2>/dev/null | cut -d= -f2-)"
+  if [[ "$a" =~ ^[A-Za-z0-9]{32,128}$ ]] && [ "$a" = "$b" ]; then return 0; fi
+  echo "Выпуск $1 закрывает API замком сайта, а OSP_WEB_TOKEN не задан или разный в secrets/osp-web.env и secrets/osp-api.env — сначала: bash scripts/deploy-server.sh web-token-init" >&2
+  return 1
+}
+
 switch_to() { # switch_to <метка>; при отказе — назад на прежнюю
   local target="$1" before
+  web_token_ready "$target" || return 1
   before="$(release_of current)"
   save_api_logs "$before"
   point current "$target"
@@ -180,6 +193,7 @@ case "${1:-}" in
     preflight
     cur="$(release_of current)"
     [ -n "$cur" ] || die "портал не выложен"
+    web_token_ready "$cur" || exit 1
     save_api_logs "$cur"
     dc "$cur" up -d --no-deps --force-recreate osp-api
     healthy "$cur"
@@ -300,8 +314,18 @@ case "${1:-}" in
     dc "$cur" run --rm --no-deps -T osp-api node src/larix-cli.js "${@:2}"
     ;;
 
+  identity)
+    # Связи учёток с СУ-10 — ручные команды server/osp-api/src/identity-cli.js в образе выложенного выпуска (файлы — через
+    # stdin и stdout: secrets/ в контейнер не монтируется). Почта и ФИО — только в выводе export-users; удобнее звать через
+    # scripts/deploy-server.sh identity …, он пишет файлы с правами 600. Выход: 0 — готово, 3 — конфликты, 4 — сбой.
+    case "${2:-}" in export-users | links-apply | links-report | sync | revoke-sessions) ;; *) die "укажите команду: bash deploy.sh identity export-users | links-apply [--apply] | links-report | sync [--force] | revoke-sessions --kind keycloak|password" ;; esac
+    cur="$(release_of current)"
+    [ -n "$cur" ] || die "портал не выложен: сначала bash deploy.sh install <каталог выпуска>"
+    dc "$cur" run --rm --no-deps -T osp-api node src/identity-cli.js "${@:2}"
+    ;;
+
   *)
-    echo "Использование: bash deploy.sh install <каталог выпуска> | rollback | status | api-restart | postgrest-restart | auth-config | covers-copy <копия>.covers.csv | larix probe|sync" >&2
+    echo "Использование: bash deploy.sh install <каталог выпуска> | rollback | status | api-restart | postgrest-restart | auth-config | covers-copy <копия>.covers.csv | larix probe|sync | identity …" >&2
     exit 1
     ;;
 esac

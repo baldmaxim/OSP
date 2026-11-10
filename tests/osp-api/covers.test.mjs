@@ -233,7 +233,7 @@ describe('Обложки объектов: показ, загрузка, коп�
 })
 
 describe('Миниатюры обложек: GET /api/covers/<имя>/thumb', { skip }, () => {
-  const YEAR_CACHE = 'public, max-age=31536000, immutable'
+  const YEAR_CACHE = 'private, max-age=31536000, immutable'
   const originalKey = `/osp/covers/${NAME}`
   const thumbKey = `/osp/covers/thumbs/800/${NAME}.webp`
   let buildApp

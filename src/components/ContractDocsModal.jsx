@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { IconDocsStack, IconFileText, IconFolderTree } from './icons/ToolbarIcons'
+import { IconDocsStack, IconFileText, IconFolderTree, IconHash } from './icons/ToolbarIcons'
 import { IconFileSpreadsheet, IconUpload } from './icons/BsmIcons'
 import SectionTemplateCards from './SectionTemplateCards'
 import { CONCEPT_AGREEMENT_TEMPLATE, CONTRACTS_DP_TEMPLATE } from '../utils/sectionTemplateItems'
@@ -13,7 +13,9 @@ import './TenderDocsModal.css'
 //
 // Шаблоны — ссылки, общие с «Тендерами — Основное строительство» (одна правка видна в обоих разделах):
 // «Понятийное соглашение» и «Шаблон ДП» (договор подряда). Указывает и меняет администратор, открывает каждый. Импорт и
-// загрузка ПСДЦ — только с правом правки договоров и не во вкладке «Удаленные».
+// загрузка ПСДЦ — только с правом правки договоров и не во вкладке «Удаленные». «Структура хранения» и «Стандартные приложения»
+// (они для заведения договоров и раскладки по общей папке) сотруднику объекта не показываются (showSetup, 10.11.2026):
+// ему остаются шаблоны — понятийное соглашение нужно для заявки на заключение ДП.
 
 const TEMPLATES = [
   { ...CONCEPT_AGREEMENT_TEMPLATE, icon: <IconFileText size={18} /> },
@@ -25,8 +27,10 @@ export default function ContractDocsModal({
   onOpenStorageStructure,
   onOpenAttachments,
   onOpenImport,
+  onOpenNumbering,
   canImport = false,
   canEditTemplates = false,
+  showSetup = true,
 }) {
   useEffect(() => {
     const onKeydown = (e) => { if (e.key === 'Escape') onClose() }
@@ -57,17 +61,30 @@ export default function ContractDocsModal({
           <div className="tdm-cards">
             <SectionTemplateCards items={TEMPLATES} canEdit={canEditTemplates} />
 
-            <button type="button" className="tdm-card" onClick={onOpenStorageStructure}>
-              <span className="tdm-card-icon"><IconFolderTree size={18} /></span>
-              <span className="tdm-card-title">Структура хранения документов</span>
-              <span className="tdm-card-desc">Единый порядок папок в сетевом хранилище — куда класть файлы</span>
-            </button>
+            {showSetup && (
+              <button type="button" className="tdm-card" onClick={onOpenStorageStructure}>
+                <span className="tdm-card-icon"><IconFolderTree size={18} /></span>
+                <span className="tdm-card-title">Структура хранения документов</span>
+                <span className="tdm-card-desc">Единый порядок папок в сетевом хранилище — куда класть файлы</span>
+              </button>
+            )}
 
-            <button type="button" className="tdm-card" onClick={onOpenAttachments}>
-              <span className="tdm-card-icon"><IconDocsStack size={18} /></span>
-              <span className="tdm-card-title">Стандартные приложения</span>
-              <span className="tdm-card-desc">Приложения, которые предлагаются при заведении договора по объекту</span>
-            </button>
+            {showSetup && (
+              <button type="button" className="tdm-card" onClick={onOpenAttachments}>
+                <span className="tdm-card-icon"><IconDocsStack size={18} /></span>
+                <span className="tdm-card-title">Стандартные приложения</span>
+                <span className="tdm-card-desc">Приложения, которые предлагаются при заведении договора по объекту</span>
+              </button>
+            )}
+
+            {/* Нумерация договоров по объектам (10.11.2026): правила и коды объектов — ContractNumberingModal. */}
+            {showSetup && onOpenNumbering && (
+              <button type="button" className="tdm-card" onClick={onOpenNumbering}>
+                <span className="tdm-card-icon"><IconHash size={18} /></span>
+                <span className="tdm-card-title">Нумерация договоров</span>
+                <span className="tdm-card-desc">Номер КОД-ДП-ГГ-NNN: коды объектов, последний и следующий номер</span>
+              </button>
+            )}
 
             {canImport && (
               <button type="button" className="tdm-card" onClick={onOpenImport}>

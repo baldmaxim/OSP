@@ -7,7 +7,6 @@ import DocCheckCardCounts from './DocCheckCardCounts'
 import {
   CLOSED_DOC_CHECK_STATUSES,
   DOC_CHECK_PRIORITY_LABEL,
-  DOC_CHECK_STATUS_LABEL,
   cardTitle,
   createdShort,
   dueShort,
@@ -28,7 +27,7 @@ const DUE_TITLE = {
 // кружок «завершить», заголовок «Контрагент / ДС № 1» с примечанием, внизу
 // объект, дата добавления и метки, срок, приоритет, файлы, шаги, сообщения, письмо и кружки
 // исполнителей; цвет карточки — заливкой. Остальное — в карточке заявки по щелчку.
-function DocCheckCard({ request, employees, canEdit, showStatus, onOpen, onToggleDone, onMenu }) {
+function DocCheckCard({ request, employees, canEdit, onOpen, onToggleDone, onMenu }) {
   const done = CLOSED_DOC_CHECK_STATUSES.has(request.status)
   const due = dueState(request)
   const created = createdShort(request.created_at)
@@ -72,10 +71,6 @@ function DocCheckCard({ request, employees, canEdit, showStatus, onOpen, onToggl
           ><IconMore size={16} /></button>
         )}
       </div>
-
-      {showStatus && (
-        <div className="dc-card-status">{DOC_CHECK_STATUS_LABEL[request.status] || request.status}</div>
-      )}
 
       <div className="dc-card-foot">
         <div className="dc-card-chips">

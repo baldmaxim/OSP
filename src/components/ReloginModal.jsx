@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { useRole } from '../contexts/RoleContext'
+import { ssoLoginHref } from '../pages/SsoScreens'
 import './ReloginModal.css'
 
 // Свой вход: сессия закончилась (срок, выход на другом устройстве, смена пароля) — окно входа поверх страницы.
 // Страница и набранное в формах остаются; после входа тем же пользователем работа продолжается. Вошли в
 // другой вкладке — окно закрывается само (RoleContext, BroadcastChannel).
+// Вход через СУ-10: «Войти заново» открывает вход СУ-10 в маленьком окне (часто без пароля — вход СУ-10 ещё жив); окно
+// сообщает вкладкам и закрывается (/auth/done). Окна заблокированы — обычный переход на вход с возвратом на эту страницу.
 export default function ReloginModal() {
-  const { ownAuth, sessionExpired, user, relogin, logout } = useRole()
+  const { ownAuth, ssoAuth, sessionExpired, user, relogin, logout } = useRole()
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -26,6 +29,28 @@ export default function ReloginModal() {
     }
   }
 
+  const ssoAgain = () => {
+    const popup = window.open(ssoLoginHref('/auth/done'), 'osp-relogin', 'popup,width=520,height=720')
+    if (!popup) window.location.assign(ssoLoginHref(`${window.location.pathname}${window.location.search}`))
+  }
+  const signOut = () => logout().finally(() => window.location.assign('/login'))
+
+  if (ssoAuth) {
+    return (
+      <div className="relogin-backdrop" role="dialog" aria-modal="true" aria-labelledby="relogin-title">
+        <div className="relogin-card">
+          <h2 id="relogin-title">Вход закончился</h2>
+          <p>Войдите заново через СУ-10 — в отдельном окне. Страница и несохранённые данные на месте.</p>
+          <div className="relogin-email">{user.email}</div>
+          <div className="relogin-actions">
+            <button type="button" className="relogin-primary" onClick={ssoAgain} autoFocus>Войти заново</button>
+            <button type="button" className="relogin-secondary" onClick={signOut}>Выйти</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="relogin-backdrop" role="dialog" aria-modal="true" aria-labelledby="relogin-title">
       <form className="relogin-card" onSubmit={submit}>
@@ -37,7 +62,7 @@ export default function ReloginModal() {
           autoComplete="current-password" required autoFocus />
         <div className="relogin-actions">
           <button type="submit" className="relogin-primary" disabled={busy}>{busy ? 'Вход…' : 'Войти'}</button>
-          <button type="button" className="relogin-secondary" onClick={() => logout().finally(() => window.location.assign('/login'))}>
+          <button type="button" className="relogin-secondary" onClick={signOut}>
             Выйти
           </button>
         </div>

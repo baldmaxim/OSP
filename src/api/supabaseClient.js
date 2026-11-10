@@ -10,7 +10,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { getRuntimeConfig } from '../config/runtime'
 import { observingFetch } from './clientErrors'
-import { isOwnAuth } from './authMode'
+import { isSessionAuth } from './authMode'
 
 // Ключ сессии в localStorage. supabase-js по умолчанию выводит его из адреса
 // проекта (sb-<первая часть хоста>-auth-token); закрепляем по адресу из сборки,
@@ -30,7 +30,7 @@ function getSupabase() {
     throw new Error('Missing Supabase environment variables. Please check your .env.local file.')
   }
   const storageKey = authStorageKey || defaultStorageKey(import.meta.env.VITE_SUPABASE_URL || supabaseUrl)
-  const auth = isOwnAuth()
+  const auth = isSessionAuth()
     ? { storageKey, persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
     : { storageKey }
   client = createClient(supabaseUrl, supabaseAnonKey, { auth, global: { fetch: observingFetch } })

@@ -162,6 +162,18 @@ describe('osp-api: права объявлены на маршруте, закр
       'POST /api/admin/api-keys/:id/delete': { method: 'POST', url: '/api/admin/api-keys/0f0e0d0c-0b0a-4908-8706-050403020100/delete', payload: {} },
       'GET /api/admin/api-keys/calls': { method: 'GET', url: '/api/admin/api-keys/calls' },
       'GET /api/ready через nginx': { method: 'GET', url: '/api/ready', headers: { 'x-forwarded-for': '203.0.113.7' } },
+      // Вход через СУ-10 и заявки на доступ — здесь режим supabase: адреса отвечают 404 (у администраторских — после проверки
+      // прав). Работа и права в режиме keycloak — tests/osp-api/keycloak.test.mjs.
+      'GET /api/auth/oidc/login': { method: 'GET', url: '/api/auth/oidc/login' },
+      'GET /api/auth/oidc/callback': { method: 'GET', url: '/api/auth/oidc/callback?code=x&state=y' },
+      'GET /api/admin/identity-requests': { method: 'GET', url: '/api/admin/identity-requests' },
+      'POST /api/admin/identity-requests/sync': { method: 'POST', url: '/api/admin/identity-requests/sync', payload: {} },
+      'POST /api/admin/identity-requests/:id/create-user': { method: 'POST', url: '/api/admin/identity-requests/0f0e0d0c-0b0a-4908-8706-050403020100/create-user', payload: { role: 'engineer' } },
+      'POST /api/admin/identity-requests/:id/link': { method: 'POST', url: '/api/admin/identity-requests/0f0e0d0c-0b0a-4908-8706-050403020100/link', payload: { userId: '0f0e0d0c-0b0a-4908-8706-050403020100' } },
+      'POST /api/admin/identity-requests/:id/reject': { method: 'POST', url: '/api/admin/identity-requests/0f0e0d0c-0b0a-4908-8706-050403020100/reject', payload: {} },
+      'POST /api/admin/identity-requests/:id/reopen': { method: 'POST', url: '/api/admin/identity-requests/0f0e0d0c-0b0a-4908-8706-050403020100/reopen', payload: {} },
+      'GET /api/admin/identities': { method: 'GET', url: '/api/admin/identities' },
+      'DELETE /api/admin/users/:id/identity': { method: 'DELETE', url: '/api/admin/users/0f0e0d0c-0b0a-4908-8706-050403020100/identity', payload: {} },
     }
     const measured = {}
     for (const [title, req] of Object.entries(requests)) {
@@ -217,7 +229,8 @@ describe('osp-api: права объявлены на маршруте, закр
     }
     // Ключи API и заявки на регистрацию: кроме администратора — никто, ни сотрудник, ни подрядчик.
     for (const [title, row] of Object.entries(measured)) {
-      if (!title.includes('/api/admin/api-keys') && !title.includes('/api/admin/contractor-signups')) continue
+      if (!title.includes('/api/admin/api-keys') && !title.includes('/api/admin/contractor-signups') && !title.includes('/api/admin/identit')
+        && !title.includes('/api/admin/users/')) continue
       assert.equal(row['без токена'], 401, title)
       for (const denied of ['employee', 'unapproved', 'contractor', 'contractor_noorg', 'no_user_roles', 'blocked']) assert.equal(row[denied], 403, `${title}: ${denied}`)
       assert.ok(row.admin !== 401 && row.admin !== 403, `${title}: администратор`)

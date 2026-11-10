@@ -1,0 +1,87 @@
+/* «+ Заявка на заключение ДП» — в строке вкладок «Реестра по договорам», сразу за «Все» (10.11.2026). Не вкладка, а действие:
+   своя рамка и цвет ссылки, по высоте — посередине строки вкладок. */
+.cr-dp-add {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-self: center;
+  align-items: center;
+  gap: 0.3125rem;
+  height: 1.75rem;
+  margin: 0 0.5rem;
+  padding: 0 0.625rem 0 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 45%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary-color) 7%, transparent);
+  color: var(--ui-link, var(--primary-color));
+  font-family: inherit;
+  font-size: var(--ui-text, 0.875rem);
+  line-height: 1;
+  font-weight: var(--ui-medium, 500);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cr-dp-add:hover {
+  border-color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+}
+.cr-dp-add-plus { font-size: 1.125rem; line-height: 1; font-weight: 600; }
+
+/* Окно рисуется в <body> (у реестра вкладки — свои размеры шрифта): обёртка без размеров, оверлей — fixed. */
+.dpr-portal { position: static; }
+
+.cr-dp-load-error {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  z-index: 1301;
+  transform: translateX(-50%);
+  max-width: min(36rem, calc(100vw - 2rem));
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--danger-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--danger-color);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+/* Подана — плашка внизу справа: номер и ссылка на заявку; сама уходит через 15 с. */
+.cr-dp-created {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1290;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: min(32rem, calc(100vw - 2rem));
+  padding: 0.625rem 0.5rem 0.625rem 0.875rem;
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--success-color, #16a34a);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  font-size: var(--ui-text, 0.875rem);
+  line-height: var(--ui-text-lh, 1.25rem);
+}
+.cr-dp-created a { color: var(--ui-link, var(--primary-color)); font-weight: var(--ui-medium, 500); white-space: nowrap; }
+.cr-dp-created-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.cr-dp-created-x:hover { background: var(--hover-bg); color: var(--text-primary); }
+
+@media (max-width: 640px) {
+  .cr-dp-add { height: 2.25rem; margin: 0 0.25rem; }
+  .cr-dp-created { right: 0.5rem; left: 0.5rem; bottom: 0.75rem; max-width: none; }
+  .cr-dp-load-error { top: 3.75rem; } /* под полосой меню телефона (52 px сверху) */
+}

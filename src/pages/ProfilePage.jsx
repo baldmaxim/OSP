@@ -6,7 +6,7 @@ import ChangePasswordForm from '../components/ChangePasswordForm'
 import './ProfilePage.css'
 
 function ProfilePage() {
-  const { user, role, userProfile, updateProfile, ownAuth, logout } = useRole()
+  const { user, role, userProfile, updateProfile, ownAuth, ssoAuth, ssoLinks, logout } = useRole()
   // Свой вход (tender.su10.ru): смена пароля и выход на всех устройствах.
   const [passwordFormOpen, setPasswordFormOpen] = useState(false)
   const [passwordChanged, setPasswordChanged] = useState(false)
@@ -130,7 +130,21 @@ function ProfilePage() {
           </div>
         </form>
 
-        {ownAuth && (
+        {ssoAuth && (
+          <div className="profile-security">
+            <h3>Пароль и вход</h3>
+            {/* Вход через СУ-10: пароль меняется в профиле СУ-10; «Выйти везде» — все входы портала и выход из СУ-10 здесь. */}
+            <div className="profile-actions">
+              {ssoLinks?.accountUrl && (
+                <a className="btn-save" href={ssoLinks.accountUrl} target="_blank" rel="noopener noreferrer">Сменить пароль в СУ-10</a>
+              )}
+              <button type="button" className="btn-logout-all" onClick={() => logout({ everywhere: true }).finally(() => window.location.assign('/login'))}>
+                Выйти на всех устройствах
+              </button>
+            </div>
+          </div>
+        )}
+        {ownAuth && !ssoAuth && (
           <div className="profile-security">
             <h3>Пароль и вход</h3>
             {passwordChanged && <span className="profile-message success">Пароль изменён. Другие устройства выйдут из портала.</span>}

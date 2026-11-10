@@ -2,6 +2,8 @@
 // так он записан в objects.cover_image_url после переноса (migration/target/sql/load-covers.sql) и у
 // новых обложек.
 //
+//   В режимах своей сессии (AUTH_MODE own, keycloak) оба адреса ниже — только вошедшему сотруднику: картинка с того же
+//   адреса получает cookie сессии, а публичная витрина обложек не показывает. В режиме supabase — открыты, как раньше.
 //   GET  /api/covers/<имя>     — открытый адрес, как был у общедоступного бакета Supabase: картинку
 //                                показывает <img>, а он токен не передаёт. Имя — только по шаблону
 //                                «UUID.расширение» и только в каталоге covers/; ответ — переадресация на
@@ -18,14 +20,16 @@
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { z } from 'zod'
-import { access } from '../lib/access.js'
+import { access, isEmployeeRole } from '../lib/access.js'
+import { isSessionMode } from '../config.js'
 import { COVER_NAME_RE, COVER_THUMB_TYPE, COVER_URL_PREFIX, coverKey } from '../lib/covers.js'
 import { createCoverThumbs } from '../lib/coverThumbs.js'
 import { READONLY_CODE, READONLY_TEXT } from '../lib/writeBarrier.js'
 
 export const COVER_VIEW_TTL_SEC = 10 * 60
 // Имя обложки — UUID, файл не перезаписывается (409 при загрузке): новая обложка — новый адрес.
-export const COVER_THUMB_CACHE = 'public, max-age=31536000, immutable'
+// private: обложка — для вошедших, промежуточным кэшам её не хранить.
+export const COVER_THUMB_CACHE = 'private, max-age=31536000, immutable'
 // Сколько ждать миниатюру, которой ещё нет (первый показ после загрузки или выкладки). Дольше — оригинал, а миниатюра
 // доделывается в фоне: при первом открытии страницы очередь на разбор не должна держать картинку без предела.
 export const COVER_THUMB_WAIT_MS = 5_000
@@ -52,8 +56,19 @@ export async function warmCoverThumbs({ db, thumbs, log }) {
   return out
 }
 
-export function registerCovers(app, { config, db = null, getS3, isReadOnly = () => false, coverThumbs = null, coverThumbWaitMs = COVER_THUMB_WAIT_MS }) {
+export function registerCovers(app, { config, db = null, getS3, isReadOnly = () => false, coverThumbs = null, coverThumbWaitMs = COVER_THUMB_WAIT_MS,
+  principal = null, isSuperadmin = null }) {
   const thumbs = coverThumbs || createCoverThumbs({ getS3, bucket: config.s3?.bucket, isReadOnly, log: app.log })
+  const sessionOnly = isSessionMode(config.authMode) && Boolean(principal)
+  // → true, если смотреть можно; иначе отказ уже отправлен.
+  const viewer = async (request, reply) => {
+    if (!sessionOnly) return true
+    const p = await principal.resolve(request).catch(() => null)
+    if (p?.kind === 'user' && (isEmployeeRole(p.roleRow) || (isSuperadmin && await isSuperadmin(p.user.id).catch(() => false)))) return true
+    const status = p?.kind === 'error' ? p.status : p?.kind === 'user' ? 403 : 401
+    reply.code(status).send({ error: 'Обложки объектов — только вошедшим сотрудникам', ...(p?.code ? { code: p.code } : {}) })
+    return false
+  }
 
   if (db && config.coverWarm && config.s3?.bucket) {
     let timer
@@ -88,6 +103,7 @@ export function registerCovers(app, { config, db = null, getS3, isReadOnly = () 
     handler: async (request, reply) => {
       const name = String(request.params.name || '')
       if (!COVER_NAME_RE.test(name)) return reply.code(404).send({ error: 'Not found' })
+      if (!(await viewer(request, reply))) return reply
       const s3 = s3ForView(request, reply)
       if (!s3) return reply
       return redirectToOriginal(s3, name, reply)
@@ -101,6 +117,7 @@ export function registerCovers(app, { config, db = null, getS3, isReadOnly = () 
     handler: async (request, reply) => {
       const name = String(request.params.name || '')
       if (!COVER_NAME_RE.test(name)) return reply.code(404).send({ error: 'Not found' })
+      if (!(await viewer(request, reply))) return reply
       const s3 = s3ForView(request, reply)
       if (!s3) return reply
       let timer

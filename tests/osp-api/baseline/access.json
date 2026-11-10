@@ -340,6 +340,116 @@
     "no_user_roles": 404,
     "blocked": 404
   },
+  "GET /api/auth/oidc/login": {
+    "без токена": 404,
+    "неверный токен": 404,
+    "employee": 404,
+    "admin": 404,
+    "unapproved": 404,
+    "contractor": 404,
+    "contractor_noorg": 404,
+    "no_user_roles": 404,
+    "blocked": 404
+  },
+  "GET /api/auth/oidc/callback": {
+    "без токена": 404,
+    "неверный токен": 404,
+    "employee": 404,
+    "admin": 404,
+    "unapproved": 404,
+    "contractor": 404,
+    "contractor_noorg": 404,
+    "no_user_roles": 404,
+    "blocked": 404
+  },
+  "GET /api/admin/identity-requests": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "POST /api/admin/identity-requests/sync": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "POST /api/admin/identity-requests/:id/create-user": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "POST /api/admin/identity-requests/:id/link": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "POST /api/admin/identity-requests/:id/reject": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "POST /api/admin/identity-requests/:id/reopen": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "GET /api/admin/identities": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "DELETE /api/admin/users/:id/identity": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
   "GET /api/rates/*": {
     "без ключа": 401,
     "неверный ключ": 401,

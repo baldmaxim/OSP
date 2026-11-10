@@ -7,7 +7,7 @@ import { daysUntilDate, splitChecklistLines } from './taskHelpers.js'
 // Порядок в массиве = порядок колонок канбана (как на доске, где отдел вёл
 // проверку до сайта). «Ожидаем скан» стоит ПОСЛЕ «Завершено» намеренно: по
 // системе документ готов, но подписанный бумажный оригинал ещё не вернулся.
-// board: true — статуса нет в базе до миграции 20261113 (колонки не показываем).
+// board: true — статуса нет в базе до миграции 20261113 (колонки не показываем); сейчас таких нет.
 export const DOC_CHECK_STATUSES = [
   { value: 'new', label: 'Новые заявки', className: 'dcs-new' },
   { value: 'in_progress', label: 'В работе', className: 'dcs-progress' },
@@ -16,12 +16,20 @@ export const DOC_CHECK_STATUSES = [
   { value: 'accounting', label: 'Загрузка в 1С', className: 'dcs-accounting' },
   { value: 'done', label: 'Завершено', className: 'dcs-done' },
   { value: 'awaiting_scan', label: 'Ожидаем скан ДП/ДС, подписанного в бумажном виде', className: 'dcs-scan' },
-  { value: 'tax_clause', label: 'Проверка документов (исключение налоговой оговорки)', className: 'dcs-tax', board: true },
 ]
-export const DOC_CHECK_STATUS_LABEL = Object.fromEntries(DOC_CHECK_STATUSES.map(s => [s.value, s.label]))
-export const DOC_CHECK_STATUS_CLASS = Object.fromEntries(DOC_CHECK_STATUSES.map(s => [s.value, s.className]))
 
-// Статусы, доступные в базе: без колонок 20261113 — прежние семь.
+// Убранные колонки (10.11.2026, решение пользователя: «Сводку по ДП» и «Проверку документов (исключение налоговой
+// оговорки)» удалить вообще). Статус tax_clause остаётся в базе (ограничение 20261113 не трогаем) только ради подписи у
+// заявок, которые в нём ещё стоят: такую заявку не предлагают ни колонкой, ни выбором, бросить в неё нельзя. Пока она
+// есть на доске, для неё рисуется колонка без «+» и без приёма карточек (как для любого статуса вне справочника); перенесли
+// или отправили в архив последнюю — колонка пропала сама. Разово: migration/data/20261110_doc_check_tax_clause_archive.sql.
+export const RETIRED_DOC_CHECK_STATUSES = [
+  { value: 'tax_clause', label: 'Проверка документов (исключение налоговой оговорки)', className: 'dcs-tax' },
+]
+export const DOC_CHECK_STATUS_LABEL = Object.fromEntries([...DOC_CHECK_STATUSES, ...RETIRED_DOC_CHECK_STATUSES].map(s => [s.value, s.label]))
+export const DOC_CHECK_STATUS_CLASS = Object.fromEntries([...DOC_CHECK_STATUSES, ...RETIRED_DOC_CHECK_STATUSES].map(s => [s.value, s.className]))
+
+// Статусы, доступные в базе: без колонок 20261113 — прежние семь (сейчас список один и тот же).
 export function availableStatuses(hasBoardFields) {
   return DOC_CHECK_STATUSES.filter(s => hasBoardFields || !s.board)
 }
@@ -30,36 +38,13 @@ export function availableStatuses(hasBoardFields) {
 // входит: пока бумага не пришла, заявку рано убирать из работы.
 export const CLOSED_DOC_CHECK_STATUSES = new Set(['done'])
 
-// «Сводка по ДП» — не статус, а колонка-выборка: те же заявки из других колонок
-// по отбору (тип документа и статусы). Стоит там же, где на прежней доске, —
-// между «Ожидаем скан» и «Проверкой документов».
-export const SUMMARY_COLUMN = 'summary'
-export const DEFAULT_SUMMARY = {
-  types: ['dp'],
-  statuses: DOC_CHECK_STATUSES.map(s => s.value).filter(v => !CLOSED_DOC_CHECK_STATUSES.has(v)),
-}
-
 export function boardColumns(hasBoardFields) {
-  const cols = availableStatuses(hasBoardFields).map(s => ({ ...s, kind: 'status' }))
-  const at = cols.findIndex(c => c.value === 'awaiting_scan') + 1
-  cols.splice(at, 0, { value: SUMMARY_COLUMN, label: 'Сводка по ДП', className: 'dcs-summary', kind: 'summary' })
-  return cols
+  return availableStatuses(hasBoardFields).map(s => ({ ...s, kind: 'status' }))
 }
 
-// Отбор «Сводки» из сохранённой настройки. Пустой список — «все» (как пустой
-// фильтр панели); нет настройки или она чужая — по умолчанию.
-export function normalizeSummary(raw) {
-  if (!raw || typeof raw !== 'object') return DEFAULT_SUMMARY
-  const pick = (list, known, fallback) => (Array.isArray(list) ? list.filter(v => known[v]) : fallback)
-  return {
-    types: pick(raw.types, DOC_TYPE_LABEL, DEFAULT_SUMMARY.types),
-    statuses: pick(raw.statuses, DOC_CHECK_STATUS_LABEL, DEFAULT_SUMMARY.statuses),
-  }
-}
-
-export function matchesSummary(request, summary) {
-  return (!summary.types.length || summary.types.includes(request.doc_type))
-    && (!summary.statuses.length || summary.statuses.includes(request.status))
+// Колонка для статуса вне справочника (убранный или после ручной правки в базе): не теряем заявку, но и не принимаем в неё.
+export function extraColumn(value) {
+  return { value, label: DOC_CHECK_STATUS_LABEL[value] || value, className: DOC_CHECK_STATUS_CLASS[value] || '', kind: 'extra' }
 }
 
 export const DOC_TYPES = [
@@ -315,7 +300,7 @@ export function compareForBoard(a, b) {
   return new Date(b.created_at) - new Date(a.created_at)
 }
 
-// «Сводка по ДП» — выборка из разных колонок, номера порядка там несравнимы (в каждой колонке свой счёт): только по дате.
+// По дате добавления — порядок колонки «Новые» / «Старые» (кнопка в шапке колонки).
 export function compareNewestFirst(a, b) {
   return (new Date(b.created_at) - new Date(a.created_at)) || (b.sort_order - a.sort_order)
 }
@@ -326,14 +311,13 @@ export function compareOldestFirst(a, b) {
 // Порядок карточек колонки — кнопка в шапке колонки, нажатие переключает по кругу (06.11.2026, просьба пользователя):
 // свой порядок → новые сверху → старые сверху → свой порядок. «Свой» — как расставили мышью (sort_order в базе), поэтому
 // переживает обновление страницы и не теряется, пока колонка показана по дате: по дате только сортируется показ, в базу
-// ничего не пишется. «Сводка» своего порядка не имеет (номера разных колонок несравнимы) — только по дате, по умолчанию
-// новые сверху. Дата — добавления заявки (created_at), та, что на карточке. Выбор — у каждой колонки свой, в браузере.
+// ничего не пишется. Дата — добавления заявки (created_at), та, что на карточке. Выбор — у каждой колонки свой, в браузере.
 export const COLUMN_SORTS = {
   manual: { label: 'Свой порядок', short: '', compare: compareForBoard },
   newest: { label: 'Новые сверху', short: 'Новые', compare: compareNewestFirst },
   oldest: { label: 'Старые сверху', short: 'Старые', compare: compareOldestFirst },
 }
-const sortCycle = (column) => (column === SUMMARY_COLUMN ? ['newest', 'oldest'] : ['manual', 'newest', 'oldest'])
+const sortCycle = () => ['manual', 'newest', 'oldest']
 
 // Порядок колонки по сохранённому выбору: нет выбора или он колонке не подходит — по умолчанию.
 export function columnSortOf(sorts, column) {

@@ -8,6 +8,7 @@
 // миграции; окно «Счета и КП»: позиция и строка счёта рядом, правильная цена не показывается, свежий документ важнее.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import { chromium } from 'playwright'
 import * as XLSX from 'xlsx'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
@@ -70,7 +71,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
   const rateOf = (page, name, vor) => page.evaluate(([n, v]) => window.__fakeDb.tender_vor_supply_rates
     .find((r) => r.material_name === n && r.estimate_name === v) || null, [name, vor])
 
-  it('одна строка на позицию: цена — всем ВОР строки, сумма — по объёму; другая ед. изм. — своя строка; фильтр по ВОР', async () => {
+  it('одна строка на позицию: цена — всем ВОР строки, сумма — по объёму; другая ед. изм. — своя строка; «По ВОРам» — своими строками', async () => {
     const { page, context, errors } = await openPage()
     try {
       await vors(page, 'ВОРы тендера: 2').waitFor()
@@ -113,13 +114,24 @@ describe('Расценка снабжением: таблица', { skip: !launc
       await pricedCount(page, 3, 5)
       assert.match(plain(await page.locator('.sp-table tfoot').innerText()), /Итого1004700,00/) // 850 000 + 48 000 + 106 700
 
-      // Фильтр по ВОР: только его позиции, объём и суммы — его; цена по-прежнему одна на строку.
-      await page.getByLabel('Показать позиции ВОР').selectOption('ВК')
-      await page.getByRole('button', { name: 'Все (2)' }).waitFor()
-      assert.equal(await page.getByLabel(price('Хомут монтажный', 'ОВ')).count(), 0)
-      assert.match(plain(await rowOf(page, TRUBA, TWO).locator('td[data-label="Объём"]').innerText()), /^200/)
-      assert.match(plain(await page.getByLabel(sum(TRUBA, TWO)).inputValue()), /^100000,00$/)
-      assert.match(plain(await page.locator('.sp-table tfoot').innerText()), /Итого100000,00/)
+      // Выбора одного ВОР нет. «По ВОРам» — позиции каждого ВОР своими строками, с именем ВОР; цена такой строки — только в её ВОР.
+      assert.equal(await page.getByLabel('Показать позиции ВОР', { exact: true }).count(), 0, 'выбора одного ВОР нет')
+      await page.getByRole('button', { name: 'Собранные', pressed: true }).waitFor()
+      await page.getByRole('button', { name: 'По ВОРам' }).click()
+      await page.getByRole('button', { name: 'Все (6)', exact: true }).waitFor()
+      const vkPipe = rowOf(page, TRUBA, 'ВК')
+      assert.match(plain(await vkPipe.locator('td[data-label="Объём"]').innerText()), /^200$/)
+      await vkPipe.getByText('ВОР «ВК»', { exact: true }).waitFor()
+      assert.match(plain(await page.getByLabel(sum(TRUBA, 'ВК')).inputValue()), /^100000,00$/)
+      await enter(page.getByLabel(price(TRUBA, 'ВК')), '450')
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.estimate_name === 'ВК' && Number(r.supply_price) === 450))
+      await page.waitForTimeout(300)
+      assert.equal((await rateOf(page, 'Труба медная Ø12,7', 'ОВ')).supply_price, 500, 'цена другого ВОР не тронута')
+      await page.waitForFunction(() => /Итого994700,00/.test(document.querySelector('.sp-table tfoot').innerText.replace(/\s/g, ''))) // 750 000 + 90 000 + 48 000 + 106 700
+      // Обратно — одна строка на позицию, и видно, что в ВОР разные цены.
+      await page.getByRole('button', { name: 'Собранные' }).click()
+      await page.getByRole('button', { name: 'Все (5)', exact: true }).waitFor()
+      await rowOf(page, TRUBA, TWO).getByText('в ВОР разные цены', { exact: false }).waitFor()
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
@@ -182,11 +194,12 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
-  it('«Скачать Excel» и «Версии ВОР» — только администратору; инженеру с правом правки и зрителю — нет', async () => {
+  it('«Скачать Excel» — всем; «Версии ВОР» и спойлер ВОРов на странице снабжения — только администратору', async () => {
     const admin = await openPage()
     try {
       await admin.page.getByRole('button', { name: 'Скачать Excel' }).waitFor()
       await admin.page.getByRole('button', { name: 'Версии ВОР' }).waitFor()
+      await vors(admin.page, 'ВОРы тендера: 2').waitFor()
       assert.deepEqual(admin.errors, [])
     } finally {
       await admin.context.close()
@@ -195,8 +208,16 @@ describe('Расценка снабжением: таблица', { skip: !launc
       const { page, context, errors } = await openPage(q)
       try {
         await page.locator('.sp-table').waitFor()
-        assert.equal(await page.getByRole('button', { name: 'Скачать Excel' }).count(), 0, q)
         assert.equal(await page.getByRole('button', { name: 'Версии ВОР' }).count(), 0, q)
+        assert.equal(await page.locator('.sp-vors').count(), 0, `${q}: снабжению — только позиции, без сведений о ВОР`)
+        assert.equal(await page.getByLabel('Показать позиции ВОР', { exact: true }).count(), 0, q)
+        await page.getByRole('button', { name: 'По ВОРам' }).waitFor()
+        // Выгрузка — та же, что у администратора: лист на ВОР, без столбца «Цену поставил».
+        const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Скачать Excel' }).click()])
+        const wb = XLSX.read(fs.readFileSync(await download.path()), { type: 'buffer' })
+        assert.equal(wb.SheetNames.length, 2, q)
+        const head = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 })[0]
+        assert.ok(head.includes('Наименование') && !head.includes('Цену поставил'), `${q}: ${head}`)
         assert.deepEqual(errors, [])
       } finally {
         await context.close()
@@ -473,13 +494,12 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
-  it('ссылка нескольким сразу: отметить строки и весь ВОР → одна ссылка всем; сетевой путь; убрать у отмеченных', async () => {
+  it('ссылка нескольким сразу: отметить строки → одна ссылка всем; сетевой путь; убрать у отмеченных', async () => {
     const { page, context, errors } = await openPage()
     try {
-      // Весь ВОР — выбрать его в списке и отметить показанные; плюс одна строка другого ВОР.
-      await page.getByLabel('Показать позиции ВОР').selectOption('ВК')
-      await page.getByLabel('Отметить все показанные позиции').check()
-      await page.getByLabel('Показать позиции ВОР').selectOption('')
+      // Строка из двух ВОР, строка одного ВОР и строка другого.
+      await page.getByLabel(`Отметить: ${TRUBA} (${TWO})`).check()
+      await page.getByLabel('Отметить: Кран шаровой Ду15 (ВОР «ВК»)').check()
       await page.getByLabel('Отметить: Изоляция K-Flex 13×15 (ВОР «ОВ»)').check()
       await page.locator('.sp-sel-bar', { hasText: 'Отмечено: 3' }).waitFor()
       await page.getByRole('button', { name: 'Документ', exact: true }).click()
@@ -494,8 +514,8 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.equal(await page.locator('.sp-sel-bar').count(), 0, 'отметка снята после прикрепления')
       assert.equal(await rowOf(page, 'Изоляция K-Flex 13×15', 'ОВ').getByRole('button', { name: 'Скопировать путь к документу «Изоляция K-Flex 13×15»' }).count(), 1)
       // Убрать у трубы и крана ВК.
-      await page.getByLabel('Показать позиции ВОР').selectOption('ВК')
-      await page.getByLabel('Отметить все показанные позиции').check()
+      await page.getByLabel(`Отметить: ${TRUBA} (${TWO})`).check()
+      await page.getByLabel('Отметить: Кран шаровой Ду15 (ВОР «ВК»)').check()
       await page.getByRole('button', { name: 'Документ', exact: true }).click()
       await page.getByRole('dialog').getByRole('button', { name: 'Убрать документ' }).click()
       await page.waitForFunction(() => window.__fakeDb.tender_supply_links.length === 1)
@@ -665,9 +685,15 @@ describe('Расценка снабжением: таблица', { skip: !launc
     for (const query of ['&qPriced=1&qMatStatus=%D0%97%D0%B0%D0%B2%D0%B5%D1%80%D1%88%D1%91%D0%BD', '&qPriced=1&canEdit=0']) {
       const { page, context, errors } = await open(query, '/tenders/materials/mat-q/pricing')
       try {
-        await vors(page, 'ВОР «Корпус 7»').waitFor({ timeout: 120000 })
-        assert.match(await (await openVors(page)).locator('.sp-vor-line').getAttribute('title'), /в расценку не загружался — позиции показаны по вкладке/)
         const cable = page.getByLabel(price('Кабель ВВГнг 3×2,5', 'Корпус 7'))
+        if (query.includes('canEdit=0')) {
+          // Зрителю на странице снабжения — только позиции, без спойлера ВОРов.
+          await cable.waitFor({ timeout: 120000 })
+          assert.equal(await page.locator('.sp-vors').count(), 0, query)
+        } else {
+          await vors(page, 'ВОР «Корпус 7»').waitFor({ timeout: 120000 })
+          assert.match(await (await openVors(page)).locator('.sp-vor-line').getAttribute('title'), /в расценку не загружался — позиции показаны по вкладке/)
+        }
         assert.match(plain(await cable.inputValue()), /120,00/, query)
         assert.equal(await cable.isDisabled(), true, query)
         await pricedCount(page, 1, 2)

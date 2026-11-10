@@ -1,0 +1,29 @@
+/* «Администрирование» → «Заявки на доступ» (вход через СУ-10). */
+.ir-tab { display: flex; flex-direction: column; gap: 0.75rem; }
+.ir-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.ir-switch { display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
+.ir-switch button { padding: 0.375rem 0.75rem; font-size: 0.8125rem; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.ir-switch button.is-active { background: var(--primary-color); color: #fff; }
+.ir-note { margin: 0; font-size: 0.8125rem; color: var(--text-secondary); }
+.ir-hint { margin: 0; font-size: 0.75rem; color: var(--text-tertiary); }
+.ir-error { margin: 0; color: #dc2626; font-size: 0.875rem; }
+.ir-muted { color: var(--text-tertiary); font-size: 0.8125rem; }
+.ir-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.ir-card { border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem 1rem; background: var(--bg-primary); display: flex; flex-direction: column; gap: 0.625rem; }
+.ir-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; }
+.ir-name { font-weight: 600; font-size: 0.9375rem; color: var(--text-primary); }
+.ir-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem; }
+.ir-chip { display: inline-block; padding: 0.0625rem 0.5rem; border-radius: 999px; font-size: 0.75rem; background: var(--bg-tertiary, rgba(100, 116, 139, 0.12)); color: var(--text-secondary); }
+.ir-label { font-size: 0.75rem; color: var(--text-tertiary); margin-bottom: 0.25rem; }
+.ir-similar ul, .ir-pick { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.375rem; }
+.ir-similar li, .ir-pick li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.ir-pick-name { font-weight: 500; color: var(--text-primary); }
+.ir-actions, .ir-form-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.ir-danger { color: #b91c1c; }
+.ir-form { display: flex; flex-direction: column; gap: 0.5rem; max-width: 32rem; }
+.ir-field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem; color: var(--text-secondary); }
+.ir-field input, .ir-field select { padding: 0.375rem 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); font-size: 0.875rem; }
+@media (max-width: 640px) {
+  .ir-meta { align-items: flex-start; }
+  .ir-field input, .ir-field select { font-size: 1rem; }
+}

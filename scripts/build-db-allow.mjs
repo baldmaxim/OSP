@@ -22,6 +22,10 @@ import { candidateMigrations } from '../tests/db/lib/rights.mjs'
 
 const OUT = path.join(ROOT, 'server', 'osp-api', 'src', 'data', 'allow.json')
 const ROLES = ['anon', 'authenticated']
+// Гость (без входа) через шлюз читает только публичную витрину. На проде анониму выдано SELECT на десятки таблиц, и от
+// утечки там защищают одни правила по строкам; здесь правило по строкам — вторая линия, а не единственная (вход через
+// Keycloak su10, раздел 4.1 задачи). Новая страница без входа — новая строка здесь, это решение о публикации.
+export const ANON_TABLES = ['public_open_tenders']
 
 export function readGrants(port) {
   const actions = (role) => `(select coalesce(json_agg(p order by p), '[]'::json)
@@ -56,8 +60,8 @@ export function buildAllow({ tables, functions }) {
   const allow = { tables: {}, rpc: {} }
   for (const [name, t] of Object.entries(tables)) {
     const entry = {}
-    // Аноним — только чтение: записи без входа портал не делает, и правил записи для анонима в базе нет.
-    const anon = t.anon.filter((a) => a === 'select')
+    // Аноним — только чтение и только публичная витрина: записи без входа портал не делает.
+    const anon = ANON_TABLES.includes(name) ? t.anon.filter((a) => a === 'select') : []
     if (anon.length) entry.anon = anon
     if (t.authenticated.length) entry.authenticated = t.authenticated
     if (Object.keys(entry).length) allow.tables[name] = entry
@@ -112,6 +116,7 @@ export function parseAllowAnnotations(text, where = 'миграция') {
         throw new Error(`${at}: «${part}» — нужно роль=действия, роль ${ROLES.join('|')}, действия ${ACTIONS.join(',')}`)
       }
       if (role === 'anon' && actions.some((a) => a !== 'select')) throw new Error(`${at}: анониму — только select`)
+      if (role === 'anon' && !ANON_TABLES.includes(name)) throw new Error(`${at}: анониму — только публичная витрина (ANON_TABLES в scripts/build-db-allow.mjs)`)
       entry[role] = ACTIONS.filter((a) => actions.includes(a))
     }
     out.push({ kind, name, entry: Object.fromEntries(ROLES.filter((r) => entry[r]).map((r) => [r, entry[r]])) })

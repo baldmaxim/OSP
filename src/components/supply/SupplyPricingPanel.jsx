@@ -68,7 +68,9 @@ const DOC_READ_MAX_BYTES = 30 * 1024 * 1024
 //
 // Таблица — одна строка на позицию: одинаковые позиции всех ВОР сложены, не складываются, только если уверенности меньше 90 %
 // (utils/supplyDocMatch.mergeSamePositions; решение пользователя 05.11.2026). Цена строки пишется всем её ВОР: у каждого ВОР по-прежнему
-// своя строка цены и свой объём, поэтому карточка, «Сравнение КП» и реестр СУ-10 работают как раньше. ВОРы — под спойлером над таблицей.
+// своя строка цены и свой объём, поэтому карточка, «Сравнение КП» и реестр СУ-10 работают как раньше. Переключатель «Собранные / По ВОРам»
+// (10.11.2026): «По ВОРам» — позиции каждого ВОР своими строками, цена — только в этот ВОР. Выбора одного ВОР нет. ВОРы — под спойлером
+// над таблицей: в карточке и у администратора; снабжению на странице — только позиции.
 //
 // Цены — tender_vor_supply_rates основного тендера: введённое сразу видно в карточке и в «Сравнении КП», в
 // реестре «Расценки от снабжения СУ-10» — после его пересчёта (до 10 минут). Сохранение — само (через секунду
@@ -297,9 +299,9 @@ function summedPosition(targets) {
 // — всех показанных. Состояние записи — самое тревожное среди целей.
 const DRAFT_ORDER = ['conflict', 'error', 'saving', 'queued']
 const newestRated = (list) => [...list].sort((a, b) => String(b.rate.updated_at || '').localeCompare(String(a.rate.updated_at || '')))[0] || null
-function composeRow(base, targets, vorFilter) {
+function composeRow(base, targets) {
   const { group, index, p } = base
-  const shown = vorFilter ? targets.filter((t) => t.doc === vorFilter) : targets
+  const shown = targets
   const first = targets[0]
   const withDraft = DRAFT_ORDER.map((st) => targets.find((t) => t.draft?.status === st)).find(Boolean) || null
   const rated = targets.filter((t) => t.rate)
@@ -391,6 +393,9 @@ export default function SupplyPricingPanel({
   const canEditRole = canEdit('tenders') || canEdit('tenders_materials')
   // Администратору в колонке «Дата цены» — ещё и кто поставил цену.
   const showAuthor = !!(isAdmin || isSuperAdmin)
+  // Спойлер «ВОРы тендера» (файлы, привязка к вкладке «ВОР» карточки, колонки листа, очистка) — тендерному отделу в карточке и
+  // администратору. Снабжению на странице /tenders/materials/:id/pricing нужны только позиции (решение пользователя 10.11.2026).
+  const vorsShown = variant !== 'page' || showAuthor
   const myId = user?.id || null
 
   const [ctx, setCtx] = useState(ctxProp)
@@ -404,7 +409,8 @@ export default function SupplyPricingPanel({
   const [loadedItems, setLoadedItems] = useState(null)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
-  const [vorFilter, setVorFilter] = useState('') // показать только позиции этого ВОР
+  // Как показать позиции: 'merged' — одинаковые позиции всех ВОР одной строкой (по умолчанию), 'byVor' — каждый ВОР своими строками.
+  const [viewMode, setViewMode] = useState('merged')
   const [deliveryOpen, setDeliveryOpen] = useState(false) // колонка «Доставка», пока ни у одной цены её нет
   const [dateOpen, setDateOpen] = useState(false) // фильтр по дате цены
   const [flash, setFlash] = useState({}) // key → { kind: 'saved' | 'remote' | 'auto', by, at, from }
@@ -971,12 +977,15 @@ export default function SupplyPricingPanel({
   const viewerProblems = useMemo(() => viewerJobs.map((j) => serverFailure(importState, j.doc)).filter(Boolean), [viewerJobs, importState])
   const pendingForViewer = useMemo(() => viewerJobs.filter((j) => !viewerProblems.some((p) => p.doc.id === j.doc.id)), [viewerJobs, viewerProblems])
 
-  // Строки таблицы — одна на позицию (tenderGroups). Основа строки — только от списков: не пересобирается при каждой цене, строки не
-  // перерисовываются зря. Выбран один ВОР — объём и сумма только его, а цена по-прежнему пишется всем ВОР строки.
-  const rowBases = useMemo(() => tenderGroups.map((group, index) => {
-    const shown = vorFilter ? group.targets.filter((t) => t.doc === vorFilter) : group.targets
-    return shown.length ? { group, index, p: summedPosition(shown) } : null
-  }).filter(Boolean), [tenderGroups, vorFilter])
+  // Строки таблицы. «Собранные» (по умолчанию) — одна на позицию (tenderGroups): цена пишется всем ВОР строки. «По ВОРам» — позиции
+  // каждого ВОР своими строками, по порядку ВОР и позиций в нём: цена строки пишется только в её ВОР (решение пользователя 10.11.2026).
+  // Основа строки — только от списков: не пересобирается при каждой цене, строки не перерисовываются зря.
+  const vorGroups = useMemo(() => sourceViews.flatMap((d) => d.positions.filter((p) => p.k).map((p) => ({
+    key: posKey(d.name, p.k), k: p.k, name: p.name, vorTag: d.name, targets: [{ doc: d.name, position: p }],
+  }))), [sourceViews])
+  const byVor = viewMode === 'byVor' && sourceViews.length > 1
+  const rowBases = useMemo(() => (byVor ? vorGroups : tenderGroups)
+    .map((group, index) => ({ group, index, p: summedPosition(group.targets) })), [byVor, vorGroups, tenderGroups])
   const allRows = useMemo(() => rowBases.map((base) => composeRow(base, base.group.targets.map((t) => {
     const key = posKey(t.doc, t.position.k)
     const list = ratesByKey.get(key) || []
@@ -986,7 +995,7 @@ export default function SupplyPricingPanel({
       key, doc: t.doc, p: t.position, rate, duplicates: list.slice(1), draft, view: rowView(t.position, rate, draft),
       change: changesByDoc.get(t.doc)?.get(t.position.k) || null, carry: carry.byTarget.get(key) || null, unitOff: unitMismatch(rate, t.position),
     }
-  }), vorFilter)), [rowBases, ratesByKey, drafts, changesByDoc, carry, vorFilter])
+  }))), [rowBases, ratesByKey, drafts, changesByDoc, carry])
   const counts = useMemo(() => {
     let priced = 0
     let changed = 0
@@ -1010,7 +1019,6 @@ export default function SupplyPricingPanel({
       return true
     }).map((r, gi) => ({ ...r, gi }))
   }, [allRows, search, filter, dateFrom, dateTo])
-  const shownDoc = vorFilter ? docViews.find((d) => d.name === vorFilter) || null : null
   const virtual = rows.length > VIRTUALIZE_FROM
   const tableWrapRef = useRef(null)
 
@@ -1602,7 +1610,8 @@ export default function SupplyPricingPanel({
       }
     }
     await Promise.all(Array.from({ length: Math.min(DOC_APPLY_PARALLEL, queue.length) }, worker))
-    return { jobs, queue, failed: queue.filter((j) => ['error', 'conflict'].includes(draftsRef.current[j.key]?.status)).length }
+    const failedKeys = new Set(queue.filter((j) => ['error', 'conflict'].includes(draftsRef.current[j.key]?.status)).map((j) => j.key))
+    return { jobs, queue, failed: failedKeys.size, failedKeys }
   }
   // Цена из меню похожих в другой ед. изм.: как есть — копия с отметкой источника (в реестр СУ-10 не попадает, там она была бы
   // с чужой единицей); пересчитанная — своя цена.
@@ -1615,13 +1624,15 @@ export default function SupplyPricingPanel({
     linkDone(`«${row.p.name}»: цена из тендера № ${offer.rate.tender_number}${converted ? ` — пересчитана за ${row.p.unit}` : ''}.`)
   }
 
-  // Окно «Счета и КП тендера»: цена строки — как ввод руками, файл — документом позиций, получивших цену из него.
+  // Окно «Счета и КП тендера»: цена строки — как ввод руками, файл — документом позиций, получивших цену из него (и тех, где та же цена
+  // уже стояла). Цена не записалась (ошибка, «изменено другим») — файл к позиции не прикрепляется: документ не от её цены.
   const applyAutoPick = async (lines, onProgress) => {
-    const { jobs, queue, failed } = await writeDocPrices(lines, onProgress)
+    const { jobs, queue, failed, failedKeys } = await writeDocPrices(lines, onProgress)
     let attached = 0
     if (filesOn) {
       const byDoc = new Map()
       for (const j of jobs) {
+        if (failedKeys.has(j.key) || !j.doc) continue
         const list = byDoc.get(j.doc.id) || { doc: j.doc, targets: [] }
         list.targets.push({ estimateName: j.target.doc, name: j.target.position.name })
         byDoc.set(j.doc.id, list)
@@ -2244,10 +2255,13 @@ export default function SupplyPricingPanel({
               ))}
             </div>
             {docViews.length > 1 && (
-              <select className="sp-vor-filter" value={vorFilter} onChange={(e) => setVorFilter(e.target.value)} aria-label="Показать позиции ВОР">
-                <option value="">Все ВОР ({docViews.length})</option>
-                {docViews.map((d) => <option key={d.name} value={d.name}>{d.name} · {d.priced} из {d.positions.length}</option>)}
-              </select>
+              <div className="sp-filter sp-view-mode" role="group" aria-label="Как показать позиции ВОР">
+                {[['merged', 'Собранные', 'Одинаковые позиции всех ВОР — одной строкой: объём сложен, цена пишется во все ВОР'],
+                  ['byVor', 'По ВОРам', 'Позиции каждого ВОР — своими строками: цена пишется только в этот ВОР']].map(([k, label, title]) => (
+                  <button key={k} type="button" className={`sp-filter-btn${viewMode === k ? ' active' : ''}`} aria-pressed={viewMode === k} title={title}
+                    onClick={() => { if (viewMode !== k) { setViewMode(k); setSelected(new Set()); setSuggest(null) } }}>{label}</button>
+                ))}
+              </div>
             )}
             {datesOn && (dateOpen || dateFrom || dateTo ? (
               <div className={`sp-date-filter${dateFrom || dateTo ? ' is-active' : ''}`} role="group" aria-label="Дата цены">
@@ -2270,7 +2284,7 @@ export default function SupplyPricingPanel({
                   <IconUpload size={16} /> Счета и КП{tenderDocCount > 0 ? ` (${tenderDocCount})` : ''}{autoPickReady > 0 ? ` · новых цен: ${autoPickReady}` : ''}
                 </button>
               )}
-              {showAuthor && <button type="button" className="btn-secondary" onClick={exportExcel}><IconFileSpreadsheet size={16} /> Скачать Excel</button>}
+              <button type="button" className="btn-secondary" onClick={exportExcel}><IconFileSpreadsheet size={16} /> Скачать Excel</button>
               {showAuthor && revisions !== null && (
                 <button type="button" className="btn-secondary" onClick={() => setVersionsOpen(true)} title="Что менялось в ВОР и цены каждой прежней версии">
                   <IconHistory size={16} /> Версии ВОР
@@ -2280,33 +2294,35 @@ export default function SupplyPricingPanel({
           </div>
 
           {/* Строка постоянной высоты под панелью: спойлер ВОР слева, состояние справа — сообщения не сдвигают таблицу под курсором. */}
-          <div className="sp-subbar">
-            {renderVors()}
-            {editable && (
-          <div className="sp-statusbar" role="status" aria-live="polite">
-              {selectable && selected.size > 0 ? (
-                <span className="sp-sel-bar">
-                  <span>Отмечено: <b className="ui-num">{selected.size}</b></span>
-                  <button type="button" className="btn-secondary sp-sel-action" onClick={() => openLinkDialog(allRows.filter((r) => selected.has(r.key)))}>
-                    <IconLink size={16} /> Документ
-                  </button>
-                  <button type="button" className="sp-link-btn" onClick={() => setSelected(new Set())}>Снять отметку</button>
-                </span>
-              ) : (
-                <>
-                  {failedCount > 0 ? (
-                    <span className="sp-save-status is-error"><IconAlertCircle size={16} /> Не сохранено: {failedCount} — нажмите красный значок в строке</span>
-                  ) : savingCount > 0 ? (
-                    <span className="sp-save-status is-saving"><IconClock size={16} /> Сохраняем…</span>
-                  ) : lastSavedAt ? (
-                    <span className="sp-save-status is-ok"><IconCheck size={16} /> Все цены сохранены · {fmtClock(lastSavedAt)}</span>
-                  ) : null}
-                  {(fillNote || reuseNote) && <span className="sp-fill-note" title={fillNote || reuseNote}>{fillNote || reuseNote}</span>}
-                </>
+          {(vorsShown || editable) && (
+            <div className="sp-subbar">
+              {vorsShown && renderVors()}
+              {editable && (
+              <div className="sp-statusbar" role="status" aria-live="polite">
+                {selectable && selected.size > 0 ? (
+                  <span className="sp-sel-bar">
+                    <span>Отмечено: <b className="ui-num">{selected.size}</b></span>
+                    <button type="button" className="btn-secondary sp-sel-action" onClick={() => openLinkDialog(allRows.filter((r) => selected.has(r.key)))}>
+                      <IconLink size={16} /> Документ
+                    </button>
+                    <button type="button" className="sp-link-btn" onClick={() => setSelected(new Set())}>Снять отметку</button>
+                  </span>
+                ) : (
+                  <>
+                    {failedCount > 0 ? (
+                      <span className="sp-save-status is-error"><IconAlertCircle size={16} /> Не сохранено: {failedCount} — нажмите красный значок в строке</span>
+                    ) : savingCount > 0 ? (
+                      <span className="sp-save-status is-saving"><IconClock size={16} /> Сохраняем…</span>
+                    ) : lastSavedAt ? (
+                      <span className="sp-save-status is-ok"><IconCheck size={16} /> Все цены сохранены · {fmtClock(lastSavedAt)}</span>
+                    ) : null}
+                    {(fillNote || reuseNote) && <span className="sp-fill-note" title={fillNote || reuseNote}>{fillNote || reuseNote}</span>}
+                  </>
+                )}
+              </div>
               )}
             </div>
-            )}
-          </div>
+          )}
 
           <div ref={tableWrapRef} className={`table-container sp-table-wrap${virtual ? ' is-virtual' : ''}`}>
             <table className={`data-table sp-table${linksOn ? ' has-links' : ''}${commentsOn ? ' has-comments' : ''}${datesOn ? (showAuthor ? ' has-dates has-authors' : ' has-dates') : ''}${deliveryShown ? ' has-delivery' : ''}`}>
@@ -2358,7 +2374,7 @@ export default function SupplyPricingPanel({
                   <td colSpan={selectable ? 5 : 4}>Итого</td>
                   <td />
                   {deliveryShown && <td />}
-                  <td className="ui-money"><b>{formatAmount(shownDoc ? shownDoc.total : grand.total)}</b></td>
+                  <td className="ui-money"><b>{formatAmount(grand.total)}</b></td>
                   {datesOn && <td />}
                   {linksOn && <td />}
                   {commentsOn && <td />}
@@ -2551,6 +2567,7 @@ const PriceRow = memo(function PriceRow({
         draft?.status === 'error' && 'is-error',
         draft?.status === 'conflict' && 'is-conflict',
         selected && 'is-selected',
+        gi % 2 === 1 && 'is-alt',
       ].filter(Boolean).join(' ')}
     >
       {selectable && (
@@ -2560,7 +2577,8 @@ const PriceRow = memo(function PriceRow({
       )}
       <td className="ui-rownum" data-label="№">{index + 1}</td>
       <td className="sp-name" data-label="Наименование">
-        <span>{p.name}</span>
+        <span className="sp-name-text">{p.name}</span>
+        {row.group.vorTag && <span className="sp-hint sp-vor-tag">ВОР «{row.group.vorTag}»</span>}
         {row.group.sameAs?.length > 0 && (
           <span className="sp-hint">
             в другом ВОР: {row.group.sameAs.map((s) => `«${s.name}»`).join(', ')}

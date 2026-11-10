@@ -79,6 +79,77 @@
     ]
   },
   {
+    "method": "GET",
+    "url": "/api/admin/identities",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "GET",
+    "url": "/api/admin/identity-requests",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "POST",
+    "url": "/api/admin/identity-requests/:id/create-user",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "counterpartyId",
+      "fullName",
+      "objectIds",
+      "role"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/admin/identity-requests/:id/link",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "userId"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/admin/identity-requests/:id/reject",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": []
+  },
+  {
+    "method": "POST",
+    "url": "/api/admin/identity-requests/:id/reopen",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": []
+  },
+  {
+    "method": "POST",
+    "url": "/api/admin/identity-requests/sync",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": []
+  },
+  {
+    "method": "DELETE",
+    "url": "/api/admin/users/:id/identity",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": []
+  },
+  {
     "method": "POST",
     "url": "/api/auth/admin/reset-password",
     "kind": "user",
@@ -137,6 +208,22 @@
     "kind": "user",
     "require": "signedIn",
     "reason": null,
+    "body": null
+  },
+  {
+    "method": "GET",
+    "url": "/api/auth/oidc/callback",
+    "kind": "open",
+    "require": null,
+    "reason": "Возврат из СУ-10 после входа: сессии ещё нет; сам проверяет state своей cookie, код с PKCE, подпись и адресатов токенов",
+    "body": null
+  },
+  {
+    "method": "GET",
+    "url": "/api/auth/oidc/login",
+    "kind": "open",
+    "require": null,
+    "reason": "Начало входа через СУ-10 (Keycloak): сессии ещё нет; отвечает только переходом страницы, ставит лишь зашифрованную cookie состояния входа",
     "body": null
   },
   {

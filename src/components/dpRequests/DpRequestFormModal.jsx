@@ -9,6 +9,8 @@ import {
 } from '../../utils/dpRequests'
 import { createDpRequest, updateDpRequest } from '../../services/dpRequests'
 import { SECTION_TEMPLATE_LINK_KEY, fetchTemplateLinks, isWebLink } from '../../services/sectionTemplates'
+// Стили окна — со страницы заявок: окно открывают и из «Реестра по договорам» (DpRequestCreateButton), куда страница не заходила.
+import '../../pages/DpRequestsPage.css'
 
 // Файлы, выбранные в окне новой заявки: на сервер уходят только вместе с заявкой (строки ещё нет).
 function StagedFiles({ id, label, hint, accept, files, onFiles, required, error }) {

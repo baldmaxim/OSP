@@ -275,7 +275,7 @@ describe('свой вход на настоящей базе', { skip, timeout: 
     const c = await loginOk(U.superadmin)
     const me = await app.inject({ method: 'GET', url: '/api/auth/me', headers: as(c) })
     assert.equal(me.statusCode, 200)
-    assert.deepEqual(me.json(), { user: { id: U.superadmin.id, email: U.superadmin.email }, isSuperadmin: true, mustChange: false })
+    assert.deepEqual(me.json(), { user: { id: U.superadmin.id, email: U.superadmin.email }, isSuperadmin: true, mustChange: false, authSource: 'password' })
   })
 
   it('перебор: после 5 неудач пауза растёт, верный пароль её не обходит; несуществующая почта считается так же; успех сбрасывает', async () => {
@@ -342,8 +342,10 @@ describe('свой вход на настоящей базе', { skip, timeout: 
     const dup = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: `__Host-osp_session=${c.session}; __Host-osp_session=${'z'.repeat(43)}` } })
     assert.equal(dup.statusCode, 400)
     assert.equal(dup.json().code, 'OSP_COOKIE_DUPLICATE')
-    const anon = await app.inject({ method: 'GET', url: '/api/db/tenders?select=id' })
-    assert.equal(anon.statusCode, 200, 'без cookie — аноним, как раньше')
+    // Без cookie — гость: через шлюз только публичная витрина (scripts/build-db-allow.mjs, ANON_TABLES), таблицы ему закрыты.
+    const anon = await app.inject({ method: 'GET', url: '/api/db/public_open_tenders?select=id' })
+    assert.equal(anon.statusCode, 200, 'без cookie — гость, витрина')
+    assert.equal((await app.inject({ method: 'GET', url: '/api/db/tenders?select=id' })).statusCode, 401, 'гостю таблицы закрыты')
     assert.equal(internalTokens().at(-1).osp_role, 'anon')
   })
 
@@ -355,7 +357,9 @@ describe('свой вход на настоящей базе', { skip, timeout: 
     const me = await app.inject({ method: 'GET', url: '/api/auth/me', headers: as(c) })
     assert.equal(me.statusCode, 401)
     assert.equal(me.json().code, 'OSP_SESSION_REVOKED')
-    assert.match([].concat(me.headers['set-cookie']).join('|'), /__Host-osp_session=; Path=\/; Max-Age=0/)
+    // Cookie на отказе не стираются (только при выходе): поздний ответ запроса, ушедшего до нового входа в соседнем окне,
+    // стёр бы новую сессию. Новый вход и так перезапишет cookie.
+    assert.equal(me.headers['set-cookie'], undefined)
     const db = await app.inject({ method: 'GET', url: '/api/db/tenders?select=id', headers: as(c) })
     assert.equal(db.statusCode, 401)
     asMark('osp:internal', `update public.user_roles set is_blocked = false, is_approved = true where user_id = '${U.racer.id}'`)

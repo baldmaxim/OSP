@@ -1,9 +1,6 @@
 {
   "tables": {
     "app_settings": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -20,9 +17,6 @@
       ]
     },
     "bsm_contract_rates": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -31,9 +25,6 @@
       ]
     },
     "bsm_contractor_rates": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -42,9 +33,6 @@
       ]
     },
     "bsm_supply_rates": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -71,9 +59,6 @@
       ]
     },
     "contacts": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -82,9 +67,6 @@
       ]
     },
     "contract_advance_schedule": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -93,9 +75,6 @@
       ]
     },
     "contract_appendices": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -104,9 +83,6 @@
       ]
     },
     "contract_attachments": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -115,9 +91,6 @@
       ]
     },
     "contract_audit_log": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -126,9 +99,6 @@
       ]
     },
     "contract_clause_comments": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -137,9 +107,6 @@
       ]
     },
     "contract_clause_dispute_clauses": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -148,9 +115,6 @@
       ]
     },
     "contract_clause_disputes": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -159,9 +123,6 @@
       ]
     },
     "contract_clauses": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -170,9 +131,6 @@
       ]
     },
     "contract_counterparties": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -180,10 +138,12 @@
         "update"
       ]
     },
-    "contract_psdc_items": {
-      "anon": [
+    "contract_number_counters": {
+      "authenticated": [
         "select"
-      ],
+      ]
+    },
+    "contract_psdc_items": {
       "authenticated": [
         "delete",
         "insert",
@@ -192,9 +152,6 @@
       ]
     },
     "contracts": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -224,9 +181,6 @@
       ]
     },
     "counterparties": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -235,9 +189,6 @@
       ]
     },
     "counterparties_inn_backup_2026_09_21": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -246,9 +197,6 @@
       ]
     },
     "counterparty_audit_log": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -257,9 +205,6 @@
       ]
     },
     "counterparty_contacts": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -275,9 +220,6 @@
       ]
     },
     "counterparty_relations": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -286,9 +228,6 @@
       ]
     },
     "dc_request_audit_log": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -297,9 +236,6 @@
       ]
     },
     "dc_request_tasks": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -308,9 +244,6 @@
       ]
     },
     "dc_requests": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -319,9 +252,6 @@
       ]
     },
     "departments": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -330,9 +260,6 @@
       ]
     },
     "doc_check_request_audit_log": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -355,9 +282,6 @@
       ]
     },
     "doc_check_requests": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -366,9 +290,6 @@
       ]
     },
     "document_check_requests": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -397,9 +318,6 @@
       ]
     },
     "employees": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -408,9 +326,6 @@
       ]
     },
     "general_document_folders": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -419,9 +334,6 @@
       ]
     },
     "general_document_links": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -430,9 +342,6 @@
       ]
     },
     "general_documents": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -479,9 +388,6 @@
       ]
     },
     "object_areas": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -490,9 +396,6 @@
       ]
     },
     "object_contract_attachments": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -501,9 +404,6 @@
       ]
     },
     "object_cost_plan": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -512,9 +412,6 @@
       ]
     },
     "object_documents": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -523,9 +420,6 @@
       ]
     },
     "object_estimate_items": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -542,9 +436,6 @@
       ]
     },
     "object_staff": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -553,9 +444,6 @@
       ]
     },
     "object_warranties": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -564,9 +452,6 @@
       ]
     },
     "object_warranty_retention_payments": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -575,9 +460,6 @@
       ]
     },
     "object_warranty_retentions": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -586,9 +468,6 @@
       ]
     },
     "objects": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -597,9 +476,6 @@
       ]
     },
     "positions": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -641,9 +517,6 @@
       ]
     },
     "role_permissions": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -652,9 +525,6 @@
       ]
     },
     "roles": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -663,9 +533,6 @@
       ]
     },
     "s3_documents": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -699,9 +566,6 @@
       ]
     },
     "task_audit_log": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -710,9 +574,6 @@
       ]
     },
     "task_checklist_items": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -721,9 +582,6 @@
       ]
     },
     "task_comments": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -732,9 +590,6 @@
       ]
     },
     "task_participants": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -743,9 +598,6 @@
       ]
     },
     "tasks": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -754,9 +606,6 @@
       ]
     },
     "tender_audit_log": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -780,9 +629,6 @@
       ]
     },
     "tender_counterparties": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -791,9 +637,6 @@
       ]
     },
     "tender_counterparty_proposals": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -802,9 +645,6 @@
       ]
     },
     "tender_doc_links": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -813,9 +653,6 @@
       ]
     },
     "tender_docs": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -824,9 +661,6 @@
       ]
     },
     "tender_documents": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -835,9 +669,6 @@
       ]
     },
     "tender_estimate_items": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -846,9 +677,6 @@
       ]
     },
     "tender_proposal_files": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -857,9 +685,6 @@
       ]
     },
     "tender_rd_codes": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -868,9 +693,6 @@
       ]
     },
     "tender_rd_document_codes": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -923,9 +745,6 @@
       ]
     },
     "tender_vor_supply_rates": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -934,9 +753,6 @@
       ]
     },
     "tender_winners": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -945,9 +761,6 @@
       ]
     },
     "tenders": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -956,9 +769,6 @@
       ]
     },
     "user_roles": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -983,9 +793,6 @@
       ]
     },
     "work_types": {
-      "anon": [
-        "select"
-      ],
       "authenticated": [
         "delete",
         "insert",
@@ -1034,6 +841,15 @@
       "authenticated"
     ],
     "can_see_task": [
+      "authenticated"
+    ],
+    "contract_code_key": [
+      "authenticated"
+    ],
+    "contract_code_norm": [
+      "authenticated"
+    ],
+    "contract_number_key": [
       "authenticated"
     ],
     "contractor_contracts": [

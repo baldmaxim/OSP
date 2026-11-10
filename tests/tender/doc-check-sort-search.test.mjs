@@ -14,7 +14,7 @@ import {
 } from '../../src/utils/counterpartyPicker.js'
 import { counterpartyNumbers } from '../../src/utils/counterpartyFilters.js'
 import {
-  COLUMN_SORTS, SUMMARY_COLUMN, columnSortOf, datePlaceBefore, nextColumnSort, normalizeColumnSorts, withColumnSort,
+  COLUMN_SORTS, columnSortOf, datePlaceBefore, nextColumnSort, normalizeColumnSorts, withColumnSort,
 } from '../../src/utils/docCheckHelpers.js'
 
 const CPS = [
@@ -65,11 +65,9 @@ describe('Поиск контрагента и порядок колонок: п
     assert.deepEqual(names(filterCounterpartyOptions(options, `№ ${no}`)), ['ООО "Пром Атом Строй"'])
   })
 
-  it('порядок колонки: свой → новые → старые → свой; у «Сводки» — только по дате; в браузере хранится только не по умолчанию', () => {
+  it('порядок колонки: свой → новые → старые → свой; в браузере хранится только не по умолчанию', () => {
     assert.equal(columnSortOf({}, 'in_progress'), 'manual')
-    assert.equal(columnSortOf({}, SUMMARY_COLUMN), 'newest')
     assert.equal(columnSortOf({ in_progress: 'bogus' }, 'in_progress'), 'manual')
-    assert.equal(columnSortOf({ summary: 'manual' }, SUMMARY_COLUMN), 'newest', 'своего порядка у «Сводки» нет')
     const seen = []
     let sorts = {}
     for (let i = 0; i < 4; i++) {
@@ -78,9 +76,7 @@ describe('Поиск контрагента и порядок колонок: п
     }
     assert.deepEqual(seen, ['newest', 'oldest', 'manual', 'newest'])
     assert.deepEqual(withColumnSort({ done: 'oldest' }, 'done', 'manual'), {})
-    assert.equal(nextColumnSort({}, SUMMARY_COLUMN), 'oldest')
-    assert.equal(nextColumnSort({ summary: 'oldest' }, SUMMARY_COLUMN), 'newest')
-    assert.deepEqual(normalizeColumnSorts({ done: 'oldest', new: 'manual', summary: 'newest', x: 'zzz', y: 5 }), { done: 'oldest' })
+    assert.deepEqual(normalizeColumnSorts({ done: 'oldest', new: 'manual', x: 'zzz', y: 5 }), { done: 'oldest' })
     assert.deepEqual(normalizeColumnSorts('[1]'), {})
     assert.deepEqual(normalizeColumnSorts(['oldest']), {})
   })
@@ -189,7 +185,7 @@ describe('Поиск контрагента и порядок колонок в 
       await page.locator('.fdrop-panel .fdrop-option').first().click()
       await page.keyboard.press('Escape')
       await page.locator('.fdrop-panel').waitFor({ state: 'detached' })
-      const shown = await page.locator('.dc-column:not(.dc-column--summary) .dc-card').evaluateAll((els) => els.map((el) => el.dataset.id))
+      const shown = await page.locator('.dc-column .dc-card').evaluateAll((els) => els.map((el) => el.dataset.id))
       assert.deepEqual(shown.sort(), ['dcr-2', 'dcr-5'])
       assert.deepEqual(errors, [])
     } finally {
@@ -236,7 +232,6 @@ describe('Поиск контрагента и порядок колонок в 
       assert.equal(await sortBtn(page, 'in_progress').textContent(), 'Старые')
       // Остальные колонки — как были.
       assert.equal(await sortBtn(page, 'done').getAttribute('data-sort'), 'manual')
-      assert.equal(await sortBtn(page, 'summary').getAttribute('data-sort'), 'newest')
       assert.equal(await updates(page), 0, 'по дате — только показ, в базу ничего')
 
       await go(page, '&dcSortDates=1')
@@ -246,11 +241,7 @@ describe('Поиск контрагента и порядок колонок в 
       assert.deepEqual(await cardsIn(page, 'in_progress'), manual, 'свой порядок — прежний')
       assert.equal(await sortBtn(page, 'in_progress').textContent(), '')
 
-      // «Сводка»: новые ↔ старые, своего порядка нет.
-      await sortBtn(page, 'summary').click()
-      assert.equal(await sortBtn(page, 'summary').getAttribute('data-sort'), 'oldest')
-      await sortBtn(page, 'summary').click()
-      assert.equal(await sortBtn(page, 'summary').getAttribute('data-sort'), 'newest')
+      assert.equal(await page.locator('.dc-column[data-status="summary"]').count(), 0, '«Сводки по ДП» нет (10.11.2026)')
       assert.equal(await updates(page), 0)
       assert.deepEqual(errors, [])
     } finally {

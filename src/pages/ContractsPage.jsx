@@ -17,6 +17,12 @@ import VorDivisionChip from '../components/VorDivisionChip'
 import VorDivisionFilter from '../components/VorDivisionFilter'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
 import ContractDocsModal from '../components/ContractDocsModal'
+import ContractNumberingModal from '../components/ContractNumberingModal'
+import {
+  codeKey, isSchemeNumberTaken, manualNumberWarnings, nextContractNumber, numberKey, parseContractNumber,
+} from '../utils/contractNumbering'
+import { isMissingNumbering, loadNumberCounters } from '../services/contractNumbering'
+import DpRequestCreateButton from '../components/dpRequests/DpRequestCreateButton'
 import { CONTRACTS_STRUCTURE } from '../utils/docStorageStructures'
 import { IconDocsStack, IconColumns, IconColumnsWide, IconSearch, IconObject, IconJoint, IconUser, IconTag } from '../components/icons/ToolbarIcons'
 import { IconContracts } from '../components/icons/NavIcons'
@@ -389,7 +395,7 @@ function InlineDateCell({ value, onChange, disabled, overdue }) {
 function ContractRegistry() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { isAdmin, userProfile, canEdit, scopedObjectIds } = useRole()
+  const { isAdmin, isSuperAdmin, userProfile, canEdit, scopedObjectIds } = useRole()
   // task 333: гейт add/edit/delete для раздела «contracts»
   const canEditContracts = canEdit('contracts')
   // Телефон: реестр рендерим карточками вместо широкой таблицы
@@ -399,6 +405,11 @@ function ContractRegistry() {
   // Руководитель строительства (привязан к объекту) не видит внутренние примечания
   // (примечание юриста и примечания в приложениях к договору).
   const hideNotes = scopedObjectIds.length > 0
+  // Сотрудник объекта — руководитель строительства или экономист объекта, привязанный к объектам в «Ролях» (10.11.2026, решение
+  // пользователя): видит только договоры своих объектов (fetchContracts), в фильтре — только свои объекты; общая папка
+  // раздела, «Структура хранения» и «Стандартные приложения» (они для заведения договоров) ему не нужны. Договоры он не
+  // заводит — это право правки раздела, его у этих ролей нет; заявку на заключение ДП подаёт плюсиком у вкладки «Все».
+  const siteStaff = scopedObjectIds.length > 0
 
   // Раздел — единый реестр без выбора отдела: договоры ведутся и по объектам
   // основного строительства, и по объектам гарантийного обслуживания.
@@ -440,6 +451,13 @@ function ContractRegistry() {
   const [showStorageStructure, setShowStorageStructure] = useState(false)
   // «Документы раздела»: шаблоны, структура хранения, приложения, импорт Excel и загрузка ПСДЦ — одним окном.
   const [showDocsMenu, setShowDocsMenu] = useState(false)
+  // Нумерация договоров по объектам (миграция 20270110, utils/contractNumbering.js): коды объектов — objects.contract_code,
+  // счётчики — contract_number_counters. supported: false — нумерации нет (missing: миграции нет — форма как раньше).
+  // numberManual — номер в форме набрал человек (в том числе стёр): пока не набрал, форма нового договора сама ставит
+  // следующий номер выбранного объекта и меняет его при смене объекта; «Подставить» возвращает подстановку.
+  const [numbering, setNumbering] = useState({ supported: null, counters: [], missing: false })
+  const [showNumbering, setShowNumbering] = useState(false)
+  const [numberManual, setNumberManual] = useState(false)
   const [rootFolderPath, setRootFolderPath] = useState('')
   const [attachmentsObjectId, setAttachmentsObjectId] = useState('')
   const [objectAttachments, setObjectAttachments] = useState([])
@@ -679,15 +697,38 @@ function ContractRegistry() {
       // Оба отдела: основное строительство И гарантийное обслуживание — договор
       // можно завести на любой объект. Сортировка по статусу ('main_construction'
       // < 'warranty_service') ставит ОС первыми, затем по имени.
-      const { data, error } = await db
+      // contract_code — код объекта в номере договора (миграция 20270110); колонки нет — прежняя выборка, нумерации нет.
+      const query = (cols) => db
         .from('objects')
-        .select('id, name, status')
+        .select(cols)
         .order('status', { ascending: true })
         .order('name', { ascending: true })
+      let { data, error } = await query('id, name, status, contract_code')
+      if (error && isMissingNumbering(error)) {
+        setNumbering({ supported: false, counters: [], missing: true });
+        ({ data, error } = await query('id, name, status'))
+      }
       if (error) throw error
       setObjects(data || [])
     } catch (error) {
       console.error('Ошибка загрузки объектов:', error.message)
+    }
+  }
+
+  // Счётчики номеров по схеме — перед каждой новой формой: номер мог только что взять коллега.
+  const refreshNumbering = async () => {
+    try {
+      const loaded = await loadNumberCounters()
+      // Таблицы нет — миграции нет: больше не спрашиваем.
+      const next = { ...loaded, missing: !loaded.supported }
+      setNumbering(next)
+      return next
+    } catch (err) {
+      // Не прочитались (сеть) — номер не подставляем, форма работает: номер вводится вручную; следующая форма спросит снова.
+      console.error('Не удалось загрузить счётчики номеров договоров:', err.message)
+      const failed = { supported: false, counters: [], missing: false }
+      setNumbering(failed)
+      return failed
     }
   }
 
@@ -1230,10 +1271,11 @@ function ContractRegistry() {
   }, [contacts, dedupContacts])
 
   // Опции фильтра «Объект» — объекты выбранного отдела, по алфавиту; при «Все договоры» отдел виден по бейджу в списке.
+  // Сотруднику объекта — только его объекты (чужие дали бы пустой реестр и показали бы, какие ещё объекты есть).
   const objectFilterOptions = useMemo(() =>
-    objects.filter(o => dept === 'all' || o.status === dept)
+    objects.filter(o => (dept === 'all' || o.status === dept) && (!siteStaff || scopedObjectIds.includes(o.id)))
       .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru')),
-  [objects, dept])
+  [objects, dept, siteStaff, scopedObjectIds])
   // Другой отдел: выбранные объекты чужого отдела дали бы пустой реестр без видимой причины.
   const changeDept = (next) => {
     setDept(next)
@@ -1641,6 +1683,18 @@ function ContractRegistry() {
       alert('Выберите объект работ')
       return
     }
+    // Номер по схеме, набранный вручную: не тот код, не по порядку, уже выдавался — одно окно подтверждения.
+    // Подставленный формой номер не переспрашиваем; занятый номер база всё равно не примет.
+    const typedNumber = formData.contract_number.trim()
+    const autoAssigned = !isDsForm && !editingContract && numbering.supported && !numberManual
+      && !!schemeNumber && typedNumber === schemeNumber
+    if (!isDsForm && numbering.supported && typedNumber && !autoAssigned) {
+      const warnings = manualNumberWarnings({
+        number: typedNumber, object: formObject, counters: numbering.counters,
+        ownNumber: editingContract?.contract_number ?? null,
+      })
+      if (warnings.length && !window.confirm(`Номер ${typedNumber}:\n\n${warnings.map(w => `• ${w}`).join('\n')}\n\nСохранить с этим номером?`)) return
+    }
     try {
       // Подразделение — только у договора и только если колонка уже есть (миграция 20261112): без неё
       // PostgREST отказал бы во всей записи. У ДС колонку не трогаем — они берут подразделение договора.
@@ -1688,8 +1742,21 @@ function ContractRegistry() {
         if (error) throw error
         await logContractEvent(contractId, 'field_updated', { description: `Обновлены данные документа (${docWord})` })
       } else {
-        const { data, error } = await db.from('contracts').insert([payload]).select('id, display_id').single()
+        let { data, error } = await db.from('contracts').insert([payload]).select('id, display_id').single()
+        // Подставленный номер успел взять другой договор (коллега сохранил раньше): база отказала по уникальности —
+        // берём следующий по свежему счётчику и сохраняем ещё раз, человеку говорим, какой номер получился.
+        let reassigned = null
+        if (error && autoAssigned && isSchemeNumberTaken(error)) {
+          const fresh = await refreshNumbering()
+          const retry = fresh.supported ? nextContractNumber(formObject, fresh.counters) : null
+          if (retry && retry.number !== payload.contract_number) {
+            reassigned = { from: payload.contract_number, to: retry.number }
+            payload.contract_number = retry.number
+            ;({ data, error } = await db.from('contracts').insert([payload]).select('id, display_id').single())
+          }
+        }
         if (error) throw error
+        if (reassigned) alert(`Номер ${reassigned.from} успел получить другой договор — этому договору присвоен ${reassigned.to}.`)
         contractId = data?.id
         const numberPart = payload.contract_number ? ` № ${payload.contract_number}` : ' (без номера)'
         await logContractEvent(contractId, 'created', {
@@ -1751,6 +1818,16 @@ function ContractRegistry() {
       setFormAttachments(new Set())
       fetchContracts()
     } catch (error) {
+      if (!isDsForm && isSchemeNumberTaken(error) && parseContractNumber(formData.contract_number)) {
+        // Номер по схеме не повторяется (уникальность в базе) — называем, у какого договора он уже есть.
+        const key = numberKey(formData.contract_number)
+        const owner = contracts.find(c => c.id !== editingContract?.id && c.record_type === DOC_TYPE.CONTRACT && numberKey(c.contract_number) === key)
+        alert(`Номер ${formData.contract_number.trim()} уже есть у ${owner ? `договора ID ${owner.display_id}${owner.deleted_at ? ' (в «Удалённых»)' : ''}` : 'другого договора'}. `
+          + 'Номера по схеме не повторяются — укажите другой номер'
+          + (schemeNumber ? ` или подставьте следующий: ${schemeNumber}.` : '.'))
+        if (!numbering.missing) refreshNumbering()
+        return
+      }
       console.error('Ошибка сохранения договора:', error.message)
       alert('Ошибка: ' + error.message)
     }
@@ -1759,6 +1836,9 @@ function ContractRegistry() {
   const handleEditContract = (contract) => {
     // Списки контрагентов и тендеров могли ещё не подгрузиться в простое.
     ensureFormRefs()
+    // Номер договора по схеме: «Подставить» и проверка набранного номера смотрят счётчики.
+    if ((contract.record_type || 'dp') === DOC_TYPE.CONTRACT && !numbering.missing) refreshNumbering()
+    setNumberManual(true)
     setEditingContract(contract)
     // Для ДС держим тот же унаследованный снимок — при сохранении по нему
     // пересчитывается список изменяемых полей.
@@ -1886,8 +1966,12 @@ function ContractRegistry() {
     setEditingContract(null)
     setAmendmentTarget(null)
     setAmendmentInherited(null)
-    const nextNumber = await computeNextContractNumber()
+    // С нумерацией по объектам номер подставит форма, когда выбран объект (эффект ниже). Без неё (миграции 20270110
+    // нет) — прежний «следующий номер» по всему реестру.
+    const scheme = numbering.missing ? numbering : await refreshNumbering()
+    const nextNumber = scheme.missing ? await computeNextContractNumber() : ''
     const status = STATUS_OPTIONS.some(s => s.value === activeTab) ? activeTab : 'new_request'
+    setNumberManual(false)
     setFormData({ ...EMPTY_FORM, contract_number: nextNumber, status })
     setFormCounterpartyIds([])
     setCounterpartySearch('')
@@ -2033,6 +2117,26 @@ function ContractRegistry() {
   // Условия завершённого документа заморожены (то же правило в триггере БД):
   // иначе актуальные суммы поменялись бы задним числом и без следа в истории.
   const formFrozen = !!editingContract && isCompleted(editingContract)
+  // Номер договора по схеме объекта (КОД-ДП-ГГ-NNN): следующий по счётчику; null — ДС, нет кода у объекта или нумерации.
+  const formObject = formData.object_id ? objects.find(o => o.id === formData.object_id) : null
+  const schemeNext = !isDsForm && numbering.supported ? nextContractNumber(formObject, numbering.counters) : null
+  // Номер в поле уже по схеме этого объекта — подсказка «Подставить» не нужна.
+  const numberParsed = parseContractNumber(formData.contract_number)
+  const numberMatchesObject = !!numberParsed && numberParsed.codeKey === codeKey(formObject?.contract_code)
+  const schemeNumber = schemeNext?.number || ''
+  useEffect(() => {
+    if (!showModal || editingContract || isDsForm || !numbering.supported || numberManual) return
+    if (formData.contract_number !== schemeNumber) setFormData(prev => ({ ...prev, contract_number: schemeNumber }))
+  }, [showModal, editingContract, isDsForm, numbering.supported, numberManual, schemeNumber, formData.contract_number])
+  const handleNumberInput = (e) => {
+    setNumberManual(true)
+    handleInputChange(e)
+  }
+  const applySchemeNumber = () => {
+    if (!schemeNumber) return
+    setNumberManual(false)
+    setFormData(prev => ({ ...prev, contract_number: schemeNumber }))
+  }
   const changedFieldsNow = useMemo(
     () => (isDsForm && amendmentInherited ? collectChangedFields(amendmentInherited, formData) : []),
     [isDsForm, amendmentInherited, formData])
@@ -2687,14 +2791,16 @@ function ContractRegistry() {
         </div>
         <div className="cr-header-actions">
           {/* Путь к общей папке всего раздела (app_settings). Путь к папке
-              конкретного договора — в его строке реестра. */}
-          <RootFolderPathButton
-            settingKey="contracts_root_folder_path"
-            title="Общая папка договоров"
-            canEdit={canEditContracts}
-            placeholder="\\192.168.5.55\SharA_Tender\СУБПОДРЯДЫ ДОГОВОРА И ДС"
-            onValueChange={setRootFolderPath}
-          />
+              конкретного договора — в его строке реестра. Сотруднику объекта не нужна (10.11.2026). */}
+          {!siteStaff && (
+            <RootFolderPathButton
+              settingKey="contracts_root_folder_path"
+              title="Общая папка договоров"
+              canEdit={canEditContracts}
+              placeholder="\\192.168.5.55\SharA_Tender\СУБПОДРЯДЫ ДОГОВОРА И ДС"
+              onValueChange={setRootFolderPath}
+            />
+          )}
           {/* Структура хранения, приложения, импорт Excel, загрузка ПСДЦ и шаблоны — в окне «Документы»,
               как у «Тендеров — Основное строительство». */}
           <button
@@ -2730,21 +2836,24 @@ function ContractRegistry() {
         </div>
       </div>
 
-      {/* Вкладки по статусу (task 183 + 190); «Удаленные» — справа, красным. */}
+      {/* Вкладки по статусу (task 183 + 190); «Удаленные» — справа, красным. Сразу за «Все» — «+ Заявка на заключение ДП»
+          (10.11.2026): у кого есть право подавать заявки (dp_requests_create). */}
       <div className="status-tabs">
         {TABS.map(tab => (
-          <button
-            key={tab.key}
-            type="button"
-            className={`status-tab ${activeTab === tab.key ? 'active' : ''} ${tab.key === 'deleted' ? 'tab-deleted' : ''}`}
-            title={tab.hint}
-            onClick={() => setActiveTab(tab.key)}
-          >
-            {tab.label}
-            {tabCounts[tab.key] != null && (
-              <span className="tab-count">{tabCounts[tab.key]}</span>
-            )}
-          </button>
+          <Fragment key={tab.key}>
+            <button
+              type="button"
+              className={`status-tab ${activeTab === tab.key ? 'active' : ''} ${tab.key === 'deleted' ? 'tab-deleted' : ''}`}
+              title={tab.hint}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+              {tabCounts[tab.key] != null && (
+                <span className="tab-count">{tabCounts[tab.key]}</span>
+              )}
+            </button>
+            {tab.key === 'all' && <DpRequestCreateButton />}
+          </Fragment>
         ))}
       </div>
 
@@ -3412,13 +3521,47 @@ function ContractRegistry() {
                 )}
 
                 <div className={fieldGroupCls('contract_number')}>
-                  <label>{isDsForm ? '№ ДС' : '№ договора'}</label>
-                  <input type="text" name="contract_number" value={formData.contract_number} onChange={handleInputChange} placeholder="Можно оставить пустым" disabled={formFrozen} />
-                  <small className="form-hint">
-                    {isDsForm
-                      ? 'Номер ДС уникален внутри одного договора.'
-                      : 'Если номера ещё нет — оставьте поле пустым, договор подсветится в реестре.'}
-                  </small>
+                  <label htmlFor="contract-form-number">{isDsForm ? '№ ДС' : '№ договора'}</label>
+                  {isDsForm || !numbering.supported ? (
+                    <>
+                      <input id="contract-form-number" type="text" name="contract_number" value={formData.contract_number} onChange={handleInputChange} placeholder="Можно оставить пустым" disabled={formFrozen} />
+                      <small className="form-hint">
+                        {isDsForm
+                          ? 'Номер ДС уникален внутри одного договора.'
+                          : 'Если номера ещё нет — оставьте поле пустым, договор подсветится в реестре.'}
+                      </small>
+                    </>
+                  ) : (
+                    <>
+                      {/* Нумерация по объектам (10.11.2026): номер по схеме подставляется, его можно заменить своим. */}
+                      <div className="cnum-field">
+                        <input id="contract-form-number" type="text" name="contract_number" value={formData.contract_number}
+                          onChange={handleNumberInput} placeholder={schemeNumber ? `По схеме: ${schemeNumber}` : 'Номер договора'}
+                          disabled={formFrozen} autoComplete="off" />
+                        {schemeNumber && !formFrozen && formData.contract_number !== schemeNumber
+                          && !(editingContract && numberMatchesObject) && (
+                          <button type="button" className="cnum-apply" onClick={applySchemeNumber}
+                            title={`Подставить следующий номер объекта: ${schemeNumber}`}>
+                            Подставить {schemeNumber}
+                          </button>
+                        )}
+                      </div>
+                      <small className="form-hint cnum-hint" data-state={!formObject ? 'no-object' : !schemeNext ? 'no-code'
+                        : formData.contract_number === schemeNumber && !numberManual ? 'auto' : 'manual'}>
+                        {!formObject
+                          ? 'Выберите объект — номер подставится по схеме КОД-ДП-ГГ-NNN. Можно ввести свой.'
+                          : !schemeNext
+                            ? <>У объекта нет кода для номера по схеме — введите номер вручную или оставьте пустым. Коды — «Документы» → «Нумерация договоров».</>
+                            : formData.contract_number === schemeNumber && !numberManual
+                              ? `Следующий номер объекта по счётчику ${schemeNext.year} года (код ${schemeNext.code}). Можно заменить своим.`
+                              : numberMatchesObject
+                                ? 'Номер по схеме объекта.'
+                                : formData.contract_number
+                                  ? 'Свой номер — не по схеме объекта.'
+                                  : 'Без номера — договор подсветится в реестре.'}
+                      </small>
+                    </>
+                  )}
                 </div>
 
                 <div className="form-group">
@@ -3773,8 +3916,23 @@ function ContractRegistry() {
           onOpenStorageStructure={() => { setShowDocsMenu(false); setShowStorageStructure(true) }}
           onOpenAttachments={() => { setShowDocsMenu(false); handleOpenAttachmentsModal() }}
           onOpenImport={() => { setShowDocsMenu(false); ensureFormRefs(); setShowImportModal(true) }}
+          onOpenNumbering={() => { setShowDocsMenu(false); if (!numbering.missing) refreshNumbering(); setShowNumbering(true) }}
           canImport={!isDeletedTab && canEditContracts}
           canEditTemplates={isAdmin}
+          showSetup={!siteStaff}
+        />
+      )}
+
+      {/* Нумерация договоров по объектам: правила и коды объектов; код задаёт администратор. */}
+      {showNumbering && (
+        <ContractNumberingModal
+          objects={objects}
+          counters={numbering.counters}
+          supported={!numbering.missing}
+          countersReady={numbering.supported === true}
+          canEdit={isAdmin || isSuperAdmin}
+          onClose={() => setShowNumbering(false)}
+          onCodeSaved={(id, code) => setObjects(prev => prev.map(o => (o.id === id ? { ...o, contract_code: code } : o)))}
         />
       )}
 

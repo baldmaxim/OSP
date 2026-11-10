@@ -1,5 +1,6 @@
 // Данные крупного тендера для стенда (выполняется до импорта страницы).
 import { normName } from '../../../src/utils/supplyRateHelpers.js'
+import { codeKey, numberKey, parseContractNumber } from '../../../src/utils/contractNumbering.js'
 const params = new URLSearchParams(window.location.search)
 const ITEMS = Number(params.get('items') || 5000)
 const CPS = Number(params.get('cps') || 10)
@@ -1185,6 +1186,57 @@ if (CONTRACTS > 0) {
     id: `ca-${c.id}`, owner_type: 'contract', owner_id: c.id, doc_category: 'concept_agreement', file_name: `ПС ${c.contract_number}.pdf`,
     s3_key: `contracts/${c.id}/ps.pdf`, mime_type: 'application/pdf', size_bytes: 1000, created_at: '2026-09-02T10:00:00Z',
   })))
+}
+
+// ── Нумерация договоров по объектам (миграция 20270110; вместе с ?contracts=N) ───────────────────────────
+// &contractNumbering=1 — коды объектов и счётчик есть: у obj-1 код СЕВ (выдано 004 в этом году по Москве), у obj-2 кода нет;
+// база не даёт повторить номер по схеме (как индекс contracts_scheme_number_uniq) и поднимает счётчик (как триггер).
+// &contractNumbering=legacy — миграции нет: колонки кода и таблицы счётчика нет.
+const NUMBERING = params.get('contractNumbering')
+if (NUMBERING === 'legacy') {
+  window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}), objects: ['contract_code'] }
+  window.__fakeErrors = { ...(window.__fakeErrors || {}),
+    contract_number_counters: { code: 'PGRST205', message: "Could not find the table 'public.contract_number_counters' in the schema cache" } }
+} else if (NUMBERING === '1') {
+  const fdb = window.__fakeDb
+  const year = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Moscow', year: 'numeric' }).format(new Date()))
+  fdb.objects.find((o) => o.id === 'obj-1').contract_code = 'СЕВ'
+  fdb.objects.find((o) => o.id === 'obj-2').contract_code = null
+  fdb.contract_number_counters = [
+    { code_key: 'СЕВ', year, last_number: 4 },
+    { code_key: 'СЕВ', year: year - 1, last_number: 37 },
+  ]
+  const prevHold = window.__fakeHold
+  window.__fakeHold = (q) => {
+    if (q.table === 'contracts' && (q.op === 'insert' || q.op === 'update')) {
+      const rows = q.op === 'insert' ? q.payload : [q.patch]
+      const self = q.op === 'update' ? q.filters.find((f) => f.col === 'id')?.val : null
+      for (const r of rows) {
+        const key = numberKey(r.contract_number)
+        if (key && (r.record_type || 'dp') === 'dp'
+          && (fdb.contracts || []).some((c) => c.id !== self && c.record_type === 'dp' && numberKey(c.contract_number) === key)) {
+          return { error: { code: '23505', message: 'duplicate key value violates unique constraint "contracts_scheme_number_uniq"' } }
+        }
+      }
+    }
+    if (q.table === 'objects' && q.op === 'update' && q.patch?.contract_code) {
+      const self = q.filters.find((f) => f.col === 'id')?.val
+      const key = codeKey(q.patch.contract_code)
+      if (fdb.objects.some((o) => o.id !== self && codeKey(o.contract_code) === key)) {
+        return { error: { code: '23505', message: 'duplicate key value violates unique constraint "objects_contract_code_uniq"' } }
+      }
+    }
+    return prevHold?.(q) || {}
+  }
+  const prevAfter = window.__fakeAfter?.contracts
+  window.__fakeAfter = { ...(window.__fakeAfter || {}), contracts: (op, row, old) => {
+    prevAfter?.(op, row, old)
+    const p = row.record_type === 'dp' || row.record_type == null ? parseContractNumber(row.contract_number) : null
+    if (!p) return
+    const c = fdb.contract_number_counters.find((x) => x.code_key === p.codeKey && x.year === p.year)
+    if (!c) fdb.contract_number_counters.push({ code_key: p.codeKey, year: p.year, last_number: p.seq })
+    else if (c.last_number < p.seq) c.last_number = p.seq
+  } }
 }
 
 // ── «Проверка КП» (?route=/kp-review&kpReview=1) ─────────────────────────────────────────────────────────

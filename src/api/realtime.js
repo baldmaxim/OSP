@@ -6,7 +6,7 @@
 // Флаг читается на каждом шаге опроса: путь переключается в открытой вкладке, без перезагрузки.
 import { supabase } from './supabaseClient'
 import { ownDb, ownDbEnabled } from './db'
-import { isOwnAuth } from './authMode'
+import { isSessionAuth } from './authMode'
 import { createTablePoller, createTableReader } from './tablePolling'
 
 // Сколько без действий пользователя вкладка считается оставленной (монитор с открытым порталом): опрос реже.
@@ -29,7 +29,7 @@ const userIdle = () => Date.now() - lastActivityAt >= IDLE_AFTER_MS
 // columns — какие колонки нужны подписчику в опросе (через запятую, с id); не задано — все.
 export function subscribeTable({ channelName, schema = 'public', table, filter = null, columns = null }, onChange, onStatus) {
   // Свой вход: к Supabase не обращаемся вовсе — только опрос своего сервера.
-  const channel = isOwnAuth() ? null : supabase
+  const channel = isSessionAuth() ? null : supabase
     .channel(channelName)
     // После переключения на базу Яндекса события Supabase уже не про наши данные — пропускаем.
     .on('postgres_changes', { event: '*', schema, table, ...(filter ? { filter } : {}) }, (payload) => { if (!ownDbEnabled()) onChange(payload) })

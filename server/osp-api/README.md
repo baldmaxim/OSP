@@ -369,6 +369,55 @@ osp.root.sx его нет — сервер не спрашивается). В р
 
 Перенос учёток и паролей из Supabase — `migration/accounts/README.md`.
 
+## Вход через Keycloak su10 (`AUTH_MODE=keycloak`)
+
+Единый вход контура su10 (auth.su10.ru, OIDC, код + PKCE, BFF): браузер видит только cookie сессии портала, токены Keycloak —
+только на сервере, шифром ключа сервера (AAD — id сессии). Учётка портала прежняя (`auth.users.id`), связь с учёткой СУ-10 —
+`osp_auth.identity_links`; роли, объекты, права разделов, одобрение и блокировка в портале — по-прежнему база портала, из токена не
+берутся. Переключение `own ⇄ keycloak` — `scripts/deploy-server.sh auth-mode`, порядок — `migration/CUTOVER.md`.
+
+- **Вход** (`src/routes/oidc.js`, `src/lib/auth/oidc.js`): `GET /api/auth/oidc/login?returnUrl=` — только переходом страницы
+  (`Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`), cookie состояния на каждую вкладку (`__Host-osp_oidc_<k>`, шифр,
+  30 мин, не больше трёх); `GET /api/auth/oidc/callback` — state своей cookie, `iss` ответа (RFC 9207), код с PKCE, id_token
+  (`iss`, `aud`, `nonce`), access token по JWKS (RS256, `iss`, `aud ∋ osp`, `azp = osp`, срок, `sub` — UUID, строгие типы claims).
+  Строку запроса возврата снимает `rewriteUrl` до маршрута — в журнал и тексты ошибок она не попадает. `returnUrl` — только свой
+  путь (не `//`, не `/\`, не `/api/`), до 512 байт. Discovery — при запуске (Keycloak недоступен — служба работает; issuer не тот —
+  не стартует) и лениво потом.
+- **Кто это** (`src/lib/principal.js`): матрица режимов — `own` и `both` принимают только парольные сессии, `keycloak` — только
+  сессии СУ-10; чужой вид и Bearer — 401 `OSP_AUTH_MODE` (понимают и старые вкладки). CSRF — у любой cookie-сессии. Cookie на
+  отказах не стираются (только при выходе).
+- **Продление и перепроверка** (`src/lib/auth/oidcRecheck.js`): сессию СУ-10 продлевает только действие — `X-OSP-Activity` = CSRF
+  сессии (48 ч без действий, 30 дней всего); раз в 5 минут работы — refresh grant. Отзывают только `invalid_grant`, нет роли
+  `access`, чужой `sub`; сбой Keycloak — работа до часа (`OIDC_MAX_OFFLINE_SEC`), повтор раз в минуту, потом 503
+  `OSP_SSO_UNAVAILABLE`. Одна перепроверка на сессию — аренда в строке (владелец, 10 с), параллельные ждут до 5 с. Простой
+  вкладки (30 минут без действий) — фоновым запросам 401 `OSP_IDLE` без отзыва.
+- **Связь и заявки** (`src/lib/auth/identity.js`): по `sub`; по почте — только в окно (`OIDC_LINK_BY_EMAIL=true`), ровно одна
+  одобренная учётка без связи, не администратор; иначе заявка. Решения администратора — `src/routes/identityAdmin.js`
+  (`/api/admin/identity-requests*`, `/api/admin/identities`, `DELETE /api/admin/users/:id/identity`). Роль «Администратор» и связи
+  администраторов — только суперадминистратор: проверка в маршрутах и триггер базы `user_roles_admin_guard` (транзакции идут от
+  имени администратора). Пользователей сами не создаём.
+- **Сверка группы** (`src/lib/auth/accessSync.js`, `src/lib/auth/kcAdmin.js`): клиент `osp-access-sync`, только участники
+  `osp-access`, только нужные поля; раз в `KC_ACCESS_SYNC_INTERVAL_SEC` и по «Проверить СУ-10». Новые участники — заявки
+  `kc_sync`; заявки без входов ушедших — снимаются; сессии связанных не из группы — отзываются. Предохранитель: отзыв или чистка
+  больше max(10, 20 %), падение участников на 30 % (от 10), пустая группа после непустой — ни отзыва, ни чистки (`held`), принять —
+  `deploy-server.sh identity sync --force`. Одна сверка на все экземпляры — аренда в `osp_auth.meta`.
+- **Выход:** `POST /api/auth/logout` → `{ endSessionUrl }` (id_token читается до отзыва; отзыв затирает токены триггером).
+- **Режимы:** в `keycloak` парольные маршруты, регистрация и решения по регистрациям — 410 `OSP_SSO_ONLY`; код парольного входа
+  и пароли остаются — это путь возврата в `own`. `/api/ready` показывает `oidc` справочно, вне готовности.
+- **Ручные команды** — `src/identity-cli.js` (`deploy.sh identity …`): `export-users`, `links-apply [--apply]`, `links-report`,
+  `sync [--force]`, `revoke-sessions --kind keycloak|password`.
+- Тесты: `tests/osp-api/keycloak.test.mjs` (Keycloak в памяти, настоящая база и миграции), `identity-cli.test.mjs`,
+  `client-auth.test.mjs`.
+
+## Замок сайта и PostgREST по сокету (сервер corp)
+
+osp-api подключён к общей сети сервера (вход через Keycloak ходит на auth.su10.ru), поэтому:
+- `OSP_WEB_GATE=1` (compose): без жетона `X-OSP-Web` (`OSP_WEB_TOKEN`, ставит osp-web) — 403 первым хуком, до любых проверок;
+  loopback без `X-Forwarded-For` (проверка живости, `deploy.sh auth-config`, `/api/ready`) — пропуск;
+- PostgREST слушает unix-сокет в общем томе (`OSP_PGRST_URL=unix:/run/osp-pgrst/pgrst.sock`), шлюз и внутренний клиент ходят
+  туда одним путём (`src/lib/upstreamFetch.js`): имени в сети, которое мог бы занять сосед, у PostgREST нет.
+Тесты — `tests/osp-api/web-gate.test.mjs`, через настоящие контейнеры — `tests/deploy/docker.test.mjs`.
+
 ## Регистрация подрядчика на сайте
 
 Два режима, `OSP_CONTRACTOR_SIGNUP_MODE` (закрыта, пока не заданы все настройки, `osp-api.env.example`: тогда открытые адреса отвечают 404, а

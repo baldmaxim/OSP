@@ -260,3 +260,7 @@
 .login-facts div { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 0.5rem; }
 .login-facts dt { color: var(--text-tertiary); }
 .login-facts dd { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
+
+/* Вход через СУ-10: ссылка-кнопка (переход, не отправка формы) и пояснение под ней. */
+.sso-button { display: block; text-align: center; text-decoration: none; box-sizing: border-box; }
+.sso-note { margin-top: 0.75rem; text-align: center; }

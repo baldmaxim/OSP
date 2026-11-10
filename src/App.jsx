@@ -11,6 +11,7 @@ import DpRequestAlert from './components/dpRequests/DpRequestAlert'
 import ChunkErrorBoundary from './components/ChunkErrorBoundary'
 import RolePreviewBar from './components/RolePreviewBar'
 import ReloginModal from './components/ReloginModal'
+import { NoAccessPage, AccessRequestedPage, AuthDonePage } from './pages/SsoScreens'
 import { CONTRACTS_REGISTRY_PATH, CONTRACT_SECTION_KEYS, contractsEntry } from './utils/contractsHub'
 import './App.css'
 // Глобальный мобильный слой — импортируется последним, чтобы перебивать базовые
@@ -21,13 +22,20 @@ import './mobile.css'
 // (проверяет загрузку/ошибку/тип пользователя), поэтому при отсутствии права запрещённая
 // страница вообще НЕ монтируется и не делает Supabase-запросов. Секции — те же ключи, что
 // в Sidebar (canView('tenders') и т.д.) и в role_permissions.section: единый словарь прав.
+// Страница входа с адресом возврата: после входа через СУ-10 человек попадает туда, откуда пришёл.
+const loginWithReturn = (location) => {
+  const back = `${location.pathname}${location.search}`
+  return back && back !== '/' ? `/login?returnUrl=${encodeURIComponent(back)}` : '/login'
+}
+
 function PermissionRoute({ section, anyOf, children }) {
   const { authLoading, roleError, isLoggedIn, isEmployee, canView } = useRole()
+  const location = useLocation()
   if (authLoading) {
     return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text-tertiary)' }}>Загрузка...</div>
   }
   if (roleError) return <AccessError message={roleError} />
-  if (!isLoggedIn) return <Navigate to="/login" replace />
+  if (!isLoggedIn) return <Navigate to={loginWithReturn(location)} replace />
   if (!isEmployee) return <Navigate to="/contractor" replace />
   if (anyOf && anyOf.length > 0 && !anyOf.some((s) => canView(s))) return <AccessDenied />
   if (section && !canView(section)) return <AccessDenied />
@@ -108,7 +116,7 @@ function EmployeeLayout() {
   // страницы и НЕ admin. Раньше тут пользователь с непроверенной ролью мог получить доступ.
   if (roleError) return <AccessError message={roleError} />
 
-  if (!isLoggedIn) return <Navigate to="/login" replace />
+  if (!isLoggedIn) return <Navigate to={loginWithReturn(location)} replace />
   if (!isEmployee) return <Navigate to="/contractor" replace />
 
   return (
@@ -236,6 +244,10 @@ function AuthRoutes() {
           path="/contractor"
           element={isContractor ? <ContractorCabinetPage /> : <Navigate to="/partner" replace />}
         />
+        {/* Вход через СУ-10: итог входа без сессии портала и окно повторного входа (SsoScreens.jsx). */}
+        <Route path="/no-access" element={<NoAccessPage />} />
+        <Route path="/access-requested" element={<AccessRequestedPage />} />
+        <Route path="/auth/done" element={<AuthDonePage />} />
         <Route path="/contractor/proposals" element={<Navigate to="/contractor" replace />} />
         <Route path="/contractor/negotiations" element={<Navigate to="/contractor?tab=contracts" replace />} />
         <Route path="/*" element={<EmployeeLayout />} />

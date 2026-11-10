@@ -1,6 +1,7 @@
 ---
 name: skill_keycloak_supabase_migration
 description: >-
+  [Для портала ОСП заменено задачей auth 06.11.2026 — см. migration/CUTOVER.md, «Вход через Keycloak su10».]
   Переезд портала контура su10 с Supabase (Supabase Auth + Supabase Postgres) в общий кластер Yandex
   Managed PostgreSQL со входом через корпоративный Keycloak (realm su10, auth.su10.ru) — так, чтобы у
   пользователей сохранился доступ к прежним документам и записям. Покрывает инвентаризацию Supabase,
@@ -12,6 +13,11 @@ description: >-
 ---
 
 # Портал с Supabase → общий кластер PG + вход через Keycloak su10
+
+> **Для портала ОСП заменено 06.11.2026** задачей команды auth (`temp/osp-oidc.md`): привязка по почте в окно переключения и чтение
+> группы через Admin API там разрешены и сделаны (`server/osp-api/src/lib/auth/identity.js`, `accessSync.js`). Порядок —
+> `migration/CUTOVER.md`, «Вход через Keycloak su10». Правила этого skill о запрете привязки по почте и Admin API к ОСП больше не
+> относятся.
 
 Подставляй `<portal>` (client-id портала в Keycloak, латиница, напр. `docflow`) и `<portal-domain>`
 (напр. `docflow.su10.ru`). Детали — в `references/`, этот файл — порядок работы и правила.

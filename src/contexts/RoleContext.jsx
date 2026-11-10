@@ -44,8 +44,8 @@ const RoleContext = createContext()
 // реэкспортируются, чтобы прежние импорты из RoleContext не менялись.
 export { ROLES, ROLE_LABELS, SECTIONS }
 
-// Email суперадминов — автоподтверждение и роль admin без ожидания.
-const SUPER_ADMINS = ['sadovnikov.d.y@su10.ru']
+// Суперадминистратор — только по таблице superadmins в базе: признак отдаёт сервер (/api/auth/me → isSuperadmin).
+// Почты в коде нет; строку ролей суперадминистратора страница не меняет — права в базе ему даёт is_admin().
 
 export function RoleProvider({ children }) {
   // security fix (fail-closed): роль НЕ берём из localStorage как источник истины —
@@ -59,6 +59,9 @@ export function RoleProvider({ children }) {
     return saved ? JSON.parse(saved) : null
   })
   const [user, setUser] = useState(null)
+  // Кто вошёл — для событий входа из других вкладок (подписка живёт дольше одного отрисовывания).
+  const userIdRef = useRef(null)
+  useEffect(() => { userIdRef.current = user?.id ?? null }, [user])
   const [authLoading, setAuthLoading] = useState(true)
   // Свой вход (tender.su10.ru): временный пароль надо сменить до работы; закончившаяся сессия — окно повторного
   // входа поверх страницы, без потери набранного.
@@ -143,7 +146,7 @@ export function RoleProvider({ children }) {
   }
 
   const fetchUserRole = useCallback(async (userId, userEmail, { isSuperadmin = false } = {}) => {
-    const isSuperAdmin = isSuperadmin || SUPER_ADMINS.includes(userEmail?.toLowerCase())
+    const isSuperAdmin = isSuperadmin === true
     setRoleError(null)
 
     try {
@@ -160,15 +163,7 @@ export function RoleProvider({ children }) {
 
       if (data) {
         if (isSuperAdmin) {
-          // Суперадмин всегда admin. Чиним дрейф роли/is_approved в БД, если он есть
-          // (суперадмина пропускает RLS через is_admin() по email), и автоподтверждаем.
-          // При RLS-блокировке update упадёт в catch → fail-closed, а не admin.
-          if (data.role !== ROLES.ADMIN || !data.is_approved) {
-            await db
-              .from('user_roles')
-              .update({ is_approved: true, role: 'admin' })
-              .eq('user_id', userId)
-          }
+          // Суперадмин всегда admin в интерфейсе; права в базе ему даёт is_admin() (таблица superadmins), строку ролей не трогаем.
           await fetchPermissions(ROLES.ADMIN)
           setUserProfile({ full_name: data.full_name || '', work_phone: data.work_phone || '', work_email: data.work_email || '', created_at: data.created_at || '', object_ids: resolveObjectIds(data) })
           setRole(ROLES.ADMIN)
@@ -192,10 +187,7 @@ export function RoleProvider({ children }) {
         setRole(data.role)
       } else {
         if (isSuperAdmin) {
-          // Суперадмин — создаём сразу подтверждённым (требует прав записи).
-          await db
-            .from('user_roles')
-            .insert([{ user_id: userId, email: userEmail, role: 'admin', is_approved: true }])
+          // Суперадмин без строки ролей — admin в интерфейсе; строку не заводим (права в базе — по таблице superadmins).
           await fetchPermissions(ROLES.ADMIN)
           setRole(ROLES.ADMIN)
           return
@@ -341,8 +333,19 @@ export function RoleProvider({ children }) {
       if (event === 'SESSION_EXPIRED') { setSessionExpired(true); return }
       if (event === 'PASSWORD_CHANGE_REQUIRED') { setMustChangePassword(true); return }
       if (event === 'SIGNED_IN_ELSEWHERE') {
-        auth.getSession().then(({ data }) => { if (data.session) setSessionExpired(false) })
+        // Вошли в другой вкладке или в окне повторного входа через СУ-10. Другой человек — перезагрузка: чужие данные на
+        // экране не остаются.
+        auth.getSession().then(({ data }) => {
+          if (!data.session) return
+          if (userIdRef.current && data.session.user?.id !== userIdRef.current) { window.location.reload(); return }
+          setSessionExpired(false)
+        })
         return
+      }
+      // Вышли в другой вкладке: при входе через СУ-10 — страница входа без автоперехода (вход СУ-10 мог ещё не закрыться).
+      if (event === 'SIGNED_OUT_ELSEWHERE' && auth.isSso) {
+        auth.markLeaving()
+        window.location.assign('/login?sso=logout')
       }
       const u = session?.user ?? null
       if (!u) {
@@ -548,8 +551,11 @@ export function RoleProvider({ children }) {
 
   // Выход
   const logout = async ({ everywhere = false } = {}) => {
-    if (everywhere && auth.isOwn) await auth.logoutAll()
-    else await auth.signOut()
+    // Вход через СУ-10: сервер отдаёт адрес выхода из СУ-10 — после сброса состояния страница уходит туда. Флаг «выходим» —
+    // до выхода: страница входа, на которую сразу перерисуется приложение, не должна сама начать вход СУ-10 и перебить выход.
+    if (auth.isSso) auth.markLeaving()
+    const out = everywhere && auth.isOwn ? await auth.logoutAll() : await auth.signOut()
+    const endSessionUrl = out?.endSessionUrl || null
     setMustChangePassword(false)
     setSessionExpired(false)
     // Предпросмотр роли — состояние сессии администратора, при выходе снимаем.
@@ -560,13 +566,19 @@ export function RoleProvider({ children }) {
     setPermissions({})
     setRoleError(null)
     setUserProfile({ full_name: '', work_phone: '', work_email: '', created_at: '' })
+    if (endSessionUrl || auth.isSso) {
+      // Выход из СУ-10 (или, если адреса нет, страница входа без автоперехода: живой вход СУ-10 вернул бы обратно).
+      window.location.assign(endSessionUrl || '/login?sso=logout')
+      // Страница уходит: вызывающие (меню, профиль) не должны перебить переход своим «/login» — обещание не завершается.
+      await new Promise(() => {})
+    }
   }
 
   // ── Предпросмотр роли ────────────────────────────────────────────────────
   // Реальные права (по ним решаем, можно ли вообще включать режим и кто может
   // из него выйти) — считаются ДО подмены.
   const realIsAdmin = role === ROLES.ADMIN
-  const realIsSuperAdmin = user?.isSuperadmin === true || !!(user?.email && SUPER_ADMINS.includes(user.email.toLowerCase()))
+  const realIsSuperAdmin = user?.isSuperadmin === true
   const canPreviewRoles = realIsAdmin || realIsSuperAdmin
   // Режим считается активным, только если его включил тот, кому это разрешено:
   // подложенный в sessionStorage ключ сам по себе прав не меняет (он их только
@@ -699,8 +711,12 @@ export function RoleProvider({ children }) {
       previewInfo: previewActive ? preview : null,
       startRolePreview,
       stopRolePreview,
-      // Свой вход (tender.su10.ru)
+      // Свой вход (tender.su10.ru): ownAuth — своя сессия (пароль ОСП или СУ-10); passwordAuth — пароль ОСП (форма,
+      // смена пароля, временные пароли); ssoAuth — вход через СУ-10 (Keycloak), ssoLinks — его профиль и управление доступом.
       ownAuth: auth.isOwn,
+      passwordAuth: auth.isPassword,
+      ssoAuth: auth.isSso,
+      ssoLinks: auth.ssoLinks,
       mustChangePassword,
       sessionExpired,
       changePassword,

@@ -171,3 +171,10 @@ export const IconClose = ({ size }) => (
     <path d="M6 6l12 12M18 6 6 18" />
   </TbSvg>
 )
+
+// Нумерация — знак номера «#»
+export const IconHash = ({ size }) => (
+  <TbSvg size={size}>
+    <path d="M9 4 7 20M17 4l-2 16M4 9h16M3 15h16" />
+  </TbSvg>
+)

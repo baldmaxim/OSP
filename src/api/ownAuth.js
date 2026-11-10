@@ -3,7 +3,8 @@
 //   • сессия — в httpOnly-cookie, токена у браузера нет (getAccessToken → null);
 //   • регистрации и повторного письма нет — учётки заводит администратор;
 //   • при входе может потребоваться смена временного пароля (mustChange);
-//   • события: SIGNED_IN, SIGNED_OUT, SESSION_EXPIRED (сессия закончилась — окно повторного входа),
+//   • события: SIGNED_IN, SIGNED_OUT, SESSION_EXPIRED (сессия закончилась — окно повторного входа), SIGNED_IN_ELSEWHERE и
+//     SIGNED_OUT_ELSEWHERE (вошли или вышли в другой вкладке),
 //     PASSWORD_CHANGE_REQUIRED. Другие вкладки узнают о входе и выходе через BroadcastChannel('osp-auth').
 // Модуль чистый (fetch и канал передаются) — tests/osp-api/client-auth.test.mjs.
 const CODES_AS_MESSAGE = new Set(['PENDING_APPROVAL', 'ACCOUNT_BLOCKED'])
@@ -25,7 +26,7 @@ export function createOwnAuth({ fetchImpl, channel = null }) {
   if (channel) {
     channel.onmessage = (msg) => {
       const event = msg?.data?.event
-      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') { me = null; mePromise = null; emit(event === 'SIGNED_IN' ? 'SIGNED_IN_ELSEWHERE' : 'SIGNED_OUT') }
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') { me = null; mePromise = null; emit(event === 'SIGNED_IN' ? 'SIGNED_IN_ELSEWHERE' : 'SIGNED_OUT_ELSEWHERE') }
     }
   }
 
@@ -46,7 +47,10 @@ export function createOwnAuth({ fetchImpl, channel = null }) {
   async function loadMe() {
     try {
       const data = await call('/api/auth/me', { method: 'GET' })
-      return { user: { ...data.user, isSuperadmin: data.isSuperadmin === true }, mustChange: data.mustChange === true }
+      return {
+        user: { ...data.user, isSuperadmin: data.isSuperadmin === true, authSource: data.authSource || 'password' },
+        mustChange: data.mustChange === true,
+      }
     } catch (err) {
       if (err.status === 401 || err.status === 403) return null
       throw err
@@ -78,14 +82,17 @@ export function createOwnAuth({ fetchImpl, channel = null }) {
     }
   }
 
+  // Вход через СУ-10: сервер возвращает адрес выхода из СУ-10 (endSessionUrl) — страница переходит по нему.
   async function signOut({ all = false } = {}) {
+    let endSessionUrl = null
     try {
-      await call('/api/auth/logout', { body: all ? { all: true } : {} })
+      const data = await call('/api/auth/logout', { body: all ? { all: true } : {} })
+      if (typeof data?.endSessionUrl === 'string' && /^https:\/\//.test(data.endSessionUrl)) endSessionUrl = data.endSessionUrl
     } catch { /* сессии уже нет — выход всё равно состоялся */ }
     me = null
     emit('SIGNED_OUT', null)
     broadcast('SIGNED_OUT')
-    return { error: null }
+    return { error: null, endSessionUrl }
   }
 
   async function changePassword({ currentPassword, newPassword }) {
@@ -114,7 +121,7 @@ export function createOwnAuth({ fetchImpl, channel = null }) {
     adminResetPassword: (userId) => call('/api/auth/admin/reset-password', { body: { userId } }),
     // Событие сессии от любого запроса к своему серверу (session.js).
     sessionEvent(code) {
-      if (code === 'OSP_SESSION_REVOKED') { me = null; emit('SESSION_EXPIRED', null) }
+      if (code === 'OSP_SESSION_REVOKED' || code === 'OSP_SSO_REQUIRED') { me = null; emit('SESSION_EXPIRED', null) }
       if (code === 'OSP_PASSWORD_CHANGE_REQUIRED') emit('PASSWORD_CHANGE_REQUIRED', null)
     },
   }

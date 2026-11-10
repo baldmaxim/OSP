@@ -92,7 +92,16 @@ export default function ContractorCompanyTab({ card, error, preview = false }) {
         </section>
       )}
       <p className="cab-hint">Чтобы изменить сведения, напишите на <a href="mailto:tender.osp@su10.ru">tender.osp@su10.ru</a>.</p>
-      {auth.isOwn && !preview && (
+      {auth.isSso && !preview && (
+        <section className="cab-section">
+          <h3>Пароль</h3>
+          {/* Вход через СУ-10: пароль меняется в профиле СУ-10. */}
+          {auth.ssoLinks.accountUrl
+            ? <a className="cab-btn" href={auth.ssoLinks.accountUrl} target="_blank" rel="noopener noreferrer">Сменить пароль в СУ-10</a>
+            : <p className="cab-hint">Пароль меняется в СУ-10 (auth.su10.ru).</p>}
+        </section>
+      )}
+      {auth.isOwn && !auth.isSso && !preview && (
         <section className="cab-section">
           <h3>Пароль</h3>
           {passwordDone && <div className="cab-note is-ok">Пароль изменён, остальные входы завершены.</div>}

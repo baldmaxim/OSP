@@ -52,8 +52,9 @@ async function inspect(url, res) {
     if (body && typeof body.code === 'string') code = body.code
   } catch { /* тело не JSON */ }
   const status = res.status
-  // Закончилась сессия своего входа или вход переключили — это не поломка: человек просто войдёт заново.
-  if (code === 'OSP_SESSION_REVOKED' || code === 'OSP_AUTH_MODE' || code === 'OSP_PASSWORD_CHANGE_REQUIRED') return
+  // Закончилась сессия своего входа, вход переключили, вкладка простаивает, вход СУ-10 истёк или доступ отозван в СУ-10 — это не
+  // поломка портала: человек войдёт заново или продолжит работу. Сбой самого СУ-10 (OSP_SSO_UNAVAILABLE) — наблюдаем.
+  if (['OSP_SESSION_REVOKED', 'OSP_AUTH_MODE', 'OSP_PASSWORD_CHANGE_REQUIRED', 'OSP_IDLE', 'OSP_SSO_REQUIRED', 'OSP_NO_PORTAL_ACCESS'].includes(code)) return
   const broken = status === 401 || status === 403 || status >= 500 ||
     code === '42501' || code === '57014' || (code && code.startsWith('PGRST'))
   if (!broken) return

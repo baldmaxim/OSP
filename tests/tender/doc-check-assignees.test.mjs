@@ -120,7 +120,7 @@ describe('Исполнители и создание заявки в брауз�
     await page.locator('.dc-card[data-id="dcr-1"] .dc-avatar').waitFor()
     return { page, errors, close: () => context.close().catch(() => {}) }
   }
-  const card = (page, id) => page.locator(`.dc-column:not(.dc-column--summary) .dc-card[data-id="${id}"]`)
+  const card = (page, id) => page.locator(`.dc-column .dc-card[data-id="${id}"]`)
   const row = (page, id) => page.evaluate((key) => window.__fakeDb.doc_check_requests.find((r) => r.id === key), id)
   const log = (page, id) => page.evaluate((key) => window.__fakeDb.doc_check_request_audit_log.filter((l) => l.request_id === key), id)
   const openForm = async (page, id) => {
@@ -166,7 +166,7 @@ describe('Исполнители и создание заявки в брауз�
   it('фильтр — только юристы и «Без исполнителя»; скрытые не находятся поиском и не считаются исполнителями', async () => {
     const { page, errors, close } = await openPage()
     try {
-      const ids = () => page.locator('.dc-column:not(.dc-column--summary) .dc-card').evaluateAll((els) => els.map((el) => el.dataset.id))
+      const ids = () => page.locator('.dc-column .dc-card').evaluateAll((els) => els.map((el) => el.dataset.id))
       for (const hidden of ['сидорова', 'петров']) {
         await page.locator('.dc-search').fill(hidden)
         assert.deepEqual(await ids(), [], hidden)

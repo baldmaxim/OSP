@@ -14,8 +14,9 @@
                   osp-api ──▶ osp-postgrest ──▶ база Яндекса         ┘
 ```
 
-- Портов на сервере проект не занимает: `osp-web` доступен только общему nginx по сети, `osp-api` и
-  `osp-postgrest` — только внутри проекта.
+- Портов на сервере проект не занимает: `osp-web` доступен только общему nginx по сети; `osp-postgrest` — только
+  внутри проекта, на сокете в общем томе; `osp-api` — во внутренней сети и в общей сети сервера, за замком сайта
+  (без жетона osp-web — 403).
 - На сервере ничего не собирается: выпуск (образы и файлы установки) собирается на машине сборки.
 - У каждого контейнера потолок памяти и процессора, журнал ограничен по размеру, запуск не от root,
   файловая система только на чтение.
@@ -187,6 +188,33 @@ bash /opt/portals/osp/deploy.sh rollback                     # вернуть п
 ```
 Каталог портала по умолчанию — `/opt/portals/osp` (`OSP_HOME`). После установки `deploy.sh` и `neighbors.sh`
 выпуска лежат в нём.
+
+## Замок сайта, сокет PostgREST и вход через Keycloak su10
+
+API подключён к общей сети сервера (вход через Keycloak ходит на `https://auth.su10.ru`: у общего nginx в сети edge это имя), поэтому
+закрыт замком сайта: без жетона `X-OSP-Web` (ставит osp-web во всех трёх `location /api`) — 403; изнутри контейнера — без жетона.
+PostgREST слушает не порт, а сокет в общем томе `pgrst-sock` (в памяти, только пользователь 1000) — сосед в общей сети, назвавшийся
+`osp-postgrest`, ничего не получит. Порядок — `migration/CUTOVER.md`, «Вход через Keycloak su10».
+
+```bash
+# corpsu@corp$ — один раз, до первого выпуска с замком (значение не выводится; тот же жетон — в osp-web.env и osp-api.env)
+bash scripts/deploy-server.sh web-token-init
+# выпуск с замком — только both: compose, сайт и API меняются вместе (без жетона в обоих файлах выкладка не начнётся)
+bash scripts/deploy-server.sh both
+# discovery СУ-10 изнутри контейнера API → 200
+docker exec osp-osp-api-1 node -e "fetch('https://auth.su10.ru/realms/su10/.well-known/openid-configuration').then(r=>console.log(r.status))"
+
+# режим входа — без сборки, около минуты; не прошло — прежний. keycloak проверяет OIDC_*, жетон, discovery и подтверждение
+# привязки по почте; own — готовность своего входа (кому нужен временный пароль). Сессии другого вида закрываются.
+bash scripts/deploy-server.sh auth-mode keycloak
+bash scripts/deploy-server.sh auth-mode own
+
+# связи с СУ-10: файлы — только в /opt/portals/osp/identity (права 600), почта и ФИО на экран не выводятся
+bash scripts/deploy-server.sh identity export-users
+bash scripts/deploy-server.sh identity links-apply <файл связей> [--apply] [--partial id,…]
+bash scripts/deploy-server.sh identity links-report
+bash scripts/deploy-server.sh identity sync [--force]
+```
 
 ## Обложки объектов: копирование из Supabase в cloud.ru
 

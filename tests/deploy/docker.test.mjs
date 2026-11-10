@@ -42,11 +42,15 @@ const PROJECT = `osp-test-${P}`
 const PROXY_NET = `osp-test-proxy-${P}`
 // Жетон адреса клиента (web/nginx.conf): знают только запись общего nginx и контейнер сайта.
 const EDGE_TOKEN = crypto.randomBytes(24).toString('hex')
+// Жетон сайта для замка API (OSP_WEB_GATE): знают только контейнер сайта и API.
+const WEB_TOKEN = crypto.randomBytes(24).toString('hex')
 const DB_NET = `osp-test-db-${P}`
 const INFRA = `osp-test-infra-${P}`
 const NEIGHBOUR = `osp-test-neighbour-${P}`
 // Сосед с собственным API в той же общей сети. Имена «web» и «api» — самые обычные для чужого проекта.
 const NEIGHBOUR_API = `osp-test-neighbour-api-${P}`
+// Сосед, занявший в общей сети имя PostgREST портала: запросы шлюза к нему не идут — PostgREST слушает сокет в томе.
+const NEIGHBOUR_PGRST = `osp-test-neighbour-pgrst-${P}`
 const FOREIGN = `osp-test-foreign-${P}`
 const SUPABASE = `osp-test-supabase-${P}`
 const SUPABASE_URL = 'http://supabase:8080'
@@ -156,6 +160,8 @@ describe('Портал в Docker: связка для общего сервер�
     ok(docker(['run', '-d', '--name', NEIGHBOUR, '--network', PROXY_NET, '--network-alias', 'web', NGINX_IMAGE]), 'сосед')
     ok(docker(['run', '-d', '--name', NEIGHBOUR_API, '--network', PROXY_NET, '--network-alias', 'api', NODE_IMAGE, 'node', '-e',
       "require('http').createServer((q, s) => { console.log('HIT ' + q.url); s.end('neighbour-api') }).listen(8787, '0.0.0.0')"]), 'API соседа')
+    ok(docker(['run', '-d', '--name', NEIGHBOUR_PGRST, '--network', PROXY_NET, '--network-alias', 'osp-postgrest', NODE_IMAGE, 'node', '-e',
+      "require('http').createServer((q, s) => { console.log('HIT ' + q.url + ' ' + (q.headers.authorization ? 'with-token' : 'no-token')); s.end('[]') }).listen(3001, '0.0.0.0')"]), 'сосед с именем PostgREST')
     // Общий nginx — как на сервере: каталог записей, сертификаты в /etc/letsencrypt, проверка — /var/www/certbot.
     fs.mkdirSync(confDir())
     fs.writeFileSync(path.join(confDir(), 'neighbour.conf'), `server {
@@ -180,12 +186,13 @@ describe('Портал в Docker: связка для общего сервер�
       `SUPABASE_URL=${SUPABASE_URL}`, `SUPABASE_ANON_KEY=${projectKey('anon')}`, `SUPABASE_JWT_SECRET=${SECRET}`, 'OSP_API_REQUIRE=supabase',
       `RATES_API_KEYS=${RATES_KEY}`, `OSP_DB_URL=${dbUri}`, 'OSP_DB_POOL_MAX=2', `OSP_PGRST_JWT_SECRET=${GATEWAY_SECRET}`, `OSP_PGRST_DB_ROLE=${db.owner}`,
       'S3_ENDPOINT=http://s3:9000', 'S3_BUCKET=osp', 'S3_ACCESS_KEY_ID=ospdocker', `S3_SECRET_ACCESS_KEY=${S3_SECRET}`,
+      `OSP_WEB_TOKEN=${WEB_TOKEN}`,
     ].join('\n') + '\n', { mode: 0o600 })
     const pgrstEnv = fs.readFileSync(path.join(ROOT, 'deploy', 'postgrest', 'postgrest.env.example'), 'utf8')
       .replace(/^PGRST_DB_URI=.*$/m, `PGRST_DB_URI=${dbUri}&sslrootcert=/etc/ssl/osp/yandex-root.crt&application_name=osp-postgrest`)
       .replace(/^PGRST_JWT_SECRET=.*$/m, `PGRST_JWT_SECRET=${GATEWAY_SECRET}`)
     fs.writeFileSync(path.join(home, 'secrets', 'postgrest.env'), pgrstEnv, { mode: 0o600 })
-    fs.writeFileSync(path.join(home, 'secrets', 'osp-web.env'), `OSP_EDGE_TOKEN=${EDGE_TOKEN}\n`, { mode: 0o600 })
+    fs.writeFileSync(path.join(home, 'secrets', 'osp-web.env'), `OSP_EDGE_TOKEN=${EDGE_TOKEN}\nOSP_WEB_TOKEN=${WEB_TOKEN}\n`, { mode: 0o600 })
     fs.copyFileSync(path.join(tls, 'ca.crt'), path.join(home, 'certs', 'yandex-root.crt'))
     fs.chmodSync(path.join(home, 'certs', 'yandex-root.crt'), 0o644)
     fs.writeFileSync(path.join(home, 'shared', 'config.json'), '{"features":{"ospDb":true},"marker":"osp-docker-test"}\n')
@@ -217,7 +224,7 @@ networks:
 
   after(() => {
     docker(['compose', '-p', PROJECT, 'down', '--volumes', '--remove-orphans'])
-    docker(['rm', '-fv', INFRA, NEIGHBOUR, NEIGHBOUR_API, FOREIGN, SUPABASE, S3STUB])
+    docker(['rm', '-fv', INFRA, NEIGHBOUR, NEIGHBOUR_API, NEIGHBOUR_PGRST, FOREIGN, SUPABASE, S3STUB])
     docker(['volume', 'rm', `${PROJECT}_www`])
     docker(['network', 'rm', `${PROJECT}_internal`])
     db?.stop()
@@ -509,17 +516,22 @@ networks:
       assert.equal(res.count, direct(t, users.admin), `администратор / ${t}`)
     }
     const anon = as(null)
-    for (const t of ['tenders', 'objects']) assert.equal((await anon.from(t).select('*', { count: 'exact', head: true })).count, direct(t, null), `аноним / ${t}`)
-    assert.ok(direct('tenders', users.admin) > direct('tenders', null), 'аноним видит только витрину')
+    // Гость через шлюз читает только публичную витрину (scripts/build-db-allow.mjs, ANON_TABLES); таблицы ему закрыты целиком.
+    assert.equal((await anon.from('public_open_tenders').select('*', { count: 'exact', head: true })).count, direct('public_open_tenders', null), 'аноним / витрина')
+    for (const t of ['tenders', 'objects', 'user_roles', 'contracts']) assert.equal((await anon.from(t).select('*', { count: 'exact', head: true })).status, 401, `аноним / ${t}`)
     assert.equal((await anon.from('tenders').insert({ work_description: 'x' })).status, 401)
     assert.equal((await admin.rpc('is_admin')).data, true)
     // То же через общий nginx (HTTPS): ответ PostgREST доходит как есть.
     const viaInfra = https('/api/db/tenders?select=id&limit=1', ['-H', `authorization: Bearer ${userToken(SUPABASE_URL, users.admin)}`])
     assert.equal(JSON.parse(viaInfra.stdout).length, 1)
-    // PostgREST и API доступны только внутри проекта: из общей сети сервера сосед до них не дотягивается.
-    const fromNeighbour = (host) => docker(['exec', NEIGHBOUR, 'sh', '-c', `wget -q -T 3 -O /dev/null http://${host}/ ; echo $?`]).stdout.trim()
-    assert.notEqual(fromNeighbour('osp-postgrest:3001'), '0')
-    assert.notEqual(fromNeighbour('osp-api:8787'), '0')
+    // API в общей сети (вход через Keycloak ходит на auth.su10.ru), но соседу отвечает 403 — замок сайта; с подложенным
+    // X-Forwarded-For и чужим жетоном — тоже. PostgREST слушает сокет: сосед, назвавшийся osp-postgrest, ни одного запроса
+    // портала не получил.
+    const statusFromNeighbour = (url, headers = []) => docker(['exec', NEIGHBOUR, 'sh', '-c',
+      `wget -S -q -T 3 -O /dev/null ${headers.map((h) => `--header '${h}'`).join(' ')} ${url} 2>&1 | grep -m 1 'HTTP/' | awk '{ print $2 }'`]).stdout.trim()
+    assert.equal(statusFromNeighbour('http://osp-api:8787/api/health'), '403')
+    assert.equal(statusFromNeighbour('http://osp-api:8787/api/db/tenders?select=id', ['X-Forwarded-For: 127.0.0.1', 'X-OSP-Web: wrong']), '403')
+    assert.ok(!docker(['logs', NEIGHBOUR_PGRST]).stdout.includes('HIT'), 'до соседа с именем PostgREST запросы портала не дошли')
     // А свой «api» сосед находит по-прежнему — и это его контейнер, не портала.
     assert.equal(docker(['exec', NEIGHBOUR, 'sh', '-c', 'wget -q -T 3 -O - http://api:8787/']).stdout, 'neighbour-api')
   })
@@ -554,7 +566,14 @@ networks:
     assert.equal(docker(['compose', '-p', PROJECT, 'exec', '-T', 'osp-api', 'sh', '-c', 'id -u; touch /app/probe 2>/dev/null; echo $?']).stdout.trim(), '1000\n1')
     // Порты на сервере: у API и PostgREST — ни одного (порт сайта здесь открыт только правкой теста).
     for (const service of ['osp-api', 'osp-postgrest']) assert.equal(docker(['port', containerOf(service)]).stdout.trim(), '', `${service}: порт наружу`)
-    assert.ok(!inspect(containerOf('osp-api'), '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}').includes(PROXY_NET), 'API не в общей сети сервера')
+    assert.ok(inspect(containerOf('osp-api'), '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}').includes(PROXY_NET), 'API в общей сети сервера (за замком сайта)')
+    // Проверка живости изнутри контейнера (loopback, без жетона) проходит: замок её не держит.
+    assert.equal(docker(['exec', containerOf('osp-api'), 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8787/api/health']).status, 0, 'проверка живости')
+    assert.notEqual(inspect(containerOf('osp-api'), '{{.State.Health.Status}}'), 'unhealthy')
+    // Режим входа читается изнутри контейнера (на этом держится auth-mode) — замок его не держит.
+    const cfg = deploy(['auth-config'])
+    assert.equal(cfg.status, 0, cfg.stdout + cfg.stderr)
+    assert.match(cfg.stdout, /"mode":"supabase"/)
     assert.ok(!inspect(containerOf('osp-postgrest'), '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}').includes(PROXY_NET))
     // Процессор: в сумме не больше одного ядра, приоритет вдвое ниже обычного — соседи получают его первыми.
     const services = ['osp-web', 'osp-api', 'osp-postgrest']
@@ -620,7 +639,7 @@ networks:
     assert.match(thumb, /^HTTP\/\S+ 200/m, thumb)
     assert.match(thumb, /content-type: image\/webp/i)
     assert.equal(caching(thumb).length, 1, thumb)
-    assert.match(caching(thumb)[0], /public, max-age=31536000, immutable/i)
+    assert.match(caching(thumb)[0], /private, max-age=31536000, immutable/i)
     assert.match(thumb, /strict-transport-security: max-age=31536000\s/i)
     assert.match(thumb, /x-content-type-options: nosniff/i)
     assert.ok(docker(['logs', S3STUB]).stdout.split('\n').includes(`PUT /osp/covers/thumbs/800/${name}.webp`), 'миниатюра сохранена в хранилище')
