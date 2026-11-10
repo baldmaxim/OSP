@@ -315,6 +315,28 @@ describe('свой вход на настоящей базе', { skip, timeout: 
     }
   })
 
+  it('закончившиеся сессии за общим адресом офиса не исчерпывают лимит неверных cookie; подбор cookie — исчерпывает', async () => {
+    try {
+      await makeApp({}, { authFailPerIp: { max: 3, windowMs: 60_000 } })
+      // Несколько вкладок с отозванной сессией (cookie на отказах не стираются) опрашивают сервер с одного адреса.
+      const dead = await loginOk(U.racer)
+      await app.inject({ method: 'POST', url: '/api/auth/logout', headers: as(dead, { unsafe: true }), payload: { all: true } })
+      for (let i = 0; i < 8; i++) {
+        const r = await app.inject({ method: 'GET', url: '/api/db/tenders?select=id', headers: as(dead) })
+        assert.equal(r.statusCode, 401, `запрос ${i}`)
+        assert.equal(r.json().code, 'OSP_SESSION_REVOKED')
+      }
+      const fresh = await loginOk(U.legacy)
+      assert.equal((await app.inject({ method: 'GET', url: '/api/auth/me', headers: as(fresh) })).statusCode, 200, 'новый вход с того же адреса работает')
+      // Случайные cookie — подбор: после трёх — 429.
+      const garbage = (i) => app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: `__Host-osp_session=garbage${i}${'x'.repeat(30)}` } })
+      for (let i = 0; i < 3; i++) assert.equal((await garbage(i)).statusCode, 401)
+      assert.equal((await garbage(9)).statusCode, 429)
+    } finally {
+      await makeApp()
+    }
+  })
+
   it('вход только с самого портала: чужой Origin, Sec-Fetch-Site: same-site, не-JSON — отказ', async () => {
     assert.equal((await login(U.legacy.email, U.legacy.password, { origin: 'https://evil.su10.ru' })).statusCode, 403)
     assert.equal((await login(U.legacy.email, U.legacy.password, { 'sec-fetch-site': 'same-site' })).statusCode, 403)

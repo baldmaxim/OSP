@@ -66,11 +66,12 @@ export function createPrincipalResolver({ mode, verifyBearer, sessions, userStat
     const cookie = readToken(request.headers.cookie, SESSION_COOKIE)
     if (cookie.duplicate) return err(400, 'OSP_COOKIE_DUPLICATE', 'Повреждённые cookie входа — войдите заново', true)
     if (!cookie.value) return { kind: 'anon' }
-    if (failLimit?.blocked(request.ip) && !sessions.cached?.(cookie.value)) return tooMany()
+    if (failLimit?.blocked(request.ip) && !sessions.cached?.(cookie.value) && !sessions.known?.(cookie.value)) return tooMany()
     let session
     try { session = await sessions.lookup(cookie.value) } catch { return unavailable() }
     if (!session) {
-      failLimit?.take(request.ip)
+      // Считаются только cookie, которых в базе не было: закончившаяся сессия (отозвана, истекла) — не подбор.
+      if (!sessions.known?.(cookie.value)) failLimit?.take(request.ip)
       return err(401, 'OSP_SESSION_REVOKED', 'Сессия завершена — войдите заново')
     }
     if (session.authSource !== SESSION_KIND[mode]) return modeChanged()

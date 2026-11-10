@@ -262,6 +262,22 @@ build_release() { # build_release both|api|web
   [ -f "$REL/MANIFEST" ] || fail "выпуск не найден: $REL"
 }
 
+# Замок сайта (выпуск 0 входа через Keycloak): до сборки, а не после неё. Новый compose закрывает API жетоном сайта и переводит
+# PostgREST на сокет — значит, сайт и API должны смениться вместе, а жетон уже лежать в обоих файлах. Иначе выкладка всё равно
+# откатилась бы на проверке готовности, но после долгой сборки.
+gate_ready_for() { # gate_ready_for both|api|web
+  local compose="$SRC/deploy/docker/compose.yml" cur_compose a b
+  grep -qE '^[[:space:]]*OSP_WEB_GATE:[[:space:]]*"1"' "$compose" || return 0
+  a="$(web_token_of "$API_ENV")"; b="$(web_token_of "$OSP_HOME/secrets/osp-web.env")"
+  if ! [[ "$a" =~ ^[A-Za-z0-9]{32,128}$ ]] || [ "$a" != "$b" ]; then
+    fail "выпуск закрывает API замком сайта, а жетона нет или он разный в osp-web.env и osp-api.env — сначала: bash scripts/deploy-server.sh web-token-init"
+  fi
+  cur_compose="$OSP_HOME/current/compose.yml"
+  if [ "$1" != both ] && [ -f "$cur_compose" ] && ! grep -qE '^[[:space:]]*OSP_WEB_GATE:[[:space:]]*"1"' "$cur_compose"; then
+    fail "первый выпуск с замком сайта — только both: сайт, API и compose меняются вместе"
+  fi
+}
+
 install_release() {
   log "снимок соседей по серверу"
   bash "$REL/neighbors.sh" --save
@@ -527,12 +543,16 @@ oidc_discovery_ok() {
       .catch(() => process.exit(4))' "$issuer" >/dev/null 2>&1
 }
 
+# Сайт спрашивает режим входа у сервера, только если в shared/config.json «authServer»: true. Без него вкладки остались бы на
+# входе Supabase, а сервер отвечал бы им «вход изменился» — цикл перезагрузок.
+auth_server_on() { grep -qE '"authServer"[[:space:]]*:[[:space:]]*true' "$OSP_HOME/shared/config.json" 2>/dev/null; }
+
 # Привязка по почте (OIDC_LINK_BY_EMAIL=true) — только после письменного подтверждения команды auth, что почту в Keycloak
 # меняет администратор, а не сам пользователь. Подтверждение записано в migration/CUTOVER.md строкой с датой.
 sso_email_confirmed() { grep -qE '^- \*\*Почта в Keycloak — подтверждение auth:\*\* [0-9]{2}\.[0-9]{2}\.[0-9]{4}' "$SRC/migration/CUTOVER.md" 2>/dev/null; }
 
 do_auth_mode() {
-  local mode="${1:-}" prev other v
+  local mode="${1:-}" prev v
   case "$mode" in supabase | both | own | keycloak) ;; *) usage; fail "режим входа: supabase | both | own | keycloak" ;; esac
   [ -f "$API_ENV" ] || fail "нет $API_ENV"
   prev="$(env_value AUTH_MODE)"; prev="${prev:-supabase}"
@@ -541,6 +561,9 @@ do_auth_mode() {
     [ -n "$(env_value OSP_PUBLIC_ORIGIN)" ] || fail "в $API_ENV не задан OSP_PUBLIC_ORIGIN (https://tender.su10.ru)"
   fi
   [ "$mode" != both ] || [ -n "$(env_value OSP_AUTH_PILOT_IDS)" ] || fail "для both нужен OSP_AUTH_PILOT_IDS (кто проверяет свой вход)"
+  if [ "$mode" = own ] || [ "$mode" = keycloak ]; then
+    auth_server_on || fail "в $OSP_HOME/shared/config.json нет \"authServer\": true — сначала он, иначе вкладки уйдут в цикл перезагрузок"
+  fi
   if [ "$mode" = keycloak ]; then
     for v in OIDC_ISSUER OIDC_CLIENT_ID OIDC_CLIENT_SECRET OIDC_REDIRECT_URI OIDC_POST_LOGOUT_REDIRECT_URI OSP_WEB_TOKEN; do
       [ -n "$(env_value "$v")" ] || fail "в $API_ENV не задан $v — вход через СУ-10 не настроен (значения не выводятся)"
@@ -560,11 +583,9 @@ do_auth_mode() {
   set_env_line AUTH_MODE "$mode"
   if bash "$OSP_HOME/deploy.sh" api-restart && [ "$(auth_mode_now)" = "$mode" ]; then
     ok "вход переключён: $mode"
-    # Сессии другого вида новый режим и так не принимает (OSP_AUTH_MODE) — закрываем, чтобы не висели до срока.
-    case "$mode" in keycloak) other=password ;; own | both) other=keycloak ;; *) other="" ;; esac
-    if [ -n "$other" ] && [ "$prev" != "$mode" ]; then
-      do_identity revoke-sessions --kind "$other" || warn "сессии вида $other не закрыты — их всё равно не примет режим $mode"
-    fi
+    # Сессии другого вида не отзываются: новый режим их не принимает (401 OSP_AUTH_MODE), и открытые вкладки сами
+    # перезагружаются на вход нового режима. Отозванная сессия показала бы старой вкладке окно ввода пароля — в режиме СУ-10
+    # оно не сработает. Закрыть их явно — identity revoke-sessions --kind keycloak|password.
     return 0
   fi
   warn "API в режиме $mode не прошёл проверку — возвращаю $prev"
@@ -622,6 +643,7 @@ main() {
       preflight; need_web_env
       exec 9>"$OSP_HOME/.deploy-server.lock"; flock -n 9 || fail "уже идёт другая выкладка или миграция"
       git_sync "$@"
+      case "$scope" in backend) gate_ready_for api ;; frontend) gate_ready_for web ;; both) gate_ready_for both ;; esac
       case "$scope" in backend) build_release api ;; frontend) build_release web ;; both) build_release both ;; esac
       install_release; summary ;;
     status)               preflight; bash "$OSP_HOME/deploy.sh" status ;;

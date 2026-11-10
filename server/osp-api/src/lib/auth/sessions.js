@@ -221,6 +221,11 @@ export function createSessions({ db, box = null, now = Date.now, idleMs = SESSIO
     return r.rowCount
   }
 
+  // Строка этой сессии в базе была (пусть отозвана или истекла): не подбор cookie, а закончившаяся сессия вкладки, которая ещё
+  // опрашивает сервер. Лимит неверных cookie её не считает — иначе несколько таких вкладок за общим адресом офиса закрыли бы
+  // вход всему офису (cookie на отказах больше не стираются, src/lib/principal.js).
+  const known = (token) => cache.has(tokenHash(token))
+
   // Действующая сессия уже в памяти — проверка без обращения к базе (её не задевает лимит неверных cookie).
   function cached(token) {
     const hit = cache.get(tokenHash(token))
@@ -229,7 +234,7 @@ export function createSessions({ db, box = null, now = Date.now, idleMs = SESSIO
   }
 
   return {
-    createInTx, lookup, cached, touch, activity, patch, revoke, revokeHash, revokeForLogout, revokeAllInTx, revokeKeycloakInTx,
+    createInTx, lookup, cached, known, touch, activity, patch, revoke, revokeHash, revokeForLogout, revokeAllInTx, revokeKeycloakInTx,
     forget: (idHash) => cache.delete(idHash), size: () => cache.size, kcIdleMs: kcIdle, isLegacy: () => legacy,
   }
 }
