@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
 import ClampText from '../components/ClampText'
 import FilterDropdown from '../components/FilterDropdown'
@@ -32,6 +32,8 @@ import '../styles/workUi.css'
 // «Заявка на заключение ДП» (миграции 20261227, 20261231; решения пользователя 05.11.2026). По аналогии с «Заявкой на ДС», только договоры.
 // Подают экономист объекта и руководитель строительства (право dp_requests_create): понятийное соглашение (обязательно), документы и примечание;
 // привязанный к объектам в «Ролях» — и свой объект (один — стоит сам, несколько — выбирает).
+// Подают только из «Реестра по договорам» (кнопка «+ Заявка на заключение ДП», DpRequestCreateButton; 10.11.2026, решение пользователя:
+// одна точка подачи). Здесь — реестр и работа с поданными: статус, поля отдела, правка автором своей новой заявки.
 // Объект, договор, сумму и ответственного заполняют те, кто работает с заявками (правка раздела dp_requests).
 // О новой заявке всплывает большое окно (components/dpRequests/DpRequestAlert.jsx — на всех страницах).
 
@@ -58,7 +60,7 @@ function DpStatus({ req, canWork, onChange }) {
 }
 
 export default function DpRequestsPage() {
-  const { user, userProfile, role, roleLabels, canEdit, scopedObjectIds } = useRole()
+  const { user, userProfile, role, roleLabels, canEdit, canView, scopedObjectIds } = useRole()
   useBodyClass('ui-work-portal')
   const isPhone = useIsPhone()
   const userId = user?.id || null
@@ -70,15 +72,13 @@ export default function DpRequestsPage() {
   const [requests, setRequests] = useState(null)
   const [docs, setDocs] = useState([])
   const [objects, setObjects] = useState([])
-  const [ownObjects, setOwnObjects] = useState(null)
-  const [ownObjectsFailed, setOwnObjectsFailed] = useState(false)
   const [staff, setStaff] = useState([])
   const [missing, setMissing] = useState(false)
   const [error, setError] = useState('')
   const [tab, setTab] = useState('all')
   const [query, setQuery] = useState('')
   const [objectIds, setObjectIds] = useState([])
-  const [formFor, setFormFor] = useState(null) // { request: строка | null }
+  const [formFor, setFormFor] = useState(null) // { request: строка } — правка поданной заявки
   const [previewDoc, setPreviewDoc] = useState(null)
   const [showRecipients, setShowRecipients] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -106,38 +106,32 @@ export default function DpRequestsPage() {
   }, [])
 
   const scopeKey = (scopedObjectIds || []).join(',')
-  // Подающий, привязанный к объектам в «Ролях» (рукстрой, экономист объекта), указывает свой объект сам (06.11.2026, решение
-  // пользователя): форме нужны названия его объектов. Работающий с заявками выбирает объект в своём блоке формы.
-  const pickOwnObject = !canWork && canCreate && scopeKey !== ''
   useEffect(() => {
     reload()
-    let alive = true
-    if (pickOwnObject) {
-      setOwnObjects(null)
-      setOwnObjectsFailed(false)
-      loadDpObjects(scopedObjectIds).then((rows) => { if (alive) setOwnObjects(rows) }).catch((err) => {
-        if (!alive) return
-        setOwnObjectsFailed(true)
-        setError(`Ваши объекты не загрузились: ${dpErrorText(err)}`)
-      })
-    }
     // Все объекты и сотрудники — только форме того, кто заполняет заявку.
     if (canWork) {
       loadDpObjects(scopedObjectIds).then(setObjects).catch((err) => setError(`Объекты не загрузились: ${dpErrorText(err)}`))
       loadDpStaff().then(setStaff).catch((err) => setError(`Сотрудники объектов не загрузились: ${dpErrorText(err)}`))
     }
-    return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, reload, canWork, pickOwnObject])
+  }, [scopeKey, reload, canWork])
 
   // Заявки коллег — при возврате на вкладку; у получателя — сразу, как только пришло окно.
   useEffect(() => {
     const onVisible = () => { if (document.visibilityState === 'visible') reload() }
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener(DP_ALERTS_EVENT, reload)
+    // Подана из «Реестра по договорам» (в той же вкладке) — показать и подсветить.
+    const onCreated = async (e) => {
+      await reload()
+      const id = e.detail?.id
+      if (id) { setTab('all'); setHighlightId(id) }
+    }
+    window.addEventListener(DP_CREATED_EVENT, onCreated)
     return () => {
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener(DP_ALERTS_EVENT, reload)
+      window.removeEventListener(DP_CREATED_EVENT, onCreated)
     }
   }, [reload])
 
@@ -207,14 +201,9 @@ export default function DpRequestsPage() {
   }
   const restore = (req) => act(() => restoreDpRequest(req.id))
 
-  const onSaved = async (created) => {
+  const onSaved = async () => {
     setFormFor(null)
     await reload()
-    if (created?.id) {
-      setTab('all')
-      setHighlightId(created.id)
-      window.dispatchEvent(new CustomEvent(DP_CREATED_EVENT))
-    }
   }
 
   const fileProps = (req, category) => {
@@ -282,8 +271,10 @@ export default function DpRequestsPage() {
               <span>Уведомления</span>
             </button>
           )}
-          {canCreate && !missing && (
-            <button type="button" className="btn-primary" onClick={() => setFormFor({ request: null })}>+ Новая заявка</button>
+          {canCreate && !missing && canView('contracts') && (
+            <Link to="/contracts/registry" className="dpr-create-hint" title="Новая заявка подаётся кнопкой «+ Заявка на заключение ДП» рядом с вкладкой «Все»">
+              Подать заявку — в «Реестре по договорам»
+            </Link>
           )}
         </div>
       </div>
@@ -423,8 +414,6 @@ export default function DpRequestsPage() {
           staff={staff}
           me={me}
           canWork={canWork}
-          ownObjects={pickOwnObject ? ownObjects : undefined}
-          ownObjectsFailed={ownObjectsFailed}
           onClose={() => setFormFor(null)}
           onSaved={onSaved}
         />

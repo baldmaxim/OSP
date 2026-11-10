@@ -579,24 +579,6 @@
   border-radius: 6px;
   font-size: 0.875rem;
 }
-.rr-stub {
-  padding: 3rem 1.5rem;
-  text-align: center;
-  background: var(--bg-secondary);
-  border: 1px dashed var(--border-color);
-  border-radius: 8px;
-}
-.rr-stub-icon {
-  font-size: 2.5rem;
-  opacity: 0.6;
-  margin-bottom: 0.5rem;
-}
-.rr-stub-title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 0.5rem;
-}
 .rr-stub-hint {
   font-size: 0.875rem;
   color: var(--text-tertiary);

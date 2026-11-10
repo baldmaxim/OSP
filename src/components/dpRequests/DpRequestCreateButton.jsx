@@ -9,10 +9,11 @@ import { DP_CREATED_EVENT, DP_REQUEST_PARAM, dpErrorText } from '../../utils/dpR
 import './DpRequestCreateButton.css'
 
 // «+ Заявка на заключение ДП» в «Реестре по договорам» (10.11.2026, решение пользователя: подать заявку — плюсиком рядом с
-// вкладкой «Все», как «+ Новая заявка» на странице заявок; сама страница /dp-requests и блок хаба остаются). Окно — то же,
-// что на странице (DpRequestFormModal), с теми же правами: кнопка — у права dp_requests_create, подающий с привязкой к объектам
+// вкладкой «Все»; с 10.11.2026, позже — единственное место подачи: на странице /dp-requests кнопки нет, там работа с заявками). Окно —
+// DpRequestFormModal, с теми же правами: кнопка — у права dp_requests_create, подающий с привязкой к объектам
 // выбирает свой объект, работающий с заявками (dp_requests) видит ещё блок «Заполняет отдел». Запреты — в базе (20261227, 20261231).
-// После подачи — плашка с номером и ссылкой на заявку (если раздел заявок открыт), окно о новой заявке у получателей — как со страницы.
+// После подачи — плашка с номером и ссылкой на заявку (если раздел заявок открыт), окно о новой заявке у получателей; открытая страница
+// заявок (событие DP_CREATED_EVENT с id) перечитывает реестр и подсвечивает строку.
 const NOTE_MS = 15000
 
 export default function DpRequestCreateButton() {
@@ -66,7 +67,7 @@ export default function DpRequestCreateButton() {
     setOpen(false)
     if (!row?.id) return
     setCreated(row)
-    window.dispatchEvent(new CustomEvent(DP_CREATED_EVENT))
+    window.dispatchEvent(new CustomEvent(DP_CREATED_EVENT, { detail: { id: row.id } }))
   }
 
   return (

@@ -10,6 +10,8 @@
   align-items: center;
 }
 .dpr-bell { display: inline-flex; }
+/* Подача — только из «Реестра по договорам»: здесь ссылка туда, а не кнопка. */
+.dpr-create-hint { color: var(--ui-link, #1d4ed8); font-size: 0.875rem; text-decoration: underline; text-underline-offset: 2px; }
 .dpr-bell svg { width: 1rem; height: 1rem; }
 
 .dpr-page-error { margin: 0.5rem 1rem; }

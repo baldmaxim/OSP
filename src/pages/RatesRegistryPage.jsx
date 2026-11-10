@@ -22,10 +22,10 @@ const S3DocumentPreview = lazy(() => import('../components/S3DocumentPreview'))
 
 // task 356/354/411: «Реестр расценок» — общий список расценок из разных источников.
 //   1) От подрядчиков (КП) — представление kp_rates_registry (дедуп на стороне БД).
-//   2) ДП и ДС — в разработке. 3) Снабжение СУ-10 — supply_rates_registry.
-//   4) Договорные расценки (Larix) — представление larix_rates_registry, загрузка из Larix.CPM раз в день
+//   2) Снабжение СУ-10 — supply_rates_registry (вкладка «ДП и ДС» — заглушка — убрана 10.11.2026).
+//   3) Договорные расценки (Larix) — представление larix_rates_registry, загрузка из Larix.CPM раз в день
 //      (server/osp-api/src/lib/larixSync.js), вкладка — LarixRegistrySection.
-//   5) Расценки подрядчиков (актуальные тендеры) — цены из кабинета подрядчика по тендерам, которые ещё идут
+//   4) Расценки подрядчиков (актуальные тендеры) — цены из кабинета подрядчика по тендерам, которые ещё идут
 //      (tender_bid_rates), только администратору — ContractorBidsSection. После завершения тендера они попадают
 //      в «От подрядчиков (КП)» (миграция 20261103). Ссылка на вкладку — /rates-registry?tab=bids.
 //
@@ -408,7 +408,7 @@ function SupplyRegistrySection() {
   )
 }
 
-const TOP_TABS = ['kp', 'bids', 'dp_ds', 'supply', 'larix']
+const TOP_TABS = ['kp', 'bids', 'supply', 'larix']
 
 function RatesRegistryPage() {
   const { isAdmin, canEdit } = useRole()
@@ -417,7 +417,7 @@ function RatesRegistryPage() {
   const [topTab, setTopTab] = useState(() => {
     const t = searchParams.get('tab')
     return TOP_TABS.includes(t) && (t !== 'bids' || isAdmin) ? t : 'kp'
-  })                                                   // 'kp' | 'bids' | 'dp_ds' | 'supply' | 'larix'
+  })                                                   // 'kp' | 'bids' | 'supply' | 'larix'
   const [kindTab, setKindTab] = useState('materials') // 'materials' | 'works'
 
   // Фильтры. Объект/Подрядчик/Тендер — множественный выбор (пустой массив = не применён).
@@ -507,7 +507,7 @@ function RatesRegistryPage() {
     return () => { cancelled = true }
   }, [])
 
-  // Справочники фильтров — один раз и только на вкладке КП: на «ДП и ДС» они не
+  // Справочники фильтров — один раз и только на вкладке КП: на других вкладках они не
   // нужны, а запросы уходили всё равно.
   useEffect(() => {
     if (topTab !== 'kp') return
@@ -794,11 +794,6 @@ function RatesRegistryPage() {
             Расценки подрядчиков (актуальные тендеры)
           </button>
         )}
-        <button type="button" role="tab" aria-selected={topTab === 'dp_ds'}
-          className={`rr-top-tab ${topTab === 'dp_ds' ? 'active' : ''}`}
-          onClick={() => setTopTab('dp_ds')}>
-          Расценки от подрядчиков (ДП и ДС)
-        </button>
         <button type="button" role="tab" aria-selected={topTab === 'supply'}
           className={`rr-top-tab ${topTab === 'supply' ? 'active' : ''}`}
           onClick={() => setTopTab('supply')}>
@@ -811,15 +806,7 @@ function RatesRegistryPage() {
         </button>
       </div>
 
-      {topTab === 'dp_ds' ? (
-        <div className="rr-stub">
-          <div className="rr-stub-icon" aria-hidden>🚧</div>
-          <div className="rr-stub-title">В разработке</div>
-          <div className="rr-stub-hint">
-            Раздел «Расценки от подрядчиков (ДП и ДС)» — в разработке.
-          </div>
-        </div>
-      ) : topTab === 'supply' ? (
+      {topTab === 'supply' ? (
         <SupplyRegistrySection />
       ) : topTab === 'larix' ? (
         <LarixRegistrySection />

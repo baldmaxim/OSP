@@ -7,6 +7,7 @@
 // Триггер стенда повторяет запрет базы dp_requests_guard: без понятийного соглашения заявка не подаётся, поля отдела автор не меняет.
 import { lazy, Suspense } from 'react'
 import DpRequestAlert from '../../../src/components/dpRequests/DpRequestAlert'
+import DpRequestCreateButton from '../../../src/components/dpRequests/DpRequestCreateButton'
 
 const DpRequestsPage = lazy(() => import('../../../src/pages/DpRequestsPage'))
 
@@ -139,6 +140,8 @@ export default function DpStand({ page = false }) {
   return (
     <>
       <DpRequestAlert />
+      {/* Подают только из «Реестра по договорам» — здесь та же кнопка, без самого реестра. */}
+      {page && <div data-testid="registry-button"><DpRequestCreateButton /></div>}
       {page
         ? <Suspense fallback={null}><DpRequestsPage /></Suspense>
         : <div data-testid="other-page">Посторонняя страница</div>}

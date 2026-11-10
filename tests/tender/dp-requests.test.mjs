@@ -203,6 +203,8 @@ describe('Заявка на заключение ДП: страница', { skip
   }
   const row = (page, n) => page.locator('.dpr-table tbody tr').filter({ has: page.locator('.dpr-number', { hasText: new RegExp(`^${n}$`) }) })
   const dialog = (page) => page.locator('.dpr-dialog')
+  // Подают только из «Реестра по договорам» (кнопка DpRequestCreateButton; стенд ставит её над страницей заявок).
+  const newRequest = (page) => page.locator('.cr-dp-add').click()
   // Поля, которые заполняет работающий с заявками.
   const fillWorkFields = async (page, { object = 'ЖК «Северный квартал»', responsible = 'Экономов Андрей Петрович · Экономист объекта' } = {}) => {
     const d = dialog(page)
@@ -273,7 +275,7 @@ describe('Заявка на заключение ДП: страница', { skip
     const { page, errors, close } = await open(ECONOMIST)
     try {
       await row(page, 1).waitFor()
-      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      await newRequest(page)
       const d = dialog(page)
       assert.deepEqual(await d.locator('.dpr-label').allTextContents(), ['Понятийное соглашение *', 'Документы (необязательно)', 'Примечание'])
       assert.equal(await d.locator('select').count(), 0, 'ни объекта, ни ответственного')
@@ -314,7 +316,7 @@ describe('Заявка на заключение ДП: страница', { skip
     const { page, errors, close } = await open(ECONOMIST)
     try {
       await row(page, 1).waitFor()
-      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      await newRequest(page)
       await attachBoth(page)
       await attachDoc(page, { name: 'Расчёт.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from('xlsx') })
       await fillNote(page)
@@ -336,7 +338,7 @@ describe('Заявка на заключение ДП: страница', { skip
     const { page, errors, close } = await open(`${ECONOMIST}&scope=obj-1,obj-2`)
     try {
       await row(page, 1).waitFor()
-      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      await newRequest(page)
       const d = dialog(page)
       const select = d.getByLabel('Объект')
       await select.locator('option', { hasText: 'Бизнес-центр' }).waitFor({ state: 'attached' })
@@ -370,7 +372,7 @@ describe('Заявка на заключение ДП: страница', { skip
     const { page, errors, close } = await open('asRole=construction_manager&asUser=boss-1&asName=Строев%20Борис%20Иванович&noEdit=dp_requests,admin&dpRecipient=0&scope=obj-2')
     try {
       await row(page, 2).waitFor()
-      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      await newRequest(page)
       const d = dialog(page)
       const select = d.getByLabel('Объект')
       await select.locator('option', { hasText: 'Бизнес-центр «Нурлы»' }).waitFor({ state: 'attached' })
@@ -433,7 +435,7 @@ describe('Заявка на заключение ДП: страница', { skip
     const { page, close } = await open('dpRecipient=0')
     try {
       await row(page, 1).waitFor()
-      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      await newRequest(page)
       const d = dialog(page)
       await attachConcept(page)
       await fillWorkFields(page)
@@ -450,7 +452,7 @@ describe('Заявка на заключение ДП: страница', { skip
   it('файл не того типа не принимается; перетаскивание и удаление из списка', async () => {
     const { page, close } = await open(ECONOMIST)
     try {
-      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      await newRequest(page)
       await attachConcept(page, { name: 'virus.exe', mimeType: 'application/octet-stream', buffer: Buffer.from('x') })
       assert.match(await dialog(page).locator('.dpr-error-line').innerText(), /нужен PDF, Word или скан/)
       await attachConcept(page, { name: 'Расчёт.xlsx', mimeType: 'application/vnd.ms-excel', buffer: Buffer.from('x') })
@@ -474,7 +476,7 @@ describe('Заявка на заключение ДП: страница', { skip
     const { page, close } = await open(`${ECONOMIST}&dpFailUpload=1`)
     try {
       await row(page, 1).waitFor()
-      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      await newRequest(page)
       await fillNote(page)
       await attachBoth(page)
       await dialog(page).getByRole('button', { name: 'Создать заявку' }).click()
@@ -499,7 +501,7 @@ describe('Заявка на заключение ДП: страница', { skip
           trigger(r, old)
         }
       })
-      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      await newRequest(page)
       await fillNote(page)
       await attachBoth(page)
       await dialog(page).getByRole('button', { name: 'Создать заявку' }).click()
@@ -512,7 +514,7 @@ describe('Заявка на заключение ДП: страница', { skip
   it('ответственный (форма работающего с заявками): сам вошедший без карточки, смена объекта, объект без сотрудников', async () => {
     const { page, close } = await open('asRole=construction_manager&asUser=boss-2&asName=Новиков%20Пётр%20Ильич&noEdit=admin&dpRecipient=0')
     try {
-      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      await newRequest(page)
       const d = dialog(page)
       assert.equal(await d.getByLabel('Ответственный').isDisabled(), true, 'объект не выбран')
       await d.getByLabel('Объект').selectOption({ label: 'ЖК «Северный квартал»' })
@@ -530,11 +532,24 @@ describe('Заявка на заключение ДП: страница', { skip
     } finally { await close() }
   })
 
+  it('на странице заявок подать нельзя: кнопки «+ Новая заявка» нет, ссылка ведёт в «Реестр по договорам»', async () => {
+    const { page, errors, close } = await open(ECONOMIST)
+    try {
+      await row(page, 1).waitFor()
+      const pageRoot = page.locator('.dp-requests-page')
+      assert.equal(await pageRoot.getByRole('button', { name: /Новая заявка/ }).count(), 0)
+      const hint = pageRoot.locator('.dpr-create-hint')
+      assert.equal(await hint.getAttribute('href'), '/contracts/registry')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
   it('без права создания кнопки нет; без права работы статус — только показ', async () => {
     const { page, close } = await open('asRole=finance&asUser=fin-1&noEdit=dp_requests,dp_requests_create,admin&dpRecipient=0')
     try {
       await row(page, 1).waitFor()
-      assert.equal(await page.getByRole('button', { name: '+ Новая заявка' }).count(), 0)
+      assert.equal(await page.locator('.cr-dp-add').count(), 0)
+      assert.equal(await page.locator('.dpr-create-hint').count(), 0)
       assert.equal(await page.getByRole('button', { name: 'Уведомления' }).count(), 0)
       assert.equal(await row(page, 1).locator('select').count(), 0)
       assert.equal(await row(page, 1).getByRole('button', { name: /Изменить заявку/ }).count(), 0)
@@ -666,7 +681,7 @@ describe('Заявка на заключение ДП: страница', { skip
     const { page, errors, close } = await open(ECONOMIST.replace('&dpRecipient=0', ''))
     try {
       await row(page, 1).waitFor()
-      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      await newRequest(page)
       await attachConcept(page)
       await dialog(page).getByRole('button', { name: 'Создать заявку' }).click()
       await page.locator('.dpa-dialog').waitFor()
@@ -700,7 +715,7 @@ describe('Заявка на заключение ДП: страница', { skip
     const { page, close } = await open('')
     try {
       await row(page, 1).waitFor()
-      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      await newRequest(page)
       await fillWorkFields(page)
       await fillNote(page)
       await attachBoth(page)
@@ -754,7 +769,7 @@ describe('Заявка на заключение ДП: страница', { skip
     const { page, errors, close } = await open('dpMissing=1')
     try {
       await page.getByText('20261227_dp_requests').waitFor()
-      assert.equal(await page.getByRole('button', { name: '+ Новая заявка' }).count(), 0)
+      assert.equal(await page.locator('.dpr-create-hint').count(), 0)
       assert.equal(await page.getByRole('button', { name: 'Уведомления' }).count(), 0)
       assert.equal(await page.locator('.dpa-dialog').count(), 0)
       assert.deepEqual(errors, [])
@@ -772,7 +787,7 @@ describe('Заявка на заключение ДП: страница', { skip
       assert.equal(await page.locator('.dpr-table').count(), 0)
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
       assert.ok(overflow <= 1, `нет прокрутки вбок: ${overflow}`)
-      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      await newRequest(page)
       const form = await dialog(page).boundingBox()
       assert.ok(form.x >= 0 && form.x + form.width <= 390)
       await dialog(page).getByRole('button', { name: 'Отмена' }).click()
@@ -787,7 +802,7 @@ describe('Заявка на заключение ДП: страница', { skip
       assert.ok(status.width < 200, `статус: ${status.width}px`)
       const file = await card.locator('.dpr-file-name').first().boundingBox()
       assert.ok(file.width > 250, `имя файла: ${file.width}px`)
-      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      await newRequest(page)
       assert.equal(await dialog(page).getByLabel('Примечание').evaluate((el) => getComputedStyle(el).fontSize), '16px')
     } finally { await close() }
   })
