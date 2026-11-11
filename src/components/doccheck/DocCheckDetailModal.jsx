@@ -8,7 +8,9 @@ import { IconUser } from '../icons/ToolbarIcons'
 import { employeeName } from '../../services/employees'
 import { fetchComments } from '../../services/docCheckCard'
 import { safeHttpUrl } from '../../utils/publicTenders'
+import { talkTimes } from '../../utils/docCheckTalkRead'
 import {
+  NO_CARD_COUNTS,
   DOC_CHECK_COLOR_LABEL,
   DOC_CHECK_PRIORITY_LABEL,
   DOC_CHECK_STATUS_CLASS,
@@ -19,11 +21,13 @@ import {
   assigneeStaffOptions,
   availableStatuses,
   avatarTone,
+  cardCountsById,
   cardTitle,
   dueState,
   fmtDocDate,
   fmtDocDateTime as fmtDateTime,
   initials,
+  requestIdLabel,
   shownAssigneeIds,
 } from '../../utils/docCheckHelpers'
 
@@ -94,8 +98,12 @@ function Row({ label, className, children }) {
 export default function DocCheckDetailModal({
   request, employees, objects, counterparties, canEdit, hasBoardFields, hasCardFields, currentUserId, deletion, refreshKey,
   onStatusChange, onAssign, onEdit, onDelete, onClose, onCardCounts,
+  talkReadMark = Number.POSITIVE_INFINITY, onTalkSeen,
 }) {
   const [tab, setTab] = useState('general')
+  // Граница «прочитано» на момент открытия окна (окно у каждой заявки своё — key в DocCheckRequestsPage): сообщения коллег
+  // позже неё подсвечены, пока окно открыто, хотя заявка уже отмечена прочитанной. Ответил сам — всё до ответа прочитано.
+  const [openReadMark] = useState(talkReadMark)
   // Файлы меняли — после закрытия окна перечитать, сколько их у заявки (скрепка на карточке доски).
   const filesChanged = useRef(false)
   const markFilesChanged = useCallback(() => { filesChanged.current = true }, [])
@@ -129,8 +137,16 @@ export default function DocCheckDetailModal({
   // Число сообщений на карточке доски — сразу, без перечитывания всей доски.
   useEffect(() => {
     if (cardState !== 'ready') return
-    onCardCounts(request.id, { commentsCount: comments.length })
-  }, [cardState, comments, request.id, onCardCounts])
+    onCardCounts(request.id, cardCountsById(comments, currentUserId).get(request.id) || NO_CARD_COUNTS)
+  }, [cardState, comments, request.id, currentUserId, onCardCounts])
+
+  // Переписка на экране (вкладка «Общая») — сообщения коллег прочитаны: подсветка на карточке доски гаснет.
+  const times = useMemo(() => talkTimes(comments, currentUserId), [comments, currentUserId])
+  useEffect(() => {
+    if (cardState !== 'ready' || tab !== 'general' || !times.lastOther || !onTalkSeen) return
+    onTalkSeen(request.id, times.lastOther)
+  }, [cardState, tab, times, request.id, onTalkSeen])
+  const unreadAfter = Math.max(openReadMark, times.lastMine)
 
   // История нужна редко — грузим только при открытии своей вкладки.
   useEffect(() => {
@@ -183,6 +199,9 @@ export default function DocCheckDetailModal({
           <div className="dc-detail-heading">
             <h3>{cardTitle(request)}</h3>
             <p className="dc-detail-sub">
+              {request.request_number != null && (
+                <span className="dc-chip dc-chip--id" title="Номер заявки — не меняется">{requestIdLabel(request)}</span>
+              )}
               <span className={`dc-status-chip ${DOC_CHECK_STATUS_CLASS[request.status] || ''}`}>
                 {DOC_CHECK_STATUS_LABEL[request.status] || request.status}
               </span>
@@ -332,6 +351,7 @@ export default function DocCheckDetailModal({
                 comments={comments}
                 onCommentsChange={changeComments}
                 currentUserId={currentUserId}
+                unreadAfter={unreadAfter}
                 canWrite={!isDeleted}
                 state={cardState}
                 onRetry={retryCard}

@@ -90,6 +90,14 @@
   },
   {
     "method": "GET",
+    "url": "/api/admin/counterparties/:id/su10-org",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "GET",
     "url": "/api/admin/identities",
     "kind": "user",
     "require": "admin",
@@ -146,6 +154,78 @@
   {
     "method": "POST",
     "url": "/api/admin/identity-requests/sync",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": []
+  },
+  {
+    "method": "POST",
+    "url": "/api/admin/su10-org-exceptions",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "reason",
+      "subject"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "url": "/api/admin/su10-org-exceptions/:subject",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": []
+  },
+  {
+    "method": "GET",
+    "url": "/api/admin/su10-orgs",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "GET",
+    "url": "/api/admin/su10-orgs/:id/candidates",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "POST",
+    "url": "/api/admin/su10-orgs/:id/create-counterparty",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "inn",
+      "name"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "url": "/api/admin/su10-orgs/:id/link",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": []
+  },
+  {
+    "method": "POST",
+    "url": "/api/admin/su10-orgs/:id/link",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "counterpartyId"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/admin/su10-orgs/refresh",
     "kind": "user",
     "require": "admin",
     "reason": null,
@@ -447,10 +527,12 @@
     "body": [
       "action",
       "category",
+      "document_id",
       "download",
       "file_name",
       "mime_type",
       "notes",
+      "only_if",
       "operation_id",
       "owner_id",
       "owner_type",

@@ -6,7 +6,8 @@
 //   • ответ авторизации: state — своей cookie (отдельная на каждую вкладку со входом), iss (RFC 9207), код — с PKCE S256;
 //   • id_token: iss, aud, nonce, срок (openid-client);
 //   • access token: подпись RS256 ключом realm, iss, aud ∋ клиент (у Keycloak aud бывает строкой и массивом), azp = клиент,
-//     срок; sub — UUID; почта, имя и роли — строгих типов и длин. Роль доступа к порталу — resource_access.<клиент>.roles;
+//     срок; sub — UUID; почта, имя, роли и организация (su10_org_id) — строгих типов и длин. Роль доступа к порталу —
+//     resource_access.<клиент>.roles;
 //   • адрес возврата — только из настройки (OIDC_REDIRECT_URI), returnUrl — только свой путь (не «//», не «/\», не /api/).
 // Сырые параметры ответа (code, state), токены и тела ошибок Keycloak не попадают ни в журнал, ни в ответы.
 import { createHash, randomBytes } from 'node:crypto'
@@ -75,7 +76,19 @@ function strictClaims(payload, clientId) {
   if (roles !== undefined && (!Array.isArray(roles) || roles.length > 50 || roles.some((r) => typeof r !== 'string' || r.length > 100))) {
     throw new OidcError('claims')
   }
-  return { subject: sub.toLowerCase(), email: email ? email.trim().toLowerCase() : null, sid: sid || null, roles: roles || [] }
+  return { subject: sub.toLowerCase(), email: email ? email.trim().toLowerCase() : null, sid: sid || null, roles: roles || [],
+    orgIds: orgClaim(payload[ORG_CLAIM]) }
+}
+
+// Организация учётки в реестре СУ-10 (claim su10_org_id, temp/osp-org-mapping.md): массив id, норма — ровно один. Строка —
+// один элемент; нет claim — пусто. Иной вид (не UUID, не строка, больше 10) — ошибка входа: решение о доступе подрядчика
+// принимается по этому claim, догадываться нельзя (src/lib/auth/orgs.js).
+export const ORG_CLAIM = 'su10_org_id'
+export function orgClaim(value) {
+  if (value === undefined || value === null) return []
+  const list = typeof value === 'string' ? [value] : value
+  if (!Array.isArray(list) || list.length > 10 || list.some((v) => typeof v !== 'string' || !UUID.test(v))) throw new OidcError('claims')
+  return [...new Set(list.map((v) => v.toLowerCase()))]
 }
 
 // ФИО «Фамилия Имя» — как при сверке группы (src/lib/auth/accessSync.js).

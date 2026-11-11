@@ -9,10 +9,11 @@ import { cardCountsById } from '../utils/docCheckHelpers'
 const COMMENTS = 'doc_check_request_comments'
 
 // Число сообщений на карточках доски: всё разом, а не запросом на заявку. Потолок 1000 строк на ответ — поэтому постранично.
-export async function fetchCardCounts() {
-  const comments = await fetchAllRows((from, to) => db.from(COMMENTS).select('request_id')
+// Автор и время — для непрочитанных (myId — вошедший: свои сообщения не новые). Текст не читаем.
+export async function fetchCardCounts(myId = null) {
+  const comments = await fetchAllRows((from, to) => db.from(COMMENTS).select('request_id, author_user_id, created_at')
     .order('request_id', { ascending: true }).order('id', { ascending: true }).range(from, to))
-  return cardCountsById(comments)
+  return cardCountsById(comments, myId)
 }
 
 // Кто и когда удалил заявку: id → { name, at }. Берём из истории (событие soft_deleted) — так видно и уже удалённые, колонка

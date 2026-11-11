@@ -19,7 +19,7 @@
 #   bash scripts/deploy-server.sh accounts-sync --users <файл> --credentials <файл> [--manifest <файл>] [--restore <uuid>] [--yes]
 #   bash scripts/deploy-server.sh accounts-check             # готов ли свой вход (только чтение)
 #   bash scripts/deploy-server.sh auth-mode supabase|both|own|keycloak  # переключить вход без сборки; не прошло — прежний
-#   bash scripts/deploy-server.sh identity export-users | links-apply <файл> [--apply] [--partial id,…] | links-report | sync [--force]
+#   bash scripts/deploy-server.sh identity export-users | links-apply <файл> [--apply] [--partial id,…] | links-report | sync [--force] | orgs-sync [--check] [--force]
 #                                                          # связи учёток с СУ-10 (вход через Keycloak); файлы — 600
 #   bash scripts/deploy-server.sh transfer-key-destroy       # после переноса: удалить ключ переноса и файлы выгрузок
 #
@@ -97,7 +97,7 @@ usage() {
                         перенос учёток и паролей (файлы — в $ACCOUNTS_IN); без --yes — с вопросом
   accounts-check        готов ли свой вход (только чтение)
   auth-mode <режим>     supabase | both | own | keycloak — без сборки; не прошло — возвращается прежний
-  identity <команда>    связи с СУ-10: export-users | links-apply <файл> [--apply] | links-report | sync [--force]
+  identity <команда>    связи с СУ-10: export-users | links-apply <файл> [--apply] | links-report | sync [--force] | orgs-sync [--check] [--force]
   transfer-key-destroy  удалить ключ переноса и файлы выгрузок
 
 Если меняется и база: сначала migrate, потом backend или both.
@@ -523,12 +523,12 @@ do_identity() {
       bash "$OSP_HOME/deploy.sh" identity links-apply "${@:3}" < "$file" || rc=$?
       [ "$rc" = 0 ] || fail "файл связей не применён (код $rc) — замечания выше"
       ;;
-    links-report | sync | revoke-sessions)
+    links-report | sync | revoke-sessions | orgs-sync)
       bash "$OSP_HOME/deploy.sh" identity "$@" || rc=$?
       [ "$rc" = 0 ] || [ "$rc" = 3 ] || fail "identity $cmd: сбой (код $rc)"
       [ "$rc" = 0 ] || warn "identity $cmd: есть замечания (код 3) — см. выше"
       ;;
-    *) fail "identity: export-users | links-apply <файл> [--apply] [--partial id,…] | links-report | sync [--force] | revoke-sessions --kind keycloak|password" ;;
+    *) fail "identity: export-users | links-apply <файл> [--apply] [--partial id,…] | links-report | sync [--force] | revoke-sessions --kind keycloak|password | orgs-sync [--check] [--force]" ;;
   esac
 }
 
@@ -574,6 +574,11 @@ do_auth_mode() {
     fi
     log "связи с СУ-10 (для сведения):"
     do_identity links-report || true
+    # Организации СУ-10: права служебного клиента и полная сверка реестра — без них сотрудники и подрядчики не войдут
+    # (server/osp-api/src/lib/auth/orgs.js; служба и сама не станет готовой). Отложено предохранителем — режим не меняется.
+    log "организации СУ-10: проверка прав и полная сверка реестра"
+    bash "$OSP_HOME/deploy.sh" identity orgs-sync --check || fail "служебному клиенту СУ-10 не хватает прав на реестр организаций — см. выше"
+    bash "$OSP_HOME/deploy.sh" identity orgs-sync || fail "реестр организаций СУ-10 не сверен (или отложен предохранителем) — режим не меняется"
   fi
   if [ "$mode" = own ]; then
     log "свежая проверка готовности своего входа"

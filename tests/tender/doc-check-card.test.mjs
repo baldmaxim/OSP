@@ -19,6 +19,9 @@ import {
   DOC_CHECK_CONCEPT_CATEGORY, cardCountsById, fieldEvents, mergeRequestCounts,
 } from '../../src/utils/docCheckHelpers.js'
 import { safeHttpUrl } from '../../src/utils/publicTenders.js'
+import {
+  isUnreadMessage, loadTalkReads, markTalkRead, readMarkOf, talkReadKey, talkTimes, unreadTalkCount,
+} from '../../src/utils/docCheckTalkRead.js'
 
 const PDF = (name) => ({ name, mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4') })
 
@@ -37,7 +40,7 @@ describe('Окно заявки: правила без браузера', () => 
     const b = { id: 'b' }
     const cache = new WeakMap()
     const first = mergeRequestCounts([a, b], new Map([['a', 2]]), new Map(), cache)
-    assert.deepEqual(first[0], { id: 'a', docsCount: 2, commentsCount: 0 })
+    assert.deepEqual(first[0], { id: 'a', docsCount: 2, commentsCount: 0, unreadCount: 0 })
     const same = mergeRequestCounts([a, b], new Map([['a', 2]]), new Map(), cache)
     assert.equal(same[0], first[0])
     assert.equal(same[1], first[1])
@@ -54,12 +57,61 @@ describe('Окно заявки: правила без браузера', () => 
   })
 
   it('счётчик сообщений на карточке; шагов нет', () => {
-    const map = cardCountsById([{ request_id: 'a' }, { request_id: 'c' }, { request_id: 'c' }])
-    assert.deepEqual(map.get('a'), { commentsCount: 1 })
-    assert.deepEqual(map.get('c'), { commentsCount: 2 })
+    const map = cardCountsById([
+      { request_id: 'a', author_user_id: 'u2', created_at: '2026-11-11T10:00:00Z' },
+      { request_id: 'c', author_user_id: 'me', created_at: '2026-11-11T10:05:00Z' },
+      { request_id: 'c', author_user_id: 'u2', created_at: '2026-11-11T10:10:00Z' },
+    ], 'me')
+    assert.deepEqual(map.get('a'), { commentsCount: 1, otherAts: [Date.parse('2026-11-11T10:00:00Z')], lastMineAt: 0 })
+    assert.deepEqual(map.get('c'), { commentsCount: 2, otherAts: [Date.parse('2026-11-11T10:10:00Z')],
+      lastMineAt: Date.parse('2026-11-11T10:05:00Z') })
     assert.equal(map.has('b'), false)
     assert.equal(DOC_CHECK_CONCEPT_CATEGORY, 'doc_check_concept_agreement')
     assert.equal(fs.existsSync(path.join(REPO, 'src', 'components', 'doccheck', 'DocCheckSteps.jsx')), false)
+  })
+
+  it('непрочитанные: сообщения коллег позже отметки и позже своего ответа; первый вход — прежнее прочитано', () => {
+    const store = new Map()
+    globalThis.localStorage = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+    }
+    try {
+      const at = (t) => Date.parse(`2026-11-11T${t}:00Z`)
+      // Первый вход: граница — сейчас, она записана и при следующей загрузке не сдвигается.
+      const first = loadTalkReads('me', at('10:00'))
+      assert.deepEqual(first, { since: at('10:00'), seen: {} })
+      assert.deepEqual(loadTalkReads('me', at('12:00')), first)
+      assert.equal(readMarkOf(null, 'a'), Number.POSITIVE_INFINITY, 'без пользователя непрочитанных нет')
+
+      const counts = { commentsCount: 4, otherAts: [at('09:00'), at('10:30'), at('11:00')], lastMineAt: at('10:40') }
+      assert.equal(unreadTalkCount(counts, readMarkOf(first, 'a')), 1, 'до первого входа — прочитано; до своего ответа — тоже')
+      assert.equal(unreadTalkCount({ ...counts, lastMineAt: 0 }, readMarkOf(first, 'a')), 2)
+      assert.equal(unreadTalkCount({ commentsCount: 0, otherAts: [], lastMineAt: 0 }, 0), 0)
+
+      // Отметка: самое позднее показанное сообщение; меньшая её не отматывает; другая вкладка — сливается.
+      const read = markTalkRead('me', 'a', at('11:00'), first)
+      assert.equal(readMarkOf(read, 'a'), at('11:00'))
+      assert.equal(unreadTalkCount(counts, readMarkOf(read, 'a')), 0)
+      store.set(talkReadKey('me'), JSON.stringify({ since: at('10:00'), seen: { b: at('11:30') } }))
+      const merged = markTalkRead('me', 'a', at('10:50'), read)
+      assert.deepEqual(merged.seen, { a: at('11:00'), b: at('11:30') })
+      assert.deepEqual(JSON.parse(store.get(talkReadKey('me'))).seen, merged.seen)
+      // Испорченная запись — как первый вход.
+      store.set(talkReadKey('me'), '{oops')
+      assert.deepEqual(loadTalkReads('me', at('13:00')), { since: at('13:00'), seen: {} })
+    } finally {
+      delete globalThis.localStorage
+    }
+    const comments = [
+      { author_user_id: 'u2', created_at: '2026-11-11T09:00:00Z' },
+      { author_user_id: 'me', created_at: '2026-11-11T09:30:00Z' },
+      { author_user_id: null, created_at: '2026-11-11T10:00:00Z' },
+    ]
+    assert.deepEqual(talkTimes(comments, 'me'), { lastMine: Date.parse('2026-11-11T09:30:00Z'), lastOther: Date.parse('2026-11-11T10:00:00Z') })
+    assert.equal(isUnreadMessage(comments[0], 'me', Date.parse('2026-11-11T08:00:00Z')), true)
+    assert.equal(isUnreadMessage(comments[1], 'me', 0), false, 'своё — не новое')
+    assert.equal(isUnreadMessage(comments[2], 'me', Date.parse('2026-11-11T10:00:00Z')), false, 'на границе — прочитано')
   })
 
   it('стили окна — у самой страницы: она ленивая, чужой CSS может не загрузиться', () => {
@@ -553,6 +605,50 @@ describe('Окно заявки на проверку ДП/ДС в браузе�
 
       assert.equal(await modal.locator('.dc-talk-title').textContent(), 'Обсуждение3')
       assert.equal(await card(page, 'dcr-3').locator('.dc-count--talk').textContent(), '3', 'доска за окном обновилась')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('непрочитанные: на карточке счётчик залит цветом, в окне новые подсвечены с чертой; открыл — прочитано и после перезагрузки', async () => {
+    const { page, errors, close } = await openPage('&dcComments=2')
+    try {
+      // Первый вход в этом браузере: всё, что написано раньше, — прочитано.
+      await card(page, 'dcr-3').locator('.dc-count--talk').waitFor()
+      assert.equal(await page.locator('.dc-count--talk.is-unread').count(), 0)
+
+      // Отметки «с начала времён»: у dcr-3 после своего «Принято» коллега написал ещё два сообщения.
+      await page.evaluate(() => localStorage.setItem('docCheckTalkRead:v1:user-1', JSON.stringify({ since: 0, seen: {} })))
+      await page.reload()
+      const badge = card(page, 'dcr-3').locator('.dc-count--talk.is-unread')
+      await badge.waitFor()
+      assert.equal(await badge.textContent(), '4', 'число — все сообщения, новые — цветом и в подсказке')
+      assert.match(await badge.getAttribute('title'), /^Обсуждение: 4 сообщения, непрочитанных: 2$/)
+      assert.notEqual(await badge.evaluate((el) => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)')
+      assert.equal(await page.locator('.dc-count--talk.is-unread').count(), 1)
+
+      let modal = await openCard(page, 'dcr-3')
+      await modal.locator('.dc-talk-msg').nth(3).waitFor()
+      assert.deepEqual(await modal.locator('.dc-talk-msg.is-unread .dc-talk-body').allTextContents(), ['Сообщение 3', 'Сообщение 4'])
+      assert.equal(await modal.locator('.dc-talk-msg.is-unread .dc-talk-new').count(), 2)
+      assert.equal(await modal.locator('.dc-talk-new-mark').textContent(), 'Новые сообщения: 2')
+      assert.notEqual(await modal.locator('.dc-talk-msg.is-unread').first().evaluate((el) => getComputedStyle(el).backgroundColor),
+        await modal.locator('.dc-talk-msg').first().evaluate((el) => getComputedStyle(el).backgroundColor))
+      // Переписка на экране — на доске уже прочитано; в окне подсветка остаётся, пока оно открыто.
+      await page.waitForFunction(() => !document.querySelector('.dc-card[data-id="dcr-3"] .dc-count--talk.is-unread'))
+      assert.equal(await modal.locator('.dc-talk-msg.is-unread').count(), 2)
+      await modal.locator('.modal-close').click()
+      await modal.waitFor({ state: 'detached' })
+
+      modal = await openCard(page, 'dcr-3')
+      await modal.locator('.dc-talk-msg').nth(3).waitFor()
+      assert.equal(await modal.locator('.dc-talk-msg.is-unread, .dc-talk-new-mark').count(), 0)
+      await modal.locator('.modal-close').click()
+
+      await page.reload()
+      await card(page, 'dcr-3').locator('.dc-count--talk').waitFor()
+      assert.equal(await page.locator('.dc-count--talk.is-unread').count(), 0, 'отметка «прочитано» переживает перезагрузку')
       assert.deepEqual(errors, [])
     } finally {
       await close()

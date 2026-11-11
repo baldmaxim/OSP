@@ -13,15 +13,15 @@
 export const RIGHTS_DEFAULTS = { ttlMs: 30_000, maxEntries: 2000 }
 const RIGHTS_TTL_MAX_MS = 60_000
 
-const QUERY = `select r.role, r.counterparty_id, r.is_approved, r.is_blocked,
-    coalesce(jsonb_object_agg(p.section, jsonb_build_array(coalesce(p.can_view, false), coalesce(p.can_edit, false)))
-      filter (where p.section is not null), '{}'::jsonb) as perms
-  from public.user_roles r
-  left join public.role_permissions p on p.role = r.role
-  where r.user_id = $1
-  group by r.user_id, r.role, r.counterparty_id, r.is_approved, r.is_blocked`
-const SUPERADMIN_QUERY = `select to_regclass('public.superadmins') is not null
-    and exists (select 1 from public.superadmins s where s.user_id = $1) as ok`
+// Таблиц прав и суперадминистраторов может не быть (учебные базы тестов, база раньше миграций): тогда прав раздела нет —
+// проходит только администратор по роли. Есть ли таблица — один раз на процесс, пока не появится.
+const TABLES_QUERY = `select to_regclass('public.role_permissions') is not null as rp, to_regclass('public.superadmins') is not null as sa,
+    to_regclass('public.roles') is not null as ro`
+const ROW_QUERY = `select r.role, r.counterparty_id, r.is_approved, r.is_blocked from public.user_roles r where r.user_id = $1`
+const LABEL_QUERY = 'select label from public.roles where key = $1'
+const PERMS_QUERY = `select p.section, coalesce(p.can_view, false) as v, coalesce(p.can_edit, false) as e
+  from public.role_permissions p where p.role = $1`
+const SUPERADMIN_QUERY = 'select exists (select 1 from public.superadmins s where s.user_id = $1) as ok'
 
 // Строка user_roles + права роли + признак суперадминистратора → права. Чистая функция (тесты сверяют её с базой).
 export function rightsFromRow(row, superadmin = false) {
@@ -37,6 +37,7 @@ export function rightsFromRow(row, superadmin = false) {
   const perms = row?.perms && typeof row.perms === 'object' ? row.perms : {}
   return {
     role,
+    roleLabel: row?.role_label || null,
     admin,
     superadmin,
     employee,
@@ -58,10 +59,17 @@ export function createSectionRights({ db, ttlMs = RIGHTS_DEFAULTS.ttlMs, maxEntr
   const cache = new Map() // userId → { rights, at }
   const pending = new Map()
 
+  let tables = null // { rp, sa } — как только обе есть, больше не спрашиваем
   const load = (userId) => db.read(null, async (tx) => {
-    const { rows } = await tx.query(QUERY, [userId])
-    const sa = await tx.query(SUPERADMIN_QUERY, [userId])
-    return rightsFromRow(rows.length === 1 ? rows[0] : null, sa.rows[0]?.ok === true)
+    if (!tables?.rp || !tables?.sa || !tables?.ro) tables = (await tx.query(TABLES_QUERY)).rows[0]
+    const { rows } = await tx.query(ROW_QUERY, [userId])
+    const row = rows.length === 1 ? { ...rows[0], perms: {} } : null
+    if (row && tables.rp) {
+      for (const p of (await tx.query(PERMS_QUERY, [row.role])).rows) row.perms[p.section] = [p.v === true, p.e === true]
+    }
+    if (row && tables.ro) row.role_label = (await tx.query(LABEL_QUERY, [row.role])).rows[0]?.label || null
+    const superadmin = tables.sa ? (await tx.query(SUPERADMIN_QUERY, [userId])).rows[0]?.ok === true : false
+    return rightsFromRow(row, superadmin)
   })
 
   function get(userId) {

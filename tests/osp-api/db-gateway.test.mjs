@@ -17,6 +17,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { SECRET, userToken, projectKey } from './lib/tokens.mjs'
 import { startFakeS3 } from './lib/fakes.mjs'
+import { openSections } from './lib/open-sections.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const SERVER = path.join(ROOT, 'server', 'osp-api')
@@ -130,7 +131,7 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
     logs = []
     const { defaultDeps } = await import(path.join(SERVER, 'src', 'app.js'))
     app = buildApp({ config: config(over), logger: { level: 'info', stream: { write: (l) => logs.push(l) } }, ...(limits ? { limits } : {}),
-      deps: { ...defaultDeps, allow: ALLOW, createLoadStatus: () => ({ current: async () => loadState }), createAuthAdmin: () => ({
+      deps: { ...defaultDeps, ...openSections, allow: ALLOW, createLoadStatus: () => ({ current: async () => loadState }), createAuthAdmin: () => ({
         deleteUser: async (id) => { authAdminCalls.push(['deleteUser', id, seen.length]); if (authAdminFails) throw new Error('auth 500') },
         confirmEmail: async (id) => { authAdminCalls.push(['confirmEmail', id, seen.length]); if (authAdminFails) throw new Error('auth 500') },
         listUsers: async () => [],

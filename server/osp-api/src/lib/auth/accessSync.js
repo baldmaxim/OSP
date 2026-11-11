@@ -33,7 +33,7 @@ export function breakerReasons({ prevMembers, members, links, revoke, kcSyncRequ
   return reasons
 }
 
-export function createAccessSync({ db, kcAdmin, identity, sessions, issuer, linkByEmail = false, log = null, now = Date.now,
+export function createAccessSync({ db, kcAdmin, identity, sessions, issuer, linkByEmail = false, orgs = null, log = null, now = Date.now,
   owner = randomUUID(), options = {} }) {
   const o = { ...SYNC_DEFAULTS, ...options }
   let running = null
@@ -138,6 +138,15 @@ export function createAccessSync({ db, kcAdmin, identity, sessions, issuer, link
       const members = await kcAdmin.groupMembers()
       const result = await apply(members, force)
       log?.info({ ...result }, 'kc access sync')
+      // Реестр организаций СУ-10 и организации участников (src/lib/auth/orgs.js): ошибка — сверка организаций пропускается,
+      // прежний кэш остаётся, сверка группы не страдает.
+      if (orgs) {
+        try {
+          await orgs.afterSync(members, { held: result.held })
+        } catch (err) {
+          log?.warn({ code: err?.code, status: err?.status }, 'org sync')
+        }
+      }
       return result
     } finally {
       await releaseLease()

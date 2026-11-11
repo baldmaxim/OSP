@@ -1,0 +1,75 @@
+/* «Администрирование» → «Организации СУ-10», окно «Сопоставить…», строка организации в заявках. Префикс so-. */
+.so-tab { display: flex; flex-direction: column; gap: 0.75rem; }
+.so-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.so-toolbar .so-search { flex: 1 1 14rem; min-width: 10rem; padding: 0.375rem 0.625rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); font-size: 0.875rem; }
+.so-switch { display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
+.so-switch button { padding: 0.375rem 0.75rem; font-size: 0.8125rem; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; white-space: nowrap; }
+.so-switch button.is-active { background: var(--primary-color); color: #fff; }
+.so-switch .so-count { margin-left: 0.25rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
+.so-note { margin: 0; font-size: 0.8125rem; color: var(--text-secondary); }
+.so-hint { margin: 0; font-size: 0.75rem; color: var(--text-tertiary); line-height: 1.45; }
+.so-error { margin: 0; color: #dc2626; font-size: 0.875rem; }
+.so-warn { margin: 0; padding: 0.5rem 0.75rem; font-size: 0.8125rem; line-height: 1.45; color: #92400e; background: rgba(245, 158, 11, 0.14); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; }
+.so-muted { color: var(--text-tertiary); font-size: 0.8125rem; }
+
+.so-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px; }
+.so-table { width: 100%; min-width: 56rem; border-collapse: collapse; font-size: 0.8125rem; }
+.so-table th { text-align: left; font-weight: 600; color: var(--text-secondary); background: var(--bg-tertiary, rgba(100, 116, 139, 0.08)); padding: 0.5rem 0.625rem; border-bottom: 1px solid var(--border-color); }
+.so-table td { padding: 0.5rem 0.625rem; border-bottom: 1px solid var(--border-color); vertical-align: top; color: var(--text-primary); }
+.so-table tr:last-child td { border-bottom: none; }
+.so-table .so-num { text-align: right; font-variant-numeric: tabular-nums; width: 5.5rem; }
+.so-table .so-inn { font-variant-numeric: tabular-nums; white-space: nowrap; width: 8rem; }
+.so-table .so-actions-col { width: 13rem; }
+.so-name { font-weight: 500; overflow-wrap: anywhere; }
+.so-sub { display: block; margin-top: 0.125rem; font-size: 0.75rem; color: var(--text-tertiary); }
+.so-actions { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+.so-chip { display: inline-block; padding: 0.0625rem 0.5rem; border-radius: 999px; font-size: 0.75rem; background: var(--bg-tertiary, rgba(100, 116, 139, 0.12)); color: var(--text-secondary); white-space: nowrap; }
+.so-chip.is-ok { background: rgba(22, 163, 74, 0.12); color: #15803d; }
+.so-chip.is-bad { background: rgba(220, 38, 38, 0.1); color: #b91c1c; }
+.so-chip.is-warn { background: rgba(245, 158, 11, 0.16); color: #92400e; }
+.so-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.25rem; }
+.so-danger { color: #b91c1c; }
+.so-employees { margin: 0.375rem 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.25rem; }
+.so-employees li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; font-size: 0.75rem; }
+.so-exc-form { display: flex; flex-wrap: wrap; gap: 0.375rem; align-items: center; }
+.so-exc-form input { flex: 1 1 12rem; padding: 0.25rem 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); font-size: 0.8125rem; }
+.so-section-title { margin: 0.5rem 0 0; font-size: 0.9375rem; color: var(--text-primary); }
+
+/* Окно «Сопоставить…» */
+.so-overlay { position: fixed; inset: 0; z-index: 1290; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgba(15, 23, 42, 0.45); }
+.so-dialog { width: 720px; max-width: 100%; max-height: calc(100vh - 2rem); overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; padding: 1.25rem 1.5rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3); box-sizing: border-box; }
+.so-dialog h3 { margin: 0; font-size: 1.0625rem; color: var(--text-primary); overflow-wrap: anywhere; }
+.so-dialog-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; }
+.so-close { border: none; background: transparent; font-size: 1.25rem; line-height: 1; color: var(--text-secondary); cursor: pointer; padding: 0.25rem; }
+.so-search-input { width: 100%; box-sizing: border-box; padding: 0.375rem 0.625rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); font-size: 0.875rem; }
+.so-label { font-size: 0.75rem; color: var(--text-tertiary); }
+.so-cands { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.so-cand { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; padding: 0.5rem 0.625rem; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); }
+.so-cand.is-confident { border-color: rgba(22, 163, 74, 0.5); }
+.so-cand-main { flex: 1 1 18rem; min-width: 0; }
+.so-create { display: flex; flex-direction: column; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border-color); }
+.so-create-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.so-create-row input { flex: 1 1 12rem; padding: 0.375rem 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); font-size: 0.875rem; }
+.so-create-row input.so-inn-input { flex: 0 1 10rem; font-variant-numeric: tabular-nums; }
+
+/* Карточка контрагента → «Организация СУ-10» (вне страницы «Администрирование» — свои кнопки) */
+.so-btn { align-self: flex-start; padding: 0.3125rem 0.75rem; font-size: 0.8125rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; }
+.so-btn:hover:not(:disabled) { border-color: var(--primary-color); color: var(--primary-color); }
+.so-btn:disabled { opacity: 0.55; cursor: default; }
+.so-btn.so-danger { color: #b91c1c; }
+.so-cp-block .so-pick { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.375rem; }
+.so-cp-block .so-cands { max-height: 18rem; overflow-y: auto; }
+
+/* Строка организации в заявке на доступ */
+.so-org-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; font-size: 0.8125rem; color: var(--text-secondary); }
+
+@media (max-width: 640px) {
+  .so-table { min-width: 0; }
+  .so-table thead { display: none; }
+  .so-table, .so-table tbody, .so-table tr, .so-table td { display: block; width: auto; }
+  .so-table tr { padding: 0.5rem 0.625rem; border-bottom: 1px solid var(--border-color); }
+  .so-table td { padding: 0.125rem 0; border: none; }
+  .so-table .so-num, .so-table .so-inn { text-align: left; width: auto; }
+  .so-table .so-num::before { content: attr(data-label) ': '; color: var(--text-tertiary); }
+  .so-toolbar .so-search, .so-search-input, .so-create-row input, .so-exc-form input { font-size: 1rem; }
+}

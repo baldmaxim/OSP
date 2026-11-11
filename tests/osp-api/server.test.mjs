@@ -122,6 +122,8 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
     s3: { endpoint: s3.url, region: 'ru-central-1', bucket: 'osp', accessKeyId: 'AKIDTEST', secretAccessKey: 'secret-test' },
     anthropicApiKey: 'anthropic-test-key',
     ratesApiKeys: ['rk-one', 'rk-two'],
+    // Ключи из настроек без базы — прежнее поведение, только явно (по умолчанию db: src/lib/apiKeys.js).
+    security: { apiKeysSource: 'env' },
     ...over,
   })
 
@@ -454,7 +456,9 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.equal(s3.requests.filter((r) => r.method === 'DELETE').length, 0, 'объект не трогали')
       const calls = supa.requests.filter((r) => r.path === '/rest/v1/rpc/osp_can').map((r) => JSON.parse(r.body))
       assert.ok(calls.every((c) => !(c.p_section === 'contracts' && c.p_kind === 'view')), 'просмотр для изменения не спрашивается')
-      assert.equal((await rename(U.emp, CONTRACT_KEY, 'Другое.docx')).statusCode, 200)
+      state.docs[CONTRACT_KEY].row.file_name = 'x.docx'
+      const renamed = await rename(U.emp, CONTRACT_KEY, 'Другое.docx')
+      assert.equal(renamed.statusCode, 200, renamed.body)
       assert.equal((await del(U.emp, CONTRACT_KEY)).statusCode, 200)
     })
 
@@ -769,7 +773,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.equal((await up(U.emp, 'task', TASK_1)).statusCode, 404, 'задача не видна')
     })
 
-    it('нет osp_can (Р2a не применена) — 503 на загрузку, подтверждение и удаление; скачивание работает', async () => {
+    it('нет osp_can (Р2a не применена) — 503 на загрузку, подтверждение, удаление и скачивание: без проверки прав файлов не выдаём', async () => {
       state.noOspCan = true
       for (const body of [{ action: 'upload', ...fileBody() }, { action: 'confirm', ...fileBody() }, { action: 'delete', s3_key: `general-documents/${GDOC_1}/g.pdf` }]) {
         const res = await fn('s3-presign', U.emp, body)
@@ -777,7 +781,8 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
         assert.equal(res.json().code, 'OSP_RIGHTS_UNAVAILABLE')
       }
       assert.ok(state.docs[`general-documents/${GDOC_1}/g.pdf`], 'строка не удалена')
-      assert.equal((await fn('s3-presign', U.emp, { action: 'download', s3_key: KEY_T1 })).statusCode, 200)
+      // Скачивание теперь проверяет право чтения раздела владельца (READ_RULES): без osp_can — тоже 503.
+      assert.equal((await fn('s3-presign', U.emp, { action: 'download', s3_key: KEY_T1 })).statusCode, 503)
       assert.equal(s3.requests.length, 0)
     })
   })
@@ -847,7 +852,8 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       aiResponse = new Error('overloaded')
       const fail = await fn('ai-assist', U.emp, body)
       assert.equal(fail.statusCode, 500)
-      assert.deepEqual(fail.json(), { error: 'overloaded' })
+      // Текст исключения внешней службы клиенту не уходит — только в журнал службы.
+      assert.deepEqual(fail.json(), { error: 'Ошибка обращения к ИИ — повторите позже' })
       await makeApp({ anthropicApiKey: '' })
       assert.deepEqual((await fn('ai-assist', U.emp, body)).json(), { error: 'ANTHROPIC_API_KEY не задан в секретах функции' })
     })

@@ -472,6 +472,105 @@
     "no_user_roles": 403,
     "blocked": 403
   },
+  "GET /api/admin/su10-orgs": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "POST /api/admin/su10-orgs/refresh": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "GET /api/admin/su10-orgs/:id/candidates": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "POST /api/admin/su10-orgs/:id/link": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "DELETE /api/admin/su10-orgs/:id/link": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "POST /api/admin/su10-orgs/:id/create-counterparty": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "GET /api/admin/counterparties/:id/su10-org": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "POST /api/admin/su10-org-exceptions": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "DELETE /api/admin/su10-org-exceptions/:subject": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 404,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
   "GET /api/rates/*": {
     "без ключа": 401,
     "неверный ключ": 401,

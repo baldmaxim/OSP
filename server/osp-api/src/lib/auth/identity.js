@@ -23,6 +23,9 @@ export const IDENTITY_ERRORS = {
   roleUnknown: { status: 400, code: 'role_unknown', message: 'Такой роли нет' },
   referenceUnknown: { status: 400, code: 'reference_unknown', message: 'Организация или объект не найдены' },
   notLinked: { status: 404, code: 'not_linked', message: 'Пользователь не связан с СУ-10' },
+  orgUnmapped: { status: 409, code: 'org_unmapped', message: 'Сначала сопоставьте организацию СУ-10 этого человека с контрагентом' },
+  orgNotOwn: { status: 409, code: 'org_not_own', message: 'Учётка СУ-10 не в своей организации: сотрудник не войдёт без исключения суперадминистратора' },
+  orgLookup: { status: 503, code: 'org_lookup_failed', message: 'СУ-10 не ответил — организация учётки не определена, повторите позже' },
 }
 const fail = (key, extra = {}) => ({ ok: false, ...IDENTITY_ERRORS[key], ...extra })
 
@@ -30,7 +33,7 @@ export const normEmail = (v) => (typeof v === 'string' && v.trim() ? v.trim().to
 const normName = (v) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').toLowerCase().replace(/ё/g, 'е') : '')
 const localPart = (email) => (email && email.includes('@') ? email.slice(0, email.indexOf('@')) : '')
 
-export function createIdentity({ db, issuer, linkByEmail = false, sessions, createUserTx, isSuperadmin, log = null }) {
+export function createIdentity({ db, issuer, linkByEmail = false, sessions, createUserTx, isSuperadmin, orgs = null, log = null }) {
   const event = (tx, userId, kind, detail = {}) =>
     tx.query('insert into osp_auth.events (user_id, kind, detail) values ($1, $2, $3)', [userId, kind, JSON.stringify(detail)])
 
@@ -111,16 +114,27 @@ export function createIdentity({ db, issuer, linkByEmail = false, sessions, crea
     return (await tx.query('select 1 from public.superadmins where user_id = $1', [userId])).rows.length > 0
   }
 
-  // Вход через СУ-10 целиком — одной транзакцией: кто это, действует ли учётка, новая сессия, отметки входа, событие.
-  // keycloak — { subject, sid, refreshToken, idToken }. → { kind: 'user', userId, session } | { kind: 'requested' | 'rejected' | 'disabled' }
-  async function completeLogin({ subject, email, fullName, keycloak }) {
+  // Вход через СУ-10 целиком — одной транзакцией: кто это, действует ли учётка, организация (src/lib/auth/orgs.js), новая
+  // сессия, отметки входа, событие. keycloak — { subject, sid, refreshToken, idToken }; orgIds — claim su10_org_id.
+  // → { kind: 'user', userId, session } | { kind: 'requested' | 'rejected' | 'disabled' } | { kind: 'org_denied', error }
+  async function completeLogin({ subject, email, fullName, keycloak, orgIds = [] }) {
+    if (orgs) await orgs.ensureKnown(orgIds)
     return db.write(null, async (tx) => {
       const who = await resolveLoginTx(tx, { subject, email, fullName })
-      if (who.kind !== 'user') return who
+      if (who.kind !== 'user') {
+        if (orgs) await orgs.recordTx(tx, subject, orgIds)
+        return who
+      }
       if (!(await accountActiveTx(tx, who.userId))) {
         await tx.mark('auth')
         await event(tx, who.userId, 'login_refused', { reason: 'disabled', via: 'sso' })
         return { kind: 'disabled' }
+      }
+      // Организация — до выпуска сессии и той же транзакцией: при смене контрагента новая сессия уже с ним, при отказе
+      // сессии нет, а прежние закрыты.
+      if (orgs) {
+        const org = await orgs.applyTx(tx, { userId: who.userId, subject, orgIds, via: 'login' })
+        if (!org.ok) return { kind: 'org_denied', error: org.error }
       }
       await tx.mark('internal')
       const session = await sessions.createInTx(tx, { userId: who.userId, keycloak: { issuer, subject, ...keycloak } })
@@ -146,10 +160,12 @@ export function createIdentity({ db, issuer, linkByEmail = false, sessions, crea
   async function listRequests({ status = 'pending' } = {}) {
     return db.read(null, async (tx) => {
       await tx.mark('auth')
-      const { rows: requests } = await tx.query(`select id, email, full_name, status, origin, created_at, first_seen_at, last_seen_at, decided_at
+      const { rows: requests } = await tx.query(`select id, subject, email, full_name, status, origin, created_at, first_seen_at, last_seen_at, decided_at
         from osp_auth.identity_requests where issuer = $1 and status = $2 order by created_at desc limit 500`, [issuer, status])
       const linked = new Set((await tx.query('select user_id from osp_auth.identity_links where issuer = $1', [issuer])).rows.map((r) => r.user_id))
       const pendingCount = (await tx.query(`select count(*)::int as n from osp_auth.identity_requests where issuer = $1 and status = 'pending'`, [issuer])).rows[0].n
+      const orgsOn = Boolean(orgs) && await orgs.enabled()
+      const orgOf = orgsOn ? await orgs.describeSubjectsTx(tx, requests.map((q) => q.subject)) : new Map()
       const { users, supers } = await readUsersTx(tx)
       const free = users.filter((u) => !linked.has(u.id))
       const out = requests.map((q) => {
@@ -173,11 +189,12 @@ export function createIdentity({ db, issuer, linkByEmail = false, sessions, crea
         }
         similar.sort((a, b) => b.match.length - a.match.length)
         return {
-          id: q.id, email: q.email, fullName: q.full_name, status: q.status, origin: q.origin, createdAt: q.created_at,
-          firstSeenAt: q.first_seen_at, lastSeenAt: q.last_seen_at, decidedAt: q.decided_at, similar: similar.slice(0, 5),
+          id: q.id, subject: String(q.subject).toLowerCase(), email: q.email, fullName: q.full_name, status: q.status, origin: q.origin,
+          createdAt: q.created_at, firstSeenAt: q.first_seen_at, lastSeenAt: q.last_seen_at, decidedAt: q.decided_at,
+          similar: similar.slice(0, 5), ...(orgsOn ? { org: orgOf.get(String(q.subject).toLowerCase()) || null } : {}),
         }
       })
-      return { requests: out, pending: pendingCount }
+      return { requests: out, pending: pendingCount, orgsEnabled: orgsOn }
     })
   }
 
@@ -245,19 +262,61 @@ export function createIdentity({ db, issuer, linkByEmail = false, sessions, crea
     }
   }
 
+  // Учётка СУ-10 заявки (для организации — до транзакции решения). → subject | null
+  async function requestSubject(requestId) {
+    if (!UUID.test(String(requestId))) return null
+    return db.read(null, async (tx) => {
+      await tx.mark('auth')
+      const row = (await tx.query('select subject from osp_auth.identity_requests where id = $1 and issuer = $2', [requestId, issuer])).rows[0]
+      return row ? String(row.subject).toLowerCase() : null
+    })
+  }
+
   // «Создать пользователя» по заявке: учётка, роль, связь, заявка — одной транзакцией. Пароля нет: вход — через СУ-10.
+  // Организация СУ-10 (src/lib/auth/orgs.js): подрядчику контрагент — только из связи организации (то, что прислала форма,
+  // не берётся); сотруднику — только своя организация или исключение суперадминистратора (иначе он всё равно не войдёт).
   async function createUser({ actor, requestId, role, objectIds = [], counterpartyId = null, fullName = null }) {
     if (role === 'admin' && !(await isSuperadmin(actor.userId))) return fail('superadminOnly')
+    let subjectOrg = null
+    if (orgs && await orgs.enabled()) {
+      const subject = await requestSubject(requestId)
+      if (subject) {
+        subjectOrg = await orgs.subjectOrgs(subject)
+        if (!subjectOrg) return fail('orgLookup')
+      }
+    }
     return unwrap(actor, async (tx) => {
       const q = await pendingRequestTx(tx, requestId)
       if (q.ok === false) return q
+      let cpId = counterpartyId
+      let fromOrg = false
+      if (subjectOrg) {
+        const r = await orgs.resolveTx(tx, subjectOrg.orgIds)
+        if (role === 'contractor') {
+          if (r.result !== 'counterparty') return fail('orgUnmapped', { orgId: r.orgId || null, result: r.result })
+          cpId = r.counterpartyId
+          fromOrg = true
+        } else {
+          cpId = null
+          if (r.result !== 'own') {
+            await tx.mark('auth')
+            const exc = r.result === 'ambiguous' ? null
+              : (await tx.query('select su10_org_id from osp_auth.org_exceptions where issuer = $1 and subject = $2', [issuer, q.subject])).rows[0]
+            if (!exc || (exc.su10_org_id || null) !== (r.orgId || null)) return fail('orgNotOwn', { orgId: r.orgId || null, result: r.result })
+          }
+        }
+      }
       const email = normEmail(q.email)
       if (!email) throw rollbackWith({ ok: false, status: 400, code: 'email_missing', message: 'В заявке нет почты — привяжите её к существующему пользователю' })
       await tx.mark('internal')
       const taken = (await tx.query('select id from auth.users where osp_private.email_norm(email) = osp_private.email_norm($1)', [email])).rows[0]
       if (taken) return fail('emailTaken', { userId: taken.id })
-      const created = await createUserTx(tx, { email, fullName: (fullName || q.full_name || '').trim() || null, role, counterpartyId, objectIds })
+      const created = await createUserTx(tx, { email, fullName: (fullName || q.full_name || '').trim() || null, role, counterpartyId: cpId, objectIds })
       if (created.ok === false) throw rollbackWith(created)
+      if (fromOrg) {
+        await tx.mark('internal')
+        await tx.query(`update public.user_roles set counterparty_source = 'su10' where user_id = $1`, [created.user.id])
+      }
       const problem = await insertLinkTx(tx, { subject: q.subject, userId: created.user.id, source: 'request', actor })
       if (problem) throw rollbackWith(problem)
       await decideTx(tx, { q, actor, userId: created.user.id, action: 'create' })

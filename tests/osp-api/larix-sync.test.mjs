@@ -353,7 +353,7 @@ describe('Загрузка договорных расценок из Larix.CPM'
     const app = buildApp({
       config: {
         host: '127.0.0.1', port: 0, supabaseUrl: '', supabaseAnonKey: '', supabaseServiceKey: '', s3: {}, anthropicApiKey: '',
-        ratesApiKeys: ['rk-larix:kp+larix', 'rk-old'], db: { url: `postgres://postgres@127.0.0.1:${pgdb.port}/psdc_test`, poolMax: 2 },
+        ratesApiKeys: ['rk-larix:kp+larix', 'rk-old'], security: { apiKeysSource: 'env' }, db: { url: `postgres://postgres@127.0.0.1:${pgdb.port}/psdc_test`, poolMax: 2 },
       },
       deps: defaultDeps, logger: false,
     })

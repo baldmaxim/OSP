@@ -29,7 +29,7 @@ DROP TRIGGER IF EXISTS s3_documents_user_guard ON public.s3_documents;
 DROP FUNCTION IF EXISTS public.s3_documents_user_guard();
 DROP TRIGGER IF EXISTS app_settings_write_guard ON public.app_settings;
 DROP FUNCTION IF EXISTS public.app_settings_write_guard();
-DROP FUNCTION IF EXISTS public.app_settings_key_section(text);
+DROP FUNCTION IF EXISTS public.app_settings_key_sections(text);
 DROP FUNCTION IF EXISTS public.profile_update_own(text, text, text);
 
 CREATE OR REPLACE FUNCTION public.dp_request_scope() RETURNS uuid[]

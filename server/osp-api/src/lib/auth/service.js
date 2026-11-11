@@ -9,6 +9,7 @@
 //   • перебор: по нормализованной почте после 5 неудач — пауза 1 мин, затем вдвое длиннее, до 15 мин; хранится
 //     в базе. Вытесняются только строки несуществующих почт без действующей блокировки;
 //   • пароли (osp_auth) читаются и пишутся только с отметкой 'auth', учётки и сессии — с 'internal'.
+import { orgRegistryProblemTx } from './orgs.js'
 import { CANARY_AAD, CANARY_TEXT } from './secretBox.js'
 import { hashPassword, needsRehash } from './passwords.js'
 import { checkNewPassword, generateTemporaryPassword } from './policy.js'
@@ -28,7 +29,7 @@ export const AUTH_ERRORS = {
 
 const fail = (key, extra = {}) => ({ ok: false, ...AUTH_ERRORS[key], ...extra })
 
-export function createAuthService({ db, box, verifier, sessions, blocklist, mode = 'own', pilotIds = [], logger = null }) {
+export function createAuthService({ db, box, verifier, sessions, blocklist, mode = 'own', pilotIds = [], logger = null, orgIssuer = null }) {
   let superadminsTable = null // есть ли public.superadmins (на проде — да; в тестовых базах может не быть)
   // Новый отпечаток — через очередь расчётов проверяющего (passwords.js), до открытия транзакции.
   const newHash = (password) => (verifier.hash ? verifier.hash(password) : hashPassword(password))
@@ -369,6 +370,10 @@ export function createAuthService({ db, box, verifier, sessions, blocklist, mode
       if (mode === 'keycloak') {
         const { rows: t } = await tx.query("select to_regclass('osp_auth.identity_links') is not null as ok")
         if (!t[0].ok) throw new Error('нет таблиц входа через СУ-10 — сначала миграция 20270112 (deploy-server.sh migrate)')
+        // Организации СУ-10 (src/lib/auth/orgs.js): без полной сверки реестра и своей организации в нём сотрудники получили
+        // бы отказ при входе, а подрядчики — без связей.
+        const orgProblem = await orgRegistryProblemTx(tx, orgIssuer)
+        if (orgProblem) throw new Error(orgProblem)
       }
       await tx.mark('internal')
       const { rows: c } = await tx.query(`select exists (select 1 from information_schema.columns

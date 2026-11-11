@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import AutoGrowTextarea from '../AutoGrowTextarea'
 import CounterpartyContracts from './CounterpartyContracts'
+import CounterpartySu10Org from './CounterpartySu10Org'
 import CounterpartyVatSelect from './CounterpartyVatSelect'
 import { VAT_NONE, vatSelectValue, vatText } from '../../utils/counterpartyVat'
 import { phoneHref } from '../../utils/phoneFormat'
@@ -216,6 +217,9 @@ export default function CounterpartyGeneralTab({
               </div>
             )}
           </section>
+
+          {/* Организация СУ-10: по ней подрядчик входит через СУ-10 с этим контрагентом (только администратор). */}
+          {isAdmin && <CounterpartySu10Org counterpartyId={cp.id} />}
         </div>
       </div>
 

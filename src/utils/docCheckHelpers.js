@@ -23,6 +23,7 @@ export const DOC_CHECK_STATUSES = [
 // заявок, которые в нём ещё стоят: такую заявку не предлагают ни колонкой, ни выбором, бросить в неё нельзя. Пока она
 // есть на доске, для неё рисуется колонка без «+» и без приёма карточек (как для любого статуса вне справочника); перенесли
 // или отправили в архив последнюю — колонка пропала сама. Разово: migration/data/20261110_doc_check_tax_clause_archive.sql.
+// «Ожидаем скан» остаётся колонкой (11.11.2026, решение пользователя).
 export const RETIRED_DOC_CHECK_STATUSES = [
   { value: 'tax_clause', label: 'Проверка документов (исключение налоговой оговорки)', className: 'dcs-tax' },
 ]
@@ -194,15 +195,30 @@ export const MAX_COMMENT_LENGTH = 4000
 // — свободный текст, права на файлы заявки — те же (s3_documents_doc_check_guard, WRITE_RULES.doc_check_requests).
 export const DOC_CHECK_CONCEPT_CATEGORY = 'doc_check_concept_agreement'
 
-// Счётчик на карточке доски: заявка → сколько сообщений.
-export const NO_CARD_COUNTS = { commentsCount: 0 }
-export function cardCountsById(comments) {
+// Счётчик на карточке доски: заявка → сколько сообщений, а для «непрочитанных» (docCheckTalkRead.js) — время каждого
+// сообщения коллег (мс) и своего последнего. Без myId все сообщения — чужие.
+export const NO_CARD_COUNTS = Object.freeze({ commentsCount: 0, otherAts: Object.freeze([]), lastMineAt: 0 })
+export function cardCountsById(comments, myId = null) {
   const map = new Map()
   for (const c of comments || []) {
-    const cur = map.get(c.request_id) || NO_CARD_COUNTS
-    map.set(c.request_id, { commentsCount: cur.commentsCount + 1 })
+    let cur = map.get(c.request_id)
+    if (!cur) {
+      cur = { commentsCount: 0, otherAts: [], lastMineAt: 0 }
+      map.set(c.request_id, cur)
+    }
+    cur.commentsCount += 1
+    const at = Date.parse(c.created_at) || 0
+    if (myId && c.author_user_id === myId) cur.lastMineAt = Math.max(cur.lastMineAt, at)
+    else cur.otherAts.push(at)
   }
   return map
+}
+
+// Те же числа? Сообщения только добавляются, поэтому хватает числа, своего последнего и последнего чужого.
+export function sameCardCounts(a, b) {
+  const last = (list) => (list?.length ? list[list.length - 1] : 0)
+  return a.commentsCount === b.commentsCount && (a.lastMineAt || 0) === (b.lastMineAt || 0)
+    && (a.otherAts?.length || 0) === (b.otherAts?.length || 0) && last(a.otherAts) === last(b.otherAts)
 }
 
 // Инициалы для кружка исполнителя: «Иванова Роза Петровна» → «ИР», почта → две буквы.
@@ -390,12 +406,32 @@ const EMBED = `,
   counterparties(id, name)`
 // Поля карточки (миграция 20261124): та же миграция заводит обсуждение, поэтому её колонки — признак всего набора.
 export const CARD_FIELDS = ['email_link']
-// Что читать — от полного набора к прежнему: первая выборка, на которую база ответила без 42703.
-export const DOC_CHECK_SELECTS = [
-  { board: true, card: true, select: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}, ${CARD_FIELDS.join(', ')}${EMBED}` },
-  { board: true, card: false, select: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}${EMBED}` },
-  { board: false, card: false, select: `${BASE_SELECT}${EMBED}` },
+// Постоянный номер заявки — «ID» (миграция 20270123): колонка позже остальных, поэтому у каждого набора полей — вариант с ней
+// и без неё. Без колонки номер не показываем вовсе: номер, посчитанный страницей, у сотрудника объекта (видит только свои
+// заявки) разошёлся бы с номером базы.
+export const NUMBER_FIELD = 'request_number'
+const LEVELS = [
+  { board: true, card: true, fields: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}, ${CARD_FIELDS.join(', ')}` },
+  { board: true, card: false, fields: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}` },
+  { board: false, card: false, fields: BASE_SELECT },
 ]
+// Что читать — от полного набора к прежнему: первая выборка, на которую база ответила без 42703.
+export const DOC_CHECK_SELECTS = LEVELS.flatMap(({ board, card, fields }) => [
+  { board, card, number: true, select: `${fields}, ${NUMBER_FIELD}${EMBED}` },
+  { board, card, number: false, select: `${fields}${EMBED}` },
+])
+
+// «ID 123» — номер заявки на доске, в реестре и в окне. Нет номера — пусто.
+export function requestIdLabel(request) {
+  return request?.request_number != null ? `ID ${request.request_number}` : ''
+}
+
+// Поиск по номеру: «ID 12», «№ 12», «#12» — только эта заявка; просто «12» — эта заявка и всё, где «12» есть в тексте
+// (номер ДС, примечание). null — запрос не о номере.
+export function requestNumberQuery(query) {
+  const m = /^(id|№|#)?\s*(\d{1,9})$/i.exec(String(query || '').trim())
+  return m ? { number: Number(m[2]), only: !!m[1] } : null
+}
 
 // Колонок ещё нет: PostgREST отвечает 42703 (или PGRST204 на записи).
 export function isMissingBoardColumn(err) {
@@ -407,15 +443,19 @@ export function normalizeRequest(r) {
   return { ...r, assignee_ids: r.assignee_ids || [], labels: r.labels || [] }
 }
 
-// Заявки с числом файлов и сообщений. Заявка, у которой числа прежние, остаётся тем же объектом (cache — WeakMap
-// на время жизни страницы): карточка доски сравнивает его и не перерисовывается. На доске сотни карточек, а меняется одна.
-export function mergeRequestCounts(requests, docCounts, cardCounts, cache) {
+// Заявки с числом файлов, сообщений и непрочитанных сообщений (unreadOf(id, counts) — число; нет — 0). Заявка, у которой числа
+// прежние, остаётся тем же объектом (cache — WeakMap на время жизни страницы): карточка доски сравнивает его и не
+// перерисовывается. На доске сотни карточек, а меняется одна.
+export function mergeRequestCounts(requests, docCounts, cardCounts, cache, unreadOf = null) {
   return requests.map((r) => {
     const docsCount = docCounts.get(r.id) || 0
     const counts = cardCounts.get(r.id) || NO_CARD_COUNTS
+    const unreadCount = unreadOf ? unreadOf(r.id, counts) : 0
     const hit = cache.get(r)
-    if (hit && hit.docsCount === docsCount && hit.commentsCount === counts.commentsCount) return hit
-    const row = { ...r, docsCount, ...counts }
+    if (hit && hit.docsCount === docsCount && hit.commentsCount === counts.commentsCount && hit.unreadCount === unreadCount) {
+      return hit
+    }
+    const row = { ...r, docsCount, commentsCount: counts.commentsCount, unreadCount }
     cache.set(r, row)
     return row
   })

@@ -324,3 +324,30 @@
     align-items: flex-start;
   }
 }
+
+/* 11.11.2026: руководитель строительства и экономист объекта — статус тендеров своих объектов и свои заявки
+   (utils/siteNotifications.js). Плашка статуса вместо срока; маркер слева — по этапу: идёт, новая, приостановлен, закрыт. */
+.notif-status-chip {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  letter-spacing: 0.01em;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+.notif-status-chip.is-new { background: rgba(124, 58, 237, 0.12); color: #6d28d9; }
+.notif-status-chip.is-paused { background: rgba(245, 158, 11, 0.18); color: #b45309; }
+.notif-status-chip.is-closed { background: rgba(22, 163, 74, 0.14); color: #15803d; }
+[data-theme='dark'] .notif-status-chip { color: #93c5fd; }
+[data-theme='dark'] .notif-status-chip.is-new { color: #c4b5fd; }
+[data-theme='dark'] .notif-status-chip.is-paused { color: #fbbf24; }
+[data-theme='dark'] .notif-status-chip.is-closed { color: #4ade80; }
+.notif-item.is-status .notif-dot { background: #2563eb; }
+.notif-item.is-status.is-new .notif-dot { background: #7c3aed; }
+.notif-item.is-status.is-paused .notif-dot { background: #d97706; }
+.notif-item.is-status.is-closed .notif-dot { background: #16a34a; }
+.notif-toggle-btn.is-active.notif-toggle-doccheck .notif-toggle-count { background: rgba(124, 58, 237, 0.14); color: #6d28d9; }
+.notif-toggle-btn.is-active.notif-toggle-dp .notif-toggle-count { background: rgba(217, 119, 6, 0.16); color: #b45309; }
+[data-theme='dark'] .notif-toggle-btn.is-active.notif-toggle-doccheck .notif-toggle-count { color: #c4b5fd; }
+[data-theme='dark'] .notif-toggle-btn.is-active.notif-toggle-dp .notif-toggle-count { color: #fcd34d; }

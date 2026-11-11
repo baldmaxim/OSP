@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { identityAdmin } from '../../api'
+import { ORG_RESULT_TEXT, counterpartyLabel } from '../../utils/su10Orgs'
+import Su10OrgMatchDialog from './Su10OrgMatchDialog'
 import './IdentityRequestsTab.css'
+import './Su10OrgsTab.css'
 
 // «Администрирование» → «Заявки на доступ» (вход через СУ-10). Заявка появляется, когда человеку выдали доступ к порталу на
 // auth.su10.ru/manage (сверка группы — раз в 5 минут или по «Проверить СУ-10») или когда он вошёл, а связи с учёткой портала
 // нет. Администратор ОСП решает: привязать к существующему пользователю (подсказки — похожие по почте и ФИО), создать нового
 // (роль, объекты, организация) или отклонить. Пароли и блокировку учётки СУ-10 ведёт auth.su10.ru/manage, не портал.
 // Роль «Администратор» и связи администраторов — только у суперадминистратора (так же проверяет сервер и база).
+// Организация СУ-10 человека (server/osp-api/src/lib/auth/orgs.js): подрядчику контрагент — только из связи организации
+// («Организации СУ-10»), выбрать вручную нельзя; сотрудник войдёт, только если организация своя (или есть исключение).
 
 const MATCH_LABEL = { email: 'почта', name: 'ФИО', email_local: 'почта до «@»' }
 const formatDateTime = (ts) => {
@@ -15,15 +20,34 @@ const formatDateTime = (ts) => {
   return Number.isNaN(d.getTime()) ? null : d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-function CreateForm({ request, roleOptions, objectOptions, counterpartyOptions, onNeedCounterparties, onSubmit, onCancel, busy }) {
+// Организация СУ-10 человека: что о ней известно и связана ли она с контрагентом.
+function OrgLine({ org, onMatch }) {
+  if (!org) return null
+  const canMatch = org.result === 'unmapped' && org.org?.kind === 'contractor' && org.org?.state === 'active' && !org.counterparty
+  const tone = org.result === 'counterparty' || org.result === 'own' ? 'is-ok' : org.result === 'unknown_subject' ? '' : 'is-warn'
+  return (
+    <div className="so-org-line">
+      <span className="ir-label">Организация СУ-10:</span>
+      {org.org && <span className="so-name">{org.org.name}</span>}
+      <span className={`so-chip ${tone}`}>{ORG_RESULT_TEXT[org.result] || org.result}</span>
+      {org.counterparty && <span>→ {counterpartyLabel(org.counterparty)}</span>}
+      {canMatch && onMatch && <button type="button" className="btn-soft" onClick={onMatch}>Сопоставить…</button>}
+    </div>
+  )
+}
+
+function CreateForm({ request, roleOptions, objectOptions, counterpartyOptions, onNeedCounterparties, onSubmit, onCancel, busy, orgsEnabled, onMatch }) {
   const [role, setRole] = useState('')
   const [objectIds, setObjectIds] = useState([])
   const [counterpartyId, setCounterpartyId] = useState('')
   const [fullName, setFullName] = useState(request.fullName || '')
-  useEffect(() => { if (role === 'contractor') onNeedCounterparties?.() }, [role, onNeedCounterparties])
+  useEffect(() => { if (role === 'contractor' && !orgsEnabled) onNeedCounterparties?.() }, [role, onNeedCounterparties, orgsEnabled])
+  const org = request.org || null
+  // С организациями СУ-10 подрядчику контрагент ставит сервер из связи; без связи создать подрядчика нельзя.
+  const contractorBlocked = orgsEnabled && role === 'contractor' && org?.result !== 'counterparty' && org?.result !== 'unknown_subject'
   const submit = (e) => {
     e.preventDefault()
-    onSubmit({ role, objectIds, counterpartyId: role === 'contractor' ? counterpartyId || null : null, fullName: fullName.trim() || null })
+    onSubmit({ role, objectIds, counterpartyId: role === 'contractor' && !orgsEnabled ? counterpartyId || null : null, fullName: fullName.trim() || null })
   }
   return (
     <form className="ir-form" onSubmit={submit}>
@@ -39,7 +63,19 @@ function CreateForm({ request, roleOptions, objectOptions, counterpartyOptions, 
           <option value="contractor">Подрядчик</option>
         </select>
       </label>
-      {role === 'contractor' ? (
+      {role === 'contractor' && orgsEnabled ? (
+        <div className="ir-field">
+          <span>Организация</span>
+          {org?.result === 'counterparty' ? <span className="so-name">{counterpartyLabel(org.counterparty)} — по связи организации СУ-10</span>
+            : org?.result === 'unknown_subject' ? <span className="so-muted">Организация человека в СУ-10 будет определена при создании.</span>
+              : (
+                <span className="so-warn">
+                  {ORG_RESULT_TEXT[org?.result] || 'Организация не определена'} — подрядчика не создать, пока организация не связана с контрагентом.
+                  {org?.result === 'unmapped' && onMatch && <> <button type="button" className="btn-soft" onClick={onMatch}>Сопоставить…</button></>}
+                </span>
+              )}
+        </div>
+      ) : role === 'contractor' ? (
         <label className="ir-field">
           <span>Организация</span>
           <select value={counterpartyId} onChange={(e) => setCounterpartyId(e.target.value)} required>
@@ -55,8 +91,12 @@ function CreateForm({ request, roleOptions, objectOptions, counterpartyOptions, 
           </select>
         </label>
       )}
+      {orgsEnabled && role && role !== 'contractor' && org && !['own', 'unknown_subject'].includes(org.result) && (
+        <p className="so-warn">Учётка СУ-10 не в своей организации ({ORG_RESULT_TEXT[org.result] || org.result}): сотрудник не войдёт без исключения
+          суперадминистратора — «Организации СУ-10».</p>
+      )}
       <div className="ir-form-actions">
-        <button type="submit" className="btn-primary" disabled={busy || !role}>{busy ? 'Создаём…' : 'Создать пользователя'}</button>
+        <button type="submit" className="btn-primary" disabled={busy || !role || contractorBlocked}>{busy ? 'Создаём…' : 'Создать пользователя'}</button>
         <button type="button" className="btn-secondary" onClick={onCancel} disabled={busy}>Отмена</button>
       </div>
     </form>
@@ -107,6 +147,7 @@ export default function IdentityRequestsTab({ roleOptions, objectOptions, counte
   const [syncing, setSyncing] = useState(false)
   const [open, setOpen] = useState(null) // { id, kind: 'create' | 'link' }
   const [busyId, setBusyId] = useState(null)
+  const [matchOrg, setMatchOrg] = useState(null) // организация СУ-10 для «Сопоставить…»
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -152,7 +193,10 @@ export default function IdentityRequestsTab({ roleOptions, objectOptions, counte
       onChanged?.()
     } catch (err) {
       if (err.code === 'email_taken') notify?.('err', 'Учётная запись с такой почтой уже есть — привяжите заявку к ней')
-      else notify?.('err', err.message || 'Не удалось выполнить действие')
+      else if (err.code === 'org_unmapped' || err.code === 'org_not_own' || err.code === 'org_lookup_failed') {
+        notify?.('err', err.message)
+        await load()
+      } else notify?.('err', err.message || 'Не удалось выполнить действие')
     } finally {
       setBusyId(null)
     }
@@ -195,6 +239,10 @@ export default function IdentityRequestsTab({ roleOptions, objectOptions, counte
                         </div>
                       </div>
 
+                      {data?.orgsEnabled && (
+                        <OrgLine org={q.org} onMatch={q.org?.org ? () => setMatchOrg({ id: q.org.org.id, name: q.org.org.name, inn: q.org.org.inn }) : null} />
+                      )}
+
                       {q.similar?.length > 0 && (
                         <div className="ir-similar">
                           <div className="ir-label">Похожие пользователи портала</div>
@@ -225,7 +273,8 @@ export default function IdentityRequestsTab({ roleOptions, objectOptions, counte
                         open?.id === q.id ? (
                           open.kind === 'create' ? (
                             <CreateForm request={q} roleOptions={roleChoices} objectOptions={objectOptions} counterpartyOptions={counterpartyOptions}
-                              onNeedCounterparties={onNeedCounterparties} busy={busy} onCancel={() => setOpen(null)}
+                              onNeedCounterparties={onNeedCounterparties} busy={busy} onCancel={() => setOpen(null)} orgsEnabled={Boolean(data?.orgsEnabled)}
+                              onMatch={q.org?.org ? () => setMatchOrg({ id: q.org.org.id, name: q.org.org.name, inn: q.org.org.inn }) : null}
                               onSubmit={(input) => act(q.id, () => identityAdmin.createUser(q.id, input), 'Пользователь создан')} />
                           ) : (
                             <LinkPicker users={users} isSuperAdmin={isSuperAdmin} busy={busy} onCancel={() => setOpen(null)}
@@ -250,6 +299,10 @@ export default function IdentityRequestsTab({ roleOptions, objectOptions, counte
                 })}
               </ul>
             )}
+      {matchOrg && (
+        <Su10OrgMatchDialog org={matchOrg} notify={notify} onClose={() => setMatchOrg(null)}
+          onDone={() => { setMatchOrg(null); load() }} />
+      )}
     </div>
   )
 }

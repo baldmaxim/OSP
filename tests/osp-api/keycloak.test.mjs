@@ -28,6 +28,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const SERVER = path.join(ROOT, 'server', 'osp-api')
 const OWN_AUTH = path.join(ROOT, 'migration', 'yandex', '20261019_own_auth.sql')
 const IDENTITY = path.join(ROOT, 'migration', 'yandex', '20270112_keycloak_identity.sql')
+// Организации СУ-10 (20270201): сотрудник входит только со своей организацией — у тестовых учёток claim своей по умолчанию,
+// реестр засеян (подробно — tests/osp-api/su10-orgs.test.mjs).
+const ORGS = path.join(ROOT, 'migration', 'yandex', '20270201_su10_org_links.sql')
+const OWN_ORG = 'f0000000-0000-4000-8000-000000000001'
 const depsOk = ['openid-client', 'jose', 'pg', 'fastify'].every((m) => fs.existsSync(path.join(SERVER, 'node_modules', m)))
 const skip = !depsOk ? 'нет зависимостей: npm ci --prefix server/osp-api' : pgAvailable() ? false : 'нет PostgreSQL (бинарники или Docker)'
 
@@ -78,6 +82,7 @@ async function createFakeKeycloak(jose) {
       iss: ISSUER, sub: user.sub, aud: ['osp', 'account'], azp: 'osp', typ: 'Bearer', exp: now() + 300, iat: now(),
       email: user.email, preferred_username: user.email, sid: user.sid || 'sid-1',
       resource_access: { osp: { roles }, account: { roles: ['view-profile'] } },
+      su10_org_id: user.org ?? [OWN_ORG],
       ...v.claims,
     }
     if (v.aud !== undefined) claims.aud = v.aud
@@ -188,7 +193,7 @@ create table auth.users (id uuid primary key, aud text, role text, email text, e
   last_sign_in_at timestamptz, created_at timestamptz, updated_at timestamptz, raw_user_meta_data jsonb);
 alter table auth.users enable row level security; alter table auth.users force row level security;
 create policy osp_internal on auth.users for all to public using ((select osp_private.bypass())) with check ((select osp_private.bypass()));
-create table public.counterparties (id uuid primary key, name text);
+create table public.counterparties (id uuid primary key, name text, status text not null default 'active', deleted_at timestamptz);
 create table public.roles (key text primary key, label text);
 insert into public.roles values ('admin', 'Администратор'), ('engineer', 'Инженер'), ('contractor', 'Подрядчик');
 create table public.user_roles (id uuid primary key default gen_random_uuid(), user_id uuid not null unique, role text not null default 'engineer',
@@ -203,6 +208,7 @@ alter table public.superadmins enable row level security; alter table public.sup
 create policy osp_internal on public.superadmins for all to public using ((select osp_private.bypass())) with check ((select osp_private.bypass()));
 ${fs.readFileSync(OWN_AUTH, 'utf8')}
 ${fs.readFileSync(IDENTITY, 'utf8')}
+${fs.readFileSync(ORGS, 'utf8')}
 `
 
 describe('вход через Keycloak su10 на настоящей базе', { skip, timeout: 600000 }, () => {
@@ -327,6 +333,8 @@ describe('вход через Keycloak su10 на настоящей базе', {
       insert into public.superadmins values ('${U.boss.id}');
       select 1`)
     authSql(`insert into osp_auth.meta (key, value) values ('canary', '${box.encrypt('osp-auth-canary', 'osp-auth-canary')}')`)
+    authSql(`insert into osp_auth.su10_orgs (issuer, su10_org_id, kind, name, state, generation) values ('${ISSUER}', '${OWN_ORG}', 'own', 'СУ-10', 'active', 1);
+      insert into osp_auth.meta (key, value) values ('su10_org_registry', '{"generation":1}')`)
     for (const [k, p] of [['emp', 'emp'], ['admin', 'admin'], ['boss', 'boss'], ['blocked', 'blocked']]) link(KC[k], U[p])
     await makeApp()
   })

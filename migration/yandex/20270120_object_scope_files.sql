@@ -89,7 +89,7 @@ DO $scope$
 DECLARE
   by_contract constant text := '(SELECT public.osp_object_scope()) IS NULL OR public.osp_contract_in_scope(contract_id)';
   by_dispute constant text := '(SELECT public.osp_object_scope()) IS NULL OR EXISTS (SELECT 1 FROM public.contract_clause_disputes d WHERE d.id = dispute_id)';
-  by_object constant text := '(SELECT public.osp_object_scope()) IS NULL OR object_id = ANY ((SELECT public.osp_object_scope()))';
+  by_object constant text := '(SELECT public.osp_object_scope()) IS NULL OR object_id = ANY ((SELECT public.osp_object_scope())::uuid[])';
   conds jsonb := jsonb_build_object(
     'contracts', jsonb_build_array(by_object,
       '(' || by_object || ') AND (parent_contract_id IS NULL OR public.osp_contract_in_scope(parent_contract_id))'
@@ -225,7 +225,51 @@ CREATE POLICY osp_internal ON osp_private.s3_upload_intents FOR ALL TO PUBLIC
   USING ((SELECT osp_private.bypass())) WITH CHECK ((SELECT osp_private.bypass()));
 
 -- ── 5. Настройки разделов ────────────────────────────────────────────────────
--- @APP_SETTINGS@
+-- Чей ключ — по интерфейсу: общая папка раздела — правка раздела (папка «Тендеров на материалы» — и правка этого раздела),
+-- ссылка заявок на ДС — правка «Заявок на ДС», дежурный по тендерам и шаблоны-ссылки — администратор; незнакомый ключ —
+-- администратор. Служебные операции (отметка реестра расценок) и скрипты без пользователя — как раньше.
+CREATE OR REPLACE FUNCTION public.app_settings_key_sections(p_key text) RETURNS text[]
+  LANGUAGE sql IMMUTABLE
+  SET search_path = public, pg_temp
+AS $$
+  SELECT CASE
+    WHEN p_key = 'tenders_root_folder_path:materials' THEN ARRAY['tenders', 'tenders_materials']
+    WHEN p_key = 'tenders_root_folder_path' OR p_key LIKE 'tenders\_root\_folder\_path:%'
+      OR p_key LIKE 'tenders\_drive\_folder\_link:%' THEN ARRAY['tenders']
+    WHEN p_key = 'cost_plans_root_folder_path' THEN ARRAY['tenders']
+    WHEN p_key = 'contracts_root_folder_path' THEN ARRAY['contracts']
+    WHEN p_key = 'dc_requests_external_link' THEN ARRAY['dc_requests']
+    ELSE ARRAY['admin']
+  END
+$$;
+
+CREATE OR REPLACE FUNCTION public.app_settings_write_guard() RETURNS trigger
+  LANGUAGE plpgsql
+  SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_key text := CASE WHEN TG_OP = 'DELETE' THEN OLD.key ELSE NEW.key END;
+  v_ok boolean;
+BEGIN
+  IF auth.uid() IS NULL OR (SELECT osp_private.bypass()) THEN
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+  END IF;
+  SELECT bool_or(public.osp_can(s, 'edit')) INTO v_ok FROM unnest(public.app_settings_key_sections(v_key)) s;
+  -- Переименование ключа — право и старого, и нового.
+  IF v_ok AND TG_OP = 'UPDATE' AND NEW.key IS DISTINCT FROM OLD.key THEN
+    SELECT bool_or(public.osp_can(s, 'edit')) INTO v_ok FROM unnest(public.app_settings_key_sections(OLD.key)) s;
+  END IF;
+  IF NOT coalesce(v_ok, false) THEN
+    RAISE EXCEPTION 'Эту настройку меняет сотрудник с правом правки её раздела' USING ERRCODE = '42501', HINT = 'app_setting_section';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END
+$$;
+DROP TRIGGER IF EXISTS app_settings_write_guard ON public.app_settings;
+CREATE TRIGGER app_settings_write_guard BEFORE INSERT OR UPDATE OR DELETE ON public.app_settings
+  FOR EACH ROW EXECUTE FUNCTION public.app_settings_write_guard();
 
 -- ── 6. Свой профиль ──────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.profile_update_own(p_full_name text DEFAULT NULL, p_work_phone text DEFAULT NULL,

@@ -2,8 +2,9 @@
 // работы сервер обменивает refresh token сессии в Keycloak и проверяет новый access token. Так блокировка учётки, выход из
 // всех порталов и отзыв доступа на auth.su10.ru/manage доходят до ОСП не позже чем через 5 минут работы.
 //
-// Отзывают сессию только три исхода: invalid_grant (SSO истёк, учётка заблокирована, вышли везде) — 401 OSP_SSO_REQUIRED;
-// нет роли доступа к порталу — 403 OSP_NO_PORTAL_ACCESS; чужой sub — 401 OSP_SSO_REQUIRED. Всё остальное (сеть, 5xx, таймаут,
+// Отзывают сессию: invalid_grant (SSO истёк, учётка заблокирована, вышли везде) — 401 OSP_SSO_REQUIRED; нет роли доступа к
+// порталу — 403 OSP_NO_PORTAL_ACCESS; чужой sub — 401 OSP_SSO_REQUIRED; организация учётки (src/lib/auth/orgs.js) — 403
+// OSP_ORG_UNMAPPED / OSP_ORG_DENIED, смена контрагента — 401 OSP_ORG_CHANGED (тогда закрыты все сессии пользователя). Всё остальное (сеть, 5xx, таймаут,
 // ошибка клиента, ключи realm) — сбой контура, а не решение о человеке: работа продолжается до kc_checked_at + час
 // (OIDC_MAX_OFFLINE_SEC), повтор не чаще раза в минуту, потом 503 OSP_SSO_UNAVAILABLE — без отзыва.
 //
@@ -23,12 +24,17 @@ export const RECHECK_ERRORS = {
   noAccess: { status: 403, code: 'OSP_NO_PORTAL_ACCESS', message: 'Доступ к порталу отозван в СУ-10' },
   unavailable: { status: 503, code: 'OSP_SSO_UNAVAILABLE', message: 'Вход СУ-10 временно недоступен — повторите позже' },
   revoked: { status: 401, code: 'OSP_SESSION_REVOKED', message: 'Сессия завершена — войдите заново' },
+  // Организация учётки СУ-10 (src/lib/auth/orgs.js): все сессии пользователя уже закрыты в той же транзакции.
+  orgUnmapped: { status: 403, code: 'OSP_ORG_UNMAPPED', message: 'Организация не сопоставлена с контрагентом ОСП — обратитесь к администратору ОСП' },
+  orgDenied: { status: 403, code: 'OSP_ORG_DENIED', message: 'Учётка СУ-10 не числится в организации СУ-10 — обратитесь к администратору ОСП' },
+  orgChanged: { status: 401, code: 'OSP_ORG_CHANGED', message: 'Организация учётки СУ-10 изменилась — войдите заново' },
 }
+const ORG_KEYS = { unmapped: 'orgUnmapped', denied: 'orgDenied', changed: 'orgChanged' }
 const OK = Object.freeze({ ok: true })
 const failWith = (key) => ({ ok: false, ...RECHECK_ERRORS[key] })
 const ms = (v) => (v == null ? null : new Date(v).getTime())
 
-export function createRecheck({ db, oidc, sessions, box, recheckMs = 300_000, activityWindowMs = 1_800_000, maxOfflineMs = 3_600_000,
+export function createRecheck({ db, oidc, sessions, box, orgs = null, recheckMs = 300_000, activityWindowMs = 1_800_000, maxOfflineMs = 3_600_000,
   leaseMs = 10_000, retryMs = 60_000, waitMs = 5_000, pollMs = 250, now = Date.now, log = null, owner = randomUUID() }) {
   const inflight = new Map() // id_hash → обещание итога
   const sleep = (t) => new Promise((resolve) => { setTimeout(resolve, t).unref?.() })
@@ -131,6 +137,22 @@ export function createRecheck({ db, oidc, sessions, box, recheckMs = 300_000, ac
     const subject = String(step.claimed.kc_subject || '').toLowerCase()
     if (result.access.subject !== subject) return deny(session, 'sso_subject', 'ssoRequired')
     if (!result.access.hasAccess) return deny(session, 'sso_access_revoked', 'noAccess')
+
+    // Организация — по новому access token. Отказ и смена контрагента закрывают все сессии пользователя в той же транзакции
+    // (src/lib/auth/orgs.js). Сбой базы — не решение о человеке: как прочие сбои, повтор через минуту в пределах часа.
+    if (orgs) {
+      let org
+      try {
+        org = await orgs.applyOnRecheck({ userId: session.userId, subject, orgIds: result.access.orgIds || [] })
+      } catch (err) {
+        log?.warn({ code: err?.code }, 'sso recheck org')
+        return postpone(session)
+      }
+      if (!org.ok) {
+        sessions.forget(session.idHash)
+        return failWith(ORG_KEYS[org.key] || 'orgUnmapped')
+      }
+    }
 
     const aad = kcAad(session.idHash)
     let written

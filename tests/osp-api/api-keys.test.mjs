@@ -256,8 +256,8 @@ describe('ключи API на настоящей базе', { skip, timeout: 600
 
   it('ключи из настроек сервера: в списке, права — из строки, отозвать можно, убранный из строки — не действует', async () => {
     await makeApp(['rk-env-one:kp+larix', 'rk-env-two', 'rk-env-three:supply'])
-    // До занесения в список (и без таблиц) ключ из настроек работает как раньше.
-    assert.deepEqual((await rates('health', 'rk-env-one')).json(), { ok: true, resources: ['kp', 'larix'] })
+    // Режим db (по умолчанию): пока ключа из настроек нет в списке, проверить его нечем — 503, а не допуск (src/lib/apiKeys.js).
+    assert.equal((await rates('health', 'rk-env-one')).statusCode, 503)
     // Служба заносит их сама при запуске (фоном); повтор безопасен — здесь дожидаемся результата.
     assert.equal((await app.apiKeys.syncEnv()).registered, 3)
     const env = (await list()).keys.filter((k) => k.source === 'env').sort((a, b) => a.name.localeCompare(b.name))

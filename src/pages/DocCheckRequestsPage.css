@@ -170,6 +170,10 @@
 @media (pointer: fine) {
   .dc-board { cursor: grab; user-select: none; }
   .dc-board.is-panning { scroll-snap-type: none; }
+  /* Шапка над доской тоже двигает её (11.11.2026): свободное место — «рука», у кнопок и полей — свой курсор. */
+  .doc-check-page.is-board > .dc-head, .doc-check-page.is-board > .dc-toolbar { cursor: grab; user-select: none; }
+  .doc-check-page.is-board > :is(.dc-head, .dc-toolbar) :where(button, a, label, .fdrop) { cursor: pointer; }
+  .doc-check-page.is-board > :is(.dc-head, .dc-toolbar) :where(input, textarea) { cursor: text; user-select: text; }
 }
 /* Шторка на время жеста: курсор и никаких :hover под указателем. */
 .dc-board > .dc-gesture-veil, .dc-gesture-veil { position: fixed; inset: 0; z-index: 1390; max-width: none; cursor: grabbing; }
@@ -378,6 +382,14 @@
 .dc-chip--label { background: color-mix(in srgb, var(--text-tertiary) 12%, var(--bg-secondary)); }
 /* Объект и дата добавления — одной строкой: не хватает места, сокращается название объекта, карточка не растёт. */
 .dc-card-where { display: flex; align-items: center; gap: 0.25rem; min-width: 0; max-width: 100%; }
+/* Номер заявки (ID): первым в строке, не сокращается; рамкой, без подложки — не спутать с датой рядом. */
+.dc-chip--id {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-weight: var(--ui-semibold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 /* Дата добавления: на мягкой подложке и чуть плотнее соседних подписей. Год — в подсказке. */
 .dc-chip--created {
   flex-shrink: 0;
@@ -407,6 +419,16 @@
   font-variant-numeric: tabular-nums;
 }
 .dc-count.is-full { color: var(--success-color); }
+/* Непрочитанные сообщения: счётчик залит синим (не жёлтым и не красным — это цвета срока). */
+.dc-count--talk.is-unread {
+  padding: 0 0.3125rem;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: var(--ui-semibold);
+}
+.dc-count--talk.is-unread > svg { color: inherit; }
+[data-theme='dark'] .dc-count--talk.is-unread { background: #93c5fd; color: #0b1220; }
 /* Ссылка на письмо на карточке: открывается сразу, в новой вкладке. */
 .dc-chip--mail { color: var(--ui-link); text-decoration: none; }
 .dc-chip--mail > svg { color: inherit; }
@@ -550,6 +572,8 @@
   background: var(--dcs, var(--text-tertiary));
 }
 .dc-table .dc-col-who { white-space: nowrap; }
+.dc-table .dc-col-id { width: 3.5rem; white-space: nowrap; color: var(--text-secondary); font-weight: var(--ui-semibold); }
+.dc-mcard .dc-chip--id { vertical-align: 0.0625rem; }
 
 /* ── Основа окон раздела ────────────────────────────────────────────────── */
 /* Свои правила, не из стилей других разделов. Те есть, только если раздел открывали раньше: по ссылке или после F5 окно
@@ -1072,6 +1096,38 @@
   border-top-right-radius: 3px;
   background: color-mix(in srgb, var(--primary-color) 8%, var(--bg-secondary));
 }
+/* Непрочитанное сообщение коллеги — синей подложкой и полосой слева, пометка «новое»; перед первым — черта. */
+.dc-talk-msg.is-unread {
+  border-color: #93c5fd;
+  box-shadow: inset 3px 0 0 #2563eb;
+  background: #eff6ff;
+}
+[data-theme='dark'] .dc-talk-msg.is-unread {
+  border-color: #3b82f6;
+  box-shadow: inset 3px 0 0 #93c5fd;
+  background: color-mix(in srgb, #2563eb 20%, var(--bg-secondary));
+}
+.dc-talk-new {
+  margin-right: auto;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-size: var(--ui-hint);
+  line-height: 1.125rem;
+  font-weight: var(--ui-semibold);
+}
+[data-theme='dark'] .dc-talk-new { background: #93c5fd; color: #0b1220; }
+.dc-talk-new-mark {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #1d4ed8;
+  font-size: var(--ui-hint);
+  font-weight: var(--ui-semibold);
+}
+.dc-talk-new-mark::before, .dc-talk-new-mark::after { content: ''; flex: 1; border-top: 1px solid currentColor; opacity: 0.5; }
+[data-theme='dark'] .dc-talk-new-mark { color: #93c5fd; }
 .dc-talk-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 0.75rem; margin-bottom: 0.1875rem; font-size: var(--ui-th); line-height: var(--ui-th-lh); color: var(--text-primary); }
 .dc-talk-time { flex-shrink: 0; color: var(--text-secondary); font-size: var(--ui-hint); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .dc-talk-body { margin: 0; font-size: var(--ui-text); line-height: 1.375rem; color: var(--text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }

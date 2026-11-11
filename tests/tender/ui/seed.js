@@ -1430,6 +1430,8 @@ if (params.get('docCheck') === '1') {
     req('dcr-9', { doc_number: '9', deleted_at: '2026-10-26T10:00:00Z' }),
   ]
   fdb.doc_check_requests.forEach(embed)
+  // Постоянный номер заявки (ID, миграция 20270123) — по порядку как в миграции; ?dcNoNumber=1 — колонки ещё нет.
+  fdb.doc_check_requests.forEach((r, i) => { r.request_number = i + 1 })
   fdb.doc_check_request_audit_log = []
   // Файлы dcr-2: документ на проверку (без категории, как все прежние) и понятийное соглашение — своя категория (11.11.2026).
   fdb.s3_documents.push({ id: 'dcr-file-1', owner_type: 'doc_check_request', owner_id: 'dcr-2', file_name: 'ДП СУ2-001.pdf',
@@ -1497,7 +1499,14 @@ if (params.get('docCheck') === '1') {
   // Встраивание objects(...) / counterparties(...) после записи — как PostgREST (стенд встраивания не разбирает).
   // Дату добавления ставит база (значение колонки по умолчанию).
   window.__fakeTriggers = { ...(window.__fakeTriggers || {}),
-    doc_check_requests: (row) => { row.created_at ??= new Date().toISOString(); embed(row) },
+    doc_check_requests: (row) => {
+      row.created_at ??= new Date().toISOString()
+      // Номер ставит база (GENERATED ALWAYS AS IDENTITY) — следующий после наибольшего.
+      if (!(window.__fakeMissingColumns?.doc_check_requests || []).includes('request_number')) {
+        row.request_number ??= Math.max(0, ...fdb.doc_check_requests.map((r) => r.request_number || 0)) + 1
+      }
+      embed(row)
+    },
     // Автора и время сообщения ставит база (триггер doc_check_request_comments_stamp): что прислал клиент — не важно.
     doc_check_request_comments: (row) => {
       row.author_user_id = params.get('asUser') || 'user-1'
@@ -1516,11 +1525,17 @@ if (params.get('docCheck') === '1') {
     window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}), doc_check_requests: card }
     noCardTables()
   }
+  if (params.get('dcNoNumber') === '1' || params.get('docCheckLegacy') === '1' || params.get('docCheckNoCard') === '1') {
+    for (const r of fdb.doc_check_requests) delete r.request_number
+    window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}),
+      doc_check_requests: [...(window.__fakeMissingColumns?.doc_check_requests || []), 'request_number'] }
+  }
   if (params.get('docCheckLegacy') === '1') {
     const board = ['assignee_ids', 'due_date', 'priority', 'color', 'labels', 'archived_at']
     for (const r of fdb.doc_check_requests) for (const k of [...board, ...card]) delete r[k]
     fdb.doc_check_requests = fdb.doc_check_requests.filter((r) => r.status !== 'tax_clause')
-    window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}), doc_check_requests: [...board, ...card] }
+    window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}),
+      doc_check_requests: [...board, ...card, 'request_number'] }
     noCardTables()
   }
 }

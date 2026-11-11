@@ -23,11 +23,15 @@
 //             dcComments=N — длинная переписка у dcr-3; dcBadLink=1 — не адрес вместо письма),
 //             /stand/api-keys («Администрирование» → «Доступ к API»; apiKeys=missing — раздела у сервера нет,
 //             apiKeysMany=N — ещё N ключей),
+//             /stand/su10-orgs («Администрирование» → «Организации СУ-10», заявки, карточка контрагента, карточка пользователя;
+//             su10View=tab|requests|card|drawer, su10Mode=own, su10Super=1, su10Down=1, su10Off=1),
 //             /stand/add-user («Администрирование» → «Добавить пользователя»; addUserNoGuest=1 — роли «Гость» нет),
 //             /stand/access-rights («Администрирование» → «Права доступа»: роли, права, просмотр от имени роли),
 //             /stand/file-list&dcStats=1 (список файлов с окном просмотра: переименование; canEdit=0 — без права правки),
 //             /rates-registry (реестр расценок, вкладка КП: ручные расценки, «Документ (ВОР)», проверка по файлу;
 //             kpRegistryLegacy=1 — колонок миграции 20261122 ещё нет);
+//             /notifications (уведомления; с asRole=construction_manager&scope=… — вид рукстроя: свои тендеры и заявки;
+//             с docCheck=1 — переход в заявку на проверку ДП/ДС), см. notifications-stand.jsx;
 //   items   — позиций ВОР (по умолчанию 5000, три документа, разделы),
 //   cps     — подрядчиков с КП (по умолчанию 10),
 //   tenders — тендеров в реестре (по умолчанию 40),
@@ -76,6 +80,8 @@ const DocCheckRequestsPage = lazy(() => import('../../../src/pages/DocCheckReque
 const CostPlansPage = lazy(() => import('../../../src/pages/CostPlansPage'))
 // «Доступ к API» — так же (AdminPage.css) и со своим «сервером» в памяти (api-keys-stand.jsx).
 const ApiKeysStand = lazy(() => import('./api-keys-stand.jsx'))
+// «Организации СУ-10» — так же, со своим «сервером» в памяти (su10-orgs-stand.jsx).
+const Su10OrgsStand = lazy(() => import('./su10-orgs-stand.jsx'))
 const AddUserStand = lazy(() => import('./add-user-stand.jsx'))
 const AccessRightsStand = lazy(() => import('./access-rights-stand.jsx'))
 const FileListStand = lazy(() => import('./file-list-stand.jsx'))
@@ -85,6 +91,8 @@ const SidebarStand = lazy(() => import('./sidebar-stand.jsx'))
 const ObjectDetailPage = lazy(() => import('../../../src/pages/ObjectDetailPage'))
 // Реестр расценок (вкладка КП: ручные расценки, документ строки, проверка по файлу) — со своими данными (kp-registry-stand.jsx).
 const KpRegistryStand = lazy(() => import('./kp-registry-stand.jsx'))
+// «Уведомления» (провайдер и страница) — со своими данными (notifications-stand.jsx).
+const NotificationsStand = lazy(() => import('./notifications-stand.jsx'))
 import { weekKey } from '../../../src/utils/weeks'
 
 const params = new URLSearchParams(window.location.search)
@@ -113,6 +121,7 @@ const routes = (
     <Route path="/tasks" element={<TasksPage />} />
     <Route path="/stand/dgp" element={<Suspense fallback={null}><DgpStand /></Suspense>} />
     <Route path="/stand/api-keys" element={<Suspense fallback={null}><ApiKeysStand /></Suspense>} />
+    <Route path="/stand/su10-orgs" element={<Suspense fallback={null}><Su10OrgsStand /></Suspense>} />
     <Route path="/stand/add-user" element={<Suspense fallback={null}><AddUserStand /></Suspense>} />
     <Route path="/stand/access-rights" element={<Suspense fallback={null}><AccessRightsStand /></Suspense>} />
     <Route path="/stand/file-list" element={<Suspense fallback={null}><FileListStand /></Suspense>} />
@@ -129,6 +138,7 @@ const routes = (
     <Route path="/doc-check-requests" element={<Suspense fallback={null}><DocCheckRequestsPage /></Suspense>} />
     <Route path="/cost-plans" element={<Suspense fallback={null}><CostPlansPage /></Suspense>} />
     <Route path="/rates-registry" element={<Suspense fallback={null}><KpRegistryStand /></Suspense>} />
+    <Route path="/notifications" element={<Suspense fallback={null}><NotificationsStand /></Suspense>} />
     <Route path="/tenders/materials/:tenderId/pricing" element={<SupplyPricingPage />} />
     <Route path="/tenders/:tenderId" element={<TenderDetailPage />} />
   </Routes>

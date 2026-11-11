@@ -6,4 +6,5 @@ export { invokeFunction, filesViaOspApi, ospFiles, requestBidVorFile, requestBid
 export { subscribeTable } from './realtime'
 export { apiKeys } from './apiKeys'
 export { identityAdmin } from './identityAdmin'
+export { su10Orgs } from './su10Orgs'
 export { contractorSignup, contractorSignupsAdmin, signupManual, signupOpen } from './contractorSignup'

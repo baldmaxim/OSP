@@ -283,11 +283,12 @@ describe('права разделов: шлюз', { skip }, () => {
     assert.equal((await call('GET', '/api/db/tender_bid_rates?select=id', { who: U.contractor })).statusCode, 200)
     assert.equal((await call('POST', '/api/db/rpc/bid_rates_save', { who: U.contractor, body: {} })).statusCode, 200, 'функция подрядчика (в карте — admin)')
     seen.length = 0
+    // Вне списка — как у учётки с регистрации: «такой таблицы / функции нет» (404) или 403; до PostgREST — ничего.
     for (const table of Object.keys(ALLOW.tables).filter((t) => !CONTRACTOR_ALLOW.tables[t])) {
-      assert.equal((await call('GET', `/api/db/${table}?select=id`, { who: U.contractor })).statusCode, 403, table)
+      assert.ok([403, 404].includes((await call('GET', `/api/db/${table}?select=id`, { who: U.contractor })).statusCode), table)
     }
     for (const fn of Object.keys(ALLOW.rpc).filter((f) => !CONTRACTOR_ALLOW.rpc[f])) {
-      assert.equal((await call('POST', `/api/db/rpc/${fn}`, { who: U.contractor, body: {} })).statusCode, 403, fn)
+      assert.ok([403, 404].includes((await call('POST', `/api/db/rpc/${fn}`, { who: U.contractor, body: {} })).statusCode), fn)
     }
     assert.equal(reached(), 0)
   })

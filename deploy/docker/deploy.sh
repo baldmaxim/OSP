@@ -318,7 +318,7 @@ case "${1:-}" in
     # Связи учёток с СУ-10 — ручные команды server/osp-api/src/identity-cli.js в образе выложенного выпуска (файлы — через
     # stdin и stdout: secrets/ в контейнер не монтируется). Почта и ФИО — только в выводе export-users; удобнее звать через
     # scripts/deploy-server.sh identity …, он пишет файлы с правами 600. Выход: 0 — готово, 3 — конфликты, 4 — сбой.
-    case "${2:-}" in export-users | links-apply | links-report | sync | revoke-sessions) ;; *) die "укажите команду: bash deploy.sh identity export-users | links-apply [--apply] | links-report | sync [--force] | revoke-sessions --kind keycloak|password" ;; esac
+    case "${2:-}" in export-users | links-apply | links-report | sync | revoke-sessions | orgs-sync) ;; *) die "укажите команду: bash deploy.sh identity export-users | links-apply [--apply] | links-report | sync [--force] | revoke-sessions --kind keycloak|password | orgs-sync [--check] [--force]" ;; esac
     cur="$(release_of current)"
     [ -n "$cur" ] || die "портал не выложен: сначала bash deploy.sh install <каталог выпуска>"
     dc "$cur" run --rm --no-deps -T osp-api node src/identity-cli.js "${@:2}"

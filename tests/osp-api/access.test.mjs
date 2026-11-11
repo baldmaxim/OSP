@@ -77,7 +77,7 @@ describe('osp-api: права объявлены на маршруте, закр
       config: {
         host: '127.0.0.1', port: 0, supabaseUrl: supa.url, supabaseAnonKey: 'anon-test-key', supabaseServiceKey: 'service-test-key',
         s3: { endpoint: s3.url, region: 'ru-central-1', bucket: 'osp', accessKeyId: 'AKIDTEST', secretAccessKey: 'secret-test' },
-        anthropicApiKey: 'anthropic-test-key', ratesApiKeys: ['rk-one'],
+        anthropicApiKey: 'anthropic-test-key', ratesApiKeys: ['rk-one'], security: { apiKeysSource: 'env' },
       },
     })
   })
@@ -176,6 +176,16 @@ describe('osp-api: права объявлены на маршруте, закр
       'POST /api/admin/identity-requests/:id/reopen': { method: 'POST', url: '/api/admin/identity-requests/0f0e0d0c-0b0a-4908-8706-050403020100/reopen', payload: {} },
       'GET /api/admin/identities': { method: 'GET', url: '/api/admin/identities' },
       'DELETE /api/admin/users/:id/identity': { method: 'DELETE', url: '/api/admin/users/0f0e0d0c-0b0a-4908-8706-050403020100/identity', payload: {} },
+      // Организации СУ-10 (src/routes/orgAdmin.js): в режиме supabase — 404 после проверки прав.
+      'GET /api/admin/su10-orgs': { method: 'GET', url: '/api/admin/su10-orgs' },
+      'POST /api/admin/su10-orgs/refresh': { method: 'POST', url: '/api/admin/su10-orgs/refresh', payload: {} },
+      'GET /api/admin/su10-orgs/:id/candidates': { method: 'GET', url: '/api/admin/su10-orgs/0f0e0d0c-0b0a-4908-8706-050403020100/candidates' },
+      'POST /api/admin/su10-orgs/:id/link': { method: 'POST', url: '/api/admin/su10-orgs/0f0e0d0c-0b0a-4908-8706-050403020100/link', payload: { counterpartyId: '0f0e0d0c-0b0a-4908-8706-050403020100' } },
+      'DELETE /api/admin/su10-orgs/:id/link': { method: 'DELETE', url: '/api/admin/su10-orgs/0f0e0d0c-0b0a-4908-8706-050403020100/link', payload: {} },
+      'POST /api/admin/su10-orgs/:id/create-counterparty': { method: 'POST', url: '/api/admin/su10-orgs/0f0e0d0c-0b0a-4908-8706-050403020100/create-counterparty', payload: {} },
+      'GET /api/admin/counterparties/:id/su10-org': { method: 'GET', url: '/api/admin/counterparties/0f0e0d0c-0b0a-4908-8706-050403020100/su10-org' },
+      'POST /api/admin/su10-org-exceptions': { method: 'POST', url: '/api/admin/su10-org-exceptions', payload: { subject: '0f0e0d0c-0b0a-4908-8706-050403020100', reason: 'проверка' } },
+      'DELETE /api/admin/su10-org-exceptions/:subject': { method: 'DELETE', url: '/api/admin/su10-org-exceptions/0f0e0d0c-0b0a-4908-8706-050403020100', payload: {} },
     }
     const measured = {}
     for (const [title, req] of Object.entries(requests)) {

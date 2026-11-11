@@ -150,3 +150,6 @@ vite.config.ts.timestamp-*
 
 # Собранные выпуски портала (образы Docker) — вне git
 deploy/docker/out/
+
+# Выгрузки организаций СУ-10 от auth (в названиях — ФИО ИП, персональные данные): в git не класть (temp/osp-org-mapping.md)
+temp/su10-orgs-*.csv

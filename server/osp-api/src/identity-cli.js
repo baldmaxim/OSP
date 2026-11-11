@@ -15,6 +15,11 @@
 //   sync [--force]                   — сверка группы СУ-10 сейчас; --force — принять состояние, которое предохранитель отложил.
 //   revoke-sessions --kind keycloak|password
 //                                    — закрыть действующие сессии этого вида (после переключения режима входа).
+//   orgs-sync [--check] [--force]    — реестр организаций СУ-10 (src/lib/auth/orgs.js) целиком и организации всех участников
+//                                      группы доступа; в конце — сотрудники портала, чья организация не своя (им до
+//                                      переключения нужно исключение суперадминистратора), только id. --check — только
+//                                      проверить права служебного клиента: каждый адрес Admin API отвечает. --force —
+//                                      принять состояние реестра, которое предохранитель отложил.
 //
 // Почта и ФИО — только в CSV export-users (stdout); остальные команды печатают числа и идентификаторы. Секреты не печатаются.
 // Выход: 0 — готово; 3 — конфликты / предохранитель; 4 — сбой; 1 — ошибка запуска.
@@ -26,6 +31,7 @@ import { createSessions } from './lib/auth/sessions.js'
 import { createIdentity } from './lib/auth/identity.js'
 import { createKcAdmin } from './lib/auth/kcAdmin.js'
 import { createAccessSync } from './lib/auth/accessSync.js'
+import { createOrgs } from './lib/auth/orgs.js'
 import * as ops from './lib/auth/identityOps.js'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -39,7 +45,7 @@ const log = {
 }
 
 function usage() {
-  err('Использование: node src/identity-cli.js export-users | links-apply [--apply] [--partial id,id] | links-report | sync [--force] | revoke-sessions --kind keycloak|password')
+  err('Использование: node src/identity-cli.js export-users | links-apply [--apply] [--partial id,id] | links-report | sync [--force] | revoke-sessions --kind keycloak|password | orgs-sync [--check] [--force]')
   return 1
 }
 
@@ -140,6 +146,25 @@ async function linksReport(db, issuer) {
   return adminsUnlinked.length ? 3 : 0
 }
 
+// Реестр организаций СУ-10 целиком (и организации участников группы доступа) или только проверка прав. Только числа и id.
+async function orgsSync(orgs, kcAdmin, args) {
+  if (args.includes('--check')) {
+    const r = await kcAdmin.probe()
+    for (const s of r.steps) err(`${s.ok ? 'OK  ' : 'FAIL'} ${s.step}${s.ok ? '' : ` (${s.code}${s.status ? `, ${s.status}` : ''})`}`)
+    out(JSON.stringify({ ok: r.ok }))
+    return r.ok ? 0 : 3
+  }
+  if (!(await orgs.enabled())) { err('нет таблиц организаций СУ-10 — сначала миграция 20270201 (deploy-server.sh migrate)'); return 1 }
+  const r = await orgs.fullSync({ force: args.includes('--force') })
+  const reg = r.registry
+  err(`Реестр: организаций ${reg.orgs} (ошибочных ${reg.invalid}), выбыло ${reg.missing}, поколение ${reg.generation}${reg.held ? ` — ОТЛОЖЕНО предохранителем (${reg.reasons.join(', ')}): проверьте реестр, принять — --force` : ''}`)
+  err(`Участников группы доступа: ${r.members}; организаций спрошено: ${r.lookups}${r.lookupErrors ? `, ошибок: ${r.lookupErrors}` : ''}`)
+  err(`Сотрудников портала не в своей организации (без исключения не войдут): ${r.employeesNotInOwn.length}`)
+  for (const e of r.employeesNotInOwn) out(`${e.userId}\t${e.subject}\t${e.result}`)
+  // Ошибки опроса организаций участников — только показ (решения о доступе по ним не принимаются): не повод для кода 3.
+  return reg.held ? 3 : 0
+}
+
 async function revokeSessions(db, args) {
   const kind = args[args.indexOf('--kind') + 1]
   if (!['keycloak', 'password'].includes(kind)) return usage()
@@ -150,27 +175,27 @@ async function revokeSessions(db, args) {
 
 async function main(argv) {
   const [cmd, ...args] = argv
-  if (!['export-users', 'links-apply', 'links-report', 'sync', 'revoke-sessions'].includes(cmd)) return usage()
+  if (!['export-users', 'links-apply', 'links-report', 'sync', 'revoke-sessions', 'orgs-sync'].includes(cmd)) return usage()
   const config = loadConfig()
   if (!config.db.url) { err('нет OSP_DB_URL'); return 1 }
   const issuer = config.oidc.issuer
-  if (['links-apply', 'links-report', 'sync'].includes(cmd) && !issuer) { err('нет OIDC_ISSUER — связи привязаны к нему'); return 1 }
+  if (['links-apply', 'links-report', 'sync', 'orgs-sync'].includes(cmd) && !issuer) { err('нет OIDC_ISSUER — связи привязаны к нему'); return 1 }
   const db = defaultDeps.createDb({ url: config.db.url, caFile: config.db.caFile, max: 1, logger: log })
   try {
     if (cmd === 'export-users') return await exportUsers(db)
     if (cmd === 'links-apply') return await linksApply(db, issuer, args)
     if (cmd === 'links-report') return await linksReport(db, issuer)
     if (cmd === 'revoke-sessions') return await revokeSessions(db, args)
-    // sync
+    // sync, orgs-sync
     if (!config.oidc.admin) { err('сверка не настроена: нет KC_ADMIN_CLIENT_ID / KC_ADMIN_CLIENT_SECRET'); return 1 }
     if (!config.auth.keys) { err('нет OSP_AUTH_KEYS'); return 1 }
     const box = createSecretBox(config.auth.keys)
     const sessions = createSessions({ db, box, logger: log })
-    const identity = createIdentity({ db, issuer, linkByEmail: config.oidc.linkByEmail, sessions, createUserTx: null, isSuperadmin: async () => false, log })
-    const sync = createAccessSync({
-      db, identity, sessions, issuer, linkByEmail: config.oidc.linkByEmail, log,
-      kcAdmin: createKcAdmin({ issuer, admin: config.oidc.admin }),
-    })
+    const kcAdmin = createKcAdmin({ issuer, admin: config.oidc.admin })
+    const orgs = createOrgs({ db, kcAdmin, issuer, sessions, log })
+    if (cmd === 'orgs-sync') return await orgsSync(orgs, kcAdmin, args)
+    const identity = createIdentity({ db, issuer, linkByEmail: config.oidc.linkByEmail, sessions, createUserTx: null, isSuperadmin: async () => false, orgs, log })
+    const sync = createAccessSync({ db, identity, sessions, issuer, linkByEmail: config.oidc.linkByEmail, orgs, log, kcAdmin })
     const result = await sync.run({ force: args.includes('--force') })
     if (result.busy) { err('сверка уже идёт в службе — повторите через минуту'); return 3 }
     out(JSON.stringify(result))

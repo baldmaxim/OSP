@@ -14,7 +14,7 @@ export const OIDC_LOGIN_REASON = 'Начало входа через СУ-10 (Ke
 export const OIDC_CALLBACK_REASON = 'Возврат из СУ-10 после входа: сессии ещё нет; сам проверяет state своей cookie, код с PKCE, подпись и адресатов токенов'
 export const OIDC_CALLBACK_PATH = '/api/auth/oidc/callback'
 const SSO_ERRORS = new Set(['state', 'unavailable', 'exchange', 'token', 'claims', 'disabled', 'navigation', 'config', 'error', 'access_denied',
-  'login_required', 'temporarily_unavailable', 'server_error', 'invalid_request'])
+  'login_required', 'temporarily_unavailable', 'server_error', 'invalid_request', 'org_unmapped', 'org_denied'])
 const ssoErrorCode = (code) => (SSO_ERRORS.has(code) ? code : 'error')
 
 // rewriteUrl сервера: у возврата из СУ-10 строка запроса (code, state, session_state, iss) уходит в закрытое поле запроса,
@@ -107,11 +107,14 @@ export function registerOidc(app, ctx) {
 
       const outcome = await identity.completeLogin({
         subject: r.access.subject, email: r.email, fullName: r.fullName,
-        keycloak: { sid: r.sid, refreshToken: r.refreshToken, idToken: r.idToken },
+        keycloak: { sid: r.sid, refreshToken: r.refreshToken, idToken: r.idToken }, orgIds: r.access.orgIds || [],
       })
       if (outcome.kind === 'requested') { reply.header('set-cookie', [clearState]); return reply.redirect('/access-requested', 302) }
       if (outcome.kind === 'rejected') { reply.header('set-cookie', [clearState]); return reply.redirect('/no-access', 302) }
       if (outcome.kind === 'disabled') return toLogin(reply, 'disabled', [clearState])
+      // Организация учётки СУ-10 (src/lib/auth/orgs.js): подрядчик без действующей связи — org_unmapped, сотрудник не в своей
+      // организации — org_denied. Сессии нет, прежние закрыты.
+      if (outcome.kind === 'org_denied') return toLogin(reply, outcome.error === 'denied' ? 'org_denied' : 'org_unmapped', [clearState])
 
       // Прежняя сессия этого браузера — другого человека: отозвать (защита от подмены сессии). Своя — её и так заменит cookie.
       const old = readToken(request.headers.cookie, SESSION_COOKIE)

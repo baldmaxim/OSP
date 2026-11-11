@@ -29,7 +29,8 @@ export function registerIdentityAdmin(app, ctx) {
   const on = config.authMode === 'keycloak' && Boolean(identity)
   const notFound = (reply) => reply.code(404).send({ error: 'Not found' })
   const answer = (reply, r) => (r.ok === false
-    ? reply.code(r.status).send({ error: r.message, code: r.code, ...(r.userId ? { userId: r.userId } : {}) })
+    ? reply.code(r.status).send({ error: r.message, code: r.code, ...(r.userId ? { userId: r.userId } : {}),
+      ...(r.orgId !== undefined ? { orgId: r.orgId } : {}), ...(r.result ? { result: r.result } : {}) })
     : r)
   const actorOf = (request) => ({ userId: request.auth.user.id, email: request.auth.user.email || '' })
 

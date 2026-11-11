@@ -9,7 +9,9 @@
 //     { any: [[раздел, "view"|"edit"], …] }                — полный доступ;
 //     { any: […], columns: [колонки] }                      — только эти колонки: для чтения — что запросить,
 //                                                             отфильтровать и отсортировать; для записи — ключи тела;
-//     { role: [ключи ролей], columns?: […] }                — по роли (интерфейс гейтит по роли, а не по разделу).
+//     { role: [ключи ролей], columns?: […] }                — по роли (интерфейс гейтит по роли, а не по разделу);
+//     { rolePattern: { key, label }, columns?: […] }        — по роли, как её узнаёт база: ключ или название подходят под
+//                                                             образец (регулярное выражение без учёта регистра).
 // Администратор проходит любое правило, кроме "none". Нет записи в карте — только администратор.
 // Чтение помечено "read": "sensitive" (проверяется всегда) или "reference" (справочник: режим OSP_DB_SECTIONS_READ_REFERENCE).
 import fs from 'node:fs'
@@ -37,8 +39,14 @@ function checkRule(rule, where) {
       }
     } else if (v.role) {
       if (!Array.isArray(v.role) || v.role.length === 0 || !v.role.every((r) => IDENT.test(r))) throw new Error(`${where}: role — список ключей ролей`)
+    } else if (v.rolePattern) {
+      const { key, label } = v.rolePattern
+      if (!key && !label) throw new Error(`${where}: rolePattern — key и/или label`)
+      for (const re of [key, label].filter(Boolean)) {
+        try { new RegExp(re, 'i') } catch { throw new Error(`${where}: rolePattern — негодное выражение ${re}`) }
+      }
     } else {
-      throw new Error(`${where}: вариант без any и role`)
+      throw new Error(`${where}: вариант без any, role и rolePattern`)
     }
     if (v.columns !== undefined && (!Array.isArray(v.columns) || v.columns.length === 0 || !v.columns.every((c) => IDENT.test(c)))) {
       throw new Error(`${where}: columns — непустой список имён колонок`)
@@ -164,6 +172,9 @@ export function queryColumnsFor(params, path) {
 }
 
 // ── Решение ──────────────────────────────────────────────────────────────────
+const rolePatternMatch = ({ key, label }, rights) =>
+  Boolean((key && new RegExp(key, 'i').test(rights.role || '')) || (label && new RegExp(label, 'i').test(rights.roleLabel || '')))
+
 // rule + права → { full: bool } | { columns: Set } | null (нет).
 export function evaluateRule(rule, rights) {
   if (rule === undefined || rule === 'admin') return rights.admin ? { full: true } : null
@@ -172,7 +183,9 @@ export function evaluateRule(rule, rights) {
   if (rights.admin) return { full: true }
   let limited = null
   for (const v of rule) {
-    const ok = v.any ? v.any.some(([s, k]) => rights.can(s, k)) : (rights.employee && v.role.includes(rights.role))
+    const ok = v.any ? v.any.some(([s, k]) => rights.can(s, k))
+      : v.role ? (rights.employee && v.role.includes(rights.role))
+        : (rights.employee && rolePatternMatch(v.rolePattern, rights))
     if (!ok) continue
     if (!v.columns) return { full: true }
     limited ??= new Set()

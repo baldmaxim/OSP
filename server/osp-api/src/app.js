@@ -72,6 +72,9 @@ import { createKcAdmin } from './lib/auth/kcAdmin.js'
 import { createAccessSync } from './lib/auth/accessSync.js'
 import { registerOidc, rewriteOidcUrl } from './routes/oidc.js'
 import { registerIdentityAdmin } from './routes/identityAdmin.js'
+import { createOrgs } from './lib/auth/orgs.js'
+import { createOrgAdmin } from './lib/auth/orgAdmin.js'
+import { registerOrgAdmin } from './routes/orgAdmin.js'
 
 // Список разрешённого шлюзу данных — выдача прав прода как есть (scripts/build-db-allow.mjs).
 const ALLOW = JSON.parse(fs.readFileSync(new URL('./data/allow.json', import.meta.url), 'utf8'))
@@ -288,6 +291,7 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     db, sessions, box: authBox,
     verifier: passwordVerifier,
     blocklist: passwordBlocklist, mode: authMode, pilotIds: config.auth.pilotIds || [], logger: app.log,
+    orgIssuer: config.oidc?.issuer || null,
   }) : null
   // Суперадминистратор (таблица superadmins) — с памятью на полминуты: спрашивается на каждом запросе своей сессии
   // только у тех, кто не одобрен, и у маршрутов администратора.
@@ -309,17 +313,27 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   const kcFetch = deps.oidcFetch || globalThis.fetch
   const oidc = keycloak ? createOidc({ oidc: config.oidc, publicOrigin: config.auth.publicOrigin, box: authBox, fetch: kcFetch, log: app.log }) : null
   const o = config.oidc || {}
+  // Admin API СУ-10 (только чтение): сверка группы доступа и реестр организаций — один клиент.
+  const kcAdmin = (keycloak || authMode === 'own') && o.issuer && o.admin
+    ? (deps.createKcAdmin || createKcAdmin)({ issuer: o.issuer, admin: o.admin, fetch: kcFetch }) : null
+  // Организация учётки СУ-10 → контрагент (src/lib/auth/orgs.js). В режиме keycloak — всегда: решение при входе и перепроверке
+  // идёт по кэшу реестра и связям. В режиме own — только для вкладки «Организации СУ-10» (связи готовят до переключения,
+  // на вход по паролю они не влияют); нужен служебный клиент KC_ADMIN_*.
+  const orgs = (keycloak && o.issuer) || (authMode === 'own' && kcAdmin) ? createOrgs({
+    db, kcAdmin, issuer: o.issuer, sessions, userStatus, log: app.log, options: deps.orgsOptions,
+  }) : null
   const recheck = keycloak ? createRecheck({
-    db, oidc, sessions, box: authBox, log: app.log,
+    db, oidc, sessions, box: authBox, log: app.log, orgs,
     recheckMs: (o.recheckSec ?? 300) * 1000, activityWindowMs: (o.activityWindowSec ?? 1800) * 1000, maxOfflineMs: (o.maxOfflineSec ?? 3600) * 1000,
     ...deps.recheckOptions,
   }) : null
+  const orgAdmin = orgs && kcAdmin ? createOrgAdmin({ db, orgs, issuer: o.issuer, sessions, userStatus, log: app.log }) : null
   const identity = keycloak ? createIdentity({
-    db, issuer: o.issuer, linkByEmail: Boolean(o.linkByEmail), sessions, createUserTx: authService.createUserTx, isSuperadmin, log: app.log,
+    db, issuer: o.issuer, linkByEmail: Boolean(o.linkByEmail), sessions, createUserTx: authService.createUserTx, isSuperadmin, orgs, log: app.log,
   }) : null
-  const accessSync = keycloak && o.admin ? createAccessSync({
-    db, identity, sessions, issuer: o.issuer, linkByEmail: Boolean(o.linkByEmail), log: app.log,
-    kcAdmin: (deps.createKcAdmin || createKcAdmin)({ issuer: o.issuer, admin: o.admin, fetch: kcFetch }), options: deps.accessSyncOptions,
+  const accessSync = keycloak && kcAdmin ? createAccessSync({
+    db, identity, sessions, issuer: o.issuer, linkByEmail: Boolean(o.linkByEmail), orgs, log: app.log,
+    kcAdmin, options: deps.accessSyncOptions,
   }) : null
   if (keycloak && !o.admin) app.log.warn({}, 'kc access sync: KC_ADMIN_* не заданы — сверка группы СУ-10 выключена, заявки — только от входа')
   if (oidc) {
@@ -335,6 +349,7 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     })
   }
   if (accessSync) app.decorate('accessSync', accessSync)
+  if (orgs) app.decorate('orgs', orgs)
   if (accessSync && config.accessSyncTimer !== false) {
     const stopSync = accessSync.start((o.admin.syncIntervalSec ?? 300) * 1000)
     app.addHook('onClose', async () => stopSync())
@@ -742,10 +757,11 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   const ctx = { signup, signupAdmin, pow, config, getS3, getAnthropic, getServiceClient, limiters, db,
     verifyUserToken, allow: deps.allow || ALLOW, mint, beforeGateway, gatewayOn, isReadOnly, loadStatus,
     principal, authService, sessions, isSuperadmin, apiKeys, coverThumbs: deps.coverThumbs, coverThumbWaitMs: deps.coverThumbWaitMs,
-    oidc, identity, accessSync, sectionRights, security, sectionMap: deps.sectionMap, contractorAllow: deps.contractorAllow }
+    oidc, identity, accessSync, orgs, orgAdmin, sectionRights, security, sectionMap: deps.sectionMap, contractorAllow: deps.contractorAllow }
   registerAuth(app, ctx)
   registerOidc(app, ctx)
   registerIdentityAdmin(app, ctx)
+  registerOrgAdmin(app, ctx)
   registerSignup(app, ctx)
   registerDbGateway(app, ctx)
   registerS3Presign(app, ctx)

@@ -552,6 +552,112 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
     }
   })
 
+  it('шапка страницы тоже двигает доску: за название и свободное место строки фильтров; поиск и кнопки — как раньше', async () => {
+    const { page, errors, close } = await openPage()
+    try {
+      assert.equal(await page.locator('.dc-head').evaluate((el) => getComputedStyle(el).cursor), 'grab')
+      assert.equal(await page.locator('.dc-search').evaluate((el) => getComputedStyle(el).cursor), 'text')
+      const title = await page.locator('.dc-head h2').boundingBox()
+      await page.mouse.move(title.x + title.width - 10, title.y + title.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(title.x + title.width - 130, title.y + title.height / 2, { steps: 3 })
+      assert.equal(await boardLeft(page), 120)
+      assert.equal(await page.locator('.dc-board.is-panning').count(), 1)
+      await page.mouse.up()
+      assert.equal(await page.locator('.dc-gesture-veil').count(), 0)
+
+      // Свободное место строки фильтров (не кнопка и не список).
+      const spot = await page.locator('.dc-toolbar').evaluate((el) => {
+        const r = el.getBoundingClientRect()
+        const y = r.top + r.height / 2
+        for (let x = r.right - 4; x > r.left; x -= 8) {
+          const t = document.elementFromPoint(x, y)
+          if (t && el.contains(t) && !t.closest('button, a, input, select, textarea, label, .fdrop')) return { x, y }
+        }
+        return null
+      })
+      assert.ok(spot, 'в строке фильтров есть свободное место')
+      await page.mouse.move(spot.x, spot.y)
+      await page.mouse.down()
+      await page.mouse.move(spot.x + 50, spot.y, { steps: 2 })
+      await page.mouse.up()
+      assert.equal(await boardLeft(page), 70, 'вправо — обратно')
+
+      // Поиск: нажатие ставит курсор в поле, доска стоит; кнопка шапки работает как кнопка.
+      const search = await page.locator('.dc-search').boundingBox()
+      await page.mouse.move(search.x + search.width / 2, search.y + search.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(search.x + search.width / 2 - 100, search.y + search.height / 2, { steps: 2 })
+      await page.mouse.up()
+      assert.equal(await boardLeft(page), 70)
+      assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('dc-search')), true)
+      await page.getByRole('tab', { name: 'Реестр' }).click()
+      await page.locator('.dc-table').waitFor()
+      // В реестре доски нет — шапка ничего не двигает и не ломается.
+      const head = await page.locator('.dc-head h2').boundingBox()
+      await page.mouse.move(head.x + head.width - 10, head.y + head.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(head.x + head.width - 110, head.y + head.height / 2, { steps: 2 })
+      await page.mouse.up()
+      assert.equal(await page.locator('.dc-gesture-veil').count(), 0)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('номер заявки (ID): на карточке, в окне и в реестре; поиск «ID 5» и «#2» — только она, «5» — и номер, и текст', async () => {
+    const { page, errors, close } = await openPage()
+    try {
+      assert.equal(await column(page, 'done').locator('.dc-card[data-id="dcr-5"] .dc-chip--id').textContent(), 'ID 5')
+      assert.equal(await page.locator('.dc-card .dc-chip--id').count(), await page.locator('.dc-card').count(), 'у каждой карточки')
+      const shown = () => page.locator('.dc-card').evaluateAll((els) => els.map((el) => el.dataset.id).sort())
+      await page.locator('.dc-search').fill('ID 5')
+      await page.waitForFunction(() => document.querySelectorAll('.dc-card').length === 1)
+      assert.deepEqual(await shown(), ['dcr-5'])
+      await page.locator('.dc-search').fill('#2')
+      await page.waitForFunction(() => document.querySelector('.dc-card')?.dataset.id === 'dcr-2' && document.querySelectorAll('.dc-card').length === 1)
+      // Просто число — номер заявки и текст (номер ДС, контрагент): dcr-3 среди найденных.
+      await page.locator('.dc-search').fill('3')
+      await page.waitForFunction(() => [...document.querySelectorAll('.dc-card')].some((el) => el.dataset.id === 'dcr-3'))
+      assert.ok((await shown()).includes('dcr-3'))
+      await page.locator('.dc-search').fill('')
+
+      const card = column(page, 'in_progress').locator('.dc-card[data-id="dcr-2"]')
+      await card.click()
+      const modal = page.locator('.dc-detail-modal')
+      await modal.waitFor()
+      assert.equal(await modal.locator('.dc-detail-sub .dc-chip--id').textContent(), 'ID 2')
+      await modal.locator('.modal-close').click()
+
+      await page.getByRole('tab', { name: 'Реестр' }).click()
+      await page.locator('.dc-table').waitFor()
+      assert.equal(await page.locator('.dc-table thead th').first().textContent(), 'ID')
+      const ids = await page.locator('.dc-table tbody .dc-col-id').allTextContents()
+      assert.deepEqual([...ids].sort((a, b) => a - b), ['1', '2', '3', '4', '5', '6', '7'])
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('номера ещё нет (миграция 20270123 не применена): ни «ID», ни столбца; остальное как было', async () => {
+    const { page, errors, close } = await openPage('&dcNoNumber=1')
+    try {
+      await column(page, 'new').locator('.dc-card[data-id="dcr-1"]').waitFor()
+      assert.equal(await page.locator('.dc-chip--id').count(), 0)
+      // Выборка с номером получила 42703 — страница прочитала полный набор без него: исполнители и письмо на месте.
+      assert.ok(await page.evaluate(() => window.__supabaseStats.requests.some((r) => r.table === 'doc_check_requests' && r.missing === 'request_number')))
+      assert.deepEqual(await column(page, 'in_progress').locator('.dc-card[data-id="dcr-2"] .dc-avatar').allTextContents(), ['ЮМ'])
+      await page.getByRole('tab', { name: 'Реестр' }).click()
+      await page.locator('.dc-table').waitFor()
+      assert.equal(await page.locator('.dc-table thead th').first().textContent(), 'Документ')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
   it('без права правки карточка не двигается: за неё тоже можно тянуть доску, щелчок открывает заявку', async () => {
     const { page, errors, close } = await openPage('&canEdit=0')
     try {
@@ -793,7 +899,7 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
       const rows = page.locator('.dc-table tbody tr')
       await rows.first().locator('.dc-col-deleted').getByText('Тест').waitFor()
       assert.deepEqual(await page.locator('.dc-table thead th').allTextContents(),
-        ['Документ', 'Объект', 'Исполнители', 'Срок', 'Статус', 'Метки', 'Создал', 'Удалил', ''])
+        ['ID', 'Документ', 'Объект', 'Исполнители', 'Срок', 'Статус', 'Метки', 'Создал', 'Удалил', ''])
       // Последние удалённые — сверху; у dcr-9 в истории записи нет.
       assert.deepEqual(await rows.locator('.dc-row-title').allTextContents(), ['Подрядчик 01 / ДС № 1', 'Подрядчик 01 / ДС № 9'])
       assert.match(await rows.nth(0).locator('.dc-col-deleted').textContent(), /^Тест\d{2}\.\d{2}\.\d{4}, \d{2}:\d{2}$/)

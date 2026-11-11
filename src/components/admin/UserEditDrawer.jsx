@@ -5,7 +5,9 @@ import FilterDropdown from '../FilterDropdown'
 // Правая выдвижная панель редактирования пользователя — единственная поверхность правки
 // (никаких постоянных select в строках таблицы). Сохранение идёт через onSave(form),
 // который возвращает Promise; ошибки и индикатор загрузки показываем здесь.
-export default function UserEditDrawer({ user, roleOptions, objectOptions, counterpartyOptions = [], onClose, onSave }) {
+// counterpartyLocked — вход через СУ-10: контрагента подрядчика ставит сервер по организации учётки («Организации СУ-10»),
+// здесь — только показ (база правку мимо сервера отклоняет, migration/yandex/20270201).
+export default function UserEditDrawer({ user, roleOptions, objectOptions, counterpartyOptions = [], counterpartyLocked = false, onClose, onSave }) {
   const current = user ? userStatus(user) : 'active'
   const [form, setForm] = useState(() => ({
     full_name: user?.full_name || '',
@@ -132,22 +134,35 @@ export default function UserEditDrawer({ user, roleOptions, objectOptions, count
             </div>
           )}
 
-          <div className="adm-drawer-field">
-            <span>Контрагент (кабинет подрядчика)</span>
-            <FilterDropdown
-              label=""
-              searchable
-              searchPlaceholder="Поиск контрагента…"
-              allLabel="— сотрудник СУ-10 —"
-              value={form.counterparty_id || ''}
-              onChange={(v) => set({ counterparty_id: v || '' })}
-              options={counterpartyOptions.map(c => ({ value: c.id, label: c.name }))}
-            />
-            <small className="adm-drawer-hint">
-              Если выбрать контрагента — этот логин становится кабинетом подрядчика: свои тендеры,
-              тендерный пакет, загрузка КП и свои договоры. Пусто = сотрудник СУ-10.
-            </small>
-          </div>
+          {counterpartyLocked ? (
+            <div className="adm-drawer-field">
+              <span>Контрагент (кабинет подрядчика)</span>
+              <div className="adm-drawer-requested">
+                {counterpartyOptions.find((c) => c.id === form.counterparty_id)?.name || (form.counterparty_id ? 'контрагент задан' : '— сотрудник СУ-10 —')}
+              </div>
+              <small className="adm-drawer-hint">
+                При входе через СУ-10 контрагента подрядчику ставит организация его учётки СУ-10 — связь меняют во вкладке
+                «Организации СУ-10».
+              </small>
+            </div>
+          ) : (
+            <div className="adm-drawer-field">
+              <span>Контрагент (кабинет подрядчика)</span>
+              <FilterDropdown
+                label=""
+                searchable
+                searchPlaceholder="Поиск контрагента…"
+                allLabel="— сотрудник СУ-10 —"
+                value={form.counterparty_id || ''}
+                onChange={(v) => set({ counterparty_id: v || '' })}
+                options={counterpartyOptions.map(c => ({ value: c.id, label: c.name }))}
+              />
+              <small className="adm-drawer-hint">
+                Если выбрать контрагента — этот логин становится кабинетом подрядчика: свои тендеры,
+                тендерный пакет, загрузка КП и свои договоры. Пусто = сотрудник СУ-10.
+              </small>
+            </div>
+          )}
 
           <label className="adm-drawer-field">
             <span>Статус</span>

@@ -1,0 +1,4311 @@
+{
+  "_readme": "Права разделов шлюза /api/db: см. server/osp-api/src/lib/dbSections.js и README («Права разделов в шлюзе»)",
+  "tables": {
+    "app_settings": {
+      "read": "reference",
+      "select": "employee",
+      "insert": "employee",
+      "update": "employee",
+      "delete": "employee",
+      "why": "Решение: ключи проверит триггер базы. Пишут (upsert): tenders_root_folder_path:{construction|warranty|joint|other} и tenders_drive_folder_link:construction — TendersPage, E(tenders); tenders_root_folder_path:materials — TendersPage материалы, E(tenders)|E(tenders_materials); cost_plans_root_folder_path — CostPlansPage, E(tenders); contracts_root_folder_path — ContractsPage, E(contracts); dc_requests_external_link — DcRequestsPage, E(dc_requests); tender_responsible_override — TendersPage, isAdmin; concept_agreement_template_link — SectionTemplateCards (TenderDocsModal в TendersPage, ContractDocsModal в ContractsPage), isAdmin; contracts_dp_template_link — то же, isAdmin; rates_registry_refreshed_at — только функция refresh_rates_registry. Читают: fallback tenders_root_folder_path, все перечисленные + rates_registry_refreshed_at (RatesRegistryPage). delete из интерфейса не вызывается (upsert с null)."
+    },
+    "bid_company_answers": {
+      "read": "sensitive",
+      "select": "admin",
+      "why": "Сотрудники читают только в просмотре «как подрядчик» (админ). Подрядчик — своей картой; пишет функция bid_company_save."
+    },
+    "bid_form_fields": {
+      "read": "sensitive",
+      "select": "admin",
+      "insert": "admin",
+      "update": "admin",
+      "delete": "admin",
+      "why": "«Поля анкеты» в ContractorBidsSection (isAdmin). Подрядчик читает своей картой."
+    },
+    "bsm_contract_rates": {
+      "read": "sensitive",
+      "select": "admin",
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Страницы БСМ не подключены к маршрутам (живого доступа нет). select строго — none; admin — для диагностики."
+    },
+    "bsm_contractor_rates": {
+      "read": "sensitive",
+      "select": "admin",
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Страницы БСМ не подключены к маршрутам (живого доступа нет). select строго — none; admin — для диагностики."
+    },
+    "bsm_supply_rates": {
+      "read": "sensitive",
+      "select": "admin",
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Страницы БСМ не подключены к маршрутам (живого доступа нет). select строго — none; admin — для диагностики."
+    },
+    "client_errors": {
+      "read": "sensitive",
+      "select": "admin",
+      "why": "Интерфейс не читает (телеметрия пишется функцией report_client_error). Строго — none; admin оставлен для диагностики."
+    },
+    "client_versions": {
+      "read": "sensitive",
+      "select": "admin",
+      "why": "Интерфейс не читает (report_client_version). Строго — none; admin — для диагностики."
+    },
+    "company_departments": {
+      "read": "reference",
+      "select": "employee",
+      "insert": "admin",
+      "update": "admin",
+      "delete": "admin",
+      "why": "DepartmentsPage — любой сотрудник читает; правит только isAdmin (canManage), в базе is_admin()."
+    },
+    "contacts": {
+      "read": "reference",
+      "select": "employee",
+      "insert": [
+        {
+          "any": [
+            [
+              "contacts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "contacts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "contacts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Справочник сотрудников: читают почти все разделы и DepartmentsPage (любой сотрудник: cost_plan_economists → contacts(id, full_name, position, phone)); пишет ContactsPage (canEditContacts). components/GeneralInfo.jsx не подключён."
+    },
+    "contract_advance_schedule": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "График авансов в ContractDetailPage (canEditContracts)."
+    },
+    "contract_appendices": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Приложения-задачи «Работы юриста» в ContractsPage (canEditContracts)."
+    },
+    "contract_attachments": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "ContractDetailPage только читает (contract_attachments → object_contract_attachments)."
+    },
+    "contract_audit_log": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": "none",
+      "why": "Решение *_audit_log. ContractsPage / ContractDetailPage logEvent; читает ContractDetailPage."
+    },
+    "contract_clause_comments": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": "none",
+      "why": "СПОРНО: комментарий к разногласию пишет любой зритель договора — в ContractClausesTab гейта нет (rights-map: «нет гейта»). Дано V(contracts) как в интерфейсе; вариант строже — E(contracts)."
+    },
+    "contract_clause_dispute_clauses": {
+      "read": "sensitive",
+      "select": "admin",
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Интерфейс не обращается. select строго — none; admin — для диагностики."
+    },
+    "contract_clause_disputes": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Протокол разногласий (ContractClausesTab в ContractDetailPage): создание/правка/удаление — canEdit = canEditContracts && !удалён. Подрядчик — своей картой (сейчас кабинет вкладку договоров не показывает)."
+    },
+    "contract_clauses": {
+      "read": "sensitive",
+      "select": "admin",
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Интерфейс больше не читает (кабинет без договоров с 03.11). select строго — none; admin — для диагностики."
+    },
+    "contract_counterparties": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        },
+        {
+          "any": [
+            [
+              "dc_requests",
+              "view"
+            ],
+            [
+              "counterparties",
+              "view"
+            ]
+          ],
+          "columns": [
+            "id",
+            "contract_id",
+            "counterparty_id"
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Стороны договора: ContractsPage (delete+insert), импорт; вложено в ContractsPage/ContractDetailPage; DcRequestsPage (выбор договора) и сводка реестра контрагентов — id/contract_id/counterparty_id; дерево карточки контрагента (contract_counterparties → contracts) — только при canView(contracts)."
+    },
+    "contract_number_counters": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Счётчик номеров: форма нового договора и ContractNumberingModal (ContractsPage). Пишет триггер."
+    },
+    "contract_psdc_items": {
+      "read": "sensitive",
+      "select": "admin",
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Старая таблица ПСДЦ, интерфейс не использует. select строго — none; admin — для диагностики."
+    },
+    "contracts": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        },
+        {
+          "any": [
+            [
+              "reports",
+              "view"
+            ]
+          ],
+          "columns": [
+            "id",
+            "object_id",
+            "status",
+            "contract_amount",
+            "psdc_total",
+            "currency",
+            "counterparty_id",
+            "responsible_contact_id",
+            "deleted_at",
+            "record_type",
+            "parent_contract_id",
+            "display_id",
+            "changed_fields"
+          ]
+        },
+        {
+          "any": [
+            [
+              "dc_requests",
+              "view"
+            ]
+          ],
+          "columns": [
+            "id",
+            "display_id",
+            "record_type",
+            "deleted_at",
+            "status",
+            "counterparty_id",
+            "object_id",
+            "contract_number",
+            "contract_date",
+            "parent_contract_id",
+            "root_contract_id",
+            "contract_amount",
+            "psdc_total",
+            "currency",
+            "work_name"
+          ]
+        },
+        {
+          "any": [
+            [
+              "counterparties",
+              "view"
+            ]
+          ],
+          "columns": [
+            "id",
+            "counterparty_id",
+            "record_type",
+            "status",
+            "signed_date",
+            "deleted_at",
+            "division"
+          ]
+        },
+        {
+          "any": [
+            [
+              "tasks",
+              "view"
+            ]
+          ],
+          "columns": [
+            "id",
+            "contract_number",
+            "work_name",
+            "deleted_at",
+            "created_at"
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": "admin",
+      "why": "Полное: ContractsPage, ContractDetailPage, PsdcBatchPage, ContractsImportModal, NotificationsContext, счётчик хаба, дерево договоров в карточке контрагента (только при canView(contracts)). Узко: fetchStats отчётов — СПОРНО (грузится для любого V(reports), хотя договорные подвкладки только при reports_full; предлагаю грузить договоры только при reports_full и сузить правило до reports_full); выбор договора заявки на ДС (DcRequestsPage) и договоры заявок в карточке контрагента (loadCounterpartyDcRequests при canView(dc_requests)); сводка «Договор» реестра контрагентов (loadCounterpartyContractSummary); ссылки задач (TasksPage). «Планы затрат» договоры не читают. Запись — решение: E(contracts); СПОРНО: окончательное delete в интерфейсе только isAdmin (handleHardDeleteContract) — предлагаю delete: admin."
+    },
+    "cost_plan_calc_file_log": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "«Журнал» «Расчёта ПЗ» (CostPlansPage). Пишет триггер."
+    },
+    "cost_plan_compensation": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": "admin",
+      "update": "admin",
+      "delete": "admin",
+      "why": "«Расчёт ПЗ» (CostPlansPage → CostPlanCalcTab): смотрят все с V(tenders), вносит isAdmin (upsert = insert+update)."
+    },
+    "cost_plan_economists": {
+      "read": "reference",
+      "select": "employee",
+      "insert": "admin",
+      "update": "admin",
+      "delete": "admin",
+      "why": "Читают DepartmentsPage (любой сотрудник), CostPlansPage («Экономисты ОСП»), форма тендера (подстановка). Назначает isAdmin (CostPlanDocsModal canEdit={isAdmin}), в базе is_admin()."
+    },
+    "counterparties": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "view"
+            ],
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ],
+            [
+              "contracts",
+              "view"
+            ],
+            [
+              "dc_requests",
+              "view"
+            ],
+            [
+              "doc_check_requests",
+              "view"
+            ],
+            [
+              "reports_full",
+              "view"
+            ]
+          ]
+        },
+        {
+          "any": [
+            [
+              "vors",
+              "view"
+            ],
+            [
+              "reports",
+              "view"
+            ],
+            [
+              "rates_registry",
+              "view"
+            ]
+          ],
+          "columns": [
+            "id",
+            "name",
+            "status",
+            "deleted_at"
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "edit"
+            ]
+          ]
+        },
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ],
+          "columns": [
+            "name",
+            "inn",
+            "status"
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": "admin",
+      "why": "Читают: CounterpartiesPage, тендеры (реестр, карточка, участники, «Сравнение КП», заявки с сайта), договоры, заявки на ДС, доска ДП/ДС (counterpartyPicker), отчёт «Подрядчики» и «Заявки на ДС» (reports_full), AdminPage; узко (id, name) — победитель во «ВОРах и РД» (tenderWinners), fetchStats отчётов (winner), выбор подрядчика «Добавить расценку» (kpManualRates). Вставка: CounterpartiesPage (+импорт) и WinnerFromBase → createWinnerCounterparty при завершении тендера ОС (без права «Контрагентов», E(tenders), решение 03.11). Безвозвратное удаление — только isAdmin; мягкое — update deleted_at (canEditCp)."
+    },
+    "counterparties_inn_backup_2026_09_21": {
+      "read": "sensitive",
+      "select": "none",
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "СПОРНО: резервная копия ИНН от 21.09, интерфейс не обращается — предлагаю убрать из allow.json / базы."
+    },
+    "counterparty_audit_log": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "view"
+            ],
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ],
+            [
+              "contracts",
+              "view"
+            ],
+            [
+              "dc_requests",
+              "view"
+            ],
+            [
+              "doc_check_requests",
+              "view"
+            ],
+            [
+              "reports_full",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "edit"
+            ],
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": "none",
+      "why": "Решение *_audit_log: select — полные правила чтения родителя (без узких вариантов по колонкам); фактически читает только CounterpartiesPage («Изменения») — можно сузить до V(counterparties). Вставка: CounterpartiesPage, createWinnerCounterparty (TendersPage, E(tenders))."
+    },
+    "counterparty_contacts": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "view"
+            ],
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ],
+            [
+              "dc_requests",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "CounterpartiesPage; вложено в участников тендера (TendersPage, TenderDetailPage); DcRequestsPage — руководитель для выбора контрагента (counterpartyHead)."
+    },
+    "counterparty_contract_links": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Карточка контрагента: сводка «Договор» (id, contract_id, counterparty_id) и «Прикрепить договор» (canEdit && canViewContracts); в базе osp_can(counterparties, edit)."
+    },
+    "counterparty_relations": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Аффилированные: CounterpartiesPage / CounterpartyGeneralTab; связи пересоздаются insert+delete, update не вызывается."
+    },
+    "dc_request_audit_log": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "dc_requests",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "dc_requests",
+              "edit"
+            ]
+          ]
+        },
+        {
+          "role": [
+            "udorojanie"
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": "none",
+      "why": "Решение *_audit_log: logDcEvent/logFieldChange (правка раздела и «Отдел по удорожанию»), чтение — история заявки и отчёт."
+    },
+    "dc_request_tasks": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "dc_requests",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Только вложено в dc_requests (реестр, отчёт); колонки и окна «Задачи» с 27.10 нет — записи из интерфейса нет."
+    },
+    "dc_requests": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "dc_requests",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "dc_requests",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "dc_requests",
+              "edit"
+            ]
+          ]
+        },
+        {
+          "columns": [
+            "submission_check",
+            "submission_comment",
+            "submission_resp_user_id",
+            "submission_resp_name",
+            "notes",
+            "updated_at"
+          ],
+          "rolePattern": {
+            "key": "^udoroj",
+            "label": "удорож"
+          }
+        }
+      ],
+      "delete": "admin",
+      "why": "DcRequestsPage; отчёт «Заявки на ДС» (reports_full и V(dc_requests)); карточка контрагента (при canView(dc_requests)); счётчик хаба. Правка — canEditDc; «Отдел по удорожанию» (isCostIncreaseRole: ключ /^udoroj/ или «удорож» в названии роли — в правиле перечислен ключ udorojanie; другие роли с «удорож» в названии надо добавить в список) — статус ОКС, комментарий, ответственный, примечание; в базе триггер dc_requests_submission_stamp. Выход из «проверки по договору» — ещё admin/lawyer (внутри E(dc_requests), правилом раздела не выразить). Окончательное удаление — isAdmin. СПОРНО: роль задана ключом udorojanie, а страница узнаёт отдел и по названию роли (/удорож/) — роли с другим ключом надо перечислить."
+    },
+    "departments": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "contacts",
+              "view"
+            ],
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "contacts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "contacts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "contacts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "ContactsPage; вложено contacts(*, departments(name)) в TendersPage (fetchResponsibleContacts, оба вида реестра); CostPlanEconomistsTab (админ). Пишет ContactsPage."
+    },
+    "doc_check_request_audit_log": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "doc_check_requests",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "doc_check_requests",
+              "edit"
+            ],
+            [
+              "doc_check_requests_create",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": "none",
+      "why": "Решение *_audit_log: logEvent (в т.ч. «Заявка создана» у создателя), история и «Удалил» (fetchDeletions)."
+    },
+    "doc_check_request_comments": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "doc_check_requests",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "doc_check_requests",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "«Обсуждение» — пишет любой, кто видит раздел (решение 20261124, в базе osp_can(view) + doc_check_scope)."
+    },
+    "doc_check_request_steps": {
+      "read": "sensitive",
+      "select": "none",
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Шагов в заявке нет с 11.11.2026 (DocCheckSteps удалён, services/docCheckCard.js таблицу не читает)."
+    },
+    "doc_check_requests": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "doc_check_requests",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "doc_check_requests",
+              "edit"
+            ]
+          ]
+        },
+        {
+          "any": [
+            [
+              "doc_check_requests_create",
+              "edit"
+            ]
+          ],
+          "columns": [
+            "object_id",
+            "counterparty_id",
+            "doc_type",
+            "doc_number",
+            "doc_date",
+            "notes",
+            "email_link",
+            "status",
+            "sort_order",
+            "created_by_name"
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "doc_check_requests",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": "none",
+      "why": "DocCheckRequestsPage (canEditSection; createOnly — «Новые заявки», работу отдела снимает триггер doc_check_requests_write_guard), счётчики хаба. Удаление — мягкое (update), прямого delete нет."
+    },
+    "document_check_requests": {
+      "read": "sensitive",
+      "select": "admin",
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Прежний раздел DocumentCheckPage не подключён к маршрутам. select строго — none; admin — для диагностики."
+    },
+    "dp_request_alert_recipients": {
+      "read": "sensitive",
+      "select": "employee",
+      "insert": [
+        {
+          "any": [
+            [
+              "admin",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "admin",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "DpRequestAlert (оболочка, любой сотрудник): своя строка — получатель ли; DpRecipientsModal: список и правка — canManageRecipients = canEdit(admin)."
+    },
+    "dp_requests": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "dp_requests",
+              "view"
+            ],
+            [
+              "dp_requests_create",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "dp_requests_create",
+              "edit"
+            ]
+          ],
+          "columns": [
+            "object_id",
+            "contract_title",
+            "amount",
+            "responsible_contact_id",
+            "responsible_name",
+            "responsible_role",
+            "reason"
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "dp_requests",
+              "edit"
+            ]
+          ]
+        },
+        {
+          "any": [
+            [
+              "dp_requests_create",
+              "edit"
+            ]
+          ],
+          "columns": [
+            "reason",
+            "status",
+            "deleted_at"
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "dp_requests_create",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "DpRequestsPage (canWork = E(dp_requests)); подача — только кнопка в реестре договоров (DpRequestCreateButton, canCreate = E(dp_requests_create)): insert черновика .select(id), затем status=new; автор правит примечание, удаляет/восстанавливает свою, пока «Новая» (canChangeDpRequest; строки и поля держат dp_request_scope и dp_requests_guard). delete — только уборка своего черновика при сбое создания. Счётчики хаба — V(dp_requests)."
+    },
+    "employee_directory": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "tasks",
+              "view"
+            ],
+            [
+              "dc_requests",
+              "view"
+            ],
+            [
+              "doc_check_requests",
+              "view"
+            ],
+            [
+              "counterparties",
+              "view"
+            ],
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ],
+            [
+              "admin",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "services/employees.js fetchEmployees: TasksPage, DcRequestsPage, DocCheckRequestsPage, CounterpartyContracts (карточка контрагента), SupplyPricingPanel (карточка тендера и страница снабжения), DpRecipientsModal (право admin)."
+    },
+    "employees": {
+      "read": "sensitive",
+      "select": "admin",
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Таблицу интерфейс не использует (сотрудники — employee_directory и contacts). Строго — none; admin — для диагностики."
+    },
+    "general_document_folders": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "general_documents",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "general_documents",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "general_documents",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "general_documents",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "GeneralDocumentsPage."
+    },
+    "general_document_links": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "general_documents",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "general_documents",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": [
+        {
+          "any": [
+            [
+              "general_documents",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Вложено в general_documents; ссылки пересоздаются insert+delete."
+    },
+    "general_documents": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "general_documents",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "general_documents",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "general_documents",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "general_documents",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "GeneralDocumentsPage (canEditDocs)."
+    },
+    "kp_manual_rates": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "KpManualRateDialog / KpRateCheckDialog «Добавить в реестр» / KpRateDocCell (canEditRegistry); в базе osp_can(rates_registry, edit)."
+    },
+    "kp_rates_registry": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "RatesRegistryPage / LarixRegistrySection / services/larixRates.js (раздел rates_registry)."
+    },
+    "kp_rates_registry_filter_counterparties": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "RatesRegistryPage / LarixRegistrySection / services/larixRates.js (раздел rates_registry)."
+    },
+    "kp_rates_registry_filter_objects": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "RatesRegistryPage / LarixRegistrySection / services/larixRates.js (раздел rates_registry)."
+    },
+    "kp_rates_registry_filter_tenders": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "RatesRegistryPage / LarixRegistrySection / services/larixRates.js (раздел rates_registry)."
+    },
+    "kp_rates_registry_units": {
+      "read": "sensitive",
+      "select": "admin",
+      "why": "Интерфейс не читает. Строго — none; admin — для диагностики."
+    },
+    "larix_rates_registry": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "RatesRegistryPage / LarixRegistrySection / services/larixRates.js (раздел rates_registry)."
+    },
+    "larix_sync_runs": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "RatesRegistryPage / LarixRegistrySection / services/larixRates.js (раздел rates_registry)."
+    },
+    "object_areas": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "objects",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "ObjectDetailPage, выгрузка объектов (ObjectsPage)."
+    },
+    "object_contract_attachments": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Приложения объекта к договору: ContractsPage (правка — canEditContracts), ContractDetailPage (вложено в contract_attachments)."
+    },
+    "object_cost_plan": {
+      "read": "reference",
+      "select": "admin",
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Интерфейс не обращается. select строго — none; admin — для диагностики."
+    },
+    "object_documents": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "objects",
+              "view"
+            ]
+          ]
+        },
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ]
+          ],
+          "columns": [
+            "id",
+            "object_id",
+            "name",
+            "document_number",
+            "document_date",
+            "document_type",
+            "parent_document_id",
+            "notes",
+            "order_number",
+            "created_at"
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "ObjectDetailPage, objectDocMd, выгрузка; «Расчёт ПЗ» (CostPlansPage → CostPlanCalcTab, services/costPlanCalc.js OBJECT_DOC_COLUMNS) читает выбор подтверждающего документа."
+    },
+    "object_estimate_items": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "objects",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "ObjectDetailPage (смета, утверждение is_approved), выгрузка объектов."
+    },
+    "object_site_contacts": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": "admin",
+      "update": "admin",
+      "delete": "admin",
+      "why": "Контакт площадки: TendersPage (письмо подрядчикам) и TenderDocsModal → SiteContactsTab (только основные виды реестра); назначает isAdmin (canEditSiteContacts), в базе is_admin()."
+    },
+    "object_staff": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "objects",
+              "view"
+            ]
+          ]
+        },
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "dp_requests",
+              "view"
+            ],
+            [
+              "dp_requests_create",
+              "edit"
+            ]
+          ],
+          "columns": [
+            "id",
+            "object_id",
+            "contact_id",
+            "staff_role",
+            "sort_order"
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "ObjectDetailPage/ObjectsPage/выгрузка; ответственные заявки на ДП (services/dpRequests.js loadDpStaff: DpRequestsPage и кнопка в реестре договоров) и руководитель строительства для письма (services/siteContacts.js, TendersPage). update интерфейс не вызывает."
+    },
+    "object_warranties": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "objects",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "ObjectDetailPage, WarrantyActSignModal, выгрузка."
+    },
+    "object_warranty_retention_payments": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "objects",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Вложено в object_warranty_retentions (ObjectDetailPage, выгрузка); платежи пересоздаются delete+insert, update не вызывается."
+    },
+    "object_warranty_retentions": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "objects",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "ObjectDetailPage, выгрузка."
+    },
+    "objects": {
+      "read": "reference",
+      "select": "employee",
+      "insert": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "objects",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Справочник: читают все разделы, DepartmentsPage (любой сотрудник: id, name, status), AdminPage, DpRequestAlert-цепочка. Пишут ObjectsPage/ObjectDetailPage (canEditObjects; удаление — не только админ); contract_code — ContractNumberingModal (isAdmin, в базе триггер objects_contract_code_guard)."
+    },
+    "positions": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "contacts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "contacts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "contacts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "contacts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Только ContactsPage (вкладка «Должности»)."
+    },
+    "psdc": {
+      "read": "sensitive",
+      "select": "admin",
+      "why": "Интерфейс читает ПСДЦ только функциями psdc_*. Строго — none; admin оставлен для диагностики и подсчётов test:db через шлюз."
+    },
+    "psdc_batches": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js (PsdcBatchPage, карточка договора)."
+    },
+    "psdc_issues": {
+      "read": "sensitive",
+      "select": "admin",
+      "why": "Интерфейс читает ПСДЦ только функциями psdc_*. Строго — none; admin оставлен для диагностики и подсчётов test:db через шлюз."
+    },
+    "psdc_rows": {
+      "read": "sensitive",
+      "select": "admin",
+      "why": "Интерфейс читает ПСДЦ только функциями psdc_*. Строго — none; admin оставлен для диагностики и подсчётов test:db через шлюз."
+    },
+    "psdc_source_rows": {
+      "read": "sensitive",
+      "select": "admin",
+      "why": "Интерфейс читает ПСДЦ только функциями psdc_*. Строго — none; admin оставлен для диагностики и подсчётов test:db через шлюз."
+    },
+    "public_open_tenders": {
+      "read": "reference",
+      "select": "employee",
+      "why": "PublicTendersPage (/public/tenders) — гость (anon по allow.json) и любой вошедший; для подрядчика — карта подрядчика."
+    },
+    "role_permissions": {
+      "read": "sensitive",
+      "select": "employee",
+      "insert": "admin",
+      "update": "admin",
+      "delete": "admin",
+      "why": "Решение. RoleContext — права своей роли (и «посмотреть от имени роли» у админа); AccessRightsTab пишет."
+    },
+    "roles": {
+      "read": "sensitive",
+      "select": "employee",
+      "insert": "admin",
+      "update": "admin",
+      "delete": "admin",
+      "why": "Решение. RoleContext/useAvailableRoles читают; AccessRightsTab (AdminPage) пишет."
+    },
+    "s3_documents": {
+      "read": "sensitive",
+      "select": "employee",
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Решение: запись только через osp-api (s3-presign, bid-file); строки по владельцу будет резать новое правило базы. Читают почти все разделы (списки файлов, вложенные s3:s3_documents!…)."
+    },
+    "section_templates": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "contracts",
+              "view"
+            ],
+            [
+              "dc_requests",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Якоря шаблонов: TenderDocsModal (основные виды тендеров), CostPlansPage («Расчёт ПЗ»), ContractDocsModal, DcRequestDocsModal. Писать некому."
+    },
+    "supply_rates_registry": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "RatesRegistryPage / LarixRegistrySection / services/larixRates.js (раздел rates_registry)."
+    },
+    "supply_rates_registry_filter_objects": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "RatesRegistryPage / LarixRegistrySection / services/larixRates.js (раздел rates_registry)."
+    },
+    "supply_rates_registry_filter_tenders": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "RatesRegistryPage / LarixRegistrySection / services/larixRates.js (раздел rates_registry)."
+    },
+    "supply_rates_registry_units": {
+      "read": "sensitive",
+      "select": "admin",
+      "why": "Интерфейс не читает. Строго — none; admin — для диагностики."
+    },
+    "task_audit_log": {
+      "read": "sensitive",
+      "select": "employee",
+      "insert": "employee",
+      "update": "none",
+      "delete": "none",
+      "why": "Решение *_audit_log; строки режет RLS задачи."
+    },
+    "task_checklist_items": {
+      "read": "reference",
+      "select": "employee",
+      "insert": "employee",
+      "update": "employee",
+      "delete": "employee",
+      "why": "Решение: задачи — любой сотрудник, строки режет RLS (can_see_task). TasksPage, TaskDetailModal, services/tasks.js, NotificationsContext."
+    },
+    "task_comments": {
+      "read": "reference",
+      "select": "employee",
+      "insert": "employee",
+      "update": "employee",
+      "delete": "employee",
+      "why": "Решение: задачи — любой сотрудник, строки режет RLS (can_see_task). TasksPage, TaskDetailModal, services/tasks.js, NotificationsContext."
+    },
+    "task_participants": {
+      "read": "reference",
+      "select": "employee",
+      "insert": "employee",
+      "update": "employee",
+      "delete": "employee",
+      "why": "Решение: задачи — любой сотрудник, строки режет RLS (can_see_task). TasksPage, TaskDetailModal, services/tasks.js, NotificationsContext."
+    },
+    "tasks": {
+      "read": "reference",
+      "select": "employee",
+      "insert": "employee",
+      "update": "employee",
+      "delete": "employee",
+      "why": "Решение: задачи — любой сотрудник, строки режет RLS (can_see_task). TasksPage, TaskDetailModal, services/tasks.js, NotificationsContext."
+    },
+    "tender_audit_log": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ],
+            [
+              "vors",
+              "view"
+            ],
+            [
+              "reports",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ],
+            [
+              "vors",
+              "edit"
+            ]
+          ]
+        },
+        {
+          "role": [
+            "economist"
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": "none",
+      "why": "Решение *_audit_log: insert — объединение правил записи tenders (E(tenders) ⊂ V(tenders) cost_plan, E(vors), E(tenders_materials), роль economist «ТГ»); select — полные правила чтения tenders. Читают: история примечаний (TendersPage), карточка тендера, «Работа инженеров» (суперадмин в отчётах)."
+    },
+    "tender_bid_files": {
+      "read": "sensitive",
+      "select": "admin",
+      "why": "loadAllBidFiles — сводка администратора; просмотр «как подрядчик». Подрядчик — своей картой. Пишет служба."
+    },
+    "tender_bid_forms": {
+      "read": "sensitive",
+      "select": "admin",
+      "why": "Подробности сводки (loadBidForm) — isAdmin; просмотр «как подрядчик». Подрядчик — своей картой."
+    },
+    "tender_bid_rates": {
+      "read": "sensitive",
+      "select": "admin",
+      "why": "Только ContractorBidsSection (реестр расценок, вкладка bids — isAdmin) и просмотр «как подрядчик» (админ). Подрядчик — своей картой."
+    },
+    "tender_bid_requests": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Заявки с сайта: BidRequestsBlock и счётчик «заявки: N» в основном реестре тендеров (loadBidRequests / loadPendingRequestCounts), сводка администратора. Подрядчик — своей картой."
+    },
+    "tender_counterparties": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ],
+            [
+              "reports_full",
+              "view"
+            ]
+          ]
+        },
+        {
+          "any": [
+            [
+              "counterparties",
+              "view"
+            ]
+          ],
+          "columns": [
+            "tender_id",
+            "counterparty_id",
+            "status"
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Участники: TendersPage (canEditTenders; в реестре тендеров на материалы участников и раскрытой строки нет — чтение только для счётчиков и онлайн-подписки id,tender_id,status), TenderDetailPage/TenderProposalUploadModal/TenderProposalsCompare (E(tenders)); отчёт «Подрядчики» (reports_full); история участия в карточке контрагента (status + tenders(...)). Подрядчик — своей картой."
+    },
+    "tender_counterparty_proposals": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "КП по позициям сметы: TenderDetailPage, TenderProposalUploadModal (upsert), TenderProposalsCompare. Подрядчик — своей картой."
+    },
+    "tender_doc_links": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Вкладка «Документы» карточки (TenderDocumentsTab), понятийное соглашение при завершении (tenderConceptAgreement, TendersPage E(tenders)); ссылки пересоздаются insert+delete."
+    },
+    "tender_docs": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "TenderDocumentsTab, TenderFinalDocBlock (карточка), карточка «Понятийное соглашение» при завершении тендера ОС (TendersPage, основной вид)."
+    },
+    "tender_documents": {
+      "read": "reference",
+      "select": "admin",
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Прежние ссылки-документы тендера: интерфейс не обращается. select строго — none; admin — для диагностики."
+    },
+    "tender_estimate_items": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Вкладка «ВОР» карточки (импорт Excel: delete+insert, E(tenders)); расценка снабжением читает её как запасной список позиций (SupplyPricingPage). update не вызывается. Подрядчик — своей картой."
+    },
+    "tender_proposal_files": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ],
+            [
+              "reports_full",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "role": [
+            "economist"
+          ],
+          "columns": [
+            "review_status",
+            "review_note",
+            "reviewed_at",
+            "reviewed_by",
+            "review_note_s3_document_id",
+            "remarks_send_required",
+            "remarks_sent",
+            "remarks_sent_at",
+            "remarks_sent_by",
+            "summary_added",
+            "summary_added_at",
+            "summary_added_by"
+          ]
+        },
+        {
+          "role": [
+            "engineer"
+          ],
+          "columns": [
+            "remarks_sent",
+            "remarks_sent_at",
+            "remarks_sent_by",
+            "summary_added",
+            "summary_added_at",
+            "summary_added_by"
+          ]
+        }
+      ],
+      "delete": "none",
+      "why": "Файлы КП: TenderCounterpartyFiles/TenderProposalUploadModal (вставка — canEditTenders), «Проверка КП», NotificationsContext (V(tenders)), отчёты KpStats/ContractorStats (reports_full). Правка: проверка — canReview = admin|суперадмин|role economist (KpReviewModal); «В сводной» — canSummary = engineer|economist; «Подрядчику» — canSend = engineer; ручной этап — суперадмин (проходит и так). Удаление строки — каскадом от s3_documents (через osp-api), прямого delete нет."
+    },
+    "tender_rd_codes": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "vors",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "vors",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Вкладка «Шифр РД» карточки (TenderRdCodesTab, E(tenders): правка, удаление, перестановка); TenderVorRdPanel / VorRdModal (TendersPage основной вид — canEditTenders, VorsPage — E(tenders)|E(vors)): чтение и добавление шифра."
+    },
+    "tender_rd_document_codes": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "vors",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "vors",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "vors",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Шифры у PDF РД: TenderVorRdPanel (setDocumentCodes: insert/delete) и TenderRdCodesTab."
+    },
+    "tender_supply_comments": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Комментарий позиции (upsert + delete пустого)."
+    },
+    "tender_supply_import_state": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Статус разбора ВОР службой: реестр материалов и панель расценки. Пишет только служба."
+    },
+    "tender_supply_links": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Документ позиции (upsert = insert+update, удаление)."
+    },
+    "tender_supply_progress": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "«Расценка: N из M» в реестре тендеров на материалы (loadSupplyProgress)."
+    },
+    "tender_supply_rate_log": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Опрос чужих правок и история цены (SupplyRateHistory). Пишет триггер."
+    },
+    "tender_supply_revisions": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Версии ВОР: панель расценки, реестр материалов («ВОР изменён»), уведомления NotificationsContext (E(tenders_materials)). Пишет триггер, «просмотрено» — supply_revisions_review."
+    },
+    "tender_supply_sources": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Списки позиций ВОР (автозагрузка у того, кто правит; «Указать лист и колонки»; ответ «отдельный ВОР»)."
+    },
+    "tender_vor_supply_rates": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "SupplyPricingPanel (карточка и /tenders/materials/:id/pricing; canEditRole = E(tenders)|E(tenders_materials), в базе supply_can_edit), импорт Excel карточки (upsert, E(tenders)), счётчик вкладки. Цены других тендеров (loadOtherTenderRates) — тем же правилом."
+    },
+    "tender_winners": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ],
+            [
+              "vors",
+              "view"
+            ],
+            [
+              "reports_full",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Вложено в TENDER_LIST_SELECT, карточку, TENDER_WINNERS_SELECT (VorsPage); отчёт «Подрядчики». Пишет окно завершения тендера (основной вид, canEditTenders = E(tenders)): delete+insert."
+    },
+    "tenders": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ],
+            [
+              "vors",
+              "view"
+            ],
+            [
+              "reports",
+              "view"
+            ]
+          ]
+        },
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ],
+          "columns": [
+            "id",
+            "object_id",
+            "work_description",
+            "winner_counterparty_id",
+            "status",
+            "public_tender_number",
+            "parent_tender_id",
+            "deleted_at",
+            "created_at"
+          ]
+        },
+        {
+          "any": [
+            [
+              "counterparties",
+              "view"
+            ]
+          ],
+          "columns": [
+            "id",
+            "public_tender_number",
+            "parent_tender_id",
+            "work_description",
+            "tender_start_date",
+            "tender_end_date"
+          ]
+        },
+        {
+          "any": [
+            [
+              "tasks",
+              "view"
+            ]
+          ],
+          "columns": [
+            "id",
+            "public_tender_number",
+            "work_description",
+            "deleted_at"
+          ]
+        },
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ],
+          "columns": [
+            "id",
+            "work_description",
+            "object_id",
+            "public_tender_number",
+            "deleted_at",
+            "tender_type",
+            "created_at",
+            "status"
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        },
+        {
+          "any": [
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ],
+          "columns": [
+            "object_id",
+            "custom_object_name",
+            "work_description",
+            "status",
+            "start_date",
+            "end_date",
+            "tender_type",
+            "department",
+            "parent_tender_id",
+            "notes",
+            "tender_start_date",
+            "tender_end_date"
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        },
+        {
+          "any": [
+            [
+              "vors",
+              "edit"
+            ]
+          ],
+          "columns": [
+            "vor_division",
+            "vor_status",
+            "vor_sto_user_id",
+            "vor_sto_name",
+            "vor_link",
+            "vor_end_date"
+          ]
+        },
+        {
+          "any": [
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ],
+          "columns": [
+            "materials_priority",
+            "materials_resp_user_id",
+            "materials_resp_name",
+            "materials_proposal_start_date",
+            "materials_proposal_deadline",
+            "materials_proposal_link",
+            "status",
+            "notes",
+            "deleted_at"
+          ]
+        },
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ]
+          ],
+          "columns": [
+            "cost_plan_status",
+            "cost_plan_responsible_id",
+            "cost_plan_link",
+            "cost_plan_start_date",
+            "cost_plan_end_date",
+            "cost_plan_notes"
+          ]
+        },
+        {
+          "role": [
+            "economist"
+          ],
+          "columns": [
+            "tg_published",
+            "tg_published_at",
+            "tg_published_by",
+            "tg_skip",
+            "tg_skip_at",
+            "tg_skip_by"
+          ]
+        }
+      ],
+      "delete": "admin",
+      "why": "Чтение полное: реестры (TendersPage, онлайн-подписка select *), карточка, ПЗ, «Проверка КП», сводка, «ВОРы и РД» (VorsPage, подписка select *), отчёты (fetchStats для любого V(reports)); узко: форма/реестр договоров (ContractsPage, ContractDetailPage tenders(work_description, public_tender_number)), история участия в карточке контрагента, ссылки задач (TasksPage), выбор тендера «Добавить расценку» (kpManualRates). NotificationsContext — при V(tenders) и E(tenders_materials) (последний ⊂ V(tenders_materials) обычно). Вставка: реестр (canEditTenders); у тендеров на материалы — «+ Добавить тендер» (tender_type=materials). Правка: E(tenders) — всё; E(vors) — VorsPage (статус, подразделение, СТО, ссылка, срок ВОР) и подразделение в реестре (canEditVorDivision); E(tenders_materials) — строка реестра материалов (приоритет, ответственный снабжения, сроки КП, ссылка на КП, статус, примечание, восстановление из «Удалённых»); V(tenders) — CostPlansPage без гейта (статус, ответственный, ссылка, сроки, примечание ПЗ; folder_path там же — только E(tenders)); роль economist — «ТГ» (canToggleTgPublished = canEditTenders || role economist; роли engineer в коде нет). Синхронизация work_description при чтении материалов (TendersPage fetchTenders) — дефект, не дана. Удаление (и мягкое, и окончательное) — isAdmin; мягкое — update deleted_at. СПОРНО: (1) вариант E(tenders_materials) по колонкам не отличает тендер на материалы от основного (status, notes, deleted_at основного тендера тоже пройдут; вставка — с любым tender_type) — предлагаю триггер/правило базы по tender_type=materials, а deleted_at можно убрать (восстановление из «Удалённых» у снабжения редкое); (2) роли engineer для «ТГ» в коде нет — дано только economist."
+    },
+    "user_roles": {
+      "read": "sensitive",
+      "select": "employee",
+      "insert": "admin",
+      "update": "admin",
+      "delete": "admin",
+      "why": "Решение. Чтение: RoleContext (своя строка), AdminPage, services/s3.js, employees/stoEmployees (RLS: своя строка / админ). Запись: AdminPage, AccessRightsTab (сброс роли). Профиль — функцией profile_update_own; запасной update из RoleContext (без функции) и insert заявки при входе через Supabase шлюзу не нужны."
+    },
+    "vor_rd_sets": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "vors",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "vors",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "vors",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "vors",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Комплекты РД под строкой «ВОРов и РД» (VorsPage), в базе vor_rd_can_edit()."
+    },
+    "vor_requests": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "vors",
+              "view"
+            ],
+            [
+              "reports",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "vors",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "vors",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": "none",
+      "why": "Заявки на ВОР без тендера: VorsPage / VorRequestModal (canEditVors = E(tenders)|E(vors)), отчёт ВОРов (fetchStats для V(reports)). Удаление — мягкое (update deleted_at)."
+    },
+    "work_types": {
+      "read": "reference",
+      "select": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "view"
+            ],
+            [
+              "reports_full",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "CounterpartiesPage (вкладка «Виды работ», правка — canEditCp); отчёт «Подрядчики» ContractorStats (только при reports_full)."
+    }
+  },
+  "rpc": {
+    "admin_confirm_user_email": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "admin",
+      "why": "AdminPage."
+    },
+    "admin_delete_user": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "admin",
+      "why": "AdminPage."
+    },
+    "bid_access": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "bid_admin_overview": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "admin",
+      "why": "ContractorBidsSection (isAdmin)."
+    },
+    "bid_can_edit": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "bid_company_save": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Только подрядчик (карта подрядчика); в просмотре «как подрядчик» запись закрыта."
+    },
+    "bid_contractor_tenders": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Только подрядчик (карта подрядчика); сотрудники и просмотр «как подрядчик» читают таблицами."
+    },
+    "bid_decide": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "BidRequestsBlock в основном реестре тендеров (canEdit(tenders))."
+    },
+    "bid_form_save": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Только подрядчик (карта подрядчика); в просмотре «как подрядчик» запись закрыта."
+    },
+    "bid_positions": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "admin",
+      "why": "BidWorkspace (учётка с сайта); у сотрудника — только просмотр «как подрядчик» (админ). Подрядчик — своей картой."
+    },
+    "bid_rates_save": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Только подрядчик (карта подрядчика); в просмотре «как подрядчик» запись закрыта."
+    },
+    "bid_request": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Только подрядчик (карта подрядчика); в просмотре «как подрядчик» запись закрыта."
+    },
+    "bid_tender_open": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "bid_vor_superseded": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "admin",
+      "why": "Сотрудник вызывает только в просмотре «как подрядчик» (BidWorkspace, админ). Подрядчик — своей картой."
+    },
+    "can_see_task": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "contract_code_key": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "contract_code_norm": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "contract_number_key": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "contractor_contracts": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Кабинет больше не вызывает (договоров в кабинете нет с 03.11)."
+    },
+    "contractor_kp_item_open": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "contractor_org_card": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Только подрядчик (карта подрядчика); сотрудники и просмотр «как подрядчик» читают таблицами."
+    },
+    "contractor_org_name": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Только подрядчик (карта подрядчика); сотрудники и просмотр «как подрядчик» читают таблицами."
+    },
+    "contractor_set_participation": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Только подрядчик (карта подрядчика); в просмотре «как подрядчик» запись закрыта."
+    },
+    "counterparty_site_accounts": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "counterparties",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Реестр контрагентов: «С регистрацией»."
+    },
+    "current_counterparty_id": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "doc_check_scope": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "dp_request_alerts_ack": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "employee",
+      "why": "DpRequestAlert «Понятно»/«Открыть заявку» — гасит свои."
+    },
+    "dp_request_my_alerts": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "employee",
+      "why": "DpRequestAlert в EmployeeLayout (GET)."
+    },
+    "dp_request_scope": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "get_auth_users": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "admin",
+      "why": "AdminPage (список учёток)."
+    },
+    "is_admin": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "is_my_contract": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "is_my_tender": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "is_negotiation_employee": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "is_portal_employee": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "is_task_participant": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "kp_norm_name": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "kp_norm_unit": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "kp_rates_lookup": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "«Проверить по файлу» реестра КП (KpRateCheckDialog), любой зритель реестра."
+    },
+    "list_sto_employees": {
+      "kind": "read",
+      "read": "reference",
+      "call": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "vors",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Ответственный СТО: форма тендера (TendersPage handleEditTender), VorsPage."
+    },
+    "list_supply_employees": {
+      "kind": "read",
+      "read": "reference",
+      "call": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Ответственный снабжения в реестре тендеров на материалы (TendersPage)."
+    },
+    "osp_can": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "osp_counterparty_id": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "osp_is_employee": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "osp_registry_reader": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "profile_update_own": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "employee",
+      "why": "RoleContext.updateProfile (ProfilePage): своя строка — ФИО, телефон, почта (20270120)."
+    },
+    "psdc_add_rows": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: загрузка/проверка/применение ПСДЦ (PsdcPanel при can_edit, PsdcBatchPage canEditContracts); право документа решает psdc_contracts_permission в базе."
+    },
+    "psdc_apply": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: загрузка/проверка/применение ПСДЦ (PsdcPanel при can_edit, PsdcBatchPage canEditContracts); право документа решает psdc_contracts_permission в базе."
+    },
+    "psdc_batch_apply": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: загрузка/проверка/применение ПСДЦ (PsdcPanel при can_edit, PsdcBatchPage canEditContracts); право документа решает psdc_contracts_permission в базе."
+    },
+    "psdc_batch_create": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: загрузка/проверка/применение ПСДЦ (PsdcPanel при can_edit, PsdcBatchPage canEditContracts); право документа решает psdc_contracts_permission в базе."
+    },
+    "psdc_batch_issues": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: PsdcPanel (карточка договора), PsdcBatchPage."
+    },
+    "psdc_batch_items": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: PsdcPanel (карточка договора), PsdcBatchPage."
+    },
+    "psdc_batch_set_documents": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: загрузка/проверка/применение ПСДЦ (PsdcPanel при can_edit, PsdcBatchPage canEditContracts); право документа решает psdc_contracts_permission в базе."
+    },
+    "psdc_batch_set_notes": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: загрузка/проверка/применение ПСДЦ (PsdcPanel при can_edit, PsdcBatchPage canEditContracts); право документа решает psdc_contracts_permission в базе."
+    },
+    "psdc_can_view_document": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Часть ПСДЦ."
+    },
+    "psdc_cancel": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: загрузка/проверка/применение ПСДЦ (PsdcPanel при can_edit, PsdcBatchPage canEditContracts); право документа решает psdc_contracts_permission в базе."
+    },
+    "psdc_cell_value": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Часть ПСДЦ."
+    },
+    "psdc_compare": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: PsdcPanel (карточка договора), PsdcBatchPage."
+    },
+    "psdc_contracts_permission": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Часть ПСДЦ."
+    },
+    "psdc_create": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: загрузка/проверка/применение ПСДЦ (PsdcPanel при can_edit, PsdcBatchPage canEditContracts); право документа решает psdc_contracts_permission в базе."
+    },
+    "psdc_delete": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: загрузка/проверка/применение ПСДЦ (PsdcPanel при can_edit, PsdcBatchPage canEditContracts); право документа решает psdc_contracts_permission в базе."
+    },
+    "psdc_document_state": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: PsdcPanel (карточка договора), PsdcBatchPage."
+    },
+    "psdc_feature_started_at": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Часть ПСДЦ."
+    },
+    "psdc_get": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: PsdcPanel (карточка договора), PsdcBatchPage."
+    },
+    "psdc_get_rows": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: PsdcPanel (карточка договора), PsdcBatchPage."
+    },
+    "psdc_log_export": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "exportPsdc в PsdcPanel — «Скачать» доступно зрителю договора; пишет запись журнала выгрузки."
+    },
+    "psdc_norm_header": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Часть ПСДЦ."
+    },
+    "psdc_number_message": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Часть ПСДЦ."
+    },
+    "psdc_parse_decimal": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Часть ПСДЦ."
+    },
+    "psdc_set_source_file": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: загрузка/проверка/применение ПСДЦ (PsdcPanel при can_edit, PsdcBatchPage canEditContracts); право документа решает psdc_contracts_permission в базе."
+    },
+    "psdc_validate": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "services/psdc.js: загрузка/проверка/применение ПСДЦ (PsdcPanel при can_edit, PsdcBatchPage canEditContracts); право документа решает psdc_contracts_permission в базе."
+    },
+    "psdc_visible": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Часть ПСДЦ."
+    },
+    "refresh_rates_registry": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Кнопка «Обновить» RatesRegistryPage — любой зритель реестра (не чаще раза в минуту, в базе)."
+    },
+    "report_client_error": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "employee",
+      "why": "Телеметрия оболочки (src/api/clientErrors.js, services/telemetry.js). Подрядчик — своей картой."
+    },
+    "report_client_version": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "employee",
+      "why": "Телеметрия оболочки. Подрядчик — своей картой."
+    },
+    "supply_autofill": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "SupplyPricingPanel при открытии у того, кто правит (supply_can_edit в базе)."
+    },
+    "supply_can_edit": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Расчёт похожести / ключей — на странице свой порт (supplySimilarity.js, normName)."
+    },
+    "supply_estimate_rename": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "«Привязать» ВОР (SupplyPricingPanel)."
+    },
+    "supply_name_heads": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Расчёт похожести / ключей — на странице свой порт (supplySimilarity.js, normName)."
+    },
+    "supply_name_nums": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Расчёт похожести / ключей — на странице свой порт (supplySimilarity.js, normName)."
+    },
+    "supply_name_pieces": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Расчёт похожести / ключей — на странице свой порт (supplySimilarity.js, normName)."
+    },
+    "supply_name_prepare": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Расчёт похожести / ключей — на странице свой порт (supplySimilarity.js, normName)."
+    },
+    "supply_name_score": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Расчёт похожести / ключей — на странице свой порт (supplySimilarity.js, normName)."
+    },
+    "supply_name_similarity": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Расчёт похожести / ключей — на странице свой порт (supplySimilarity.js, normName)."
+    },
+    "supply_name_stems": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Расчёт похожести / ключей — на странице свой порт (supplySimilarity.js, normName)."
+    },
+    "supply_name_tokens": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Расчёт похожести / ключей — на странице свой порт (supplySimilarity.js, normName)."
+    },
+    "supply_name_word_share": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Расчёт похожести / ключей — на странице свой порт (supplySimilarity.js, normName)."
+    },
+    "supply_name_words": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Расчёт похожести / ключей — на странице свой порт (supplySimilarity.js, normName)."
+    },
+    "supply_norm_name": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Расчёт похожести / ключей — на странице свой порт (supplySimilarity.js, normName)."
+    },
+    "supply_norm_number": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Расчёт похожести / ключей — на странице свой порт (supplySimilarity.js, normName)."
+    },
+    "supply_rate_carry": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "«Перенести цену» (SupplyPricingPanel)."
+    },
+    "supply_rate_origins": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Пометка «цена из тендера № …» (loadRateOrigins)."
+    },
+    "supply_rate_suggestions": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Меню «похожие цены» (SupplySuggestMenu)."
+    },
+    "supply_rates_locked": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Расчёт похожести / ключей — на странице свой порт (supplySimilarity.js, normName)."
+    },
+    "supply_revisions_review": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "«Изменения просмотрены» (SupplyPricingPanel reviewDocs); в базе — только правящий расценку."
+    },
+    "supply_stem_word": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает. Расчёт похожести / ключей — на странице свой порт (supplySimilarity.js, normName)."
+    },
+    "supply_suggestion_counts": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Счётчики «похожие цены: N» для показанных строк."
+    },
+    "supply_vor_adopt": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "«Да, новая версия ВОР» (SupplyPricingPanel)."
+    },
+    "tender_compare_proposals": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "«Сравнение КП» в карточке тендера (GET)."
+    },
+    "touch_last_login": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "employee",
+      "why": "RoleContext после входа (вход через Supabase; при своём входе время ставит сервер)."
+    },
+    "vor_rd_can_edit": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "vor_requests_can_access": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    }
+  }
+}

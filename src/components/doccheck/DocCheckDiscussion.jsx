@@ -1,7 +1,8 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useLayoutEffect, useRef, useState } from 'react'
 import DocCheckGrowingField from './DocCheckGrowingField'
 import { addComment } from '../../services/docCheckCard'
 import { MAX_COMMENT_LENGTH } from '../../utils/docCheckHelpers'
+import { isUnreadMessage } from '../../utils/docCheckTalkRead'
 import { formatDateTimeRu } from '../../utils/taskHelpers'
 
 // Обсуждение заявки — по образцу обсуждения задачи: автор, время, текст; свои сообщения прижаты вправо. Написать может
@@ -10,18 +11,36 @@ import { formatDateTimeRu } from '../../utils/taskHelpers'
 // С 11.11.2026 (решение пользователя: «переписку разместить справа, на общем») — не вкладка, а панель справа на вкладке
 // «Общая»: заголовок с числом сообщений, переписка прокручивается сама по себе, поле ввода — у нижнего края. На телефоне
 // панель стоит под сведениями заявки и прокручивается вместе с окном.
-export default function DocCheckDiscussion({ requestId, comments, onCommentsChange, currentUserId, canWrite, state, onRetry }) {
+//
+// Непрочитанные (11.11.2026, docCheckTalkRead.js): сообщения коллег позже unreadAfter — цветом и с пометкой «новое», перед
+// первым — черта «Новые сообщения»; окно открывается на ней, если новых больше, чем видно.
+export default function DocCheckDiscussion({
+  requestId, comments, onCommentsChange, currentUserId, unreadAfter = Number.POSITIVE_INFINITY, canWrite, state, onRetry,
+}) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   // Не даёт отправить дважды (Enter, нажатый снова до ответа базы).
   const sendingRef = useRef(false)
   const listRef = useRef(null)
+  const newMarkRef = useRef(null)
+  // Первое положение — после первой загрузки: на черте новых; дальше (своё сообщение, новые коллег) — конец переписки.
+  const placed = useRef(false)
+
+  const unreadIds = new Set(comments.filter(c => isUnreadMessage(c, currentUserId, unreadAfter)).map(c => c.id))
+  const firstUnreadId = comments.find(c => unreadIds.has(c.id))?.id
 
   // Новые сообщения — внизу, поле ввода — под ними: при открытии и после отправки показываем конец переписки. Прокручивается
   // только сама переписка: на телефоне своей прокрутки у неё нет, и окно со сведениями заявки остаётся на месте.
   useLayoutEffect(() => {
     const list = listRef.current
-    if (list) list.scrollTop = list.scrollHeight
+    if (!list) return
+    list.scrollTop = list.scrollHeight
+    if (state !== 'ready' || placed.current) return
+    placed.current = true
+    const mark = newMarkRef.current
+    if (!mark) return
+    const above = mark.getBoundingClientRect().top - list.getBoundingClientRect().top
+    if (above < 0) list.scrollTop += above - 8
   }, [comments.length, state])
 
   const send = async () => {
@@ -58,15 +77,27 @@ export default function DocCheckDiscussion({ requestId, comments, onCommentsChan
           </p>
         )}
         {ready && comments.length === 0 && <p className="dc-muted">Сообщений пока нет.</p>}
-        {ready && comments.map(c => (
-          <div key={c.id} className={`dc-talk-msg${c.author_user_id && c.author_user_id === currentUserId ? ' is-mine' : ''}`}>
-            <div className="dc-talk-head">
-              <b>{c.author_name || 'Сотрудник'}</b>
-              <span className="dc-talk-time">{formatDateTimeRu(c.created_at)}</span>
-            </div>
-            <p className="dc-talk-body">{c.body}</p>
-          </div>
-        ))}
+        {ready && comments.map(c => {
+          const unread = unreadIds.has(c.id)
+          const mine = c.author_user_id && c.author_user_id === currentUserId
+          return (
+            <Fragment key={c.id}>
+              {c.id === firstUnreadId && (
+                <div className="dc-talk-new-mark" ref={newMarkRef} role="separator">
+                  <span>{unreadIds.size === 1 ? 'Новое сообщение' : `Новые сообщения: ${unreadIds.size}`}</span>
+                </div>
+              )}
+              <div className={`dc-talk-msg${mine ? ' is-mine' : ''}${unread ? ' is-unread' : ''}`}>
+                <div className="dc-talk-head">
+                  <b>{c.author_name || 'Сотрудник'}</b>
+                  {unread && <span className="dc-talk-new">новое</span>}
+                  <span className="dc-talk-time">{formatDateTimeRu(c.created_at)}</span>
+                </div>
+                <p className="dc-talk-body">{c.body}</p>
+              </div>
+            </Fragment>
+          )
+        })}
       </div>
       {ready && canWrite && (
         <div className="dc-inline-add dc-talk-add">

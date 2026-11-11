@@ -1,6 +1,6 @@
 // Клиент Supabase в памяти браузера для стенда карточки тендера.
 // Реализует ровно те части PostgREST-построителя, которые использует карточка:
-// select (с count/head), eq/in/is, or (логическое дерево: eq, in, is, not., and/or), order, range/limit, single/maybeSingle,
+// select (с count/head), eq/in/is, gt/gte/lt/lte, or (логическое дерево: eq, in, is, not., and/or), order, range/limit, single/maybeSingle,
 // insert/upsert/update/delete с .select(). Встраивания (objects(name)…) не
 // разбираются — нужные поля заранее лежат в данных. Каждый запрос ждёт
 // искусственную «сетевую» задержку и учитывается в window.__supabaseStats.
@@ -88,6 +88,8 @@ function applyFilters(rows, filters) {
     if (f.op === 'in') return f.val.map(String).includes(String(r[f.col]))
     if (f.op === 'gt') return r[f.col] > f.val
     if (f.op === 'gte') return r[f.col] >= f.val
+    if (f.op === 'lt') return r[f.col] < f.val
+    if (f.op === 'lte') return r[f.col] <= f.val
     if (f.op === 'ilike') return String(r[f.col] ?? '').toLowerCase().includes(String(f.val).replace(/^%|%$/g, '').toLowerCase())
     if (f.op === 'or') return f.conds.some((c) => testCond(r, c))
     return true
@@ -162,6 +164,8 @@ function builder(table) {
     in(col, val) { q.filters.push({ op: 'in', col, val }); return self },
     gt(col, val) { q.filters.push({ op: 'gt', col, val }); return self },
     gte(col, val) { q.filters.push({ op: 'gte', col, val }); return self },
+    lt(col, val) { q.filters.push({ op: 'lt', col, val }); return self },
+    lte(col, val) { q.filters.push({ op: 'lte', col, val }); return self },
     ilike(col, val) { q.filters.push({ op: 'ilike', col, val }); return self },
     neq() { return self },
     not(col, op, val) {

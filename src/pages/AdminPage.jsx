@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { db, identityAdmin } from '../api'
+import { db, identityAdmin, su10Orgs } from '../api'
 import { useRole, SECTIONS } from '../contexts/RoleContext'
 import FilterDropdown from '../components/FilterDropdown'
 import RoleBadge from '../components/admin/RoleBadge'
@@ -12,6 +12,7 @@ import ApiKeysTab from '../components/admin/ApiKeysTab'
 import AccessRightsTab from '../components/admin/AccessRightsTab'
 import ContractorSignupsTab from '../components/admin/ContractorSignupsTab'
 import IdentityRequestsTab from '../components/admin/IdentityRequestsTab'
+import Su10OrgsTab from '../components/admin/Su10OrgsTab'
 import { fetchAllActiveCounterparties } from '../utils/fetchAllRows'
 import './AdminPage.css'
 
@@ -62,6 +63,15 @@ function AdminPage() {
     if (!ssoAuth) return
     identityAdmin.list('pending').then((d) => setPendingRequests(d.pending || 0)).catch(() => {})
   }, [ssoAuth])
+  // «Организации СУ-10» (server/osp-api/src/routes/orgAdmin.js): вкладка есть, если сервер её отдаёт — свой вход, служебный
+  // клиент СУ-10 и миграция 20270201; работает и до переключения на вход через СУ-10 (связи готовят заранее).
+  const [su10OrgsOn, setSu10OrgsOn] = useState(false)
+  useEffect(() => {
+    if (!ownAuth || !(isAdmin || isSuperAdmin)) return
+    let alive = true
+    su10Orgs.list().then(() => { if (alive) setSu10OrgsOn(true) }).catch(() => {})
+    return () => { alive = false }
+  }, [ownAuth, isAdmin, isSuperAdmin])
 
   // --- Users ---
   const [userRoles, setUserRoles] = useState([])
@@ -304,6 +314,9 @@ function AdminPage() {
       counterparty_id: form.counterparty_id || null,
       ...statusPatch(form.status, userProfile?.full_name || null),
     }
+    // Вход через СУ-10: контрагента подрядчика ставит сервер по организации СУ-10 («Организации СУ-10»); база правку мимо
+    // сервера и так отклонит (20270201), поэтому поле не шлём совсем.
+    if (ssoAuth) delete payload.counterparty_id
     // Статус не меняли — не перезаписываем, кто и когда заблокировал.
     if (form.status === userStatus(u)) {
       delete payload.blocked_at
@@ -499,6 +512,9 @@ function AdminPage() {
               Заявки на доступ{pendingRequests > 0 && <span className="admin-tab-count">{pendingRequests}</span>}
             </button>
           )}
+          {su10OrgsOn && (isAdmin || isSuperAdmin) && (
+            <button className={`admin-tab ${activeTab === 'su10orgs' ? 'active' : ''}`} onClick={() => setActiveTab('su10orgs')}>Организации СУ-10</button>
+          )}
           {/* Ключи выдаёт только администратор — так же проверяет сервер (server/osp-api/src/routes/apiKeys.js). */}
           {(isAdmin || isSuperAdmin) && (
             <button className={`admin-tab ${activeTab === 'api' ? 'active' : ''}`} onClick={() => setActiveTab('api')}>Доступ к API</button>
@@ -516,6 +532,13 @@ function AdminPage() {
               onNeedCounterparties={ensureCounterparties} users={userRoles} isSuperAdmin={isSuperAdmin} notify={notify}
               onChanged={() => { fetchUsers({ silent: true }); loadSsoLinks() }} onPendingCount={setPendingRequests}
             />
+          </div>
+        )}
+
+        {/* ===== Организации СУ-10 ===== */}
+        {activeTab === 'su10orgs' && su10OrgsOn && (isAdmin || isSuperAdmin) && (
+          <div className="admin-tabpane">
+            <Su10OrgsTab notify={notify} isSuperAdmin={isSuperAdmin} />
           </div>
         )}
 
@@ -716,6 +739,7 @@ function AdminPage() {
           roleOptions={roleOptionsFor(editUser)}
           objectOptions={objectsList}
           counterpartyOptions={counterpartiesList}
+          counterpartyLocked={ssoAuth}
           onClose={() => setEditUser(null)}
           onSave={saveUserFromDrawer}
         />

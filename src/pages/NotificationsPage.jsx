@@ -38,18 +38,38 @@ const CheckAllIcon = () => (
   </svg>
 )
 
+// Вкладки. У руководителя строительства и экономиста объекта (siteStaff) — статус тендеров своих объектов и свои заявки
+// (utils/siteNotifications.js); договоров и проверки КП у них нет. onlyIfAny — вкладка видна, только когда в ней что-то есть.
+const OFFICE_TABS = [
+  { key: 'tender', label: 'Тендеры', cls: 'notif-toggle-tender', empty: 'Нет тендеров с приближающимся сроком.', hint: 'Здесь появятся записи, которые скоро завершаются.' },
+  { key: 'contract', label: 'Договоры', cls: 'notif-toggle-contract', empty: 'Нет договоров с приближающимся сроком.', hint: 'Здесь появятся записи, которые скоро завершаются.' },
+  { key: 'task', label: 'Задачи', cls: 'notif-toggle-task', empty: 'Нет задач с горящим сроком.', hint: 'Здесь появятся ваши задачи со сроком в ближайшие дни и задачи, ждущие вашей приёмки.' },
+  { key: 'kp_review', label: 'Проверка КП', cls: 'notif-toggle-review', empty: 'Нет недавно проверенных КП.', hint: 'Здесь появятся результаты проверки КП аналитиком — их нужно направить контрагенту.' },
+  { key: 'supply_vor', label: 'Изменения ВОР', cls: 'notif-toggle-review', onlyIfAny: true },
+]
+const SITE_TABS = [
+  { key: 'tender', label: 'Тендеры', cls: 'notif-toggle-tender', empty: 'По вашим объектам нет идущих тендеров.', hint: 'Здесь виден статус тендеров ваших объектов. Объекты назначает администратор в «Ролях».' },
+  { key: 'doc_check', label: 'Проверка ДП/ДС', cls: 'notif-toggle-doccheck', empty: 'По вашим объектам нет заявок на проверку ДП/ДС.', hint: 'Здесь видно, на каком этапе заявки ваших объектов, кто бы их ни подал. Подать заявку — «Договоры и ДС» → «Заявки на проверку ДП/ДС».' },
+  { key: 'dp_request', label: 'Заявки на ДП', cls: 'notif-toggle-dp', empty: 'По вашим объектам нет заявок на заключение ДП.', hint: 'Здесь виден статус заявок ваших объектов. Заявку подают в «Реестре по договорам» кнопкой «+ Заявка на заключение ДП».' },
+  { key: 'task', label: 'Задачи', cls: 'notif-toggle-task', onlyIfAny: true },
+  { key: 'supply_vor', label: 'Изменения ВОР', cls: 'notif-toggle-review', onlyIfAny: true },
+]
+
 // Один пункт списка уведомлений. Внутри раздела вид (Тендер/Договор) очевиден из
 // заголовка секции, поэтому бейдж вида не показываем.
 function NotifItem({ n, read, onOpen }) {
   const isReview = n.kind === 'kp_review'
   const isVor = n.kind === 'supply_vor'
-  const dateLabel = isReview ? 'Проверено'
+  // Статус тендера или заявки (рукстрой и экономист объекта): срока нет, важен этап.
+  const isStatus = Boolean(n.statusLabel)
+  const dateLabel = n.dateLabel || (isReview ? 'Проверено'
     : isVor ? 'Изменён'
       : n.kind === 'task' ? (n.taskReview ? 'Сдано на приёмку' : 'Срок')
-        : n.kind === 'tender' ? 'Окончание процедуры' : 'Планируемое подписание'
+        : n.kind === 'tender' ? 'Окончание процедуры' : 'Планируемое подписание')
+  const tone = isStatus ? `is-status is-${n.statusTone || 'active'}` : isReview ? 'is-review' : urgencyClass(n.days)
   return (
     <li
-      className={`notif-item ${isReview ? 'is-review' : urgencyClass(n.days)}${read ? ' is-read' : ''}`}
+      className={`notif-item ${tone}${read ? ' is-read' : ''}`}
       onClick={() => onOpen(n)}
       role="button"
       tabIndex={0}
@@ -59,7 +79,9 @@ function NotifItem({ n, read, onOpen }) {
       <div className="notif-body">
         <div className="notif-top">
           {n.badge && <span className="notif-num">{n.badge}</span>}
-          {isReview ? (
+          {isStatus ? (
+            <span className={`notif-status-chip is-${n.statusTone || 'active'}`}>{n.statusLabel}</span>
+          ) : isReview ? (
             <span className={`notif-review-chip ${n.reviewStatus === 'has_remarks' ? 'is-remarks' : 'is-ok'}`}>
               {n.reviewStatus === 'has_remarks' ? 'Есть замечания' : 'Проверено'}
             </span>
@@ -76,13 +98,14 @@ function NotifItem({ n, read, onOpen }) {
         </div>
         <div className="notif-object">{n.objectName}</div>
         {n.subtitle && <div className="notif-subtitle">{n.subtitle}</div>}
+        {n.author && <div className="notif-subtitle notif-author">Подал(а): {n.author}</div>}
         {isReview && n.responsible && (
           <div className="notif-subtitle notif-responsible">
             Ответственный: {n.responsible} — направить контрагенту
           </div>
         )}
         {isReview && n.note && <div className="notif-review-note">{n.note}</div>}
-        <div className="notif-date">{dateLabel}: {formatDateRu(n.date)}</div>
+        {n.date && <div className="notif-date">{dateLabel}: {formatDateRu(n.date)}</div>}
       </div>
       <span className="notif-open" aria-hidden>›</span>
     </li>
@@ -91,8 +114,8 @@ function NotifItem({ n, read, onOpen }) {
 
 function NotificationsPage() {
   const navigate = useNavigate()
-  const { notifications, unreadCount, loading, markAllRead, markRead, isRead } = useNotifications()
-  const [tab, setTab] = useState('tender') // 'tender' | 'contract' | 'kp_review' | 'task' | 'supply_vor'
+  const { notifications, unreadCount, loading, markAllRead, markRead, isRead, siteStaff } = useNotifications()
+  const [tab, setTab] = useState('tender')
 
   const openItem = (n) => {
     markRead(n.key)
@@ -100,22 +123,21 @@ function NotificationsPage() {
   }
 
   // Разбиваем по виду; порядок внутри сохраняется (уже отсортированы по срочности).
-  const tenderItems = useMemo(() => notifications.filter(n => n.kind === 'tender'), [notifications])
-  const contractItems = useMemo(() => notifications.filter(n => n.kind === 'contract'), [notifications])
-  const kpReviewItems = useMemo(() => notifications.filter(n => n.kind === 'kp_review'), [notifications])
-  const taskItems = useMemo(() => notifications.filter(n => n.kind === 'task'), [notifications])
-  const vorItems = useMemo(() => notifications.filter(n => n.kind === 'supply_vor'), [notifications])
-  const tenderUnread = useMemo(() => tenderItems.filter(n => !isRead(n.key)).length, [tenderItems, isRead])
-  const contractUnread = useMemo(() => contractItems.filter(n => !isRead(n.key)).length, [contractItems, isRead])
-  const kpUnread = useMemo(() => kpReviewItems.filter(n => !isRead(n.key)).length, [kpReviewItems, isRead])
-  const taskUnread = useMemo(() => taskItems.filter(n => !isRead(n.key)).length, [taskItems, isRead])
-  const vorUnread = useMemo(() => vorItems.filter(n => !isRead(n.key)).length, [vorItems, isRead])
-
-  const activeItems = tab === 'tender' ? tenderItems
-    : tab === 'contract' ? contractItems
-      : tab === 'task' ? taskItems
-        : tab === 'supply_vor' ? vorItems
-          : kpReviewItems
+  const byKind = useMemo(() => {
+    const map = new Map()
+    for (const n of notifications) {
+      if (!map.has(n.kind)) map.set(n.kind, [])
+      map.get(n.kind).push(n)
+    }
+    return map
+  }, [notifications])
+  const tabs = (siteStaff ? SITE_TABS : OFFICE_TABS)
+    .map((t) => {
+      const items = byKind.get(t.key) || []
+      return { ...t, items, unread: items.filter((n) => !isRead(n.key)).length }
+    })
+    .filter((t) => !t.onlyIfAny || t.items.length > 0)
+  const active = tabs.find((t) => t.key === tab) || tabs[0]
 
   return (
     <div className="notifications-page">
@@ -131,88 +153,38 @@ function NotificationsPage() {
       </div>
 
       <p className="notif-hint">
-        Тендеры и договоры, у которых окончание в ближайшие 5 дней, и ваши задачи
-        с горящим сроком. Напоминания повторяются за 5, 3 дня и в день окончания.
+        {siteStaff
+          ? 'Статус тендеров ваших объектов и заявок по ним — на проверку ДП/ДС и на заключение ДП. Сменился статус — уведомление снова непрочитанное.'
+          : 'Тендеры и договоры, у которых окончание в ближайшие 5 дней, и ваши задачи с горящим сроком. Напоминания повторяются за 5, 3 дня и в день окончания.'}
       </p>
 
-      {/* Переключатель между тендерами и договорами со счётчиками (task 424) */}
+      {/* Переключатель вкладок со счётчиками (task 424) */}
       <div className="notif-toggle" role="tablist" aria-label="Тип уведомлений">
-        <button
-          role="tab"
-          aria-selected={tab === 'tender'}
-          className={`notif-toggle-btn notif-toggle-tender${tab === 'tender' ? ' is-active' : ''}`}
-          onClick={() => setTab('tender')}
-        >
-          <span>Тендеры</span>
-          <span className="notif-toggle-count">{tenderItems.length}</span>
-          {tenderUnread > 0 && <span className="notif-toggle-dot" title={`${tenderUnread} непрочитанных`} />}
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === 'contract'}
-          className={`notif-toggle-btn notif-toggle-contract${tab === 'contract' ? ' is-active' : ''}`}
-          onClick={() => setTab('contract')}
-        >
-          <span>Договоры</span>
-          <span className="notif-toggle-count">{contractItems.length}</span>
-          {contractUnread > 0 && <span className="notif-toggle-dot" title={`${contractUnread} непрочитанных`} />}
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === 'task'}
-          className={`notif-toggle-btn notif-toggle-task${tab === 'task' ? ' is-active' : ''}`}
-          onClick={() => setTab('task')}
-        >
-          <span>Задачи</span>
-          <span className="notif-toggle-count">{taskItems.length}</span>
-          {taskUnread > 0 && <span className="notif-toggle-dot" title={`${taskUnread} непрочитанных`} />}
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === 'kp_review'}
-          className={`notif-toggle-btn notif-toggle-review${tab === 'kp_review' ? ' is-active' : ''}`}
-          onClick={() => setTab('kp_review')}
-        >
-          <span>Проверка КП</span>
-          <span className="notif-toggle-count">{kpReviewItems.length}</span>
-          {kpUnread > 0 && <span className="notif-toggle-dot" title={`${kpUnread} непрочитанных`} />}
-        </button>
-        {vorItems.length > 0 && (
+        {tabs.map((t) => (
           <button
+            key={t.key}
             role="tab"
-            aria-selected={tab === 'supply_vor'}
-            className={`notif-toggle-btn notif-toggle-review${tab === 'supply_vor' ? ' is-active' : ''}`}
-            onClick={() => setTab('supply_vor')}
+            aria-selected={t.key === active.key}
+            className={`notif-toggle-btn ${t.cls}${t.key === active.key ? ' is-active' : ''}`}
+            onClick={() => setTab(t.key)}
           >
-            <span>Изменения ВОР</span>
-            <span className="notif-toggle-count">{vorItems.length}</span>
-            {vorUnread > 0 && <span className="notif-toggle-dot" title={`${vorUnread} непрочитанных`} />}
+            <span>{t.label}</span>
+            <span className="notif-toggle-count">{t.items.length}</span>
+            {t.unread > 0 && <span className="notif-toggle-dot" title={`${t.unread} непрочитанных`} />}
           </button>
-        )}
+        ))}
       </div>
 
       {loading ? (
         <div className="notif-empty">Загрузка…</div>
-      ) : activeItems.length === 0 ? (
+      ) : active.items.length === 0 ? (
         <div className="notif-empty">
-          <p>{tab === 'tender'
-            ? 'Нет тендеров с приближающимся сроком.'
-            : tab === 'contract'
-              ? 'Нет договоров с приближающимся сроком.'
-              : tab === 'task'
-                ? 'Нет задач с горящим сроком.'
-                : 'Нет недавно проверенных КП.'}</p>
-          <p className="notif-empty-hint">
-            {tab === 'kp_review'
-              ? 'Здесь появятся результаты проверки КП аналитиком — их нужно направить контрагенту.'
-              : tab === 'task'
-                ? 'Здесь появятся ваши задачи со сроком в ближайшие дни и задачи, ждущие вашей приёмки.'
-                : 'Здесь появятся записи, которые скоро завершаются.'}
-          </p>
+          <p>{active.empty || 'Уведомлений нет.'}</p>
+          {active.hint && <p className="notif-empty-hint">{active.hint}</p>}
         </div>
       ) : (
         <ul className="notif-list">
-          {activeItems.map((n) => (
+          {active.items.map((n) => (
             <NotifItem key={n.key} n={n} read={isRead(n.key)} onOpen={openItem} />
           ))}
         </ul>

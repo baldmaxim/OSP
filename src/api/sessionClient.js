@@ -28,6 +28,14 @@ export const sessionFetch = createSessionFetch({
     if (code === 'OSP_AUTH_MODE') reloadOnce()
     else if (code === 'OSP_NO_PORTAL_ACCESS') {
       if (window.location.pathname !== '/no-access') window.location.assign('/no-access')
+    } else if (code === 'OSP_ORG_UNMAPPED' || code === 'OSP_ORG_DENIED') {
+      // Организация учётки СУ-10 не даёт войти (server/osp-api/src/lib/auth/orgs.js): все сессии уже закрыты — экран входа с причиной.
+      const target = `/login?sso_error=${code === 'OSP_ORG_DENIED' ? 'org_denied' : 'org_unmapped'}`
+      if (`${window.location.pathname}${window.location.search}` !== target) window.location.assign(target)
+    } else if (code === 'OSP_ORG_CHANGED') {
+      // Учётку перевели в другую организацию: вход СУ-10 жив, после перезагрузки придёт новая сессия уже с новым контрагентом.
+      // Окно повторного входа не годится — страница осталась бы с прежним контрагентом.
+      reloadOnce()
     } else if (code !== 'OSP_IDLE') own?.sessionEvent(code)
   },
 })

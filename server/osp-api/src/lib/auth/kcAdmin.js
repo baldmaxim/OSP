@@ -1,6 +1,10 @@
-// Admin API Keycloak su10 — только чтение участников группы доступа к порталу (KC_ACCESS_GROUP, osp-access), служебным
-// клиентом osp-access-sync (client_credentials, у сервис-аккаунта только view-users). Нужен сверке группы
-// (src/lib/auth/accessSync.js): заявка появляется у администратора ОСП сразу после выдачи доступа на auth.su10.ru/manage.
+// Admin API Keycloak su10 — только чтение, служебным клиентом osp-access-sync (client_credentials, у сервис-аккаунта только
+// view-users; поиск групп — query-groups, если realm его требует). Нужен:
+//   • сверке группы доступа (KC_ACCESS_GROUP, osp-access; src/lib/auth/accessSync.js): заявка появляется у администратора ОСП
+//     сразу после выдачи доступа на auth.su10.ru/manage;
+//   • реестру организаций СУ-10 (подгруппы /org, src/lib/auth/orgs.js): какой контрагент у подрядчика.
+// Адреса: GET /groups?search, /groups/{id}/members, /groups/{id}/children, /users/{sub}/groups. Права проверяет
+// identity orgs-sync --check (probe) до переключения на вход через СУ-10.
 //
 // view-users видит все учётки realm, поэтому: читаем только свою группу; из ответа берём только id, логин, почту, имя,
 // фамилию и признак «включена»; ответы Admin API и токен никуда не пишутся (в журнал — только коды ошибок).
@@ -112,5 +116,107 @@ export function createKcAdmin({ issuer, admin, fetch: fetchImpl = globalThis.fet
     throw new KcAdminError('too_many_members')
   }
 
-  return { groupMembers, adminBase: base }
+  // ── Реестр организаций СУ-10 (подгруппы /org, temp/osp-org-mapping.md) ─────────────────────────────────────────────
+  // Только прямые подгруппы /org: у каждой — атрибуты su10_org_id (постоянный id, не id группы), su10_org_kind (own |
+  // contractor), org_name, inn. Вложенные группы глубже одного уровня организацией не считаются (их число — в итоге).
+  // Подгруппа без su10_org_id (служебная «(организация не определена)») пропускается. Негодные атрибуты при годном id —
+  // организация с ошибкой (invalid/attributes); один su10_org_id у двух групп — обе с ошибкой (invalid/duplicate_id).
+  // Читается целиком или никак: любой сбой страницы — исключение, вызывающий не меняет кэш.
+  async function orgRootId() {
+    const list = await get('/groups?search=org&exact=true&briefRepresentation=true')
+    if (!Array.isArray(list)) throw new KcAdminError('org_shape')
+    const root = list.find((g) => g && g.name === 'org' && g.path === '/org' && typeof g.id === 'string')
+    if (!root) throw new KcAdminError('org_registry_not_found', 404)
+    return root.id
+  }
+
+  // → { orgs: [{ id, kind, name, inn, state, invalidReason }], skipped: { noId, nested } }
+  async function orgRegistry() {
+    const rootId = await orgRootId()
+    const groups = []
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const rows = await get(`/groups/${encodeURIComponent(rootId)}/children?briefRepresentation=false&first=${page * KC_PAGE}&max=${KC_PAGE}`)
+      if (!Array.isArray(rows)) throw new KcAdminError('org_children_shape')
+      groups.push(...rows)
+      if (rows.length < KC_PAGE) return parseOrgGroups(groups)
+    }
+    throw new KcAdminError('too_many_orgs')
+  }
+
+  // Организации учётки: подгруппы пути «/org/<имя>» с su10_org_id (вложенные глубже — нет). → [su10_org_id…]
+  async function userOrgs(subject) {
+    if (!UUID.test(String(subject))) throw new KcAdminError('subject_shape')
+    const rows = await get(`/users/${encodeURIComponent(subject)}/groups?briefRepresentation=false&max=${KC_PAGE}`)
+    if (!Array.isArray(rows)) throw new KcAdminError('user_groups_shape')
+    const ids = new Set()
+    for (const g of rows) {
+      if (!g || typeof g.path !== 'string' || !/^\/org\/[^/]+$/.test(g.path)) continue
+      const id = attr(g, 'su10_org_id')
+      if (UUID.test(id)) ids.add(id.toLowerCase())
+    }
+    return [...ids]
+  }
+
+  // Проверка прав служебного клиента перед переключением (identity orgs-sync --check): каждый нужный адрес отвечает.
+  // → { ok, steps: [{ step, ok, code? }] }
+  async function probe(name = admin.group) {
+    const steps = []
+    const step = async (label, fn) => {
+      try { await fn(); steps.push({ step: label, ok: true }) } catch (err) { steps.push({ step: label, ok: false, code: err?.code || 'error', status: err?.status ?? null }) }
+    }
+    let rootId = null
+    let memberId = null
+    await step('token', () => accessToken(true))
+    await step('groups_search', async () => { rootId = await orgRootId() })
+    if (rootId) await step('org_children', () => get(`/groups/${encodeURIComponent(rootId)}/children?briefRepresentation=false&first=0&max=1`))
+    await step('access_group_members', async () => {
+      const id = await groupId(name)
+      const rows = await get(`/groups/${encodeURIComponent(id)}/members?briefRepresentation=true&first=0&max=1`)
+      memberId = Array.isArray(rows) && typeof rows[0]?.id === 'string' ? rows[0].id : null
+    })
+    if (memberId) await step('user_groups', () => userOrgs(memberId))
+    return { ok: steps.every((s) => s.ok), steps }
+  }
+
+  return { groupMembers, orgRegistry, userOrgs, probe, adminBase: base }
+}
+
+const attr = (group, key) => {
+  const v = group?.attributes?.[key]
+  const s = Array.isArray(v) ? (v.length === 1 ? v[0] : null) : null
+  return typeof s === 'string' ? s.trim() : ''
+}
+
+// Подгруппы /org → организации. Чистая функция (тесты): строгие атрибуты, повтор id, вложенные.
+export function parseOrgGroups(groups) {
+  const skipped = { noId: 0, nested: 0 }
+  const byId = new Map()
+  for (const g of groups) {
+    if (!g || typeof g !== 'object') continue
+    // Вложенные подгруппы организацией не считаются — только счёт (subGroupCount у краткого и полного вида ответа).
+    const nested = Array.isArray(g.subGroups) ? g.subGroups.length : Number(g.subGroupCount) || 0
+    skipped.nested += nested
+    const rawId = attr(g, 'su10_org_id')
+    if (!rawId) { skipped.noId++; continue }
+    if (!UUID.test(rawId)) { skipped.noId++; continue }
+    const id = rawId.toLowerCase()
+    const kind = attr(g, 'su10_org_kind')
+    const groupName = typeof g.name === 'string' ? g.name.replace(/^орг:\s*/u, '').replace(/∕/g, '/').trim() : ''
+    // eslint-disable-next-line no-control-regex
+    const name = (attr(g, 'org_name') || groupName).replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 300)
+    const rawInn = attr(g, 'inn').replace(/\s+/g, '')
+    const innOk = !rawInn || /^(\d{10}|\d{12})$/.test(rawInn)
+    const valid = (kind === 'own' || kind === 'contractor') && name && innOk
+    const org = {
+      id, kind: kind === 'own' || kind === 'contractor' ? kind : null, name: name || id, inn: innOk && rawInn ? rawInn : null,
+      state: valid ? 'active' : 'invalid', invalidReason: valid ? null : 'attributes',
+    }
+    if (byId.has(id)) {
+      const prev = byId.get(id)
+      byId.set(id, { ...prev, state: 'invalid', invalidReason: 'duplicate_id' })
+      continue
+    }
+    byId.set(id, org)
+  }
+  return { orgs: [...byId.values()], skipped }
 }

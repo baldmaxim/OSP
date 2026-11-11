@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import DocCheckBoard from '../components/doccheck/DocCheckBoard'
@@ -6,6 +7,7 @@ import DocCheckFormModal from '../components/doccheck/DocCheckFormModal'
 import DocCheckDetailModal from '../components/doccheck/DocCheckDetailModal'
 import DocCheckAvatars from '../components/doccheck/DocCheckAvatars'
 import DocCheckCardCounts from '../components/doccheck/DocCheckCardCounts'
+import { panByDrag } from '../components/doccheck/boardGestures'
 import FilterDropdown from '../components/FilterDropdown'
 import IconTile from '../components/IconTile'
 import { IconFilter, IconObject, IconSearch, IconUser } from '../components/icons/ToolbarIcons'
@@ -48,8 +50,12 @@ import {
   nextSortOrder,
   normalizeRequest,
   placeInColumn,
+  requestIdLabel,
+  requestNumberQuery,
+  sameCardCounts,
   shownAssigneeIds,
 } from '../utils/docCheckHelpers'
+import { loadTalkReads, markTalkRead, readMarkOf, talkReadKey, unreadTalkCount } from '../utils/docCheckTalkRead'
 import '../styles/workUi.css'
 import '../components/MobileCards.css'
 import './DocCheckRequestsPage.css'
@@ -84,6 +90,9 @@ function readStored(key, fallback) {
 function writeStored(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* приватный режим */ }
 }
+
+// Что в шапке нажимается само и не двигает доску.
+const HEAD_CONTROLS = 'button, a, input, select, textarea, label, .fdrop, [role="menu"], [role="listbox"], [role="dialog"]'
 
 const sameCounts = (a, b) => a.size === b.size && [...b].every(([id, n]) => a.get(id) === n)
 
@@ -218,7 +227,7 @@ export default function DocCheckRequestsPage() {
   const fetchCardCounts = useCallback(async () => {
     countsChanged.current = new Set()
     try {
-      const map = await readCardCounts()
+      const map = await readCardCounts(myId)
       setCardCounts(prev => {
         for (const id of countsChanged.current) map.set(id, prev.get(id) || NO_CARD_COUNTS)
         return map
@@ -226,15 +235,30 @@ export default function DocCheckRequestsPage() {
     } catch (err) {
       console.warn('Не удалось посчитать сообщения заявок:', err.message)
     }
-  }, [])
+  }, [myId])
   const handleCardCounts = useCallback((id, counts) => {
     countsChanged.current.add(id)
     setCardCounts(prev => {
       const cur = prev.get(id) || NO_CARD_COUNTS
-      if (cur.commentsCount === counts.commentsCount) return prev
+      if (sameCardCounts(cur, counts)) return prev
       return new Map(prev).set(id, counts)
     })
   }, [])
+
+  // Непрочитанные сообщения обсуждения (11.11.2026, docCheckTalkRead.js): отметки «прочитано» — в браузере, по пользователю.
+  // Окно заявки с перепиской отмечает её прочитанной; другая вкладка с доской узнаёт об этом из события storage.
+  const [talkReads, setTalkReads] = useState(() => (myId ? loadTalkReads(myId) : null))
+  useEffect(() => {
+    setTalkReads(myId ? loadTalkReads(myId) : null)
+    if (!myId) return undefined
+    const onStorage = (e) => { if (e.key === talkReadKey(myId)) setTalkReads(loadTalkReads(myId)) }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [myId])
+  const handleTalkSeen = useCallback((id, at) => {
+    if (!myId) return
+    setTalkReads(prev => (at > readMarkOf(prev, id) ? markTalkRead(myId, id, at, prev) : prev))
+  }, [myId])
   // Таблицы обсуждения нет, пока нет колонок той же миграции — до этого не обращаемся.
   useEffect(() => { if (hasCardFields) fetchCardCounts() }, [hasCardFields, fetchCardCounts])
 
@@ -495,8 +519,9 @@ export default function DocCheckRequestsPage() {
   // Заявка, у которой ничего не изменилось, остаётся тем же объектом: её карточка не перерисовывается.
   const mergedRows = useRef(new WeakMap())
   const withCounts = useMemo(
-    () => mergeRequestCounts(requests, docCounts, cardCounts, mergedRows.current),
-    [requests, docCounts, cardCounts],
+    () => mergeRequestCounts(requests, docCounts, cardCounts, mergedRows.current,
+      (id, counts) => unreadTalkCount(counts, readMarkOf(talkReads, id))),
+    [requests, docCounts, cardCounts, talkReads],
   )
   const inMode = useMemo(() => withCounts.filter(r => {
     if (mode === 'deleted') return !!r.deleted_at
@@ -506,6 +531,7 @@ export default function DocCheckRequestsPage() {
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
+    const byNumber = requestNumberQuery(q)
     return inMode.filter(r => {
       if (filterObjectIds.length && !filterObjectIds.includes(r.object_id)) return false
       if (filterCounterpartyIds.length && !filterCounterpartyIds.includes(r.counterparty_id)) return false
@@ -514,6 +540,9 @@ export default function DocCheckRequestsPage() {
       if (filterPriorities.length && !filterPriorities.includes(r.priority)) return false
       if (!matchesDeadline(r, filterDeadline)) return false
       if (!q) return true
+      // Номер заявки (ID): «ID 12» / «№ 12» / «#12» — только она; «12» — она и тексты с «12».
+      if (byNumber && r.request_number === byNumber.number) return true
+      if (byNumber?.only) return false
       return [
         r.doc_number, r.notes, r.objects?.name, r.counterparties?.name, cardTitle(r), ...r.labels,
         ...shownAssigneeIds(r, employees).map(id => employeeName(employees, id, '')),
@@ -555,6 +584,20 @@ export default function DocCheckRequestsPage() {
   }, [counterparties])
 
   const detail = detailId ? withCounts.find(r => r.id === detailId) : null
+
+  // Ссылка на заявку — /doc-check-requests?request=<id> (уведомление автору, 11.11.2026): после загрузки заявка открывается,
+  // параметр снимается. Заявки нет или она не видна — просто доска.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const linkedId = searchParams.get('request')
+  useEffect(() => {
+    if (!linkedId || loading) return
+    if (requests.some(r => r.id === linkedId)) setDetailId(linkedId)
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('request')
+      return next
+    }, { replace: true })
+  }, [linkedId, loading, requests, setSearchParams])
   // Сколько фильтров панели выбрано (поиск — в шапке, не считается): число на кнопке «Фильтры» телефона.
   const activeFilters = [filterObjectIds, filterCounterpartyIds, filterTypes, filterAssignees, filterPriorities]
     .filter(list => list.length > 0).length + (filterDeadline ? 1 : 0)
@@ -566,6 +609,21 @@ export default function DocCheckRequestsPage() {
   const deletedCount = requests.filter(r => r.deleted_at).length
   const archivedCount = requests.filter(r => !r.deleted_at && r.archived_at).length
   const showBoard = view === 'board' && mode === 'active'
+
+  // Шапка над доской (название, поиск, фильтры) тоже двигает доску: нажать мышью на свободное место и вести влево-вправо
+  // (11.11.2026, просьба пользователя). Кнопки, поля и списки работают как обычно. Тот же жест, что на самой доске.
+  const pageRef = useRef(null)
+  const headPan = useRef(null)
+  const panFromHead = useCallback((e) => {
+    if (!showBoard || e.button !== 0 || e.pointerType !== 'mouse' || headPan.current || e.target.closest(HEAD_CONTROLS)) return
+    const box = pageRef.current?.querySelector(':scope > .dc-board')
+    if (!box || box.scrollWidth <= box.clientWidth) return
+    headPan.current = panByDrag(e, box, () => { headPan.current = null })
+  }, [showBoard])
+  useEffect(() => () => headPan.current?.(), [])
+
+  // Номера заявок (ID) есть — после миграции 20270123; до неё столбца «ID» в реестре нет.
+  const hasNumbers = useMemo(() => requests.some(r => r.request_number != null), [requests])
 
   // Реестр — тем же значением, пока не изменились его данные: окно заявки сотни строк не перерисовывает.
   const listTable = useMemo(() => (isPhone ? (
@@ -580,7 +638,9 @@ export default function DocCheckRequestsPage() {
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailId(r.id) } }}
           >
             <div className="mcard-head">
-              <span className="mcard-title dc-row-title">{cardTitle(r)}</span>
+              <span className="mcard-title dc-row-title">
+                {r.request_number != null && <span className="dc-chip dc-chip--id">{requestIdLabel(r)}</span>} {cardTitle(r)}
+              </span>
               <span className={`dc-status-chip ${DOC_CHECK_STATUS_CLASS[r.status] || ''}`}>
                 {DOC_CHECK_STATUS_LABEL[r.status] || r.status}
               </span>
@@ -631,6 +691,7 @@ export default function DocCheckRequestsPage() {
         <table className="data-table dc-table">
           <thead>
             <tr>
+              {hasNumbers && <th className="dc-col-id">ID</th>}
               <th>Документ</th>
               <th>Объект</th>
               {hasBoardFields && <th>Исполнители</th>}
@@ -645,6 +706,7 @@ export default function DocCheckRequestsPage() {
           <tbody>
             {listRows.map(r => (
               <tr key={r.id} onClick={() => setDetailId(r.id)} className={`dc-row${r.color ? ` has-color dc-c-${r.color}` : ''}`}>
+                {hasNumbers && <td className="dc-col-id ui-num">{r.request_number ?? '—'}</td>}
                 <td>
                   <div className="dc-row-title">{cardTitle(r)}</div>
                   {r.notes && <div className="dc-row-notes">{r.notes}</div>}
@@ -693,7 +755,7 @@ export default function DocCheckRequestsPage() {
           </tbody>
         </table>
       </div>
-  )), [isPhone, listRows, employees, hasBoardFields, mode, canEditSection, actions, deletions])
+  )), [isPhone, listRows, employees, hasBoardFields, hasNumbers, mode, canEditSection, actions, deletions])
 
   // «Архив» и «Удалённые»: на компьютере — в шапке, на телефоне — в панели фильтров.
   const modeButtons = (
@@ -718,10 +780,10 @@ export default function DocCheckRequestsPage() {
   if (loading) return <div className="loading">Загрузка...</div>
 
   return (
-    <div className={`doc-check-page ui-work${showBoard ? ' is-board' : ''}`}>
+    <div ref={pageRef} className={`doc-check-page ui-work${showBoard ? ' is-board' : ''}`}>
       {/* Шапка — две низкие строки (решение пользователя 03.11.2026: больше заявок на экране): название, вид, поиск и
           действия; под ними фильтры. */}
-      <div className="page-header dc-head">
+      <div className="page-header dc-head" onPointerDown={panFromHead}>
         <h2>
           {/* Тон тот же, что у пункта меню, — раздел узнаётся по цвету. */}
           <IconTile tone="violet" className="page-icon-tile"><IconDocCheck /></IconTile>
@@ -788,7 +850,7 @@ export default function DocCheckRequestsPage() {
       )}
 
       {(!isPhone || filtersOpen) && (
-      <div className="dc-toolbar">
+      <div className="dc-toolbar" onPointerDown={panFromHead}>
         {isPhone && <div className="dc-toolbar-modes">{modeButtons}</div>}
         {hasBoardFields && (
           <>
@@ -895,6 +957,7 @@ export default function DocCheckRequestsPage() {
 
       {detail && (
         <DocCheckDetailModal
+          key={detail.id}
           request={detail}
           employees={employees}
           objects={objects}
@@ -906,6 +969,8 @@ export default function DocCheckRequestsPage() {
           deletion={deletions?.get(detail.id) || null}
           refreshKey={detailRefresh}
           onCardCounts={handleCardCounts}
+          talkReadMark={readMarkOf(talkReads, detail.id)}
+          onTalkSeen={handleTalkSeen}
           onStatusChange={(r, status) => moveTo(r, status)}
           onAssign={handleAssign}
           onEdit={(r) => { setDetailId(null); setFormFor({ request: r }) }}

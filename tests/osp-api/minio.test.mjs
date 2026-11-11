@@ -76,7 +76,7 @@ describe('osp-api s3-presign против MinIO (настоящая подпис
     state = {
       users: { [USER.token]: { id: USER.id } },
       roles: { [USER.id]: { role: 'engineer', counterparty_id: null, is_approved: true, is_blocked: false, full_name: 'Инженер' } },
-      docs: {}, myContracts: {}, can: { [USER.id]: ['tenders:view', 'objects:edit'] }, owners: { tenders: { [TENDER]: 'all' } },
+      docs: {}, myContracts: {}, can: { [USER.id]: ['tenders:view', 'tenders:edit', 'objects:edit'] }, owners: { tenders: { [TENDER]: 'all' } },
     }
     supa = await startFakeSupabase(state)
     const { buildApp } = await import(path.join(SERVER, 'src', 'app.js'))
@@ -141,6 +141,22 @@ describe('osp-api s3-presign против MinIO (настоящая подпис
     assert.deepEqual(state.docs, {}, 'строка удалена')
     assert.deepEqual(await listKeys(prefix), [])
     assert.deepEqual(await call({ action: 'delete', s3_key: up.s3_key }), { ok: true, already: true }, 'повтор удаления')
+  })
+
+  it('ссылка на загрузку подписывает тип и длину: другой размер или тип — 403, объекта нет', async () => {
+    const content = 'ровно эти байты'
+    const file = {
+      operation_id: '0190a000-0000-7000-8000-00000000d00d', owner_type: 'tender', owner_id: TENDER, file_name: 'Подпись.txt',
+      mime_type: 'text/plain', size_bytes: Buffer.byteLength(content),
+    }
+    const up = await call({ action: 'upload', ...file })
+    const longer = await fetch(up.presigned_url, { method: 'PUT', headers: { 'Content-Type': file.mime_type }, body: `${content} и ещё` })
+    assert.equal(longer.status, 403, 'другая длина')
+    const otherType = await fetch(up.presigned_url, { method: 'PUT', headers: { 'Content-Type': 'text/html' }, body: content })
+    assert.equal(otherType.status, 403, 'другой тип')
+    assert.deepEqual(await listKeys(`tenders/${TENDER}/0190a000-0000-7000-8000-00000000d00d`), [], 'объекта нет')
+    const ok = await fetch(up.presigned_url, { method: 'PUT', headers: { 'Content-Type': file.mime_type }, body: content })
+    assert.equal(ok.status, 200, await ok.text())
   })
 
   it('обложка: PUT по ссылке — только с заявленным типом; показ /api/covers/<имя> отдаёт файл', async () => {

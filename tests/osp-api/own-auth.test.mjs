@@ -21,6 +21,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { TestDatabase, pgAvailable } from '../psdc/lib/pg.mjs'
 import { SECRET, userToken, projectKey } from './lib/tokens.mjs'
+import { openSections } from './lib/open-sections.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const SERVER = path.join(ROOT, 'server', 'osp-api')
@@ -128,7 +129,7 @@ describe('свой вход на настоящей базе', { skip, timeout: 
     await app?.close()
     logs = []
     const deps = {
-      ...defaultDeps, blocklist,
+      ...defaultDeps, ...openSections, blocklist,
       // Проверка пароля с крючком: тест может «задержать» вход между проверкой и записью.
       createPasswordVerifier: () => {
         const real = defaultDeps.createPasswordVerifier ? defaultDeps.createPasswordVerifier() : null

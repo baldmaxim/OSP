@@ -96,8 +96,11 @@ describe('Права под одну учётку на копии прода: ц
       await new Promise((r) => setTimeout(r, 500))
     }
 
-    const { buildApp } = await import(path.join(SERVER, 'src', 'app.js'))
-    app = buildApp({ logger: false, config: {
+    const { buildApp, defaultDeps } = await import(path.join(SERVER, 'src', 'app.js'))
+    // Права разделов шлюза здесь не проверяются (их набор — tests/osp-api/db-sections.test.mjs): цепочка «шлюз → PostgREST →
+    // база» должна отдавать каждому столько же строк, сколько база, поэтому разделы открыты (tests/osp-api/lib/open-sections.mjs).
+    const { openSections } = await import(path.join(ROOT, 'tests', 'osp-api', 'lib', 'open-sections.mjs'))
+    app = buildApp({ logger: false, deps: { ...defaultDeps, ...openSections }, config: {
       host: '127.0.0.1', port: 0, supabaseUrl: SUPABASE_URL, supabaseAnonKey: 'k', supabaseServiceKey: '', supabaseJwtSecret: SECRET,
       s3: {}, anthropicApiKey: '', ratesApiKeys: [], required: ['supabase'],
       db: { url: db.url, caFile: '', poolMax: 2 },

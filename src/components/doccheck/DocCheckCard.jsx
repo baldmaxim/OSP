@@ -12,6 +12,7 @@ import {
   dueShort,
   dueState,
   fmtDocDate,
+  requestIdLabel,
   shownAssigneeIds,
 } from '../../utils/docCheckHelpers'
 
@@ -25,7 +26,7 @@ const DUE_TITLE = {
 
 // Карточка заявки на проверку ДП/ДС на доске — по образцу прежней доски отдела:
 // кружок «завершить», заголовок «Контрагент / ДС № 1» с примечанием, внизу
-// объект, дата добавления и метки, срок, приоритет, файлы, сообщения, письмо и кружки
+// номер заявки (ID, с 20270123), объект, дата добавления и метки, срок, приоритет, файлы, сообщения, письмо и кружки
 // исполнителей; цвет карточки — заливкой. Остальное — в карточке заявки по щелчку.
 function DocCheckCard({ request, employees, canEdit, onOpen, onToggleDone, onMenu }) {
   const done = CLOSED_DOC_CHECK_STATUSES.has(request.status)
@@ -75,6 +76,9 @@ function DocCheckCard({ request, employees, canEdit, onOpen, onToggleDone, onMen
       <div className="dc-card-foot">
         <div className="dc-card-chips">
           <span className="dc-card-where">
+            {request.request_number != null && (
+              <span className="dc-chip dc-chip--id" title="Номер заявки — не меняется; поиск: «ID 123»">{requestIdLabel(request)}</span>
+            )}
             <span className="dc-chip dc-chip--object" title={request.objects?.name || 'Объект не указан'}>
               {request.objects?.name || 'Без объекта'}
             </span>

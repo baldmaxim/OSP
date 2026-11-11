@@ -1,9 +1,12 @@
-import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { db } from '../api'
 import { useRole } from './RoleContext'
 import { chunkList } from '../utils/inChunks'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { revisionTitle } from '../utils/supplyVorVersions'
+import {
+  RECENT_DAYS, docCheckNotifications, dpRequestNotifications, isSiteStaffRole, tenderStatusNotifications,
+} from '../utils/siteNotifications'
 
 // Уведомления о приближающемся завершении тендеров и договоров.
 // Считаются на лету из дат (без таблицы в БД и без крон-задач): при загрузке
@@ -17,6 +20,12 @@ import { revisionTitle } from '../utils/supplyVorVersions'
 //   задача   → due_date        (крайний срок; просроченные тоже показываем)
 //   ВОР      → сметный отдел обновил ВОР тендера, а снабжение изменения ещё не смотрело (версии ВОР, миграция
 //              20261029) — тем, кто правит «Тендеры на материалы»; снимается, когда изменения отметили просмотренными
+//
+// Руководитель строительства и экономист объекта (11.11.2026, решение пользователя) видят другое — utils/siteNotifications.js:
+// статус тендеров и заявок (на проверку ДП/ДС и на заключение ДП) своих объектов (смена статуса — снова непрочитано);
+// проверки КП и сроков договоров у них нет. Задачи и изменения ВОР — по правам, как у всех.
+//
+// Перечитывается при входе и тихо — при возврате на вкладку браузера, не чаще раза в RETURN_REFRESH_MS.
 //
 // Ключ уведомления СТАБИЛЕН для конкретной сущности (tender:<id>, contract:<id>,
 // kp_review:<id>:<status>) и НЕ зависит от количества дней до срока. Поэтому один
@@ -33,6 +42,11 @@ const READ_KEY = 'notifications_read_v2'
 const HORIZON_DAYS = 5
 // task 431: недавно проверенные КП попадают в уведомления в течение N дней после проверки.
 const REVIEW_LOOKBACK_DAYS = 14
+const RETURN_REFRESH_MS = 5 * 60 * 1000
+
+// Таблицы или колонки ещё нет (база раньше миграции) — источник пропускаем, остальные уведомления работают.
+const missingSchema = (error) => ['42P01', '42703', 'PGRST200', 'PGRST204', 'PGRST205'].includes(error?.code)
+const EMPTY = Promise.resolve({ data: [], error: null })
 
 // Завершённые статусы, по которым не уведомляем.
 const TENDER_DONE = new Set(['Завершен', 'Завершён', 'Принято в работу', 'Перезапуск'])
@@ -73,7 +87,7 @@ function loadReadSet() {
 }
 
 export function NotificationsProvider({ children }) {
-  const { isLoggedIn, isEmployee, canView, canEdit, scopedObjectIds, user } = useRole()
+  const { isLoggedIn, isEmployee, canView, canEdit, scopedObjectIds, user, role } = useRole()
   // canView — нестабильная функция (пересоздаётся каждый рендер). Забираем нужные
   // права как примитивы, чтобы refresh/useEffect не уходили в цикл перезапросов.
   const canTenders = canView('tenders')
@@ -82,6 +96,10 @@ export function NotificationsProvider({ children }) {
   const canTasks = canView('tasks')
   // Изменения ВОР — снабжению: тем, кто правит расценку в «Тендерах на материалах».
   const canSupply = canEdit('tenders_materials')
+  // Рукстрой и экономист объекта: тендеры и заявки своих объектов вместо работы отдела.
+  const siteStaff = isSiteStaffRole(role)
+  const canDocCheck = canView('doc_check_requests') || canEdit('doc_check_requests_create')
+  const canDp = canView('dp_requests') || canEdit('dp_requests_create')
   const userId = user?.id || null
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(false)
@@ -92,12 +110,14 @@ export function NotificationsProvider({ children }) {
     try { localStorage.setItem(READ_KEY, JSON.stringify([...set])) } catch { /* noop */ }
   }, [])
 
-  const refresh = useCallback(async () => {
+  const lastRefresh = useRef(0)
+  const refresh = useCallback(async ({ quiet = false } = {}) => {
     if (!isLoggedIn || !isEmployee) {
       setNotifications([])
       return
     }
-    setLoading(true)
+    lastRefresh.current = Date.now()
+    if (!quiet) setLoading(true)
     try {
       const todayStr = toDateOnlyString(todayMidnight())
       const horizon = todayMidnight()
@@ -107,7 +127,23 @@ export function NotificationsProvider({ children }) {
 
       // Тендеры и договоры независимы — грузим параллельно (быстрее старт приложения).
       let tendersQ = null
-      if (canTenders) {
+      const recentSince = todayMidnight()
+      recentSince.setDate(recentSince.getDate() - RECENT_DAYS)
+      if (siteStaff) {
+        // Тендеры своих объектов — все, кроме давно закрытых (их отбирает tenderStatusNotifications). Объектов нет —
+        // «своих» тендеров тоже нет. Постранично: у нескольких объектов тендеров бывает больше 1000 за всё время.
+        tendersQ = canTenders && scopedObjectIds.length > 0
+          ? fetchAllRows((from, to) => db
+            .from('tenders')
+            .select('id, public_tender_number, work_description, status, department, tender_type, tender_end_date, updated_at, object_id, objects(name)')
+            .is('deleted_at', null)
+            .in('object_id', scopedObjectIds)
+            .order('updated_at', { ascending: false })
+            .order('id', { ascending: true })
+            .range(from, to))
+            .then((data) => ({ data, error: null }), (error) => ({ data: null, error }))
+          : null
+      } else if (canTenders) {
         tendersQ = db
           .from('tenders')
           .select('id, public_tender_number, work_description, tender_end_date, status, object_id, objects(name)')
@@ -119,7 +155,7 @@ export function NotificationsProvider({ children }) {
           .limit(1000)
         if (scopedObjectIds.length > 0) tendersQ = tendersQ.in('object_id', scopedObjectIds)
       }
-      const contractsQ = canContracts
+      const contractsQ = canContracts && !siteStaff
         ? db
           .from('contracts')
           .select('id, contract_number, work_name, signed_date, status, objects(name)')
@@ -134,7 +170,7 @@ export function NotificationsProvider({ children }) {
       // task 431: недавно завершённые проверки КП (approved/has_remarks) — уведомляем
       // ответственного по тендеру, чтобы он направил результат контрагенту.
       let kpReviewQ = null
-      if (canTenders) {
+      if (canTenders && !siteStaff) {
         const reviewSince = todayMidnight()
         reviewSince.setDate(reviewSince.getDate() - REVIEW_LOOKBACK_DAYS)
         kpReviewQ = db
@@ -188,19 +224,63 @@ export function NotificationsProvider({ children }) {
           .then((data) => ({ data, error: null }), (error) => ({ data: null, error }))
         : null
 
-      const [tendersRes, contractsRes, kpReviewRes, myTasksRes, reviewTasksRes, supplyRes] = await Promise.all([
-        tendersQ ? tendersQ : Promise.resolve({ data: [], error: null }),
-        contractsQ ? contractsQ : Promise.resolve({ data: [], error: null }),
-        kpReviewQ ? kpReviewQ : Promise.resolve({ data: [], error: null }),
-        myTasksQ ? myTasksQ : Promise.resolve({ data: [], error: null }),
-        reviewTasksQ ? reviewTasksQ : Promise.resolve({ data: [], error: null }),
-        supplyQ ? supplyQ : Promise.resolve({ data: [], error: null }),
+      // Заявки своих объектов (только рукстрою и экономисту объекта; решение пользователя 11.11.2026: «их заявка — это все
+      // заявки объекта и статус по ним»), кто бы их ни подал. Объектов нет — «своих» заявок тоже нет. Заявка на ДП бывает
+      // без объекта (его вносит отдел позже) — свою такую тоже показываем. Заявки на проверку ДП/ДС — `*`: колонки доски
+      // (archived_at, миграция 20261113) есть не во всех базах. Постранично: у объекта их бывает больше 1000 за всё время.
+      const pages = (build) => fetchAllRows(build)
+        .then((data) => ({ data, error: null }), (error) => ({ data: null, error }))
+      const docCheckQ = siteStaff && canDocCheck && scopedObjectIds.length > 0
+        ? pages((from, to) => db
+          .from('doc_check_requests')
+          .select('*, objects(name), counterparties(name)')
+          .in('object_id', scopedObjectIds)
+          .is('deleted_at', null)
+          .order('updated_at', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, to))
+        : null
+      const dpQ = siteStaff && canDp && (scopedObjectIds.length > 0 || userId)
+        ? pages((from, to) => db
+          .from('dp_requests')
+          .select('id, request_number, status, status_changed_at, contract_title, created_by_name, created_at, deleted_at, objects(name)')
+          .or([
+            scopedObjectIds.length > 0 ? `object_id.in.(${scopedObjectIds.join(',')})` : null,
+            userId ? `created_by.eq.${userId}` : null,
+          ].filter(Boolean).join(','))
+          .is('deleted_at', null)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, to))
+        : null
+
+      const [tendersRes, contractsRes, kpReviewRes, myTasksRes, reviewTasksRes, supplyRes, docCheckRes, dpRes] = await Promise.all([
+        tendersQ || EMPTY,
+        contractsQ || EMPTY,
+        kpReviewQ || EMPTY,
+        myTasksQ || EMPTY,
+        reviewTasksQ || EMPTY,
+        supplyQ || EMPTY,
+        docCheckQ || EMPTY,
+        dpQ || EMPTY,
       ])
       if (tendersRes.error) throw tendersRes.error
       if (contractsRes.error) throw contractsRes.error
 
-      // Тендеры — по tender_end_date. Окно [сегодня, сегодня+5].
-      for (const t of tendersRes.data || []) {
+      if (siteStaff) {
+        out.push(...tenderStatusNotifications(tendersRes.data, { since: recentSince }))
+        for (const [res, build, what] of [
+          [docCheckRes, docCheckNotifications, 'Заявки на проверку ДП/ДС'],
+          [dpRes, dpRequestNotifications, 'Заявки на ДП'],
+        ]) {
+          // Сбой одного источника (нет миграции, шлюз не пустил) не гасит остальные уведомления.
+          if (!res.error) out.push(...build(res.data, { since: recentSince }))
+          else console.warn(`${what} не загружены${missingSchema(res.error) ? ' (миграция?)' : ''}:`, res.error.message)
+        }
+      }
+
+      // Тендеры — по tender_end_date. Окно [сегодня, сегодня+5]. У рукстроя и экономиста объекта — статусы выше.
+      for (const t of siteStaff ? [] : tendersRes.data || []) {
         if (TENDER_DONE.has(t.status)) continue
         const days = daysUntil(t.tender_end_date)
         if (days < 0 || days > HORIZON_DAYS) continue
@@ -358,9 +438,20 @@ export function NotificationsProvider({ children }) {
     } finally {
       setLoading(false)
     }
-  }, [isLoggedIn, isEmployee, canTenders, canContracts, canTasks, canSupply, userId, scopedObjectIds])
+  }, [isLoggedIn, isEmployee, canTenders, canContracts, canTasks, canSupply, siteStaff, canDocCheck, canDp, userId, scopedObjectIds])
 
   useEffect(() => { refresh() }, [refresh])
+
+  // Вернулись на вкладку — тихо перечитываем: статус тендера или заявки могли сменить, пока страница была открыта.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      if (Date.now() - lastRefresh.current < RETURN_REFRESH_MS) return
+      refresh({ quiet: true })
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [refresh])
 
   // Синхронизация «прочитано» между вкладками: если в другой вкладке отметили
   // уведомления прочитанными, подхватываем актуальный набор — иначе в этой вкладке
@@ -394,8 +485,8 @@ export function NotificationsProvider({ children }) {
   const isRead = useCallback((key) => readSet.has(key), [readSet])
 
   const value = useMemo(
-    () => ({ notifications, unreadCount, loading, refresh, markRead, markAllRead, isRead }),
-    [notifications, unreadCount, loading, refresh, markRead, markAllRead, isRead]
+    () => ({ notifications, unreadCount, loading, refresh, markRead, markAllRead, isRead, siteStaff }),
+    [notifications, unreadCount, loading, refresh, markRead, markAllRead, isRead, siteStaff]
   )
 
   return (
@@ -411,7 +502,7 @@ export function useNotifications() {
   if (!ctx) {
     return {
       notifications: [], unreadCount: 0, loading: false,
-      refresh: () => {}, markRead: () => {}, markAllRead: () => {}, isRead: () => false,
+      refresh: () => {}, markRead: () => {}, markAllRead: () => {}, isRead: () => false, siteStaff: false,
     }
   }
   return ctx

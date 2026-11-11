@@ -1,0 +1,101 @@
+{
+  "_readme": "Подрядчик (учётка с организацией или роль contractor) через /api/db — только это; см. src/routes/dbGateway.js",
+  "tables": {
+    "bid_company_answers": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "bid_form_fields": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "public_open_tenders": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "roles": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "s3_documents": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "tender_bid_files": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "tender_bid_forms": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "tender_bid_rates": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "tender_counterparty_proposals": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "tender_estimate_items": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "user_roles": {
+      "authenticated": [
+        "select"
+      ]
+    }
+  },
+  "rpc": {
+    "bid_company_save": [
+      "authenticated"
+    ],
+    "bid_contractor_tenders": [
+      "authenticated"
+    ],
+    "bid_form_save": [
+      "authenticated"
+    ],
+    "bid_positions": [
+      "authenticated"
+    ],
+    "bid_rates_save": [
+      "authenticated"
+    ],
+    "bid_request": [
+      "authenticated"
+    ],
+    "bid_vor_superseded": [
+      "authenticated"
+    ],
+    "contractor_org_card": [
+      "authenticated"
+    ],
+    "contractor_org_name": [
+      "authenticated"
+    ],
+    "contractor_set_participation": [
+      "authenticated"
+    ],
+    "report_client_error": [
+      "authenticated"
+    ],
+    "report_client_version": [
+      "authenticated"
+    ],
+    "touch_last_login": [
+      "authenticated"
+    ]
+  }
+}
