@@ -1,6 +1,7 @@
 // «Реестр по договорам» глазами сотрудника объекта (10.11.2026, решение пользователя): руководитель строительства и экономист
 // объекта видят договоры только своих объектов, без общей папки раздела, без «+ Добавить договор», без «Структуры хранения» и
-// «Стандартных приложений»; заявку на заключение ДП подают плюсиком сразу за вкладкой «Все» — то же окно, что на /dp-requests.
+// «Стандартных приложений»; заявку на заключение ДП подают кнопкой «+ Заявка на заключение ДП» — то же окно, что на /dp-requests.
+// 11.11.2026 вкладки «Все» не стало (это «Договоры и ДС») — кнопка среди действий шапки реестра, не между вкладками.
 // У администратора и сотрудника без привязки к объектам — всё как раньше, плюс та же кнопка, если есть право подавать заявки.
 // Стенд tests/tender/ui (route=/contracts/registry), Chromium. Люди и объекты вымышленные.
 import { describe, it, before, after } from 'node:test'
@@ -39,9 +40,9 @@ describe('Реестр по договорам: сотрудник объект�
     await page.locator('.contracts-page-v2 .loading').waitFor({ state: 'detached' }).catch(() => {})
     return { page, errors, close: () => context.close().catch(() => {}) }
   }
-  // Что стоит в строке вкладок по порядку: вкладки — названием, кнопка — классом.
-  const tabsRow = (page) => page.locator('.contracts-page-v2 .status-tabs > *').evaluateAll((els) => els.map((el) => (
-    el.classList.contains('cr-dp-add') ? 'cr-dp-add' : el.firstChild.textContent.trim())))
+  // Что стоит в действиях шапки по порядку: кнопки — текстом, кнопка заявки — классом.
+  const headerActions = (page) => page.locator('.contracts-page-v2 .cr-header-actions > button').evaluateAll((els) => els.map((el) => (
+    el.classList.contains('cr-dp-add') ? 'cr-dp-add' : el.textContent.trim())))
   const docsCards = async (page) => {
     await page.getByRole('button', { name: 'Документы' }).click()
     const modal = page.locator('.tdm-modal')
@@ -66,7 +67,8 @@ describe('Реестр по договорам: сотрудник объект�
 
       assert.equal(await page.locator('.contracts-page-v2 .rfpath').count(), 0, 'общей папки раздела нет')
       assert.equal(await page.getByRole('button', { name: '+ Добавить договор' }).count(), 0, 'договоры не заводит')
-      assert.deepEqual((await tabsRow(page)).slice(0, 3), ['Все', 'cr-dp-add', 'В работе'], 'кнопка — сразу за «Все»')
+      assert.deepEqual(await headerActions(page), ['Документы', 'Компактный вид', 'cr-dp-add'], 'кнопка — среди действий шапки')
+      assert.equal(await page.locator('.contracts-page-v2 .status-tabs .cr-dp-add').count(), 0, 'не между вкладками')
       assert.match(await page.locator('.cr-dp-add').textContent(), /^\+\s*Заявка на заключение ДП$/)
 
       const cards = await docsCards(page)
@@ -140,7 +142,7 @@ describe('Реестр по договорам: сотрудник объект�
       assert.match(rows, /Нурлы/)
       assert.equal(await page.locator('.contracts-page-v2 .rfpath').count(), 1)
       assert.equal(await page.getByRole('button', { name: '+ Добавить договор' }).count(), 1)
-      assert.deepEqual((await tabsRow(page)).slice(0, 2), ['Все', 'cr-dp-add'])
+      assert.deepEqual((await headerActions(page)).slice(-2), ['cr-dp-add', '+ Добавить договор'])
       const cards = await docsCards(page)
       assert.ok(cards.includes('Структура хранения документов') && cards.includes('Стандартные приложения'), cards.join())
       assert.deepEqual(errors, [])
@@ -151,12 +153,12 @@ describe('Реестр по договорам: сотрудник объект�
     const { page, errors, close } = await open('noEdit=dp_requests_create')
     try {
       assert.equal(await page.locator('.cr-dp-add').count(), 0)
-      assert.deepEqual((await tabsRow(page)).slice(0, 2), ['Все', 'В работе'])
+      assert.deepEqual((await headerActions(page)).slice(-1), ['+ Добавить договор'])
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
 
-  it('телефон: кнопка в строке вкладок, окно — в экран', async () => {
+  it('телефон: кнопка в шапке, под палец, окно — в экран', async () => {
     const { page, errors, close } = await open(SITE, { width: 390, height: 800 }, { hasTouch: true, isMobile: true })
     try {
       const btn = page.locator('.cr-dp-add')

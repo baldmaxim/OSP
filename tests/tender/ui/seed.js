@@ -1180,6 +1180,16 @@ if (CONTRACTS > 0) {
     Object.assign(contracts[3], { estimat_status: 'skip', estimat_status_at: '2026-10-21T09:00:00Z', estimat_status_by: 'Петров П. П.' })
     contracts[6].deleted_at = '2026-10-22T09:00:00Z'
   }
+  // &contractsPaths=1 — пути документа (значки под номером, 11.11.2026): у ctr-1 все три (Larix — карточка 4521), у ctr-2 —
+  // только папка, у ctr-4 — Signal и Larix не карточкой (код — хвост адреса), остальные — без путей.
+  if (params.get('contractsPaths') === '1') {
+    Object.assign(contracts[0], {
+      folder_path: '\\\\su10-fs\\Договоры\\ЖК Северный\\1-26', signal_link: 'https://signal.su10.ru/folder/1-26',
+      document_link: 'https://cpm.su10.larix.ru/contract/4521',
+    })
+    Object.assign(contracts[1], { folder_path: '\\\\su10-fs\\Договоры\\ЖК Северный\\2-26' })
+    Object.assign(contracts[3], { signal_link: 'https://signal.su10.ru/folder/4-26', document_link: 'https://cpm.su10.larix.ru/projects/77/docs/ДП-4' })
+  }
   window.__fakeDb.contracts = contracts
   window.__fakeDb.contract_appendices = []
   window.__fakeDb.s3_documents.push(...contracts.filter((_, i) => i % 7 === 0).map((c) => ({

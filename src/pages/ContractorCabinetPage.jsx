@@ -14,7 +14,9 @@ import { IconHardHat, IconChevronDown } from '../components/icons/TenderHubIcons
 import { IconSearch } from '../components/icons/ToolbarIcons'
 import {
   loadCabinetTenders, loadCabinetTendersPreview, loadOrgCard, loadOrgCardPreview, requestParticipation, setParticipationStatus, TENDER_OPEN_STATUS,
+  VOR_CATEGORIES,
 } from '../services/contractorBids'
+import { isWorkbookFileName } from '../utils/vorFiles'
 import { phoneHref } from '../utils/siteContacts'
 import { breakAfterDash, formatDateRange } from '../utils/dateRange'
 import '../components/Tenders.css'
@@ -50,6 +52,10 @@ const ContractorCompanyTab = lazy(() => import('../components/contractor/Contrac
 //
 // Просмотр от имени подрядчика (previewActive): запросы идут под администратором, у него нет организации, и функции кабинета
 // отказывают. Поэтому те же сведения читаются из таблиц, а записи нет: заявка только на экране, цены и анкета — только просмотр.
+//
+// Решения пользователя 11.11.2026 (окно тендера): файлы ВОР — только в «Расценке» (рядом с каждым — свой ВОР подрядчика с расценками,
+// миграция 20270113), в «Документах тендера» их больше нет; РД — раскрывающимся списком; шаблона КП нет, расценка на сайте временно
+// скрыта (BidWorkspace). Без расценки в кабинете (база раньше 20261102) — всё как было: ВОР в документах и прежний шаблон КП.
 
 const PARTICIPATION_LABEL = {
   request_sent: 'Приглашение отправлено',
@@ -117,11 +123,20 @@ const SORTERS = {
   tender_end_date: (t) => t.tender_end_date,
 }
 
-const DOC_SECTION_LABEL = {
-  tender_package: 'Тендерный пакет',
-  rd: 'Рабочая документация',
-  vor_statement: 'Ведомость объёмов работ',
-  vor: 'ВОР и рабочая документация',
+// Документы тендера: пакет — списком; Excel-файлы ВОР — своей группой, только если расценки в кабинете нет (иначе они в «Расценке»);
+// всё остальное (РД, PDF из «ВОР и РД») — «Рабочая документация», свёрнута.
+const isVorWorkbook = (d) => VOR_CATEGORIES.includes(d.doc_category) && isWorkbookFileName(d.file_name)
+function docGroups(docs, vorInPricing) {
+  const groups = [
+    { key: 'tender_package', label: 'Тендерный пакет', docs: [] },
+    { key: 'vor', label: 'Ведомость объёмов работ', docs: [] },
+    { key: 'rd', label: 'Рабочая документация', docs: [], collapsed: true },
+  ]
+  for (const d of docs) {
+    if (isVorWorkbook(d)) { if (!vorInPricing) groups[1].docs.push(d); continue }
+    groups[(d.doc_category || 'tender_package') === 'tender_package' ? 0 : 2].docs.push(d)
+  }
+  return groups.filter((g) => g.docs.length)
 }
 
 function formatDateTime(value) {
@@ -448,11 +463,9 @@ function ContractorCabinetPage() {
 
   if (!isContractor) return null
 
-  const docsBySection = tenderDocs.reduce((acc, d) => {
-    const key = d.doc_category || 'tender_package'
-    ;(acc[key] = acc[key] || []).push(d)
-    return acc
-  }, {})
+  // Расценка в кабинете есть — файлы ВОР только там, второй раз в документах не показываются.
+  const vorInPricing = bidsEnabled && !!activeTender?.access
+  const shownDocGroups = docGroups(tenderDocs, vorInPricing)
 
   const deadline = daysLeft(activeTender?.tender_end_date)
   const activeChip = activeTender ? participationChip(activeTender, bidsEnabled) : null
@@ -554,7 +567,7 @@ function ContractorCabinetPage() {
                       <div className="cab-step-text">
                         <b>Хотите участвовать?</b>
                         <span>
-                          Откроются файлы ВОР и расценка на сайте. Отдел увидит вашу организацию и решит, включить ли её в участники тендера.
+                          Откроются файлы ВОР для расценки. Отдел увидит вашу организацию и решит, включить ли её в участники тендера.
                         </span>
                       </div>
                       <button type="button" className={`cab-btn cab-btn-primary${joining ? ' is-busy' : ''}`} disabled={joining} onClick={handleJoin}>
@@ -565,17 +578,17 @@ function ContractorCabinetPage() {
                   {bidsEnabled && activeTender.access === 'pending' && (
                     <div className="cab-note is-ok">
                       Заявка подана: отдел решит, включить ли вашу организацию в участники. Расценивать можно уже сейчас —
-                      цены сохраняются сами и сразу видны отделу.
+                      расценку отдел видит сразу.
                     </div>
                   )}
                   {bidsEnabled && activeTender.access === 'rejected' && (
                     <div className="cab-note is-warn">
-                      Отдел не включил вашу организацию в участники этого тендера. Введённые цены сохранены, менять их нельзя.
+                      Отдел не включил вашу организацию в участники этого тендера. Ваша расценка сохранена, менять её нельзя.
                     </div>
                   )}
 
-                  {/* Документы тендера: пакет и ВОР/РД */}
-                  {!selfRegistered && activeTender.access && activeTender.access !== 'rejected' && (
+                  {/* Документы тендера: пакет и РД (свёрнута); ВОР — в «Расценке» */}
+                  {!selfRegistered && activeTender.access && activeTender.access !== 'rejected' && (tenderDocs.length === 0 || shownDocGroups.length > 0) && (
                   <section className="cab-section">
                     <h3>Документы тендера</h3>
                     {tenderBusy && tenderDocs.length === 0 ? (
@@ -583,11 +596,10 @@ function ContractorCabinetPage() {
                     ) : tenderDocs.length === 0 ? (
                       <p className="cab-muted">Документы ещё не опубликованы.</p>
                     ) : (
-                      Object.entries(docsBySection).map(([cat, docs]) => (
-                        <div key={cat} className="cab-docs-group">
-                          <div className="cab-docs-title">{DOC_SECTION_LABEL[cat] || cat}</div>
+                      shownDocGroups.map((g) => {
+                        const list = (
                           <ul className="cab-docs">
-                            {docs.map(d => {
+                            {g.docs.map(d => {
                               const mime = (d.mime_type || '').toLowerCase()
                               const canPreview = mime === 'application/pdf' || mime.startsWith('image/')
                               return (
@@ -602,8 +614,23 @@ function ContractorCabinetPage() {
                               )
                             })}
                           </ul>
-                        </div>
-                      ))
+                        )
+                        return g.collapsed ? (
+                          <details key={g.key} className="cab-docs-group cab-docs-fold">
+                            <summary className="cab-docs-title">
+                              <IconChevronDown size={14} />
+                              {g.label}
+                              <span className="cab-docs-count">{g.docs.length}</span>
+                            </summary>
+                            {list}
+                          </details>
+                        ) : (
+                          <div key={g.key} className="cab-docs-group">
+                            <div className="cab-docs-title">{g.label}</div>
+                            {list}
+                          </div>
+                        )
+                      })
                     )}
                   </section>
                   )}
@@ -619,6 +646,7 @@ function ContractorCabinetPage() {
                           canEdit={CAN_PRICE.has(activeTender.access) && !previewActive}
                           previewCounterpartyId={previewActive ? cpId : null}
                           counterpartyName={contractorInfo?.name || ''}
+                          counterpartyId={cpId}
                           tenderNumbers={tenderNumbers}
                           onSummary={handleBidSummary}
                           serverPositions={selfRegistered}
@@ -627,8 +655,9 @@ function ContractorCabinetPage() {
                     </section>
                   )}
 
-                  {/* Подача КП по шаблону — прежний путь: смета во вкладке «ВОР» карточки (в новых тендерах её нет). Основное — файл ВОР и «Расценка» выше. */}
-                  {(!bidsEnabled || pricedItems.length > 0) && activeTender.access === 'invited' && (
+                  {/* Подача КП по шаблону — прежний путь: смета во вкладке «ВОР» карточки (в новых тендерах её нет), только без расценки в
+                      кабинете (база раньше 20261102). С ней шаблона нет (решение пользователя 11.11.2026): подрядчик заполняет сам файл ВОР. */}
+                  {!bidsEnabled && activeTender.access === 'invited' && (
                   <section className="cab-section">
                     <h3>Коммерческое предложение по шаблону</h3>
                     {pricedItems.length === 0 ? (

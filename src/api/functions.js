@@ -31,6 +31,14 @@ export function invokeFunction(name, options) {
 // Файл ВОР для расценки — только свой API: учётка с регистрации бывает только на новом портале, строк s3_documents она не видит.
 export const requestBidVorFile = (fileId) => callOspFunction('bid-vor-file', { body: { file_id: fileId } }, { getToken: ospToken, fetchImpl: sessionFetch })
 
+// Свой ВОР подрядчика с расценками (миграция 20270113): загрузка, скачивание, удаление — только свой API, решают функции базы.
+export const requestBidFile = (body) => callOspFunction('bid-file', { body }, { getToken: ospToken, fetchImpl: sessionFetch })
+// Тот же файл администратору (сводка расценок подрядчиков) — маршрут /api/admin/bid-file, ответ в том же виде.
+export const requestBidFileAdmin = (fileId) => callOspFunction('bid-file', { body: { file_id: fileId } }, {
+  getToken: ospToken,
+  fetchImpl: (url, init) => sessionFetch(String(url).replace('/api/fn/', '/api/admin/'), init),
+})
+
 // Путь файлов выбирается один раз, в начале операции: начатая загрузка заканчивается тем же путём.
 export function filesViaOspApi() {
   return filesPath({

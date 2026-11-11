@@ -316,3 +316,75 @@ describe('Шаблон КП: чужой файл не читается', () => {
     assert.equal(byId.m1.total_cost, 380000)
   })
 })
+
+// Свой ВОР подрядчика с расценками (миграция 20270113, решение пользователя 11.11.2026): цены читает тот же разбор, что «Цены из
+// файла», сумма ведомости — цена файла × объём ВОР отдела; сводка по ведомостям — как «ВОР × подрядчик» в «Сравнении КП».
+describe('Свой ВОР с расценками: сводка по ведомости и по тендеру', async () => {
+  const { summarizeBidFile, bidFileVat } = await import('../../src/utils/bidFileSummary.js')
+  const { bidFilesTable, summaryCounted, summaryIncomplete, coverageText } = await import('../../src/utils/bidFiles.js')
+  const { readBidPriceDoc } = await import('../../src/utils/bidImport.js')
+  const vor = readBidFileBytes(bytesOf(CURRENT))
+  const positions = [...vor.materials, ...vor.works]
+
+  // Подрядчик заполнил цены в том же файле ВОР: бетон и арматура, из работ — только плита; объём у себя поправил — не в счёт.
+  const filled = () => {
+    const copy = JSON.parse(JSON.stringify(CURRENT))
+    copy['Материалы'][3][4] = 7800
+    copy['Материалы'][4][4] = '85 000'
+    copy['Материалы'][5][4] = 7800
+    copy['Материалы'][3][3] = 999
+    copy['Работы'][1][4] = 2500
+    return bytesOf(copy)
+  }
+
+  it('заполненный ВОР отдела: цена × объём ведомости, отдельно материалы и работы; сколько позиций с ценой', async () => {
+    const s = summarizeBidFile(await readBidPriceDoc(filled(), 'ВОР к1 — Альфа.xlsx'), positions)
+    assert.equal(s.error, undefined)
+    assert.equal(s.materials, 7800 * 130.5 + 85000 * 3.25)
+    assert.equal(s.works, 2500 * 130.5)
+    assert.equal(s.total, s.materials + s.works)
+    assert.deepEqual(s.items, { material: 2, work: 2 })
+    assert.deepEqual(s.priced, { material: 2, work: 1 })
+    assert.equal(s.vat, 'gross')
+    assert.ok(summaryCounted(s))
+    assert.equal(summaryIncomplete(s, 'material'), false)
+    assert.equal(summaryIncomplete(s, 'work'), true, 'армирование без цены — итог неполный')
+    assert.equal(coverageText(s, 'work'), 'Цены у 1 из 2 позиций работ')
+  })
+
+  it('НДС: «без НДС» в документе — НДС сверху; подрядчик без НДС — как есть', () => {
+    const doc = { items: [{ name: 'Бетон В25 W8', unit: 'м3', price: 1000, priceVat: 'net' }], vat: { mode: 'net', rate: 22 } }
+    assert.equal(summarizeBidFile(doc, positions).materials, 1220 * 130.5)
+    assert.equal(summarizeBidFile(doc, positions).vat, 'net')
+    const exempt = summarizeBidFile(doc, positions, { exempt: true })
+    assert.equal(exempt.materials, 1000 * 130.5)
+    assert.equal(exempt.vat, 'exempt')
+    assert.equal(bidFileVat({ vat: null }, { rate: 7 }).rate, 7, 'ставка документа не указана — из анкеты')
+  })
+
+  it('не прочитался, ВОР отдела не разобран, цен по позициям нет — сумма не считается, причина записана', () => {
+    assert.deepEqual(summarizeBidFile({ error: 'no_table' }, positions), { v: 1, error: 'no_table' })
+    assert.equal(summarizeBidFile({ items: [{ name: 'Бетон В25 W8', unit: 'м3', price: 1 }] }, null).error, 'no_vor')
+    const none = summarizeBidFile({ items: [{ name: 'Кирпич облицовочный', unit: 'шт', price: 30 }] }, positions)
+    assert.equal(none.error, 'no_prices')
+    assert.equal(summaryCounted(none), false)
+  })
+
+  it('сводка тендера: файл — к своей ведомости; ВОР заменили — файл прежней версии по имени; ведомости нет — в итог не входит', () => {
+    const vors = [{ id: 'v1', file_name: 'ВОР к1.xlsx' }, { id: 'v2-new', file_name: 'ВОР к2.xlsx' }, { id: 'v3', file_name: 'ВОР к3.xlsx' }]
+    const sum = (total, over = {}) => ({ v: 1, materials: total / 2, works: total / 2, total, items: { material: 1, work: 1 }, priced: { material: 1, work: 1 }, ...over })
+    const mine = [
+      { id: 'f1', vor_file_id: 'v1', vor_name: 'ВОР к1', summary: sum(100) },
+      { id: 'f2', vor_file_id: 'v2-old', vor_name: 'ВОР к2', summary: sum(50, { priced: { material: 0, work: 1 } }) },
+      { id: 'f4', vor_file_id: 'gone', vor_name: 'ВОР паркинга', summary: sum(1000) },
+    ]
+    const t = bidFilesTable(vors, mine)
+    assert.deepEqual(t.rows.map((r) => [r.vor.id, r.file?.id || null, r.stale]), [['v1', 'f1', false], ['v2-new', 'f2', true], ['v3', null, false]])
+    assert.deepEqual(t.orphans.map((f) => f.id), ['f4'])
+    assert.deepEqual([t.totals.materials, t.totals.works, t.totals.total], [75, 75, 150])
+    assert.deepEqual([t.totals.uploaded, t.totals.counted, t.totals.incomplete], [2, 2, true])
+    // Файл без суммы — загружен, но в итог не входит.
+    const t2 = bidFilesTable(vors, [{ id: 'f1', vor_file_id: 'v1', vor_name: 'ВОР к1', summary: { v: 1, error: 'no_prices' } }])
+    assert.deepEqual([t2.totals.uploaded, t2.totals.counted, t2.totals.total], [1, 0, 0])
+  })
+})

@@ -1,6 +1,7 @@
 {
   "tables": {
     "bid_form_fields": { "authenticated": ["select"] },
+    "tender_bid_files": { "authenticated": ["select"] },
     "tender_bid_forms": { "authenticated": ["select"] },
     "tender_bid_rates": { "authenticated": ["select"] },
     "user_roles": { "authenticated": ["select"] }

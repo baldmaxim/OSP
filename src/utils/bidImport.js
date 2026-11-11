@@ -52,15 +52,8 @@ export async function readBidPriceDoc(bytes, fileName, { keepBlank = false } = {
   return readSupplierDoc(bytes, fileName)
 }
 
-export const DOC_ERROR_TEXT = {
-  unsupported: 'Такой файл не читается: нужен Excel (.xlsx, .xls), CSV, PDF или фото счёта.',
-  broken: 'Файл не открылся — возможно, он повреждён.',
-  encrypted: 'PDF защищён паролем — сохраните его без пароля.',
-  scan: 'Скан или фото: текст не распознался. Нужен скан получше, Excel или PDF с текстом.',
-  ocr_failed: 'Не удалось запустить распознавание скана: обновите страницу и повторите. Без него читаются Excel и PDF с текстом.',
-  no_table: 'Не нашли таблицу: нужна шапка с колонками «Наименование» и «Цена» (или «Сумма»).',
-  empty: 'Шапку нашли, а строк с ценой нет.',
-}
+// Причины, по которым файл не прочитался, — общие с файлами ВОР подрядчика (utils/bidFiles.js).
+export { DOC_ERROR_TEXT } from './bidFiles.js'
 
 // Позиции расценки → группы для сопоставления (как positionGroups у снабжения): одна позиция — одна группа.
 export function bidGroups(positions) {

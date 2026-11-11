@@ -1,5 +1,5 @@
 import { Fragment, useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { CURRENCY_OPTIONS, formatMoney } from '../utils/estimateImport'
@@ -7,9 +7,7 @@ import FilterDropdown from '../components/FilterDropdown'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
 import ConceptAgreementCell from '../components/ConceptAgreementCell'
-import FolderPathCell from '../components/FolderPathCell'
-import SignalLinkCell from '../components/SignalLinkCell'
-import LarixLinkCell from '../components/LarixLinkCell'
+import DocLinkMarks from '../components/DocLinkMarks'
 import EstimatToggle from '../components/EstimatToggle'
 import { estimatEvent, estimatPatch, estimatState } from '../utils/contractEstimat'
 import RootFolderPathButton from '../components/RootFolderPathButton'
@@ -33,8 +31,8 @@ const ContractsImportModal = lazy(() => import('../components/ContractsImportMod
 import { fetchCounterpartyDocSummary, deleteDocument } from '../services/s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { chunkList } from '../utils/inChunks'
-import { LARIX_LINK_FIELD, LARIX_LINK_LABEL, LARIX_NAME, isInLarix } from '../utils/contractLarix'
-import { registryCounts, registryRows } from '../utils/contractRegistryTabs'
+import { LARIX_LINK_FIELD, LARIX_LINK_LABEL, isInLarix } from '../utils/contractLarix'
+import { kindCounts, registryCounts, registryRows } from '../utils/contractRegistryTabs'
 import { contractParties, counterpartyFilterOptions, hasCounterparty, matchCounterpartyOption } from '../utils/contractCounterpartyFilter'
 import { docTender, tenderChoices, tenderOptionLabel, tenderTitle } from '../utils/contractTender'
 import { VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION } from '../utils/vorDivisions'
@@ -112,8 +110,10 @@ const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map(s => [s.value, s.labe
 
 // Отдел (03.11, решение пользователя): реестр делится на основное строительство и гарантийное обслуживание — по объекту
 // документа. «Наши договоры» (contracts.handled_by_us, миграция 20260827) — с того же дня фильтр в панели, а не второй охват.
+// 11.11.2026 (реестр разгружен): «ОС и ГО» вместо «Все договоры» — третьего «все» рядом с видом документа и статусами нет;
+// чисел на переключателе нет — их показывают вкладки вида документа ниже.
 const DEPTS = [
-  { key: 'all', label: 'Все договоры', hint: 'Основное строительство и гарантийное обслуживание' },
+  { key: 'all', label: 'ОС и ГО', hint: 'Основное строительство и гарантийное обслуживание' },
   { key: 'main_construction', label: 'ОС', hint: 'Основное строительство: договоры и ДС по объектам ОС' },
   { key: 'warranty_service', label: 'ГО', hint: 'Гарантийное обслуживание: договоры и ДС по объектам ГО' },
 ]
@@ -127,9 +127,11 @@ const DEPT_STORAGE_KEY = 'contracts-dept'
 // строками: иначе реестр раздваивается и суммы считаются дважды. Счётчики
 // «Договоров и ДС» — договоры и ДС вместе (utils/contractRegistryTabs).
 // Выбор запоминается в браузере: после перезагрузки реестр открывается тем же.
+// 11.11.2026 (решение пользователя: «кнопка Все — это буквально и есть кнопка Договоры и ДС»): вид документа — главные
+// вкладки реестра с числами, вкладки «Все» нет; статус — переключатели рядом (TABS), ничего не выбрано — все статусы.
 const DOC_KINDS = [
-  { key: 'all', label: 'Договоры и ДС', hint: 'Весь реестр: договоры, ДС раскрываются под своим договором по кнопке «ДС: N». Счётчики — договоры и ДС вместе' },
-  { key: 'contracts', label: 'Договоры', hint: 'Только договоры, каждый по своему статусу. Счётчики — только договоры; все ДС договора — в раскрытой строке' },
+  { key: 'all', label: 'Договоры и ДС', hint: 'Весь реестр: договоры, ДС раскрываются под своим договором по кнопке «ДС: N». Число — договоры и ДС вместе' },
+  { key: 'contracts', label: 'Договоры', hint: 'Только договоры, каждый по своему статусу; все ДС договора — в раскрытой строке' },
   { key: 'amendments', label: 'ДС', hint: 'Только ДС отдельными строками: на изменение ВОР и на дополнительные работы' },
 ]
 const DOC_KIND_STORAGE_KEY = 'contracts-doc-kind'
@@ -235,8 +237,9 @@ function AmountCell({ contract, actual }) {
 
 // Вкладки по статусу, правила — inTab (utils/contractRegistryTabs). «В работе» — вся незавершённая работа: новая заявка, в
 // работе, ожидание подписания на бумаге; точный статус — в строке. 03.11: семь вкладок сведены к пяти — на сайте в «Заявках
-// на заключение» было 0 документов, в «Ожидании подписания» 2. 05.11: названия «Общий реестр» нет — весь реестр это вид
-// «Договоры и ДС» с вкладкой «Все»; без неё из «В работе» не вернуться ко всем статусам.
+// на заключение» было 0 документов, в «Ожидании подписания» 2. 11.11.2026: «Все» — не кнопка, а состояние «статус не
+// выбран» (activeTab 'all'): статусы — переключатели, повторное нажатие на выбранный возвращает все статусы; число всех —
+// на вкладке вида документа.
 const TABS = [
   { key: 'all', label: 'Все', hint: 'Все статусы выбранного вида документов, кроме удалённых' },
   { key: 'in_work', label: 'В работе', hint: 'Новые заявки, в работе и ожидание подписания в бумажном виде' },
@@ -244,6 +247,7 @@ const TABS = [
   { key: 'completed', label: 'Завершено' },
   { key: 'deleted', label: 'Удаленные' },
 ]
+const STATUS_CHIPS = TABS.filter(t => t.key !== 'all')
 
 const EMPTY_FORM = {
   record_type: 'dp',
@@ -393,7 +397,6 @@ function InlineDateCell({ value, onChange, disabled, overdue }) {
 }
 
 function ContractRegistry() {
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { isAdmin, isSuperAdmin, userProfile, canEdit, scopedObjectIds } = useRole()
   // task 333: гейт add/edit/delete для раздела «contracts»
@@ -1327,9 +1330,13 @@ function ContractRegistry() {
 
   // Отдел, «Наши договоры» и тип документа применяются до вкладок и счётчиков — это тот же реестр, просто суженный,
   // поэтому и статусные счётчики считаются в нём. В «Договорах и ДС» договор и ДС считаются каждый по своему статусу.
-  const { tabs: tabCounts, scopes: scopeCounts, depts: deptCounts } = useMemo(
+  const { tabs: tabCounts, scopes: scopeCounts } = useMemo(
     () => registryCounts(contracts, { docKind, scope, dept }),
     [contracts, docKind, scope, dept])
+  // Числа на вкладках вида документа — при выбранном статусе (без него — все, кроме удалённых).
+  const docKindCounts = useMemo(
+    () => kindCounts(contracts, { scope, dept, tab: activeTab }),
+    [contracts, scope, dept, activeTab])
 
   // Реестр загружается целиком; по вкладкам фильтруем в памяти (мгновенно).
   // В «Договорах и ДС» под договором — его ДС этой вкладки (nested); договор в
@@ -1532,13 +1539,17 @@ function ContractRegistry() {
     ? filteredSortedContracts.reduce((n, c) => n + nestedDsOf(c.id).length, 0)
     : 0
 
-  // Пагинация — над таблицей и под ней, одна и та же (обычная функция-рендер).
+  // Над таблицей — только итог («Показано … из …»), страницы и «Строк на странице» — один раз, под таблицей
+  // (11.11.2026: раньше одна и та же полоса стояла и сверху, и снизу). Обычная функция-рендер.
   const renderPagination = (position) => (
     <div className={`registry-pagination is-${position}`}>
-      <span className="rp-info">
-        Показано {rangeFrom}–{rangeTo} из {totalCount} {pluralContracts(totalCount, isAmendmentsView)}
-        {nestDs && nestedDsTotal > 0 && <> · ДС к ним: {nestedDsTotal}</>}
-      </span>
+      {position === 'top' && (
+        <span className="rp-info">
+          Показано {rangeFrom}–{rangeTo} из {totalCount} {pluralContracts(totalCount, isAmendmentsView)}
+          {nestDs && nestedDsTotal > 0 && <> · ДС к ним: {nestedDsTotal}</>}
+        </span>
+      )}
+      {position === 'bottom' && (
       <div className="rp-controls">
         <label className="rp-size">
           Строк на странице:
@@ -1554,6 +1565,7 @@ function ContractRegistry() {
           <button className="rp-btn" onClick={() => setPage(pageCount)} disabled={currentPage >= pageCount} title="Последняя">»</button>
         </div>
       </div>
+      )}
     </div>
   )
 
@@ -2011,13 +2023,6 @@ function ContractRegistry() {
     [LARIX_LINK_FIELD]: LARIX_LINK_LABEL,
     division: 'Подразделение',
   }
-  // Путь к папке (миграция 20260904) — обычное инлайн-поле договора.
-  const handleSaveFolderPath = (contractId, value) => handleInlineField(contractId, 'folder_path', value.trim())
-  // Путь к Signal (миграция 20260919) — ссылка на документы в общем хранилище.
-  const handleSaveSignalLink = (contractId, value) => handleInlineField(contractId, 'signal_link', value.trim())
-  // Путь к Larix.CPM — вносится так же, как путь к Signal. По его заполненности
-  // определяется, внесён ли договор в Larix (utils/contractLarix.js).
-  const handleSaveLarixLink = (contractId, value) => handleInlineField(contractId, LARIX_LINK_FIELD, value.trim())
   // Плашка «Estimat»: не загружено → загружено → не загружать (utils/contractEstimat.js). Цвет меняется только
   // после записи: запись, не задевшая строку (нет права, документ удалён), — ошибка, а не ложная отметка.
   const handleEstimatChange = async (doc, next) => {
@@ -2033,10 +2038,13 @@ function ContractRegistry() {
       alert('Ошибка: ' + error.message)
     }
   }
+  // Пути документа (папка — миграция 20260904, Signal — 20260919, Larix.CPM — по нему же «внесён в Larix»,
+  // utils/contractLarix.js) пишутся тоже здесь, из окна значков путей (DocLinkMarks). Возвращает false, если не
+  // сохранилось (сообщение уже показано) — окно правки остаётся открытым.
   const handleInlineField = async (contractId, field, rawValue) => {
     const value = rawValue === '' ? null : rawValue
     const contract = contracts.find(c => c.id === contractId)
-    if (!contract || (contract[field] ?? null) === value) return
+    if (!contract || (contract[field] ?? null) === value) return true
     try {
       const { error } = await db.from('contracts').update({ [field]: value }).eq('id', contractId)
       if (error) throw error
@@ -2049,6 +2057,7 @@ function ContractRegistry() {
         newValue: shown(value),
         description: `Изменено: ${INLINE_FIELD_LABEL[field] || field}`,
       })
+      return true
     } catch (error) {
       console.error('Ошибка сохранения:', error.message)
       // Колонки ещё нет в базе — называем миграцию, а не сырой текст PostgREST.
@@ -2056,6 +2065,7 @@ function ContractRegistry() {
       else alert(field === 'signal_link' && (error.code === 'PGRST204' || /signal_link/.test(error.message || ''))
         ? 'Не удалось сохранить путь к Signal: в базе не применена миграция 20260919_contract_signal_link.'
         : 'Ошибка: ' + error.message)
+      return false
     }
   }
 
@@ -2188,50 +2198,30 @@ function ContractRegistry() {
     />
   )
 
-  // Три пути документа и понятийное соглашение. Заполненный путь — своя строка; пустые собраны в одну
-  // «путь к папке · Signal · Larix.CPM» с общим «путь к»: три полные подписи в строку не помещались
-  // (порядок и переносы — .cpaths в ContractRegistryPolish.css). Открыть проводник кликом браузер не
-  // даёт без помощника, поэтому путь к папке ещё и копируется.
-  const renderDocPaths = (doc) => (
-    <>
-      <div className="cpaths">
-        {canEditContracts && (!doc.folder_path || !doc.signal_link || !isInLarix(doc)) && (
-          <span className="cpaths-label" aria-hidden="true">путь к</span>
-        )}
-        <FolderPathCell
-          value={doc.folder_path}
+  // Отметки документа одной строкой (11.11.2026, решение пользователя: реестр разгружен): пути — значками (папка и Signal —
+  // зелёный значок, если указан, красный, если нет; Larix — код карточки или «нет», DocLinkMarks) и понятийное соглашение —
+  // короткой отметкой «ПС». Полные пути — в подсказках, правка — в окне у значков. «Estimat» — здесь только у ДС в списке
+  // раскрытого договора; у строки таблицы он рядом с номером (решение 03.11). У удалённых документов отметок нет.
+  const renderDocMarks = (doc, { estimat = true } = {}) => {
+    const docLabel = `${isAmendment(doc) ? 'ДС' : 'договора'}${doc.contract_number ? ` № ${doc.contract_number}` : ''}`
+    return (
+      <div className="cmarks">
+        <DocLinkMarks
+          doc={doc}
           canEdit={canEditContracts}
-          onSave={(v) => handleSaveFolderPath(doc.id, v)}
-          addLabel="папке"
-          addTitle="Указать путь к папке"
-          placeholder="\\su10-fs\Договоры\ЖК Алия\СУ-2-АЛ"
+          onSave={(field, value) => handleInlineField(doc.id, field, value)}
+          label={docLabel}
         />
-        {/* Ссылка на те же документы в общем хранилище, открывается кликом. */}
-        <SignalLinkCell
-          value={doc.signal_link}
+        {estimat && <EstimatToggle doc={doc} canEdit={canEditContracts} onChange={handleEstimatChange} />}
+        <ConceptAgreementCell
+          files={conceptDocsByContract[doc.id] || []}
+          contractId={doc.id}
           canEdit={canEditContracts}
-          onSave={(v) => handleSaveSignalLink(doc.id, v)}
-          addLabel="Signal"
-          addTitle="Указать путь к Signal"
-        />
-        {/* Ссылка на карточку документа в Larix; вносится так же, как путь к Signal. Подпись
-            короткая («Larix», как «не в Larix»): с «Larix.CPM» строка путей не помещалась в колонку. */}
-        <LarixLinkCell
-          value={doc[LARIX_LINK_FIELD]}
-          canEdit={canEditContracts}
-          onSave={(v) => handleSaveLarixLink(doc.id, v)}
-          addLabel="Larix"
-          addTitle={`Указать путь к ${LARIX_NAME}`}
+          onChanged={() => refreshConceptDocs(doc.id)}
         />
       </div>
-      <ConceptAgreementCell
-        files={conceptDocsByContract[doc.id] || []}
-        contractId={doc.id}
-        canEdit={canEditContracts}
-        onChanged={() => refreshConceptDocs(doc.id)}
-      />
-    </>
-  )
+    )
+  }
 
   // Приложения документа (task 419): строки ведут юристы — ответственный, согласования, примечание.
   const renderAppendices = (doc) => {
@@ -2466,7 +2456,9 @@ function ContractRegistry() {
   // и приложения. withStatus — у ДС: своей строки в таблице у них нет, статус меняется здесь.
   // 29.10.2026: область — во всю ширину, примечание — полем в одной строке с юристом и сроками
   // (занимает остаток строки), приложения — под ними во всю ширину.
-  const renderLawyerWork = (doc, { withStatus = false } = {}) => {
+  // inRow — поля, которые и так стоят столбцами в строке документа (11.11.2026: не повторяем; «Компактный вид»
+  // и узкое окно столбцы убирают — тогда поля здесь). У ДС в списке строки нет — у них все поля.
+  const renderLawyerWork = (doc, { withStatus = false, inRow = {} } = {}) => {
     const docDeleted = !!doc.deleted_at
     const ro = !canEditContracts || docDeleted
     const overdue = !docDeleted && isOverdue(doc)
@@ -2479,38 +2471,44 @@ function ContractRegistry() {
               {docDeleted ? <span className="status-badge status-deleted">Удалён</span> : renderStatusPicker(doc)}
             </div>
           )}
-          <div className="ce2-field ce2-field-lawyer">
-            <span className="ce2-label">Юрист</span>
-            <FilterDropdown
-              label=""
-              value={lawyerRepByContactId[doc.responsible_contact_id] || doc.responsible_contact_id || ''}
-              onChange={(v) => handleInlineField(doc.id, 'responsible_contact_id', v)}
-              options={contactDropdownOptions}
-              searchable
-              searchPlaceholder="Поиск сотрудника…"
-              allLabel="—"
-              formatTrigger={formatPersonShortName}
-              disabled={ro}
-            />
-          </div>
-          <div className="ce2-field">
-            <span className="ce2-label">Принят в работу</span>
-            <InlineDateCell
-              value={doc.accepted_date}
-              onChange={(v) => handleInlineField(doc.id, 'accepted_date', v)}
-              disabled={ro}
-            />
-          </div>
-          <div className={`ce2-field${overdue ? ' is-overdue' : ''}`}>
-            <span className="ce2-label">План. подписания</span>
-            <InlineDateCell
-              value={doc.signed_date}
-              onChange={(v) => handleInlineField(doc.id, 'signed_date', v)}
-              disabled={ro}
-              overdue={overdue}
-            />
-            {overdue && <span className="overdue-note">Просрочено</span>}
-          </div>
+          {!inRow.lawyer && (
+            <div className="ce2-field ce2-field-lawyer">
+              <span className="ce2-label">Юрист</span>
+              <FilterDropdown
+                label=""
+                value={lawyerRepByContactId[doc.responsible_contact_id] || doc.responsible_contact_id || ''}
+                onChange={(v) => handleInlineField(doc.id, 'responsible_contact_id', v)}
+                options={contactDropdownOptions}
+                searchable
+                searchPlaceholder="Поиск сотрудника…"
+                allLabel="—"
+                formatTrigger={formatPersonShortName}
+                disabled={ro}
+              />
+            </div>
+          )}
+          {!inRow.accepted && (
+            <div className="ce2-field">
+              <span className="ce2-label">Принят в работу</span>
+              <InlineDateCell
+                value={doc.accepted_date}
+                onChange={(v) => handleInlineField(doc.id, 'accepted_date', v)}
+                disabled={ro}
+              />
+            </div>
+          )}
+          {!inRow.planned && (
+            <div className={`ce2-field${overdue ? ' is-overdue' : ''}`}>
+              <span className="ce2-label">План. подписания</span>
+              <InlineDateCell
+                value={doc.signed_date}
+                onChange={(v) => handleInlineField(doc.id, 'signed_date', v)}
+                disabled={ro}
+                overdue={overdue}
+              />
+              {overdue && <span className="overdue-note">Просрочено</span>}
+            </div>
+          )}
           {!hideNotes && (
             <div className="ce2-field ce2-field-note">
               <span className="ce2-label">
@@ -2540,8 +2538,8 @@ function ContractRegistry() {
   }
 
   // ДС в выпадающем списке области ДС. Шапка — кнопка-переключатель одной строкой (номер, дата, тип, статус,
-  // предмет, сумма) и ссылка на карточку; раскрытое — пути документа, работа юриста по ДС и действия.
-  // q — строка поиска: ДС, которое нашёл поиск, подсвечено.
+  // предмет, сумма), за ней отметки ДС (пути значками, «Estimat», понятийное соглашение) и ссылка на карточку;
+  // раскрытое — работа юриста по ДС и действия. q — строка поиска: ДС, которое нашёл поиск, подсвечено.
   const renderDsItem = (ds, q) => {
     const open = openDsItems.has(ds.id)
     const dsDeleted = !!ds.deleted_at
@@ -2562,7 +2560,7 @@ function ContractRegistry() {
             aria-expanded={open}
             aria-controls={open ? bodyId : undefined}
             onClick={() => toggleDsItem(ds.id)}
-            title={open ? 'Свернуть' : 'Подробнее: работа юриста по ДС, пути, действия'}
+            title={open ? 'Свернуть' : 'Подробнее: работа юриста по ДС и действия'}
           >
             <span className="ce2-ds-chev" aria-hidden>▸</span>
             <span className="ce2-ds-num">
@@ -2586,27 +2584,15 @@ function ContractRegistry() {
             <span className="ce2-ds-amount">{amount || '—'}{hasAppliedPsdc(ds) ? ' (ПСДЦ)' : ''}</span>
           </button>
           {/* Не внутри кнопки строки: кнопка в кнопке недопустима. */}
-          {!dsDeleted && <EstimatToggle doc={ds} canEdit={canEditContracts} onChange={handleEstimatChange} />}
+          {!dsDeleted && renderDocMarks(ds)}
           <Link
             to={`/contracts/${ds.id}`}
             className="ce2-ds-open"
-            title="Открыть карточку ДС (колёсиком мыши — в новой вкладке)"
+            title={`Открыть карточку ДС${ds.display_id != null ? ` (ID ${ds.display_id})` : ''} — колёсиком мыши в новой вкладке`}
           >Открыть</Link>
         </div>
         {open && (
           <div className="ce2-ds-body" id={bodyId}>
-            <div className="ce2-ds-meta">
-              {ds.display_id != null && (
-                <span className="cds-id" title="Постоянный ID документа в портале">ID {ds.display_id}</span>
-              )}
-              {!dsDeleted && isInLarix(ds) && (
-                <span className="larix-badge is-in" title={`Внесён в ${LARIX_NAME}`}>Larix</span>
-              )}
-              {!dsDeleted && !isInLarix(ds) && (ds.status || 'new_request') !== 'new_request' && (
-                <span className="larix-badge is-out" title={`Не внесён в ${LARIX_NAME}: укажите путь к ${LARIX_NAME}`}>не в Larix</span>
-              )}
-            </div>
-            {!dsDeleted && <div className="ce2-ds-paths">{renderDocPaths(ds)}</div>}
             {renderLawyerWork(ds, { withStatus: true })}
             <div className="ce-actions ce2-ds-actions">
               {dsDeleted ? (
@@ -2635,6 +2621,9 @@ function ContractRegistry() {
                   </button>
                 </>
               ) : null}
+              {ds.display_id != null && (
+                <span className="cds-id ce2-ds-id" title="Постоянный ID документа в портале">ID {ds.display_id}</span>
+              )}
             </div>
           </div>
         )}
@@ -2644,30 +2633,23 @@ function ContractRegistry() {
 
   // Строка под раскрытым документом (29.10.2026, по просьбе пользователя: «рабочая область юриста слишком
   // маленькая»): сверху во всю ширину — работа юриста, под ней — полоса ДС (по строке на ДС), внизу
-  // одной строкой — реквизиты и стороны договора. Раньше работа юриста и ДС стояли рядом пополам, и
-  // таблица приложений юриста не помещалась.
+  // одной строкой — сведения, которых нет в строке таблицы. 11.11.2026 (реестр разгружен): здесь нет того, что уже есть
+  // в строке, — «Открыть карточку» (номер — ссылка), «Редактировать» и «+ Создать ДС» (действия строки), юриста и
+  // дат, если они стоят столбцами, ID, типа, тендера, подразделения и сторон договора (столбец «Контрагент»).
   const renderExpandedRow = (contract) => {
-    const docDeleted = !!contract.deleted_at
     const isDs = isAmendment(contract)
-    const parties = contractParties(contract)
     const shown = liveChildren(contract, docIndex).length > 0 ? currentTerms(contract, docIndex).view : contract
     const dsList = dsListOf(contract)
-    // Вкладка статуса показывает ДС только этого статуса — говорим, сколько их у договора всего.
+    // Выбран статус — ДС только этого статуса: говорим, сколько их у договора ещё.
     const totalDs = nestDs ? flattenTree(contract, docIndex).length : dsList.length
     const q = searchText.trim().toLowerCase()
-    const tender = docTender(contract, docIndex.byId)
     const details = [
-      contract.display_id != null && ['ID портала', contract.display_id],
-      ['Тип', DOC_TYPE_SHORT[contract.record_type] || 'Договор'],
-      ['Тендер', tender
-        ? <Link to={`/tenders/${tender.id}`} title={tender.description}>{tenderTitle(tender)}{tender.inherited ? ' (договора)' : ''}</Link>
-        : 'не привязан'],
-      divisionEnabled && ['Подразделение', VOR_DIVISION_LABEL[divisionOf(contract)] || 'не указано'],
       shown.gen_director_name && ['Ген.директор', shown.gen_director_name],
       shown.phone && ['Телефон', shown.phone],
       shown.email && ['Email', shown.email],
       shown.bsm && ['БСМ', shown.bsm],
     ].filter(Boolean)
+    const inRow = { lawyer: showLawyer, accepted: showAcceptedDate, planned: showPlannedDate }
     return (
       <tr className="contract-expanded-row" onClick={(e) => e.stopPropagation()}>
         <td colSpan={tableColCount}>
@@ -2677,22 +2659,8 @@ function ContractRegistry() {
             <section className="ce2-area ce2-area-lawyer" aria-label="Работа юриста">
               <div className="ce2-area-head">
                 <span className="ce2-area-title">Работа юриста</span>
-                <span className="ce2-area-sub">
-                  {isDs ? 'по этому ДС' : 'по договору'}: юрист, сроки, примечание и приложения
-                </span>
-                {/* Действия раскрытого блока — в шапке, справа: не теряются под длинной таблицей. */}
-                <div className="ce-actions ce2-area-actions">
-                  <button type="button" className="ce-open-card" onClick={() => navigate(`/contracts/${contract.id}`)}>
-                    {isDs ? 'Открыть карточку ДС' : 'Открыть карточку договора'}
-                  </button>
-                  {canEditContracts && !docDeleted && (
-                    <button type="button" className="ce-edit-link" onClick={() => handleEditContract(contract)}>
-                      {isDs ? 'Редактировать ДС' : 'Редактировать договор'}
-                    </button>
-                  )}
-                </div>
               </div>
-              {renderLawyerWork(contract)}
+              {renderLawyerWork(contract, { inRow })}
             </section>
 
             <section className="ce2-area ce2-area-ds" aria-label="Дополнительные соглашения">
@@ -2700,14 +2668,9 @@ function ContractRegistry() {
                 <span className="ce2-area-title">{isDs ? 'ДС к этому соглашению' : 'Дополнительные соглашения'}</span>
                 <span className="ce2-area-count">{dsList.length}</span>
                 {totalDs > dsList.length && (
-                  <span className="ce2-area-sub" title="Остальные ДС договора — в других статусах (во вкладке «Все» видны все)">
-                    на вкладке; всего у договора — {totalDs}
+                  <span className="ce2-area-sub" title="Остальные ДС договора — в других статусах: без выбранного статуса видны все">
+                    ещё {totalDs - dsList.length} в других статусах
                   </span>
-                )}
-                {canEditContracts && !docDeleted && (
-                  <button type="button" className="ce-add-appendix ce2-add-ds" onClick={() => handleAddAmendment(contract)}>
-                    + Создать ДС
-                  </button>
                 )}
               </div>
               {dsList.length === 0 ? (
@@ -2721,39 +2684,27 @@ function ContractRegistry() {
               )}
             </section>
 
-            {/* Реквизиты и стороны — только для просмотра, одной строкой под областями. */}
-            <section className="ce2-info" aria-label="Реквизиты">
-              <dl className="ce2-info-list">
-                {details.map(([label, value]) => (
-                  <div key={label} className="ce2-info-item">
-                    <dt>{label}</dt>
-                    <dd>{value}</dd>
-                  </div>
-                ))}
-              </dl>
-              {/* Стороны договора (может быть несколько — трёхсторонний договор) */}
-              {parties.length > 1 && (
-                <div className="ce2-info-row">
-                  <span className="ce2-info-label">Стороны договора</span>
-                  <ul className="ce-parties">
-                    {parties.map((p, i) => (
-                      <li key={p.id}>
-                        <span className="ce-party-name">{p.name}</span>
-                        {p.inn && <span className="ce-party-inn">ИНН: {p.inn}</span>}
-                        {i === 0 && <span className="ce-party-main">основной</span>}
-                        <CounterpartyDocBadges summary={cpDocSummary.get(p.id)} showDate />
-                      </li>
+            {/* Сведения договора, которых нет в строке, — только для просмотра, одной строкой под областями. */}
+            {(details.length > 0 || shown.comments) && (
+              <section className="ce2-info" aria-label="Сведения">
+                {details.length > 0 && (
+                  <dl className="ce2-info-list">
+                    {details.map(([label, value]) => (
+                      <div key={label} className="ce2-info-item">
+                        <dt>{label}</dt>
+                        <dd>{value}</dd>
+                      </div>
                     ))}
-                  </ul>
-                </div>
-              )}
-              {shown.comments && (
-                <div className="ce2-info-row">
-                  <span className="ce2-info-label">Комментарии</span>
-                  <span className="ce2-info-text">{shown.comments}</span>
-                </div>
-              )}
-            </section>
+                  </dl>
+                )}
+                {shown.comments && (
+                  <div className="ce2-info-row">
+                    <span className="ce2-info-label">Комментарии</span>
+                    <span className="ce2-info-text">{shown.comments}</span>
+                  </div>
+                )}
+              </section>
+            )}
           </div>
         </td>
       </tr>
@@ -2772,7 +2723,8 @@ function ContractRegistry() {
           <IconTile tone="sand" className="page-icon-tile"><IconContracts /></IconTile>
           Реестр по договорам
         </h2>
-        {/* Отдел: сначала выбираем, какой реестр смотрим, и только потом — стадию внутри него (вкладки ниже). */}
+        {/* Отдел: сначала выбираем, какой реестр смотрим, и только потом — вид документа и статус внутри него (ниже).
+            Чисел здесь нет: сколько документов — на вкладках вида документа. */}
         <div className="registry-scope" role="tablist" aria-label="Отдел">
           {DEPTS.map(d => (
             <button
@@ -2785,7 +2737,6 @@ function ContractRegistry() {
               onClick={() => changeDept(d.key)}
             >
               {d.label}
-              <span className="registry-scope-count">{deptCounts[d.key]}</span>
             </button>
           ))}
         </div>
@@ -2828,6 +2779,9 @@ function ContractRegistry() {
               <span>{hideTailColumns ? 'Все столбцы' : 'Компактный вид'}</span>
             </button>
           )}
+          {/* «+ Заявка на заключение ДП» (10.11.2026, решение пользователя: подавать — из реестра договоров) — у права
+              dp_requests_create; с 11.11.2026 — среди действий шапки (стояла между вкладками за «Все», вкладки «Все» нет). */}
+          <DpRequestCreateButton />
           {!isDeletedTab && canEditContracts && (
             <button type="button" className="btn-primary" onClick={handleAddNew}>
               + Добавить договор
@@ -2836,45 +2790,52 @@ function ContractRegistry() {
         </div>
       </div>
 
-      {/* Вкладки по статусу (task 183 + 190); «Удаленные» — справа, красным. Сразу за «Все» — «+ Заявка на заключение ДП»
-          (10.11.2026): у кого есть право подавать заявки (dp_requests_create). */}
-      <div className="status-tabs">
-        {TABS.map(tab => (
-          <Fragment key={tab.key}>
+      {/* Вкладки — вид документа с числами (11.11.2026, решение пользователя: «Все» и «Договоры и ДС» были одним и тем же,
+          вкладки «Все» нет), рядом — статус переключателями: ничего не выбрано — все статусы, кроме удалённых; повторное
+          нажатие на выбранный снимает его. «Удаленные» — справа, красным. */}
+      <div className="status-tabs cr-tabs">
+        <div className="cr-kind-tabs" role="tablist" aria-label="Документ">
+          {DOC_KINDS.map(k => (
             <button
+              key={k.key}
               type="button"
-              className={`status-tab ${activeTab === tab.key ? 'active' : ''} ${tab.key === 'deleted' ? 'tab-deleted' : ''}`}
-              title={tab.hint}
-              onClick={() => setActiveTab(tab.key)}
+              role="tab"
+              aria-selected={docKind === k.key}
+              title={k.hint}
+              data-kind={k.key}
+              className={`status-tab cr-kind-tab${docKind === k.key ? ' active' : ''}`}
+              onClick={() => changeDocKind(k.key)}
             >
-              {tab.label}
-              {tabCounts[tab.key] != null && (
-                <span className="tab-count">{tabCounts[tab.key]}</span>
-              )}
+              {k.label}
+              <span className="tab-count">{docKindCounts[k.key]}</span>
             </button>
-            {tab.key === 'all' && <DpRequestCreateButton />}
-          </Fragment>
-        ))}
+          ))}
+        </div>
+        <div className="cr-status-chips" role="group" aria-label="Статус">
+          {STATUS_CHIPS.map(tab => {
+            const on = activeTab === tab.key
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                aria-pressed={on}
+                data-tab={tab.key}
+                className={`cr-status-chip${on ? ' active' : ''}${tab.key === 'deleted' ? ' tab-deleted' : ''}`}
+                title={on ? 'Снять отбор: все статусы' : tab.hint}
+                onClick={() => setActiveTab(on ? 'all' : tab.key)}
+              >
+                {tab.label}
+                <span className="cr-status-count">{tabCounts[tab.key]}</span>
+                {on && <span className="cr-status-x" aria-hidden="true">×</span>}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Панель: что показывать и поиск с фильтрами — одной строкой, как у «Заявки на ДС»;
           при нехватке места переносится, элементы не сжимаются. */}
       <div className="cr-toolbar">
-        <div className="rf-doc-kind" role="radiogroup" aria-label="Документ">
-          {DOC_KINDS.map(k => (
-            <button
-              key={k.key}
-              type="button"
-              role="radio"
-              aria-checked={docKind === k.key}
-              title={k.hint}
-              className={`rf-doc-kind-btn${docKind === k.key ? ' is-active' : ''}`}
-              onClick={() => changeDocKind(k.key)}
-            >
-              {k.label}
-            </button>
-          ))}
-        </div>
         <div className="ui-search">
           <IconSearch />
           {/* Короткая подсказка помещается целиком; где ищет поле — в aria-label. */}
@@ -3213,6 +3174,8 @@ function ContractRegistry() {
                     onClick={(e) => e.stopPropagation()}
                     title={missingLabel ? `Не заполнено: ${missingLabel}` : undefined}
                   >
+                    {/* Номер (ссылка на карточку) и дата с ID; справа — «Estimat» (рядом с номером, решение 03.11), тип ДС и
+                        «ДС: N» (раскрывает строку). Ниже — отметки документа одной строкой: пути значками и «ПС». */}
                     <div className="cnum-head">
                       <Link
                         to={`/contracts/${contract.id}`}
@@ -3230,31 +3193,32 @@ function ContractRegistry() {
                           <span className="cds-id" title="Постоянный ID документа в портале">ID {contract.display_id}</span>
                         )}
                       </Link>
-                      {!docDeleted && <EstimatToggle doc={contract} canEdit={canEditContracts} onChange={handleEstimatChange} />}
+                      {(!docDeleted || isAmendment(contract) || dsCount > 0) && (
+                        <span className="cnum-side">
+                          {!docDeleted && <EstimatToggle doc={contract} canEdit={canEditContracts} onChange={handleEstimatChange} />}
+                          {isAmendment(contract) && (
+                            <span className={`ds-type-badge is-${contract.record_type}`} title={DOC_TYPE_LABEL[contract.record_type]}>
+                              {DOC_TYPE_SHORT[contract.record_type]}
+                            </span>
+                          )}
+                          {dsCount > 0 && (
+                            <button
+                              type="button"
+                              className={`ds-count-badge ds-toggle${isExpanded ? ' is-open' : ''}`}
+                              onClick={toggleExpand}
+                              aria-expanded={isExpanded}
+                              title={isExpanded
+                                ? 'Свернуть: работа юриста и дополнительные соглашения'
+                                : 'Показать дополнительные соглашения и работу юриста под строкой'}
+                            >
+                              <span className="ds-toggle-chev" aria-hidden>▸</span>
+                              ДС: {dsCount}
+                            </button>
+                          )}
+                        </span>
+                      )}
                     </div>
-                    {isAmendment(contract) && (
-                      <span className={`ds-type-badge is-${contract.record_type}`} title={DOC_TYPE_LABEL[contract.record_type]}>
-                        {DOC_TYPE_SHORT[contract.record_type]}
-                      </span>
-                    )}
-                    {/* «ДС: N» раскрывает строку: ДС — в правой области под договором. */}
-                    {dsCount > 0 && (
-                      <button
-                        type="button"
-                        className={`ds-count-badge ds-toggle${isExpanded ? ' is-open' : ''}`}
-                        onClick={toggleExpand}
-                        aria-expanded={isExpanded}
-                        title={isExpanded
-                          ? 'Свернуть: работа юриста и дополнительные соглашения'
-                          : 'Показать дополнительные соглашения и работу юриста под строкой'}
-                      >
-                        <span className="ds-toggle-chev" aria-hidden>▸</span>
-                        ДС: {dsCount}
-                      </button>
-                    )}
-                    {/* Три пути документа — перед понятийным соглашением: с них
-                        начинают поиск документов по договору. */}
-                    {!docDeleted && renderDocPaths(contract)}
+                    {!docDeleted && renderDocMarks(contract, { estimat: false })}
                   </td>
                   {isAmendmentsView && (
                     <td className="cell-parent" onClick={(e) => e.stopPropagation()}>
@@ -3270,8 +3234,8 @@ function ContractRegistry() {
                   <td className="cell-counterparty">
                     {parties.length === 0 ? '—' : (
                       <ul className="cp-list">
-                        {parties.map(p => (
-                          <li key={p.id}>
+                        {parties.map((p, i) => (
+                          <li key={p.id} title={[parties.length > 1 && i === 0 && 'Основная сторона', p.inn && `ИНН ${p.inn}`].filter(Boolean).join(' · ') || undefined}>
                             <span>{p.name}</span>
                             <CounterpartyDocBadges summary={cpDocSummary.get(p.id)} showDate />
                           </li>
@@ -3309,16 +3273,7 @@ function ContractRegistry() {
                     {docDeleted ? (
                       <span className="status-badge status-deleted">Удалён</span>
                     ) : renderStatusPicker(contract)}
-                    {/* Состояние выводится из пути к Larix.CPM под номером договора. */}
-                    {!docDeleted && isInLarix(contract) && (
-                      <span className="larix-badge is-in" title={`Внесён в ${LARIX_NAME}`}>Larix</span>
-                    )}
-                    {!docDeleted && !isInLarix(contract) && (contract.status || 'new_request') !== 'new_request' && (
-                      <span
-                        className="larix-badge is-out"
-                        title={`Не внесён в ${LARIX_NAME}: укажите путь к ${LARIX_NAME} под номером договора`}
-                      >не в Larix</span>
-                    )}
+                    {/* Larix здесь больше не отмечается (11.11.2026): он — значком «Larix …» под номером. */}
                     {tabView.context.has(contract.id) && (
                       <span className="ctx-ds-note" title="Договор в другом статусе: он на вкладке, потому что здесь его ДС">показан ради ДС</span>
                     )}

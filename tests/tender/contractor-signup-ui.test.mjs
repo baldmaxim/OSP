@@ -62,7 +62,7 @@ describe('Регистрация подрядчика на сайте: стра�
       assert.ok(!tabs.some((t) => t.startsWith('Договоры')), 'договоров нет')
 
       await page.getByRole('link', { name: 'Открыть тендер № 857' }).click()
-      assert.match(await page.locator('.cab-join').textContent(), /Откроются файлы ВОР и расценка на сайте/)
+      assert.match(await page.locator('.cab-join').textContent(), /Откроются файлы ВОР для расценки/)
       await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
       await page.locator('.bid-tab', { hasText: 'Материалы' }).locator('.bid-tab-count', { hasText: '2' }).waitFor({ timeout: 30000 })
       assert.equal(await page.locator('.cab-docs').count(), 0, 'списка файлов нет')
@@ -132,7 +132,9 @@ describe('Регистрация подрядчика на сайте: стра�
       assert.equal(await page.getByRole('link', { name: 'Открыть тендер № 704' }).count(), 0)
       await page.getByRole('link', { name: 'Открыть тендер № 857' }).click()
       await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
-      await page.locator('.cab-doc-name', { hasText: 'ВОР паркинга.xlsx' }).waitFor()
+      // Файл ВОР — в расценке (решение пользователя 11.11.2026: второго показа в «Документах тендера» нет).
+      await page.getByRole('button', { name: 'Скачать ВОР «ВОР паркинга.xlsx»' }).waitFor({ timeout: 60000 })
+      assert.equal(await page.locator('.cab-doc-name', { hasText: 'ВОР паркинга.xlsx' }).count(), 0)
       await page.locator('.bid-tab', { hasText: 'Работы' }).locator('.bid-tab-count', { hasText: '2' }).waitFor({ timeout: 60000 })
       assert.equal((await page.evaluate(() => window.__bidCalls.filter((c) => c.fn === 'bid_positions'))).length, 0, 'позиции — из файла')
       assert.deepEqual(errors, [])

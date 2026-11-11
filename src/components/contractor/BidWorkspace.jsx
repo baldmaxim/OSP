@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react'
 import {
-  loadTenderFiles, downloadFileBytes, loadServerPositions, loadMyRates, loadMyRateHistory, saveRates, loadFormFields, loadMyForm, VOR_CATEGORIES,
+  loadTenderFiles, downloadFileBytes, loadServerPositions, loadMyRates, loadMyRateHistory, saveRates, loadFormFields, loadMyForm, loadBidFiles,
+  VOR_CATEGORIES,
 } from '../../services/contractorBids'
 import { vatFromAnswers, vatField, vatIncluded, vatLabel } from '../../utils/bidForm'
 import { readBidFileBytes, mergeBidFiles, rateKey, BID_KIND_LABEL } from '../../utils/bidVor'
@@ -11,6 +12,7 @@ import { IconDownload } from '../icons/ActionIcons'
 import BidPositionsTable from './BidPositionsTable'
 import BidStructureView from './BidStructureView'
 import BidFormPanel from './BidFormPanel'
+import BidVorFiles from './BidVorFiles'
 import './BidWorkspace.css'
 
 const BidImportDialog = lazy(() => import('./BidImportDialog'))
@@ -28,8 +30,16 @@ const BidImportDialog = lazy(() => import('./BidImportDialog'))
 // файл принимает «Цены из файла»; собранная здесь книга — только маленькая кнопка «Шаблон Excel».
 //
 // previewCounterpartyId — просмотр от имени подрядчика: администратору правило показывает цены всех организаций, нужны только эти.
+//
+// Свой ВОР с расценками (миграция 20270113, решение пользователя 11.11.2026): расценка на сайте временно скрыта (SITE_PRICING) — рядом
+// с каждой ведомостью подрядчик загружает свой заполненный ВОР, суммы по ведомостям и итог — сводкой как в «Сравнении КП» (BidVorFiles).
+// Остаются особые условия и анкета. Таблицы файлов в базе нет (база раньше миграции) — прежняя расценка на сайте, как была.
+// Собранной сайтом книги («Шаблон Excel») больше нет: подрядчик заполняет сам файл ВОР отдела.
 
 const SAVE_DELAY_MS = 600
+// Расценка прямо на сайте (таблицы «Материалы» / «Работы», «Цены из файла», «Структура КП»). Временно скрыта — решение пользователя
+// 11.11.2026; вернуть — true: таблицы встанут под блоком своих ВОР. Без миграции 20270113 расценка на сайте показывается и так.
+const SITE_PRICING = false
 
 // Разобранные файлы — на время открытой страницы: переключение между тендерами не скачивает их заново.
 const parsedCache = new Map()
@@ -59,7 +69,9 @@ const PARSE_ERROR = {
   missing: 'файла нет в хранилище',
 }
 
-export default function BidWorkspace({ tender, canEdit, counterpartyName, tenderNumbers, onSummary, serverPositions = false, previewCounterpartyId = null }) {
+export default function BidWorkspace({
+  tender, canEdit, counterpartyName, counterpartyId = null, tenderNumbers, onSummary, serverPositions = false, previewCounterpartyId = null,
+}) {
   const tenderId = tender.id
   const [files, setFiles] = useState(null) // null — загрузка списка
   const [filesError, setFilesError] = useState('')
@@ -76,6 +88,24 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
   const [answers, setAnswers] = useState({})
   const [previousForm, setPreviousForm] = useState(null)
   const [formError, setFormError] = useState('')
+  // Свои ВОР с расценками: undefined — читаются, null — таблицы ещё нет (прежняя расценка на сайте), массив — строки.
+  const [myFiles, setMyFiles] = useState(undefined)
+  const [myFilesError, setMyFilesError] = useState('')
+  const ownCp = previewCounterpartyId || counterpartyId
+
+  const loadMyFiles = useCallback(async () => {
+    if (!ownCp) { setMyFiles(null); return }
+    try {
+      setMyFiles(await loadBidFiles(tenderId, ownCp))
+      setMyFilesError('')
+    } catch (e) {
+      setMyFilesError(e.message || String(e))
+      setMyFiles((prev) => (prev === undefined ? [] : prev))
+    }
+  }, [tenderId, ownCp])
+  useEffect(() => { setMyFiles(undefined); loadMyFiles() }, [loadMyFiles])
+  const fileMode = Array.isArray(myFiles)
+  const sitePricing = SITE_PRICING || myFiles === null
 
   // ── Файлы ВОР ──────────────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -162,9 +192,9 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
   }, [tenderId, previewCounterpartyId])
   useEffect(() => { loadRates() }, [loadRates])
 
-  // Свои цены из других тендеров — только тому, кто может ставить цены.
+  // Свои цены из других тендеров — только тому, кто может ставить цены на сайте.
   useEffect(() => {
-    if (!canEdit) return undefined
+    if (!canEdit || !sitePricing) return undefined
     let cancelled = false
     loadMyRateHistory(tenderId)
       .then((rows) => {
@@ -178,7 +208,7 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
       })
       .catch(() => { if (!cancelled) setHistory(new Map()) })
     return () => { cancelled = true }
-  }, [tenderId, canEdit])
+  }, [tenderId, canEdit, sitePricing])
 
   // ── Запись: очередь позиций, порция раз в SAVE_DELAY_MS ────────────────────────────────────────────
   const pending = useRef(new Map())
@@ -297,16 +327,11 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
     }
   }
 
-  const exportExcel = async () => {
-    const { downloadBidWorkbook } = await import('../../utils/bidExport')
-    downloadBidWorkbook({ tender, counterpartyName, positions, rates, files: okFiles, form: { fields: formFields || [], answers } })
-  }
-
   // Особые условия «Главного листа» всех файлов ВОР — без повторов.
   const conditions = useMemo(() => [...new Set(okFiles.flatMap((f) => f.parsed.conditions || []))], [okFiles])
 
   // ── Отрисовка ──────────────────────────────────────────────────────────────────────────────────────
-  if (files === null) return <div className="bid-state">{serverPositions ? 'Загрузка позиций ВОР…' : 'Загрузка файлов ВОР…'}</div>
+  if (files === null || myFiles === undefined) return <div className="bid-state">{serverPositions ? 'Загрузка позиций ВОР…' : 'Загрузка файлов ВОР…'}</div>
 
   const fileProblems = (files || []).filter((f) => parsed[f.id]?.status === 'error')
   const tabs = [
@@ -316,9 +341,38 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
     { key: 'kp', label: 'Структура КП' },
   ]
 
+  const formPanel = (
+    <BidFormPanel
+      tenderId={tenderId}
+      canEdit={canEdit}
+      fields={formFields}
+      answers={answers}
+      previous={previousForm}
+      error={formError}
+      onAnswers={setAnswers}
+      onPreviousUsed={() => setPreviousForm(null)}
+    />
+  )
+
   return (
     <div className="bid-ws">
-      {files.length > 0 && (
+      {fileMode ? (
+        (files.length > 0 || myFiles.length > 0) && (
+          <BidVorFiles
+            tenderId={tenderId}
+            vorFiles={files}
+            parsed={parsed}
+            myFiles={myFiles}
+            canEdit={canEdit}
+            preview={!!previewCounterpartyId}
+            ownVat={vat}
+            counterpartyName={counterpartyName}
+            onDownloadVor={downloadVor}
+            vorError={vorError}
+            onChanged={loadMyFiles}
+          />
+        )
+      ) : files.length > 0 && (
         <div className="bid-vor-files">
           <div className="bid-vor-head">
             <b>{files.length > 1 ? 'Файлы ВОР для расценки' : 'Файл ВОР для расценки'}</b>
@@ -338,55 +392,56 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
           {vorError && <div className="bid-note is-warn" role="alert">{vorError}</div>}
         </div>
       )}
+      {myFilesError && <div className="bid-note is-warn">Ваши файлы с расценками не загрузились: {myFilesError}</div>}
+      {fileMode && !canEdit && (
+        <div className="bid-save">
+          {previewCounterpartyId ? 'Просмотр от имени подрядчика: файлы не загружаются.' : 'Только просмотр: приём предложений закрыт или участие отклонено.'}
+        </div>
+      )}
 
-      <div className="bid-summary">
-        <div className="bid-summary-cells">
-          <SummaryCell label="Материалы" s={summary.material} />
-          <SummaryCell label="Работы" s={summary.work} />
-          <div className="bid-sum-cell bid-sum-total">
-            <span className="bid-sum-label">{vat?.exempt ? 'Итого, без НДС' : 'Итого с НДС'}</span>
-            <span className="bid-sum-value">{formatAmount(summary.material.total + summary.work.total)} ₽</span>
-          </div>
-          {formFields && vatField(formFields) && (
-            needVat ? (
-              <button type="button" className="bid-sum-cell bid-sum-warn" onClick={() => setTab('form')}>
-                <span className="bid-sum-label">Ставка НДС</span>
-                <span className="bid-sum-value">не указана — выбрать</span>
-              </button>
-            ) : (
-              <div className="bid-sum-cell">
-                <span className="bid-sum-label">НДС: {vatLabel(vat)}</span>
-                <span className="bid-sum-value">
-                  {vat.exempt ? '—' : `в т. ч. ${formatAmount(vatIncluded(summary.material.total + summary.work.total, vat))} ₽`}
-                </span>
+      {sitePricing && (
+        <>
+          <div className="bid-summary">
+            <div className="bid-summary-cells">
+              <SummaryCell label="Материалы" s={summary.material} />
+              <SummaryCell label="Работы" s={summary.work} />
+              <div className="bid-sum-cell bid-sum-total">
+                <span className="bid-sum-label">{vat?.exempt ? 'Итого, без НДС' : 'Итого с НДС'}</span>
+                <span className="bid-sum-value">{formatAmount(summary.material.total + summary.work.total)} ₽</span>
               </div>
-            )
-          )}
-        </div>
-        <div className="bid-summary-actions">
-          {editable && (
-            <button type="button" className="cab-btn" onClick={() => setImportOpen(true)} disabled={!allPositions.length}>
-              Цены из файла
-            </button>
-          )}
-          {editable && historyHits.length > 0 && (
-            <button type="button" className="cab-btn" onClick={applyHistory} title="Те же позиции, что вы уже расценивали в других тендерах">
-              Мои прошлые цены ({historyHits.length})
-            </button>
-          )}
-          <button
-            type="button"
-            className="cab-btn-small"
-            onClick={exportExcel}
-            disabled={!allPositions.length}
-            title="Материалы, работы и структура КП одной книгой, с уже введёнными ценами"
-          >
-            Шаблон Excel
-          </button>
-        </div>
-      </div>
+              {formFields && vatField(formFields) && (
+                needVat ? (
+                  <button type="button" className="bid-sum-cell bid-sum-warn" onClick={() => setTab('form')}>
+                    <span className="bid-sum-label">Ставка НДС</span>
+                    <span className="bid-sum-value">не указана — выбрать</span>
+                  </button>
+                ) : (
+                  <div className="bid-sum-cell">
+                    <span className="bid-sum-label">НДС: {vatLabel(vat)}</span>
+                    <span className="bid-sum-value">
+                      {vat.exempt ? '—' : `в т. ч. ${formatAmount(vatIncluded(summary.material.total + summary.work.total, vat))} ₽`}
+                    </span>
+                  </div>
+                )
+              )}
+            </div>
+            <div className="bid-summary-actions">
+              {editable && (
+                <button type="button" className="cab-btn" onClick={() => setImportOpen(true)} disabled={!allPositions.length}>
+                  Цены из файла
+                </button>
+              )}
+              {editable && historyHits.length > 0 && (
+                <button type="button" className="cab-btn" onClick={applyHistory} title="Те же позиции, что вы уже расценивали в других тендерах">
+                  Мои прошлые цены ({historyHits.length})
+                </button>
+              )}
+            </div>
+          </div>
 
-      <SaveLine save={save} canEdit={canEdit} preview={!!previewCounterpartyId} ratesState={ratesState} onRetry={() => flushRef.current()} onReload={loadRates} />
+          <SaveLine save={save} canEdit={canEdit} preview={!!previewCounterpartyId} ratesState={ratesState} onRetry={() => flushRef.current()} onReload={loadRates} />
+        </>
+      )}
 
       {filesError && <div className="bid-note is-warn">{serverPositions ? 'Позиции ВОР не загрузились' : 'Файлы тендера не загрузились'}: {filesError}</div>}
       {files.length === 0 && !filesError && (
@@ -402,7 +457,7 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
           {' '}Сообщите ответственному по тендеру.
         </div>
       )}
-      {orphanRates.length > 0 && (
+      {sitePricing && orphanRates.length > 0 && (
         <div className="bid-note is-warn">
           Цены без позиции в ВОР: {orphanRates.length} — позиции убрали или переименовали в новой версии ВОР.
           В расчёт они не входят.
@@ -416,55 +471,56 @@ export default function BidWorkspace({ tender, canEdit, counterpartyName, tender
         </div>
       )}
 
-      <nav className="bid-tabs" role="tablist">
-        {tabs.map((t) => (
-          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key}
-            className={`bid-tab${tab === t.key ? ' is-active' : ''}`} onClick={() => setTab(t.key)}>
-            {t.label}
-            {t.count != null && <span className="bid-tab-count">{t.count}</span>}
-            {t.warn && <span className="bid-tab-warn" title="Не указана ставка НДС">!</span>}
-          </button>
-        ))}
-      </nav>
+      {sitePricing ? (
+        <>
+          <nav className="bid-tabs" role="tablist">
+            {tabs.map((t) => (
+              <button key={t.key} type="button" role="tab" aria-selected={tab === t.key}
+                className={`bid-tab${tab === t.key ? ' is-active' : ''}`} onClick={() => setTab(t.key)}>
+                {t.label}
+                {t.count != null && <span className="bid-tab-count">{t.count}</span>}
+                {t.warn && <span className="bid-tab-warn" title="Не указана ставка НДС">!</span>}
+              </button>
+            ))}
+          </nav>
 
-      {tab === 'form' && (
-        <BidFormPanel
-          tenderId={tenderId}
-          canEdit={canEdit}
-          fields={formFields}
-          answers={answers}
-          previous={previousForm}
-          error={formError}
-          onAnswers={setAnswers}
-          onPreviousUsed={() => setPreviousForm(null)}
-        />
-      )}
-      {(tab === 'material' || tab === 'work') && (
-        <BidPositionsTable
-          key={tab}
-          kind={tab}
-          positions={tab === 'material' ? positions.materials : positions.works}
-          rates={rates}
-          history={history}
-          tenderNumbers={tenderNumbers}
-          canEdit={editable}
-          docs={okFiles.map((f) => f.name)}
-          vatExempt={!!vat?.exempt}
-          onCommit={commit}
-        />
-      )}
-      {tab === 'kp' && <BidStructureView files={okFiles} rates={rates} />}
+          {tab === 'form' && formPanel}
+          {(tab === 'material' || tab === 'work') && (
+            <BidPositionsTable
+              key={tab}
+              kind={tab}
+              positions={tab === 'material' ? positions.materials : positions.works}
+              rates={rates}
+              history={history}
+              tenderNumbers={tenderNumbers}
+              canEdit={editable}
+              docs={okFiles.map((f) => f.name)}
+              vatExempt={!!vat?.exempt}
+              onCommit={commit}
+            />
+          )}
+          {tab === 'kp' && <BidStructureView files={okFiles} rates={rates} />}
 
-      {importOpen && (
-        <Suspense fallback={null}>
-          <BidImportDialog
-            positions={allPositions}
-            rates={rates}
-            vat={vat}
-            onApply={(list) => { commitMany(list); setImportOpen(false) }}
-            onClose={() => setImportOpen(false)}
-          />
-        </Suspense>
+          {importOpen && (
+            <Suspense fallback={null}>
+              <BidImportDialog
+                positions={allPositions}
+                rates={rates}
+                vat={vat}
+                onApply={(list) => { commitMany(list); setImportOpen(false) }}
+                onClose={() => setImportOpen(false)}
+              />
+            </Suspense>
+          )}
+        </>
+      ) : (
+        <section className="bid-form-section" aria-label="Анкета участника">
+          <h4>
+            Анкета участника
+            {needVat && canEdit && <span className="bid-tab-warn" title="Не указана ставка НДС">!</span>}
+          </h4>
+          {formPanel}
+        </section>
       )}
     </div>
   )

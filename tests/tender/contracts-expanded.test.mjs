@@ -3,6 +3,9 @@
 //     «Дополнительные соглашения» — выпадающий список ДС; ДС больше не раскрываются полными строками таблицы;
 //     позже в тот же день («рабочая область юриста слишком маленькая») — области одна под другой во всю
 //     ширину: работа юриста сверху (примечание — в строке с юристом и сроками), ДС ниже — по строке на ДС;
+//   • 11.11.2026 (реестр разгружен): в раскрытом документе нет того, что уже есть в строке, — «Открыть карточку», «Редактировать»,
+//     «+ Создать ДС», юриста и дат (пока они столбцами), ID, типа, тендера, подразделения и сторон договора; у ДС отметки
+//     (пути значками, «Estimat», «ПС») — в шапке строки ДС;
 //   • подразделение договора, как у тендеров (contracts.division, миграция 20261112): плашка под «Работами»,
 //     фильтр в заголовке колонки; у ДС — подразделение договора, только показ. Колонки ещё нет — ни плашки, ни
 //     фильтра, и форма не шлёт division (иначе PostgREST отказал бы во всей записи).
@@ -74,11 +77,13 @@ describe('Договоры и ДС: раскрытый договор и под�
         }
       })
       assert.deepEqual(areas, { lawyerFull: true, dsBelow: true, dsFull: true, dsOneLine: true })
-      // Примечание юриста — в строке с юристом и сроками, «Открыть карточку» — в шапке области.
-      assert.deepEqual(await expanded.locator('.ce2-area-lawyer > .ce2-fields .ce2-label').allInnerTexts(),
-        ['ЮРИСТ', 'ПРИНЯТ В РАБОТУ', 'ПЛАН. ПОДПИСАНИЯ', 'ПРИМЕЧАНИЕ ЮРИСТА'])
-      assert.equal(await expanded.locator('.ce2-area-lawyer .ce2-area-head .ce-open-card').innerText(), 'Открыть карточку договора')
-      assert.match(await expanded.locator('.ce2-info').innerText(), /ID портала\s*2/)
+      // Повторов строки нет: юрист и даты — столбцами в строке, карточка — номером, правка и «+ ДС» — действиями строки.
+      assert.deepEqual(await expanded.locator('.ce2-area-lawyer > .ce2-fields .ce2-label').allInnerTexts(), ['ПРИМЕЧАНИЕ ЮРИСТА'])
+      assert.equal(await expanded.locator('.ce2-area-lawyer .ce2-area-head button').count(), 0)
+      assert.equal(await expanded.getByRole('button', { name: /Создать ДС|Редактировать договор|Открыть карточку/ }).count(), 0)
+      assert.equal(await expanded.locator('.ce2-info').count(), 0, 'сведений сверх строки у договора нет — блока нет')
+      // ДС — отметки в шапке строки ДС.
+      assert.equal(await expanded.locator('.ce2-ds-head > .cmarks .dlm-group').count(), 3)
       // Три ДС по ID: изменение ВОР, доп. работы и ДС к ДС (с пометкой, к какому).
       const items = expanded.locator('.ce2-ds')
       assert.equal(await items.count(), 3)
@@ -86,19 +91,27 @@ describe('Договоры и ДС: раскрытый договор и под�
       assert.match(await items.nth(2).locator('.ds-parent-note').innerText(), /к ДС № 3\/26/)
       assert.match(await items.nth(1).innerText(), /просрочено/)
 
-      // Стрелка ДС — его работа юриста (со статусом), пути и действия; щелчок по строке договора тут ни при чём.
+      // Стрелка ДС — его работа юриста (со статусом) и действия; щелчок по строке договора тут ни при чём.
       await items.nth(1).locator('.ce2-ds-toggle').click()
       const body = items.nth(1).locator('.ce2-ds-body')
       await body.waitFor()
       assert.equal(await items.nth(1).locator('.ce2-ds-toggle').getAttribute('aria-expanded'), 'true')
       assert.deepEqual(await body.locator('.ce2-label').allInnerTexts(), ['СТАТУС', 'ЮРИСТ', 'ПРИНЯТ В РАБОТУ', 'ПЛАН. ПОДПИСАНИЯ', 'ПРИМЕЧАНИЕ ЮРИСТА'])
       assert.match(await body.locator('.ce-block-title').last().innerText(), /Приложения к ДС/)
+      assert.equal(await body.locator('.ce2-ds-id').innerText(), 'ID 901')
       const note = body.locator('textarea.ce-note')
       await note.fill('Ждём подпись подрядчика')
       await note.blur()
       await page.waitForFunction(() => window.__fakeDb.contracts.find((c) => c.id === 'ctr-x1')?.notes === 'Ждём подпись подрядчика')
       assert.equal((await contract(page, 'ctr-2')).notes ?? null, null, 'примечание ДС не попало в договор')
       assert.equal(await page.locator('.contracts-table tbody tr.contract-expanded-row').count(), 1, 'договор остался раскрыт')
+
+      // «Компактный вид» убирает юриста и даты из строки — они появляются в работе юриста.
+      await page.locator('.cr-header-actions .btn-view-toggle', { hasText: 'Компактный вид' }).click()
+      await page.locator('.contracts-table.is-slim').waitFor()
+      assert.deepEqual(await expanded.locator('.ce2-area-lawyer > .ce2-fields .ce2-label').allInnerTexts(),
+        ['ЮРИСТ', 'ПРИНЯТ В РАБОТУ', 'ПЛАН. ПОДПИСАНИЯ', 'ПРИМЕЧАНИЕ ЮРИСТА'])
+      await page.locator('.cr-header-actions .btn-view-toggle.active').click()
 
       // Раскрытых договоров может быть несколько.
       await row(page, 'ctr-5').locator('.cell-counterparty').click()
@@ -134,7 +147,7 @@ describe('Договоры и ДС: раскрытый договор и под�
       assert.ok(await page.locator('.contracts-table thead th.th-filtered').count() === 1, 'заголовок помечен')
 
       // Вид «ДС»: ДС договора ctr-2 показывают его подразделение без выбора.
-      await page.locator('.rf-doc-kind-btn', { hasText: /^ДС$/ }).click()
+      await page.locator('.cr-kind-tab[data-kind="amendments"]').click()
       const ds = row(page, 'ctr-3')
       await ds.waitFor()
       assert.match(await ds.locator('.cdiv').innerText(), /Отделка/)

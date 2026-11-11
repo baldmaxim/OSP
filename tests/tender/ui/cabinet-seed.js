@@ -5,6 +5,10 @@
 //   «Расценки подрядчиков (актуальные тендеры)»; ?selfReg=1 — подрядчик, зарегистрировавшийся на сайте (позиции с сервера, файлов нет);
 //   ?preview=1 — администратор смотрит кабинет от имени подрядчика: функции кабинета ему отказывают, данные — из таблиц;
 //   ?legacyItems=1 — у тендера № 905 есть смета во вкладке «ВОР» (прежний путь: шаблон и загрузка КП).
+//   ?bidFiles=1 — миграция 20270113 применена: свой ВОР с расценками рядом с каждой ведомостью (расценка на сайте скрыта); у тендера
+//   № 857 две ведомости (корпуса), в базе лежит и файл чужой организации — кабинет его не показывает. Маршрут /api/fn/bid-file
+//   (и /api/admin/bid-file) подделан здесь: ключ — в каталоге организации, файл — в «хранилище» стенда. Без параметра таблицы файлов
+//   нет (PGRST205) — кабинет показывает прежнюю расценку на сайте.
 import * as XLSX from 'xlsx'
 import { readBidFileBytes } from '../../../src/utils/bidVor'
 
@@ -12,6 +16,7 @@ const params = new URLSearchParams(window.location.search)
 const PAGE = params.get('page') || 'cabinet'
 const SELF_REGISTERED = params.get('selfReg') === '1'
 const PREVIEW = params.get('preview') === '1'
+const BID_FILES = params.get('bidFiles') === '1'
 const CP = { id: 'cp-alpha', name: 'ООО Альфа', ...(SELF_REGISTERED ? { selfRegistered: true } : {}) }
 
 window.__fakeRole = PAGE === 'admin'
@@ -63,7 +68,7 @@ function vorBook() {
   return `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${b64}`
 }
 
-window.__fakeFiles = { 'tenders/t-open/vor.xlsx': vorBook(), 'tenders/t-inv/vor.xlsx': vorBook() }
+window.__fakeFiles = { 'tenders/t-open/vor.xlsx': vorBook(), 'tenders/t-inv/vor.xlsx': vorBook(), 'tenders/t-open/vor2.xlsx': vorBook() }
 
 const db = window.__fakeDb = {
   s3_documents: [
@@ -83,6 +88,31 @@ const db = window.__fakeDb = {
     { id: 'f-vat', label: 'Ставка НДС', hint: 'выберите из списка', kind: 'select', options: ['22 %', '7 %', '5 %', '0 %'], code: 'vat', sort_order: 20, is_active: true, created_at: '2026-10-23T00:00:00Z' },
     { id: 'f-old', label: 'Скрытое поле', hint: null, kind: 'text', options: null, code: null, sort_order: 30, is_active: false, created_at: '2026-10-23T00:00:00Z' },
   ],
+}
+
+if (BID_FILES) {
+  db.s3_documents.push(
+    { id: 'doc-vor2', owner_type: 'tender', owner_id: 't-open', doc_category: 'vor_statement', file_name: 'ВОР корпус 2.xlsx', s3_key: 'tenders/t-open/vor2.xlsx', mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size_bytes: 9000, created_at: '2026-10-21T10:00:00Z' },
+    { id: 'doc-pack', owner_type: 'tender', owner_id: 't-open', doc_category: 'tender_package', file_name: 'Тендерный пакет.zip', s3_key: 'tenders/t-open/pack.zip', mime_type: 'application/zip', size_bytes: 120000, created_at: '2026-10-20T09:00:00Z' },
+    { id: 'doc-rd1', owner_type: 'tender', owner_id: 't-open', doc_category: 'rd', file_name: 'РД КЖ лист 1.pdf', s3_key: 'tenders/t-open/rd1.pdf', mime_type: 'application/pdf', size_bytes: 300000, created_at: '2026-10-20T09:00:00Z' },
+    { id: 'doc-rd2', owner_type: 'tender', owner_id: 't-open', doc_category: 'vor', file_name: 'РД КЖ лист 2.pdf', s3_key: 'tenders/t-open/rd2.pdf', mime_type: 'application/pdf', size_bytes: 300000, created_at: '2026-10-20T09:00:00Z' },
+  )
+  // Файл чужой организации к той же ведомости: правило базы его не отдаёт, кабинет отбирает по своей организации.
+  db.tender_bid_files = [{ id: 'bf-foreign', tender_id: 't-open', counterparty_id: 'cp-beta', vor_file_id: 'doc-vor', vor_name: 'ВОР паркинга',
+    s3_key: 'bids/t-open/cp-beta/x-beta.xlsx', file_name: 'Бета расценка.xlsx', size_bytes: 5000, uploaded_by_name: 'Бета',
+    summary: { v: 1, materials: 777, works: 0, total: 777, items: { material: 2, work: 2 }, priced: { material: 2, work: 0 } },
+    created_at: '2026-10-25T10:00:00Z', updated_at: '2026-10-25T10:00:00Z' }]
+  // Просмотр от имени подрядчика и сводка администратора: у «ООО Альфа» уже лежит свой ВОР к ведомости паркинга.
+  if (PREVIEW || PAGE === 'admin') {
+    const key = 'bids/t-open/cp-alpha/0-alpha.xlsx'
+    window.__fakeFiles[key] = vorBook()
+    db.tender_bid_files.push({ id: 'bf-alpha', tender_id: 't-open', counterparty_id: CP.id, vor_file_id: 'doc-vor', vor_name: 'ВОР паркинга',
+      s3_key: key, file_name: 'Альфа — ВОР паркинга.xlsx', size_bytes: 9000, uploaded_by_name: 'Альфин А. А.',
+      summary: { v: 1, materials: 1294150, works: 326250, total: 1620400, items: { material: 2, work: 2 }, priced: { material: 2, work: 1 } },
+      created_at: '2026-10-26T10:00:00Z', updated_at: '2026-10-26T10:00:00Z' })
+  }
+} else {
+  window.__fakeErrors = { ...(window.__fakeErrors || {}), tender_bid_files: { code: 'PGRST205', message: "Could not find the table 'public.tender_bid_files' in the schema cache" } }
 }
 
 const TENDERS = [
@@ -252,4 +282,56 @@ if (PAGE === 'admin') {
       tenders: { public_tender_number: 857, work_description: 'Бетонные полы паркинга', status: 'Идет тендерная процедура' }, counterparties: { name: CP.name } },
   )
   db.tender_bid_forms.push({ id: 'form-1', tender_id: 't-open', counterparty_id: CP.id, answers: { 'f-name': { label: 'Наименование контрагента', value: 'ООО Альфа' } } })
+}
+
+// ── Маршрут своего ВОР с расценками (/api/fn/bid-file, /api/admin/bid-file) — как служба с функциями базы bid_file_* ──────────
+if (BID_FILES) {
+  const realFetch = window.fetch.bind(window)
+  const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+  const FAKE_S3 = 'https://fake-s3.invalid/'
+  const accessOf = (tenderId) => {
+    const t = TENDERS.find((x) => x.id === tenderId)
+    if (!t?.is_open) return null
+    return t.invite && t.invite !== 'declined' ? 'invited' : db.tender_bid_requests.find((r) => r.tender_id === tenderId)?.status || null
+  }
+  window.__bidFileCalls = []
+  window.fetch = async (url, init = {}) => {
+    const href = String(url?.url || url)
+    const admin = href.endsWith('/api/admin/bid-file')
+    if (!href.endsWith('/api/fn/bid-file') && !admin) return realFetch(url, init)
+    const body = JSON.parse(init.body || '{}')
+    window.__bidFileCalls.push({ admin, ...body })
+    await new Promise((r) => setTimeout(r, 80))
+    const action = admin ? 'download' : body.action
+    if (PREVIEW && !admin) return json(403, { error: 'Файл с расценкой — только для подрядчика' })
+    if (action === 'download') {
+      const row = db.tender_bid_files.find((f) => f.id === body.file_id && (admin || f.counterparty_id === CP.id))
+      if (!row) return json(404, { error: 'Файл не найден' })
+      return json(200, { presigned_url: FAKE_S3 + row.s3_key, expires_in: 3600, file_name: row.file_name })
+    }
+    if (action === 'delete') {
+      const i = db.tender_bid_files.findIndex((f) => f.id === body.file_id && f.counterparty_id === CP.id)
+      if (i < 0) return json(200, { ok: true, already: true })
+      const [row] = db.tender_bid_files.splice(i, 1)
+      delete window.__fakeFiles[row.s3_key]
+      window.__fakeTouch?.('tender_bid_files')
+      return json(200, { ok: true })
+    }
+    const access = accessOf(body.tender_id)
+    if (!access || access === 'rejected') return json(403, { error: 'Приём предложений по этому тендеру закрыт или заявка не подана' })
+    const vorDoc = db.s3_documents.find((d) => d.id === body.vor_file_id && d.owner_id === body.tender_id && /\.xlsx?$/i.test(d.file_name))
+    if (!vorDoc) return json(404, { error: 'Такой ведомости в тендере нет' })
+    const key = `bids/${body.tender_id}/${CP.id}/${body.operation_id}-${body.file_name}`
+    if (action === 'upload') return json(200, { presigned_url: FAKE_S3 + key, expires_in: 900 })
+    if (!window.__fakeFiles[key]) return json(409, { error: 'Файла ещё нет в хранилище — загрузка не завершилась', code: 'OSP_NOT_UPLOADED' })
+    const now = new Date().toISOString()
+    const vorName = vorDoc.file_name.replace(/\.(xlsx|xlsm|xls)$/i, '')
+    const i = db.tender_bid_files.findIndex((f) => f.tender_id === body.tender_id && f.counterparty_id === CP.id && f.vor_file_id === body.vor_file_id)
+    const row = { id: i >= 0 ? db.tender_bid_files[i].id : crypto.randomUUID(), tender_id: body.tender_id, counterparty_id: CP.id, vor_file_id: body.vor_file_id,
+      vor_name: vorName, s3_key: key, file_name: body.file_name, size_bytes: body.size_bytes, summary: body.summary || {},
+      uploaded_by_name: 'Альфин А. А.', created_at: i >= 0 ? db.tender_bid_files[i].created_at : now, updated_at: now }
+    if (i >= 0) { delete window.__fakeFiles[db.tender_bid_files[i].s3_key]; db.tender_bid_files[i] = row } else db.tender_bid_files.push(row)
+    window.__fakeTouch?.('tender_bid_files')
+    return json(200, { ok: true, vor_name: vorName })
+  }
 }

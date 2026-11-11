@@ -8,7 +8,7 @@ import { chunkList } from '../utils/inChunks'
 
 const FUNCTION_NAME = 's3-presign'
 
-async function unwrapFunction({ data, error }) {
+export async function unwrapFunction({ data, error }) {
   if (error) {
     // supabase-js оборачивает non-2xx ответ в FunctionsHttpError, у которого message —
     // общий («non-2xx status code»). Достаём реальную причину из тела ответа функции

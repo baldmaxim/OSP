@@ -6,9 +6,10 @@
 // подрядчика участником (bid_decide). Цены и анкету читает администратор (bid_admin_overview) и сама организация.
 //
 // Пока миграции нет, функции и таблицы отвечают «не найдено» — сервис возвращает null, страницы работают как раньше.
-import { db } from '../api'
+import { db, requestBidFile, requestBidFileAdmin } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
-import { fetchFileBytes } from './s3'
+import { uuidv7 } from '../utils/uuid'
+import { fetchFileBytes, unwrapFunction } from './s3'
 
 export const BIDS_MIGRATION_HINT = 'Расценка на сайте появится после обновления базы (миграция 20261102_contractor_bids).'
 
@@ -181,6 +182,72 @@ export async function loadTenderFiles(tenderId) {
 
 // Байты файла ВОР — по подписанной ссылке (её выдаёт сервер, только если строка файла видна).
 export const downloadFileBytes = (s3Key) => fetchFileBytes(s3Key)
+
+// ── Свой ВОР с расценками (миграция 20270113, решение пользователя 11.11.2026) ─────────────────────────
+// Расценка на сайте временно скрыта: подрядчик скачивает пустой ВОР, заполняет цены у себя и загружает файл к той же ведомости.
+// Строку пишет служба (/api/fn/bid-file) функциями базы; читают организация (свои) и администратор. Ключа файла браузер не видит.
+const BID_FILE_COLUMNS = 'id, tender_id, counterparty_id, vor_file_id, vor_name, file_name, size_bytes, summary, uploaded_by_name, created_at, updated_at'
+export const BID_FILE_MAX_MB = 25
+
+// Свои файлы по тендеру. null — таблицы ещё нет (база раньше миграции): кабинет показывает прежнюю расценку на сайте.
+// counterpartyId — всегда своя организация: администратору (просмотр от имени подрядчика) правило показывает файлы всех.
+export async function loadBidFiles(tenderId, counterpartyId) {
+  const { data, error } = await db
+    .from('tender_bid_files')
+    .select(BID_FILE_COLUMNS)
+    .eq('tender_id', tenderId)
+    .eq('counterparty_id', counterpartyId)
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
+  if (error) {
+    if (isMissingBids(error)) return null
+    throw error
+  }
+  return data || []
+}
+
+// Все файлы подрядчиков — администратору (сводка). null — таблицы ещё нет.
+export async function loadAllBidFiles() {
+  try {
+    return await fetchAllRows((from, to) => db
+      .from('tender_bid_files')
+      .select(BID_FILE_COLUMNS)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to))
+  } catch (e) {
+    if (isMissingBids(e)) return null
+    throw e
+  }
+}
+
+const bidFileCall = async (body) => unwrapFunction(await requestBidFile(body))
+
+// Загрузка: ссылка на PUT → файл в хранилище → подтверждение со сводкой. Повтор того же выбора не плодит строк: ключ операции один.
+export async function uploadBidFile({ tenderId, vorFileId, file, summary }) {
+  const fields = {
+    tender_id: tenderId,
+    vor_file_id: vorFileId,
+    operation_id: uuidv7(),
+    file_name: file.name,
+    mime_type: file.type || 'application/octet-stream',
+    size_bytes: file.size,
+  }
+  const up = await bidFileCall({ action: 'upload', ...fields })
+  let res
+  try {
+    res = await fetch(up.presigned_url, { method: 'PUT', headers: { 'Content-Type': fields.mime_type }, body: file })
+  } catch (e) {
+    throw new Error(`Хранилище недоступно: ${e?.message || e}`)
+  }
+  if (!res.ok) throw new Error(`Хранилище не приняло файл (${res.status})`)
+  return bidFileCall({ action: 'confirm', ...fields, summary })
+}
+
+export const removeBidFile = (fileId) => bidFileCall({ action: 'delete', file_id: fileId })
+// { presigned_url, file_name } — ссылка на скачивание своего файла; администратору — свой маршрут.
+export const bidFileUrl = (fileId) => bidFileCall({ action: 'download', file_id: fileId })
+export const bidFileUrlAdmin = async (fileId) => unwrapFunction(await requestBidFileAdmin(fileId))
 
 const RATE_COLUMNS = 'id, tender_id, counterparty_id, kind, item_key, unit_key, name, unit, volume, price, total, note, source, updated_at'
 

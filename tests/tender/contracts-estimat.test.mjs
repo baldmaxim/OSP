@@ -115,12 +115,12 @@ describe('Договоры и ДС: плашка Estimat', { skip: !launch && '�
       const ds = page.locator('.ce2-ds', { hasText: '№ 3/26' })
       await ds.waitFor()
       assert.equal(await page.locator(`.ce2-ds-toggle ${CHIP}`).count(), 0, 'кнопка в кнопке недопустима')
-      const chip = ds.locator(`.ce2-ds-head > ${CHIP}`)
+      const chip = ds.locator(`.ce2-ds-head > .cmarks > ${CHIP}`)
       const expanded = await ds.locator('.ce2-ds-toggle').getAttribute('aria-expanded')
 
       await chip.click()
       await waitStatus(page, 'ctr-3', 'uploaded')
-      await page.waitForFunction(() => document.querySelector('.ce2-ds-head > .estimat-chip.is-pub'))
+      await page.waitForFunction(() => document.querySelector('.ce2-ds-head .estimat-chip.is-pub'))
       assert.equal((await dbDoc(page, 'ctr-2')).status, 'none', 'договор не задет')
       assert.match(await rowOf(page, 2).locator(CHIP).getAttribute('class'), /\bis-unpub\b/)
       assert.equal(await ds.locator('.ce2-ds-toggle').getAttribute('aria-expanded'), expanded)
@@ -174,7 +174,7 @@ describe('Договоры и ДС: плашка Estimat', { skip: !launch && '�
   it('удалённые документы — без плашки', async () => {
     const { page, errors, close } = await open(ESTIMAT)
     try {
-      await page.locator('.status-tab', { hasText: 'Удаленные' }).click()
+      await page.locator('.cr-status-chip[data-tab="deleted"]').click()
       const row = rowOf(page, 7)
       await row.waitFor()
       assert.equal(await row.locator(CHIP).count(), 0)

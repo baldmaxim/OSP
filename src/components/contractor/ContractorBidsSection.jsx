@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom'
 import { useRole } from '../../contexts/RoleContext'
 import {
   loadBidOverview, loadBidRates, loadBidForm, loadFormFields, createFormField, updateFormField, deleteFormField,
-  loadCurrentBidRates, BIDS_MIGRATION_HINT, BID_TENDER_DONE,
+  loadCurrentBidRates, loadAllBidFiles, bidFileUrlAdmin, BIDS_MIGRATION_HINT, BID_TENDER_DONE,
 } from '../../services/contractorBids'
+import { summaryCounted, SUMMARY_ERROR_TEXT } from '../../utils/bidFiles'
+import { downloadSignedFile } from '../FileDownload'
 import { formatAmount } from '../../utils/money'
 import { useDebounced } from '../../utils/ratesRegistry'
 import { FIELD_KINDS, VAT_FIELD_CODE, VAT_OPTIONS, parseOptions } from '../../utils/bidForm'
@@ -14,7 +16,8 @@ import './ContractorBidsSection.css'
 // подрядчики вводят в кабинете, по тендерам, которые ещё не завершены. Пока только администратору (решение
 // пользователя). После завершения тендера расценки по позициям уходят во вкладку «Расценки от подрядчиков (КП)»
 // (миграция 20261103, при пересчёте реестра), здесь тендер больше не показывается.
-//   • «Тендеры и подрядчики» — кто в каком тендере что расценил, суммы, НДС, анкета; подробности и выгрузка;
+//   • «Тендеры и подрядчики» — кто в каком тендере что расценил, суммы, НДС, анкета; подробности и выгрузка; свои ВОР с расценками,
+//     которые подрядчик загрузил к ведомостям (миграция 20270113): число, сумма по файлам, в подробностях — список и скачивание;
 //   • «Позиции» — все цены актуальных тендеров списком (поиск, вид);
 //   • «Поля анкеты» — «Квалификационная и контактная информация», которую подрядчик заполняет в кабинете.
 
@@ -34,6 +37,20 @@ const PARTICIPATION = {
 }
 const REQUEST = { pending: 'Заявка: ждёт решения', accepted: 'Заявка принята', rejected: 'Заявка отклонена' }
 const SOURCE = { manual: 'вручную', import: 'из файла', history: 'из прошлого тендера' }
+
+const pairKey = (tenderId, counterpartyId) => `${tenderId}|${counterpartyId}`
+// Файлы подрядчиков по паре «тендер — организация»: { files, total } (итог — по файлам с посчитанной сводкой).
+function filesByPair(files) {
+  const map = new Map()
+  for (const f of files || []) {
+    const k = pairKey(f.tender_id, f.counterparty_id)
+    const cur = map.get(k) || { files: [], total: 0 }
+    cur.files.push(f)
+    if (summaryCounted(f.summary)) cur.total += Number(f.summary.total || 0)
+    map.set(k, cur)
+  }
+  return map
+}
 
 function participationText(r) {
   if (r.invite_status) return PARTICIPATION[r.invite_status] || 'Участник'
@@ -75,12 +92,15 @@ function BidsOverview() {
   const [query, setQuery] = useState('')
   const [scope, setScope] = useState('all') // all | open | priced | pending
   const [open, setOpen] = useState(null)
+  const [files, setFiles] = useState(() => new Map())
 
   const load = useCallback(async () => {
     setError('')
     try {
-      const data = await loadBidOverview()
+      // Файлы ВОР — без миграции 20270113 их нет (null), сводка работает как раньше.
+      const [data, fileRows] = await Promise.all([loadBidOverview(), loadAllBidFiles().catch(() => null)])
       if (data === null) { setMissing(true); setRows([]); return }
+      setFiles(filesByPair(fileRows))
       setRows(data)
     } catch (e) {
       setError(e.message || String(e))
@@ -95,20 +115,21 @@ function BidsOverview() {
       // Завершённый тендер — уже в «Расценках от подрядчиков (КП)».
       if (r.tender_status === BID_TENDER_DONE) return false
       if (scope === 'open' && !r.is_open) return false
-      if (scope === 'priced' && !(r.materials_priced + r.works_priced)) return false
+      if (scope === 'priced' && !(r.materials_priced + r.works_priced) && !files.has(pairKey(r.tender_id, r.counterparty_id))) return false
       if (scope === 'pending' && r.request_status !== 'pending') return false
       if (!q) return true
       return [r.public_tender_number, r.object_name, r.work_description, r.counterparty_name, r.counterparty_inn]
         .some((v) => String(v ?? '').toLowerCase().includes(q))
     })
-  }, [rows, query, scope])
+  }, [rows, query, scope, files])
 
   const totals = useMemo(() => ({
     tenders: new Set(list.map((r) => r.tender_id)).size,
     orgs: new Set(list.map((r) => r.counterparty_id)).size,
     sum: list.reduce((s, r) => s + Number(r.total || 0), 0),
+    filesSum: list.reduce((s, r) => s + (files.get(pairKey(r.tender_id, r.counterparty_id))?.total || 0), 0),
     pending: list.filter((r) => r.request_status === 'pending').length,
-  }), [list])
+  }), [list, files])
 
   if (rows === null) return <div className="cbp-state">Загрузка…</div>
   if (missing) return <div className="cbp-state">{BIDS_MIGRATION_HINT}</div>
@@ -118,7 +139,8 @@ function BidsOverview() {
       <div className="cbp-stats">
         <div><b>{totals.tenders}</b><span>тендеров</span></div>
         <div><b>{totals.orgs}</b><span>организаций</span></div>
-        <div><b>{formatAmount(totals.sum)} ₽</b><span>сумма расценок</span></div>
+        <div><b>{formatAmount(totals.sum)} ₽</b><span>сумма расценок на сайте</span></div>
+        {files.size > 0 && <div><b>{formatAmount(totals.filesSum)} ₽</b><span>по загруженным ВОР</span></div>}
         <div><b>{totals.pending}</b><span>заявок ждут решения</span></div>
       </div>
       <div className="cbp-filters">
@@ -145,6 +167,7 @@ function BidsOverview() {
                 <th className="num">Материалы</th>
                 <th className="num">Работы</th>
                 <th className="num">Итого, ₽</th>
+                <th className="num">ВОР с расценками</th>
                 <th>НДС</th>
                 <th className="num">Анкета</th>
                 <th>Изменено</th>
@@ -167,6 +190,12 @@ function BidsOverview() {
                   <td className="num">{r.materials_priced}<span className="cbp-sub">{money(r.materials_total)}</span></td>
                   <td className="num">{r.works_priced}<span className="cbp-sub">{money(r.works_total)}</span></td>
                   <td className="num cbp-strong">{money(r.total)}</td>
+                  <td className="num">
+                    {(() => {
+                      const f = files.get(pairKey(r.tender_id, r.counterparty_id))
+                      return f ? <>{f.files.length}<span className="cbp-sub">{money(f.total)}</span></> : '—'
+                    })()}
+                  </td>
                   <td className={r.vat ? 'cbp-date' : 'cbp-wait'}>{r.vat || 'не указан'}</td>
                   <td className="num">{r.form_answers || '—'}</td>
                   <td className="cbp-date">{fmtDateTime(r.updated_at)}</td>
@@ -176,15 +205,15 @@ function BidsOverview() {
           </table>
         </div>
       )}
-      {open && <BidDetail row={open} onClose={() => setOpen(null)} />}
+      {open && <BidDetail row={open} files={files.get(pairKey(open.tender_id, open.counterparty_id))?.files || []} onClose={() => setOpen(null)} />}
     </>
   )
 }
 
-function BidDetail({ row, onClose }) {
+function BidDetail({ row, files = [], onClose }) {
   const [rates, setRates] = useState(null)
   const [form, setForm] = useState(null)
-  const [kind, setKind] = useState('material')
+  const [kind, setKind] = useState(files.length ? 'files' : 'material')
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -201,7 +230,9 @@ function BidDetail({ row, onClose }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const shown = (rates || []).filter((r) => (kind === 'form' ? false : r.kind === kind))
+  const shown = (rates || []).filter((r) => r.kind === kind)
+  const download = (f) => downloadSignedFile(`bidfile:${f.id}`, f.file_name, () => bidFileUrlAdmin(f.id))
+    .catch((e) => setError(`«${f.file_name}» не скачался: ${e.message || e}`))
   const answers = Object.values(form?.answers || {})
   const exportExcel = async () => {
     const { downloadRatesWorkbook } = await import('../../utils/bidExport')
@@ -228,7 +259,8 @@ function BidDetail({ row, onClose }) {
           </div>
         </header>
         <nav className="cbp-tabs cbp-tabs-sm">
-          {[['material', `Материалы (${(rates || []).filter((r) => r.kind === 'material').length})`],
+          {[...(files.length ? [['files', `ВОР с расценками (${files.length})`]] : []),
+            ['material', `Материалы (${(rates || []).filter((r) => r.kind === 'material').length})`],
             ['work', `Работы (${(rates || []).filter((r) => r.kind === 'work').length})`],
             ['form', `Анкета (${answers.length})`]].map(([k, label]) => (
             <button key={k} type="button" className={kind === k ? 'is-active' : ''} onClick={() => setKind(k)}>{label}</button>
@@ -236,7 +268,35 @@ function BidDetail({ row, onClose }) {
         </nav>
         <div className="cbp-drawer-body">
           {error && <div className="cbp-error">{error}</div>}
-          {rates === null ? (
+          {kind === 'files' ? (
+            <table className="cbp-table cbp-table-detail">
+              <thead>
+                <tr>
+                  <th>ВОР отдела</th><th>Файл подрядчика</th><th className="num">Материалы, ₽</th><th className="num">Работы, ₽</th>
+                  <th className="num">Итого, ₽</th><th>Загружен</th>
+                </tr>
+              </thead>
+              <tbody>
+                {files.map((f) => {
+                  const s = f.summary
+                  const ok = summaryCounted(s)
+                  return (
+                    <tr key={f.id}>
+                      <td>{f.vor_name}</td>
+                      <td>
+                        <button type="button" className="cbp-link" onClick={() => download(f)}>{f.file_name}</button>
+                        {!ok && <span className="cbp-sub cbp-wait">{SUMMARY_ERROR_TEXT[s?.error] || 'сумма не посчитана'}</span>}
+                      </td>
+                      <td className="num">{ok ? money(s.materials) : '—'}</td>
+                      <td className="num">{ok ? money(s.works) : '—'}</td>
+                      <td className="num cbp-strong">{ok ? money(s.total) : '—'}</td>
+                      <td className="cbp-date">{fmtDateTime(f.updated_at || f.created_at)}<span className="cbp-sub">{f.uploaded_by_name || ''}</span></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          ) : rates === null ? (
             <div className="cbp-state">Загрузка…</div>
           ) : kind === 'form' ? (
             answers.length === 0 ? <div className="cbp-state">Анкета не заполнена.</div> : (

@@ -310,3 +310,87 @@ button.bid-sum-cell { font: inherit; color: inherit; text-align: left; cursor: p
   .bid-modal-overlay { padding: 0; align-items: stretch; }
   .bid-modal { max-height: 100dvh; border-radius: 0; }
 }
+
+/* ── Свой ВОР с расценками (20270113): ВОР отдела → ваш ВОР, сводка по ведомостям (BidVorFiles) ─────────────────────── */
+.bid-files { display: flex; flex-direction: column; gap: 0.75rem; }
+.bid-pairs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.bid-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+.bid-pair-side { display: flex; flex-direction: column; align-items: flex-start; gap: 0.3rem; min-width: 0; padding: 0.65rem 0.85rem; }
+.bid-pair-vor { background: color-mix(in srgb, var(--primary-color) 5%, var(--bg-primary)); border-right: 1px solid var(--border-color); }
+.bid-pair-mine.has-file { background: color-mix(in srgb, #16a34a 5%, var(--bg-primary)); }
+.bid-pair-label { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-tertiary); }
+.bid-pair .bid-vor-name { flex: none; }
+.bid-file-name { font-size: 0.875rem; font-weight: 600; overflow-wrap: anywhere; }
+.bid-file-meta { font-size: 0.75rem; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.bid-file-sum { font-size: 0.9375rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bid-file-sum.is-warn { font-size: 0.8125rem; font-weight: 500; color: #b45309; }
+[data-theme='dark'] .bid-file-sum.is-warn { color: #fcd34d; }
+.bid-file-stale { font-size: 0.8125rem; color: #b45309; }
+[data-theme='dark'] .bid-file-stale { color: #fcd34d; }
+.bid-file-actions { display: flex; flex-wrap: wrap; gap: 0.375rem; margin-top: 0.15rem; }
+.bid-file-actions label.cab-btn-small { display: inline-flex; align-items: center; cursor: pointer; }
+.bid-file-actions .is-busy { opacity: 0.7; cursor: default; }
+.bid-file-remove:hover:not(:disabled) { border-color: #ef4444 !important; color: #ef4444 !important; }
+.bid-upload-btn { margin-top: 0.15rem; }
+.bid-pair .bid-note { align-self: stretch; }
+.bid-note.is-ok { background: color-mix(in srgb, #16a34a 12%, transparent); color: #15803d; }
+[data-theme='dark'] .bid-note.is-ok { color: #6ee7b7; }
+.bid-orphans { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.55rem 0.75rem; border: 1px dashed var(--border-color); border-radius: 8px; }
+.bid-orphans ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.bid-orphans li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+
+/* Сводка по ведомостям — как сводная «ВОР × подрядчик» «Сравнения КП» карточки тендера (TenderProposalsCompare.css, psmt-*). */
+.bid-matrix-block { display: flex; flex-direction: column; gap: 0.375rem; }
+.bid-matrix-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); }
+.bid-matrix { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.bid-matrix thead th {
+  padding: 0.5rem 0.625rem;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  vertical-align: bottom;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.bid-matrix .bm-th-doc { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); min-width: 12rem; }
+.bid-matrix .bm-th-cp { text-align: center; border-left: 2px solid var(--border-color); border-right: 2px solid var(--border-color); }
+.bid-matrix .bm-th-cp-name { display: block; font-size: 0.8125rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bid-matrix .bm-th-cp-sub { display: block; margin-top: 0.125rem; font-size: 0.6875rem; font-weight: 500; color: var(--text-tertiary); }
+.bid-matrix .bm-th-sub { text-align: right; font-size: 0.6875rem; font-weight: 500; color: var(--text-tertiary); white-space: nowrap; padding: 0.25rem 0.625rem 0.4375rem; }
+.bid-matrix .bm-th-sub:first-child { border-left: 2px solid var(--border-color); }
+.bid-matrix .bm-th-total { border-right: 2px solid var(--border-color); }
+.bid-matrix tbody td { padding: 0.4375rem 0.625rem; border-bottom: 1px solid var(--border-color); vertical-align: middle; font-variant-numeric: tabular-nums; }
+.bid-matrix tbody tr:last-child td { border-bottom: 0; }
+.bid-matrix .bm-td-doc { font-weight: 500; color: var(--text-primary); overflow-wrap: anywhere; }
+.bid-matrix .bm-td-num { text-align: right; white-space: nowrap; color: var(--text-secondary); }
+.bid-matrix .bm-td-mat { border-left: 2px solid var(--border-color); }
+.bid-matrix .bm-td-total { font-weight: 700; color: var(--text-primary); border-right: 2px solid var(--border-color); }
+.bid-matrix tfoot td { padding: 0.5625rem 0.625rem; background: var(--bg-tertiary); border-top: 2px solid var(--border-color); font-variant-numeric: tabular-nums; }
+.bid-matrix .bm-tf-label { font-weight: 700; color: var(--text-primary); letter-spacing: 0.02em; }
+.bid-matrix .bm-tf-num { text-align: right; white-space: nowrap; font-weight: 600; color: var(--text-primary); }
+.bid-matrix .bm-tf-total { font-weight: 800; font-size: 0.9375rem; border-right: 2px solid var(--border-color); }
+/* Цены не у всех позиций — итог неполный (жёлтым, как в «Сравнении КП»). */
+.bid-matrix .is-incomplete { background: rgba(234, 179, 8, 0.14); color: #a16207; }
+[data-theme='dark'] .bid-matrix .is-incomplete { background: rgba(234, 179, 8, 0.22); color: #fde047; }
+
+.bid-form-section { display: flex; flex-direction: column; gap: 0.5rem; }
+.bid-form-section > h4 { display: flex; align-items: center; gap: 0.4rem; margin: 0; font-size: 0.9375rem; }
+
+@media (max-width: 640px) {
+  .bid-pair { grid-template-columns: 1fr; }
+  .bid-pair-vor { border-right: 0; border-bottom: 1px solid var(--border-color); }
+  .bid-pair-side { align-items: stretch; }
+  .bid-upload-btn { width: 100%; justify-content: center; }
+  /* Сводка на телефоне — уже: имя ведомости переносится, суммы мельче; не влезло — прокрутка внутри таблицы. */
+  .bid-matrix { font-size: 0.75rem; }
+  .bid-matrix .bm-th-doc { min-width: 5.5rem; }
+  .bid-matrix thead th, .bid-matrix tbody td, .bid-matrix tfoot td { padding-left: 0.4rem; padding-right: 0.4rem; }
+  .bid-matrix .bm-tf-total { font-size: 0.8125rem; }
+}

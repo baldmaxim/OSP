@@ -18,6 +18,26 @@ export const larixLink = (doc) => String(doc?.[LARIX_LINK_FIELD] ?? '').trim()
 
 export const isInLarix = (doc) => larixLink(doc) !== ''
 
+// Короткая подпись пути в реестре (11.11.2026, решение пользователя: «либо нет, либо код с конца ссылки, полную ссылку
+// не надо»): номер карточки из …/contract/<номер>, иначе последний кусок адреса или пути. Пусто — путь не указан.
+export function larixCode(value) {
+  const v = String(value ?? '').trim()
+  if (!v) return ''
+  const card = v.match(/\/contract\/(\d+)/i)
+  if (card) return card[1]
+  if (/^https?:\/\//i.test(v)) {
+    try {
+      const u = new URL(v)
+      const parts = u.pathname.split('/').filter(Boolean)
+      if (parts.length) return decodeURIComponent(parts[parts.length - 1])
+      const num = (u.search.match(/\d+/g) || []).pop()
+      return num || u.hostname
+    } catch { /* не адрес — как путь */ }
+  }
+  const parts = v.split(/[\\/]/).filter(Boolean)
+  return parts.length ? parts[parts.length - 1] : v
+}
+
 // Карточка договора в Larix по его номеру (contract_id из «ВОР по договорам»). Тот же вид ссылки, что
 // вписывают в «Путь к Larix.CPM»; по ней загрузка Larix находит наш договор (larix_sync_finish).
 export const LARIX_WEB_URL = 'https://cpm.su10.larix.ru'

@@ -804,6 +804,11 @@
       "authenticated": [
         "select"
       ]
+    },
+    "tender_bid_files": {
+      "authenticated": [
+        "select"
+      ]
     }
   },
   "rpc": {

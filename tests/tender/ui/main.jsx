@@ -7,7 +7,7 @@
 //             задачи с чек-листом; taskChecklist=N — ещё N пунктов, taskList=N — ещё N задач), /stand/dgp (блок ДГП вкладки «Смета» объекта), /reports&dcStats=1 (заявки на ДС),
 //             /contracts/registry&contracts=N (реестр договоров, понятийные соглашения; contractsDivision=1 — колонка
 //             подразделения, миграция 20261112, и три ДС у договора ctr-2; contractsEstimat=1 — колонки отметки Estimat,
-//             миграция 20261211), /tenders/other&tendersDept=other
+//             миграция 20261211; contractsPaths=1 — пути документа у 1/26, 2/26, 4/26), /tenders/other&tendersDept=other
 //             («Тендеры — Прочее»: плотный реестр, тендеры без объекта),
 //             /dc-requests&dcStats=1 (реестр заявок на ДС с файлами; dcNumbers=1 — номера заявок из базы, миграция 20261106;
 //             dcSubmission=1 — столбцы «Статус ОКС» и «Комментарий», миграция 20261108; с dcSubResp=1 —

@@ -1,5 +1,6 @@
-// «Реестр по договорам» (/contracts/registry): разделение на ОС и ГО, пять вкладок статуса, «Наши договоры» и «Без тендера» — фильтры в
-// панели, тендер у договора и ДС (03.11). Правила — tests/contracts/registry-tabs.test.mjs.
+// «Реестр по договорам» (/contracts/registry): разделение на ОС и ГО, вид документа — вкладками с числами, статус — переключателями
+// (11.11.2026: вкладки «Все» нет), «Наши договоры» и «Без тендера» — фильтры в панели, тендер у договора и ДС (03.11).
+// Правила — tests/contracts/registry-tabs.test.mjs.
 // Стенд: 24 документа, 16 договоров и 8 ДС; каждый четвёртый — по объекту ГО; у ctr-2 — тендер, ДС ctr-3 берёт его же.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -35,27 +36,26 @@ describe('Договоры и ДС: ОС и ГО, тендер', { skip: !launch
   const counts = (page, sel) => page.locator(sel).evaluateAll((els) => Object.fromEntries(els.map((b) => [
     b.firstChild.textContent.trim(), Number(b.querySelector('[class$="-count"]')?.textContent),
   ])))
-  const dept = (page, label) => page.locator('.registry-scope-btn', { hasText: new RegExp(`^${label}`) })
+  const kindCount = async (page, kind) => Number(await page.locator(`.cr-kind-tab[data-kind="${kind}"] .tab-count`).innerText())
+  const chip = (page, tab) => page.locator(`.cr-status-chip[data-tab="${tab}"]`)
+  const dept = (page, label) => page.locator('.registry-scope-btn', { hasText: new RegExp(`^${label}$`) })
   const rowCount = (page) => page.locator('.contracts-table tbody tr.contract-row').count()
   // Строка договора по номеру: «2/26» не должно находить «12/26».
   const rowOf = (page, number) => page.locator('.contracts-table tbody tr.contract-row', { hasText: new RegExp(`(?<![0-9])${number}/26`) }).first()
 
-  it('шапка: «Все договоры» · ОС · ГО с числами; строки, вкладки и объекты — выбранного отдела; выбор запоминается', async () => {
+  it('шапка: «ОС и ГО» · ОС · ГО без чисел; строки, вкладки и объекты — выбранного отдела; выбор запоминается', async () => {
     const { page, errors, close } = await open()
     try {
-      const all = await counts(page, '.registry-scope-btn')
-      assert.deepEqual(Object.keys(all), ['Все договоры', 'ОС', 'ГО'])
-      assert.equal(all['ОС'] + all['ГО'], all['Все договоры'])
-      assert.equal(all['Все договоры'], 24)
-      assert.equal(all['ГО'], 6)
+      assert.deepEqual(await page.locator('.registry-scope-btn').allInnerTexts(), ['ОС и ГО', 'ОС', 'ГО'])
+      assert.equal(await page.locator('.registry-scope-btn [class$="-count"]').count(), 0, 'чисел на отделе нет — они на вкладках вида')
+      assert.equal(await kindCount(page, 'all'), 24)
 
       await dept(page, 'ГО').click()
       assert.equal(await dept(page, 'ГО').getAttribute('aria-selected'), 'true')
       assert.equal(await rowCount(page) > 0, true)
       const shownObjects = await page.locator('.contracts-table tbody tr.contract-row td.cell-object').allInnerTexts()
       assert.ok(shownObjects.length > 0 && shownObjects.every((t) => /Гарантийный/.test(t)), shownObjects.join(' | '))
-      const tabs = await counts(page, '.status-tab')
-      assert.equal(tabs['Все'], 6, 'вкладки считают выбранный отдел')
+      assert.equal(await kindCount(page, 'all'), 6, 'вкладки считают выбранный отдел')
 
       // Объекты в фильтре — только этого отдела.
       await page.locator('.cr-toolbar .fdrop-trigger').first().click()
@@ -71,28 +71,38 @@ describe('Договоры и ДС: ОС и ГО, тендер', { skip: !launch
     } finally { await close() }
   })
 
-  it('вкладок пять, названия «Общий реестр» нет; документ «В работе», заявка и ожидание подписания — на одной; вид — «Договоры и ДС», «Договоры», «ДС»', async () => {
+  it('вид — вкладки «Договоры и ДС», «Договоры», «ДС», вкладки «Все» нет; статусов четыре; заявка и ожидание подписания — в «В работе»', async () => {
     const { page, errors, close } = await open()
     try {
       assert.deepEqual(
-        await page.locator('.status-tab').evaluateAll((els) => els.map((b) => b.firstChild.textContent.trim())),
-        ['Все', 'В работе', 'Приостановка', 'Завершено', 'Удаленные'],
+        await page.locator('.cr-kind-tab').evaluateAll((els) => els.map((b) => b.firstChild.textContent.trim())),
+        ['Договоры и ДС', 'Договоры', 'ДС'],
       )
-      assert.deepEqual(await page.locator('.rf-doc-kind-btn').allInnerTexts(), ['Договоры и ДС', 'Договоры', 'ДС'])
+      assert.deepEqual(
+        await page.locator('.cr-status-chip').evaluateAll((els) => els.map((b) => b.firstChild.textContent.trim())),
+        ['В работе', 'Приостановка', 'Завершено', 'Удаленные'],
+      )
+      assert.equal(await page.locator('.status-tabs button', { hasText: /^Все/ }).count(), 0, 'кнопки «Все» нет: это «Договоры и ДС»')
       assert.equal(await page.getByText('Общий реестр').count(), 0)
       assert.match(await page.locator('.registry-pagination.is-top .rp-info').innerText(), /договоров · ДС к ним: 8/, 'сколько договоров и ДС — видно над таблицей')
 
-      const tabs = await counts(page, '.status-tab')
+      const tabs = await counts(page, '.cr-status-chip')
       assert.equal(tabs['Приостановка'], 1)
       assert.equal(tabs['Завершено'], 2)
       assert.equal(tabs['В работе'], 21, 'новая заявка и ожидание подписания — в «В работе»')
-      await page.locator('.status-tab', { hasText: 'В работе' }).click()
+      await chip(page, 'in_work').click()
+      assert.equal(await chip(page, 'in_work').getAttribute('aria-pressed'), 'true')
+      assert.equal(await kindCount(page, 'all'), 21, 'число вида — при выбранном статусе')
       const statuses = (await page.locator('.contracts-table tbody tr.contract-row .cell-status').allInnerTexts()).join(' ')
       assert.match(statuses, /Новая заявка/)
       assert.match(statuses, /Ожидание подписания/, 'точный статус виден в строке')
       const clipped = await page.locator('.contracts-table tbody tr.contract-row td.cell-status .status-badge')
         .evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent))
       assert.deepEqual(clipped, [], 'статус не обрезан')
+      // Повторное нажатие снимает статус — снова все.
+      await chip(page, 'in_work').click()
+      assert.equal(await chip(page, 'in_work').getAttribute('aria-pressed'), 'false')
+      assert.equal(await kindCount(page, 'all'), 24)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
@@ -122,10 +132,10 @@ describe('Договоры и ДС: ОС и ГО, тендер', { skip: !launch
       assert.match(await link.getAttribute('href'), /\/tenders\/.+/)
       assert.equal(await page.locator('a.ctender').count(), 1, 'в виде «Договоры и ДС» строка — договор')
 
-      await page.locator('.rf-doc-kind-btn', { hasText: /^ДС$/ }).click()
+      await page.locator('.cr-kind-tab[data-kind="amendments"]').click()
       const inherited = rowOf(page, 3).locator('a.ctender')
       assert.match(await inherited.getAttribute('title'), /^Тендер договора: /, 'ДС берёт тендер договора')
-      await page.locator('.rf-doc-kind-btn', { hasText: 'Договоры и ДС' }).click()
+      await page.locator('.cr-kind-tab[data-kind="all"]').click()
 
       const filter = page.locator('.cr-toolbar .qfilter', { hasText: 'Без тендера' })
       assert.match(await filter.innerText(), /15$/, 'из 16 договоров один с тендером')
@@ -134,9 +144,10 @@ describe('Договоры и ДС: ОС и ГО, тендер', { skip: !launch
       assert.equal(await page.locator('.registry-pagination.is-top .rp-info').innerText().then((t) => /из 15 договоров/.test(t)), true)
       await page.locator('.cr-toolbar .cr-filter-clear').click()
 
+      // Раскрытый документ тендер не повторяет: он — ссылкой в строке.
       await rowOf(page, 2).locator('td.cell-work .work-text').click()
-      await page.locator('.ce2-info').first().waitFor()
-      assert.match(await page.locator('.ce2-info').first().innerText(), /Тендер\s*Тендер № \d+/)
+      await page.locator('.contracts-table tr.contract-expanded-row').first().waitFor()
+      assert.equal(await page.locator('.contracts-table tr.contract-expanded-row a[href^="/tenders/"]').count(), 0)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
@@ -144,8 +155,7 @@ describe('Договоры и ДС: ОС и ГО, тендер', { skip: !launch
   it('форма: тендер — поиском среди основных тендеров объекта; у ДС пусто значит «как у договора»', async () => {
     const { page, errors, close } = await open()
     try {
-      await rowOf(page, 2).locator('td.cell-work .work-text').click()
-      await page.getByRole('button', { name: '+ Создать ДС' }).first().click()
+      await rowOf(page, 2).getByRole('button', { name: 'Создать ДС' }).click()
       const form = page.locator('.modal').last()
       await form.waitFor()
       const trigger = form.locator('.form-group', { hasText: 'Тендер (необязательно)' }).locator('.fdrop-trigger')

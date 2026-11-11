@@ -1,4 +1,5 @@
-// «Реестр по договорам» (/contracts/registry): счётчики вкладок и охвата при выборе «Документ».
+// «Реестр по договорам» (/contracts/registry): числа на вкладках вида документа и на статусах.
+//   • вид документа — вкладки с числами (11.11.2026: вкладки «Все» нет — это «Договоры и ДС»), статусы — переключатели;
 //   • «Договоры и ДС» — договоры и ДС вместе (раньше — одни договоры); «Договоры» (вид вернули 05.11) — только договоры;
 //   • на вкладке статуса видны и ДС этого статуса: договор в другом статусе — строкой «показан ради ДС»,
 //     раскрыт сразу (ДС — в правой области под строкой). Правила — utils/contractRegistryTabs
@@ -37,27 +38,30 @@ describe('Договоры и ДС: счётчики вида «Документ
       await rows.first().waitFor({ timeout: 120000 })
 
       const counts = async () => page.evaluate(() => {
-        const read = (sel) => Object.fromEntries([...document.querySelectorAll(sel)].map((b) => [
-          b.firstChild.textContent.trim(), Number(b.querySelector('[class$="-count"]')?.textContent),
+        const read = (sel, attr) => Object.fromEntries([...document.querySelectorAll(sel)].map((b) => [
+          b.getAttribute(attr), Number(b.querySelector('[class*="-count"]')?.textContent),
         ]))
-        return { tabs: read('.status-tab'), scopes: read('.registry-scope-btn') }
+        return { kinds: read('.cr-kind-tab', 'data-kind'), tabs: read('.cr-status-chip', 'data-tab') }
       })
-      const pick = async (label) => {
-        await page.locator('.rf-doc-kind-btn', { hasText: new RegExp(`^${label}$`) }).click()
+      const pick = async (kind) => {
+        await page.locator(`.cr-kind-tab[data-kind="${kind}"]`).click()
         return counts()
       }
 
-      const both = await pick('Договоры и ДС')
-      const onlyContracts = await pick('Договоры')
-      const amendments = await pick('ДС')
-      assert.deepEqual([onlyContracts.tabs['Все'], amendments.tabs['Все'], both.tabs['Все']], [20, 10, 30])
-      assert.deepEqual([onlyContracts.tabs['В работе'], amendments.tabs['В работе'], both.tabs['В работе']], [15, 10, 25])
-      assert.equal(both.tabs['Завершено'], 5)
-      assert.equal(both.scopes['Все договоры'], 30)
-      assert.equal(onlyContracts.scopes['Все договоры'], 20)
+      // Числа вида документа — без выбранного статуса; на статусах — внутри выбранного вида.
+      const both = await pick('all')
+      assert.deepEqual(both.kinds, { all: 30, contracts: 20, amendments: 10 })
+      const onlyContracts = await pick('contracts')
+      const amendments = await pick('amendments')
+      assert.deepEqual([onlyContracts.tabs.in_work, amendments.tabs.in_work, both.tabs.in_work], [15, 10, 25])
+      assert.equal(both.tabs.completed, 5)
+      // Статус выбран — числа вида документа считают его.
+      await page.locator('.cr-status-chip[data-tab="in_work"]').click()
+      assert.deepEqual((await counts()).kinds, { all: 25, contracts: 15, amendments: 10 })
+      await page.locator('.cr-status-chip[data-tab="in_work"]').click()
 
-      await pick('Договоры и ДС')
-      await page.locator('.status-tab', { hasText: 'В работе' }).click()
+      await pick('all')
+      await page.locator('.cr-status-chip[data-tab="in_work"]').click()
       // 15 договоров «В работе» + 5 завершённых ради их ДС; последние раскрыты сразу — их ДС в правой
       // области «Дополнительные соглашения» (строками таблицы ДС больше не показываются).
       await page.locator('.ctx-ds-note').first().waitFor()
@@ -82,14 +86,16 @@ describe('Договоры и ДС: счётчики вида «Документ
       await page.goto(`${stand.url}?${BASE}`)
       const rows = page.locator('.contracts-table tbody tr.contract-row')
       await rows.first().waitFor({ timeout: 120000 })
-      const kind = (label) => page.locator('.rf-doc-kind-btn', { hasText: new RegExp(`^${label}$`) })
-      const tab = (label) => page.locator('.status-tab', { hasText: label })
+      const KIND = { 'Договоры и ДС': 'all', 'Договоры': 'contracts', 'ДС': 'amendments' }
+      const TAB = { 'В работе': 'in_work', 'Завершено': 'completed' }
+      const kind = (label) => page.locator(`.cr-kind-tab[data-kind="${KIND[label]}"]`)
+      const tab = (label) => page.locator(`.cr-status-chip[data-tab="${TAB[label]}"]`)
       const info = () => page.locator('.registry-pagination.is-top .rp-info').innerText()
       const search = page.locator('.cr-search')
       const waitInfo = (re) => page.waitForFunction(({ source }) => new RegExp(source).test(document.querySelector('.registry-pagination.is-top .rp-info')?.textContent || ''), { source: re.source })
 
       await kind('Договоры').click()
-      assert.equal(await kind('Договоры').getAttribute('aria-checked'), 'true')
+      assert.equal(await kind('Договоры').getAttribute('aria-selected'), 'true')
       await waitInfo(/из 20 договоров$/)
       assert.equal(await rows.count(), 20)
       assert.equal(await page.locator('.contracts-table tbody tr.contract-expanded-row').count(), 0, 'строк, раскрытых ради ДС, нет')
@@ -108,7 +114,8 @@ describe('Договоры и ДС: счётчики вида «Документ
       await page.locator('.contracts-table .ce2-area-ds .ce2-ds').first().waitFor()
 
       // Поиск: номер ДС (15/26) в «Договорах» не находит ничего, в «ДС» — это ДС, в «Договорах и ДС» — его договор.
-      await tab('Все').click()
+      await tab('Завершено').click() // повторное нажатие снимает статус — снова все
+      assert.equal(await tab('Завершено').getAttribute('aria-pressed'), 'false')
       await search.fill('14/26')
       await waitInfo(/из 1 договор$/)
       await search.fill('15/26')
@@ -125,11 +132,11 @@ describe('Договоры и ДС: счётчики вида «Документ
       await page.locator('.cr-toolbar .qfilter', { hasText: 'Не в Larix' }).click()
       await waitInfo(/из 20 договоров$/)
       await page.locator('.cr-toolbar .cr-filter-clear').click()
-      assert.equal(await kind('Договоры').getAttribute('aria-checked'), 'true', '«Сбросить» вид не снимает')
+      assert.equal(await kind('Договоры').getAttribute('aria-selected'), 'true', '«Сбросить» вид не снимает')
 
       await page.reload()
       await rows.first().waitFor({ timeout: 60000 })
-      assert.equal(await kind('Договоры').getAttribute('aria-checked'), 'true', 'выбор помнит браузер')
+      assert.equal(await kind('Договоры').getAttribute('aria-selected'), 'true', 'выбор помнит браузер')
       await waitInfo(/из 20 договоров$/)
       assert.deepEqual(errors, [])
     } finally {

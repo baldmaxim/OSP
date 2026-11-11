@@ -1,4 +1,5 @@
-// «Реестр по договорам» (/contracts/registry): понятийное соглашение под номером договора.
+// «Реестр по договорам» (/contracts/registry): понятийное соглашение под номером договора — с 11.11.2026 отметкой «ПС» в строке
+// отметок (есть файлы — зелёное «ПС», список — во всплывающем окне; нет — у права правки «+ ПС», сразу выбор файла).
 //   • после загрузки и удаления файла перечитываются только файлы этого договора: реестр не пропадает под
 //     «Загрузка...» и не запрашивается заново (раньше — весь реестр, приложения и файлы: на тысячах договоров
 //     больше сотни запросов и полная перерисовка, браузер на секунды переставал отвечать);
@@ -40,25 +41,27 @@ describe('Договоры и ДС: понятийное соглашение', 
       await page.goto(`${stand.url}?${BASE}`)
       await page.locator('.contracts-table tbody tr.contract-row').first().waitFor({ timeout: 60000 })
       // Файлы договоров догружаются после таблицы — ждём их.
-      await page.locator('.contracts-table .ca-chip').first().waitFor({ timeout: 60000 })
+      await page.locator('.contracts-table .ca-mark.is-on').first().waitFor({ timeout: 60000 })
 
-      const free = page.locator('.contracts-table tbody tr.contract-row').filter({ hasNot: page.locator('.ca-chip') }).first()
+      const free = page.locator('.contracts-table tbody tr.contract-row').filter({ hasNot: page.locator('.ca-mark.is-on') }).first()
       const number = (await free.locator('.cds-main').innerText()).replace(/^№\s*/, '')
       // Строка — по номеру договора: после загрузки у неё появится файл, и «строка без файла» станет другой.
       const row = page.locator('.contracts-table tbody tr.contract-row', { has: page.locator('.cds-main', { hasText: new RegExp(`^№ ${number}$`) }) })
       const contractId = await page.evaluate((n) => window.__fakeDb.contracts.find(c => c.contract_number === n).id, number)
 
-      const mark = await page.evaluate(() => {
+      const since0 = await page.evaluate(() => {
         window.__sawLoader = false
         window.__loaderWatch = new MutationObserver(() => { if (document.querySelector('.loading')) window.__sawLoader = true })
         window.__loaderWatch.observe(document.body, { childList: true, subtree: true })
         return window.__supabaseStats.requests.length
       })
-      const since = () => page.evaluate((m) => window.__supabaseStats.requests.slice(m).map(r => `${r.table}:${r.op}`), mark)
+      const since = () => page.evaluate((m) => window.__supabaseStats.requests.slice(m).map(r => `${r.table}:${r.op}`), since0)
 
-      const [chooser] = await Promise.all([page.waitForEvent('filechooser'), row.locator('.ca-add').click()])
+      const [chooser] = await Promise.all([page.waitForEvent('filechooser'), row.locator('.ca-mark.is-add').click()])
       await chooser.setFiles({ name: 'Понятийное 7.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 test') })
-      await row.locator('.ca-chip-label', { hasText: 'Понятийное 7.pdf' }).waitFor({ timeout: 30000 })
+      const mark = row.locator('.ca-mark.is-on')
+      await mark.waitFor({ timeout: 30000 })
+      assert.match(await mark.getAttribute('title'), /Понятийное 7\.pdf/, 'имя файла — в подсказке отметки')
 
       const saved = await page.evaluate(() => window.__fakeDb.s3_documents.find(d => d.file_name === 'Понятийное 7.pdf'))
       assert.equal(saved.owner_type, 'contract')
@@ -69,11 +72,17 @@ describe('Договоры и ДС: понятийное соглашение', 
       assert.ok(!requests.includes('contracts:select'), `реестр не перечитывается: ${requests.join(', ')}`)
       assert.ok(!requests.includes('contract_appendices:select'), 'приложения не перечитываются')
       assert.equal(requests.filter(r => r === 's3_documents:select').length, 1, 'перечитаны только файлы этого договора')
-      assert.ok(await row.locator('.ca-add').isVisible(), 'после загрузки снова можно добавить файл')
+      // Список — во всплывающем окне: имя (просмотр), удалить, «Добавить ещё».
+      await mark.click()
+      const list = page.locator('.apop.ca-pop')
+      await list.waitFor()
+      assert.equal(await list.locator('.ca-chip-label').innerText(), 'Понятийное 7.pdf')
+      assert.ok(await list.locator('.ca-add').isVisible(), 'после загрузки снова можно добавить файл')
 
-      // Удаление — так же: только файлы договора.
-      await row.locator('.ca-has', { hasText: 'Понятийное 7.pdf' }).locator('.ca-danger').click()
-      await row.locator('.ca-chip-label', { hasText: 'Понятийное 7.pdf' }).waitFor({ state: 'detached', timeout: 30000 })
+      // Удаление — так же: только файлы договора. Последний файл — окно закрывается, снова «+ ПС».
+      await list.locator('.ca-has', { hasText: 'Понятийное 7.pdf' }).locator('.ca-danger').click()
+      await row.locator('.ca-mark.is-add').waitFor({ timeout: 30000 })
+      assert.equal(await list.count(), 0)
       assert.equal(await page.evaluate(() => window.__fakeDb.s3_documents.some(d => d.file_name === 'Понятийное 7.pdf')), false)
 
       requests = await since()

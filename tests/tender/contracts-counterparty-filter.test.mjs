@@ -92,16 +92,16 @@ describe('Договоры и ДС: фильтр по контрагентам',
     const { page, errors, close } = await open()
     try {
       // На стенде договоры ГО — каждый четвёртый: ищем контрагента, у которого все документы только в ОС.
-      await page.locator('.registry-scope-btn', { hasText: /^ГО/ }).click()
+      await page.locator('.registry-scope-btn', { hasText: /^ГО$/ }).click()
       const inGo = new Set((await rows(page).allInnerTexts()).flatMap((t) => t.match(/Подрядчик \d\d/g) || []))
-      await page.locator('.registry-scope-btn', { hasText: /^ОС/ }).click()
+      await page.locator('.registry-scope-btn', { hasText: /^ОС$/ }).click()
       await trigger(page).click()
       const only = (await optionsOf(page)).find((name) => !inGo.has(name))
       assert.ok(only, 'на стенде есть контрагент только из ОС')
       await pick(page, only)
       await page.keyboard.press('Escape')
 
-      await page.locator('.registry-scope-btn', { hasText: /^ГО/ }).click()
+      await page.locator('.registry-scope-btn', { hasText: /^ГО$/ }).click()
       assert.equal(await rows(page).count(), 0)
       assert.equal(await shown(page), only, 'выбор виден на кнопке, а не сброшен молча')
       await page.locator('.cr-toolbar .cr-filter-clear').click()

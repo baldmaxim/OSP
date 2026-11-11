@@ -1,11 +1,14 @@
-// «Реестр по договорам» (/contracts/registry): вид раздела — как у других разделов (решение пользователя 29.10.2026).
+// «Реестр по договорам» (/contracts/registry): вид раздела — как у других разделов (решение пользователя 29.10.2026),
+// 11.11.2026 разгружен (решение пользователя: «сумбурный, непонятный, перегруженный», права те же).
 //   • рабочий стиль (workUi.css, класс ui-work) и плотный вариант cr-dense на компьютере;
-//   • шапка — одна строка: название с плиткой, отдел («Все договоры» / ОС / ГО), справа действия;
-//   • панель — одной строкой: вид документа, поиск, фильтры, «Просрочено», «Не в Larix» — одна высота;
-//     «Сбросить» — только при выбранном фильтре;
+//   • шапка — одна строка: название с плиткой, отдел («ОС и ГО» / ОС / ГО), справа действия (и «+ Заявка на заключение ДП»);
+//   • вкладки — вид документа с числами, статусы — переключателями; «Все» нет: это «Договоры и ДС»;
+//   • панель — одной строкой: поиск, фильтры, «Просрочено», «Не в Larix» — одна высота; «Сбросить» — только при фильтре;
+//   • страницы — один раз, под таблицей; над ней — только итог;
 //   • договоры отделены друг от друга: каждый второй — подложкой, раскрытый договор и его область — одним блоком
-//     (полоса акцентом слева у обеих строк); в таблице ничего мельче 11px, пути документа — одной строкой;
-//   • телефон: вкладки одной строкой с прокруткой вбок, карточки без подчёркивания.
+//     (полоса акцентом слева у обеих строк); в таблице ничего мельче 11px, отметки документа — одной строкой;
+//   • пути — значками: папка и Signal — зелёный / красный, Larix — код карточки или «нет», правка — окном;
+//   • телефон: вид документа и статусы — двумя полосами с прокруткой вбок, карточки без подчёркивания.
 // Правила — docs/UI_GUIDELINES.md, «Плотный вариант: реестр «Договоры и ДС»».
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -13,7 +16,7 @@ import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 
 const launch = browserLaunchOptions()
-const BASE = 'route=/contracts/registry&contracts=30&contractsDivision=1&latency=0&shell=1'
+const BASE = 'route=/contracts/registry&contracts=30&contractsDivision=1&contractsPaths=1&latency=0&shell=1'
 
 describe('Договоры и ДС: вид раздела', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
   let stand
@@ -50,10 +53,12 @@ describe('Договоры и ДС: вид раздела', { skip: !launch && '
       const header = page.locator('.registry-header')
       assert.equal(await header.locator('h2 .ic-tile').count(), 1, 'плитка раздела у названия')
       assert.match(await header.locator('h2').innerText(), /Реестр по договорам/)
-      assert.deepEqual(await header.locator('.registry-scope-btn').evaluateAll((els) => els.map((b) => b.firstChild.textContent.trim())),
-        ['Все договоры', 'ОС', 'ГО'])
+      assert.deepEqual(await header.locator('.registry-scope-btn').allInnerTexts(), ['ОС и ГО', 'ОС', 'ГО'])
       assert.match(await header.locator('.cr-header-actions').innerText(), /Путь к общей папке/)
-      assert.deepEqual(await header.locator('.cr-header-actions > button').allInnerTexts(), ['Документы', 'Компактный вид', '+ Добавить договор'])
+      assert.deepEqual(
+        (await header.locator('.cr-header-actions > button').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim()),
+        ['Документы', 'Компактный вид', '+ Заявка на заключение ДП', '+ Добавить договор'],
+      )
       // Одна строка: название, охват и действия — на одной высоте.
       const rows = await header.evaluate((h) => {
         const top = (el) => Math.round(el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2)
@@ -61,9 +66,22 @@ describe('Договоры и ДС: вид раздела', { skip: !launch && '
       })
       assert.ok(Math.max(...rows) - Math.min(...rows) <= 2, `шапка в одну строку: ${rows}`)
 
-      // Панель: вид документа, поиск, фильтры и быстрые фильтры — одна высота (32px в плотном варианте).
+      // Вкладки: вид документа с числами, статусы — рядом одной строкой; «Удаленные» — справа.
+      const tabsRow = await page.locator('.status-tabs.cr-tabs').evaluate((t) => ({
+        kinds: [...t.querySelectorAll('.cr-kind-tab')].map((b) => b.firstChild.textContent.trim()),
+        lines: new Set([...t.querySelectorAll('.cr-kind-tab, .cr-status-chip')].map((b) => Math.round(b.getBoundingClientRect().top + b.getBoundingClientRect().height / 2))).size,
+        deletedRight: (() => {
+          const chips = [...t.querySelectorAll('.cr-status-chip')]
+          const del = t.querySelector('.cr-status-chip.tab-deleted').getBoundingClientRect()
+          return chips.every((c) => c.classList.contains('tab-deleted') || c.getBoundingClientRect().right < del.left)
+        })(),
+      }))
+      assert.deepEqual(tabsRow, { kinds: ['Договоры и ДС', 'Договоры', 'ДС'], lines: 1, deletedRight: true })
+
+      // Панель: поиск, фильтры и быстрые фильтры — одна высота (32px в плотном варианте); вида документа в ней нет.
+      assert.equal(await page.locator('.cr-toolbar .rf-doc-kind').count(), 0)
       const heights = await page.locator('.cr-toolbar').evaluate((t) => [
-        t.querySelector('.rf-doc-kind'), t.querySelector('.cr-search'), ...t.querySelectorAll('.fdrop-trigger'), ...t.querySelectorAll('.qfilter'),
+        t.querySelector('.cr-search'), ...t.querySelectorAll('.fdrop-trigger'), ...t.querySelectorAll('.qfilter'),
       ].map((el) => Math.round(el.getBoundingClientRect().height)))
       assert.deepEqual([...new Set(heights)], [32], `высоты: ${heights}`)
       assert.equal(await page.locator('.cr-toolbar .cr-filter-clear').count(), 0, 'без фильтров «Сбросить» нет')
@@ -79,6 +97,11 @@ describe('Договоры и ДС: вид раздела', { skip: !launch && '
       await page.locator('.contracts-table.is-slim').waitFor()
       assert.equal(await page.locator('.cr-header-actions .btn-view-toggle.active').innerText(), 'Все столбцы')
       await page.locator('.cr-header-actions .btn-view-toggle.active').click()
+
+      // Страницы — один раз, под таблицей; над ней — только итог.
+      assert.equal(await page.locator('.registry-pagination.is-top .rp-controls').count(), 0)
+      assert.equal(await page.locator('.registry-pagination.is-bottom .rp-controls').count(), 1)
+      assert.equal(await page.locator('.registry-pagination.is-bottom .rp-info').count(), 0)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
@@ -98,17 +121,18 @@ describe('Договоры и ДС: вид раздела', { skip: !launch && '
         .map((el) => ({ text: el.textContent.trim().slice(0, 30), px: parseFloat(getComputedStyle(el).fontSize) }))
         .filter((x) => x.px < 11))
       assert.deepEqual(await tooSmall(), [])
-      await page.locator('.rf-doc-kind-btn', { hasText: /^ДС$/ }).click()
+      await page.locator('.cr-kind-tab[data-kind="amendments"]').click()
       await page.locator('.contracts-table .cell-parent .parent-doc-link').first().waitFor()
       assert.deepEqual(await tooSmall(), [])
       // Заголовок «Сумма» — вправо, как сами суммы, и в виде «ДС» (колонок на одну больше).
       assert.equal(await page.locator('.contracts-table thead th.th-col-amount').evaluate((th) => getComputedStyle(th).textAlign), 'right')
-      await page.locator('.rf-doc-kind-btn', { hasText: /^Договоры и ДС$/ }).click()
+      await page.locator('.cr-kind-tab[data-kind="all"]').click()
       await page.locator('.contracts-table .ds-toggle').first().waitFor()
 
-      // «путь к · папке · Signal · Larix» — одной строкой.
-      const lines = await page.locator('.contracts-table .cpaths').first().evaluate((c) => new Set([...c.children].map((k) => Math.round(k.getBoundingClientRect().top))).size)
+      // Отметки документа (пути, «Estimat», «ПС») — одной строкой; пути строками с адресом больше не выводятся.
+      const lines = await page.locator('.contracts-table .cell-contract-num .cmarks').first().evaluate((c) => new Set([...c.children].map((k) => Math.round(k.getBoundingClientRect().top))).size)
       assert.equal(lines, 1)
+      assert.equal(await page.locator('.contracts-table :is(.cpaths, .fpath, .larix-badge)').count(), 0)
 
       // Раскрытый договор и его область — один блок: полоса акцентом слева у обеих строк.
       await rows.first().locator('.ds-toggle').click()
@@ -123,14 +147,17 @@ describe('Договоры и ДС: вид раздела', { skip: !launch && '
     } finally { await close() }
   })
 
-  it('телефон: вкладки одной строкой с прокруткой, карточки без подчёркивания', async () => {
+  it('телефон: вид документа и статусы — двумя полосами с прокруткой, карточки без подчёркивания', async () => {
     const { page, errors, close } = await open(390, '.mcard')
     try {
-      const tabs = await page.locator('.status-tabs').evaluate((t) => ({
-        lines: new Set([...t.querySelectorAll('.status-tab')].map((b) => Math.round(b.getBoundingClientRect().top))).size,
+      const strip = (sel, item) => page.locator(sel).evaluate((t, it) => ({
+        lines: new Set([...t.querySelectorAll(it)].map((b) => Math.round(b.getBoundingClientRect().top))).size,
         scrolls: t.scrollWidth > t.clientWidth,
-      }))
-      assert.deepEqual(tabs, { lines: 1, scrolls: true })
+      }), item)
+      assert.deepEqual(await strip('.cr-kind-tabs', '.cr-kind-tab'), { lines: 1, scrolls: true })
+      assert.deepEqual(await strip('.cr-status-chips', '.cr-status-chip'), { lines: 1, scrolls: true })
+      const tops = await page.evaluate(() => ['.cr-kind-tabs', '.cr-status-chips'].map((s) => Math.round(document.querySelector(s).getBoundingClientRect().top)))
+      assert.ok(tops[1] > tops[0], `статусы — под видом документа: ${tops}`)
       assert.equal(await page.locator('.mcard').first().evaluate((c) => getComputedStyle(c).textDecorationLine), 'none')
       assert.equal(await page.locator('.contract-registry').getAttribute('class').then((c) => /cr-dense/.test(c)), false, 'плотный вариант — только на компьютере')
       assert.deepEqual(errors, [])

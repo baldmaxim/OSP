@@ -60,6 +60,16 @@
     "body": null
   },
   {
+    "method": "POST",
+    "url": "/api/admin/bid-file",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "file_id"
+    ]
+  },
+  {
     "method": "GET",
     "url": "/api/admin/contractor-signups",
     "kind": "user",
@@ -386,6 +396,24 @@
       "final_text",
       "mode",
       "our_text"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/fn/bid-file",
+    "kind": "user",
+    "require": "contractor",
+    "reason": null,
+    "body": [
+      "action",
+      "file_id",
+      "file_name",
+      "mime_type",
+      "operation_id",
+      "size_bytes",
+      "summary",
+      "tender_id",
+      "vor_file_id"
     ]
   },
   {

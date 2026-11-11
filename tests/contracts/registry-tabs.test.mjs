@@ -3,7 +3,7 @@
 // завершённому договору на вкладке «В работе» не было видно вовсе.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { TAB_KEYS, registryCounts, registryRows } from '../../src/utils/contractRegistryTabs.js'
+import { TAB_KEYS, kindCounts, registryCounts, registryRows } from '../../src/utils/contractRegistryTabs.js'
 import { docTender, tenderChoices, tenderOptionLabel, tenderTitle } from '../../src/utils/contractTender.js'
 
 const doc = (id, over = {}) => ({
@@ -49,6 +49,24 @@ describe('счётчики', () => {
     assert.equal(tabs.deleted, 2) // k3, d13
     assert.deepEqual(scopes, { all: 8, ours: 6 })
     assert.equal(registryCounts(DOCS, { docKind: 'contracts', scope: 'all' }).tabs.all, 2)
+  })
+})
+
+// Вкладки вида документа (11.11.2026: вкладки «Все» нет — её число теперь у «Договоров и ДС»): то же, что счётчик статуса
+// выбранного вида, при любом статусе, охвате и отделе.
+describe('числа вида документа', () => {
+  it('совпадают со счётчиком статуса своего вида; «Договоры и ДС» = договоры + ДС', () => {
+    for (const scope of ['all', 'ours']) {
+      for (const tab of TAB_KEYS) {
+        const k = kindCounts(DOCS, { scope, tab })
+        for (const docKind of ['all', 'contracts', 'amendments']) {
+          assert.equal(k[docKind], registryCounts(DOCS, { docKind, scope }).tabs[tab], `${scope}/${tab}/${docKind}`)
+        }
+        assert.equal(k.all, k.contracts + k.amendments)
+      }
+    }
+    assert.deepEqual(kindCounts(DOCS, { scope: 'all' }), { all: 8, contracts: 2, amendments: 6 })
+    assert.deepEqual(kindCounts(DOCS, { scope: 'all', tab: 'in_work' }), { all: 5, contracts: 1, amendments: 4 })
   })
 })
 

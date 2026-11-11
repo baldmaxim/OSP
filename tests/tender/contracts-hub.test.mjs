@@ -87,7 +87,9 @@ describe('Договоры и ДС: страница-хаб', { skip: !launch &&
     const el = card(page, title).locator('.thub-count', { hasText: label })
     return (await el.count()) ? Number(await el.locator('strong').innerText()) : 0
   }
-  const tabCount = async (page, label) => Number(await page.locator('.status-tab', { hasText: label }).locator('.tab-count').innerText())
+  // Вкладка статуса; в «Реестре по договорам» с 11.11.2026 статус — переключатель (cr-status-chip) со своим числом.
+  const tabCount = async (page, label) => Number(await page.locator(':is(.status-tab, .cr-status-chip)', { hasText: label })
+    .locator(':is(.tab-count, .cr-status-count)').innerText())
   const requested = (page) => page.evaluate(() => [...new Set(window.__supabaseStats.requests.map((r) => r.table))])
   // Счётчики подгружаются после карточек.
   const countersLoaded = (page) => page.waitForFunction(() => {

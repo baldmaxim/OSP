@@ -111,15 +111,19 @@ export function downloadS3File(s3Key, fileName) {
   }))
 }
 
-// Файл ВОР подрядчику с регистрации: ключа файла у него нет, сервер проверяет доступ к тендеру и сообщает имя.
-export function downloadVorFile(fileId, fallbackName) {
-  return once(`vor:${fileId}`, () => transfer(fallbackName, async (signal) => {
-    const { presigned_url, file_name } = await requestVorFileUrl(fileId)
+// Файл по ссылке, которую выдаёт сервер по id (getUrl → { presigned_url, file_name }): ключа файла у браузера нет, сервер проверяет
+// доступ и сообщает имя. onceKey — повторное нажатие на тот же файл второй не качает.
+export function downloadSignedFile(onceKey, fallbackName, getUrl) {
+  return once(onceKey, () => transfer(fallbackName, async (signal) => {
+    const { presigned_url, file_name } = await getUrl()
     const res = await fetch(presigned_url, { signal })
     if (!res.ok) throw new Error(res.status === 404 ? 'файла нет в хранилище' : `хранилище ответило ${res.status}`)
     return { res, name: file_name || fallbackName }
   }))
 }
+
+// Файл ВОР подрядчику с регистрации: ключа файла у него нет, сервер проверяет доступ к тендеру и сообщает имя.
+export const downloadVorFile = (fileId, fallbackName) => downloadSignedFile(`vor:${fileId}`, fallbackName, () => requestVorFileUrl(fileId))
 
 // Документ по ссылке (http(s)): имя — из ответа сервера, иначе fallbackName. Без куки и адреса страницы: документ
 // должен быть открыт по ссылке. Закрытый документ (Google уводит на вход) и сервер, не разрешающий чтение со

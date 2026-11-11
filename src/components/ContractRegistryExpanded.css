@@ -55,9 +55,6 @@
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
-.ce2-area-head .ce2-add-ds { margin-left: auto; }
-/* «Открыть карточку» и «Редактировать» — справа в шапке работы юриста. */
-.ce2-area-head .ce2-area-actions { margin-left: auto; gap: 1rem; }
 
 /* Блоки внутри области — на фоне страницы, чтобы не сливались с ней. */
 .ce2-area .ce-block {
@@ -68,6 +65,8 @@
 .ce2-area .ce-block-title { margin-bottom: 0.375rem; }
 
 /* ── Работа юриста: юрист, сроки и примечание в одну строку ──────────────── */
+/* Юрист и даты стоят столбцами в строке — здесь их нет; ничего не осталось — блока нет. */
+.ce2-fields:empty { display: none; }
 .ce2-fields {
   display: flex;
   flex-wrap: wrap;
@@ -225,21 +224,17 @@
   border-top: 1px dashed var(--border-color);
 }
 .ce2-ds-body .ce-block { background: var(--bg-secondary); }
-.ce2-ds-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.375rem;
+.ce2-ds-actions { flex-wrap: wrap; align-items: center; }
+/* ID ДС — справа в строке действий (в шапке ДС места нет; ищется поиском реестра). */
+.ce2-ds-id { margin-left: auto; color: var(--text-tertiary); font-size: 0.6875rem; font-variant-numeric: tabular-nums; }
+/* Отметки ДС (пути значками, «Estimat», понятийное соглашение) — в шапке ДС, между строкой и «Открыть». */
+.ce2-ds-head > .cmarks { flex: 0 0 auto; flex-wrap: nowrap; }
+@container (max-width: 760px) {
+  .ce2-ds-head { flex-wrap: wrap; }
+  .ce2-ds-head > .cmarks { order: 5; flex-basis: 100%; padding-left: 1.5rem; }
 }
-.ce2-ds-meta .larix-badge { margin: 0; }
-.ce2-ds-paths {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-.ce2-ds-actions { flex-wrap: wrap; }
 
-/* ── Реквизиты и стороны — строкой под областями, только просмотр ────────── */
+/* ── Сведения договора, которых нет в строке, — под областями, только просмотр ── */
 .ce2-info {
   display: flex;
   flex-direction: column;
@@ -260,7 +255,6 @@
 .ce2-info-label { color: var(--text-tertiary); white-space: nowrap; }
 .ce2-info-item dd { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
 .ce2-info-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.75rem; }
-.ce2-info-row .ce-parties { margin: 0; }
 .ce2-info-text { color: var(--text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
 .ce-edit-link.is-danger { color: var(--danger-color); }
 

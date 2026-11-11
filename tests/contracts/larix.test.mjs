@@ -7,7 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as esbuild from 'esbuild'
-import { LARIX_LINK_FIELD, LARIX_LINK_LABEL, isInLarix, larixLink } from '../../src/utils/contractLarix.js'
+import { LARIX_LINK_FIELD, LARIX_LINK_LABEL, isInLarix, larixCode, larixLink } from '../../src/utils/contractLarix.js'
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const SRC = path.join(REPO, 'src')
@@ -41,6 +41,18 @@ describe('состояние «внесён в Larix»', () => {
     assert.equal(isInLarix({ larix_entered: true, larix_number: '777', document_link: null }), false)
     assert.equal(isInLarix({ larix_entered: false, document_link: 'https://cpm.su10.larix.ru/contract/1' }), true)
     assert.equal(larixLink({ document_link: '  https://x.example/1  ' }), 'https://x.example/1')
+  })
+
+  // Реестр показывает не ссылку, а код (11.11.2026, решение пользователя: «либо нет, либо код с конца ссылки»).
+  it('код в реестре — номер карточки, иначе хвост адреса или пути; пусто — пусто', () => {
+    assert.equal(larixCode('https://cpm.su10.larix.ru/contract/4521'), '4521')
+    assert.equal(larixCode(' https://cpm.su10.larix.ru/contract/4521/boq?tab=2 '), '4521')
+    assert.equal(larixCode('https://cpm.su10.larix.ru/projects/77/docs/%D0%94%D0%9F-4'), 'ДП-4')
+    assert.equal(larixCode('https://cpm.su10.larix.ru/?id=815'), '815')
+    assert.equal(larixCode('https://cpm.su10.larix.ru/'), 'cpm.su10.larix.ru')
+    assert.equal(larixCode('\\\\su10-fs\\Larix\\ДП-12'), 'ДП-12')
+    assert.equal(larixCode('СУ-2-АЛ'), 'СУ-2-АЛ')
+    for (const empty of ['', '   ', null, undefined]) assert.equal(larixCode(empty), '')
   })
 
   it('в коде интерфейса прежняя отметка не читается и не пишется', () => {
