@@ -56,8 +56,6 @@ import {
   isCompleted,
   liveChildren,
   planAmendment,
-  reopenBlocker,
-  frozenFieldChanges,
 } from '../utils/contractAmendments'
 import {
   buildAppendixTree,
