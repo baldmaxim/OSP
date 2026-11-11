@@ -5,6 +5,8 @@
 //   • повтор ничего не делает; изменённый или удалённый файл применённой миграции — отказ до записи;
 //   • таблица без правил, политика без проверки роли, служебная функция без отметки, проверка с FAIL,
 //     ошибка SQL — транзакция отменяется, в базе и в журнале миграций ничего не остаётся;
+//   • политика, выданная другой учётке базы вне миграций, не мешает (перечислена строкой OK); выдали эту роль
+//     учётке портала — политика действует и на портал, миграция отменяется;
 //   • запрещённое в тексте (BEGIN/COMMIT, роли Supabase, команды psql, CONCURRENTLY) — отказ до записи;
 //   • чужая база той же учётки (отпечаток не совпал) — отказ до первой команды, соседняя база не тронута;
 //   • перед первой записью снимается копия базы.
@@ -174,7 +176,7 @@ describe('Миграции базы нового портала: правила 
     const res = migrate('--yes')
     assert.equal(res.status, 0, res.all)
     assert.match(res.stdout, /OK копия базы перед миграцией: .*yandex-\d{8}-\d{6}/)
-    assert.match(res.stdout, /OK 20261014_s3_documents_sha256: применена за \d+ с; проверок OK — 20/)
+    assert.match(res.stdout, /OK 20261014_s3_documents_sha256: применена за \d+ с; проверок OK — 21/)
     assert.match(res.stdout, /OK соседи по кластеру не изменились/)
     assert.equal(journal(), '20261014_s3_documents_sha256')
     assert.equal(admin("select tool_commit from osp_meta.schema_migrations"), 'test-commit')
@@ -235,6 +237,39 @@ describe('Миграции базы нового портала: правила 
       assert.equal(journal(), '20261014_s3_documents_sha256,20261015_tender_tags', `${name}: в журнале нет`)
       drop(name)
       if (check) drop(name.replace(/\.sql$/, '.check.sql'))
+    }
+    assert.equal(run('rights.sh', [envFile, '--check']).status, 0, 'права в порядке')
+  })
+
+  it('политика другой учётки базы (заведена вне миграций) портал не задевает и миграциям не мешает; выдана учётке портала — отказ', () => {
+    admin(`create role outside_reader nologin;
+      create policy outside_select on public.tender_tags for select to outside_reader using (true);
+      grant select on public.tender_tags to outside_reader`)
+    try {
+      put('20261016_outside_note.sql', "COMMENT ON TABLE public.tender_tags IS 'метки тендеров';")
+      let res = migrate('--yes')
+      assert.equal(res.status, 0, res.all)
+      assert.match(res.stdout, /OK 20261016_outside_note: применена за \d+ с; проверок OK/)
+      assert.match(journal(), /20261016_outside_note/)
+      // Строки проверки по отдельности печатает rights.sh --check (migrate.sh — только их число, остальное в отчёте).
+      const check = run('rights.sh', [envFile, '--check'])
+      assert.equal(check.status, 0, check.all)
+      assert.match(check.stdout, /OK политики других учёток базы к порталу не применяются: outside_reader \(1\)/)
+      assert.match(check.stdout, /OK каждая политика проверяет роль из токена/)
+
+      // Учётка портала унаследовала права этой роли — политика теперь действует и на портал: проверка не пропускает.
+      admin('grant outside_reader to target_owner')
+      put('20261016_outside_z.sql', "COMMENT ON TABLE public.tender_tags IS 'метки';")
+      res = migrate('--yes')
+      assert.equal(res.status, 4, res.all)
+      assert.match(res.stdout, /FAIL каждая политика проверяет роль из токена/)
+      assert.doesNotMatch(journal(), /20261016_outside_z/)
+      drop('20261016_outside_z.sql')
+    } finally {
+      admin(`revoke outside_reader from target_owner;
+        drop policy if exists outside_select on public.tender_tags;
+        revoke all on public.tender_tags from outside_reader;
+        drop role outside_reader`)
     }
     assert.equal(run('rights.sh', [envFile, '--check']).status, 0, 'права в порядке')
   })

@@ -7,8 +7,12 @@ WITH t AS (
   FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
   WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT c.relispartition
 ), pol AS (
-  SELECT c.relname, p.polname, regexp_replace(pg_get_expr(p.polqual, p.polrelid), '\s+', ' ', 'g') AS qual,
-         regexp_replace(pg_get_expr(p.polwithcheck, p.polrelid), '\s+', ' ', 'g') AS chk
+  -- portal — политика действует на учётку, под которой идёт проверка (учётку портала): «для всех» или для роли,
+  -- права которой она наследует (то же правило, по которому PostgreSQL применяет политику). Политики, выданные
+  -- другим учёткам базы, к порталу не применяются: проверки 2–4 их не считают, строка 14 их перечисляет.
+  SELECT c.relname, p.polname, p.polroles, regexp_replace(pg_get_expr(p.polqual, p.polrelid), '\s+', ' ', 'g') AS qual,
+         regexp_replace(pg_get_expr(p.polwithcheck, p.polrelid), '\s+', ' ', 'g') AS chk,
+         (0::oid = ANY (p.polroles) OR EXISTS (SELECT 1 FROM unnest(p.polroles) AS r(id) WHERE pg_has_role(current_user, r.id, 'USAGE'))) AS portal
   FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
 ), fn AS (
   SELECT p.proname, p.prosecdef, coalesce(p.proconfig::text, '') ~ 'application_name=osp:internal' AS marked
@@ -18,13 +22,13 @@ WITH t AS (
   SELECT 1, (SELECT count(*) FROM t WHERE NOT (relrowsecurity AND relforcerowsecurity)) = 0,
          'правила по строкам включены и действуют на владельца у всех таблиц: ' || (SELECT count(*) FROM t)
   UNION ALL
-  SELECT 2, (SELECT count(*) FROM t WHERE NOT EXISTS (SELECT 1 FROM pol WHERE pol.relname = t.relname AND pol.polname = 'osp_internal')) = 0,
+  SELECT 2, (SELECT count(*) FROM t WHERE NOT EXISTS (SELECT 1 FROM pol WHERE pol.relname = t.relname AND pol.polname = 'osp_internal' AND pol.portal)) = 0,
          'у каждой таблицы есть пропуск для служебных функций'
   UNION ALL
-  SELECT 3, (SELECT count(*) FROM pol WHERE polname <> 'osp_internal') = (SELECT count(*) FROM osp_meta.policy_roles),
+  SELECT 3, (SELECT count(*) FROM pol WHERE polname <> 'osp_internal' AND portal) = (SELECT count(*) FROM osp_meta.policy_roles),
          'политик из копии: ' || (SELECT count(*) FROM osp_meta.policy_roles) || ', в базе столько же'
   UNION ALL
-  SELECT 4, (SELECT count(*) FROM pol WHERE polname <> 'osp_internal'
+  SELECT 4, (SELECT count(*) FROM pol WHERE polname <> 'osp_internal' AND portal
                AND (coalesce(qual, chk) IS NULL
                  OR coalesce(qual, ' CASE WHEN ( SELECT osp_private.bypass() AS bypass) THEN true ELSE (( SELECT osp_private.role_in(') !~ '^ ?CASE WHEN \( SELECT osp_private\.bypass\(\) AS bypass\) THEN true ELSE \(\( SELECT osp_private\.role_in\('
                  OR coalesce(chk, ' CASE WHEN ( SELECT osp_private.bypass() AS bypass) THEN true ELSE (( SELECT osp_private.role_in(') !~ '^ ?CASE WHEN \( SELECT osp_private\.bypass\(\) AS bypass\) THEN true ELSE \(\( SELECT osp_private\.role_in\(')) = 0,
@@ -123,6 +127,14 @@ WITH t AS (
          CASE WHEN to_regnamespace('osp_session') IS NULL
               THEN 'сессий своего входа ещё нет'
               ELSE 'сессии своего входа: только служебным операциям, «всем» схема недоступна' END
+  UNION ALL
+  -- Политики других учёток базы (не портала) — только перечень. Выдадут такую роль учётке портала — её политики
+  -- станут политиками портала и попадут в проверки 3 и 4.
+  SELECT 14, true,
+         CASE WHEN NOT EXISTS (SELECT 1 FROM pol WHERE NOT portal) THEN 'политик других учёток базы нет'
+              ELSE 'политики других учёток базы к порталу не применяются: '
+                   || (SELECT string_agg(DISTINCT pg_get_userbyid(r.id), ', ' ORDER BY pg_get_userbyid(r.id)) FROM pol, unnest(pol.polroles) AS r(id) WHERE NOT pol.portal)
+                   || ' (' || (SELECT count(*) FROM pol WHERE NOT portal) || ')' END
 )
 SELECT CASE WHEN ok THEN 'OK ' ELSE 'FAIL ' END || what FROM checks ORDER BY n;
 
