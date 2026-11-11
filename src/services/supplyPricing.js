@@ -12,7 +12,7 @@ import { db } from '../api'
 import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { chunkList } from '../utils/inChunks'
 import { isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
-import { deleteDocument, fetchFileBytes, uploadFile } from './s3'
+import { deleteDocument, fetchFileBytes, saveSupplyDocNotesRow, uploadFile } from './s3'
 import { VOR_STATEMENT_CATEGORY, LEGACY_VOR_CATEGORY, isNetworkError } from './tenderVorRd'
 import { isWorkbookFileName } from '../utils/vorFiles'
 import { offerNeedsReread, readOffer, unreadableOfferNotes } from '../utils/supplyOffers'
@@ -422,11 +422,11 @@ export async function uploadSupplyDoc(mainId, file, notes = null) {
 // Строки распознанного файла сохраняются при нём: notes — offerNotes из utils/supplyOffers. onlyIf — только если при файле
 // ещё то, что читали (null — пусто): фоновое чтение не затирает выбор человека в окне и то, что успел прочитать коллега.
 export async function saveSupplyDocNotes(id, notes, { onlyIf } = {}) {
-  let q = db.from('s3_documents').update({ notes }).eq('id', id)
-  if (onlyIf === null) q = q.is('notes', null)
-  else if (onlyIf !== undefined) q = q.eq('notes', onlyIf)
-  const { error } = await q
-  if (error) fail(error)
+  try {
+    await saveSupplyDocNotesRow(id, notes, { onlyIf })
+  } catch (error) {
+    fail(error)
+  }
 }
 
 // Файл (байты и имя) → распознанные строки: { read, notes, reason }. read — ответ readSupplierDoc с items или null; notes

@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from 'react'
 
-// Поле в одну строку, растущее по тексту: Enter — onSubmit, Shift+Enter — новая строка. Для шага и сообщения заявки.
+// Поле в одну строку, растущее по тексту: Enter — onSubmit, Shift+Enter — новая строка. Для сообщения заявки.
 export default function DocCheckGrowingField({ value, onChange, onSubmit, ...rest }) {
   const ref = useRef(null)
   // Высота — по числу строк (и обратно в одну строку после отправки).

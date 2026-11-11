@@ -106,8 +106,13 @@ export async function startFakeSupabase(state) {
       }
       if (req.method === 'PATCH') {
         const patch = JSON.parse(body || '{}')
-        for (const f of found) Object.assign(state.docs[f.key].row, patch)
-        return reply(found.map((f) => pick({ ...f.row, ...patch }, select)))
+        // Условие на прежние notes (заметки снабжения: «только если при файле ещё то, что читали»).
+        const notesCond = url.searchParams.get('notes')
+        const matches = (f) => notesCond === null || (notesCond === 'is.null' ? f.row.notes == null
+          : notesCond.startsWith('eq.') ? f.row.notes === notesCond.slice(3) : false)
+        const hit = found.filter(matches)
+        for (const f of hit) Object.assign(state.docs[f.key].row, patch)
+        return reply(hit.map((f) => pick({ ...f.row, ...patch }, select)))
       }
     }
     if (url.pathname === '/rest/v1/rpc/osp_can') {
@@ -128,7 +133,8 @@ export async function startFakeSupabase(state) {
       const id = eqParam(url, 'id')
       const vis = state.owners[ownerTable][id]
       const visible = vis && (vis === 'all' || (uid && vis.includes(uid)))
-      return send(200, visible ? [{ id }] : [])
+      // Поля строки владельца сверх id (автор задачи и т. п.): { ownerRows: { tasks: { <id>: { created_by_user_id } } } }.
+      return send(200, visible ? [{ id, ...(state.ownerRows?.[ownerTable]?.[id] || {}) }] : [])
     }
     const view = url.pathname.replace('/rest/v1/', '')
     if (state.views && Object.hasOwn(state.views, view)) {

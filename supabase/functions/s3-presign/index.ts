@@ -17,7 +17,7 @@
 //
 // Секреты задаются в окружении функции (см. supabase/functions/.env.local.example):
 //   S3_ENDPOINT, S3_REGION, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY.
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from 'npm:@aws-sdk/client-s3@3.658.0'
+import { S3Client, PutObjectCommand, GetObjectCommand } from 'npm:@aws-sdk/client-s3@3.658.0'
 import { getSignedUrl } from 'npm:@aws-sdk/s3-request-presigner@3.658.0'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
@@ -225,11 +225,9 @@ Deno.serve(async (req) => {
       }
 
       case 'delete': {
-        const s3_key = String(body.s3_key || '')
-        if (!s3_key) return jsonResponse({ error: 'Missing s3_key' }, 400)
-        if (!await assertKeyAllowed(s3_key)) return jsonResponse({ error: 'Файл не найден' }, 404)
-        await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: s3_key }))
-        return jsonResponse({ ok: true })
+        // Бакет общий с новым порталом (tender.su10.ru): объекты здесь не удаляются. Удалять файлы — на новом
+        // портале, где удаление проверяет права раздела и владельца (server/osp-api/src/routes/s3Presign.js).
+        return jsonResponse({ error: 'Удаление файлов — на tender.su10.ru', code: 'OSP_DELETE_MOVED' }, 403)
       }
 
       default:
@@ -237,6 +235,6 @@ Deno.serve(async (req) => {
     }
   } catch (e) {
     console.error('s3-presign error:', e)
-    return jsonResponse({ error: (e as Error)?.message || 'Internal error' }, 500)
+    return jsonResponse({ error: 'Не удалось выполнить действие с файлом' }, 500)
   }
 })

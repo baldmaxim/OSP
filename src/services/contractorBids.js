@@ -183,6 +183,23 @@ export async function loadTenderFiles(tenderId) {
 // Байты файла ВОР — по подписанной ссылке (её выдаёт сервер, только если строка файла видна).
 export const downloadFileBytes = (s3Key) => fetchFileBytes(s3Key)
 
+// Ведомости, заменённые новой версией (миграция 20270114, тендер № 847): [{ file_id, current_file_id }] — по отметке снабжения, как
+// «Сравнение КП». null — функции ещё нет или ответ не пришёл: тогда кабинет показывает все файлы, как раньше (лишний файл лучше, чем
+// пропавшая ведомость).
+export async function loadVorSuperseded(tenderId) {
+  try {
+    const { data, error } = await db.rpc('bid_vor_superseded', { p_tender: tenderId })
+    if (error) {
+      if (!isMissingBids(error)) console.error('Заменённые ведомости ВОР:', error)
+      return null
+    }
+    return Array.isArray(data) ? data.filter((r) => r?.file_id) : null
+  } catch (e) {
+    console.error('Заменённые ведомости ВОР:', e)
+    return null
+  }
+}
+
 // ── Свой ВОР с расценками (миграция 20270113, решение пользователя 11.11.2026) ─────────────────────────
 // Расценка на сайте временно скрыта: подрядчик скачивает пустой ВОР, заполняет цены у себя и загружает файл к той же ведомости.
 // Строку пишет служба (/api/fn/bid-file) функциями базы; читают организация (свои) и администратор. Ключа файла браузер не видит.
@@ -293,16 +310,44 @@ export async function saveRates(tenderId, rows) {
   return saved
 }
 
-// Поля анкеты (активные — подрядчику; все — администратору).
+// Поля анкеты (активные — подрядчику; все — администратору). scope / source — вид поля и связь с «Моей компанией» (миграция
+// 20270115); колонок ещё нет — поля без них, анкета как раньше: каждый тендер отдельно.
+const FIELD_COLUMNS = 'id, label, hint, kind, options, code, sort_order, is_active, updated_at'
+let fieldLinks = true
 export async function loadFormFields({ all = false } = {}) {
-  let q = db.from('bid_form_fields').select('id, label, hint, kind, options, code, sort_order, is_active, updated_at')
-  if (!all) q = q.eq('is_active', true)
-  const { data, error } = await q.order('sort_order', { ascending: true }).order('created_at', { ascending: true })
+  const read = () => {
+    let q = db.from('bid_form_fields').select(fieldLinks ? `${FIELD_COLUMNS}, scope, source` : FIELD_COLUMNS)
+    if (!all) q = q.eq('is_active', true)
+    return q.order('sort_order', { ascending: true }).order('created_at', { ascending: true })
+  }
+  let { data, error } = await read()
+  if (error?.code === '42703' && fieldLinks) {
+    fieldLinks = false
+    ;({ data, error } = await read())
+  }
   if (error) {
     if (isMissingBids(error)) return null
     throw error
   }
   return data || []
+}
+export const formFieldLinksEnabled = () => fieldLinks
+
+// Ответы организации на поля о компании (миграция 20270115): { answers, updated_at } | { answers: {} } (ещё не отвечали) | null — таблицы
+// ещё нет. counterpartyId — своя организация (администратору в просмотре правило показывает ответы всех).
+export async function loadCompanyAnswers(counterpartyId) {
+  if (!counterpartyId) return null
+  const { data, error } = await db.from('bid_company_answers').select('answers, updated_at').eq('counterparty_id', counterpartyId).maybeSingle()
+  if (error) {
+    if (isMissingBids(error)) return null
+    throw error
+  }
+  return data || { answers: {}, updated_at: null }
+}
+
+// Записать ответы о компании: { id поля: значение }, пустое — убрать. Те же ответы база пишет в анкеты идущих тендеров организации.
+export async function saveCompanyAnswers(answers) {
+  return unwrap(await db.rpc('bid_company_save', { p_answers: answers }))
 }
 
 // Анкета организации по тендеру и последняя заполненная (для подстановки в новый тендер). counterpartyId — как в loadMyRates.
@@ -425,9 +470,11 @@ export async function loadBidForm(tenderId, counterpartyId) {
     .eq('tender_id', tenderId).eq('counterparty_id', counterpartyId).maybeSingle())
 }
 
-export async function createFormField({ label, hint, kind = 'text', options = null, sort_order }) {
-  return unwrap(await db.from('bid_form_fields')
-    .insert([{ label, hint: hint || null, kind, options: kind === 'select' ? options : null, sort_order }]).select('id').single())
+export async function createFormField({ label, hint, kind = 'text', options = null, sort_order, scope = null, source = null }) {
+  const row = { label, hint: hint || null, kind, options: kind === 'select' ? options : null, sort_order }
+  // Вид и связь — только если колонки есть (миграция 20270115).
+  if (fieldLinks && scope) Object.assign(row, { scope: source ? 'company' : scope, source: source || null })
+  return unwrap(await db.from('bid_form_fields').insert([row]).select('id').single())
 }
 
 export async function updateFormField(id, patch) {

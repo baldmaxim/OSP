@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { db } from '../../api'
+import { useRole } from '../../contexts/RoleContext'
 import FilterDropdown from '../FilterDropdown'
 import AutoGrowTextarea from '../AutoGrowTextarea'
 import S3DocumentList from '../S3DocumentList'
@@ -87,6 +88,9 @@ function TaskDetailModal({
 
   const isAssignee = task.assignee_user_id === currentUserId
   const isCreator = task.created_by_user_id === currentUserId
+  const { isAdmin } = useRole()
+  // Файл задачи меняют загрузивший, постановщик и администратор — как сервер (s3Presign.js, mayChangeTaskDoc).
+  const canDeleteTaskDoc = (doc) => isAdmin || isCreator || (doc?.uploaded_by && doc.uploaded_by === currentUserId)
   // Поля задачи правит тот, кто её поставил (или сотрудник с правом на раздел).
   const canEditFields = canEdit || isCreator
   // Статус двигает и исполнитель — иначе он не может отчитаться о своей работе.
@@ -485,6 +489,7 @@ function TaskDetailModal({
                   ownerId={task.id}
                   title="Файлы задачи"
                   canEdit={!isDeleted}
+                  canDeleteDoc={canDeleteTaskDoc}
                   onChange={loadDetails}
                 />
               )}

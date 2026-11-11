@@ -27,11 +27,13 @@ import { createClient } from '@supabase/supabase-js'
 import { PostgrestClient } from '@supabase/postgrest-js'
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import Anthropic from '@anthropic-ai/sdk'
-import { configuredParts, checkOwnAuthConfig, isSessionMode, READY_PARTS, READY_OPTIONAL } from './config.js'
+import { configuredParts, checkOwnAuthConfig, isSessionMode, READY_PARTS, READY_OPTIONAL, parseSecurity } from './config.js'
 import { bearerToken, safeEqual } from './lib/keys.js'
 import { createDb, dbUnavailable, DB_UNAVAILABLE, DB_UNAVAILABLE_TEXT } from './lib/db.js'
 import { createTokenVerifier } from './lib/token.js'
 import { createUserStatus, STATUS_DEFAULTS } from './lib/userStatus.js'
+import { createSectionRights } from './lib/sectionRights.js'
+import { cleanupUploadIntents } from './lib/uploadIntents.js'
 import { createRateLimit, createConcurrency, createByteBudget, DEFAULT_LIMITS } from './lib/limits.js'
 import { access, installAccess } from './lib/access.js'
 import { OPEN_ROUTES } from './open-routes.js'
@@ -190,6 +192,8 @@ function withTimeout(promise, ms) {
 export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' }, limits = DEFAULT_LIMITS } = {}) {
   // Свой вход с неполными настройками не запускается (ключи, адрес портала, база, шлюз).
   checkOwnAuthConfig(config)
+  // Настройки безопасности доступа: в тестах конфиг собирается руками — тогда значения по умолчанию.
+  const security = config.security || parseSecurity({})
   const app = Fastify({
     logger: withLogSafety(logger),
     logController: new LogController({ disableRequestLogging: true }),
@@ -230,6 +234,8 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     : null
   if (db) app.addHook('onClose', async () => { await db.close() })
   const userStatus = db ? createUserStatus({ db, ttlMs: config.userStatusTtlMs ?? STATUS_DEFAULTS.ttlMs }) : null
+  // Права разделов для шлюза данных и файлов (src/lib/sectionRights.js): тот же короткий кэш, что у статуса учётки.
+  const sectionRights = deps.sectionRights || (db ? createSectionRights({ db, ttlMs: config.userStatusTtlMs ?? STATUS_DEFAULTS.ttlMs }) : null)
   const verifier = config.supabaseJwtSecret
     ? createTokenVerifier({ secret: config.supabaseJwtSecret, supabaseUrl: config.supabaseUrl })
     : null
@@ -500,7 +506,8 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
 
   // Ключи API для смежных систем: выпуск в «Администрировании», проверка на /api/rates/*, журнал вызовов
   // (src/lib/apiKeys.js). Ключи из RATES_API_KEYS заносятся в список при запуске; таблиц ещё нет — повтор по такту.
-  const apiKeys = createApiKeyStore({ db, envEntries: parseRatesKeys(config.ratesApiKeys || [], app.log), log: app.log, isReadOnly })
+  const apiKeys = createApiKeyStore({ db, envEntries: parseRatesKeys(config.ratesApiKeys || [], app.log), log: app.log, isReadOnly, source: security.apiKeysSource })
+  if (security.apiKeysSource === 'env') app.log.warn('api keys: OSP_API_KEYS_SOURCE=env — ключи из настроек сервера действуют и без базы (только до миграции 20261111)')
   app.decorate('apiKeys', apiKeys)
   if (db) {
     let envSynced = false
@@ -513,6 +520,13 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
           app.log.info(r, 'api keys from server settings')
         }),
         apiKeys.cleanup(),
+        // Незавершённые загрузки файлов старше часа (src/lib/uploadIntents.js); при барьере записи и без хранилища — нет.
+        isReadOnly() || !config.s3?.bucket ? null : (() => {
+          let s3
+          try { s3 = getS3() } catch { return null }
+          return cleanupUploadIntents({ db, s3, bucket: config.s3.bucket, log: app.log })
+            .then((r) => { if (r.removed) app.log.info(r, 'upload intents cleaned') })
+        })(),
       ]).catch((err) => app.log.warn({ code: err?.code || err?.name }, 'api keys maintenance'))
         .finally(() => { running = null })
     }
@@ -728,7 +742,7 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   const ctx = { signup, signupAdmin, pow, config, getS3, getAnthropic, getServiceClient, limiters, db,
     verifyUserToken, allow: deps.allow || ALLOW, mint, beforeGateway, gatewayOn, isReadOnly, loadStatus,
     principal, authService, sessions, isSuperadmin, apiKeys, coverThumbs: deps.coverThumbs, coverThumbWaitMs: deps.coverThumbWaitMs,
-    oidc, identity, accessSync }
+    oidc, identity, accessSync, sectionRights, security, sectionMap: deps.sectionMap, contractorAllow: deps.contractorAllow }
   registerAuth(app, ctx)
   registerOidc(app, ctx)
   registerIdentityAdmin(app, ctx)

@@ -222,4 +222,33 @@ describe('фронт: свой вход (ownAuth.js) — ответы как у 
     reply = { endSessionUrl: null }
     assert.equal((await auth.signOut({ all: true })).endSessionUrl, null)
   })
+
+  it('сервер не подтвердил выход (сеть, CSRF, сбой базы) — ошибка, а не «вышли»: сессия на месте, вкладки не узнают о выходе', async () => {
+    const { createOwnAuth } = await api('ownAuth.js')
+    const me = { user: { id: 'u1', email: 'a@b.ru' }, mustChange: false, isSuperadmin: false, authSource: 'password' }
+    for (const [name, logout] of [
+      ['сбой базы (503)', async () => json(503, { error: 'База недоступна', code: 'DB_UNAVAILABLE' })],
+      ['отказ CSRF (403)', async () => json(403, { error: 'csrf', code: 'OSP_CSRF' })],
+      ['сеть', async () => { throw new TypeError('Failed to fetch') }],
+    ]) {
+      const posted = []
+      const channel = { postMessage: (m) => posted.push(m.event) }
+      const fetchImpl = async (url) => (url === '/api/auth/me' ? json(200, me) : logout())
+      const auth = createOwnAuth({ fetchImpl, channel })
+      const events = []
+      auth.onAuthStateChange((e) => events.push(e))
+      assert.equal((await auth.getSession()).data.session.user.id, 'u1')
+      const out = await auth.signOut()
+      assert.ok(out.error, `${name}: ошибка возвращается`)
+      assert.equal(out.endSessionUrl, null)
+      assert.deepEqual(events, [], `${name}: события выхода нет`)
+      assert.deepEqual(posted, [], `${name}: другие вкладки не узнают о «выходе»`)
+      assert.equal((await auth.getSession()).data.session.user.id, 'u1', `${name}: состояние входа не сброшено`)
+      const all = await auth.signOut({ all: true })
+      assert.ok(all.error, `${name}: «выйти везде» — тоже ошибка`)
+    }
+    // Сессии уже нет — сервер отвечает 204: это выход.
+    const done = createOwnAuth({ fetchImpl: async () => new Response(null, { status: 204 }) })
+    assert.equal((await done.signOut()).error, null)
+  })
 })

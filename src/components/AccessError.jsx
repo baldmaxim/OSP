@@ -20,7 +20,7 @@ export default function AccessError({ message }) {
         <button className="btn-primary" onClick={() => window.location.reload()}>
           Повторить
         </button>
-        <button className="btn-secondary" onClick={() => { logout().finally(() => window.location.assign('/login')) }}>
+        <button className="btn-secondary" onClick={() => { logout().then(() => window.location.assign('/login'), (err) => alert(err.message)) }}>
           Выйти
         </button>
       </div>

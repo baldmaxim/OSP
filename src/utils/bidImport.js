@@ -15,8 +15,20 @@ export { SUPPLIER_DOC_ACCEPT as BID_DOC_ACCEPT } from './supplierDocRead.js'
 
 const VAT_TEXT_MAX = 200000
 
-// Заполненный ВОР отдела: строки листов «Материалы» и «Работы» с видом. Нет таких листов или в них нет цен — null;
-// keepBlank — оставить и строки без цены (незаполненный ВОР).
+// Цена в строке есть: цена или сумма больше нуля (у строки с двумя ценами — хотя бы одна). Ноль в ВОР — «не заполнено»: в шаблоне
+// отдела колонка цены стоит нулями, пока подрядчик её не заполнил (так в «Сравнении КП»: расценено — ненулевая стоимость).
+const positiveNum = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0
+export function itemHasPrice(it) {
+  if (!it) return false
+  if (positiveNum(it.price) || positiveNum(it.sum)) return true
+  return !!it.parts && ['material', 'work'].some((k) => positiveNum(it.parts[k]?.price) || positiveNum(it.parts[k]?.sum))
+}
+// Строка без цены — с пустой ценой, а не нулём: дальше ноль не должен сойти за цену.
+const asBlank = (it) => (itemHasPrice(it) ? it : { ...it, price: null, sum: null, parts: it.parts ? null : it.parts })
+
+// Заполненный ВОР отдела: строки листов «Материалы» и «Работы» с видом. Нет таких листов — null; есть, но цены в них не заполнены
+// (одни нули и пустые ячейки — подрядчик вписал цены на других листах, например по корпусам) — { blank: true, items } при keepBlank,
+// иначе null: тогда цены ищутся по всей книге. keepBlank — оставить и строки без цены (незаполненный ВОР).
 export function itemsFromBidWorkbook(XLSX, wb, { keepBlank = false } = {}) {
   const sheets = findBidSheets(wb.SheetNames || [])
   const out = []
@@ -29,11 +41,15 @@ export function itemsFromBidWorkbook(XLSX, wb, { keepBlank = false } = {}) {
     if (!header) continue
     for (const it of itemsFromRows(gridRows(grid, header), header.columns, { keepBlank })) out.push({ ...it, kindHint: kind, sheet: name })
   }
-  if (!out.length) return null
-  return { kind: 'excel', items: out, sheetName: [sheets.materials, sheets.works].filter(Boolean).join(' + '), vat: vatFromText(text) }
+  const sheetName = [sheets.materials, sheets.works].filter(Boolean).join(' + ')
+  const priced = out.filter(itemHasPrice)
+  if (priced.length) return { kind: 'excel', items: keepBlank ? out.map(asBlank) : priced, sheetName, vat: vatFromText(text) }
+  return keepBlank && out.length ? { kind: 'excel', items: out.map(asBlank), sheetName, vat: vatFromText(text), blank: true } : null
 }
 
 // Файл → { kind, items, vat, sheetName | pages } | { error } (коды ошибок — как у readSupplierDoc).
+// Книга: сначала листы «Материалы» / «Работы» ВОР; цен в них нет — вся книга (листы корпусов, «КП», свой прайс). И там цен нет —
+// при keepBlank незаполненные строки «Материалов» / «Работ», иначе ответ разбора всей книги.
 export async function readBidPriceDoc(bytes, fileName, { keepBlank = false } = {}) {
   if (isSheetFile(fileName) && !/\.csv$/i.test(fileName)) {
     const XLSX = await import('xlsx')
@@ -44,7 +60,13 @@ export async function readBidPriceDoc(bytes, fileName, { keepBlank = false } = {
       return { error: 'broken', message: String(e?.message || e) }
     }
     try {
-      return itemsFromBidWorkbook(XLSX, wb, { keepBlank }) || parseSupplierWorkbook(XLSX, wb)
+      const lists = itemsFromBidWorkbook(XLSX, wb, { keepBlank })
+      if (lists && !lists.blank) return lists
+      const whole = parseSupplierWorkbook(XLSX, wb)
+      if (!whole.error && whole.items.some(itemHasPrice)) {
+        return { ...whole, items: keepBlank ? whole.items.map(asBlank) : whole.items.filter(itemHasPrice) }
+      }
+      return lists || whole
     } catch (e) {
       return { error: 'broken', message: String(e?.message || e) }
     }

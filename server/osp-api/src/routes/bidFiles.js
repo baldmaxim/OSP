@@ -34,6 +34,7 @@ import { access } from '../lib/access.js'
 import { sanitizeFileName } from '../lib/files.js'
 import { READONLY_CODE, READONLY_TEXT } from '../lib/writeBarrier.js'
 import { attachmentDisposition, DOWNLOAD_TTL_SEC, UPLOAD_TTL_SEC } from './s3Presign.js'
+import { createUploadIntents } from '../lib/uploadIntents.js'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 // Ключ операции — UUIDv7, как у s3-presign (src/utils/uuid.js портала).
@@ -87,7 +88,9 @@ function refusal(error) {
   return null
 }
 
-export function registerBidFiles(app, { config, getS3, isReadOnly = () => false }) {
+export function registerBidFiles(app, { config, getS3, isReadOnly = () => false, db = null }) {
+  // Незавершённые загрузки — с пределом на пользователя и уборкой (src/lib/uploadIntents.js).
+  const intents = createUploadIntents({ db })
   app.route({ method: 'POST', url: '/api/fn/bid-vor-file', config: {
     access: access.user({ require: 'contractor', deny: 'Файл ВОР — только для подрядчика', rate: RATE }),
     body: z.object({ file_id: z.string().regex(UUID) }),
@@ -183,7 +186,11 @@ export function registerBidFiles(app, { config, getS3, isReadOnly = () => false 
     const s3 = getS3()
 
     if (body.action === 'upload') {
-      const url = await getSignedUrl(s3, new PutObjectCommand({ Bucket: config.s3.bucket, Key: key, ContentType: mime }), { expiresIn: UPLOAD_TTL_SEC })
+      const busy = await intents.note(key, request.auth.user.id, body.size_bytes)
+      if (busy) return reply.header('retry-after', '300').code(429).send({ error: busy, code: 'OSP_UPLOADS_PENDING' })
+      // Тип и длина — в подписи: по ссылке загружается только заявленный файл (размер — точно, не больше предела).
+      const put = new PutObjectCommand({ Bucket: config.s3.bucket, Key: key, ContentType: mime, ContentLength: body.size_bytes })
+      const url = await getSignedUrl(s3, put, { expiresIn: UPLOAD_TTL_SEC, signableHeaders: new Set(['content-type', 'content-length']) })
       return { presigned_url: url, expires_in: UPLOAD_TTL_SEC }
     }
 
@@ -211,6 +218,7 @@ export function registerBidFiles(app, { config, getS3, isReadOnly = () => false 
       request.log.error({ code: saveError.code, msg: String(saveError.message || '').slice(0, 200) }, 'bid_file_save')
       return reply.code(500).send({ error: 'Не удалось сохранить файл' })
     }
+    await intents.drop(key)
     if (typeof prev === 'string' && prev && prev !== key) await dropObject(request, prev)
     return { ok: true, vor_name: row.vor_name }
   } })

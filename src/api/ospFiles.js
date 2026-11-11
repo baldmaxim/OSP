@@ -118,5 +118,15 @@ export function createOspFiles({ call, fetchImpl, digest, newId, sleep = (ms) =>
     return described.document
   }
 
-  return { upload, downloadUrl, remove, rename, describe }
+  // Строки распознанного документа поставщика при файле расценки снабжения (osp-api, действие supply-notes). onlyIf: null —
+  // только если строк ещё нет; строка — только если при файле ещё она; undefined — без условия. → число изменённых строк.
+  async function supplyNotes(documentId, notes, onlyIf) {
+    const res = await withRetries(RENAME_ATTEMPTS, () => invoke({
+      action: 'supply-notes', document_id: documentId, notes,
+      ...(onlyIf === undefined ? {} : { only_if: onlyIf }),
+    }), retryable)
+    return res.changed ?? 0
+  }
+
+  return { upload, downloadUrl, remove, rename, describe, supplyNotes }
 }

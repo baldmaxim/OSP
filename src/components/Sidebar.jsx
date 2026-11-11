@@ -360,8 +360,12 @@ function Sidebar() {
           className="logout-btn"
           title="Выйти"
           onClick={async () => {
-            await logout()
-            navigate('/login')
+            try {
+              await logout()
+              navigate('/login')
+            } catch (err) {
+              alert(err.message)
+            }
           }}
         >
           <LogoutIcon />

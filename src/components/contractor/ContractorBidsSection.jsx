@@ -10,6 +10,7 @@ import { downloadSignedFile } from '../FileDownload'
 import { formatAmount } from '../../utils/money'
 import { useDebounced } from '../../utils/ratesRegistry'
 import { FIELD_KINDS, VAT_FIELD_CODE, VAT_OPTIONS, parseOptions } from '../../utils/bidForm'
+import { COMPANY_SOURCES, FIELD_SCOPES } from '../../utils/bidFormLinks'
 import './ContractorBidsSection.css'
 
 // Реестр расценок → «Расценки подрядчиков (актуальные тендеры)» (миграция 20261102): цены и анкеты, которые
@@ -423,10 +424,32 @@ function BidPositions() {
 }
 
 // ── Поля анкеты ──────────────────────────────────────────────────────────────────────────────────────
+// Вид поля и связь с «Моей компанией» (миграция 20270115) — одним выбором: «по тендеру», «о компании» или «из „Моей компании“: <сведение>».
+// Сведение карточки отдаётся одному полю: занятые другими полями в списке не предлагаются.
+const LINK_TENDER = '@tender'
+const LINK_COMPANY = '@company'
+const linkValue = (f) => f?.source || (f?.scope === 'company' ? LINK_COMPANY : LINK_TENDER)
+const linkPatch = (v) => ({ scope: v === LINK_TENDER ? 'tender' : 'company', source: v.startsWith('@') ? null : v })
+function LinkSelect({ value, usedSources, onChange }) {
+  const known = COMPANY_SOURCES.some((s) => s.key === value)
+  return (
+    <select className="cbp-input cbp-link-select" value={value} onChange={(e) => onChange(e.target.value)} aria-label="Чей ответ">
+      <option value={LINK_TENDER}>{FIELD_SCOPES.tender}</option>
+      <option value={LINK_COMPANY}>{FIELD_SCOPES.company}</option>
+      <optgroup label="Из «Моей компании» (карточку ведёт отдел)">
+        {COMPANY_SOURCES.filter((s) => s.key === value || !usedSources.has(s.key)).map((s) => (
+          <option key={s.key} value={s.key}>Из «Моей компании»: {s.label}</option>
+        ))}
+        {!value.startsWith('@') && !known && <option value={value}>Сведение «{value}» — нет в перечне сайта</option>}
+      </optgroup>
+    </select>
+  )
+}
+
 function FormFieldsEditor() {
   const [fields, setFields] = useState(null)
   const [error, setError] = useState('')
-  const [draft, setDraft] = useState({ label: '', hint: '', kind: 'text', options: '' })
+  const [draft, setDraft] = useState({ label: '', hint: '', kind: 'text', options: '', link: LINK_TENDER })
   const [busy, setBusy] = useState(false)
   const [missing, setMissing] = useState(false)
 
@@ -460,13 +483,16 @@ function FormFieldsEditor() {
 
   const draftOptions = parseOptions(draft.options)
   const canAdd = !!draft.label.trim() && (draft.kind !== 'select' || draftOptions.length > 0)
+  // Колонки вида и связи есть (миграция 20270115) — выбор показывается.
+  const links = fields.some((f) => 'scope' in f)
+  const usedSources = new Set(fields.map((f) => f.source).filter(Boolean))
   const add = () => {
     const label = draft.label.trim()
     if (!canAdd) return
     const max = fields.reduce((m, f) => Math.max(m, f.sort_order || 0), 0)
     run(async () => {
-      await createFormField({ label, hint: draft.hint.trim(), kind: draft.kind, options: draftOptions, sort_order: max + 10 })
-      setDraft({ label: '', hint: '', kind: 'text', options: '' })
+      await createFormField({ label, hint: draft.hint.trim(), kind: draft.kind, options: draftOptions, sort_order: max + 10, ...(links ? linkPatch(draft.link) : {}) })
+      setDraft({ label: '', hint: '', kind: 'text', options: '', link: LINK_TENDER })
     })
   }
   // Перестановка — обменом порядковых номеров с соседом.
@@ -488,11 +514,12 @@ function FormFieldsEditor() {
         ответы на него сохраняются. Переименование не меняет ответов, данных раньше: у них остаётся прежняя подпись.
         Поле «выбор из списка» — как выпадающий список в Excel: подрядчик выбирает один из вариантов. Ставка НДС
         участвует в итогах расценки — её не удалить и не скрыть, варианты можно поправить.
+        {links && ' «О компании» — один ответ на организацию: подрядчик заполняет его один раз, он сам стоит в анкете каждого тендера и виден в его «Моей компании». «Из „Моей компании“» — ответ берётся из карточки компании (её ведёт отдел); пусто в карточке — подрядчик отвечает сам, как на поле о компании.'}
       </p>
       {error && <div className="cbp-error">{error}</div>}
       <ol className="cbp-field-list">
         {fields.map((f, i) => (
-          <FieldRow key={`${f.id}|${f.updated_at}`} field={f} first={i === 0} last={i === fields.length - 1} busy={busy}
+          <FieldRow key={`${f.id}|${f.updated_at}`} field={f} first={i === 0} last={i === fields.length - 1} busy={busy} links={links} usedSources={usedSources}
             onSave={(patch) => run(() => updateFormField(f.id, patch))}
             onMove={(dir) => move(i, dir)}
             onDelete={() => { if (window.confirm(`Удалить поле «${f.label}»? Ответы, уже данные подрядчиками, останутся в их анкетах.`)) run(() => deleteFormField(f.id)) }}
@@ -508,6 +535,7 @@ function FormFieldsEditor() {
           {Object.entries(FIELD_KINDS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>
         <button type="button" className="cbp-btn cbp-btn-primary" onClick={add} disabled={busy || !canAdd}>Добавить поле</button>
+        {links && <LinkSelect value={draft.link} usedSources={usedSources} onChange={(v) => setDraft((d) => ({ ...d, link: v }))} />}
         {draft.kind === 'select' && (
           <textarea className="cbp-input cbp-options" rows={3} placeholder="Варианты — каждый с новой строки, например: да, нет" value={draft.options}
             onChange={(e) => setDraft((d) => ({ ...d, options: e.target.value }))} aria-label="Варианты списка" />
@@ -517,8 +545,9 @@ function FormFieldsEditor() {
   )
 }
 
-function FieldRow({ field, first, last, busy, onSave, onMove, onDelete }) {
+function FieldRow({ field, first, last, busy, links = false, usedSources = new Set(), onSave, onMove, onDelete }) {
   const isVat = field.code === VAT_FIELD_CODE
+  const [link, setLink] = useState(linkValue(field))
   const [label, setLabel] = useState(field.label)
   const [hint, setHint] = useState(field.hint || '')
   const [kind, setKind] = useState(field.kind || 'text')
@@ -526,7 +555,7 @@ function FieldRow({ field, first, last, busy, onSave, onMove, onDelete }) {
   const [optionsText, setOptionsText] = useState(initialOptions)
   const options = parseOptions(optionsText)
   const dirty = label.trim() !== field.label || hint.trim() !== (field.hint || '') || kind !== (field.kind || 'text')
-    || (kind === 'select' && options.join('\n') !== initialOptions)
+    || (kind === 'select' && options.join('\n') !== initialOptions) || (links && link !== linkValue(field))
   const valid = !!label.trim() && (kind !== 'select' || options.length > 0)
   return (
     <li className={`cbp-field${field.is_active ? '' : ' is-off'}`}>
@@ -544,6 +573,7 @@ function FieldRow({ field, first, last, busy, onSave, onMove, onDelete }) {
           <textarea className="cbp-input cbp-options" rows={Math.min(7, Math.max(2, options.length))} value={optionsText}
             placeholder="варианты — каждый с новой строки" onChange={(e) => setOptionsText(e.target.value)} aria-label="Варианты списка" />
         )}
+        {links && <LinkSelect value={link} usedSources={usedSources} onChange={setLink} />}
         {isVat && kind === 'select' && options.join('\n') !== VAT_OPTIONS.join('\n') && (
           <button type="button" className="bid-link cbp-link" onClick={() => setOptionsText(VAT_OPTIONS.join('\n'))}>вернуть ставки по умолчанию</button>
         )}
@@ -551,7 +581,7 @@ function FieldRow({ field, first, last, busy, onSave, onMove, onDelete }) {
       <div className="cbp-field-actions">
         {dirty && (
           <button type="button" className="cbp-btn cbp-btn-primary" disabled={busy || !valid}
-            onClick={() => onSave({ label: label.trim(), hint: hint.trim() || null, kind, options: kind === 'select' ? options : null })}>Сохранить</button>
+            onClick={() => onSave({ label: label.trim(), hint: hint.trim() || null, kind, options: kind === 'select' ? options : null, ...(links ? linkPatch(link) : {}) })}>Сохранить</button>
         )}
         {!isVat && (
           <button type="button" className="cbp-btn" disabled={busy} onClick={() => onSave({ is_active: !field.is_active })}>

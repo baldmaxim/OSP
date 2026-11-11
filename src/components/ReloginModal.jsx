@@ -33,7 +33,7 @@ export default function ReloginModal() {
     const popup = window.open(ssoLoginHref('/auth/done'), 'osp-relogin', 'popup,width=520,height=720')
     if (!popup) window.location.assign(ssoLoginHref(`${window.location.pathname}${window.location.search}`))
   }
-  const signOut = () => logout().finally(() => window.location.assign('/login'))
+  const signOut = () => logout().then(() => window.location.assign('/login'), (err) => alert(err.message))
 
   if (ssoAuth) {
     return (

@@ -2,7 +2,7 @@
 // Держим здесь всё, что нужно и доске, и реестру, и карточке — чтобы статусы,
 // подписи и цвета не разъезжались между тремя видами (как в taskHelpers.js).
 import { ROLES } from '../contexts/roleConstants.js'
-import { daysUntilDate, splitChecklistLines } from './taskHelpers.js'
+import { daysUntilDate } from './taskHelpers.js'
 
 // Порядок в массиве = порядок колонок канбана (как на доске, где отдел вёл
 // проверку до сайта). «Ожидаем скан» стоит ПОСЛЕ «Завершено» намеренно: по
@@ -185,33 +185,23 @@ export function matchesAssignees(request, selected, employees) {
   return selected.some(a => (a === NO_ASSIGNEE ? ids.length === 0 : ids.includes(a)))
 }
 
-// Обсуждение и шаги заявки (миграция 20261124). Пределы — как ограничения в базе.
+// Обсуждение заявки (миграция 20261124). Предел — как ограничение в базе. Шагов в заявке нет с 11.11.2026 (решение пользователя:
+// «убрать шаги полностью»): таблица doc_check_request_steps в базе осталась со строками, страница её не читает.
 export const MAX_COMMENT_LENGTH = 4000
-export const MAX_STEP_TITLE = 500
-// Поле «Добавить шаг» → шаги: каждая строка — отдельный шаг, как в чек-листе задачи.
-export function stepTitles(text) {
-  return splitChecklistLines(text).map(title => title.slice(0, MAX_STEP_TITLE))
-}
-export function compareSteps(a, b) {
-  return (a.sort_order - b.sort_order)
-    || String(a.created_at).localeCompare(String(b.created_at))
-    || String(a.id).localeCompare(String(b.id))
-}
 
-// Счётчики на карточке доски: заявка → шагов всего, сделано, сообщений.
-export const NO_CARD_COUNTS = { stepsTotal: 0, stepsDone: 0, commentsCount: 0 }
-export function cardCountsById(steps, comments) {
+// Файлы заявки делятся на две части (11.11.2026, решение пользователя): понятийное соглашение — своя категория, остальное —
+// «Загружаемые документы» (без категории, как все файлы, загруженные раньше). Категорию база не проверяет: s3_documents.doc_category
+// — свободный текст, права на файлы заявки — те же (s3_documents_doc_check_guard, WRITE_RULES.doc_check_requests).
+export const DOC_CHECK_CONCEPT_CATEGORY = 'doc_check_concept_agreement'
+
+// Счётчик на карточке доски: заявка → сколько сообщений.
+export const NO_CARD_COUNTS = { commentsCount: 0 }
+export function cardCountsById(comments) {
   const map = new Map()
-  const entry = (id) => {
-    if (!map.has(id)) map.set(id, { ...NO_CARD_COUNTS })
-    return map.get(id)
+  for (const c of comments || []) {
+    const cur = map.get(c.request_id) || NO_CARD_COUNTS
+    map.set(c.request_id, { commentsCount: cur.commentsCount + 1 })
   }
-  for (const s of steps || []) {
-    const e = entry(s.request_id)
-    e.stepsTotal += 1
-    if (s.is_done) e.stepsDone += 1
-  }
-  for (const c of comments || []) entry(c.request_id).commentsCount += 1
   return map
 }
 
@@ -398,7 +388,7 @@ const BASE_SELECT = `
 const EMBED = `,
   objects(id, name, status),
   counterparties(id, name)`
-// Поля карточки (миграция 20261124): та же миграция заводит обсуждение и шаги, поэтому их колонки — признак всего набора.
+// Поля карточки (миграция 20261124): та же миграция заводит обсуждение, поэтому её колонки — признак всего набора.
 export const CARD_FIELDS = ['email_link']
 // Что читать — от полного набора к прежнему: первая выборка, на которую база ответила без 42703.
 export const DOC_CHECK_SELECTS = [
@@ -417,15 +407,14 @@ export function normalizeRequest(r) {
   return { ...r, assignee_ids: r.assignee_ids || [], labels: r.labels || [] }
 }
 
-// Заявки с числом файлов, шагов и сообщений. Заявка, у которой числа прежние, остаётся тем же объектом (cache — WeakMap
+// Заявки с числом файлов и сообщений. Заявка, у которой числа прежние, остаётся тем же объектом (cache — WeakMap
 // на время жизни страницы): карточка доски сравнивает его и не перерисовывается. На доске сотни карточек, а меняется одна.
 export function mergeRequestCounts(requests, docCounts, cardCounts, cache) {
   return requests.map((r) => {
     const docsCount = docCounts.get(r.id) || 0
     const counts = cardCounts.get(r.id) || NO_CARD_COUNTS
     const hit = cache.get(r)
-    if (hit && hit.docsCount === docsCount && hit.stepsTotal === counts.stepsTotal
-      && hit.stepsDone === counts.stepsDone && hit.commentsCount === counts.commentsCount) return hit
+    if (hit && hit.docsCount === docsCount && hit.commentsCount === counts.commentsCount) return hit
     const row = { ...r, docsCount, ...counts }
     cache.set(r, row)
     return row

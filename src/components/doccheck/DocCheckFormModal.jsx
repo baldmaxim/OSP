@@ -10,6 +10,7 @@ import { filterCounterpartyOptions } from '../../utils/counterpartyPicker'
 import { ownObjectChoice } from '../../utils/ownObjectChoice'
 import {
   DOC_CHECK_COLORS,
+  DOC_CHECK_CONCEPT_CATEGORY,
   DOC_CHECK_PRIORITIES,
   DOC_CHECK_STATUS_LABEL,
   DOC_TYPES,
@@ -35,15 +36,16 @@ import {
 // Статуса в форме нет: новая заявка встаёт в колонку, где нажали «+ Добавить
 // заявку» (по кнопке в шапке — в «Новые заявки»), дальше её двигают по доске.
 // Исполнители, срок, приоритет, цвет и метки — только при колонках 20261113
-// (hasBoardFields); без них форма прежняя. Ссылка на письмо — только при колонках
-// 20261124 (hasCardFields). Исполнителем выбирают только юриста ОСП. Дату создания и
-// автора заявки меняет только администратор, у созданной заявки (canEditCreated).
+// (hasBoardFields); без них форма прежняя. Ссылки на письмо при создании нет (11.11.2026,
+// решение пользователя); у прежней заявки, где она стоит, поле остаётся в правке — поправить
+// или убрать (колонки 20261124, hasCardFields). Исполнителем выбирают только юриста ОСП. Дату
+// создания и автора заявки меняет только администратор, у созданной заявки (canEditCreated).
 //
 // Объект новой заявки у сотрудника, привязанного к объектам в «Ролях» (ownObjects — его объекты; null — читаются; undefined —
 // привязки нет): один — стоит серым, несколько — выбор обязателен (ownObjectChoice, как в «Заявке на заключение ДП»; без объекта
 // такую заявку не примет и база). creatorOnly — право только создавать (20270102, руководитель строительства, экономист объекта):
-// исполнителей, срока, приоритета, цвета и меток нет (их ставит отдел, база их у автора снимает), зато сразу — файлы на проверку:
-// после создания автор их не меняет.
+// исполнителей, срока, приоритета, цвета и меток нет (их ставит отдел, база их у автора снимает), зато сразу — файлы, двумя
+// частями, как «Документы» в окне заявки: понятийное соглашение и документы на проверку. После создания автор их не меняет.
 
 const EMPTY = {
   object_id: '', counterparty_id: '', doc_type: 'ds', doc_number: '', doc_date: '', notes: '',
@@ -51,7 +53,7 @@ const EMPTY = {
 }
 
 // Файлы новой заявки: уходят на сервер вместе с ней (строки ещё нет).
-function StagedFiles({ files, onFiles }) {
+function StagedFiles({ id, label, hint, testId, files, onFiles }) {
   const inputRef = useRef(null)
   const [dragging, setDragging] = useState(false)
   const add = (list) => {
@@ -60,10 +62,10 @@ function StagedFiles({ files, onFiles }) {
   }
   return (
     <div className="dc-form-row">
-      <span className="dc-form-label" id="dc-files-label">Документы на проверку</span>
+      <span className="dc-form-label" id={`${id}-label`}>{label}</span>
       <div
         className={`dc-drop${dragging ? ' is-over' : ''}`}
-        data-testid="dc-files"
+        data-testid={testId}
         onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => { e.preventDefault(); setDragging(false); add(e.dataTransfer?.files) }}
@@ -81,10 +83,10 @@ function StagedFiles({ files, onFiles }) {
             ><IconTrash size={14} /></button>
           </div>
         ))}
-        <button type="button" className="dc-drop-add" aria-labelledby="dc-files-label" onClick={() => inputRef.current?.click()}>
+        <button type="button" className="dc-drop-add" aria-labelledby={`${id}-label`} onClick={() => inputRef.current?.click()}>
           {files.length ? '+ ещё файл' : 'Выбрать файл'}
         </button>
-        <span className="dc-drop-hint">ДП или ДС, приложения. Можно перетащить сюда. После создания файлы меняет отдел.</span>
+        <span className="dc-drop-hint">{hint}</span>
         <input ref={inputRef} type="file" hidden multiple onChange={(e) => { add(e.target.files); e.target.value = '' }} />
       </div>
     </div>
@@ -115,9 +117,12 @@ export default function DocCheckFormModal({
     : EMPTY))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [conceptFiles, setConceptFiles] = useState([])
   const [files, setFiles] = useState([])
   const set = (patch) => { setForm(f => ({ ...f, ...patch })); setError('') }
   const showWorkFields = hasBoardFields && !creatorOnly
+  // Ссылка на письмо — только в правке заявки, где она уже стоит (при создании её не вводят).
+  const showEmailLink = hasCardFields && !!request?.email_link
   const ownChoice = !request && ownObjects !== undefined
     ? ownObjectChoice({ ownObjects, failed: ownObjectsFailed, objectId: form.object_id })
     : null
@@ -134,7 +139,7 @@ export default function DocCheckFormModal({
       return
     }
     const emailLink = form.email_link.trim()
-    if (hasCardFields && emailLink && !safeHttpUrl(emailLink)) {
+    if (showEmailLink && emailLink && !safeHttpUrl(emailLink)) {
       setError('Ссылка на письмо — адрес вида https://…')
       return
     }
@@ -162,11 +167,14 @@ export default function DocCheckFormModal({
           labels: normalizeLabels(form.labels),
         })
       }
-      if (hasCardFields) {
+      if (showEmailLink) {
         payload.email_link = emailLink || null
       }
       Object.assign(payload, created.patch)
-      await onSave(payload, creatorOnly && !request ? files : [])
+      const staged = creatorOnly && !request
+        ? [...conceptFiles.map(file => ({ file, category: DOC_CHECK_CONCEPT_CATEGORY })), ...files.map(file => ({ file, category: null }))]
+        : []
+      await onSave(payload, staged)
     } finally {
       setSaving(false)
     }
@@ -290,7 +298,7 @@ export default function DocCheckFormModal({
             />
           </div>
 
-          {hasCardFields && (
+          {showEmailLink && (
             <div className="dc-form-row">
               <label htmlFor="dc-email-link">Ссылка на письмо</label>
               <input
@@ -304,7 +312,26 @@ export default function DocCheckFormModal({
             </div>
           )}
 
-          {creatorOnly && !request && <StagedFiles files={files} onFiles={setFiles} />}
+          {creatorOnly && !request && (
+            <>
+              <StagedFiles
+                id="dc-concept-files"
+                label="Понятийное соглашение"
+                hint="Если есть. Можно перетащить сюда."
+                testId="dc-concept-files"
+                files={conceptFiles}
+                onFiles={setConceptFiles}
+              />
+              <StagedFiles
+                id="dc-files"
+                label="Документы на проверку"
+                hint="ДП или ДС, приложения. Можно перетащить сюда. После создания файлы меняет отдел."
+                testId="dc-files"
+                files={files}
+                onFiles={setFiles}
+              />
+            </>
+          )}
 
           {showWorkFields && (
             <>

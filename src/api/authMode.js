@@ -85,6 +85,7 @@ export const isOwnAuth = isSessionAuth
 // входа не переходит на вход СУ-10 сама — иначе живой ещё вход СУ-10 вернул бы человека обратно.
 let leaving = false
 export const markLeaving = () => { leaving = true }
+export const unmarkLeaving = () => { leaving = false }
 export const isLeaving = () => leaving
 
 // Ссылки СУ-10: профиль (смена пароля) и управление доступом.

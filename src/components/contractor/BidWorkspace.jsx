@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react'
 import {
   loadTenderFiles, downloadFileBytes, loadServerPositions, loadMyRates, loadMyRateHistory, saveRates, loadFormFields, loadMyForm, loadBidFiles,
-  VOR_CATEGORIES,
+  loadVorSuperseded, saveForm, VOR_CATEGORIES,
 } from '../../services/contractorBids'
 import { vatFromAnswers, vatField, vatIncluded, vatLabel } from '../../utils/bidForm'
+import { currentVorFiles } from '../../utils/bidFiles'
+import { effectiveAnswers } from '../../utils/bidFormLinks'
 import { readBidFileBytes, mergeBidFiles, rateKey, BID_KIND_LABEL } from '../../utils/bidVor'
 import { isWorkbookFileName } from '../../utils/vorFiles'
 import { formatAmount } from '../../utils/money'
@@ -35,6 +37,13 @@ const BidImportDialog = lazy(() => import('./BidImportDialog'))
 // с каждой ведомостью подрядчик загружает свой заполненный ВОР, суммы по ведомостям и итог — сводкой как в «Сравнении КП» (BidVorFiles).
 // Остаются особые условия и анкета. Таблицы файлов в базе нет (база раньше миграции) — прежняя расценка на сайте, как была.
 // Собранной сайтом книги («Шаблон Excel») больше нет: подрядчик заполняет сам файл ВОР отдела.
+//
+// Только актуальная версия каждой ведомости (миграция 20270114, тендер № 847): файлы, которые снабжение отметило прежней версией
+// (как в «Сравнении КП»), не показываются и в расценку не входят; функции нет — все файлы, как раньше.
+//
+// Анкета и «Моя компания» — одни сведения (миграция 20270115): поля о компании берутся из карточки компании и ответов организации
+// (companyCard, companyAnswers — их читает страница), и, если анкета тендера с ними расходится, она сама поправляется — анкета тендера
+// то, что видит отдел.
 
 const SAVE_DELAY_MS = 600
 // Расценка прямо на сайте (таблицы «Материалы» / «Работы», «Цены из файла», «Структура КП»). Временно скрыта — решение пользователя
@@ -71,9 +80,11 @@ const PARSE_ERROR = {
 
 export default function BidWorkspace({
   tender, canEdit, counterpartyName, counterpartyId = null, tenderNumbers, onSummary, serverPositions = false, previewCounterpartyId = null,
+  companyCard, companyAnswers, onCompanyAnswers,
 }) {
   const tenderId = tender.id
   const [files, setFiles] = useState(null) // null — загрузка списка
+  const [priorOf, setPriorOf] = useState(null) // id прежней версии ведомости → id новой (bid_vor_superseded)
   const [filesError, setFilesError] = useState('')
   const [vorError, setVorError] = useState('')
   const [parsed, setParsed] = useState({}) // id файла → { status, result, error }
@@ -111,23 +122,30 @@ export default function BidWorkspace({
   useEffect(() => {
     let cancelled = false
     setFiles(null)
+    setPriorOf(null)
     setParsed({})
     setFilesError('')
+    // Заменённые ведомости — вместе со списком: прежняя версия не должна мелькнуть, пока читается отметка.
+    const superseded = loadVorSuperseded(tenderId)
     if (serverPositions) {
-      loadServerPositions(tenderId)
-        .then((list) => {
+      Promise.all([loadServerPositions(tenderId), superseded])
+        .then(([list, sup]) => {
           if (cancelled) return
-          setFiles(list.map(({ id, file_name: fileName }) => ({ id, file_name: fileName })))
+          const { current, priorOf: prior } = currentVorFiles(list.map(({ id, file_name: fileName }) => ({ id, file_name: fileName })), sup)
+          setPriorOf(prior)
+          setFiles(current)
           setParsed(Object.fromEntries(list.map((f) => [f.id, f.parsed])))
         })
         .catch((e) => { if (!cancelled) { setFiles([]); setFilesError(e.message || String(e)) } })
       return () => { cancelled = true }
     }
-    loadTenderFiles(tenderId)
-      .then((all) => {
+    Promise.all([loadTenderFiles(tenderId), superseded])
+      .then(([all, sup]) => {
         if (cancelled) return
         const vor = all.filter((f) => VOR_CATEGORIES.includes(f.doc_category) && isWorkbookFileName(f.file_name))
-        setFiles(vor)
+        const { current, priorOf: prior } = currentVorFiles(vor, sup)
+        setPriorOf(prior)
+        setFiles(current)
       })
       .catch((e) => { if (!cancelled) { setFiles([]); setFilesError(e.message || String(e)) } })
     return () => { cancelled = true }
@@ -175,8 +193,30 @@ export default function BidWorkspace({
       .catch((e) => { if (!cancelled) { setFormFields([]); setFormError(e.message || String(e)) } })
     return () => { cancelled = true }
   }, [tenderId, previewCounterpartyId])
-  const vat = useMemo(() => vatFromAnswers(formFields, answers), [formFields, answers])
+  // Что видит подрядчик в анкете: ответы тендера, а у полей о компании — «Моя компания». companyCard / companyAnswers === undefined — ещё
+  // читаются: до тех пор ничего не поправляем.
+  const companyReady = companyCard !== undefined && companyAnswers !== undefined
+  const effective = useMemo(
+    () => effectiveAnswers(formFields, answers, companyReady ? companyCard : null, companyReady ? companyAnswers : null),
+    [formFields, answers, companyCard, companyAnswers, companyReady])
+  const shownAnswers = effective.answers
+  const vat = useMemo(() => vatFromAnswers(formFields, shownAnswers), [formFields, shownAnswers])
   const needVat = !!vatField(formFields) && !vat
+
+  // Анкета тендера расходится с «Моей компанией» — поправить её сразу: отдел видит анкету тендера. Один раз на набор правок; без права
+  // правки (просмотр от имени подрядчика, приём закрыт) — только показ.
+  const syncedRef = useRef('')
+  useEffect(() => {
+    if (!canEdit || !companyReady || formFields === null) return
+    const keys = Object.keys(effective.patch)
+    if (!keys.length) return
+    const sig = `${tenderId}|${JSON.stringify(effective.patch)}`
+    if (syncedRef.current === sig) return
+    syncedRef.current = sig
+    saveForm(tenderId, effective.patch)
+      .then(() => setAnswers((a) => ({ ...a, ...effective.patch })))
+      .catch((e) => setFormError(`Сведения из «Моей компании» не записались в анкету тендера: ${e.message || e}`))
+  }, [canEdit, companyReady, formFields, effective.patch, tenderId])
 
   // ── Цены ───────────────────────────────────────────────────────────────────────────────────────────
   const loadRates = useCallback(async () => {
@@ -346,7 +386,10 @@ export default function BidWorkspace({
       tenderId={tenderId}
       canEdit={canEdit}
       fields={formFields}
-      answers={answers}
+      answers={shownAnswers}
+      card={companyReady ? companyCard : null}
+      companyAnswers={companyReady ? companyAnswers : null}
+      onCompanyAnswers={onCompanyAnswers}
       previous={previousForm}
       error={formError}
       onAnswers={setAnswers}
@@ -361,6 +404,7 @@ export default function BidWorkspace({
           <BidVorFiles
             tenderId={tenderId}
             vorFiles={files}
+            priorOf={priorOf}
             parsed={parsed}
             myFiles={myFiles}
             canEdit={canEdit}

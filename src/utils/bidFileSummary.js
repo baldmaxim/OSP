@@ -10,11 +10,77 @@
 // анкеты, иначе 22 %); подрядчик без НДС — цены как есть.
 import { readBidPriceDoc, bidGroups, matchBidItems } from './bidImport.js'
 import { unitPriceWithVat, DEFAULT_VAT_RATE } from './supplierDoc.js'
-import { roundMoney2 } from './bidVor.js'
+import { roundMoney2, bidItemKey, bidUnitKey } from './bidVor.js'
 
 export function bidFileVat(doc, ownVat = null) {
   if (ownVat?.exempt) return { mode: 'gross', force: true, rate: 0, exempt: true }
   return { ...(doc?.vat || {}), rate: doc?.vat?.rate ?? ownVat?.rate ?? DEFAULT_VAT_RATE }
+}
+
+// Строка с двумя ценами (лист «КП» или корпуса: «Цена материалы» и «Цена СМР») → по строке на вид, как у проверки по договорным
+// расценкам: материал ищется среди материалов, работа — среди работ, и цена у каждой своя (иначе у работы взялась бы цена материала).
+export function splitByKind(items) {
+  const out = []
+  for (const it of items || []) {
+    const kinds = it.parts ? ['material', 'work'].filter((k) => it.parts[k] && (it.parts[k].price != null || it.parts[k].sum != null)) : []
+    if (!kinds.length) { out.push(it); continue }
+    for (const k of kinds) {
+      const p = it.parts[k]
+      out.push({ ...it, price: p.price, priceVat: p.priceVat, sum: p.sum, sumVat: p.sumVat, kindHint: k, parts: null })
+    }
+  }
+  return out
+}
+
+// Цены строк → позиции ведомости. Map(ключ позиции → цена за единицу с НДС) и сколько строк с ценой не нашли позицию.
+//
+// Два шага. Сначала — то же наименование (заполненный ВОР отдела — копия ведомости, наименования в нём те же): строка с таким
+// наименованием сопоставляется только со своей позицией, и цену даёт первая такая строка с ценой. Повторы (одна позиция на листах
+// нескольких корпусов) и строки без цены поэтому не уходят «по похожести» к соседним позициям — иначе толщина 0,5 мм подставила
+// бы свою цену толщине 0,6 мм, которую подрядчик не расценил. Затем — по похожести (тот же расчёт, что у «Цен из файла»), только
+// строки с ценой, у которых своего наименования в ведомости нет, и только к позициям, у которых в файле нет строки с тем же
+// наименованием.
+// Цена — только больше нуля: ноль в ВОР значит «не заполнено» (в шаблоне отдела колонка цены стоит нулями), и итог «0 ₽, цены у всех
+// позиций» был бы ложью.
+export function priceBidPositions(docItems, positions, vat) {
+  const priceOf = (it) => {
+    const p = unitPriceWithVat(it, vat)
+    return p != null && Number.isFinite(p) && p > 0 ? roundMoney2(p) : null
+  }
+  const byName = new Map()
+  for (const p of positions) {
+    const k = bidItemKey(p.name)
+    if (!k) continue
+    if (!byName.has(k)) byName.set(k, [])
+    byName.get(k).push(p)
+  }
+  const prices = new Map()
+  const claimed = new Set()
+  const rest = []
+  for (const it of splitByKind(docItems)) {
+    const same = (byName.get(bidItemKey(it.name)) || []).filter((p) => !it.kindHint || p.kind === it.kindHint)
+    if (!same.length) {
+      if (priceOf(it) != null) rest.push(it)
+      continue
+    }
+    // Одно наименование у двух позиций (разные ед. изм.) — своя ед. изм., затем первая без цены.
+    const unit = bidUnitKey(it.unit)
+    const pos = same.find((p) => p.unitKey === unit && !prices.has(p.key)) || same.find((p) => !prices.has(p.key)) || same[0]
+    claimed.add(pos.key)
+    const price = priceOf(it)
+    if (price != null && !prices.has(pos.key)) prices.set(pos.key, price)
+  }
+  let unmatched = 0
+  const free = positions.filter((p) => !claimed.has(p.key))
+  if (rest.length && free.length) {
+    matchBidItems(rest, bidGroups(free)).forEach((m, i) => {
+      if (!m?.match) { unmatched += 1; return }
+      prices.set(m.match.group.key, priceOf(rest[i]))
+    })
+  } else {
+    unmatched = rest.length
+  }
+  return { prices, unmatched }
 }
 
 // doc — ответ readBidPriceDoc, positions — позиции ведомости ([...materials, ...works] разбора ВОР), ownVat — ставка из анкеты.
@@ -23,13 +89,7 @@ export function summarizeBidFile(doc, positions, ownVat = null) {
   if (!doc || doc.error) return { v: 1, error: doc?.error || 'broken' }
   if (!positions?.length) return { v: 1, error: 'no_vor', rows: doc.items?.length || 0 }
   const vat = bidFileVat(doc, ownVat)
-  const prices = new Map()
-  let unmatched = 0
-  matchBidItems(doc.items, bidGroups(positions)).forEach((m, i) => {
-    if (!m?.match) { unmatched += 1; return }
-    const price = unitPriceWithVat(doc.items[i], vat)
-    if (price != null && Number.isFinite(price) && price >= 0) prices.set(m.match.group.key, roundMoney2(price))
-  })
+  const { prices, unmatched } = priceBidPositions(doc.items, positions, vat)
   const out = { v: 1, materials: 0, works: 0, items: { material: 0, work: 0 }, priced: { material: 0, work: 0 } }
   for (const p of positions) {
     const kind = p.kind === 'work' ? 'work' : 'material'

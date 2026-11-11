@@ -522,11 +522,21 @@ export function RoleProvider({ children }) {
     if (profileData.work_phone !== undefined) updates.work_phone = profileData.work_phone
     if (profileData.work_email !== undefined) updates.work_email = profileData.work_email
 
-    const { error } = await db
-      .from('user_roles')
-      .update(updates)
-      .eq('user_id', user.id)
-    if (error) throw error
+    // Своя строка — функцией базы (20270120): ФИО, телефон и почта, больше ничего; прямая правка user_roles — администратору.
+    // Нет функции (база раньше миграции) — прежний запрос. Пустое поле — очистить ('' — функция понимает так).
+    const { error: rpcError } = await db.rpc('profile_update_own', {
+      p_full_name: updates.full_name ?? null,
+      p_work_phone: updates.work_phone ?? null,
+      p_work_email: updates.work_email ?? null,
+    })
+    if (rpcError && rpcError.code !== 'PGRST202') throw rpcError
+    if (rpcError) {
+      const { error } = await db
+        .from('user_roles')
+        .update(updates)
+        .eq('user_id', user.id)
+      if (error) throw error
+    }
     setUserProfile(prev => ({ ...prev, ...updates }))
   }
 
@@ -555,6 +565,11 @@ export function RoleProvider({ children }) {
     // до выхода: страница входа, на которую сразу перерисуется приложение, не должна сама начать вход СУ-10 и перебить выход.
     if (auth.isSso) auth.markLeaving()
     const out = everywhere && auth.isOwn ? await auth.logoutAll() : await auth.signOut()
+    // Сервер не подтвердил выход — сеанс может быть жив: состояние не сбрасываем, вызывающий показывает причину.
+    if (out?.error) {
+      if (auth.isSso) auth.unmarkLeaving()
+      throw Object.assign(new Error('Не удалось выйти: сеанс на сервере не завершён. Проверьте связь и повторите.'), { cause: out.error })
+    }
     const endSessionUrl = out?.endSessionUrl || null
     setMustChangePassword(false)
     setSessionExpired(false)

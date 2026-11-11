@@ -163,7 +163,8 @@ export function registerAiAssist(app, { config, getAnthropic, limiters }) {
       }
     } catch (e) {
       request.log.error({ msg: e?.message }, 'ai-assist')
-      return reply.code(500).send({ error: e?.message || 'Ошибка обращения к ИИ' })
+      // Текст исключения (ответ внешней службы) клиенту не уходит — только в журнал.
+      return reply.code(500).send({ error: 'Ошибка обращения к ИИ — повторите позже' })
     } finally {
       releaseUser()
       releaseTotal()

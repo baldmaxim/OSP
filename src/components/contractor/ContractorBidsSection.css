@@ -163,6 +163,8 @@
 .cbp-icon-danger:hover:not(:disabled) { border-color: #ef4444; color: #ef4444; }
 .cbp-field-inputs { align-items: start; }
 .cbp-field-inputs > select, .cbp-field-inputs > .cbp-chip-vat { justify-self: start; }
+/* Вид поля и связь с «Моей компанией» (20270115) — своей строкой под полем. */
+.cbp-link-select { grid-column: 1 / -1; justify-self: start; max-width: 100%; }
 .cbp-options { grid-column: 1 / -1; height: auto; min-height: 3.5rem; padding: 0.4rem 0.65rem; resize: vertical; line-height: 1.4; }
 .cbp-chip-vat { margin: 0.45rem 0 0; background: color-mix(in srgb, #d97706 14%, transparent); color: #b45309; }
 [data-theme='dark'] .cbp-chip-vat { color: #fcd34d; }

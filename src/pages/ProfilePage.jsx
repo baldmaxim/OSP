@@ -138,7 +138,7 @@ function ProfilePage() {
               {ssoLinks?.accountUrl && (
                 <a className="btn-save" href={ssoLinks.accountUrl} target="_blank" rel="noopener noreferrer">Сменить пароль в СУ-10</a>
               )}
-              <button type="button" className="btn-logout-all" onClick={() => logout({ everywhere: true }).finally(() => window.location.assign('/login'))}>
+              <button type="button" className="btn-logout-all" onClick={() => logout({ everywhere: true }).then(() => window.location.assign('/login'), (err) => alert(err.message))}>
                 Выйти на всех устройствах
               </button>
             </div>
@@ -156,7 +156,7 @@ function ProfilePage() {
                 <button type="button" className="btn-save" onClick={() => { setPasswordFormOpen(true); setPasswordChanged(false) }}>
                   Сменить пароль
                 </button>
-                <button type="button" className="btn-logout-all" onClick={() => logout({ everywhere: true }).finally(() => window.location.assign('/login'))}>
+                <button type="button" className="btn-logout-all" onClick={() => logout({ everywhere: true }).then(() => window.location.assign('/login'), (err) => alert(err.message))}>
                   Выйти на всех устройствах
                 </button>
               </div>

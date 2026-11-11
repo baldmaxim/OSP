@@ -212,17 +212,24 @@ describe('Кабинет подрядчика: расценка на сайте'
       await page.locator('.bid-form-section h4', { hasText: 'Анкета участника' }).waitFor()
       await page.locator('.bid-conditions', { hasText: 'ГУ в размере 5 %' }).waitFor()
 
-      // Чужой файл к той же ведомости лежит в базе — в кабинете его нет, сводка пустая.
+      // Чужой файл к той же ведомости лежит в базе — в кабинете его нет: обе ведомости «ждут вашего файла», сводки до первого файла нет.
       const matrix = page.locator('table.bid-matrix')
-      await matrix.waitFor()
-      assert.doesNotMatch(await text(matrix), /777/)
-      assert.equal(await page.locator('.bid-pair-mine.has-file').count(), 0)
-      assert.match(await text(matrix.locator('thead')), /ООО Альфа/)
+      assert.equal(await matrix.count(), 0, 'своих файлов нет — сводки нет')
+      assert.equal(await page.locator('.bid-pair.is-empty').count(), 2)
+      assert.equal(await page.locator('.bid-state-chip', { hasText: 'Ждёт вашего файла' }).count(), 2)
+      assert.doesNotMatch(await text(page.locator('.bid-files')), /777|Бета/)
+      assert.match(await text(page.locator('.bid-progress')), /С расценкой: 0 из 2/)
+      assert.equal(await page.locator('.bid-steps li').count(), 3, 'три шага: скачать, заполнить, загрузить')
 
       // Корпус 1: армирование без цены — итог неполный (жёлтым, как в «Сравнении КП»).
       await page.waitForFunction(() => !document.querySelector('.bid-note')?.textContent.includes('Читаем файлы ВОР'), null, { timeout: 60000 })
       await parking.locator('input[type=file]').setInputFiles(pricedVor({ concrete: 7800, rebar: '85 000', slab: 2500 }))
       await parking.locator('.bid-file-name').waitFor({ timeout: 30000 })
+      await matrix.waitFor()
+      assert.match(await text(matrix.locator('thead')), /ООО Альфа/)
+      // Армирование без цены — жёлтым: «не у всех позиций есть цена».
+      assert.match(await parking.getAttribute('class'), /is-partial/)
+      await parking.locator('.bid-state-chip', { hasText: 'Не у всех позиций есть цена' }).waitFor()
       const row1 = matrix.locator('tbody tr', { hasText: 'ВОР паркинга' })
       await row1.locator('td', { hasText: '1 620 400,00' }).waitFor()
       assert.match(await text(row1), /ВОР паркинга 1 294 150,00 326 250,00 1 620 400,00/)
@@ -235,7 +242,8 @@ describe('Кабинет подрядчика: расценка на сайте'
       const row2 = matrix.locator('tbody tr', { hasText: 'ВОР корпус 2' })
       await row2.locator('td', { hasText: '1 773 300,00' }).waitFor({ timeout: 30000 })
       assert.match(await text(matrix.locator('tfoot')), /ИТОГО, ₽ 2 630 650,00 763 050,00 3 393 700,00/)
-      assert.match(await text(page.locator('.bid-matrix-block')), /Загружено 2 из 2 ведомостей/)
+      assert.match(await text(page.locator('.bid-matrix-block')), /Итог — по всем 2 ведомостям/)
+      assert.match(await text(page.locator('.bid-progress')), /С расценкой: 2 из 2/)
 
       // В базу — файл к своей ведомости и сводка; ключ задаёт служба (стенд — как она).
       const confirms = await page.evaluate(() => window.__bidFileCalls.filter((c) => c.action === 'confirm'))
@@ -250,6 +258,7 @@ describe('Кабинет подрядчика: расценка на сайте'
       assert.equal(await page.evaluate((k) => !!window.__fakeFiles[k], firstKey), false)
       assert.equal(await page.evaluate(() => window.__fakeDb.tender_bid_files.filter((f) => f.counterparty_id === 'cp-alpha').length), 2)
       assert.equal(await row1.locator('td.is-incomplete').count(), 0)
+      assert.match(await parking.getAttribute('class'), /is-ok/, 'всё с ценой — зелёным')
 
       // Скачать свой файл — под своим именем; убрать — строка корпуса снова пустая, итог пересчитан.
       const [saved] = await Promise.all([page.waitForEvent('download'), parking.getByRole('button', { name: /Скачать свой файл/ }).click()])
@@ -257,7 +266,7 @@ describe('Кабинет подрядчика: расценка на сайте'
       await block2.getByRole('button', { name: 'Убрать' }).click()
       await row2.locator('td', { hasText: '—' }).first().waitFor({ timeout: 30000 })
       assert.match(await text(matrix.locator('tfoot')), /1 717 900,00/)
-      assert.match(await text(page.locator('.bid-matrix-block')), /Загружено 1 из 2 ведомостей/)
+      assert.match(await text(page.locator('.bid-matrix-block')), /Итог — только по 1 ведомости из 2/)
       assert.deepEqual(await calls(page, 'bid_rates_save'), [], 'цены на сайте не пишутся')
       assert.deepEqual(errors, [])
     } finally {
@@ -310,6 +319,113 @@ describe('Кабинет подрядчика: расценка на сайте'
       assert.deepEqual(second.errors, [])
     } finally {
       await second.close()
+    }
+  })
+
+  it('прежняя версия ведомости (как тендер № 847) не показывается; своя расценка к ней — у новой, красным и не в итоге; «Загрузить заново» её заменяет', async () => {
+    const { page, errors, close } = await open('&bidFiles=1&vorVersions=1')
+    try {
+      await page.locator('table.tenders-registry').waitFor({ timeout: 120000 })
+      await openTender(page, 857)
+      await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
+      const pairs = page.locator('.bid-pair')
+      await pairs.nth(1).waitFor({ timeout: 60000 })
+      assert.equal(await pairs.count(), 2, 'прежняя версия паркинга — не отдельной ведомостью')
+      assert.equal(await page.getByRole('button', { name: 'Скачать ВОР «ВОР паркинга старая.xlsx»' }).count(), 0)
+      assert.ok((await calls(page, 'bid_vor_superseded')).length >= 1)
+
+      const parking = pairs.nth(1)
+      assert.match(await parking.getAttribute('class'), /is-stale/)
+      assert.match(await text(parking), /Отдел обновил ВОР — загрузите заново/)
+      assert.match(await text(parking), /Альфа — по старой ведомости\.xlsx/)
+      const matrix = page.locator('table.bid-matrix')
+      await matrix.waitFor()
+      assert.match(await text(matrix.locator('tbody tr', { hasText: 'ВОР паркинга' })), /по прежней версии ВОР — не в итоге/)
+      assert.match(await text(matrix.locator('tfoot')), /ИТОГО, ₽ — — —/, 'расценка по старым объёмам в итог не входит')
+      assert.match(await text(page.locator('.bid-progress')), /С расценкой: 0 из 2/)
+
+      await page.waitForFunction(() => !document.querySelector('.bid-note')?.textContent.includes('Читаем файлы ВОР'), null, { timeout: 60000 })
+      await parking.locator('input[type=file]').setInputFiles(pricedVor({ concrete: 7800, rebar: 85000, slab: 2500, reinforce: 30000 }))
+      await matrix.locator('tbody tr', { hasText: 'ВОР паркинга' }).locator('td', { hasText: '1 717 900,00' }).waitFor({ timeout: 30000 })
+      assert.match(await parking.getAttribute('class'), /is-ok/)
+      const mine = await page.evaluate(() => window.__fakeDb.tender_bid_files.filter((f) => f.counterparty_id === 'cp-alpha').map((f) => f.vor_file_id))
+      assert.deepEqual(mine, ['doc-vor'], 'файл — к новой версии, прежний убран')
+      const confirms = await page.evaluate(() => window.__bidFileCalls.filter((c) => c.action === 'confirm').map((c) => c.vor_file_id))
+      assert.deepEqual(confirms, ['doc-vor'])
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('анкета и «Моя компания» — одни сведения: название и НДС — из карточки, СРО и сайт — один ответ на компанию, посещение — по тендеру', async () => {
+    const { page, errors, close } = await open('&bidFiles=1&formLinks=1')
+    try {
+      await page.locator('table.tenders-registry').waitFor({ timeout: 120000 })
+      // «Моя компания»: что из карточки само стоит в анкете; СРО — заполнить один раз здесь.
+      await page.locator('.cab-tab', { hasText: 'Моя компания' }).click()
+      const own = page.locator('.cab-org-form')
+      await own.waitFor({ timeout: 30000 })
+      assert.match(await text(page.locator('.cab-org-linked')), /название, ставка НДС/)
+      assert.equal(await own.getByLabel('Наименование контрагента').count(), 0, 'из карточки — не здесь, а в карточке выше')
+      await own.getByLabel('Наличие СРО').fill('да, 500 000 ₽')
+      await own.getByLabel('Наличие СРО').blur()
+      await own.locator('.cab-org-state.is-saved').waitFor()
+      assert.deepEqual((await calls(page, 'bid_company_save')).map((c) => c.answers), [{ 'f-sro': 'да, 500 000 ₽' }])
+
+      // Тендер: поля о компании — сверху; название и НДС — из карточки, без поля ввода; СРО уже стоит; анкета тендера записалась сама.
+      await page.locator('.cab-tab', { hasText: 'Тендеры' }).click()
+      await openTender(page, 857)
+      await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
+      const company = page.locator('.bid-form-group.is-company')
+      await company.waitFor({ timeout: 60000 })
+      const nameRow = company.locator('.bid-form-row', { hasText: 'Наименование контрагента' })
+      assert.match(await text(nameRow.locator('.bid-form-value')), /ООО Альфа/)
+      assert.equal(await nameRow.locator('textarea').count(), 0, 'название — из карточки, в анкете не меняется')
+      assert.match(await text(company.locator('.bid-form-row', { hasText: 'Ставка НДС' })), /22 %/)
+      assert.equal(await company.locator('.bid-form-row', { hasText: 'Наличие СРО' }).locator('textarea').inputValue(), 'да, 500 000 ₽')
+      assert.equal(await page.locator('.bid-form-section .bid-tab-warn').count(), 0, 'НДС из карточки — выбирать не нужно')
+      await page.waitForFunction(() => window.__fakeDb.tender_bid_forms.some((f) => f.tender_id === 't-open' && f.answers['f-sro']), null, { timeout: 30000 })
+      const form = await page.evaluate(() => window.__fakeDb.tender_bid_forms.find((f) => f.tender_id === 't-open').answers)
+      assert.deepEqual([form['f-name']?.value, form['f-vat']?.value, form['f-sro']?.value], ['ООО Альфа', '22 %', 'да, 500 000 ₽'], 'отдел видит анкету заполненной')
+
+      // Сайта в карточке нет — ответ в анкете уходит и в «Мою компанию».
+      const site = company.locator('.bid-form-row', { hasText: 'Ссылка на сайт' })
+      await site.locator('textarea').fill('alpha.ru')
+      await site.locator('textarea').blur()
+      await site.locator('.bid-form-state.is-saved').waitFor()
+      assert.deepEqual((await calls(page, 'bid_company_save')).at(-1).answers, { 'f-site': 'alpha.ru' })
+      // По тендеру — своё, в «Мою компанию» не идёт.
+      const visit = page.locator('.bid-form-group:not(.is-company) .bid-form-row', { hasText: 'посещении' })
+      await visit.locator('textarea').fill('были 05.11')
+      await visit.locator('textarea').blur()
+      await visit.locator('.bid-form-state.is-saved').waitFor()
+      assert.equal((await calls(page, 'bid_company_save')).length, 2)
+
+      // Обратно в «Мою компанию»: сайт — уже там.
+      await page.locator('.cab-tab', { hasText: 'Моя компания' }).click()
+      await page.locator('.cab-org-form').waitFor()
+      assert.equal(await page.locator('.cab-org-form').getByLabel('Ссылка на сайт компании').inputValue(), 'alpha.ru')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('анкета от имени подрядчика (просмотр): сведения из карточки видны, ничего не записывается', async () => {
+    const { page, errors, close } = await open('&bidFiles=1&formLinks=1&preview=1')
+    try {
+      await page.locator('table.tenders-registry').waitFor({ timeout: 120000 })
+      await openTender(page, 857)
+      await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
+      const company = page.locator('.bid-form-group.is-company')
+      await company.waitFor({ timeout: 60000 })
+      assert.match(await text(company.locator('.bid-form-row', { hasText: 'Наименование контрагента' })), /ООО Альфа/)
+      await page.waitForTimeout(800)
+      assert.deepEqual([...await calls(page, 'bid_form_save'), ...await calls(page, 'bid_company_save')], [])
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
     }
   })
 

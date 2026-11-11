@@ -1431,19 +1431,16 @@ if (params.get('docCheck') === '1') {
   ]
   fdb.doc_check_requests.forEach(embed)
   fdb.doc_check_request_audit_log = []
+  // Файлы dcr-2: документ на проверку (без категории, как все прежние) и понятийное соглашение — своя категория (11.11.2026).
   fdb.s3_documents.push({ id: 'dcr-file-1', owner_type: 'doc_check_request', owner_id: 'dcr-2', file_name: 'ДП СУ2-001.pdf',
     s3_key: 'doc-check-requests/dcr-2/dp.pdf', size_bytes: 1024, created_at: '2026-10-21T09:00:00Z' })
-  // Карточка заявки (миграция 20261124): шаги и обсуждение у dcr-3; у двух шагов один номер — порядок по времени.
-  const step = (id, title, is_done, sort_order, created_at) => ({ id, request_id: 'dcr-3', title, is_done, sort_order, created_at })
-  fdb.doc_check_request_steps = [
-    step('st-1', 'Сверить реквизиты', true, 0, '2026-10-20T10:00:00Z'),
-    step('st-2', 'Проверить суммы', false, 10, '2026-10-20T10:01:00Z'),
-    step('st-3', 'Отправить на подпись', false, 10, '2026-10-20T10:02:00Z'),
-  ]
-  // dcSteps=N — ещё шаги у dcr-3: список длиннее окна; потолок строк — ?maxRows.
-  for (let n = 4; n <= 3 + Number(params.get('dcSteps') || 0); n++) {
-    fdb.doc_check_request_steps.push(step(`st-${n}`, `Шаг ${n}`, false, n * 10, `2026-10-20T11:${String(n % 60).padStart(2, '0')}:00Z`))
-  }
+  fdb.s3_documents.push({ id: 'dcr-file-2', owner_type: 'doc_check_request', owner_id: 'dcr-2', file_name: 'Понятийное соглашение СУ2.pdf',
+    doc_category: 'doc_check_concept_agreement', s3_key: 'doc-check-requests/dcr-2/concept.pdf', size_bytes: 2048,
+    created_at: '2026-10-21T09:05:00Z' })
+  // Шаги заявки убраны со страницы 11.11.2026, таблица в базе осталась: строка здесь — чтобы проверить, что страница её не читает.
+  fdb.doc_check_request_steps = [{ id: 'st-1', request_id: 'dcr-3', title: 'Сверить реквизиты', is_done: true, sort_order: 0,
+    created_at: '2026-10-20T10:00:00Z' }]
+  // Карточка заявки (миграция 20261124): обсуждение у dcr-3.
   fdb.doc_check_request_comments = [
     { id: 'cm-1', request_id: 'dcr-3', author_user_id: 'user-3', author_name: 'Юристова Мария Андреевна',
       body: 'Договор ушёл на подпись\nждём оригинал', created_at: '2026-10-21T09:30:00Z' },
@@ -1505,16 +1502,13 @@ if (params.get('docCheck') === '1') {
     doc_check_request_comments: (row) => {
       row.author_user_id = params.get('asUser') || 'user-1'
       row.author_name = 'Тест'
-    },
-    // Значение колонки по умолчанию: стенд их не знает.
-    doc_check_request_steps: (row) => { row.is_done ??= false } }
+    } }
   // dcBadLink=1 — в базе не адрес (правка мимо страницы): ссылкой стать не должно.
   if (params.get('dcBadLink') === '1') fdb.doc_check_requests.find((r) => r.id === 'dcr-3').email_link = 'javascript:alert(1)'
   const card = ['email_link', 'manual_assignees']
   const noCardTables = () => {
     window.__fakeErrors = { ...(window.__fakeErrors || {}),
-      doc_check_request_comments: { code: 'PGRST205', message: "Could not find the table 'public.doc_check_request_comments' in the schema cache" },
-      doc_check_request_steps: { code: 'PGRST205', message: "Could not find the table 'public.doc_check_request_steps' in the schema cache" } }
+      doc_check_request_comments: { code: 'PGRST205', message: "Could not find the table 'public.doc_check_request_comments' in the schema cache" } }
   }
   // ?docCheckNoCard=1 — миграции 20261124 ещё нет, 20261113 есть.
   if (params.get('docCheckNoCard') === '1') {

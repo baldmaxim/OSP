@@ -32,6 +32,34 @@
   color: var(--text-primary);
   font: inherit;
 }
+/* «Для анкеты тендеров» (миграция 20270115): поля анкеты о компании — правка прямо здесь. */
+.cab-org-linked { margin: 0.5rem 0 0; padding: 0.4rem 0.6rem; border-radius: 6px; background: color-mix(in srgb, var(--primary-color) 7%, transparent); }
+.cab-org-form .cab-org-row { align-items: start; }
+.cab-org-form .cab-org-row dd { display: flex; flex-direction: column; gap: 0.2rem; }
+.cab-org-form .cab-org-row.is-empty dt { color: var(--text-secondary); }
+.cab-org-hint { display: block; margin-top: 0.1rem; font-size: 0.75rem; color: var(--text-tertiary); }
+.cab-org-input {
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+  resize: vertical;
+  field-sizing: content;
+}
+.cab-org-row.is-empty .cab-org-input { border-color: color-mix(in srgb, #d97706 55%, var(--border-color)); }
+select.cab-org-input { max-width: 16rem; }
+.cab-org-from { font-size: 0.75rem; color: var(--text-tertiary); }
+.cab-org-state { font-size: 0.75rem; color: var(--text-tertiary); }
+.cab-org-state.is-saved { color: #15803d; }
+.cab-org-state.is-error { color: #b91c1c; }
+[data-theme='dark'] .cab-org-state.is-saved { color: #6ee7b7; }
+[data-theme='dark'] .cab-org-state.is-error { color: #fca5a5; }
+
 @media (max-width: 640px) {
   .cab-org { padding: 0.5rem; }
   .cab-org-row { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }

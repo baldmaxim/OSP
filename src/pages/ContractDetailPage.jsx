@@ -704,7 +704,7 @@ function ContractDetailPage() {
 
       {activeTab === 'documents' && (
         <div className="contract-documents-tab">
-          <S3DocumentList ownerType="contract" ownerId={contractId} title="Документы договора" excludeCategory="negotiation_template" />
+          <S3DocumentList ownerType="contract" ownerId={contractId} title="Документы договора" excludeCategory="negotiation_template" canDelete={canEdit('contracts')} />
         </div>
       )}
 

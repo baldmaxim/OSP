@@ -151,6 +151,20 @@ export async function deleteDocument(doc) {
   if (error) throw error
 }
 
+// Строки распознанного документа поставщика при файле расценки снабжения. Новый портал — только через osp-api (прямая правка
+// строк s3_documents через шлюз закрыта); прежний — как раньше, правкой строки под правилом сотрудника.
+export async function saveSupplyDocNotesRow(id, notes, { onlyIf } = {}) {
+  if (filesViaOspApi()) {
+    await ospFiles.supplyNotes(id, notes, onlyIf)
+    return
+  }
+  let q = db.from('s3_documents').update({ notes }).eq('id', id)
+  if (onlyIf === null) q = q.is('notes', null)
+  else if (onlyIf !== undefined) q = q.eq('notes', onlyIf)
+  const { error } = await q
+  if (error) throw error
+}
+
 // Новое имя файла (окно просмотра): только подпись в строке, объект в хранилище и его ключ прежние. Ответ — строка
 // s3_documents. Через osp-api право — как у удаления; иначе (прежний портал) — правило сотрудника по строкам.
 export async function renameDocument(doc, fileName) {

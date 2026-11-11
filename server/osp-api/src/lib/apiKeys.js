@@ -7,9 +7,13 @@
 //
 // Проверка ключа на запросе к /api/rates/*:
 //   • отпечаток есть в базе — решает строка: отозван или удалён — отказ; срок истёк — отказ; ключ из настроек
-//     сервера, которого в строке уже нет, — отказ; иначе права строки (у ключа из настроек — права из строки);
-//   • в базе отпечатка нет (миграция не применена, служба ещё не занесла ключи из настроек) — ключ из настроек
-//     сервера, как до раздела. База не ответила — так же; ключу из портала тогда — 503 (решает вызывающий).
+//     сервера, которого в строке уже нет, — отказ; иначе права строки (у ключа из настроек — права из строки).
+//   • Источник истины задаёт режим OSP_API_KEYS_SOURCE (src/config.js, parseSecurity):
+//     db (по умолчанию) — только база. Нет подключения, нет таблицы, база не ответила, ключа из настроек ещё нет в
+//       списке — исключение, вызывающий отвечает 503. Отозванный ключ из настроек так не оживает ни при сбое, ни
+//       после перезапуска службы.
+//     env — прежнее поведение до миграции 20261111: отпечатка в базе нет или база не ответила — ключ из настроек
+//       сервера. Задаётся только явно.
 // Журнал вызовов пишется после ответа и его не задерживает; при барьере записи не пишется. В журнал службы — только
 // код ошибки базы: в тексте бывают значения (отпечаток ключа в сообщении о нарушении уникальности).
 import { createHash, randomBytes } from 'node:crypto'
@@ -118,7 +122,9 @@ export function moscowToday(now = Date.now()) {
 }
 
 // envEntries — разобранная строка RATES_API_KEYS: [{ key, resources }].
-export function createApiKeyStore({ db, envEntries = [], log = null, isReadOnly = () => false, now = Date.now }) {
+export function createApiKeyStore({ db, envEntries = [], log = null, isReadOnly = () => false, now = Date.now, source = 'db' }) {
+  if (source !== 'db' && source !== 'env') throw new Error(`apiKeys: неизвестный источник ключей ${source}`)
+  const dbOnly = source === 'db'
   const env = new Map() // отпечаток → { index, resources, prefix }
   envEntries.forEach((k, i) => {
     const hash = hashKey(k.key)
@@ -139,22 +145,29 @@ export function createApiKeyStore({ db, envEntries = [], log = null, isReadOnly 
     return e ? { id: null, limitKey: `env${e.index}`, name: `Ключ из настроек сервера № ${e.index}`, source: 'env', resources: e.resources } : null
   }
 
-  // Ключ из запроса → { ok: true, key } | { ok: false, key, reason } | null (неизвестен). Бросает, только если база
-  // не ответила, а в настройках сервера такого ключа нет: вызывающий отвечает 503.
+  // Ключ из запроса → { ok: true, key } | { ok: false, key, reason } | null (неизвестен). Бросает, когда проверить ключ
+  // нельзя: вызывающий отвечает 503. В режиме db — всегда, когда база не ответила или ключа из настроек ещё нет в списке;
+  // в режиме env — только если база не ответила, а в настройках сервера такого ключа нет.
   // Неизвестные отпечатки — минуту в памяти: повтор того же неверного ключа не идёт в базу. Новый ключ выпускается случайным,
   // в этом списке его быть не может.
   const misses = new Map() // отпечаток → время
+  const NOT_SYNCED = () => new ApiKeyError(503, 'OSP_API_KEYS_SYNC', 'Ключ из настроек сервера ещё не занесён в список ключей — повторите позже')
   async function resolve(provided) {
     const hash = hashKey(provided)
     const fromEnv = envKey(hash)
     const fallback = fromEnv ? { ok: true, key: fromEnv } : null
-    if (!db || tableMissing()) return fallback
+    if (dbOnly && !db) throw NO_DB()
+    if (!dbOnly && (!db || tableMissing())) return fallback
     const missAt = misses.get(hash)
     if (!fromEnv && missAt !== undefined && now() - missAt < MISS_TTL_MS) return null
     let row
     try {
       row = await db.read(null, async (tx) => (await tx.query(LOOKUP_SQL, [hash])).rows[0] || null)
     } catch (err) {
+      if (dbOnly) {
+        if (MISSING_CODES.has(String(err?.code || ''))) throw NO_TABLE()
+        throw err
+      }
       if (noteMissing(err) || fromEnv) {
         if (fromEnv && !MISSING_CODES.has(String(err?.code || ''))) log?.warn({ code: err?.code }, 'api key lookup failed, server key used')
         return fallback
@@ -166,7 +179,10 @@ export function createApiKeyStore({ db, envEntries = [], log = null, isReadOnly 
         misses.delete(hash)
         misses.set(hash, now())
         while (misses.size > MISS_MAX) misses.delete(misses.keys().next().value)
+        return null
       }
+      // Режим db: ключ из настроек действует, только когда он в списке (там видно, не отозван ли он).
+      if (dbOnly) throw NOT_SYNCED()
       return fallback
     }
     const key = { id: row.id, limitKey: row.id, name: row.name, source: row.source }

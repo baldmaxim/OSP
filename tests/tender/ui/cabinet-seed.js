@@ -9,6 +9,10 @@
 //   № 857 две ведомости (корпуса), в базе лежит и файл чужой организации — кабинет его не показывает. Маршрут /api/fn/bid-file
 //   (и /api/admin/bid-file) подделан здесь: ключ — в каталоге организации, файл — в «хранилище» стенда. Без параметра таблицы файлов
 //   нет (PGRST205) — кабинет показывает прежнюю расценку на сайте.
+//   ?vorVersions=1 — миграция 20270114: у тендера № 857 есть прежняя версия «ВОР паркинга» (снабжение отметило её заменённой), к ней у
+//   «ООО Альфа» лежит своя расценка; bid_vor_superseded отдаёт пару «прежняя → новая». Без параметра функции нет — все файлы.
+//   ?formLinks=1 — миграция 20270115: поля анкеты о компании (название и НДС — из карточки, «Наличие СРО» — ответ на компанию),
+//   таблица bid_company_answers и bid_company_save. Без параметра колонок и таблицы нет — анкета как раньше.
 import * as XLSX from 'xlsx'
 import { readBidFileBytes } from '../../../src/utils/bidVor'
 
@@ -17,6 +21,8 @@ const PAGE = params.get('page') || 'cabinet'
 const SELF_REGISTERED = params.get('selfReg') === '1'
 const PREVIEW = params.get('preview') === '1'
 const BID_FILES = params.get('bidFiles') === '1'
+const VOR_VERSIONS = params.get('vorVersions') === '1'
+const FORM_LINKS = params.get('formLinks') === '1'
 const CP = { id: 'cp-alpha', name: 'ООО Альфа', ...(SELF_REGISTERED ? { selfRegistered: true } : {}) }
 
 window.__fakeRole = PAGE === 'admin'
@@ -90,6 +96,21 @@ const db = window.__fakeDb = {
   ],
 }
 
+if (FORM_LINKS) {
+  // Как после 20270115: название и НДС — из карточки, «Наличие СРО» — ответ на компанию, «Посещение объекта» — по тендеру.
+  Object.assign(db.bid_form_fields[0], { scope: 'company', source: 'name' })
+  Object.assign(db.bid_form_fields[1], { scope: 'company', source: 'vat' })
+  db.bid_form_fields[2].scope = 'tender'
+  db.bid_form_fields.push(
+    { id: 'f-sro', label: 'Наличие СРО', hint: 'да (сумма) / нет', kind: 'text', options: null, code: null, scope: 'company', source: null, sort_order: 40, is_active: true, created_at: '2026-10-23T00:00:00Z' },
+    { id: 'f-site', label: 'Ссылка на сайт компании', hint: null, kind: 'text', options: null, code: null, scope: 'company', source: 'website', sort_order: 50, is_active: true, created_at: '2026-10-23T00:00:00Z' },
+    { id: 'f-visit', label: 'Информация о посещении объекта', hint: null, kind: 'text', options: null, code: null, scope: 'tender', source: null, sort_order: 60, is_active: true, created_at: '2026-10-23T00:00:00Z' },
+  )
+  db.bid_company_answers = []
+} else {
+  window.__fakeErrors = { ...(window.__fakeErrors || {}), bid_company_answers: { code: 'PGRST205', message: "Could not find the table 'public.bid_company_answers' in the schema cache" } }
+}
+
 if (BID_FILES) {
   db.s3_documents.push(
     { id: 'doc-vor2', owner_type: 'tender', owner_id: 't-open', doc_category: 'vor_statement', file_name: 'ВОР корпус 2.xlsx', s3_key: 'tenders/t-open/vor2.xlsx', mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size_bytes: 9000, created_at: '2026-10-21T10:00:00Z' },
@@ -113,6 +134,21 @@ if (BID_FILES) {
   }
 } else {
   window.__fakeErrors = { ...(window.__fakeErrors || {}), tender_bid_files: { code: 'PGRST205', message: "Could not find the table 'public.tender_bid_files' in the schema cache" } }
+}
+
+// Прежняя версия ведомости паркинга (как тендер № 847: «ЗИЛ лот 33 ВОР ЭН» и «… версия 2»): файл лежит в тендере, снабжение отметило его
+// заменённым. У «ООО Альфа» к нему своя расценка — кабинет показывает её у новой версии с просьбой загрузить заново.
+if (VOR_VERSIONS) {
+  window.__fakeFiles['tenders/t-open/vor-old.xlsx'] = vorBook()
+  db.s3_documents.push({ id: 'doc-vor-old', owner_type: 'tender', owner_id: 't-open', doc_category: 'vor_statement', file_name: 'ВОР паркинга старая.xlsx',
+    s3_key: 'tenders/t-open/vor-old.xlsx', mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size_bytes: 9000, created_at: '2026-10-10T10:00:00Z' })
+  if (BID_FILES) {
+    window.__fakeFiles['bids/t-open/cp-alpha/old-alpha.xlsx'] = vorBook()
+    db.tender_bid_files.push({ id: 'bf-alpha-old', tender_id: 't-open', counterparty_id: CP.id, vor_file_id: 'doc-vor-old', vor_name: 'ВОР паркинга старая',
+      s3_key: 'bids/t-open/cp-alpha/old-alpha.xlsx', file_name: 'Альфа — по старой ведомости.xlsx', size_bytes: 9000, uploaded_by_name: 'Альфин А. А.',
+      summary: { v: 1, materials: 1000000, works: 0, total: 1000000, items: { material: 2, work: 2 }, priced: { material: 2, work: 0 } },
+      created_at: '2026-10-12T10:00:00Z', updated_at: '2026-10-12T10:00:00Z' })
+  }
 }
 
 const TENDERS = [
@@ -255,6 +291,41 @@ window.__fakeRpc = {
   ]),
 }
 
+// Как bid_vor_superseded (20270114): прежние версии ведомостей тендера и файл, который их заменил.
+if (VOR_VERSIONS) {
+  window.__fakeRpc.bid_vor_superseded = ({ p_tender }) => {
+    window.__bidCalls.push({ fn: 'bid_vor_superseded', p_tender })
+    return ok(p_tender === 't-open' ? [{ file_id: 'doc-vor-old', current_file_id: 'doc-vor' }] : [])
+  }
+}
+// Как bid_company_save (20270115): ответы о компании и они же — в анкетах идущих тендеров, где организация может менять анкету.
+if (FORM_LINKS) {
+  window.__fakeRpc.bid_company_save = ({ p_answers }) => {
+    window.__bidCalls.push({ fn: 'bid_company_save', answers: p_answers })
+    let row = db.bid_company_answers.find((r) => r.counterparty_id === CP.id)
+    if (!row) { row = { counterparty_id: CP.id, answers: {} }; db.bid_company_answers.push(row) }
+    const set = {}
+    const del = []
+    for (const [k, v] of Object.entries(p_answers)) {
+      const f = db.bid_form_fields.find((x) => x.id === k && (x.scope === 'company' || x.source))
+      if (!f) continue
+      if (!String(v).trim()) { delete row.answers[k]; del.push(k) } else { row.answers[k] = { label: f.label, value: String(v).trim() }; set[k] = row.answers[k] }
+    }
+    row.updated_at = new Date().toISOString()
+    const canEdit = (tenderId) => {
+      const t = TENDERS.find((x) => x.id === tenderId)
+      const access = t?.invite && t.invite !== 'declined' ? 'invited' : db.tender_bid_requests.find((r) => r.tender_id === tenderId)?.status
+      return !!t?.is_open && ['invited', 'pending', 'accepted'].includes(access)
+    }
+    for (const form of db.tender_bid_forms.filter((x) => x.counterparty_id === CP.id && canEdit(x.tender_id))) {
+      for (const k of del) delete form.answers[k]
+      Object.assign(form.answers, set)
+    }
+    window.__fakeTouch?.('bid_company_answers')
+    return ok(row.answers)
+  }
+}
+
 // Просмотр от имени подрядчика: запросы идут под администратором, у него нет организации — функции кабинета отказывают, как в базе.
 if (PREVIEW) {
   const refused = (text) => () => ({ data: null, error: { code: '42501', message: text } })
@@ -265,6 +336,7 @@ if (PREVIEW) {
     bid_request: record('bid_request', 'Заявку подаёт подрядчик'),
     bid_rates_save: record('bid_rates_save', 'Цены вводит подрядчик'),
     bid_form_save: record('bid_form_save', 'Анкету заполняет подрядчик'),
+    bid_company_save: record('bid_company_save', 'Сведения о компании заполняет подрядчик'),
     contractor_set_participation: record('contractor_set_participation', 'Отметку участия ставит подрядчик'),
   })
   // Администратору правило показывает цены и анкеты всех организаций тендера: чужая цена не должна попасть в просмотр.
@@ -321,6 +393,9 @@ if (BID_FILES) {
     if (!access || access === 'rejected') return json(403, { error: 'Приём предложений по этому тендеру закрыт или заявка не подана' })
     const vorDoc = db.s3_documents.find((d) => d.id === body.vor_file_id && d.owner_id === body.tender_id && /\.xlsx?$/i.test(d.file_name))
     if (!vorDoc) return json(404, { error: 'Такой ведомости в тендере нет' })
+    if (VOR_VERSIONS && body.vor_file_id === 'doc-vor-old') {
+      return json(404, { error: 'Отдел заменил эту ведомость новой версией — обновите страницу и загрузите расценку к новой' })
+    }
     const key = `bids/${body.tender_id}/${CP.id}/${body.operation_id}-${body.file_name}`
     if (action === 'upload') return json(200, { presigned_url: FAKE_S3 + key, expires_in: 900 })
     if (!window.__fakeFiles[key]) return json(409, { error: 'Файла ещё нет в хранилище — загрузка не завершилась', code: 'OSP_NOT_UPLOADED' })

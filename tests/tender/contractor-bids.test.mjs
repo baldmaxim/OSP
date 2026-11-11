@@ -370,7 +370,7 @@ describe('Свой ВОР с расценками: сводка по ведом�
     assert.equal(summaryCounted(none), false)
   })
 
-  it('сводка тендера: файл — к своей ведомости; ВОР заменили — файл прежней версии по имени; ведомости нет — в итог не входит', () => {
+  it('сводка тендера: файл — к своей ведомости; ВОР заменили — файл прежней версии по имени, в итог не входит; ведомости нет — тоже', () => {
     const vors = [{ id: 'v1', file_name: 'ВОР к1.xlsx' }, { id: 'v2-new', file_name: 'ВОР к2.xlsx' }, { id: 'v3', file_name: 'ВОР к3.xlsx' }]
     const sum = (total, over = {}) => ({ v: 1, materials: total / 2, works: total / 2, total, items: { material: 1, work: 1 }, priced: { material: 1, work: 1 }, ...over })
     const mine = [
@@ -381,10 +381,155 @@ describe('Свой ВОР с расценками: сводка по ведом�
     const t = bidFilesTable(vors, mine)
     assert.deepEqual(t.rows.map((r) => [r.vor.id, r.file?.id || null, r.stale]), [['v1', 'f1', false], ['v2-new', 'f2', true], ['v3', null, false]])
     assert.deepEqual(t.orphans.map((f) => f.id), ['f4'])
-    assert.deepEqual([t.totals.materials, t.totals.works, t.totals.total], [75, 75, 150])
-    assert.deepEqual([t.totals.uploaded, t.totals.counted, t.totals.incomplete], [2, 2, true])
+    // Расценка к прежней версии посчитана по старым объёмам — видна у новой версии, но в ИТОГО не входит, пока её не загрузят заново.
+    assert.deepEqual([t.totals.materials, t.totals.works, t.totals.total], [50, 50, 100])
+    assert.deepEqual([t.totals.uploaded, t.totals.counted, t.totals.stale, t.totals.incomplete], [1, 1, 1, false])
     // Файл без суммы — загружен, но в итог не входит.
     const t2 = bidFilesTable(vors, [{ id: 'f1', vor_file_id: 'v1', vor_name: 'ВОР к1', summary: { v: 1, error: 'no_prices' } }])
     assert.deepEqual([t2.totals.uploaded, t2.totals.counted, t2.totals.total], [1, 0, 0])
+  })
+})
+
+// Просьба пользователя 11.11.2026: «нигде нет багов с расценками». Случаи с настоящих заполненных ВОР подрядчиков (Примавера 14, вентиляция,
+// ЦентрИнжиниринг): цены вписаны на листах корпусов, а «Материалы» / «Работы» остались с нулями — сводка была «0 ₽, цены у всех позиций».
+describe('Свой ВОР с расценками: нули, повторы, две цены в строке', async () => {
+  const { summarizeBidFile, priceBidPositions } = await import('../../src/utils/bidFileSummary.js')
+  const { readBidPriceDoc, itemHasPrice } = await import('../../src/utils/bidImport.js')
+  const vor = readBidFileBytes(bytesOf(CURRENT))
+  const positions = [...vor.materials, ...vor.works]
+  const zeroLists = () => {
+    const copy = JSON.parse(JSON.stringify(CURRENT))
+    for (const r of [3, 4, 5]) copy['Материалы'][r][4] = 0
+    for (const r of [1, 2]) copy['Работы'][r][4] = 0
+    return copy
+  }
+
+  it('ноль — не цена: листы «Материалы» / «Работы» с нулями, цены на листе корпуса — цены берутся с листа корпуса', async () => {
+    const book = zeroLists()
+    book['Корпус 1'] = [
+      ['Наименование', 'Ед. изм.', 'Кол-во', 'Цена материалы', 'Цена СМР'],
+      ['Устройство монолитной плиты', 'м3', 120.5, '', 2500],
+      ['Бетон В25 W8', 'м3', 120.5, 7800, ''],
+      ['Армирование плиты', 'т', 3.25, '', 30000],
+      ['Арматура А500С d12', 'т', 3.25, 85000, ''],
+    ]
+    const doc = await readBidPriceDoc(bytesOf(book), 'ВОР — цены по корпусам.xlsx')
+    assert.ok(doc.items.every(itemHasPrice), 'строк с нулём среди строк документа нет')
+    const s = summarizeBidFile(doc, positions)
+    assert.deepEqual(s.priced, { material: 2, work: 2 }, JSON.stringify(s))
+    assert.equal(s.materials, 7800 * 130.5 + 85000 * 3.25)
+    assert.equal(s.works, 2500 * 130.5 + 30000 * 3.25, 'у работы — цена СМР, а не пустая цена материалов')
+  })
+
+  it('одни нули во всём файле — «цен нет», а не «0 ₽ и цены у всех позиций»', async () => {
+    const s = summarizeBidFile(await readBidPriceDoc(bytesOf(zeroLists()), 'Пустой ВОР.xlsx'), positions)
+    assert.equal(s.error, 'no_prices', 'сумма не считается — кабинет пишет «цены не распознаны»')
+    assert.deepEqual(s.priced, { material: 0, work: 0 })
+  })
+
+  it('незаполненный ВОР для проверки по договорным расценкам (keepBlank): нули — пустая цена, строки на месте', async () => {
+    const doc = await readBidPriceDoc(bytesOf(zeroLists()), 'Пустой ВОР.xlsx', { keepBlank: true })
+    assert.ok(doc.items.length >= 4)
+    assert.ok(doc.items.every((it) => it.price == null && it.sum == null), JSON.stringify(doc.items[0]))
+  })
+
+  it('повтор позиции (листы корпусов) не забирает соседнюю позицию «по похожести»: у нерасценённой цены нет', () => {
+    const near = [
+      { kind: 'material', key: 'm|возд05', itemKey: 'воздуховод толщ 0 5', unitKey: 'м2', name: 'Воздуховод (толщ. 0,5)', unit: 'м2', volume: 100 },
+      { kind: 'material', key: 'm|возд06', itemKey: 'воздуховод толщ 0 6', unitKey: 'м2', name: 'Воздуховод (толщ. 0,6)', unit: 'м2', volume: 50 },
+    ]
+    const items = [
+      { name: 'Воздуховод (толщ. 0,5)', unit: 'м2', price: 1000, priceVat: 'gross', kindHint: 'material' },
+      { name: 'Воздуховод (толщ. 0,5)', unit: 'м2', price: 1100, priceVat: 'gross', kindHint: 'material' },
+      { name: 'Воздуховод (толщ. 0,6)', unit: 'м2', price: 0, priceVat: 'gross', kindHint: 'material' },
+    ]
+    const { prices } = priceBidPositions(items, near, { mode: 'gross' })
+    assert.equal(prices.get('m|возд05'), 1000, 'первая строка с ценой')
+    assert.equal(prices.has('m|возд06'), false, 'ноль у 0,6 — не расценено; повтор 0,5 цену ей не даёт')
+    const s = summarizeBidFile({ items, vat: { mode: 'gross' } }, near)
+    assert.deepEqual(s.priced, { material: 1, work: 0 })
+    assert.equal(s.materials, 100000)
+  })
+
+  it('своё наименование подрядчика — по похожести, только к позиции без своей строки в файле', () => {
+    const { prices, unmatched } = priceBidPositions(
+      [{ name: 'Бетон B25 W8 (с доставкой)', unit: 'м3', price: 8000, priceVat: 'gross' }, { name: 'Кирпич', unit: 'шт', price: 30, priceVat: 'gross' }],
+      positions, { mode: 'gross' })
+    assert.equal(prices.get(positions.find((p) => p.name === 'Бетон В25 W8').key), 8000)
+    assert.equal(unmatched, 1)
+  })
+})
+
+// Тендер № 847: «ЗИЛ лот 33 ВОР ЭН» и «… от 03.11.2026 версия 2» — подрядчику только актуальная версия (миграция 20270114).
+describe('Ведомости: только актуальная версия', async () => {
+  const { currentVorFiles, bidFilesTable } = await import('../../src/utils/bidFiles.js')
+  const vors = [{ id: 'old', file_name: 'ЗИЛ лот 33 ВОР ЭН.xlsx' }, { id: 'new', file_name: 'ЗИЛ лот 33 ВОР ЭН от 03.11.2026 версия 2.xlsx' }, { id: 'k2', file_name: 'ВОР к2.xlsx' }]
+
+  it('заменённая ведомость не показывается; функции нет — все файлы', () => {
+    const { current, priorOf } = currentVorFiles(vors, [{ file_id: 'old', current_file_id: 'new' }])
+    assert.deepEqual(current.map((v) => v.id), ['new', 'k2'])
+    assert.equal(priorOf.get('old'), 'new')
+    assert.deepEqual(currentVorFiles(vors, null).current.map((v) => v.id), ['old', 'new', 'k2'])
+  })
+
+  it('заменившего файла среди ведомостей нет (отдел его удалил) — прежний остаётся: без ведомости подрядчик не останется', () => {
+    assert.deepEqual(currentVorFiles(vors, [{ file_id: 'k2', current_file_id: 'gone' }]).current.map((v) => v.id), ['old', 'new', 'k2'])
+  })
+
+  it('расценка к прежней версии — у новой (по отметке версий, хоть имя другое), в итог не входит; есть своя к новой — прежняя в сиротах', () => {
+    const { current, priorOf } = currentVorFiles(vors, [{ file_id: 'old', current_file_id: 'new' }])
+    const sum = { v: 1, materials: 10, works: 0, total: 10, items: { material: 1, work: 0 }, priced: { material: 1, work: 0 } }
+    const old = { id: 'f-old', vor_file_id: 'old', vor_name: 'ЗИЛ лот 33 ВОР ЭН', summary: sum, updated_at: '2026-10-20T00:00:00Z' }
+    const t = bidFilesTable(current, [old], priorOf)
+    const row = t.rows.find((r) => r.vor.id === 'new')
+    assert.equal(row.file?.id, 'f-old')
+    assert.equal(row.stale, true)
+    assert.deepEqual([t.totals.counted, t.totals.total, t.totals.stale], [0, 0, 1])
+    const fresh = { id: 'f-new', vor_file_id: 'new', vor_name: 'ЗИЛ лот 33 ВОР ЭН от 03.11.2026 версия 2', summary: sum, updated_at: '2026-11-10T00:00:00Z' }
+    const t2 = bidFilesTable(current, [old, fresh], priorOf)
+    assert.equal(t2.rows.find((r) => r.vor.id === 'new').file.id, 'f-new')
+    assert.deepEqual(t2.orphans.map((f) => f.id), ['f-old'])
+    assert.equal(t2.totals.total, 10)
+  })
+})
+
+// Анкета и «Моя компания» — одни сведения (миграция 20270115).
+describe('Анкета участника и «Моя компания»', async () => {
+  const { companyFieldState, effectiveAnswers, fieldGroups, COMPANY_SOURCES, isCompanyField } = await import('../../src/utils/bidFormLinks.js')
+  const fields = [
+    { id: 'name', label: 'Наименование контрагента', kind: 'text', scope: 'company', source: 'name' },
+    { id: 'vat', label: 'Ставка НДС', kind: 'select', options: ['22 %', '7 %', '5 %', '0 %'], code: 'vat', scope: 'company', source: 'vat' },
+    { id: 'dir', label: 'Генеральный директор: ФИО, тел., e-mail', kind: 'text', scope: 'company', source: 'director' },
+    { id: 'sro', label: 'Наличие СРО', kind: 'text', scope: 'company', source: null },
+    { id: 'visit', label: 'Посещение объекта', kind: 'text', scope: 'tender', source: null },
+  ]
+  const card = {
+    name: 'ООО Альфа', inn: '7707083893', legal_address: 'Москва, ул. Строителей, 1', actual_address: 'Москва, ул. Строителей, 1', vat_rate: 22,
+    contacts: [{ full_name: 'Сметчикова С. С.', position: null, email: 'smeta@alpha.ru' }, { full_name: 'Директоров Д. Д.', position: 'Генеральный директор', phone: '+7 916 000-00-10', email: 'dir@alpha.ru' }],
+  }
+
+  it('связанное поле — из карточки и не меняется; адрес один, если юр. и факт. совпадают; руководитель — по должности', () => {
+    assert.deepEqual(companyFieldState(fields[0], card, {}), { value: 'ООО Альфа', from: 'card', locked: true, cardRaw: null })
+    assert.equal(companyFieldState(fields[1], card, {}).value, '22 %')
+    assert.equal(companyFieldState(fields[2], card, {}).value, 'Директоров Д. Д., +7 916 000-00-10, dir@alpha.ru')
+    assert.equal(COMPANY_SOURCES.find((s) => s.key === 'address').value(card), 'Москва, ул. Строителей, 1')
+    assert.equal(COMPANY_SOURCES.find((s) => s.key === 'address').value({ ...card, actual_address: 'Химки' }), 'юр.: Москва, ул. Строителей, 1; факт.: Химки')
+  })
+
+  it('в карточке пусто или вариант не из списка анкеты — отвечает подрядчик, ответ — один на компанию', () => {
+    const exempt = companyFieldState(fields[1], { vat_exempt: true }, { vat: { value: '0 %' } })
+    assert.deepEqual([exempt.value, exempt.from, exempt.locked, exempt.cardRaw], ['0 %', 'company', false, 'Без НДС'])
+    assert.equal(companyFieldState(fields[0], {}, { name: { value: 'ООО Альфа-2' } }).value, 'ООО Альфа-2')
+    assert.equal(companyFieldState(fields[1], {}, { vat: { value: '20 %' } }).value, '', 'вариант, которого в списке больше нет, — как нет ответа')
+  })
+
+  it('анкета тендера: поля о компании — из «Моей компании», расхождение поправляется; по тендеру — как есть', () => {
+    const { answers, patch } = effectiveAnswers(fields, { name: 'ООО Альфа', vat: '7 %', sro: 'нет', visit: 'были' }, card, { sro: { value: 'да' } })
+    assert.deepEqual(patch, { vat: '22 %', dir: 'Директоров Д. Д., +7 916 000-00-10, dir@alpha.ru', sro: 'да' })
+    assert.equal(answers.visit, 'были')
+    // Таблицы ответов о компании нет (база раньше миграции): карточка работает, СРО — ответ тендера.
+    assert.deepEqual(effectiveAnswers(fields, { sro: 'нет' }, card, null).answers.sro, 'нет')
+    assert.deepEqual(fieldGroups(fields).tender.map((f) => f.id), ['visit'])
+    assert.equal(isCompanyField({ scope: 'tender', source: 'gone' }), true, 'сведения нет в перечне — поле всё равно о компании, ответы не теряются')
   })
 })

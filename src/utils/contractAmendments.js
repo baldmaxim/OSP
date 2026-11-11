@@ -306,6 +306,90 @@ export function planAmendment(type, target, index) {
   return { ok: false, parent: null, reason: 'Неизвестный тип документа' }
 }
 
+// ── Правка завершённого документа (то же правило, что в триггере contracts_hierarchy_guard, миграция 20270122) ──
+//
+// Условия завершённого документа заморожены; чтобы их изменить, документ возвращают из «Завершено». Мешает только
+// то, что опирается на его нынешние условия:
+//  • у ДС на изменение ВОР — следующее изменение той же ветки, в любом статусе: незавершённым в ветке бывает только
+//    последнее изменение;
+//  • завершённые ДС к документу: их изменения посчитаны от его условий.
+// ДС в работе не мешает — на действующие условия оно ещё не влияет (до 20270122 мешало любое живое ДС).
+// Тексты — как у исключений триггера: их совпадение сторожит tests/psdc/contract-reopen.test.mjs.
+// → null — можно; иначе { docs: [мешающие документы], reason }.
+export function reopenBlocker(doc, index) {
+  if (!doc || !index) return null
+  const children = liveChildren(doc, index)
+  if (doc.record_type === DOC_TYPE.CHANGE) {
+    const later = children.find(c => c.record_type === DOC_TYPE.CHANGE)
+    if (later) {
+      return {
+        docs: [later],
+        reason: `ДС ID ${doc.display_id} уже изменено соглашением ID ${later.display_id}: в ветке правится только последнее изменение. Правьте ДС ID ${later.display_id} или удалите его`,
+      }
+    }
+  }
+  const done = children.filter(isCompleted)
+  if (done.length) {
+    return {
+      docs: done,
+      reason: `Сначала верните из «Завершено» ДС к документу ID ${doc.display_id}: ID ${done.map(d => d.display_id).join(', ')}`,
+    }
+  }
+  return null
+}
+
+// Условия и идентификация, замороженные у завершённого документа (тот же набор, что в триггере; изменяемый документ и
+// changed_fields форма сама не правит). По ним правка завершённого документа пишется в историю построчно.
+export const FROZEN_FIELDS = [
+  'contract_number', 'contract_date', 'contract_amount', 'gp_amount', 'currency', 'vat_rate', 'amount_includes_vat',
+  'bsm', 'work_name', 'work_start_date', 'work_end_date', 'warranty_retention_percent', 'warranty_retention_period',
+  'warranty_period',
+]
+export const FROZEN_FIELD_LABEL = {
+  contract_number: '№ документа',
+  contract_date: 'Дата документа',
+  ...OVERRIDABLE_FIELD_LABEL,
+}
+const NUMERIC_FIELDS = new Set(['contract_amount', 'gp_amount', 'vat_rate', 'warranty_retention_percent'])
+const DATE_FIELDS = new Set(['contract_date', 'work_start_date', 'work_end_date'])
+
+// Значение поля для истории документа (история показывает только описание события).
+export function frozenFieldText(field, value) {
+  if (value == null || value === '') return '—'
+  if (field === 'amount_includes_vat') return value === false || value === 'false' ? 'Без НДС' : 'С НДС'
+  if (DATE_FIELDS.has(field)) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value))
+    if (m) return `${m[3]}.${m[2]}.${m[1]}`
+  }
+  if (NUMERIC_FIELDS.has(field) && Number.isFinite(Number(value))) {
+    const text = Number(value).toLocaleString('ru-RU', { maximumFractionDigits: 2 })
+    return field === 'vat_rate' || field === 'warranty_retention_percent' ? `${text} %` : text
+  }
+  return String(value).trim()
+}
+
+// Что правка меняет в замороженных полях: before — строка документа из базы, after — то, что уходит в запись.
+// Числа сравниваются числом (1000 и «1000.00» — одно и то же), пустое и null — тоже.
+// → [{ field, label, oldValue, newValue, text }] — text: «Сумма: 1 000 → 1 200» для истории.
+export function frozenFieldChanges(before, after) {
+  const out = []
+  for (const field of FROZEN_FIELDS) {
+    if (!after || !(field in after)) continue
+    const a = normalizeForCompare(before?.[field])
+    const b = normalizeForCompare(after[field])
+    if (a === b) continue
+    if (NUMERIC_FIELDS.has(field) && a !== '' && b !== '' && Number(a) === Number(b)) continue
+    const label = FROZEN_FIELD_LABEL[field] || field
+    const oldValue = a === '' ? null : before[field]
+    const newValue = b === '' ? null : after[field]
+    out.push({
+      field, label, oldValue, newValue,
+      text: `${label}: ${frozenFieldText(field, oldValue)} → ${frozenFieldText(field, newValue)}`,
+    })
+  }
+  return out
+}
+
 // Какие поля ДС реально меняет: сравниваем заполненную форму с унаследованным
 // снимком. Пользователю changed_fields не показываем — он видит подсветку.
 export function collectChangedFields(inherited, form) {

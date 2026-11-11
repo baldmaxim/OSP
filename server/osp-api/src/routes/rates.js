@@ -183,7 +183,8 @@ export function registerRates(app, { config, getServiceClient, limiters, db, gat
       try {
         found = await apiKeys.resolve(provided)
       } catch (err) {
-        // База не ответила, а ключа нет в настройках сервера: это не «неверный ключ» — клиент может повторить.
+        // Ключ проверить нельзя (база не ответила, нет таблицы ключей, ключ из настроек ещё не в списке): это не
+        // «неверный ключ» — клиент может повторить. Отозванный ключ так не оживает (src/lib/apiKeys.js, режим db).
         request.log.error({ code: err?.code || err?.name }, 'rates-api key lookup')
         reply.code(503).send({ error: DB_UNAVAILABLE_TEXT, code: DB_UNAVAILABLE })
         return false
@@ -362,7 +363,8 @@ export function registerRates(app, { config, getServiceClient, limiters, db, gat
       // 42P01 — представления нет: не применены миграции реестра расценок.
       const missingView = message.includes('42P01') || message.includes('does not exist')
       return reply.code(missingView ? 503 : 500).send({
-        error: missingView ? `Представление ${view} недоступно — не применены миграции реестра расценок` : message,
+        // Текст ошибки базы клиенту не уходит (имена колонок, значения): только в журнал службы.
+        error: missingView ? `Представление ${view} недоступно — не применены миграции реестра расценок` : 'Не удалось получить расценки — повторите запрос позже',
       })
     } finally {
       release()

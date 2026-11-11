@@ -9,7 +9,10 @@ import './S3DocumentList.css'
 // Использование:
 //   <S3DocumentList ownerType="tender" ownerId={tenderId} title="Документы" />
 // Права: сотрудники (isEmployee) могут загружать/удалять; подрядчики — только просмотр.
-// canEdit можно явно переопределить пропом (например, для разделов с другой политикой).
+// canEdit можно явно переопределить пропом (например, для разделов с другой политикой). canDelete — удаление и
+// переименование (по умолчанию = canEdit): сервер меняет файлы по праву правки раздела, а загружать бывает можно и с
+// просмотром (файлы договора — server/osp-api/src/routes/s3Presign.js, CHANGE_RULES). canDeleteDoc(doc) — ещё и по самому
+// файлу (файл задачи меняют загрузивший, постановщик и администратор).
 
 // Аккуратные inline SVG-иконки (вместо эмодзи, которые на части систем рендерятся криво).
 const Icon = ({ children }) => (
@@ -44,9 +47,10 @@ function formatDateTime(iso) {
   return `${dd}.${mm}.${yyyy} ${hh}:${mi}`
 }
 
-export default function S3DocumentList({ ownerType, ownerId, title = 'Документы', canEdit: canEditProp, category = null, excludeCategory = null, onChange }) {
+export default function S3DocumentList({ ownerType, ownerId, title = 'Документы', canEdit: canEditProp, canDelete: canDeleteProp, canDeleteDoc = null, category = null, excludeCategory = null, onChange }) {
   const { isEmployee } = useRole()
   const canEdit = canEditProp !== undefined ? canEditProp : isEmployee
+  const canDelete = canDeleteProp !== undefined ? canDeleteProp : canEdit
 
   const [documents, setDocuments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -167,7 +171,7 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
                 <td className="s3-doc-actions">
                   <button type="button" title="Просмотр" aria-label="Просмотр" onClick={() => setPreviewDoc(doc)}><EyeIcon /></button>
                   <button type="button" title="Скачать" aria-label="Скачать" onClick={() => handleDownload(doc)}><DownloadIcon /></button>
-                  {canEdit && (
+                  {canDelete && (!canDeleteDoc || canDeleteDoc(doc)) && (
                     <button
                       type="button"
                       title="Удалить"
@@ -184,7 +188,7 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
       )}
 
       {previewDoc && (
-        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} onRenamed={canEdit ? handleRenamed : undefined} />
+        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} onRenamed={canDelete && (!canDeleteDoc || canDeleteDoc(previewDoc)) ? handleRenamed : undefined} />
       )}
     </div>
   )

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { db } from '../../api'
-import S3DocumentList from '../S3DocumentList'
+import FilterDropdown from '../FilterDropdown'
 import DocCheckDiscussion from './DocCheckDiscussion'
-import DocCheckSteps from './DocCheckSteps'
+import DocCheckFiles from './DocCheckFiles'
 import { IconCheck, IconLink } from '../icons/ActionIcons'
+import { IconUser } from '../icons/ToolbarIcons'
 import { employeeName } from '../../services/employees'
-import { fetchCardDetails } from '../../services/docCheckCard'
+import { fetchComments } from '../../services/docCheckCard'
 import { safeHttpUrl } from '../../utils/publicTenders'
 import {
   DOC_CHECK_COLOR_LABEL,
@@ -15,6 +16,7 @@ import {
   DOC_TYPE_LABEL,
   DOC_TYPE_TITLE,
   FIELD_LABEL,
+  assigneeStaffOptions,
   availableStatuses,
   avatarTone,
   cardTitle,
@@ -25,11 +27,17 @@ import {
   shownAssigneeIds,
 } from '../../utils/docCheckHelpers'
 
-// Карточка заявки: данные, шаги, обсуждение, файлы, история.
+// Карточка заявки: две вкладки — «Общая» и «История» (11.11.2026, решение пользователя: шагов нет, «Документы» и «Обсуждение» —
+// не вкладки, а части «Общей»).
 //
-// Вкладка «Заявка» (03.11, решение пользователя: «более красивым и понятным, визуальное разделение, читаемый текст») —
-// две колонки: слева примечание и документ, справа то, что меняется в работе (статус, исполнители, срок). Окно постоянной
+// «Общая»: слева сведения — две колонки разделов (03.11: «визуальное разделение, читаемый текст»). В левой — примечание,
+// «Документы» и срок: раздел «Документы» — объект, контрагент, номер и дата, под ними файлы двумя частями, «Понятийное
+// соглашение» и «Загружаемые документы» (DocCheckFiles; прежняя вкладка «Документы»). В правой — то, что меняется в работе:
+// статус, исполнители, — и создание. Справа от сведений — переписка (DocCheckDiscussion), со своей прокруткой. Окно постоянной
 // высоты: вкладки разной длины его не дёргают.
+//
+// Исполнителей назначают прямо здесь, выбором в разделе «Исполнители» (11.11.2026: «сразу, без изменения заявки») — каждая
+// отметка сразу пишется в заявку и в историю, как смена исполнителей в форме; право — то же, правка раздела.
 //
 // Статус здесь тоже переключается — на телефоне доску не потаскаешь, а работать
 // с заявкой надо. Список колонок один и тот же (availableStatuses), поэтому
@@ -64,9 +72,9 @@ function historyValue(field, value, ctx) {
 }
 
 // Раздел окна: заголовок полосой и содержимое. Разделы отделены друг от друга рамкой.
-function Box({ title, aside, children }) {
+function Box({ title, aside, className = '', children }) {
   return (
-    <section className="dc-box">
+    <section className={`dc-box ${className}`.trim()}>
       <h4 className="dc-box-head">{title}{aside != null && <span className="dc-box-aside">{aside}</span>}</h4>
       {children}
     </section>
@@ -85,50 +93,44 @@ function Row({ label, className, children }) {
 
 export default function DocCheckDetailModal({
   request, employees, objects, counterparties, canEdit, hasBoardFields, hasCardFields, currentUserId, deletion, refreshKey,
-  onStatusChange, onEdit, onDelete, onClose, onCardCounts,
+  onStatusChange, onAssign, onEdit, onDelete, onClose, onCardCounts,
 }) {
-  const [tab, setTab] = useState('info')
-  // Открывали файлы — после закрытия окна перечитать, сколько их у заявки.
-  const docsOpened = useRef(false)
-  if (tab === 'docs') docsOpened.current = true
-  const close = () => onClose(docsOpened.current)
+  const [tab, setTab] = useState('general')
+  // Файлы меняли — после закрытия окна перечитать, сколько их у заявки (скрепка на карточке доски).
+  const filesChanged = useRef(false)
+  const markFilesChanged = useCallback(() => { filesChanged.current = true }, [])
+  const close = () => onClose(filesChanged.current)
   const [history, setHistory] = useState([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
-  const [steps, setSteps] = useState([])
   const [comments, setComments] = useState([])
   const [cardState, setCardState] = useState('loading') // loading | ready | error
 
-  // Шаги и сообщения нужны сразу: их число — на вкладках. Перечитываются и при возврате на вкладку браузера (refreshKey):
-  // правки коллег. Ответ, прочитанный до своей правки, отбрасывается — иначе вернул бы прежний список.
+  // Сообщения — сразу: переписка стоит на «Общей». Перечитываются и при возврате на вкладку браузера (refreshKey): сообщения
+  // коллег. Ответ, прочитанный до своего сообщения, отбрасывается — иначе вернул бы прежний список.
   const loadSeq = useRef(0)
   const loadCard = useCallback(async () => {
     const seq = ++loadSeq.current
     try {
-      const details = await fetchCardDetails(request.id)
+      const rows = await fetchComments(request.id)
       if (seq !== loadSeq.current) return
-      setSteps(details.steps)
-      setComments(details.comments)
+      setComments(rows)
       setCardState('ready')
     } catch (err) {
       if (seq !== loadSeq.current) return
-      console.warn('Не удалось загрузить шаги и обсуждение заявки:', err.message)
+      console.warn('Не удалось загрузить обсуждение заявки:', err.message)
       setCardState(prev => (prev === 'ready' ? prev : 'error'))
     }
   }, [request.id])
+  const retryCard = useCallback(() => { setCardState('loading'); loadCard() }, [loadCard])
   useEffect(() => { if (hasCardFields) loadCard() }, [hasCardFields, loadCard, refreshKey])
 
-  const changeSteps = useCallback((update) => { loadSeq.current += 1; setSteps(update) }, [])
   const changeComments = useCallback((update) => { loadSeq.current += 1; setComments(update) }, [])
 
-  // Счётчики на карточке доски — сразу, без перечитывания всей доски.
+  // Число сообщений на карточке доски — сразу, без перечитывания всей доски.
   useEffect(() => {
     if (cardState !== 'ready') return
-    onCardCounts(request.id, {
-      stepsTotal: steps.length,
-      stepsDone: steps.filter(s => s.is_done).length,
-      commentsCount: comments.length,
-    })
-  }, [cardState, steps, comments, request.id, onCardCounts])
+    onCardCounts(request.id, { commentsCount: comments.length })
+  }, [cardState, comments, request.id, onCardCounts])
 
   // История нужна редко — грузим только при открытии своей вкладки.
   useEffect(() => {
@@ -161,32 +163,18 @@ export default function DocCheckDetailModal({
     counterparties: new Map(counterparties.map(c => [c.id, c.name])),
   }), [tab, employees, objects, counterparties])
   const due = dueState(request)
-  const people = shownAssigneeIds(request, employees)
-    .map(id => ({ key: id, name: employeeName(employees, id), tone: avatarTone(id) }))
+  const shownIds = shownAssigneeIds(request, employees)
+  const people = shownIds.map(id => ({ key: id, name: employeeName(employees, id), tone: avatarTone(id) }))
   const statuses = availableStatuses(hasBoardFields)
   const mail = safeHttpUrl(request.email_link)
   const isDeleted = !!request.deleted_at
-  const isAssignee = !!currentUserId && (request.assignee_ids || []).includes(currentUserId)
-  const stepsDone = steps.filter(s => s.is_done).length
+  const canAssign = canEdit && hasBoardFields && !isDeleted
+  const lawyerOptions = useMemo(() => (canAssign ? assigneeStaffOptions(employees) : []), [canAssign, employees])
 
   const tabs = [
-    { key: 'info', label: 'Заявка' },
-    ...(hasCardFields ? [
-      { key: 'steps', label: 'Шаги', count: steps.length > 0 ? `${stepsDone}/${steps.length}` : null },
-      { key: 'discussion', label: 'Обсуждение', count: comments.length > 0 ? comments.length : null },
-    ] : []),
-    { key: 'docs', label: 'Документы' },
+    { key: 'general', label: 'Общая' },
     { key: 'history', label: 'История' },
   ]
-
-  const cardUnavailable = cardState === 'loading'
-    ? <p className="dc-muted">Загрузка…</p>
-    : (
-      <p className="dc-muted">
-        Не удалось загрузить.{' '}
-        <button type="button" className="dc-retry" onClick={loadCard}>Повторить</button>
-      </p>
-    )
 
   return (
     <div className="modal-overlay">
@@ -217,133 +205,138 @@ export default function DocCheckDetailModal({
               onClick={() => setTab(t.key)}
             >
               {t.label}
-              {t.count != null && <span className="dc-tab-count">{t.count}</span>}
             </button>
           ))}
         </div>
 
-        <div className="dc-detail-body">
-          {tab === 'info' && (
-            <div className="dc-info">
-              <div className="dc-info-col">
-                {request.notes && (
-                  <Box title="Примечание">
-                    <p className="dc-box-text">{request.notes}</p>
-                  </Box>
-                )}
+        <div className={`dc-detail-body${tab === 'general' ? ` dc-general${hasCardFields ? ' has-talk' : ''}` : ''}`}>
+          {tab === 'general' && (
+            <div className="dc-general-main">
+              <div className="dc-info">
+                <div className="dc-info-col">
+                  {request.notes && (
+                    <Box title="Примечание">
+                      <p className="dc-box-text">{request.notes}</p>
+                    </Box>
+                  )}
 
-                <Box title="Документ">
-                  <dl className="dc-kv">
-                    <Row label="Объект">{request.objects?.name || '—'}</Row>
-                    <Row label="Контрагент">{request.counterparties?.name || '—'}</Row>
-                    <Row label="Номер">{request.doc_number || '—'}</Row>
-                    <Row label="Дата документа" className="ui-num">{fmtDocDate(request.doc_date) || '—'}</Row>
-                    {hasCardFields && (
-                      <Row label="Письмо">
-                        {mail ? (
-                          <a className="dc-detail-mail" href={mail} target="_blank" rel="noopener noreferrer" title={request.email_link}>
-                            <IconLink size={14} />Открыть письмо
-                          </a>
-                        ) : '—'}
-                      </Row>
-                    )}
-                  </dl>
-                </Box>
-
-                {hasBoardFields && (
-                  <Box title="Срок и приоритет">
+                  <Box title="Документы" className="dc-docs">
                     <dl className="dc-kv">
-                      <Row label="Срок" className={request.due_date ? `ui-num dc-due-text is-${due}` : 'ui-num'}>
-                        {fmtDocDate(request.due_date) || '—'}{due === 'overdue' ? ' · срок прошёл' : ''}
-                      </Row>
-                      <Row label="Приоритет">{DOC_CHECK_PRIORITY_LABEL[request.priority] || '—'}</Row>
-                      {request.labels?.length > 0 && (
-                        <Row label="Метки" className="dc-card-chips">
-                          {request.labels.map(l => <span key={l} className="dc-chip dc-chip--label">{l}</span>)}
+                      <Row label="Объект">{request.objects?.name || '—'}</Row>
+                      <Row label="Контрагент">{request.counterparties?.name || '—'}</Row>
+                      <Row label="Номер">{request.doc_number || '—'}</Row>
+                      <Row label="Дата документа" className="ui-num">{fmtDocDate(request.doc_date) || '—'}</Row>
+                      {/* Ссылку на письмо при создании больше не вводят (11.11.2026) — строка только у заявок, где она есть. */}
+                      {hasCardFields && request.email_link && (
+                        <Row label="Письмо">
+                          {mail ? (
+                            <a className="dc-detail-mail" href={mail} target="_blank" rel="noopener noreferrer" title={request.email_link}>
+                              <IconLink size={14} />Открыть письмо
+                            </a>
+                          ) : '—'}
                         </Row>
                       )}
                     </dl>
+                    <DocCheckFiles requestId={request.id} canEdit={canEdit && !isDeleted} onChange={markFilesChanged} />
                   </Box>
-                )}
 
-                <Box title={isDeleted ? 'Создание и удаление' : 'Создание'}>
-                  <dl className="dc-kv">
-                    <Row label="Заявку создал">{request.created_by_name || '—'}</Row>
-                    <Row label="Создана" className="ui-num">{fmtDateTime(request.created_at)}</Row>
-                    {isDeleted && <Row label="Удалил">{deletion?.name || 'не записано'}</Row>}
-                    {isDeleted && <Row label="Удалена" className="ui-num">{fmtDateTime(request.deleted_at)}</Row>}
-                  </dl>
-                </Box>
-              </div>
+                  {hasBoardFields && (
+                    <Box title="Срок и приоритет">
+                      <dl className="dc-kv">
+                        <Row label="Срок" className={request.due_date ? `ui-num dc-due-text is-${due}` : 'ui-num'}>
+                          {fmtDocDate(request.due_date) || '—'}{due === 'overdue' ? ' · срок прошёл' : ''}
+                        </Row>
+                        <Row label="Приоритет">{DOC_CHECK_PRIORITY_LABEL[request.priority] || '—'}</Row>
+                        {request.labels?.length > 0 && (
+                          <Row label="Метки" className="dc-card-chips">
+                            {request.labels.map(l => <span key={l} className="dc-chip dc-chip--label">{l}</span>)}
+                          </Row>
+                        )}
+                      </dl>
+                    </Box>
+                  )}
+                </div>
 
-              <div className="dc-info-col">
-                <Box title="Статус">
-                  <div className="dc-status-list">
-                    {statuses.map(s => {
-                      const current = request.status === s.value
-                      return (
-                        <button
-                          key={s.value}
-                          type="button"
-                          aria-pressed={current}
-                          className={`dc-status-opt ${DOC_CHECK_STATUS_CLASS[s.value]}${current ? ' is-current' : ''}`}
-                          onClick={() => canEdit && !current && onStatusChange(request, s.value)}
-                          disabled={!canEdit || isDeleted}
-                        >
-                          <span className="dc-status-dot" aria-hidden="true">{current && <IconCheck size={11} />}</span>
-                          <span>{s.label}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </Box>
-
-                {hasBoardFields && (
-                  <Box title="Исполнители" aside={people.length > 0 ? people.length : null}>
-                    {people.length ? (
-                      <ul className="dc-detail-people">
-                        {people.map(p => (
-                          <li key={p.key}>
-                            <span className={`dc-avatar dc-avatar--t${p.tone}`} aria-hidden="true">{initials(p.name)}</span>
-                            <span className="dc-person-name">{p.name}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : <p className="dc-box-text dc-box-empty">Не назначены</p>}
+                <div className="dc-info-col">
+                  <Box title="Статус">
+                    <div className="dc-status-list">
+                      {statuses.map(s => {
+                        const current = request.status === s.value
+                        return (
+                          <button
+                            key={s.value}
+                            type="button"
+                            aria-pressed={current}
+                            className={`dc-status-opt ${DOC_CHECK_STATUS_CLASS[s.value]}${current ? ' is-current' : ''}`}
+                            onClick={() => canEdit && !current && onStatusChange(request, s.value)}
+                            disabled={!canEdit || isDeleted}
+                          >
+                            <span className="dc-status-dot" aria-hidden="true">{current && <IconCheck size={11} />}</span>
+                            <span>{s.label}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
                   </Box>
-                )}
+
+                  {hasBoardFields && (
+                    <Box title="Исполнители" aside={people.length > 0 ? people.length : null}>
+                      {people.length ? (
+                        <ul className="dc-detail-people">
+                          {people.map(p => (
+                            <li key={p.key}>
+                              <span className={`dc-avatar dc-avatar--t${p.tone}`} aria-hidden="true">{initials(p.name)}</span>
+                              <span className="dc-person-name">{p.name}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : <p className="dc-box-text dc-box-empty">Не назначены</p>}
+                      {canAssign && (
+                        <div className="dc-assign">
+                          <FilterDropdown
+                            label=""
+                            multiple
+                            searchable
+                            searchPlaceholder="Поиск юриста…"
+                            allLabel="Назначить"
+                            icon={<IconUser size={15} />}
+                            value={shownIds}
+                            onChange={(ids) => onAssign(request, ids)}
+                            options={lawyerOptions}
+                            formatTrigger={() => (people.length ? 'Назначить или снять' : 'Назначить исполнителя')}
+                            triggerTitle="Отметьте юристов ОСП — назначение сохраняется сразу"
+                            className="dc-assign-picker"
+                          />
+                        </div>
+                      )}
+                    </Box>
+                  )}
+
+                  <Box title={isDeleted ? 'Создание и удаление' : 'Создание'}>
+                    <dl className="dc-kv">
+                      <Row label="Заявку создал">{request.created_by_name || '—'}</Row>
+                      <Row label="Создана" className="ui-num">{fmtDateTime(request.created_at)}</Row>
+                      {isDeleted && <Row label="Удалил">{deletion?.name || 'не записано'}</Row>}
+                      {isDeleted && <Row label="Удалена" className="ui-num">{fmtDateTime(request.deleted_at)}</Row>}
+                    </dl>
+                  </Box>
+                </div>
               </div>
             </div>
           )}
 
-          {tab === 'steps' && (cardState !== 'ready' ? cardUnavailable : (
-            <DocCheckSteps
-              requestId={request.id}
-              steps={steps}
-              onStepsChange={changeSteps}
-              onReload={loadCard}
-              canArrange={canEdit && !isDeleted}
-              canTick={(canEdit || isAssignee) && !isDeleted}
-            />
-          ))}
-
-          {tab === 'discussion' && (cardState !== 'ready' ? cardUnavailable : (
-            <DocCheckDiscussion
-              requestId={request.id}
-              comments={comments}
-              onCommentsChange={changeComments}
-              currentUserId={currentUserId}
-              canWrite={!isDeleted}
-            />
-          ))}
-
-          {tab === 'docs' && (
-            <S3DocumentList
-              ownerType="doc_check_request"
-              ownerId={request.id}
-              title="Файлы документа"
-              canEdit={canEdit}
-            />
+          {tab === 'general' && hasCardFields && (
+            <aside className="dc-general-talk">
+              <DocCheckDiscussion
+                requestId={request.id}
+                comments={comments}
+                onCommentsChange={changeComments}
+                currentUserId={currentUserId}
+                canWrite={!isDeleted}
+                state={cardState}
+                onRetry={retryCard}
+              />
+            </aside>
           )}
 
           {tab === 'history' && (

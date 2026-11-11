@@ -6,18 +6,23 @@ import { formatDateTimeRu } from '../../utils/taskHelpers'
 
 // Обсуждение заявки — по образцу обсуждения задачи: автор, время, текст; свои сообщения прижаты вправо. Написать может
 // любой, кто видит раздел. Автора и время ставит база, поэтому подделать их нельзя; сообщения только добавляются.
-export default function DocCheckDiscussion({ requestId, comments, onCommentsChange, currentUserId, canWrite }) {
+//
+// С 11.11.2026 (решение пользователя: «переписку разместить справа, на общем») — не вкладка, а панель справа на вкладке
+// «Общая»: заголовок с числом сообщений, переписка прокручивается сама по себе, поле ввода — у нижнего края. На телефоне
+// панель стоит под сведениями заявки и прокручивается вместе с окном.
+export default function DocCheckDiscussion({ requestId, comments, onCommentsChange, currentUserId, canWrite, state, onRetry }) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   // Не даёт отправить дважды (Enter, нажатый снова до ответа базы).
   const sendingRef = useRef(false)
-  const rootRef = useRef(null)
+  const listRef = useRef(null)
 
-  // Новые сообщения — внизу, поле ввода — под ними: при открытии вкладки и после отправки показываем конец переписки.
+  // Новые сообщения — внизу, поле ввода — под ними: при открытии и после отправки показываем конец переписки. Прокручивается
+  // только сама переписка: на телефоне своей прокрутки у неё нет, и окно со сведениями заявки остаётся на месте.
   useLayoutEffect(() => {
-    const box = rootRef.current?.closest('.dc-detail-body')
-    if (box) box.scrollTop = box.scrollHeight
-  }, [comments.length])
+    const list = listRef.current
+    if (list) list.scrollTop = list.scrollHeight
+  }, [comments.length, state])
 
   const send = async () => {
     const body = text.trim()
@@ -37,19 +42,33 @@ export default function DocCheckDiscussion({ requestId, comments, onCommentsChan
     }
   }
 
+  const ready = state === 'ready'
   return (
-    <div className="dc-talk" ref={rootRef}>
-      {comments.length === 0 && <p className="dc-muted">Сообщений пока нет.</p>}
-      {comments.map(c => (
-        <div key={c.id} className={`dc-talk-msg${c.author_user_id && c.author_user_id === currentUserId ? ' is-mine' : ''}`}>
-          <div className="dc-talk-head">
-            <b>{c.author_name || 'Сотрудник'}</b>
-            <span className="dc-talk-time">{formatDateTimeRu(c.created_at)}</span>
+    <section className="dc-talk" aria-label="Обсуждение">
+      <h4 className="dc-talk-title">
+        Обсуждение
+        {ready && comments.length > 0 && <span className="dc-tab-count">{comments.length}</span>}
+      </h4>
+      <div className="dc-talk-list" ref={listRef}>
+        {state === 'loading' && <p className="dc-muted">Загрузка…</p>}
+        {state === 'error' && (
+          <p className="dc-muted">
+            Не удалось загрузить.{' '}
+            <button type="button" className="dc-retry" onClick={onRetry}>Повторить</button>
+          </p>
+        )}
+        {ready && comments.length === 0 && <p className="dc-muted">Сообщений пока нет.</p>}
+        {ready && comments.map(c => (
+          <div key={c.id} className={`dc-talk-msg${c.author_user_id && c.author_user_id === currentUserId ? ' is-mine' : ''}`}>
+            <div className="dc-talk-head">
+              <b>{c.author_name || 'Сотрудник'}</b>
+              <span className="dc-talk-time">{formatDateTimeRu(c.created_at)}</span>
+            </div>
+            <p className="dc-talk-body">{c.body}</p>
           </div>
-          <p className="dc-talk-body">{c.body}</p>
-        </div>
-      ))}
-      {canWrite && (
+        ))}
+      </div>
+      {ready && canWrite && (
         <div className="dc-inline-add dc-talk-add">
           <DocCheckGrowingField
             value={text}
@@ -63,6 +82,6 @@ export default function DocCheckDiscussion({ requestId, comments, onCommentsChan
           <button type="button" className="btn-primary" disabled={sending || !text.trim()} onClick={send}>Отправить</button>
         </div>
       )}
-    </div>
+    </section>
   )
 }

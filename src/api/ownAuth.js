@@ -83,12 +83,16 @@ export function createOwnAuth({ fetchImpl, channel = null }) {
   }
 
   // Вход через СУ-10: сервер возвращает адрес выхода из СУ-10 (endSessionUrl) — страница переходит по нему.
+  // Выход считается состоявшимся, только когда сервер его подтвердил: без сессии сервер и так отвечает 204/200. Сеть,
+  // отказ CSRF, сбой базы — { error }: сессия в cookie может быть жива, и делать вид, что вышли, нельзя.
   async function signOut({ all = false } = {}) {
     let endSessionUrl = null
     try {
       const data = await call('/api/auth/logout', { body: all ? { all: true } : {} })
       if (typeof data?.endSessionUrl === 'string' && /^https:\/\//.test(data.endSessionUrl)) endSessionUrl = data.endSessionUrl
-    } catch { /* сессии уже нет — выход всё равно состоялся */ }
+    } catch (error) {
+      return { error, endSessionUrl: null }
+    }
     me = null
     emit('SIGNED_OUT', null)
     broadcast('SIGNED_OUT')

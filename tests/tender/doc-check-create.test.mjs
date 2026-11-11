@@ -2,7 +2,8 @@
 // (миграция 20270102, решение пользователя 06.11.2026: «по такому же принципу», что «Заявка на заключение ДП»). Страница в
 // Chromium (стенд tests/tender/ui, route=/doc-check-requests&docCheck=1):
 //   • право только создавать (?noEdit=doc_check_requests): «+ Новая заявка» в шапке и «+» только у колонки «Новые заявки»,
-//     ничего не двигается; в форме — без исполнителей, срока, приоритета, цвета и меток, зато файлы на проверку;
+//     ничего не двигается; в форме — без исполнителей, срока, приоритета, цвета и меток, зато файлы двумя частями, как в окне
+//     заявки: понятийное соглашение (своя категория) и документы на проверку;
 //   • объект — из «Ролей»: один стоит серым, без выбора; несколько — выбор обязателен; заявка встаёт в «Новые заявки»;
 //   • с правом правки — форма прежняя. База (тот же запрет) — doc-check-create-db.test.mjs. Люди вымышленные.
 import { describe, it, before, after } from 'node:test'
@@ -59,10 +60,14 @@ describe('Заявки на проверку ДП/ДС: создание рук�
       const shown = await labels(page)
       for (const work of ['Исполнители', 'Срок', 'Приоритет', 'Цвет карточки', 'Метки']) assert.ok(!shown.includes(work), `${work}: ${shown.join(' | ')}`)
       assert.ok(shown.includes('Документы на проверку'))
+      assert.ok(shown.includes('Понятийное соглашение'))
+      assert.equal(await form(page).locator('#dc-email-link').count(), 0, 'ссылки на письмо при создании нет')
 
       await form(page).getByLabel('Примечание').fill('Проверить ДС на монолит')
       await page.locator('[data-testid="dc-files"] input[type=file]').setInputFiles(FILE)
       await form(page).getByText('ДС № 7.pdf').waitFor()
+      await page.locator('[data-testid="dc-concept-files"] input[type=file]').setInputFiles({ ...FILE, name: 'Понятийное соглашение.pdf' })
+      await form(page).getByText('Понятийное соглашение.pdf').waitFor()
       await form(page).getByRole('button', { name: 'Создать заявку' }).click()
       await form(page).waitFor({ state: 'detached' })
 
@@ -70,8 +75,12 @@ describe('Заявки на проверку ДП/ДС: создание рук�
       assert.equal(row.status, 'new')
       assert.equal(row.object_id, 'obj-2')
       for (const field of ['assignee_ids', 'due_date', 'priority', 'color', 'labels']) assert.ok(!(field in row), `${field} не отправляется`)
-      const files = await page.evaluate((id) => window.__fakeDb.s3_documents.filter((d) => d.owner_id === id).map((d) => [d.owner_type, d.file_name]), row.id)
-      assert.deepEqual(files, [['doc_check_request', 'ДС № 7.pdf']])
+      const files = await page.evaluate((id) => window.__fakeDb.s3_documents.filter((d) => d.owner_id === id)
+        .map((d) => [d.owner_type, d.file_name, d.doc_category ?? null]).sort((a, b) => a[1].localeCompare(b[1])), row.id)
+      assert.deepEqual(files, [
+        ['doc_check_request', 'ДС № 7.pdf', null],
+        ['doc_check_request', 'Понятийное соглашение.pdf', 'doc_check_concept_agreement'],
+      ])
       const column = page.locator('.dc-column', { has: page.locator('.dc-column-title', { hasText: 'Новые заявки' }) })
       await column.locator(`.dc-card[data-id="${row.id}"]`).waitFor()
       assert.deepEqual(errors, [])

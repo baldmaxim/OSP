@@ -1,26 +1,28 @@
-// «Заявки на проверку ДП/ДС»: карточка заявки — обсуждение, шаги, ссылка на письмо (миграция 20261124; образец —
-// обсуждение и чек-лист задач). Правила без браузера и страница в Chromium (стенд tests/tender/ui,
-// route=/doc-check-requests&docCheck=1; у dcr-3 — шаги, сообщения и письмо). Исполнители и поля администратора —
-// doc-check-assignees.test.mjs.
-//   • на карточке доски: сколько шагов сделано, число сообщений, письмо открывается, не открывая карточку;
-//   • обсуждение: автор, текст, время; Shift+Enter — перенос; автора ставит база; счётчик на доске — сразу;
-//   • шаги: добавить, отметить, удалить, переставить ручкой и стрелками; правка текста;
-//   • права: без права правки — только просмотр шагов (исполнитель отмечает), написать сообщение может любой;
-//     удалённая заявка — только чтение;
-//   • миграции ещё нет — всё как раньше, к новым таблицам нет обращений. База и права — doc-check-card-db.test.mjs.
-// Люди стенда вымышленные.
+// «Заявки на проверку ДП/ДС»: окно заявки (решения пользователя 11.11.2026). Правила без браузера и страница в Chromium
+// (стенд tests/tender/ui, route=/doc-check-requests&docCheck=1; у dcr-3 — сообщения и письмо, у dcr-2 — два файла):
+//   • две вкладки — «Общая» и «История»; шагов нет (их таблица в базе осталась, страница её не читает);
+//   • «Общая»: слева сведения, раздел «Документы» — сведения о документе и файлы двумя частями, «Понятийное соглашение»
+//     (своя категория) и «Загружаемые документы»; справа — переписка со своей прокруткой;
+//   • исполнителей назначают прямо в окне, без формы «Изменить»: отметка сразу пишется в заявку и в историю;
+//   • ссылки на письмо при создании нет; у прежней заявки со ссылкой — видна, в правке можно поправить или убрать;
+//   • права: без права правки — только просмотр файлов, назначать нельзя, написать сообщение можно; удалённая — только чтение;
+//   • миграции 20261124 ещё нет — без переписки, к её таблице нет обращений. База и права — doc-check-card-db.test.mjs.
+// Исполнители в форме и поля администратора — doc-check-assignees.test.mjs. Люди вымышленные.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import { Buffer } from 'node:buffer'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import {
-  cardCountsById, compareSteps, fieldEvents, mergeRequestCounts, stepTitles, MAX_STEP_TITLE,
+  DOC_CHECK_CONCEPT_CATEGORY, cardCountsById, fieldEvents, mergeRequestCounts,
 } from '../../src/utils/docCheckHelpers.js'
 import { safeHttpUrl } from '../../src/utils/publicTenders.js'
 
-describe('Карточка заявки: правила без браузера', () => {
+const PDF = (name) => ({ name, mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4') })
+
+describe('Окно заявки: правила без браузера', () => {
   it('ссылка на письмо: только http(s), как ограничение в базе', () => {
     assert.equal(safeHttpUrl(' https://mail.example.invalid/letter/3 '), 'https://mail.example.invalid/letter/3')
     assert.equal(safeHttpUrl('http://mail.example.invalid/x'), 'http://mail.example.invalid/x')
@@ -35,51 +37,46 @@ describe('Карточка заявки: правила без браузера'
     const b = { id: 'b' }
     const cache = new WeakMap()
     const first = mergeRequestCounts([a, b], new Map([['a', 2]]), new Map(), cache)
-    assert.deepEqual(first[0], { id: 'a', docsCount: 2, stepsTotal: 0, stepsDone: 0, commentsCount: 0 })
+    assert.deepEqual(first[0], { id: 'a', docsCount: 2, commentsCount: 0 })
     const same = mergeRequestCounts([a, b], new Map([['a', 2]]), new Map(), cache)
     assert.equal(same[0], first[0])
     assert.equal(same[1], first[1])
-    const changed = mergeRequestCounts([a, b], new Map([['a', 2]]), new Map([['b', { stepsTotal: 3, stepsDone: 1, commentsCount: 0 }]]), cache)
+    const changed = mergeRequestCounts([a, b], new Map([['a', 2]]), new Map([['b', { commentsCount: 3 }]]), cache)
     assert.equal(changed[0], first[0], 'соседняя заявка не меняется')
     assert.notEqual(changed[1], first[1])
-    assert.equal(changed[1].stepsTotal, 3)
+    assert.equal(changed[1].commentsCount, 3)
   })
 
-  it('история: ссылка — отдельным полем', () => {
-    const events = fieldEvents({ email_link: null, notes: 'x' }, { email_link: 'https://x.invalid/1', notes: 'x' })
-    assert.deepEqual(events.map(e => [e.field_name, e.new_value]), [['email_link', 'https://x.invalid/1']])
+  it('история: ссылка и исполнители — отдельными полями', () => {
+    const events = fieldEvents({ email_link: null, notes: 'x', assignee_ids: ['u1'] },
+      { email_link: 'https://x.invalid/1', notes: 'x', assignee_ids: ['u1', 'u2'] })
+    assert.deepEqual(events.map(e => [e.field_name, e.new_value]), [['email_link', 'https://x.invalid/1'], ['assignee_ids', ['u1', 'u2']]])
   })
 
-  it('счётчики и порядок шагов; строки поля — отдельные шаги', () => {
-    const map = cardCountsById(
-      [{ request_id: 'a', is_done: true }, { request_id: 'a', is_done: false }, { request_id: 'b', is_done: false }],
-      [{ request_id: 'a' }, { request_id: 'c' }, { request_id: 'c' }],
-    )
-    assert.deepEqual(map.get('a'), { stepsTotal: 2, stepsDone: 1, commentsCount: 1 })
-    assert.deepEqual(map.get('b'), { stepsTotal: 1, stepsDone: 0, commentsCount: 0 })
-    assert.deepEqual(map.get('c'), { stepsTotal: 0, stepsDone: 0, commentsCount: 2 })
-    assert.deepEqual(stepTitles('  Первый \n\n Второй\r\n'), ['Первый', 'Второй'])
-    assert.equal(stepTitles('я'.repeat(600))[0].length, MAX_STEP_TITLE)
-    const list = [
-      { id: 'b', sort_order: 10, created_at: '2026-01-02' }, { id: 'a', sort_order: 10, created_at: '2026-01-01' },
-      { id: 'c', sort_order: 0, created_at: '2026-01-03' },
-    ]
-    assert.deepEqual(list.sort(compareSteps).map(s => s.id), ['c', 'a', 'b'])
+  it('счётчик сообщений на карточке; шагов нет', () => {
+    const map = cardCountsById([{ request_id: 'a' }, { request_id: 'c' }, { request_id: 'c' }])
+    assert.deepEqual(map.get('a'), { commentsCount: 1 })
+    assert.deepEqual(map.get('c'), { commentsCount: 2 })
+    assert.equal(map.has('b'), false)
+    assert.equal(DOC_CHECK_CONCEPT_CATEGORY, 'doc_check_concept_agreement')
+    assert.equal(fs.existsSync(path.join(REPO, 'src', 'components', 'doccheck', 'DocCheckSteps.jsx')), false)
   })
 
-  it('стили шагов и обсуждения — у самой страницы: она ленивая, чужой CSS может не загрузиться', () => {
+  it('стили окна — у самой страницы: она ленивая, чужой CSS может не загрузиться', () => {
     const css = fs.readFileSync(path.join(REPO, 'src', 'pages', 'DocCheckRequestsPage.css'), 'utf8')
-    for (const cls of ['.dc-steps', '.dc-step-handle', '.dc-talk-msg', '.dc-inline-add', '.dc-chip--mail']) {
+    for (const cls of ['.dc-general-talk', '.dc-talk-list', '.dc-talk-msg', '.dc-inline-add', '.dc-chip--mail', '.dc-files-part', '.dc-file-name', '.dc-assign']) {
       assert.ok(css.includes(cls), cls)
     }
-    const used = ['DocCheckSteps', 'DocCheckDiscussion'].map((f) => fs.readFileSync(path.join(REPO, 'src', 'components', 'doccheck', `${f}.jsx`), 'utf8')).join('')
+    assert.doesNotMatch(css, /\.dc-steps?\b|\.dc-step-/, 'стилей шагов не осталось')
+    const used = ['DocCheckDiscussion', 'DocCheckFiles', 'DocCheckDetailModal']
+      .map((f) => fs.readFileSync(path.join(REPO, 'src', 'components', 'doccheck', `${f}.jsx`), 'utf8')).join('')
     assert.doesNotMatch(used, /task-checklist|task-comment|task-inline-add/)
   })
 })
 
 const launch = browserLaunchOptions()
 
-describe('Карточка заявки на проверку ДП/ДС в браузере', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
+describe('Окно заявки на проверку ДП/ДС в браузере', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
   let stand
   let browser
 
@@ -104,7 +101,7 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
     await page.locator('.dc-board, .dc-error').first().waitFor({ timeout: 120000 })
     return { page, context, errors, dialogs, close: () => context.close().catch(() => {}) }
   }
-  const card = (page, id) => page.locator(`.dc-column[data-status="in_progress"] .dc-card[data-id="${id}"]`)
+  const card = (page, id) => page.locator(`.dc-column .dc-card[data-id="${id}"]`)
   const openCard = async (page, id, tab) => {
     await page.locator(`.dc-column .dc-card[data-id="${id}"]`).first().click()
     const modal = page.locator('.dc-detail-modal')
@@ -112,11 +109,13 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
     if (tab) await modal.getByRole('tab', { name: new RegExp(`^${tab}`) }).click()
     return modal
   }
-  const stepTitlesOnPage = (modal) => modal.locator('.dc-steps li').evaluateAll((els) => els.map((el) => el.querySelector('.dc-step-label span')?.textContent ?? ''))
-  const dbSteps = (page) => page.evaluate(() => window.__fakeDb.doc_check_request_steps
-    .filter((s) => s.request_id === 'dcr-3')
-    .sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))
-    .map((s) => s.title))
+  const row = (page, id) => page.evaluate((key) => window.__fakeDb.doc_check_requests.find((r) => r.id === key), id)
+  const filesOf = (page, id) => page.evaluate((key) => window.__fakeDb.s3_documents
+    .filter((d) => d.owner_type === 'doc_check_request' && d.owner_id === key)
+    .map((d) => [d.file_name, d.doc_category ?? null]).sort((a, b) => a[0].localeCompare(b[0])), id)
+  const part = (modal, key) => modal.locator(`.dc-files-part[data-part="${key}"]`)
+  const fileNames = (modal, key) => part(modal, key).locator('.dc-file-name').allTextContents()
+  const stepReads = (page) => page.evaluate(() => window.__supabaseStats.requests.filter((r) => r.table === 'doc_check_request_steps').length)
 
   // Сколько карточек доски заново отрисовал React: тем же способом, что React DevTools (флаг PerformedWork, обход только
   // изменившихся поддеревьев). Хук ставится до загрузки React.
@@ -155,17 +154,17 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
 
       await page.evaluate(() => { window.__cardRenders = 0 })
       const modal = await openCard(page, 'dcr-3')
-      await modal.getByRole('tab', { name: /^Шаги/ }).click()
-      await modal.locator('.dc-steps li').nth(2).waitFor()
-      await modal.getByRole('tab', { name: /^Обсуждение/ }).click()
+      await modal.locator('.dc-talk-msg').first().waitFor()
+      await modal.getByRole('tab', { name: /^История/ }).click()
+      await modal.getByRole('tab', { name: /^Общая/ }).click()
       await modal.locator('.dc-talk-msg').first().waitFor()
       await modal.locator('.modal-close').click()
       await modal.waitFor({ state: 'detached' })
       await page.waitForTimeout(300)
       assert.equal(await page.evaluate(() => window.__cardRenders), 0, 'карточки доски не перерисованы')
 
-      // Что-то изменилось в заявке — перерисована только её карточка (в колонке статуса и, возможно, в «Сводке»).
-      const again = await openCard(page, 'dcr-3', 'Обсуждение')
+      // Что-то изменилось в заявке — перерисована только её карточка.
+      const again = await openCard(page, 'dcr-3')
       await again.locator('.dc-talk-add textarea').fill('Новое сообщение')
       await again.getByRole('button', { name: 'Отправить' }).click()
       await again.locator('.dc-talk-msg').nth(2).waitFor()
@@ -178,47 +177,181 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
     }
   })
 
-  it('число файлов перечитывается, только если открывали вкладку «Документы»', async () => {
-    const { page, errors, close } = await openPage()
-    try {
-      const reads = () => page.evaluate(() => window.__supabaseStats.requests.filter((q) => q.table === 's3_documents').length)
-      await page.waitForTimeout(300)
-      const start = await reads()
-      let modal = await openCard(page, 'dcr-2')
-      await modal.locator('.modal-close').click()
-      await modal.waitFor({ state: 'detached' })
-      await page.waitForTimeout(200)
-      assert.equal(await reads(), start, 'окно открыли и закрыли — лишнего запроса нет')
-      modal = await openCard(page, 'dcr-2', 'Документы')
-      await modal.getByText('ДП СУ2-001.pdf').waitFor()
-      const inTab = await reads()
-      await modal.locator('.modal-close').click()
-      await page.waitForFunction((n) => window.__supabaseStats.requests.filter((q) => q.table === 's3_documents').length > n, inTab)
-      assert.deepEqual(errors, [])
-    } finally { await close() }
-  })
-
-  it('вид окна: разделы с заголовками, две колонки, постоянная высота; подписи контрастные', async () => {
+  it('вид окна: две вкладки, сведения в две колонки, переписка справа, постоянная высота; подписи контрастные', async () => {
     const { page, errors, close } = await openPage()
     try {
       const modal = await openCard(page, 'dcr-2')
+      assert.deepEqual(await modal.locator('.dc-detail-tab').allTextContents(), ['Общая', 'История'])
       assert.deepEqual(await modal.locator('.dc-box-head').evaluateAll((els) => els.map((e) => e.firstChild.textContent)),
-        ['Примечание', 'Документ', 'Срок и приоритет', 'Создание', 'Статус', 'Исполнители'])
+        ['Примечание', 'Документы', 'Срок и приоритет', 'Статус', 'Исполнители', 'Создание'])
       const cols = await modal.locator('.dc-info-col').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)))
       assert.equal(cols.length, 2)
-      assert.ok(cols[1] > cols[0] + 200, `колонки рядом: ${cols}`)
+      assert.ok(cols[1] > cols[0] + 300, `колонки рядом: ${cols}`)
+      const info = await modal.locator('.dc-general-main').boundingBox()
+      const talk = await modal.locator('.dc-general-talk').boundingBox()
+      assert.ok(talk.x >= info.x + info.width - 1, 'переписка — справа от сведений')
+      assert.ok(Math.abs(talk.y - info.y) < 2 && Math.abs(talk.height - info.height) < 2, 'и на всю высоту окна')
+      assert.match(await modal.locator('.dc-talk-title').innerText(), /^Обсуждение/)
+      // Документы видны сразу, без прокрутки сведений.
+      const concept = await part(modal, 'concept').boundingBox()
+      assert.ok(concept.y + concept.height <= info.y + info.height, 'понятийное соглашение — в видимой части окна')
       assert.match(await modal.locator('.dc-detail-sub .dc-status-chip').innerText(), /В работе/)
       assert.match(await modal.locator('.dc-detail-sub').innerText(), /Договор подряда/)
       assert.equal(await modal.locator('.dc-status-opt.is-current').count(), 1)
       assert.equal(await modal.locator('.dc-status-opt').count(), 7, 'каждая колонка доски — отдельной строкой (без убранной «Проверки документов»)')
 
       const height = (await modal.boundingBox()).height
-      for (const tab of ['Шаги', 'Обсуждение', 'Документы', 'История', 'Заявка']) {
+      for (const tab of ['История', 'Общая']) {
         await modal.getByRole('tab', { name: new RegExp(`^${tab}`) }).click()
         assert.equal((await modal.boundingBox()).height, height, `вкладка «${tab}» не меняет высоту окна`)
       }
       const size = await modal.locator('.dc-row-kv dd').first().evaluate((e) => parseFloat(getComputedStyle(e).fontSize))
       assert.ok(size >= 14, `текст значений не мельче 14px: ${size}`)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('шагов нет: ни вкладки, ни счётчика на карточке; их таблицу страница не читает', async () => {
+    const { page, errors, close } = await openPage()
+    try {
+      await card(page, 'dcr-3').locator('.dc-count--talk').waitFor()
+      assert.equal(await page.locator('.dc-count--steps').count(), 0)
+      const modal = await openCard(page, 'dcr-3')
+      await modal.locator('.dc-talk-msg').first().waitFor()
+      assert.equal(await modal.getByRole('tab', { name: /Шаги|Документы|Обсуждение/ }).count(), 0)
+      assert.equal(await modal.locator('.dc-steps, .dc-step-handle').count(), 0)
+      await modal.locator('.modal-close').click()
+      await page.locator('.dc-view-btn', { hasText: 'Реестр' }).click()
+      await page.locator('.dc-table').waitFor()
+      assert.equal(await stepReads(page), 0)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('документы двумя частями: понятийное соглашение — своей категорией, остальное — «Загружаемые документы»', async () => {
+    const { page, errors, dialogs, close } = await openPage()
+    try {
+      const reads = () => page.evaluate(() => window.__supabaseStats.requests.filter((q) => q.table === 's3_documents').length)
+      await page.waitForTimeout(300)
+      const start = await reads()
+      let modal = await openCard(page, 'dcr-2')
+      await modal.locator('.dc-file-name').first().waitFor()
+      assert.deepEqual(await modal.locator('.dc-files-title').allTextContents(), ['Понятийное соглашение', 'Загружаемые документы'])
+      assert.deepEqual(await fileNames(modal, 'concept'), ['Понятийное соглашение СУ2.pdf'])
+      assert.deepEqual(await fileNames(modal, 'files'), ['ДП СУ2-001.pdf'])
+      assert.match(await part(modal, 'files').locator('.dc-file-meta').innerText(), /21\.10\.2026, \d\d:\d\d · 1,0 КБ/)
+      assert.equal(await reads(), start + 1, 'обе части — одним запросом')
+      await modal.locator('.modal-close').click()
+      await modal.waitFor({ state: 'detached' })
+      await page.waitForTimeout(200)
+      assert.equal(await reads(), start + 1, 'файлы не меняли — число файлов доски не перечитывается')
+
+      modal = await openCard(page, 'dcr-2')
+      await modal.locator('.dc-file-name').first().waitFor()
+      await modal.getByLabel('Загрузить: Понятийное соглашение').setInputFiles(PDF('Соглашение подписанное.pdf'))
+      await part(modal, 'concept').getByText('Соглашение подписанное.pdf').waitFor()
+      await modal.getByLabel('Загрузить: Загружаемые документы').setInputFiles([PDF('ДС № 1.pdf'), PDF('Приложение.pdf')])
+      await part(modal, 'files').getByText('Приложение.pdf').waitFor()
+      assert.deepEqual((await fileNames(modal, 'concept')).sort(), ['Понятийное соглашение СУ2.pdf', 'Соглашение подписанное.pdf'])
+      assert.equal(await part(modal, 'files').locator('.dc-files-count').textContent(), '3')
+      assert.deepEqual(await filesOf(page, 'dcr-2'), [
+        ['ДП СУ2-001.pdf', null], ['ДС № 1.pdf', null], ['Понятийное соглашение СУ2.pdf', DOC_CHECK_CONCEPT_CATEGORY],
+        ['Приложение.pdf', null], ['Соглашение подписанное.pdf', DOC_CHECK_CONCEPT_CATEGORY],
+      ])
+
+      await modal.getByRole('button', { name: 'Удалить Приложение.pdf' }).click()
+      await page.waitForFunction(() => !window.__fakeDb.s3_documents.some((d) => d.file_name === 'Приложение.pdf'))
+      assert.match(dialogs.at(-1), /Удалить файл «Приложение\.pdf»/)
+      assert.deepEqual((await fileNames(modal, 'files')).sort(), ['ДП СУ2-001.pdf', 'ДС № 1.pdf'].sort())
+
+      // Закрыли — скрепка на карточке доски показывает новое число.
+      const clip = card(page, 'dcr-2').locator('.dc-count[title="Файлы заявки"]')
+      assert.equal(await clip.textContent(), '2', 'пока окно открыто, доска не перечитывается')
+      await modal.locator('.modal-close').click()
+      await page.waitForFunction(() => document.querySelector('.dc-card[data-id="dcr-2"] .dc-count[title="Файлы заявки"]')?.textContent === '4')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('файл можно бросить на свою часть: она подсвечивается, файл встаёт в неё', async () => {
+    const { page, errors, close } = await openPage()
+    try {
+      const modal = await openCard(page, 'dcr-4')
+      await modal.locator('.dc-files-empty').first().waitFor()
+      assert.deepEqual(await modal.locator('.dc-files-empty').allTextContents(),
+        ['Не загружено · можно перетащить файл сюда', 'Документы не загружены · можно перетащить файл сюда'])
+      const target = part(modal, 'concept')
+      const data = await page.evaluateHandle(() => {
+        const dt = new DataTransfer()
+        dt.items.add(new File(['%PDF-1.4'], 'Брошенное соглашение.pdf', { type: 'application/pdf' }))
+        return dt
+      })
+      await target.dispatchEvent('dragover', { dataTransfer: data })
+      assert.match(await target.getAttribute('class'), /is-over/)
+      await target.dispatchEvent('drop', { dataTransfer: data })
+      await target.getByText('Брошенное соглашение.pdf').waitFor()
+      assert.doesNotMatch(await target.getAttribute('class'), /is-over/)
+      assert.deepEqual(await filesOf(page, 'dcr-4'), [['Брошенное соглашение.pdf', DOC_CHECK_CONCEPT_CATEGORY]])
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('исполнители — прямо в окне, без формы: отметка сразу в заявке, в истории и на доске; скрытый остаётся в базе', async () => {
+    const { page, errors, close } = await openPage()
+    try {
+      await card(page, 'dcr-2').locator('.dc-avatar').first().waitFor()
+      const modal = await openCard(page, 'dcr-4')
+      const box = modal.locator('.dc-box', { hasText: 'Исполнители' })
+      assert.match(await box.textContent(), /Не назначены/)
+      const trigger = box.locator('.dc-assign .fdrop-trigger')
+      const triggerText = box.locator('.dc-assign .fdrop-value')
+      assert.equal(await triggerText.innerText(), 'Назначить исполнителя')
+      await trigger.click()
+      const options = page.locator('.fdrop-panel .fdrop-option')
+      assert.deepEqual(await options.allTextContents(), ['Стендов Стенд Стендович', 'Юристова Мария Андреевна'], 'только юристы ОСП')
+      await options.filter({ hasText: 'Юристова Мария Андреевна' }).click()
+      await page.waitForFunction(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-4').assignee_ids?.length === 1)
+      assert.deepEqual((await row(page, 'dcr-4')).assignee_ids, ['user-3'])
+      assert.deepEqual(await box.locator('.dc-person-name').allTextContents(), ['Юристова Мария Андреевна'])
+      assert.equal(await triggerText.innerText(), 'Назначить или снять')
+      assert.deepEqual(await card(page, 'dcr-4').locator('.dc-avatar').allTextContents(), ['ЮМ'], 'доска за окном обновилась')
+      await options.filter({ hasText: 'Стендов Стенд Стендович' }).click()
+      await page.waitForFunction(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-4').assignee_ids?.length === 2)
+      await page.keyboard.press('Escape')
+      assert.equal(await page.locator('.dc-form-modal').count(), 0, 'форма «Изменить» не открывалась')
+      const log = await page.evaluate(() => window.__fakeDb.doc_check_request_audit_log.filter((l) => l.request_id === 'dcr-4'))
+      assert.deepEqual(log.map((l) => [l.field_name, l.new_value]), [['assignee_ids', ['user-3']], ['assignee_ids', ['user-3', 'user-1']]])
+      await modal.getByRole('tab', { name: /^История/ }).click()
+      await modal.locator('.dc-history li').nth(1).waitFor()
+      assert.match(await modal.locator('.dc-history').textContent(), /Исполнители[^—]*—\s*→\s*Юристова Мария Андреевна/)
+      await modal.locator('.modal-close').click()
+
+      // У dcr-2 исполнители — юрист и сотрудник другой роли (выбор его не показывает): снять юриста — другой остаётся в базе.
+      const other = await openCard(page, 'dcr-2')
+      await other.locator('.dc-assign .fdrop-trigger').click()
+      await options.filter({ hasText: 'Юристова Мария Андреевна' }).click()
+      await page.waitForFunction(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-2').assignee_ids.length === 1)
+      assert.deepEqual((await row(page, 'dcr-2')).assignee_ids, ['user-2'])
+      await page.keyboard.press('Escape')
+      assert.match(await other.locator('.dc-box', { hasText: 'Исполнители' }).textContent(), /Не назначены/)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('назначение не записалось — сообщение, на экране снова как в базе', async () => {
+    const { page, errors, dialogs, close } = await openPage()
+    try {
+      const modal = await openCard(page, 'dcr-4')
+      await page.evaluate(() => {
+        window.__fakeHold = ({ table, op }) => (table === 'doc_check_requests' && op === 'update'
+          ? { error: { code: '42501', message: 'нет права' } } : {})
+      })
+      await modal.locator('.dc-assign .fdrop-trigger').click()
+      await page.locator('.fdrop-panel .fdrop-option', { hasText: 'Юристова Мария Андреевна' }).click()
+      await page.waitForFunction(() => document.querySelector('.dc-detail-modal')?.textContent.includes('Не назначены'))
+      assert.match(dialogs.at(-1), /Не удалось сохранить заявку: нет права/)
+      assert.deepEqual((await row(page, 'dcr-4')).assignee_ids, [])
+      assert.equal(await page.evaluate(() => window.__fakeDb.doc_check_request_audit_log.length), 0, 'в истории ничего')
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
@@ -290,7 +423,7 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
           if (phone) {
             assert.deepEqual(detailBox.window, [0, 0, 390, 780], `стили других разделов: ${mode}: заявка на весь экран телефона`)
           } else {
-            assert.deepEqual(detailBox.window, [370, 107, 960, 736], `стили других разделов: ${mode}: заявка по центру, 60 × 46 rem`)
+            assert.deepEqual(detailBox.window, [226, 91, 1248, 768], `стили других разделов: ${mode}: заявка по центру, 78 × 48 rem`)
             assert.equal(formBox.window[2], 640, `стили других разделов: ${mode}: форма шириной 40 rem`)
             const centre = formBox.window[0] + formBox.window[2] / 2
             assert.equal(centre, viewport.width / 2, `стили других разделов: ${mode}: форма по центру`)
@@ -304,31 +437,33 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
     })
   }
 
-  it('телефон: окно на весь экран, разделы столбцом', async () => {
+  it('телефон: окно на весь экран, разделы столбцом, переписка — под ними', async () => {
     const { page, errors, close } = await openPage('', { width: 390, height: 780 })
     try {
       const modal = await openCard(page, 'dcr-3')
+      await modal.locator('.dc-talk-msg').first().waitFor()
       const box = await modal.boundingBox()
       assert.deepEqual([box.x, box.y, box.width, box.height], [0, 0, 390, 780])
-      const widths = await modal.locator('.dc-box').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)))
-      assert.equal(new Set(widths).size, 1, `один столбец: ${widths}`)
+      const lefts = await modal.locator('.dc-box').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)))
+      assert.equal(new Set(lefts).size, 1, `один столбец: ${lefts}`)
+      const lastBox = await modal.locator('.dc-box').last().boundingBox()
+      const talk = await modal.locator('.dc-general-talk').boundingBox()
+      assert.ok(talk.y >= lastBox.y + lastBox.height, 'переписка — под сведениями')
       assert.equal(await modal.locator('.dc-detail-body').evaluate((b) => b.scrollWidth <= b.clientWidth), true, 'без горизонтальной прокрутки')
+      assert.equal(await modal.locator('.dc-detail-body').evaluate((b) => b.scrollTop), 0, 'окно открывается с начала, а не с конца переписки')
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
 
-  it('доска: шаги, сообщения, письмо и вписанный исполнитель на карточке; у остальных лишнего нет', async () => {
+  it('доска: сообщения и письмо на карточке; у остальных лишнего нет', async () => {
     const { page, errors, close } = await openPage()
     try {
       const c = card(page, 'dcr-3')
-      await c.locator('.dc-count--steps').waitFor()
-      assert.equal(await c.locator('.dc-count--steps').textContent(), '1/3')
-      assert.match(await c.locator('.dc-count--steps').getAttribute('title'), /сделано 1 из 3/)
+      await c.locator('.dc-count--talk').waitFor()
       assert.equal(await c.locator('.dc-count--talk').textContent(), '2')
       assert.match(await c.locator('.dc-count--talk').getAttribute('title'), /2 сообщения/)
       assert.equal(await c.locator('.dc-chip--mail').textContent(), 'Письмо')
-      const other = card(page, 'dcr-2')
-      assert.equal(await other.locator('.dc-count--steps, .dc-count--talk, .dc-chip--mail').count(), 0)
+      assert.equal(await card(page, 'dcr-2').locator('.dc-count--talk, .dc-chip--mail').count(), 0)
       assert.deepEqual(errors, [])
     } finally {
       await close()
@@ -351,9 +486,12 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
       await link.dragTo(page.locator('.dc-column[data-status="signal"] .dc-column-body'))
       await page.waitForFunction(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-3').status === 'signal')
 
-      // В карточке заявки — тоже ссылка.
+      // В окне заявки — тоже ссылка; у заявки без письма строки нет.
       const modal = await openCard(page, 'dcr-3')
       assert.equal(await modal.locator('.dc-detail-mail').getAttribute('href'), 'https://mail.example.invalid/letter/3')
+      await modal.locator('.modal-close').click()
+      const plain = await openCard(page, 'dcr-2')
+      assert.equal(await plain.locator('.dc-row-kv', { hasText: 'Письмо' }).count(), 0)
       assert.deepEqual(errors, [])
     } finally {
       await close()
@@ -373,13 +511,13 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
     }
   })
 
-  it('обсуждение: автор, текст, время; Shift+Enter — перенос; пустое не уходит; число на доске — сразу', async () => {
+  it('обсуждение справа: автор, текст, время; Shift+Enter — перенос; пустое не уходит; число на доске — сразу', async () => {
     const { page, errors, close } = await openPage()
     try {
-      const modal = await openCard(page, 'dcr-3', 'Обсуждение')
+      const modal = await openCard(page, 'dcr-3')
       const msgs = modal.locator('.dc-talk-msg')
       await msgs.nth(1).waitFor()
-      assert.equal(await modal.getByRole('tab', { name: /^Обсуждение/ }).textContent(), 'Обсуждение2')
+      assert.equal(await modal.locator('.dc-talk-title').textContent(), 'Обсуждение2')
       assert.equal(await msgs.nth(0).locator('b').textContent(), 'Юристова Мария Андреевна')
       assert.equal(await msgs.nth(0).locator('.dc-talk-body').textContent(), 'Договор ушёл на подпись\nждём оригинал')
       assert.match(await msgs.nth(0).locator('.dc-talk-time').textContent(), /^21\.10\.2026, \d\d:\d\d$/)
@@ -406,14 +544,14 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
       assert.equal(await field.inputValue(), '')
       assert.equal((await field.boundingBox()).height, oneLine, 'после отправки — снова в одну строку')
 
-      const row = await page.evaluate(() => window.__fakeDb.doc_check_request_comments.at(-1))
-      assert.equal(row.request_id, 'dcr-3')
-      assert.equal(row.body, 'Первая строка\nвторая строка')
+      const last = await page.evaluate(() => window.__fakeDb.doc_check_request_comments.at(-1))
+      assert.equal(last.request_id, 'dcr-3')
+      assert.equal(last.body, 'Первая строка\nвторая строка')
       // Клиент автора не шлёт: его ставит база.
       const sent = await page.evaluate(() => window.__supabaseStats.requests.filter((r) => r.table === 'doc_check_request_comments' && r.op === 'insert').length)
       assert.equal(sent, 1)
 
-      assert.equal(await modal.getByRole('tab', { name: /^Обсуждение/ }).textContent(), 'Обсуждение3')
+      assert.equal(await modal.locator('.dc-talk-title').textContent(), 'Обсуждение3')
       assert.equal(await card(page, 'dcr-3').locator('.dc-count--talk').textContent(), '3', 'доска за окном обновилась')
       assert.deepEqual(errors, [])
     } finally {
@@ -421,140 +559,55 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
     }
   })
 
-  it('длинная переписка: при открытии виден конец, поле ввода на месте', async () => {
+  it('длинная переписка: прокручивается сама, при открытии виден конец, поле ввода на месте, сведения — с начала', async () => {
     const { page, errors, close } = await openPage('&dcComments=40')
     try {
-      const modal = await openCard(page, 'dcr-3', 'Обсуждение')
+      const modal = await openCard(page, 'dcr-3')
       await modal.locator('.dc-talk-msg').nth(41).waitFor()
+      const list = modal.locator('.dc-talk-list')
+      assert.ok(await list.evaluate((el) => el.scrollHeight > el.clientHeight + 100), 'переписка длиннее панели')
+      assert.ok(await list.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 2), 'видна последняя')
+      assert.equal(await modal.locator('.dc-general-main').evaluate((el) => el.scrollTop), 0)
       const field = modal.getByRole('textbox', { name: 'Новое сообщение' })
       const fieldBox = await field.boundingBox()
-      const bodyBox = await modal.locator('.dc-detail-body').boundingBox()
-      assert.ok(fieldBox.y + fieldBox.height <= bodyBox.y + bodyBox.height, 'поле ввода в видимой части')
-      assert.equal(await modal.locator('.dc-talk-msg').nth(41).locator('.dc-talk-body').isVisible(), true)
+      const talkBox = await modal.locator('.dc-general-talk').boundingBox()
+      assert.ok(fieldBox.y + fieldBox.height <= talkBox.y + talkBox.height, 'поле ввода в видимой части')
       await field.fill('Новое')
       await field.press('Enter')
       await modal.locator('.dc-talk-msg').nth(42).waitFor()
-      const last = await modal.locator('.dc-talk-msg').nth(42).boundingBox()
+      const lastMsg = await modal.locator('.dc-talk-msg').nth(42).boundingBox()
       const fieldNow = await field.boundingBox()
-      assert.ok(last.y + last.height <= fieldNow.y + 1, 'новое сообщение не под полем ввода')
+      assert.ok(lastMsg.y + lastMsg.height <= fieldNow.y + 1, 'новое сообщение не под полем ввода')
       assert.deepEqual(errors, [])
     } finally {
       await close()
     }
   })
 
-  it('больше 1000 сообщений и шагов: счётчик на доске точный (потолок строк PostgREST)', async () => {
-    const { page, errors, close } = await openPage('&maxRows=1000&dcComments=1200&dcSteps=1100')
+  it('больше 1000 сообщений: счётчик на доске точный (потолок строк PostgREST)', async () => {
+    const { page, errors, close } = await openPage('&maxRows=1000&dcComments=1200')
     try {
       const c = card(page, 'dcr-3')
       await c.locator('.dc-count--talk').waitFor()
       assert.equal(await c.locator('.dc-count--talk').textContent(), '1202')
-      assert.equal(await c.locator('.dc-count--steps').textContent(), '1/1103')
       assert.deepEqual(errors, [])
     } finally {
       await close()
     }
   })
 
-  it('шаги: добавить строками, отметить, удалить; счётчик на доске и вкладке — сразу', async () => {
+  it('щелчок мимо окна и Escape окно не закрывают: черновик сообщения остаётся', async () => {
     const { page, errors, close } = await openPage()
     try {
-      const modal = await openCard(page, 'dcr-3', 'Шаги')
-      await modal.locator('.dc-steps li').nth(2).waitFor()
-      assert.deepEqual(await stepTitlesOnPage(modal), ['Сверить реквизиты', 'Проверить суммы', 'Отправить на подпись'])
-      assert.equal(await modal.getByRole('tab', { name: /^Шаги/ }).textContent(), 'Шаги1/3')
-      assert.match(await modal.locator('.dc-steps-summary').textContent(), /Сделано 1 из 3/)
-      assert.match(await modal.locator('.dc-steps li').nth(0).getAttribute('class'), /is-done/)
-
-      const field = modal.getByRole('textbox', { name: 'Новый шаг' })
-      await field.click()
-      await page.keyboard.type('Запросить оригинал')
-      await page.keyboard.press('Shift+Enter')
-      await page.keyboard.type('  Занести в 1С ')
-      assert.equal(await modal.locator('.dc-inline-add .btn-secondary').textContent(), 'Добавить 2 шага')
-      await page.keyboard.press('Enter')
-      await modal.locator('.dc-steps li').nth(4).waitFor()
-      assert.deepEqual((await stepTitlesOnPage(modal)).slice(3), ['Запросить оригинал', 'Занести в 1С'])
-      assert.deepEqual((await dbSteps(page)).slice(3), ['Запросить оригинал', 'Занести в 1С'])
-      assert.equal(await card(page, 'dcr-3').locator('.dc-count--steps').textContent(), '1/5')
-
-      await modal.locator('.dc-steps li').nth(1).locator('input[type="checkbox"]').check()
-      await page.waitForFunction(() => window.__fakeDb.doc_check_request_steps.find((s) => s.id === 'st-2').is_done === true)
-      assert.equal(await modal.getByRole('tab', { name: /^Шаги/ }).textContent(), 'Шаги2/5')
-      assert.equal(await card(page, 'dcr-3').locator('.dc-count--steps').textContent(), '2/5')
-
-      await modal.getByRole('button', { name: 'Удалить шаг «Сверить реквизиты»' }).click()
-      await page.waitForFunction(() => !window.__fakeDb.doc_check_request_steps.some((s) => s.id === 'st-1'))
-      assert.equal(await card(page, 'dcr-3').locator('.dc-count--steps').textContent(), '1/4')
-
-      // Все сделаны — счётчик зелёным.
-      const boxes = modal.locator('.dc-steps li input[type="checkbox"]')
-      for (let i = 0; i < await boxes.count(); i++) await boxes.nth(i).check()
-      await page.waitForFunction(() => window.__fakeDb.doc_check_request_steps.filter((s) => s.request_id === 'dcr-3').every((s) => s.is_done))
-      assert.match(await card(page, 'dcr-3').locator('.dc-count--steps').getAttribute('class'), /is-full/)
-      assert.deepEqual(errors, [])
-    } finally {
-      await close()
-    }
-  })
-
-  it('порядок шагов: ручкой мышью и стрелками; в базе — только сменившиеся номера', async () => {
-    const { page, errors, close } = await openPage()
-    try {
-      const modal = await openCard(page, 'dcr-3', 'Шаги')
-      await modal.locator('.dc-steps li').nth(2).waitFor()
-      const handle = modal.locator('.dc-steps li').nth(2).locator('.dc-step-handle')
-      const target = await modal.locator('.dc-steps li').nth(0).boundingBox()
-      const hb = await handle.boundingBox()
-      await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
-      await page.mouse.down()
-      await page.mouse.move(hb.x + hb.width / 2, target.y + 3, { steps: 8 })
-      assert.equal(await modal.locator('.dc-steps li.drop-before').count(), 1, 'место вставки подсвечено')
-      await page.mouse.up()
-      await page.waitForFunction(() => window.__fakeDb.doc_check_request_steps.find((s) => s.id === 'st-3').sort_order === 0)
-      assert.deepEqual(await stepTitlesOnPage(modal), ['Отправить на подпись', 'Сверить реквизиты', 'Проверить суммы'])
-      assert.deepEqual(await dbSteps(page), ['Отправить на подпись', 'Сверить реквизиты', 'Проверить суммы'])
-
-      // Стрелка вниз: на одно место ниже, фокус остаётся на ручке этого шага.
-      await modal.locator('.dc-steps li').nth(0).locator('.dc-step-handle').focus()
-      await page.keyboard.press('ArrowDown')
-      await page.waitForFunction(() => window.__fakeDb.doc_check_request_steps.find((s) => s.id === 'st-3').sort_order === 10)
-      assert.deepEqual(await stepTitlesOnPage(modal), ['Сверить реквизиты', 'Отправить на подпись', 'Проверить суммы'])
-      assert.equal(await page.evaluate(() => document.activeElement?.closest('li')?.dataset.itemId), 'st-3')
-
-      // Порядок переживает повторное открытие.
-      await modal.getByRole('button', { name: 'Закрыть' }).first().click()
-      const again = await openCard(page, 'dcr-3', 'Шаги')
-      await again.locator('.dc-steps li').nth(2).waitFor()
-      assert.deepEqual(await stepTitlesOnPage(again), ['Сверить реквизиты', 'Отправить на подпись', 'Проверить суммы'])
-      assert.deepEqual(errors, [])
-    } finally {
-      await close()
-    }
-  })
-
-  it('перетаскивание шага, отпущенное за краем окна, и щелчок мимо окна карточку не закрывают', async () => {
-    const { page, errors, close } = await openPage()
-    try {
-      const modal = await openCard(page, 'dcr-3', 'Шаги')
-      await modal.locator('.dc-steps li').nth(2).waitFor()
+      const modal = await openCard(page, 'dcr-3')
+      const field = modal.getByRole('textbox', { name: 'Новое сообщение' })
+      await field.fill('Черновик')
       const box = await modal.boundingBox()
-      const hb = await modal.locator('.dc-steps li').nth(1).locator('.dc-step-handle').boundingBox()
-      await page.mouse.move(hb.x + 2, hb.y + 2)
-      await page.mouse.down()
-      await page.mouse.move(Math.max(5, box.x - 40), hb.y + 2, { steps: 4 })
-      await page.mouse.up()
       await page.mouse.click(Math.max(5, box.x - 40), box.y + box.height / 2)
       await page.mouse.click(5, 5)
       await page.keyboard.press('Escape')
       await page.waitForTimeout(150)
       assert.equal(await modal.count(), 1, 'окно на месте')
-
-      // Черновик сообщения остаётся после щелчка мимо окна.
-      await modal.getByRole('tab', { name: /^Обсуждение/ }).click()
-      const field = modal.getByRole('textbox', { name: 'Новое сообщение' })
-      await field.fill('Черновик')
-      await page.mouse.click(5, 5)
       assert.equal(await field.inputValue(), 'Черновик')
       await modal.locator('.modal-close').click()
       await modal.waitFor({ state: 'detached' })
@@ -564,58 +617,15 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
     }
   })
 
-  it('правка текста шага: Enter сохраняет, Escape отменяет', async () => {
+  it('сбой отправки: текст сообщения не пропадает', async () => {
     const { page, errors, close } = await openPage()
     try {
-      const modal = await openCard(page, 'dcr-3', 'Шаги')
-      await modal.locator('.dc-steps li').nth(2).waitFor()
-      await modal.getByRole('button', { name: 'Изменить шаг «Проверить суммы»' }).click()
-      await modal.locator('.dc-step-edit').fill('Проверить суммы и НДС')
-      await modal.locator('.dc-step-edit').press('Enter')
-      await page.waitForFunction(() => window.__fakeDb.doc_check_request_steps.find((s) => s.id === 'st-2').title === 'Проверить суммы и НДС')
-      await modal.getByRole('button', { name: 'Изменить шаг «Отправить на подпись»' }).click()
-      await modal.locator('.dc-step-edit').fill('черновик')
-      await modal.locator('.dc-step-edit').press('Escape')
-      assert.equal(await modal.locator('.dc-step-edit').count(), 0)
-      assert.equal((await stepTitlesOnPage(modal))[2], 'Отправить на подпись')
-      assert.deepEqual(errors, [])
-    } finally {
-      await close()
-    }
-  })
-
-  it('сбой записи: шаг возвращается как в базе, текст сообщения не пропадает', async () => {
-    const { page, errors, dialogs, close } = await openPage()
-    try {
-      const modal = await openCard(page, 'dcr-3', 'Шаги')
-      await modal.locator('.dc-steps li').nth(2).waitFor()
-      // Отказ базы: отметка на экране возвращается.
-      await page.evaluate(() => {
-        window.__fakeHold = ({ table, op }) => (table === 'doc_check_request_steps' && op === 'update'
-          ? { error: { code: '42501', message: 'нет права' } } : {})
-      })
-      await modal.locator('.dc-steps li').nth(1).locator('label').click()
-      await modal.locator('.dc-steps li').nth(1).locator('input[type="checkbox"]:not(:checked)').waitFor()
-      assert.match(dialogs.at(-1), /Не удалось изменить шаг: нет права/)
-      assert.equal(await page.evaluate(() => window.__fakeDb.doc_check_request_steps.find((s) => s.id === 'st-2').is_done), false)
-
-      // Запись прошла, но не задела строку (шаг удалил коллега; нет права): правила по строкам отвечают «0 строк» без
-      // ошибки — это не должно выглядеть как успех.
-      await page.evaluate(() => {
-        window.__fakeHold = undefined
-        window.__fakeDb.doc_check_request_steps = window.__fakeDb.doc_check_request_steps.filter((s) => s.id !== 'st-2')
-        window.__fakeTouch('doc_check_request_steps')
-      })
-      await modal.locator('.dc-steps li').nth(1).locator('label').click()
-      await page.waitForFunction(() => document.querySelectorAll('.dc-steps li').length === 2)
-      assert.match(dialogs.at(-1), /Не удалось изменить шаг: Шаг уже удалён или нет права/)
-      assert.deepEqual(await stepTitlesOnPage(modal), ['Сверить реквизиты', 'Отправить на подпись'])
-
+      const modal = await openCard(page, 'dcr-3')
+      await modal.locator('.dc-talk-msg').nth(1).waitFor()
       await page.evaluate(() => {
         window.__fakeHold = ({ table, op }) => (table === 'doc_check_request_comments' && op === 'insert'
           ? { error: { code: '500', message: 'сбой' } } : {})
       })
-      await modal.getByRole('tab', { name: /^Обсуждение/ }).click()
       const field = modal.getByRole('textbox', { name: 'Новое сообщение' })
       await field.fill('Важное сообщение')
       await field.press('Enter')
@@ -628,126 +638,119 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
     }
   })
 
-  it('форма: ссылка на письмо сохраняется, пишется в историю, видна на доске и в реестре', async () => {
+  it('ссылки на письмо при создании нет; у прежней заявки со ссылкой её можно поправить или убрать', async () => {
     const { page, errors, close } = await openPage()
     try {
-      const modal = await openCard(page, 'dcr-2')
-      await modal.getByRole('button', { name: 'Изменить' }).click()
+      await page.getByRole('button', { name: /Новая заявка/ }).first().click()
       const form = page.locator('.dc-form-modal')
-      // Не http(s) — форма не сохраняет.
+      await form.waitFor()
+      assert.equal(await form.locator('#dc-email-link').count(), 0, 'при создании поля нет')
+      assert.doesNotMatch(await form.innerText(), /Ссылка на письмо/)
+      await form.locator('.modal-close').click()
+
+      await page.evaluate(() => {
+        window.__patches = []
+        window.__fakeHold = ({ table, op, patch }) => {
+          if (table === 'doc_check_requests' && op === 'update') window.__patches.push(patch)
+          return {}
+        }
+      })
+      let modal = await openCard(page, 'dcr-2')
+      await modal.getByRole('button', { name: 'Изменить' }).click()
+      assert.equal(await form.locator('#dc-email-link').count(), 0, 'у заявки без ссылки — тоже нет')
+      await form.locator('#dc-num').fill('СУ2-001-1')
+      await form.getByRole('button', { name: 'Сохранить' }).click()
+      await form.waitFor({ state: 'detached' })
+      const patches = await page.evaluate(() => window.__patches)
+      assert.equal(patches.length, 1)
+      assert.ok(!('email_link' in patches[0]), 'ссылку форма не шлёт')
+
+      // У dcr-3 ссылка с прежней доски — поле в правке есть.
+      modal = await openCard(page, 'dcr-3')
+      await modal.getByRole('button', { name: 'Изменить' }).click()
+      assert.equal(await form.locator('#dc-email-link').inputValue(), 'https://mail.example.invalid/letter/3')
       await form.locator('#dc-email-link').fill('javascript:alert(1)')
       await form.getByRole('button', { name: 'Сохранить' }).click()
       assert.match(await form.locator('.dc-form-error').textContent(), /https:/)
-      assert.equal((await page.evaluate(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-2').email_link)), null)
-
-      await form.locator('#dc-email-link').fill(' https://mail.example.invalid/letter/2 ')
+      assert.equal((await row(page, 'dcr-3')).email_link, 'https://mail.example.invalid/letter/3')
+      // Убрать можно: пустое поле — NULL, а не ошибка ограничения.
+      await form.locator('#dc-email-link').fill('')
       await form.getByRole('button', { name: 'Сохранить' }).click()
       await form.waitFor({ state: 'detached' })
-
-      const saved = await page.evaluate(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-2'))
-      assert.equal(saved.email_link, 'https://mail.example.invalid/letter/2')
-
-      const c = card(page, 'dcr-2')
-      assert.equal(await c.locator('.dc-chip--mail').getAttribute('href'), 'https://mail.example.invalid/letter/2')
-
-      const log = await page.evaluate(() => window.__fakeDb.doc_check_request_audit_log.filter((l) => l.request_id === 'dcr-2').map((l) => l.field_name))
+      assert.equal((await row(page, 'dcr-3')).email_link, null)
+      assert.equal(await card(page, 'dcr-3').locator('.dc-chip--mail').count(), 0)
+      const log = await page.evaluate(() => window.__fakeDb.doc_check_request_audit_log.filter((l) => l.request_id === 'dcr-3').map((l) => l.field_name))
       assert.deepEqual(log, ['email_link'])
-      const detail = await openCard(page, 'dcr-2', 'История')
+      const detail = await openCard(page, 'dcr-3', 'История')
       await detail.locator('.dc-history li').first().waitFor()
-      const history = await detail.locator('.dc-history').textContent()
-      assert.match(history, /Ссылка на письмо/)
-      await detail.locator('.modal-close').click()
-
-      await page.locator('.dc-view-btn', { hasText: 'Реестр' }).click()
-      const row = page.locator('.dc-table tbody tr', { hasText: 'СУ2-001' })
-      assert.equal(await row.locator('.dc-chip--mail').count(), 1)
-      // Убрать ссылку можно: пустое поле — NULL, а не ошибка ограничения.
-      await row.click()
-      await page.locator('.dc-detail-modal').getByRole('button', { name: 'Изменить' }).click()
-      await page.locator('.dc-form-modal #dc-email-link').fill('')
-      await page.locator('.dc-form-modal').getByRole('button', { name: 'Сохранить' }).click()
-      await page.locator('.dc-form-modal').waitFor({ state: 'detached' })
-      assert.equal(await page.evaluate(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-2').email_link), null)
+      assert.match(await detail.locator('.dc-history').textContent(), /Ссылка на письмо/)
       assert.deepEqual(errors, [])
     } finally {
       await close()
     }
   })
 
-  it('без права правки: шаги только просмотр, написать сообщение можно', async () => {
+  it('без права правки: файлы — только скачать, назначать нельзя, написать сообщение можно', async () => {
     const { page, errors, close } = await openPage('&canEdit=0&asUser=user-9')
     try {
-      const modal = await openCard(page, 'dcr-3', 'Шаги')
-      await modal.locator('.dc-steps li').nth(2).waitFor()
-      assert.equal(await modal.locator('.dc-step-handle, .dc-step-btn, .dc-inline-add').count(), 0)
-      assert.equal(await modal.locator('.dc-steps input[type="checkbox"]:not([disabled])').count(), 0)
-      await modal.getByRole('tab', { name: /^Обсуждение/ }).click()
-      const field = modal.getByRole('textbox', { name: 'Новое сообщение' })
+      const modal = await openCard(page, 'dcr-2')
+      await modal.locator('.dc-file-name').first().waitFor()
+      assert.equal(await modal.locator('.dc-files-add, .dc-file-del, input[type="file"], .dc-assign').count(), 0)
+      assert.equal(await modal.getByRole('button', { name: /^Скачать / }).count(), 2)
+      assert.deepEqual(await modal.locator('.dc-files-empty').count(), 0)
+      await modal.locator('.modal-close').click()
+
+      const talk = await openCard(page, 'dcr-3')
+      const field = talk.getByRole('textbox', { name: 'Новое сообщение' })
       await field.fill('Вопрос от смотрящего')
       await field.press('Enter')
-      await modal.locator('.dc-talk-msg').nth(2).waitFor()
-      assert.match(await modal.locator('.dc-talk-msg').nth(2).getAttribute('class'), /is-mine/)
+      await talk.locator('.dc-talk-msg').nth(2).waitFor()
+      assert.match(await talk.locator('.dc-talk-msg').nth(2).getAttribute('class'), /is-mine/)
       assert.deepEqual(errors, [])
     } finally {
       await close()
     }
   })
 
-  it('исполнитель без права правки: ручки, карандаша и удаления нет, отметка шага работает', async () => {
-    const { page, errors, close } = await openPage('&canEdit=0&asUser=user-3')
-    try {
-      const modal = await openCard(page, 'dcr-3', 'Шаги')
-      await modal.locator('.dc-steps li').nth(2).waitFor()
-      assert.equal(await modal.locator('.dc-step-handle, .dc-step-btn, .dc-inline-add').count(), 0)
-      await modal.locator('.dc-steps li').nth(1).locator('label').click()
-      await page.waitForFunction(() => window.__fakeDb.doc_check_request_steps.find((s) => s.id === 'st-2').is_done === true)
-      assert.deepEqual(errors, [])
-    } finally {
-      await close()
-    }
-  })
-
-  it('удалённая заявка: шаги и обсуждение только чтение', async () => {
+  it('удалённая заявка: обсуждение, файлы и исполнители — только чтение', async () => {
     const { page, errors, close } = await openPage()
     try {
       await page.evaluate(() => {
         const fdb = window.__fakeDb
-        fdb.doc_check_request_steps.forEach((s) => { s.request_id = 'dcr-9' })
         fdb.doc_check_request_comments.forEach((c) => { c.request_id = 'dcr-9' })
-        window.__fakeTouch('doc_check_request_steps')
+        fdb.s3_documents.filter((d) => d.owner_id === 'dcr-2').forEach((d) => { d.owner_id = 'dcr-9' })
         window.__fakeTouch('doc_check_request_comments')
+        window.__fakeTouch('s3_documents')
       })
       await page.locator('.dc-mode-toggle--deleted').click()
       await page.locator('.dc-table tbody tr', { hasText: '№ 9' }).click()
       const modal = page.locator('.dc-detail-modal')
-      await modal.getByRole('tab', { name: /^Шаги/ }).click()
-      await modal.locator('.dc-steps li').nth(2).waitFor()
-      assert.equal(await modal.locator('.dc-step-handle, .dc-step-btn, .dc-inline-add').count(), 0)
-      assert.equal(await modal.locator('.dc-steps input[type="checkbox"]:not([disabled])').count(), 0)
-      await modal.getByRole('tab', { name: /^Обсуждение/ }).click()
       await modal.locator('.dc-talk-msg').nth(1).waitFor()
-      assert.equal(await modal.locator('.dc-talk-add').count(), 0)
+      await modal.locator('.dc-file-name').nth(1).waitFor()
+      assert.equal(await modal.locator('.dc-talk-add, .dc-files-add, .dc-file-del, .dc-assign').count(), 0)
       assert.deepEqual(errors, [])
     } finally {
       await close()
     }
   })
 
-  it('миграции 20261124 ещё нет: доска как раньше, к новым таблицам нет обращений, форма новых полей не шлёт', async () => {
+  it('миграции 20261124 ещё нет: без переписки, к её таблице нет обращений, форма новых полей не шлёт', async () => {
     const { page, errors, close } = await openPage('&docCheckNoCard=1')
     try {
-      assert.match(await page.locator('.dc-note').textContent(), /20261124_doc_check_card/)
+      assert.match(await page.locator('.dc-note').textContent(), /Обсуждение появится после[\s\S]*20261124_doc_check_card/)
       const c = card(page, 'dcr-2')
       assert.deepEqual(await c.locator('.dc-avatar').allTextContents(), ['ЮМ'], 'поля 20261113 на месте')
       const modal = await openCard(page, 'dcr-3')
-      assert.deepEqual(await modal.locator('.dc-detail-tab').allTextContents(), ['Заявка', 'Документы', 'История'])
+      assert.deepEqual(await modal.locator('.dc-detail-tab').allTextContents(), ['Общая', 'История'])
+      assert.equal(await modal.locator('.dc-general-talk').count(), 0)
+      assert.equal(await modal.locator('.dc-assign').count(), 1, 'назначать можно — это поля 20261113')
       await modal.getByRole('button', { name: 'Изменить' }).click()
       const form = page.locator('.dc-form-modal')
       assert.equal(await form.locator('#dc-email-link').count(), 0)
       await form.locator('#dc-num').fill('3-1')
       await form.getByRole('button', { name: 'Сохранить' }).click()
       await form.waitFor({ state: 'detached' })
-      const saved = await page.evaluate(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-3'))
+      const saved = await row(page, 'dcr-3')
       assert.equal(saved.doc_number, '3-1')
       assert.ok(!('email_link' in saved) && !('manual_assignees' in saved), 'базе без колонок новые поля не шлются')
       const asked = await page.evaluate(() => window.__supabaseStats.requests.filter((r) => /doc_check_request_(steps|comments)/.test(r.table)).length)
@@ -758,43 +761,49 @@ describe('Карточка заявки на проверку ДП/ДС в бр�
     }
   })
 
-  it('прежняя база (нет и 20261113): подсказка одна, новых вкладок нет', async () => {
+  it('прежняя база (нет и 20261113): подсказка одна, вкладки те же, назначать нечего', async () => {
     const { page, errors, close } = await openPage('&docCheckLegacy=1')
     try {
       assert.match(await page.locator('.dc-note').textContent(), /20261113_doc_check_board/)
       const modal = await openCard(page, 'dcr-3')
-      assert.deepEqual(await modal.locator('.dc-detail-tab').allTextContents(), ['Заявка', 'Документы', 'История'])
+      assert.deepEqual(await modal.locator('.dc-detail-tab').allTextContents(), ['Общая', 'История'])
+      assert.equal(await modal.locator('.dc-assign, .dc-general-talk').count(), 0)
+      await modal.locator('.dc-files-part').nth(1).waitFor()
       assert.deepEqual(errors, [])
     } finally {
       await close()
     }
   })
 
-  it('телефон: вкладки прокручиваются в одну строку, «×» не под полосой меню, поля не шире экрана', async () => {
-    const { page, errors, close } = await openPage('&shell=1&dcSteps=30&dcComments=30', { width: 390, height: 780 })
+  it('телефон: вкладки в одну строку, «×» не под полосой меню, поля не шире экрана, кнопки под палец', async () => {
+    const { page, errors, close } = await openPage('&shell=1&dcComments=30', { width: 390, height: 780 })
     try {
-      const modal = await openCard(page, 'dcr-3', 'Шаги')
-      await modal.locator('.dc-steps li').nth(5).waitFor()
+      const modal = await openCard(page, 'dcr-2')
+      await modal.locator('.dc-file-name').first().waitFor()
       const tabs = await modal.locator('.dc-detail-tab').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top))
       assert.equal(new Set(tabs.map(Math.round)).size, 1, 'вкладки — в один ряд')
-      assert.ok(await modal.locator('.dc-detail-tabs').evaluate((el) => el.scrollWidth > el.clientWidth), 'лишние — прокруткой')
       const close1 = await modal.locator('.modal-close').boundingBox()
       const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('.modal-close') != null, { x: close1.x + close1.width / 2, y: close1.y + close1.height / 2 })
       assert.equal(hit, true, 'полоса меню не закрывает «×»')
       const overflow = await page.evaluate(() => document.querySelector('.dc-detail-modal').scrollWidth - document.querySelector('.dc-detail-modal').clientWidth)
       assert.ok(overflow <= 0, `окно не шире экрана (лишних ${overflow}px)`)
-      const size = await modal.getByRole('textbox', { name: 'Новый шаг' }).evaluate((el) => parseFloat(getComputedStyle(el).fontSize))
-      assert.equal(size, 16, 'иначе Safari увеличивает страницу при фокусе')
-      const handle = await modal.locator('.dc-step-handle').first().boundingBox()
-      assert.ok(handle.height >= 40, 'ручку можно взять пальцем')
-      // Длинная переписка: ряд вкладок не сжимается по высоте, поле ввода и «×» на месте.
-      const tabHeight = (await modal.locator('.dc-detail-tabs').boundingBox()).height
-      await modal.getByRole('tab', { name: /^Обсуждение/ }).click()
-      await modal.locator('.dc-talk-msg').nth(31).waitFor()
-      assert.equal((await modal.locator('.dc-detail-tabs').boundingBox()).height, tabHeight)
-      const field = await modal.getByRole('textbox', { name: 'Новое сообщение' }).boundingBox()
-      assert.ok(field.y + field.height <= 780, 'поле ввода на экране')
-      assert.ok((await modal.locator('.modal-close').boundingBox()).y >= 0)
+      for (const sel of ['.dc-file-btn', '.dc-files-add', '.dc-assign .fdrop-trigger']) {
+        const b = await modal.locator(sel).first().boundingBox()
+        assert.ok(b.height >= 40, `${sel}: можно нажать пальцем (${b.height}px)`)
+      }
+      await modal.locator('.modal-close').click()
+
+      // Длинная переписка: ряд вкладок не сжимается по высоте, поле ввода — 16 px (иначе Safari увеличивает страницу).
+      const talk = await openCard(page, 'dcr-3')
+      const tabHeight = (await talk.locator('.dc-detail-tabs').boundingBox()).height
+      await talk.locator('.dc-talk-msg').nth(31).waitFor()
+      const field = talk.getByRole('textbox', { name: 'Новое сообщение' })
+      await field.scrollIntoViewIfNeeded()
+      assert.equal((await talk.locator('.dc-detail-tabs').boundingBox()).height, tabHeight)
+      const fb = await field.boundingBox()
+      assert.ok(fb.y + fb.height <= 780, 'поле ввода на экране')
+      assert.equal(await field.evaluate((el) => parseFloat(getComputedStyle(el).fontSize)), 16)
+      assert.ok((await talk.locator('.modal-close').boundingBox()).y >= 0)
       assert.deepEqual(errors, [])
     } finally {
       await close()

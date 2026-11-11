@@ -215,6 +215,34 @@ export function parseLarix(env, { dbUrl, supabaseUrl, supabaseServiceKey }) {
 }
 
 // Включена, но без базы или хранилища — служба не запускается (выкладка откатится), а не молчит без загрузки.
+// Безопасность доступа (11.11.2026): проверка прав разделов в шлюзе, ключи API, пределы загрузки файлов.
+//   OSP_DB_SECTIONS_WRITE — запись через шлюз: enforce (по умолчанию) | log (аварийно: пропускать и писать в журнал);
+//   OSP_DB_SECTIONS_READ_REFERENCE — чтение справочников: log (по умолчанию первую неделю) | enforce. Чувствительное
+//     чтение проверяется всегда (src/data/db-sections.json, «read»: «sensitive»);
+//   OSP_API_KEYS_SOURCE — db (по умолчанию: ключи только из базы, нет базы — 503) | env (до миграции 20261111);
+//   OSP_UPLOAD_MAX_BYTES / OSP_UPLOAD_MAX_BYTES_RD — предел файла сотрудника и файла РД / ВОР.
+const SECTION_MODES = ['enforce', 'log']
+function pickMode(raw, fallback, name, allowed) {
+  const v = String(raw ?? '').trim() || fallback
+  if (!allowed.includes(v)) throw new Error(`${name}: ${v} — допустимы ${allowed.join(', ')}`)
+  return v
+}
+function parseBytes(raw, fallback, name) {
+  if (raw === undefined || String(raw).trim() === '') return fallback
+  const n = Number(raw)
+  if (!Number.isSafeInteger(n) || n < 1024 * 1024 || n > 5 * 1024 ** 3) throw new Error(`${name}: целое число байт от 1 МБ до 5 ГБ`)
+  return n
+}
+export function parseSecurity(env) {
+  return {
+    dbSectionsWrite: pickMode(env.OSP_DB_SECTIONS_WRITE, 'enforce', 'OSP_DB_SECTIONS_WRITE', SECTION_MODES),
+    dbSectionsReadReference: pickMode(env.OSP_DB_SECTIONS_READ_REFERENCE, 'log', 'OSP_DB_SECTIONS_READ_REFERENCE', SECTION_MODES),
+    apiKeysSource: pickMode(env.OSP_API_KEYS_SOURCE, 'db', 'OSP_API_KEYS_SOURCE', ['db', 'env']),
+    uploadMaxBytes: parseBytes(env.OSP_UPLOAD_MAX_BYTES, 100 * 1024 * 1024, 'OSP_UPLOAD_MAX_BYTES'),
+    uploadMaxBytesRd: parseBytes(env.OSP_UPLOAD_MAX_BYTES_RD, 300 * 1024 * 1024, 'OSP_UPLOAD_MAX_BYTES_RD'),
+  }
+}
+
 export function parseSupplyImport(env) {
   if (env.OSP_SUPPLY_IMPORT !== '1') return false
   if (!env.OSP_DB_URL) throw new Error('OSP_SUPPLY_IMPORT=1: нужен OSP_DB_URL')
@@ -244,6 +272,7 @@ export function loadConfig(env = process.env) {
     },
     anthropicApiKey: env.ANTHROPIC_API_KEY || '',
     ratesApiKeys: list(env.RATES_API_KEYS),
+    security: parseSecurity(env),
     // Своё подключение к базе (src/lib/db.js). Пока маршруты данных не включены, может быть пустым.
     db: {
       url: env.OSP_DB_URL || '',

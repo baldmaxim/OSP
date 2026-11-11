@@ -23,6 +23,11 @@
 // Без входа и у учётки с регистрации ограничена и форма запроса (restrictedQueryProblem): этим страницам нужны только простые
 // условия, всё остальное — отказ; число одновременных запросов тоже ограничено.
 //
+// Права разделов (src/lib/dbSections.js, карта src/data/db-sections.json): после списка — какое право раздела нужно на
+// действие с таблицей, на каждую связанную таблицу в select и на вызов функции; права — из базы по пользователю из сессии
+// (src/lib/sectionRights.js). Подрядчик проходит вместо карты свой явный список (src/data/allow-contractor.json): всё
+// остальное ему закрыто, даже если правило базы ошибочно разрешило бы.
+//
 // Отказы шлюза имеют тот же вид и коды, что отказы PostgREST: портал уже умеет их показывать.
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
@@ -33,6 +38,7 @@ import { access } from '../lib/access.js'
 import { bearerToken } from '../lib/keys.js'
 import { csrfProblem, clearSessionCookies } from '../lib/principal.js'
 import { READONLY_CODE, READONLY_TEXT } from '../lib/writeBarrier.js'
+import { bodyColumnsProblem, decideSections, loadSectionMap } from '../lib/dbSections.js'
 
 export const GATEWAY_METHODS = ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE']
 export const GATEWAY_URL = '/api/db/*'
@@ -54,6 +60,18 @@ const pgError = (code, message) => ({ code, details: null, hint: null, message }
 // Список учётки с регистрации. Кабинету большие тела не нужны: сохранение цен — порциями до 500 строк.
 export const SELF_REGISTERED_ALLOW = JSON.parse(fs.readFileSync(new URL('../data/allow-self-contractor.json', import.meta.url), 'utf8'))
 export const SELF_REGISTERED_BODY_LIMIT = 2 * 1024 * 1024
+// Подрядчик (учётка с организацией или роль contractor): только то, что вызывает его кабинет.
+export const CONTRACTOR_ALLOW = JSON.parse(fs.readFileSync(new URL('../data/allow-contractor.json', import.meta.url), 'utf8'))
+export const SECTION_MAP = loadSectionMap()
+
+// Какие действия нужны запросу к таблице (то же, что проверяет decide): вставка с заменой — ещё и изменение; ответ со
+// строками — ещё и чтение.
+export function neededActions(method, prefer = '', select = '') {
+  const need = new Set([ACTION[method]])
+  if (method === 'POST' && /resolution=merge-duplicates/.test(prefer)) need.add('update')
+  if (method !== 'GET' && method !== 'HEAD' && (/return=representation/.test(prefer) || select)) need.add('select')
+  return [...need]
+}
 
 // Имена связанных таблиц в параметре select: «*, objects(name), winner:counterparties!fk(id, name)».
 // Связь — имя перед открывающей скобкой (без псевдонима «alias:», подсказок «!…» и «...» разворота).
@@ -114,11 +132,8 @@ export function decide(allow, role, method, kind, name, { select = '', prefer = 
       return { status: 404, body: pgError('PGRST205', `Could not find the table 'public.${name}' in the schema cache`) }
     }
     const actions = allow.tables[name][role] || []
-    const need = new Set([ACTION[method]])
     // Вставка «с заменой при совпадении» меняет существующие строки; ответ со строками требует чтения.
-    if (method === 'POST' && /resolution=merge-duplicates/.test(prefer)) need.add('update')
-    if (method !== 'GET' && method !== 'HEAD' && (/return=representation/.test(prefer) || select)) need.add('select')
-    for (const action of need) if (!actions.includes(action)) return deny(`table ${name}`)
+    for (const action of neededActions(method, prefer, select)) if (!actions.includes(action)) return deny(`table ${name}`)
   }
   let related
   try {
@@ -164,6 +179,40 @@ export function createInternalTokens({ secret, dbRole }) {
 
 export function registerDbGateway(app, ctx) {
   const { config, verifyUserToken, allow, mint } = ctx
+  const sectionMap = ctx.sectionMap || SECTION_MAP
+  const contractorAllow = ctx.contractorAllow || CONTRACTOR_ALLOW
+  // Режимы (src/config.js, parseSecurity): запись — enforce, справочное чтение — log первую неделю, чувствительное — всегда enforce.
+  const modes = {
+    write: ctx.security?.dbSectionsWrite || 'enforce',
+    readReference: ctx.security?.dbSectionsReadReference || 'log',
+  }
+
+  // Права разделов вошедшего (не анонима): null — можно; иначе отказ. Решение по колонкам тела — в request.dbCall.bodyColumns.
+  const sectionsCheck = async (request, who, { method, kind, name, params, prefer }) => {
+    if (!ctx.sectionRights) return { status: 503, body: pgError('OSP_RIGHTS_UNAVAILABLE', 'Проверка прав недоступна — повторите позже') }
+    let rights
+    try {
+      rights = await ctx.sectionRights.get(who.user.id)
+    } catch (err) {
+      request.log.error({ code: err?.code || err?.name }, 'db gateway rights')
+      return { status: 503, body: pgError('OSP_RIGHTS_UNAVAILABLE', 'Проверка прав недоступна — повторите позже') }
+    }
+    if (!rights) return { status: 403, body: pgError('42501', 'permission denied: нет учётной записи портала') }
+    const select = params.get('select') || ''
+    if (rights.contractor) return decide(contractorAllow, 'authenticated', method, kind, name, { select, prefer })
+    if (!rights.employee) return { status: 403, body: pgError('42501', 'permission denied: учётка не одобрена или заблокирована') }
+    const res = decideSections(sectionMap, rights, {
+      kind, name, method, actions: kind === 'rpc' ? [] : neededActions(method, prefer, select), select, params, modes,
+    })
+    if (res.error) return { status: 400, body: pgError('PGRST100', res.error) }
+    for (const d of res.denied) {
+      // Пробный режим: запрос проходит, в журнал — что было бы отказом (без почты: ключ роли и правило).
+      if (d.mode === 'log') { request.log.warn({ db: d.what, role: rights.role, rule: d.rule }, 'db section would deny'); continue }
+      return { status: 403, body: pgError('42501', `permission denied: ${d.what}`) }
+    }
+    request.sectionBody = res.bodyColumns ? { columns: res.bodyColumns, mode: res.bodyColumns.mode, role: rights.role, table: name } : null
+    return null
+  }
   // По сети или по сокету в общем томе (src/lib/upstreamFetch.js).
   const target = parseUpstream(config.dbGateway?.upstream)
   const upstream = target?.base || ''
@@ -233,6 +282,10 @@ export function registerDbGateway(app, ctx) {
       // Учётка с регистрации: тот же разбор (и связанных таблиц в select), но по её короткому списку.
       || (who.selfRegistered ? decide(SELF_REGISTERED_ALLOW, who.role, method, kind, name, { select: params.get('select') || '', prefer }) : null)
     if (denied) return send(reply, denied.status, denied.body)
+    if (who.role === 'authenticated') {
+      const stop = await sectionsCheck(request, who, { method, kind, name, params, prefer })
+      if (stop) return send(reply, stop.status, stop.body)
+    }
     const restricted = who.role === 'anon' || who.selfRegistered
     if (restricted) {
       const problem = restrictedQueryProblem(params)
@@ -285,12 +338,22 @@ export function registerDbGateway(app, ctx) {
       }
     }
     if (releases.length) reply.raw.once('close', releaseAll)
-    request.dbCall = { kind, name, rawQuery, who, release: releases.length ? releaseAll : null }
+    request.dbCall = { kind, name, rawQuery, who, bodyColumns: request.sectionBody || null, release: releases.length ? releaseAll : null }
   }
 
   const handler = async (request, reply) => {
     const { kind, name, rawQuery, who } = request.dbCall
     const method = request.method
+
+    // Запись, разрешённая только частью колонок (правило раздела с columns): ключи тела — из разрешённых.
+    const bc = request.dbCall.bodyColumns
+    if (bc) {
+      const problem = bodyColumnsProblem(request.body, bc.columns)
+      if (problem) {
+        if (bc.mode === 'log') request.log.warn({ db: `${bc.table} (${problem})`, role: bc.role }, 'db section would deny')
+        else return send(reply, 403, pgError('42501', `permission denied: ${bc.table} (${problem})`))
+      }
+    }
 
     // Действия, которым нужно что-то сверх базы (учётки во входе Supabase) — до запроса.
     if (ctx.beforeGateway) {
@@ -327,6 +390,7 @@ export function registerDbGateway(app, ctx) {
     scope.removeAllContentTypeParsers()
     scope.addContentTypeParser('*', { parseAs: 'buffer', bodyLimit: GATEWAY_BODY_LIMIT }, (req, body, done) => done(null, body))
     scope.decorateRequest('dbCall', null)
+    scope.decorateRequest('sectionBody', null)
     scope.route({
       method: GATEWAY_METHODS,
       url: GATEWAY_URL,

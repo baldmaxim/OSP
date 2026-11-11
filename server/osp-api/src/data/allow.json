@@ -809,6 +809,11 @@
       "authenticated": [
         "select"
       ]
+    },
+    "bid_company_answers": {
+      "authenticated": [
+        "select"
+      ]
     }
   },
   "rpc": {
@@ -1013,6 +1018,9 @@
     "psdc_visible": [
       "authenticated"
     ],
+    "profile_update_own": [
+      "authenticated"
+    ],
     "refresh_rates_registry": [
       "authenticated"
     ],
@@ -1107,6 +1115,12 @@
       "authenticated"
     ],
     "contractor_org_card": [
+      "authenticated"
+    ],
+    "bid_vor_superseded": [
+      "authenticated"
+    ],
+    "bid_company_save": [
       "authenticated"
     ]
   }

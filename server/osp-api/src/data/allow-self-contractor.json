@@ -1,5 +1,6 @@
 {
   "tables": {
+    "bid_company_answers": { "authenticated": ["select"] },
     "bid_form_fields": { "authenticated": ["select"] },
     "tender_bid_files": { "authenticated": ["select"] },
     "tender_bid_forms": { "authenticated": ["select"] },
@@ -7,11 +8,13 @@
     "user_roles": { "authenticated": ["select"] }
   },
   "rpc": {
+    "bid_company_save": ["authenticated"],
     "bid_contractor_tenders": ["authenticated"],
     "bid_form_save": ["authenticated"],
     "bid_positions": ["authenticated"],
     "bid_rates_save": ["authenticated"],
     "bid_request": ["authenticated"],
+    "bid_vor_superseded": ["authenticated"],
     "contractor_org_card": ["authenticated"],
     "contractor_org_name": ["authenticated"],
     "report_client_error": ["authenticated"],

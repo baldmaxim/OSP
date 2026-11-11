@@ -14,7 +14,7 @@ import { IconHardHat, IconChevronDown } from '../components/icons/TenderHubIcons
 import { IconSearch } from '../components/icons/ToolbarIcons'
 import {
   loadCabinetTenders, loadCabinetTendersPreview, loadOrgCard, loadOrgCardPreview, requestParticipation, setParticipationStatus, TENDER_OPEN_STATUS,
-  VOR_CATEGORIES,
+  VOR_CATEGORIES, loadCompanyAnswers,
 } from '../services/contractorBids'
 import { isWorkbookFileName } from '../utils/vorFiles'
 import { phoneHref } from '../utils/siteContacts'
@@ -208,6 +208,18 @@ function ContractorCabinetPage() {
       .catch((e) => { if (!cancelled) { setOrgCard(null); setOrgCardError(e.message || String(e)) } })
     return () => { cancelled = true }
   }, [cpId, previewActive])
+
+  // Ответы организации на поля анкеты о компании (миграция 20270115): общие для «Моей компании» и анкеты каждого тендера.
+  // undefined — читаются; null — таблицы ещё нет (анкета — каждый тендер отдельно, как раньше); иначе { id поля: { label, value } }.
+  const [companyAnswers, setCompanyAnswers] = useState(undefined)
+  useEffect(() => {
+    let cancelled = false
+    setCompanyAnswers(undefined)
+    loadCompanyAnswers(cpId)
+      .then((row) => { if (!cancelled) setCompanyAnswers(row ? (row.answers || {}) : null) })
+      .catch((e) => { console.error('Ответы о компании:', e); if (!cancelled) setCompanyAnswers(null) })
+    return () => { cancelled = true }
+  }, [cpId])
 
   // Тендеры кабинета: открытые + свои (миграция 20261102), без неё — только приглашения.
   const loadTenderList = useCallback(async () => {
@@ -457,8 +469,12 @@ function ContractorCabinetPage() {
   const tenderHref = (id) => `?tender=${encodeURIComponent(id)}`
 
   const handleLogout = async () => {
-    await logout()
-    navigate('/partner')
+    try {
+      await logout()
+      navigate('/partner')
+    } catch (err) {
+      alert(err.message)
+    }
   }
 
   if (!isContractor) return null
@@ -515,7 +531,8 @@ function ContractorCabinetPage() {
         <div className="cab-state cab-state-error">{loadError}</div>
       ) : tab === 'company' ? (
         <Suspense fallback={<div className="cab-state">Загрузка…</div>}>
-          <ContractorCompanyTab card={orgCard} error={orgCardError} preview={previewActive} />
+          <ContractorCompanyTab card={orgCard} error={orgCardError} preview={previewActive}
+            companyAnswers={companyAnswers} onCompanyAnswers={setCompanyAnswers} />
         </Suspense>
       ) : activeTenderId ? (
         <main className="cab-main cab-tender">
@@ -650,6 +667,9 @@ function ContractorCabinetPage() {
                           tenderNumbers={tenderNumbers}
                           onSummary={handleBidSummary}
                           serverPositions={selfRegistered}
+                          companyCard={orgCardError ? null : orgCard}
+                          companyAnswers={companyAnswers}
+                          onCompanyAnswers={setCompanyAnswers}
                         />
                       </Suspense>
                     </section>

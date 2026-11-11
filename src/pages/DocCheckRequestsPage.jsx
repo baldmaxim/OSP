@@ -32,6 +32,7 @@ import {
   CLOSED_DOC_CHECK_STATUSES,
   NO_ASSIGNEE,
   NO_CARD_COUNTS,
+  assigneeIdsToSave,
   assigneeStaffOptions,
   cardTitle,
   compareForBoard,
@@ -68,7 +69,8 @@ import './DocCheckRequestsPage.css'
 //
 // Без колонок миграции 20261113 (прежняя база) страница читает прежний набор
 // полей и работает как раньше: без исполнителей, сроков, меток, цвета и архива.
-// Без миграции 20261124 — без обсуждения, шагов и ссылки на письмо.
+// Без миграции 20261124 — без обсуждения. Шагов в заявке нет с 11.11.2026 (решение
+// пользователя), ссылку на письмо при создании не вводят — у прежних заявок она видна.
 
 const VIEW_KEY = 'docCheckView'
 const QUIET_RELOAD_MS = 30000
@@ -210,8 +212,8 @@ export default function DocCheckRequestsPage() {
     }
   }, [])
 
-  // Сколько шагов сделано и сколько сообщений — на карточке. Числа, которые открытая карточка заявки сообщила, пока шло
-  // чтение, новее прочитанного — их не трогаем.
+  // Сколько сообщений — на карточке. Число, которое открытая карточка заявки сообщила, пока шло чтение, новее
+  // прочитанного — его не трогаем.
   const countsChanged = useRef(new Set())
   const fetchCardCounts = useCallback(async () => {
     countsChanged.current = new Set()
@@ -222,19 +224,18 @@ export default function DocCheckRequestsPage() {
         return map
       })
     } catch (err) {
-      console.warn('Не удалось посчитать шаги и сообщения заявок:', err.message)
+      console.warn('Не удалось посчитать сообщения заявок:', err.message)
     }
   }, [])
   const handleCardCounts = useCallback((id, counts) => {
     countsChanged.current.add(id)
     setCardCounts(prev => {
       const cur = prev.get(id) || NO_CARD_COUNTS
-      if (cur.stepsTotal === counts.stepsTotal && cur.stepsDone === counts.stepsDone
-        && cur.commentsCount === counts.commentsCount) return prev
+      if (cur.commentsCount === counts.commentsCount) return prev
       return new Map(prev).set(id, counts)
     })
   }, [])
-  // Таблиц обсуждения и шагов нет, пока нет колонок той же миграции — до этого не обращаемся.
+  // Таблицы обсуждения нет, пока нет колонок той же миграции — до этого не обращаемся.
   useEffect(() => { if (hasCardFields) fetchCardCounts() }, [hasCardFields, fetchCardCounts])
 
   // Кто удалил — только когда открыты «Удалённые». null — ещё не прочитано или не удалось: имени просто нет.
@@ -324,8 +325,9 @@ export default function DocCheckRequestsPage() {
     event_type: 'status_changed', field_name: 'status', old_value: request.status, new_value: status,
   })
 
-  // files — файлы новой заявки создателя: строки ещё нет, поэтому сначала заявка, затем файлы (база пускает автора к файлам
-  // своей заявки, пока она в «Новых»). Файл не загрузился — заявка остаётся, причина — сообщением, остальные файлы грузятся.
+  // files — файлы новой заявки создателя ({ file, category }: понятийное соглашение — своя категория): строки ещё нет, поэтому
+  // сначала заявка, затем файлы (база пускает автора к файлам своей заявки, пока она в «Новых»). Файл не загрузился — заявка
+  // остаётся, причина — сообщением, остальные файлы грузятся.
   const handleSave = async (payload, files = []) => {
     try {
       if (formFor?.request) {
@@ -342,9 +344,9 @@ export default function DocCheckRequestsPage() {
         if (e) throw e
         await logEvent(data.id, { event_type: 'created', description: 'Заявка создана' })
         const failed = []
-        for (const file of files) {
+        for (const { file, category } of files) {
           try {
-            await uploadFile({ file, ownerType: 'doc_check_request', ownerId: data.id })
+            await uploadFile({ file, ownerType: 'doc_check_request', ownerId: data.id, category })
           } catch (err) {
             failed.push(`${file.name}: ${err.message || err}`)
           }
@@ -364,6 +366,14 @@ export default function DocCheckRequestsPage() {
   const moveTo = (request, status) => {
     if (request.status === status) return
     patchRequest(request, { status, sort_order: nextSortOrder(requests, status) }, [statusEvent(request, status)])
+  }
+
+  // Исполнители из окна заявки — сразу, без формы (11.11.2026, решение пользователя). Пишется то же, что пишет форма: отмеченные
+  // юристы плюс те, кого выбор не показывал (assigneeIdsToSave), и смена — в историю.
+  const handleAssign = (request, selected) => {
+    const patch = { assignee_ids: assigneeIdsToSave(request.assignee_ids, selected, employees) }
+    const events = fieldEvents(request, patch)
+    if (events.length) patchRequest(request, patch, events)
   }
 
   // Кружок на карточке: завершить / вернуть в работу.
@@ -457,10 +467,10 @@ export default function DocCheckRequestsPage() {
     else if (type === 'delete') handleDelete(request)
   }
 
-  // Файлы могли поменяться, только если открывали их вкладку: иначе перечитывать число файлов всех заявок незачем.
-  const closeDetail = (docsOpened) => {
+  // Число файлов всех заявок перечитываем, только если в окне файлы загружали, удаляли или переименовывали.
+  const closeDetail = (filesChanged) => {
     setDetailId(null)
-    if (docsOpened) fetchDocCounts()
+    if (filesChanged) fetchDocCounts()
   }
 
   // Доска и реестр получают одни и те же функции всё время жизни страницы: окно заявки, фильтры и ввод в них не должны
@@ -772,7 +782,7 @@ export default function DocCheckRequestsPage() {
       )}
       {!error && hasBoardFields && !hasCardFields && isAdmin && (
         <div className="dc-note">
-          Обсуждение, шаги и ссылка на письмо появятся после
+          Обсуждение появится после
           миграции <code>20261124_doc_check_card</code>.
         </div>
       )}
@@ -897,6 +907,7 @@ export default function DocCheckRequestsPage() {
           refreshKey={detailRefresh}
           onCardCounts={handleCardCounts}
           onStatusChange={(r, status) => moveTo(r, status)}
+          onAssign={handleAssign}
           onEdit={(r) => { setDetailId(null); setFormFor({ request: r }) }}
           onDelete={handleDelete}
           onClose={closeDetail}

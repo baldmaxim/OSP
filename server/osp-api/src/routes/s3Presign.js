@@ -14,6 +14,10 @@
 //            удаления), расширение прежнее (shared/fileRename.js); объект в хранилище и его ключ не меняются
 //   describe { s3_key, notes }                      → { document } — описание файла заявки на ДС (право — как у удаления);
 //            пустое снимает описание. У других файлов notes — служебные данные (строки счёта, паспорт ДГП): 400
+//   supply-notes { document_id, notes, only_if? }   → { ok, changed } — распознанные строки счёта или КП поставщика при файле
+//            расценки снабжения (категория supply_doc тендера; право — правка «Тендеров» или «Тендеров на материалы»).
+//            only_if: null — только если строк при файле ещё нет; строка — только если при файле ещё она (фоновое чтение
+//            не затирает выбор человека). Прямая правка строк s3_documents через шлюз закрыта (src/data/db-sections.json).
 //
 // Перенос данных (шлюз включён, src/app.js):
 //   • барьер записи — upload, confirm, delete, rename и describe отвечают 503 OSP_READONLY, скачивание работает;
@@ -28,6 +32,11 @@
 // Ключ операции один на выбранный файл: повтор любого шага не создаёт второй документ и второй объект.
 // Тот же operation_id с другим файлом (владелец, имя, тип, размер, sha256) — 409 OSP_KEY_REUSE.
 //
+// Права (11.11.2026): загрузка — WRITE_RULES (как было); изменение и удаление — CHANGE_RULES по таблице владельца и категории
+// (правка раздела, а не просмотр); скачивание — строка видна, ключ в каталоге своего владельца, владелец виден и есть
+// право чтения его раздела (READ_RULES). Предел размера — по категории; ссылка на загрузку подписывает тип и длину;
+// выданные, но не подтверждённые загрузки учитываются (osp_private.s3_upload_intents) и убираются (cleanupUploadIntents).
+//
 // Доступ: токен пользователя Supabase; строки читаются и пишутся ПОД ЕГО токеном — действует RLS.
 // Одобренный и не заблокированный; подрядчику — только скачивание: файлы своих договоров (is_my_contract) и
 // пакет, ВОР и РД тендера, которые ему показывает правило s3_documents. Загрузка и удаление — если владелец существует и виден пользователю и есть право
@@ -40,6 +49,7 @@ import { z } from 'zod'
 import { access } from '../lib/access.js'
 import { isFinalLoad, createdAfterLoad } from '../lib/loadStatus.js'
 import { READONLY_CODE, READONLY_TEXT } from '../lib/writeBarrier.js'
+import { cleanupUploadIntents, createUploadIntents } from '../lib/uploadIntents.js'
 
 // owner_type → каталог в бакете. Расширять вместе с OWNER_TABLES и WRITE_RULES.
 export const FOLDER_BY_OWNER = {
@@ -105,6 +115,43 @@ export const WRITE_RULES = {
   // Документ расценки, добавленной в реестр вручную (20261122): как сама строка — право правки «Реестра расценок».
   kp_manual_rates: [['rates_registry', 'edit']],
 }
+// Изменение и удаление существующего файла (delete, rename, describe) — правка раздела, а не просмотр. По таблице владельца и
+// категории; чего нет здесь — как WRITE_RULES (там уже правка). Файлы тендера: ВОР и РД — ещё и правка «ВОРов и РД»
+// (сметно-технический отдел); КП, пакет, документы участников, счета снабжения — правка «Тендеров» или «Тендеров на
+// материалы»; «ВОРы и РД» прочие файлы тендера не меняют. Файл задачи — см. mayChangeDoc (загрузивший, автор задачи).
+const TENDER_CHANGE = [['tenders', 'edit'], ['tenders_materials', 'edit']]
+const VOR_CHANGE = [['tenders', 'edit'], ['tenders_materials', 'edit'], ['vors', 'edit']]
+export const CHANGE_RULES = {
+  tenders: { default: TENDER_CHANGE, vor: VOR_CHANGE, vor_statement: VOR_CHANGE, rd: VOR_CHANGE },
+  tender_docs: { default: TENDER_CHANGE },
+  contracts: { default: [['contracts', 'edit']] },
+  vor_requests: { default: [['tenders', 'edit'], ['vors', 'edit']] },
+}
+// Скачивание: право чтения раздела владельца (вторым замком к правилу базы по строкам s3_documents, 20270120). Пустой
+// список — достаточно видеть владельца (задача, заявки: их строки режут свои правила; объект — справочник).
+export const READ_RULES = {
+  tenders: TENDER_PAGES,
+  tender_docs: TENDER_PAGES,
+  contracts: [['contracts', 'view']],
+  objects: [],
+  counterparties: [['counterparties', 'view']],
+  dc_requests: [['dc_requests', 'view']],
+  dp_requests: [],
+  doc_check_requests: [],
+  general_documents: [['general_documents', 'view']],
+  tasks: [],
+  psdc: [['contracts', 'view']],
+  vor_requests: [['tenders', 'view'], ['vors', 'view']],
+  section_templates: [],
+  kp_manual_rates: [['rates_registry', 'view']],
+}
+// Предел размера (решение 11.11.2026): РД, ВОР и тендерный пакет — больше (PDF чертежей), остальное — общий.
+export const LARGE_CATEGORIES = new Set(['vor', 'vor_statement', 'rd', 'tender_package', 'vor_request_rd', 'vor_request_vor'])
+// Строки распознанного документа поставщика: тело маршрута ограничено 2 МБ.
+const SUPPLY_NOTES_MAX = 1_900_000
+const SUPPLY_DOC = 'supply_doc'
+const SUPPLY_NOTES_RULES = [['tenders', 'edit'], ['tenders_materials', 'edit']]
+
 // Строки с владельцем вне списка (старые типы) удаляет только администратор.
 const UNKNOWN_OWNER_RULES = [['admin', 'edit']]
 // Категории со своим правом вместо права раздела владельца (таблица владельца → doc_category → правила): документы
@@ -122,6 +169,20 @@ const rulesFor = (table, category) => {
   const own = CATEGORY_RULES[table]
   return own && Object.hasOwn(own, category || '') ? own[category] : WRITE_RULES[table]
 }
+const changeRulesFor = (table, category) => {
+  const own = CATEGORY_RULES[table]
+  if (own && Object.hasOwn(own, category || '')) return own[category]
+  const change = CHANGE_RULES[table]
+  if (change) return Object.hasOwn(change, category || '') ? change[category] : change.default
+  return WRITE_RULES[table]
+}
+const maxBytesFor = (category, limits) => (LARGE_CATEGORIES.has(category || '') ? limits.uploadMaxBytesRd : limits.uploadMaxBytes)
+const keyInOwnerFolder = (doc) =>
+  Object.hasOwn(FOLDER_BY_OWNER, doc.owner_type)
+  && String(doc.s3_key || '').startsWith(`${FOLDER_BY_OWNER[doc.owner_type]}/${String(doc.owner_id || '').toLowerCase()}/`)
+
+// Уборка незавершённых загрузок — src/lib/uploadIntents.js (cleanupUploadIntents), запускает служба по такту.
+export { cleanupUploadIntents }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Ключ операции — только UUIDv7 (его выдаёт портал, src/utils/uuid.js): ключи файлов прежнего портала содержат UUIDv4,
@@ -203,12 +264,21 @@ export const PRESIGN_BODY = z.object({
   notes: any,
   s3_key: any,
   download: any,
+  document_id: any,
+  only_if: any,
 })
 
-const WRITE_ACTIONS = new Set(['upload', 'confirm', 'delete', 'rename', 'describe'])
+const WRITE_ACTIONS = new Set(['upload', 'confirm', 'delete', 'rename', 'describe', 'supply-notes'])
 const DOC_NOTE_MAX = 500
 
-export function registerS3Presign(app, { config, getS3, gatewayOn = false, isReadOnly = () => false, loadStatus = null, db = null, getServiceClient = null }) {
+export function registerS3Presign(app, { config, getS3, gatewayOn = false, isReadOnly = () => false, loadStatus = null, db = null, getServiceClient = null, security = null }) {
+  const limits = {
+    uploadMaxBytes: security?.uploadMaxBytes ?? 100 * 1024 * 1024,
+    uploadMaxBytesRd: security?.uploadMaxBytesRd ?? 300 * 1024 * 1024,
+  }
+  // Учёт выданной ссылки на загрузку (src/lib/uploadIntents.js): незавершённых загрузок на пользователя — с пределом.
+  const intents = createUploadIntents({ db })
+
   // Есть ли владелец вообще — без правил по строкам: «не виден пользователю» и «удалён» — разные случаи. Своя база —
   // служебной операцией, иначе — служебным клиентом. Проверить не удалось — считаем, что есть: отказ лучше, чем открыть.
   const ownerExists = async (ownerType, ownerId, log) => {
@@ -297,17 +367,28 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
     const DENY = null
     const rulesForDoc = async (doc) => {
       if (!Object.hasOwn(OWNER_TABLES, doc.owner_type)) return UNKNOWN_OWNER_RULES
-      const prefix = `${FOLDER_BY_OWNER[doc.owner_type]}/${String(doc.owner_id || '').toLowerCase()}/`
-      if (!String(doc.s3_key || '').startsWith(prefix)) return UNKNOWN_OWNER_RULES
+      if (!keyInOwnerFolder(doc)) return UNKNOWN_OWNER_RULES
       const table = await ownerTable(doc.owner_type, doc.owner_id)
-      if (table) return rulesFor(table, doc.doc_category)
+      if (table) return { table, rules: changeRulesFor(table, doc.doc_category) }
       if (await ownerExists(doc.owner_type, doc.owner_id, request.log)) return DENY
-      const union = OWNER_TABLES[doc.owner_type].flatMap((t) => rulesFor(t, doc.doc_category))
+      const union = OWNER_TABLES[doc.owner_type].flatMap((t) => changeRulesFor(t, doc.doc_category))
       return union.length ? union : UNKNOWN_OWNER_RULES
     }
+    // Файл задачи меняет загрузивший (uploaded_by ставит сервер, менять его нельзя — триггер базы), автор задачи или
+    // администратор; просто видеть задачу мало.
+    const mayChangeTaskDoc = async (doc) => {
+      if (doc.uploaded_by && doc.uploaded_by === user.id) return true
+      const { data, error } = await supabase.from('tasks').select('created_by_user_id').eq('id', doc.owner_id).maybeSingle()
+      if (error) throw error
+      if (data?.created_by_user_id === user.id) return true
+      return allowed(UNKNOWN_OWNER_RULES)
+    }
     const mayChangeDoc = async (doc) => {
-      const rules = await rulesForDoc(doc)
-      return rules !== DENY && allowed(rules)
+      const found = await rulesForDoc(doc)
+      if (found === DENY) return false
+      if (Array.isArray(found)) return allowed(found)
+      if (found.table === 'tasks') return mayChangeTaskDoc(doc)
+      return allowed(found.rules)
     }
     // Загрузка и подтверждение: владелец виден и есть право его раздела (или категории). Иначе — [код, ответ].
     const uploadDenied = async (file, category) => {
@@ -321,16 +402,23 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
       if (error) throw error
       return data
     }
-    // Ссылку по «угаданному» ключу не выдаём: строка s3_documents должна быть видна пользователю.
+    // Ссылку по «угаданному» ключу не выдаём: строка s3_documents должна быть видна пользователю, ключ — лежать в каталоге
+    // своего владельца (иначе строку переставили на другого владельца — только администратор). Сотруднику ещё нужно видеть
+    // владельца и иметь право чтения его раздела (READ_RULES).
     const assertKeyAllowed = async (s3Key) => {
       const { data, error } = await supabase
         .from('s3_documents')
-        .select('id, owner_type, owner_id, doc_category')
+        .select('id, owner_type, owner_id, doc_category, s3_key')
         .eq('s3_key', s3Key)
         .maybeSingle()
       if (error) throw error
       if (!data) return false
-      if (!isContractor) return true
+      if (!keyInOwnerFolder(data) || !Object.hasOwn(OWNER_TABLES, data.owner_type)) return !isContractor && allowed(UNKNOWN_OWNER_RULES)
+      if (!isContractor) {
+        const table = await ownerTable(data.owner_type, data.owner_id)
+        if (!table) return false
+        return allowed(READ_RULES[table] || UNKNOWN_OWNER_RULES)
+      }
       // Подрядчик: строку файла тендера правила базы уже показали только ему; категории — вторым замком.
       if (data.owner_type === 'tender') return CONTRACTOR_TENDER_CATEGORIES.has(data.doc_category)
       if (data.owner_type !== 'contract') return false
@@ -346,13 +434,20 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           const req = readFile(body)
           if (req.error) return reply.code(400).send({ error: req.error })
           const { file, category } = req
+          const max = maxBytesFor(category, limits)
+          if (file.size_bytes > max) {
+            return reply.code(413).send({ error: `Файл больше ${Math.round(max / 1024 / 1024)} МБ — такой загрузить нельзя`, code: 'OSP_FILE_TOO_LARGE' })
+          }
           const denied = await uploadDenied(file, category)
           if (denied) return reply.code(denied[0]).send(denied[1])
           const existing = await findDocument(file.operation_id)
           if (existing) return sameFile(existing, file) ? { already: true, document: existing } : reply.code(409).send(KEY_REUSE)
           const s3Key = keyFor(file)
-          const cmd = new PutObjectCommand({ Bucket: bucket, Key: s3Key, ContentType: file.mime_type })
-          const presignedUrl = await getSignedUrl(s3, cmd, { expiresIn: UPLOAD_TTL_SEC })
+          const busy = await intents.note(s3Key, user.id, file.size_bytes)
+          if (busy) return reply.header('retry-after', '300').code(429).send({ error: busy, code: 'OSP_UPLOADS_PENDING' })
+          // Тип и длина входят в подпись: загрузить по ссылке можно только заявленный файл (тип — как заявлен, размер — точно).
+          const cmd = new PutObjectCommand({ Bucket: bucket, Key: s3Key, ContentType: file.mime_type, ContentLength: file.size_bytes })
+          const presignedUrl = await getSignedUrl(s3, cmd, { expiresIn: UPLOAD_TTL_SEC, signableHeaders: new Set(['content-type', 'content-length']) })
           return { s3_key: s3Key, presigned_url: presignedUrl, expires_in: UPLOAD_TTL_SEC }
         }
 
@@ -360,6 +455,7 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           const req = readFile(body)
           if (req.error) return reply.code(400).send({ error: req.error })
           const { file, category, notes } = req
+          if (file.size_bytes > maxBytesFor(category, limits)) return reply.code(413).send({ error: 'Файл слишком большой', code: 'OSP_FILE_TOO_LARGE' })
           const denied = await uploadDenied(file, category)
           if (denied) return reply.code(denied[0]).send(denied[1])
           const existing = await findDocument(file.operation_id)
@@ -404,6 +500,7 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
             if (error.code === '42501') return reply.code(403).send({ error: NO_RIGHT })
             throw error
           }
+          await intents.drop(s3Key)
           return { document: data }
         }
 
@@ -424,7 +521,7 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           if (!s3Key) return reply.code(400).send({ error: 'Missing s3_key' })
           const { data: doc, error } = await supabase
             .from('s3_documents')
-            .select('id, owner_type, owner_id, doc_category, created_at, s3_key')
+            .select('id, owner_type, owner_id, doc_category, created_at, s3_key, uploaded_by')
             .eq('s3_key', s3Key)
             .maybeSingle()
           if (error) throw error
@@ -477,7 +574,7 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           if (!s3Key) return reply.code(400).send({ error: 'Missing s3_key' })
           const { data: doc, error } = await supabase
             .from('s3_documents')
-            .select('id, owner_type, owner_id, doc_category, file_name, s3_key')
+            .select('id, owner_type, owner_id, doc_category, file_name, s3_key, uploaded_by')
             .eq('s3_key', s3Key)
             .maybeSingle()
           if (error) throw error
@@ -509,6 +606,48 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           return { document: saved[0] }
         }
 
+        case 'supply-notes': {
+          const id = String(body.document_id || '').toLowerCase()
+          if (!UUID_RE.test(id)) return reply.code(400).send({ error: 'Missing document_id' })
+          const notes = body.notes == null ? null : String(body.notes)
+          if (notes !== null && notes.length > SUPPLY_NOTES_MAX) return reply.code(413).send({ error: 'Слишком много строк документа' })
+          const onlyIf = body.only_if === undefined ? undefined : body.only_if === null ? null : String(body.only_if)
+          const { data: doc, error } = await supabase
+            .from('s3_documents')
+            .select('id, owner_type, owner_id, doc_category, s3_key')
+            .eq('id', id)
+            .maybeSingle()
+          if (error) throw error
+          if (!doc) return reply.code(404).send({ error: 'Файл не найден' })
+          // Только файл расценки снабжения тендера, в каталоге своего тендера, тендер виден, есть право правки расценки.
+          if (doc.owner_type !== 'tender' || doc.doc_category !== SUPPLY_DOC || !keyInOwnerFolder(doc)) {
+            return reply.code(403).send({ error: 'Это не документ поставщика расценки снабжения' })
+          }
+          if (await ownerTable(doc.owner_type, doc.owner_id) !== 'tenders') return reply.code(404).send({ error: 'Тендер не найден' })
+          if (!await allowed(SUPPLY_NOTES_RULES)) return reply.code(403).send({ error: NO_RIGHT })
+          // Права и видимость проверены под токеном пользователя выше. Своя база — одной служебной правкой с условием
+          // параметром (строки счёта бывают в сотни КБ — в адрес запроса к PostgREST условие не помещается).
+          if (db) {
+            const changed = await db.write(null, async (tx) => {
+              await tx.mark('internal')
+              const r = await tx.query(
+                `update public.s3_documents set notes = $1 where id = $2 and ($3::boolean is false or notes is not distinct from $4)`,
+                [notes, doc.id, onlyIf !== undefined, onlyIf ?? null])
+              return r.rowCount
+            })
+            return { ok: true, changed }
+          }
+          let q = supabase.from('s3_documents').update({ notes }).eq('id', doc.id)
+          if (onlyIf === null) q = q.is('notes', null)
+          else if (onlyIf !== undefined) q = q.eq('notes', onlyIf)
+          const { data: saved, error: updateError } = await q.select('id')
+          if (updateError) {
+            if (updateError.code === '42501') return reply.code(403).send({ error: NO_RIGHT })
+            throw updateError
+          }
+          return { ok: true, changed: saved?.length || 0 }
+        }
+
         default:
           return reply.code(400).send({ error: `Unknown action: ${body.action}` })
       }
@@ -517,7 +656,8 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
         return reply.code(503).send({ error: 'Проверка прав недоступна: нет функции osp_can (миграция Р2a)', code: 'OSP_RIGHTS_UNAVAILABLE' })
       }
       request.log.error({ msg: e?.message }, 's3-presign')
-      return reply.code(500).send({ error: e?.message || 'Internal error' })
+      // Текст исключения (адрес хранилища, ошибка базы) клиенту не уходит — только в журнал службы.
+      return reply.code(500).send({ error: 'Не удалось выполнить действие с файлом — повторите позже' })
     }
   } })
 }

@@ -81,7 +81,7 @@ export function SsoLogin({ variant = 'employee' }) {
 function SignOutButton() {
   const { logout } = useRole()
   return (
-    <button type="button" className="login-button login-button-ghost" onClick={() => logout()}>
+    <button type="button" className="login-button login-button-ghost" onClick={() => logout().catch((err) => alert(err.message))}>
       Выйти
     </button>
   )

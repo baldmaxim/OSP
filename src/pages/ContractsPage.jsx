@@ -56,6 +56,8 @@ import {
   isCompleted,
   liveChildren,
   planAmendment,
+  reopenBlocker,
+  frozenFieldChanges,
 } from '../utils/contractAmendments'
 import {
   buildAppendixTree,
@@ -576,13 +578,19 @@ function ContractRegistry() {
       // Грузим ВЕСЬ реестр один раз (все статусы + удалённые), а по вкладкам фильтруем
       // в памяти — переключение вкладок мгновенное, без повторных запросов. Постранично
       // (fetchAllRows) — иначе потолок PostgREST в 1000 строк молча резал бы реестр.
-      const data = await fetchAllRows((from, to) => db
-        .from('contracts')
-        .select('*, objects(name, status), counterparties(id, name, inn), contract_counterparties(counterparty_id, sort_order, counterparties(id, name, inn)), tenders(work_description, public_tender_number), responsible:contacts!responsible_contact_id(id, full_name, position)')
-        .order('contract_date', { ascending: true, nullsFirst: false })
-        .order('created_at', { ascending: true })
-        .order('id', { ascending: true })
-        .range(from, to))
+      // Сотрудник, привязанный к объектам, получает договоры только своих объектов уже в ответе сервера (отбор в запросе;
+      // в базе тот же отбор держит правило по строкам — охват по объектам). Отбор ниже в браузере остаётся запасным.
+      const data = await fetchAllRows((from, to) => {
+        let q = db
+          .from('contracts')
+          .select('*, objects(name, status), counterparties(id, name, inn), contract_counterparties(counterparty_id, sort_order, counterparties(id, name, inn)), tenders(work_description, public_tender_number), responsible:contacts!responsible_contact_id(id, full_name, position)')
+        if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
+        return q
+          .order('contract_date', { ascending: true, nullsFirst: false })
+          .order('created_at', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, to)
+      })
 
       // Задача 391: сортировка по объекту (затем по дате договора). Сортируем в JS,
       // т.к. серверный .order() по join-колонке objects.name недоступен.

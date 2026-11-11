@@ -30,12 +30,28 @@ export const summaryCounted = (s) => !!s && !s.error && typeof s.total === 'numb
 // Позиции с ценой не все — итог «нерепрезентативный», как подсветка неполного КП в «Сравнении КП».
 export const summaryIncomplete = (s, kind) => summaryCounted(s) && (s.items?.[kind] || 0) > 0 && (s.priced?.[kind] || 0) < s.items[kind]
 
+// Ведомости, которые видит подрядчик: без заменённых новой версией (миграция 20270114, тендер № 847: «ЗИЛ лот 33 ВОР ЭН» и «… версия 2»).
+// superseded — ответ bid_vor_superseded ([{ file_id, current_file_id }]) или null (функции нет — все файлы, как раньше).
+// Прежний файл скрывается, только если тот, что его заменил, среди файлов тендера: иначе подрядчик остался бы без ведомости.
+// → { current: ведомости, priorOf: Map(id прежней → id той, что её заменила) }.
+export function currentVorFiles(vorFiles, superseded) {
+  const list = vorFiles || []
+  const ids = new Set(list.map((v) => v.id))
+  const priorOf = new Map()
+  for (const r of superseded || []) {
+    if (r?.file_id && r.current_file_id && ids.has(r.current_file_id) && r.file_id !== r.current_file_id) priorOf.set(r.file_id, r.current_file_id)
+  }
+  return { current: list.filter((v) => !priorOf.has(v.id)), priorOf }
+}
+
 // Ведомости тендера и свои файлы → { rows, orphans, totals }.
-//   rows — по ведомости (по имени): её файл (по id ведомости; ВОР заменили — файл к прежней версии с тем же именем, stale: расценка по старой
-//   ведомости); orphans — файлы к ведомостям, которых в тендере больше нет: в итог не входят. totals — сумма посчитанных строк.
-// vorFiles: [{ id, file_name }], myFiles: строки tender_bid_files.
-export function bidFilesTable(vorFiles, myFiles) {
-  const files = myFiles || []
+//   rows — по ведомости (по имени): её файл (по id ведомости). Файла нет — файл к прежней версии этой ведомости (по отметке версий
+//   priorOf, иначе по тому же имени): stale — расценка посчитана по старой ведомости, объёмы могли измениться, поэтому в ИТОГО она не
+//   входит, пока подрядчик не загрузит файл заново. orphans — файлы к ведомостям, которых в тендере больше нет: в итог не входят.
+//   totals — сумма посчитанных строк по актуальным ведомостям.
+// vorFiles: [{ id, file_name }] (уже без заменённых), myFiles: строки tender_bid_files, priorOf — из currentVorFiles.
+export function bidFilesTable(vorFiles, myFiles, priorOf = null) {
+  const files = [...(myFiles || [])].sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')))
   const vorIds = new Set((vorFiles || []).map((v) => v.id))
   const used = new Set()
   // Ведомости — по имени («корпус 2» раньше «корпус 10»): порядок загрузки файлов отделом подрядчику ничего не говорит.
@@ -44,16 +60,20 @@ export function bidFilesTable(vorFiles, myFiles) {
     let file = files.find((f) => f.vor_file_id === vor.id) || null
     let stale = false
     if (!file) {
-      file = files.find((f) => !used.has(f.id) && !vorIds.has(f.vor_file_id) && titleKey(f.vor_name) === titleKey(vor.file_name)) || null
+      file = files.find((f) => !used.has(f.id) && !vorIds.has(f.vor_file_id) && priorOf?.get(f.vor_file_id) === vor.id)
+        || files.find((f) => !used.has(f.id) && !vorIds.has(f.vor_file_id) && !priorOf?.has(f.vor_file_id) && titleKey(f.vor_name) === titleKey(vor.file_name))
+        || null
       stale = !!file
     }
     if (file) used.add(file.id)
     return { vor, file, stale }
   })
-  const orphans = files.filter((f) => !used.has(f.id))
-  const totals = { materials: 0, works: 0, total: 0, counted: 0, uploaded: 0, incomplete: false }
+  // Сиротами показываются в порядке загрузки.
+  const orphans = files.filter((f) => !used.has(f.id)).reverse()
+  const totals = { materials: 0, works: 0, total: 0, counted: 0, uploaded: 0, stale: 0, incomplete: false }
   for (const r of rows) {
     if (!r.file) continue
+    if (r.stale) { totals.stale += 1; continue }
     totals.uploaded += 1
     const s = r.file.summary
     if (!summaryCounted(s)) continue

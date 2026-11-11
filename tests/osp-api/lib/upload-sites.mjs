@@ -30,6 +30,8 @@ export const UPLOAD_SITES = [
   { file: 'src/pages/DcRequestsPage.jsx', calls: 1, owner: 'dc_request', table: 'dc_requests' },
   // Файлы новой заявки на проверку ДП/ДС от того, у кого право только создавать (20270102): id из вставки doc_check_requests.
   { file: 'src/pages/DocCheckRequestsPage.jsx', calls: 1, owner: 'doc_check_request', table: 'doc_check_requests' },
+  // Окно заявки на проверку ДП/ДС, раздел «Документы» (11.11.2026): понятийное соглашение и загружаемые документы.
+  { file: 'src/components/doccheck/DocCheckFiles.jsx', calls: 1, owner: 'doc_check_request', table: 'doc_check_requests' },
   { file: 'src/services/dpRequests.js', calls: 1, owner: 'dp_request', table: 'dp_requests' }, // понятийное соглашение и документ договора (20261227)
   { file: 'src/components/ConceptAgreementCell.jsx', calls: 1, owner: 'contract', table: 'contracts' },
   { file: 'src/components/ContractClausesTab.jsx', calls: 1, owner: 'contract', table: 'contracts' },
@@ -41,7 +43,6 @@ export const LIST_SITES = [
   { file: 'src/components/VorDocsModal.jsx', count: 1, owner: 'tender', table: 'tenders' },
   { file: 'src/pages/ContractDetailPage.jsx', count: 1, owner: 'contract', table: 'contracts' },
   { file: 'src/pages/CounterpartiesPage.jsx', count: 2, owner: 'counterparty', table: 'counterparties' },
-  { file: 'src/components/doccheck/DocCheckDetailModal.jsx', count: 1, owner: 'doc_check_request', table: 'doc_check_requests' },
   { file: 'src/components/VorRequestModal.jsx', count: 2, owner: 'general', table: 'vor_requests' }, // REQUEST_OWNER_TYPE
   { file: 'src/components/tasks/TaskDetailModal.jsx', count: 1, owner: 'task', table: 'tasks' },
 ]

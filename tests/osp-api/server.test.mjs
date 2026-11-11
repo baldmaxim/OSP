@@ -40,6 +40,11 @@ const KPM_1 = 'e2000000-0000-4000-8000-000000000001' // расценка рее�
 const TDOC_1 = 'a1000000-0000-4000-8000-000000000001' // строка tender_docs (вкладка «Документы» тендера)
 const OBJECT_1 = 'f0000000-0000-4000-8000-000000000001'
 const TASK_1 = 'f1000000-0000-4000-8000-000000000001'
+// Ключи файлов — в каталоге своего владельца (иначе файл переставлен на чужого владельца: скачивает только администратор).
+const KEY_T1 = `tenders/${TENDER_1}/a-plan.pdf`
+const KEY_SHARED = `tenders/${TENDER_HIDDEN}/shared.pdf`
+const KEY_VOR = `tenders/${TENDER_HIDDEN}/vor.xlsx`
+const KEY_HIDDEN_VOR = `tenders/${TENDER_HIDDEN}/hidden-vor.xlsx`
 // Ключ операции загрузки (UUIDv7 из браузера).
 const OP = (n) => `0190a000-0000-7000-8000-${String(n).padStart(12, '0')}`
 const SHA = (c) => c.repeat(64)
@@ -58,12 +63,12 @@ function supabaseState() {
       [U.economist.id]: { role: 'economist', counterparty_id: null, is_approved: true, is_blocked: false, full_name: 'Экономист Тестовый' },
     },
     docs: {
-      'tenders/t1/a-plan.pdf': { row: { id: 'd1', owner_type: 'tender', owner_id: TENDER_1 }, visibleTo: [U.emp.id, U.admin.id, U.viewer.id] },
+      [KEY_T1]: { row: { id: 'd1', owner_type: 'tender', owner_id: TENDER_1 }, visibleTo: [U.emp.id, U.admin.id, U.viewer.id] },
       [`contracts/${CONTRACT_MINE}/x.docx`]: { row: { id: 'd2', owner_type: 'contract', owner_id: CONTRACT_MINE }, visibleTo: 'all' },
       [`contracts/${CONTRACT_OTHER}/y.docx`]: { row: { id: 'd3', owner_type: 'contract', owner_id: CONTRACT_OTHER }, visibleTo: 'all' },
-      'tenders/t2/shared.pdf': { row: { id: 'd4', owner_type: 'tender', owner_id: TENDER_HIDDEN }, visibleTo: 'all' },
-      'tenders/t3/vor.xlsx': { row: { id: 'd6', owner_type: 'tender', owner_id: TENDER_HIDDEN, doc_category: 'vor_statement' }, visibleTo: 'all' },
-      'tenders/t3/hidden-vor.xlsx': { row: { id: 'd7', owner_type: 'tender', owner_id: TENDER_HIDDEN, doc_category: 'vor_statement' }, visibleTo: [U.emp.id] },
+      [KEY_SHARED]: { row: { id: 'd4', owner_type: 'tender', owner_id: TENDER_HIDDEN }, visibleTo: 'all' },
+      [KEY_VOR]: { row: { id: 'd6', owner_type: 'tender', owner_id: TENDER_HIDDEN, doc_category: 'vor_statement' }, visibleTo: 'all' },
+      [KEY_HIDDEN_VOR]: { row: { id: 'd7', owner_type: 'tender', owner_id: TENDER_HIDDEN, doc_category: 'vor_statement' }, visibleTo: [U.emp.id] },
       [`general-documents/${GDOC_1}/g.pdf`]: { row: { id: 'd5', owner_type: 'general_document', owner_id: GDOC_1, file_name: 'g.pdf' }, visibleTo: 'all' },
       [`dc-requests/${DC_REQUEST_1}/n.pdf`]: { row: { id: 'd8', owner_type: 'dc_request', owner_id: DC_REQUEST_1, file_name: 'n.pdf', notes: 'КП' }, visibleTo: 'all' },
     },
@@ -198,7 +203,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
 
     it('неодобренный, заблокированный и учётка без роли — 403', async () => {
       for (const who of [U.unapproved, U.blocked, U.noRole]) {
-        for (const body of [fileBody(), { action: 'download', s3_key: 'tenders/t1/a-plan.pdf' }]) {
+        for (const body of [fileBody(), { action: 'download', s3_key: KEY_T1 }]) {
           const res = await fn('s3-presign', who, { action: 'upload', ...body })
           assert.equal(res.statusCode, 403, who.token)
           assert.deepEqual(res.json(), { error: 'Forbidden' })
@@ -207,7 +212,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
     })
 
     it('строки базы читаются под токеном пользователя (действует RLS), не служебным ключом', async () => {
-      await fn('s3-presign', U.emp, { action: 'download', s3_key: 'tenders/t1/a-plan.pdf' })
+      await fn('s3-presign', U.emp, { action: 'download', s3_key: KEY_T1 })
       await fn('s3-presign', U.emp, { action: 'upload', ...fileBody() })
       const rest = supa.requests.filter((r) => r.path.startsWith('/rest/v1/'))
       assert.ok(rest.some((r) => r.path === '/rest/v1/rpc/osp_can'), 'право проверено')
@@ -222,7 +227,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       const hidden = await fn('s3-presign', U.emp, { action: 'download', s3_key: 'tenders/t9/guess.pdf' })
       assert.equal(hidden.statusCode, 404)
       assert.deepEqual(hidden.json(), { error: 'Файл не найден' })
-      const ok = await fn('s3-presign', U.emp, { action: 'download', s3_key: 'tenders/t1/a-plan.pdf' })
+      const ok = await fn('s3-presign', U.emp, { action: 'download', s3_key: KEY_T1 })
       assert.equal(ok.statusCode, 200)
       const url = new URL(ok.json().presigned_url)
       assert.equal(url.searchParams.get('X-Amz-Expires'), '3600')
@@ -230,16 +235,16 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
     })
 
     it('download с download=true — исходное имя: ASCII и UTF-8', async () => {
-      const res = await fn('s3-presign', U.emp, { action: 'download', s3_key: 'tenders/t1/a-plan.pdf', file_name: 'План работ.pdf', download: true })
+      const res = await fn('s3-presign', U.emp, { action: 'download', s3_key: KEY_T1, file_name: 'План работ.pdf', download: true })
       const cd = new URL(res.json().presigned_url).searchParams.get('response-content-disposition')
       assert.equal(cd, `attachment; filename="Plan_rabot.pdf"; filename*=UTF-8''${encodeURIComponent('План работ.pdf')}`)
     })
 
     it('подрядчик: файл ВОР тендера — если строку показали правила базы; прочие категории и скрытые строки — нет', async () => {
       const get = (s3_key) => fn('s3-presign', U.contractor, { action: 'download', s3_key })
-      assert.equal((await get('tenders/t3/vor.xlsx')).statusCode, 200, 'пакет, ВОР и РД')
-      assert.equal((await get('tenders/t3/hidden-vor.xlsx')).statusCode, 404, 'строка не видна правилам базы')
-      assert.equal((await get('tenders/t2/shared.pdf')).statusCode, 404, 'другая категория файла тендера')
+      assert.equal((await get(KEY_VOR)).statusCode, 200, 'пакет, ВОР и РД')
+      assert.equal((await get(KEY_HIDDEN_VOR)).statusCode, 404, 'строка не видна правилам базы')
+      assert.equal((await get(KEY_SHARED)).statusCode, 404, 'другая категория файла тендера')
     })
 
     it('подрядчик: только скачивание и только файлов своих договоров', async () => {
@@ -252,7 +257,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       }
       assert.equal((await fn('s3-presign', U.contractor, { action: 'download', s3_key: `contracts/${CONTRACT_MINE}/x.docx` })).statusCode, 200)
       assert.equal((await fn('s3-presign', U.contractor, { action: 'download', s3_key: `contracts/${CONTRACT_OTHER}/y.docx` })).statusCode, 404, 'чужой договор')
-      assert.equal((await fn('s3-presign', U.contractor, { action: 'download', s3_key: 'tenders/t2/shared.pdf' })).statusCode, 404, 'не договор')
+      assert.equal((await fn('s3-presign', U.contractor, { action: 'download', s3_key: KEY_SHARED })).statusCode, 404, 'не договор')
       assert.equal(s3.requests.length, 0)
       assert.ok(state.docs[`contracts/${CONTRACT_MINE}/x.docx`], 'строка на месте')
     })
@@ -433,6 +438,106 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.deepEqual(res.json(), { error: 'Нет права на файлы этого раздела' })
       assert.ok(state.docs[KEY])
       assert.equal(s3.requests.length, 0)
+    })
+  })
+
+  describe('права на файлы: изменение — правкой раздела, скачивание — видя владельца (11.11.2026)', () => {
+    const del = (who, key) => fn('s3-presign', who, { action: 'delete', s3_key: key })
+    const rename = (who, key, name) => fn('s3-presign', who, { action: 'rename', s3_key: key, file_name: name })
+    const download = (who, key) => fn('s3-presign', who, { action: 'download', s3_key: key })
+    const CONTRACT_KEY = `contracts/${CONTRACT_MINE}/x.docx`
+
+    it('просмотр договоров: файл договора не удалить и не переименовать; правка — можно', async () => {
+      assert.equal((await del(U.viewer, CONTRACT_KEY)).statusCode, 403)
+      assert.equal((await rename(U.viewer, CONTRACT_KEY, 'Другое.docx')).statusCode, 403)
+      assert.ok(state.docs[CONTRACT_KEY], 'строка на месте')
+      assert.equal(s3.requests.filter((r) => r.method === 'DELETE').length, 0, 'объект не трогали')
+      const calls = supa.requests.filter((r) => r.path === '/rest/v1/rpc/osp_can').map((r) => JSON.parse(r.body))
+      assert.ok(calls.every((c) => !(c.p_section === 'contracts' && c.p_kind === 'view')), 'просмотр для изменения не спрашивается')
+      assert.equal((await rename(U.emp, CONTRACT_KEY, 'Другое.docx')).statusCode, 200)
+      assert.equal((await del(U.emp, CONTRACT_KEY)).statusCode, 200)
+    })
+
+    it('просмотр тендеров: файлы тендера не меняет; «ВОРы и РД» меняют только ВОР и РД, не КП', async () => {
+      assert.equal((await del(U.viewer, KEY_T1)).statusCode, 403, 'просмотр «Тендеров»')
+      const kp = `tenders/${TENDER_1}/kp.xlsx`
+      const vor = `tenders/${TENDER_1}/vor.xlsx`
+      state.docs[kp] = { row: { id: 'dk', owner_type: 'tender', owner_id: TENDER_1, doc_category: 'general' }, visibleTo: 'all' }
+      state.docs[vor] = { row: { id: 'dv', owner_type: 'tender', owner_id: TENDER_1, doc_category: 'vor' }, visibleTo: 'all' }
+      state.can[U.viewer.id] = ['tenders:view', 'vors:edit']
+      assert.equal((await del(U.viewer, kp)).statusCode, 403, 'КП тендера — не правкой «ВОРов и РД»')
+      assert.equal((await del(U.viewer, vor)).statusCode, 200, 'ВОР — правкой «ВОРов и РД»')
+    })
+
+    it('файл задачи: просмотр задачи не даёт удалить чужой файл; загрузивший и постановщик — могут', async () => {
+      const key = (n) => `tasks/${TASK_1}/f${n}.pdf`
+      state.docs[key(1)] = { row: { id: 't1', owner_type: 'task', owner_id: TASK_1, uploaded_by: U.admin.id }, visibleTo: 'all' }
+      state.docs[key(2)] = { row: { id: 't2', owner_type: 'task', owner_id: TASK_1, uploaded_by: U.viewer.id }, visibleTo: 'all' }
+      state.docs[key(3)] = { row: { id: 't3', owner_type: 'task', owner_id: TASK_1, uploaded_by: U.admin.id }, visibleTo: 'all' }
+      assert.equal((await del(U.viewer, key(1))).statusCode, 403, 'чужой файл видимой задачи')
+      assert.equal((await rename(U.viewer, key(1), 'Другое.pdf')).statusCode, 403)
+      assert.equal((await del(U.viewer, key(2))).statusCode, 200, 'свой файл')
+      state.ownerRows = { tasks: { [TASK_1]: { created_by_user_id: U.viewer.id } } }
+      assert.equal((await del(U.viewer, key(3))).statusCode, 200, 'постановщик задачи')
+    })
+
+    it('скачивание: владелец не виден — 404; ключ не в каталоге владельца — только администратор; нет права раздела — нет ссылки', async () => {
+      // Строка видна всем, а тендер — только администратору.
+      assert.equal((await download(U.emp, KEY_SHARED)).statusCode, 404, 'владелец не виден')
+      assert.equal((await download(U.admin, KEY_SHARED)).statusCode, 200)
+      // Строку «переставили» на другого владельца: ключ лежит в каталоге другого тендера.
+      const moved = `tenders/${TENDER_HIDDEN}/moved.pdf`
+      state.docs[moved] = { row: { id: 'dm', owner_type: 'tender', owner_id: TENDER_1 }, visibleTo: 'all' }
+      assert.equal((await download(U.emp, moved)).statusCode, 404, 'сотруднику — нет')
+      assert.equal((await download(U.admin, moved)).statusCode, 200, 'администратору — да')
+      // Договор виден, но права «Договоров» нет.
+      state.can[U.viewer.id] = ['tenders:view']
+      assert.equal((await download(U.viewer, `contracts/${CONTRACT_MINE}/x.docx`)).statusCode, 404)
+      assert.equal((await download(U.viewer, KEY_T1)).statusCode, 200, 'файл тендера при просмотре «Тендеров»')
+    })
+
+    it('подрядчик: ключ не в каталоге своего договора — нет ссылки', async () => {
+      const moved = `contracts/${CONTRACT_OTHER}/moved.docx`
+      state.docs[moved] = { row: { id: 'dc', owner_type: 'contract', owner_id: CONTRACT_MINE }, visibleTo: 'all' }
+      assert.equal((await download(U.contractor, moved)).statusCode, 404)
+      assert.equal((await download(U.contractor, `contracts/${CONTRACT_MINE}/x.docx`)).statusCode, 200)
+    })
+
+    it('загрузка: больше предела — 413; РД — свой предел; ссылка подписывает тип и длину', async () => {
+      const big = await fn('s3-presign', U.emp, { action: 'upload', ...fileBody({ size_bytes: 100 * 1024 * 1024 + 1 }) })
+      assert.equal(big.statusCode, 413)
+      const rd = await fn('s3-presign', U.emp, { action: 'upload', ...fileBody({ size_bytes: 200 * 1024 * 1024, category: 'rd', operation_id: OP(901) }) })
+      assert.equal(rd.statusCode, 200, rd.body)
+      const signed = new URL(rd.json().presigned_url).searchParams.get('X-Amz-SignedHeaders')
+      assert.match(signed, /content-length/)
+      assert.match(signed, /content-type/)
+    })
+
+  })
+
+  describe('заметки снабжения: только файл расценки, только правкой тендеров (supply-notes)', () => {
+    const DOC = 'f9000000-0000-4000-8000-000000000001'
+    const KEY = `tenders/${TENDER_1}/invoice.xlsx`
+    const save = (who, body) => fn('s3-presign', who, { action: 'supply-notes', document_id: DOC, ...body })
+    beforeEach(() => {
+      state.docs[KEY] = { row: { id: DOC, owner_type: 'tender', owner_id: TENDER_1, doc_category: 'supply_doc', notes: null }, visibleTo: 'all' }
+    })
+
+    it('правка тендеров — записывает; просмотр — 403; чужая категория — 403', async () => {
+      assert.equal((await save(U.viewer, { notes: '{"v":1}' })).statusCode, 403)
+      const ok = await save(U.emp, { notes: '{"v":1}', only_if: null })
+      assert.equal(ok.statusCode, 200, ok.body)
+      assert.equal(state.docs[KEY].row.notes, '{"v":1}')
+      state.docs[KEY].row.doc_category = 'general'
+      assert.equal((await save(U.emp, { notes: '{"v":2}' })).statusCode, 403, 'не документ поставщика')
+    })
+
+    it('only_if: при файле уже другое — ничего не меняется', async () => {
+      state.docs[KEY].row.notes = '{"human":1}'
+      const res = await save(U.emp, { notes: '{"auto":1}', only_if: null })
+      assert.equal(res.statusCode, 200)
+      assert.equal(res.json().changed, 0)
+      assert.equal(state.docs[KEY].row.notes, '{"human":1}')
     })
   })
 
@@ -672,7 +777,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
         assert.equal(res.json().code, 'OSP_RIGHTS_UNAVAILABLE')
       }
       assert.ok(state.docs[`general-documents/${GDOC_1}/g.pdf`], 'строка не удалена')
-      assert.equal((await fn('s3-presign', U.emp, { action: 'download', s3_key: 'tenders/t1/a-plan.pdf' })).statusCode, 200)
+      assert.equal((await fn('s3-presign', U.emp, { action: 'download', s3_key: KEY_T1 })).statusCode, 200)
       assert.equal(s3.requests.length, 0)
     })
   })
@@ -895,7 +1000,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
 
     it('presign — частота на пользователя', async () => {
       await makeApp({}, { limits: tiny })
-      const body = { action: 'download', s3_key: 'tenders/t1/a-plan.pdf' }
+      const body = { action: 'download', s3_key: KEY_T1 }
       assert.equal((await fn('s3-presign', U.emp, body)).statusCode, 200)
       assert.equal((await fn('s3-presign', U.emp, body)).statusCode, 200)
       const third = await fn('s3-presign', U.emp, body)
@@ -998,7 +1103,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
     it('Cache-Control: no-store во всех ответах', async () => {
       for (const res of [
         await app.inject({ method: 'GET', url: '/api/health' }),
-        await fn('s3-presign', U.emp, { action: 'download', s3_key: 'tenders/t1/a-plan.pdf' }),
+        await fn('s3-presign', U.emp, { action: 'download', s3_key: KEY_T1 }),
         await app.inject({ method: 'GET', url: '/api/rates/kp?key=rk-one' }),
         await app.inject({ method: 'GET', url: '/api/nope' }),
       ]) assert.equal(res.headers['cache-control'], 'no-store')

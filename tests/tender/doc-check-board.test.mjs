@@ -200,7 +200,7 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
       assert.equal(await card.locator('.dc-chip--object').textContent(), 'Бизнес-центр «Нурлы»')
       assert.deepEqual(await card.locator('.dc-chip--label').allTextContents(), ['Переподписание'])
       assert.deepEqual(await card.locator('.dc-avatar').allTextContents(), ['ЮМ'], 'исполнители — только юристы ОСП')
-      assert.equal(await card.locator('.dc-count').textContent(), '1', 'файл заявки — скрепка с числом')
+      assert.equal(await card.locator('.dc-count').textContent(), '2', 'файлы заявки (документ и понятийное соглашение) — скрепка с числом')
       assert.match(await card.getAttribute('class'), /\bhas-color dc-c-red\b/)
       assert.match(await card.getAttribute('class'), /\bis-overdue\b/, 'срок прошёл — красная рамка')
       assert.match(await card.locator('.dc-due').getAttribute('class'), /is-overdue/)

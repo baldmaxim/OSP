@@ -5,7 +5,7 @@
 // которым нужен текущий пользователь. Токен для своего сервера — getAccessToken(): при своём входе его нет
 // (сессия в cookie), и старый токен Supabase из хранилища браузера не уходит.
 import { supabase } from './supabaseClient'
-import { isSessionAuth, isPasswordAuth, isSsoAuth, ssoLinks, markLeaving, isLeaving } from './authMode'
+import { isSessionAuth, isPasswordAuth, isSsoAuth, ssoLinks, markLeaving, unmarkLeaving, isLeaving } from './authMode'
 import { ownAuth } from './sessionClient'
 
 const current = () => (isSessionAuth() ? ownAuth : supabase.auth)
@@ -19,6 +19,7 @@ export const auth = {
   // Выход через СУ-10 начат — без автоперехода на вход (authMode.js).
   get isLeaving() { return isLeaving() },
   markLeaving: () => markLeaving(),
+  unmarkLeaving: () => unmarkLeaving(),
   getSession: (...args) => current().getSession(...args),
   getUser: (...args) => current().getUser(...args),
   onAuthStateChange: (fn) => current().onAuthStateChange(fn),
