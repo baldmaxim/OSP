@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { db } from '../api'
 import * as XLSX from 'xlsx'
@@ -8,7 +8,11 @@ import { downloadS3File } from '../components/FileDownload'
 import ObjectDocumentFileSlot from '../components/ObjectDocumentFileSlot'
 import ObjectDocMdCell from '../components/ObjectDocMdCell'
 import ObjectDocMdZipButton from '../components/ObjectDocMdZipButton'
+import ObjectDocCards from '../components/ObjectDocCards'
+import { useIsPhone } from '../hooks/useMediaQuery'
 import ObjectDgpFiles from '../components/ObjectDgpFiles'
+// Смета КП / ПЗ (миграция 20270215) — только во вкладке «Смета»: код, стили и библиотека Excel грузятся при её открытии.
+const KpEstimateWorkspace = lazy(() => import('../components/kpEstimate/KpEstimateWorkspace'))
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import WarrantyActSignModal from '../components/WarrantyActSignModal'
 import WarrantyDocSelect from '../components/WarrantyDocSelect'
@@ -595,6 +599,8 @@ function ObjectDetailPage() {
   const [expandedDocs, setExpandedDocs] = useState(new Set())
   const didInitExpand = useRef(false)
   const [docSearchQuery, setDocSearchQuery] = useState('')
+  // Телефон: документы карточками (ObjectDocCards) — таблица из 7–8 столбцов там нечитаема.
+  const isPhone = useIsPhone()
   // task 329: drag-drop порядка дополнительных соглашений.
   const [draggedAgreementId, setDraggedAgreementId] = useState(null)
   const [agreementDragOver, setAgreementDragOver] = useState(null) // {id, position: 'before'|'after'}
@@ -1889,6 +1895,22 @@ function ObjectDetailPage() {
     .map(ag => filterDocGroup(ag, getAttachments(ag.id)))
     .filter(Boolean)
   const docSearchEmpty = !!docQuery && !visibleContract && visibleAgreements.length === 0
+  // Карточки документов на телефоне — те же данные и действия, что у строк таблицы.
+  const docCardProps = {
+    getAttachments,
+    expandedDocs,
+    toggleExpand,
+    formatDate,
+    renderFile: (s3doc, accent) => (
+      <DocFileCell compact s3doc={s3doc} accent={accent} onPreview={handlePreviewFile} onDownload={handleDownloadFile} />
+    ),
+    onAddAttachment: (parentId) => handleAddDocument('attachment', parentId),
+    onEdit: handleEditDocument,
+    onDelete: handleDeleteDocument,
+    canEdit: canEditObj,
+    linkedId: linkedDocId,
+    onMdChanged: docMdHandler,
+  }
 
   if (objectDenied) return (
     <AccessDenied
@@ -2031,6 +2053,14 @@ function ObjectDetailPage() {
             )}
           </div>
 
+          {/* «Скачать все» .md — на телефоне над карточками: столбца «.md», над которым она стоит в таблице, там нет. */}
+          {isPhone && docMdHandler && (
+            <div className="odc-zip">
+              <span>Файлы .md документов</span>
+              <ObjectDocMdZipButton objectName={object.name} documents={documents} />
+            </div>
+          )}
+
           {docSearchEmpty ? (
             <div className="docs-empty-state">
               По запросу «{docSearchQuery}» ничего не найдено
@@ -2044,7 +2074,9 @@ function ObjectDetailPage() {
                     <span>Договор Генподряда</span>
                     {!generalContract && canEditObj && <button className="btn-add" onClick={() => handleAddDocument('general_contract')}>+ Добавить</button>}
                   </div>
-                  {visibleContract ? (
+                  {visibleContract && isPhone ? (
+                    <ObjectDocCards groups={[visibleContract]} {...docCardProps} />
+                  ) : visibleContract ? (
                     <div className="doc-table-wrap">
                       <table className="doc-table">
                         <thead>
@@ -2097,7 +2129,9 @@ function ObjectDetailPage() {
                     <span>Дополнительные соглашения ({additionalAgreements.length})</span>
                     {canEditObj && <button className="btn-add" onClick={() => handleAddDocument('additional_agreement')}>+ Добавить</button>}
                   </div>
-                  {visibleAgreements.length > 0 ? (
+                  {visibleAgreements.length > 0 && isPhone ? (
+                    <ObjectDocCards groups={visibleAgreements} {...docCardProps} />
+                  ) : visibleAgreements.length > 0 ? (
                     <div className="doc-table-wrap">
                       <table className="doc-table">
                         <thead>
@@ -2451,6 +2485,11 @@ function ObjectDetailPage() {
         <div className={`tab-content estimate-content${isEstimateFullscreen ? ' estimate-fullscreen' : ''}`}>
           {/* ДГП (единый ПСДЦ) — файлы, отдельно от сметы ниже; в полноэкранной смете не нужен. */}
           {!isEstimateFullscreen && <ObjectDgpFiles objectId={objectId} canEdit={canEditObj} />}
+          {!isEstimateFullscreen && (
+            <Suspense fallback={<p className="estimate-hint">Загрузка сметы КП / ПЗ…</p>}>
+              <KpEstimateWorkspace objectId={objectId} objectName={object.name} />
+            </Suspense>
+          )}
           <div className="cost-header">
             <span>Смета объекта {estimateItems.length > 0 && `(${estimateItems.filter(i => !i.is_section).length} позиций${estimateVat ? `, НДС ${estimateVat}%` : ''})`}</span>
             <div className="cost-header-actions">

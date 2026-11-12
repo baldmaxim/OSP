@@ -32,7 +32,7 @@ function SortButton({ column, sort, onSortChange }) {
 
 // Колонка доски. memo: перетаскивание меняет заглушку в одной-двух колонках, остальные не перерисовываются.
 // slotBefore — перед какой карточкой заглушка места (SLOT_AT_END — в конце), liftedId — карточка, которую сейчас несут: её
-// место занимает заглушка. Колонка статуса вне справочника (kind 'extra' — убранная «Проверка документов» и т. п.) карточки не
+// место занимает заглушка. Колонка статуса вне справочника (kind 'extra' — статус, которого нет в DOC_CHECK_STATUSES) карточки не
 // принимает: вытащить из неё можно, бросить в неё — нет.
 function DocCheckColumn({
   col, sort, list, employees, canEdit, hasBoardFields, canAdd, isOver, slotBefore, liftedId,

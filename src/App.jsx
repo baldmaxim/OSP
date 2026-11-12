@@ -12,7 +12,7 @@ import ChunkErrorBoundary from './components/ChunkErrorBoundary'
 import RolePreviewBar from './components/RolePreviewBar'
 import ReloginModal from './components/ReloginModal'
 import { NoAccessPage, AccessRequestedPage, AuthDonePage } from './pages/SsoScreens'
-import { CONTRACTS_REGISTRY_PATH, CONTRACT_SECTION_KEYS, contractsEntry } from './utils/contractsHub'
+import { CONTRACTS_REGISTRY_PATH, CONTRACTS_TREE_PATH, CONTRACT_SECTION_KEYS, contractsEntry } from './utils/contractsHub'
 import './App.css'
 // Глобальный мобильный слой — импортируется последним, чтобы перебивать базовые
 // правила при равной специфичности (модалки/формы/таблицы/шапки на всех страницах).
@@ -75,6 +75,7 @@ const KpReviewPage = lazy(() => import('./pages/KpReviewPage'))
 const SummaryPage = lazy(() => import('./pages/SummaryPage'))
 const ContractsHubPage = lazy(() => import('./pages/ContractsHubPage'))
 const ContractsPage = lazy(() => import('./pages/ContractsPage'))
+const ContractTreePage = lazy(() => import('./pages/ContractTreePage'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 // Кабинет подрядчика — одна страница с вкладками «Тендеры» и «Договоры».
@@ -175,6 +176,8 @@ function EmployeeLayout() {
             <Route path="/contracts" element={<PermissionRoute anyOf={CONTRACT_SECTION_KEYS}><ContractsHubPage /></PermissionRoute>} />
             <Route path={CONTRACTS_REGISTRY_PATH} element={<PermissionRoute section="contracts"><ContractsPage /></PermissionRoute>} />
             <Route path="/contracts/psdc-batch" element={<PermissionRoute section="contracts"><PsdcBatchPage /></PermissionRoute>} />
+            {/* «Дерево договоров» — эксперимент (12.11.2026): страница сама пускает только администратора. */}
+            <Route path={CONTRACTS_TREE_PATH} element={<PermissionRoute section="contracts"><ContractTreePage /></PermissionRoute>} />
             <Route path="/contracts/:contractId" element={<PermissionRoute section="contracts"><ContractDetailPage /></PermissionRoute>} />
             <Route path="/dc-requests" element={<PermissionRoute section="dc_requests"><DcRequestsPage /></PermissionRoute>} />
             <Route path="/dp-requests" element={<PermissionRoute section="dp_requests"><DpRequestsPage /></PermissionRoute>} />

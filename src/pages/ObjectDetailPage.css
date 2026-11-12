@@ -451,16 +451,22 @@
   font-style: italic;
 }
 
-/* Табличный вид документов (договоры, ДС, приложения) */
+/* Табличный вид документов (договоры, ДС, приложения).
+   Столбцы «№ / дата» и «Описание ДС» своей ширины не имеют — им достаётся остаток после остальных (≈ 41 rem). Поэтому
+   таблица не уже 51 rem, а уже места — прокручивается в своей рамке (12.11.2026: при узком окне или развёрнутом меню
+   этим столбцам оставалось 30–50 px, номер, дата и описание шли по букве в строку). На телефоне (≤ 640 px) таблицы
+   нет — документы карточками (ObjectDocCards). Меню «.md» — в <body>, прокрутка рамки его не обрезает. */
 .doc-table-wrap {
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   background: var(--bg-secondary);
 }
 
 .doc-table {
   width: 100%;
+  min-width: 51rem;
   border-collapse: collapse;
   font-size: 0.8125rem;
   table-layout: fixed;
@@ -2356,12 +2362,8 @@ tr:hover .btn-delete-row {
     flex-shrink: 0;
   }
 
-  /* Документы — широкие таблицы (6–7 колонок) прокручиваются вбок, а не схлопываются. */
-  .doc-table-wrap {
-    overflow-x: auto !important;
-    -webkit-overflow-scrolling: touch;
-  }
-  .doc-table { min-width: 676px; }
+  /* Документы (планшет) — таблица прокручивается вбок в своей рамке (ширина — у .doc-table выше). */
+  .doc-table-wrap { -webkit-overflow-scrolling: touch; }
 
   /* Таблицы вкладок «Гарантия»/«Площади»/«Удержания» — свой горизонтальный скролл. */
   .object-detail-page .tab-content { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -2369,8 +2371,6 @@ tr:hover .btn-delete-row {
 }
 
 @media (max-width: 640px) {
-  /* Мельче служебные ширины, чтобы меньше скроллить. */
-  .doc-table { min-width: 616px; }
   .object-detail-page .tab { padding: 0.5rem 0.75rem; font-size: 0.8125rem; }
   .object-detail-page .cost-header,
   .object-detail-page .doc-section-header,

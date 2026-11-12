@@ -5,7 +5,7 @@ import { IconContracts, IconDcRequest, IconDocCheck, IconDpRequest } from '../co
 import AccessDenied from '../components/AccessDenied'
 import { useRole } from '../contexts/RoleContext'
 import { fetchContractsHubCounters } from '../services/contractsHubCounters'
-import { CONTRACTS_REGISTRY_PATH, visibleContractSections } from '../utils/contractsHub'
+import { CONTRACTS_REGISTRY_PATH, CONTRACTS_TREE_PATH, visibleContractSections } from '../utils/contractsHub'
 import { plural } from '../utils/taskHelpers'
 import './TendersHubPage.css'
 
@@ -19,7 +19,7 @@ const ICONS = {
 // Страница-хаб «Договоры и ДС» — как «Тендеры»: шапка и карточки направлений, стили общие. Показаны только блоки, открытые
 // роли; сами страницы проверяют то же право на своём маршруте (App.jsx), так что прямая ссылка закрыта и без хаба.
 function ContractsHubPage() {
-  const { canView, scopedObjectIds } = useRole()
+  const { canView, scopedObjectIds, isAdmin, isSuperAdmin } = useRole()
   const location = useLocation()
   const sections = useMemo(() => visibleContractSections(canView), [canView])
   const sectionKeys = sections.map((s) => s.section).join(',')
@@ -85,6 +85,17 @@ function ContractsHubPage() {
           )
         })}
       </div>
+
+      {/* Эксперимент 12.11.2026: всё о договоре одной веткой. Видно только администратору; маршрут проверяет то же. */}
+      {(isAdmin || isSuperAdmin) && (
+        <Link to={CONTRACTS_TREE_PATH} className="thub-exp">
+          <span className="thub-exp-tag">Эксперимент · только администратору</span>
+          <span className="thub-exp-text">
+            <strong>Дерево договоров</strong> — договор, его ДС, заявки на ДС, проверки ДП/ДС и заявка на ДП одной веткой
+          </span>
+          <span className="thub-exp-go">Открыть <IconArrowRight size={16} /></span>
+        </Link>
+      )}
     </div>
   )
 }

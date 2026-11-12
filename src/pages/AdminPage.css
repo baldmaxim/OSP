@@ -379,11 +379,12 @@
 
 /* ── Меню действий (три точки) ── */
 .adm-menu { position: relative; display: inline-block; }
+/* Меню — в <body>, место ставит UserActionsMenu (top / left): внутри ячейки его обрезала прокрутка таблицы. */
 .adm-menu-pop {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 40;
+  position: fixed;
+  z-index: 1300;
+  box-sizing: border-box;
+  max-width: calc(100vw - 16px);
   min-width: 190px;
   padding: 0.3125rem;
   background: var(--bg-secondary);
@@ -510,7 +511,7 @@
   border-bottom: 1px solid var(--border-color);
 }
 .adm-drawer-header h3 { margin: 0; font-size: 1.0625rem; color: var(--text-primary); }
-.adm-drawer-sub { margin: 0.25rem 0 0; font-size: 0.8125rem; color: var(--text-tertiary); word-break: break-all; }
+.adm-drawer-sub { margin: 0.25rem 0 0; font-size: 0.8125rem; color: var(--text-tertiary); overflow-wrap: anywhere; }
 .adm-drawer-close { border: none; background: none; font-size: 1.5rem; line-height: 1; color: var(--text-tertiary); cursor: pointer; }
 .adm-drawer-close:hover:not(:disabled) { color: var(--text-primary); }
 .adm-drawer-body {

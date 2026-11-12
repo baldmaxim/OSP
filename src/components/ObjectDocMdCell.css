@@ -124,7 +124,7 @@
   color: var(--text-tertiary);
 }
 
-/* Меню — в body: обёртка таблицы обрезает всё, что выходит за её края (.doc-table-wrap, overflow: hidden). */
+/* Меню — в body: обёртка таблицы обрезает всё, что выходит за её края (.doc-table-wrap прокручивается вбок). */
 .doc-md-menu {
   position: fixed;
   z-index: 1100;

@@ -64,10 +64,14 @@ import DepartmentsPage from '../../../src/pages/DepartmentsPage'
 import TasksPage from '../../../src/pages/TasksPage'
 // Блок ДГП — только по требованию: стили карточки объекта (ObjectDetailPage.css) не должны задеть другие стенды.
 const DgpStand = lazy(() => import('./dgp-stand.jsx'))
+// «Смета КП / ПЗ» вкладки «Смета» объекта — со своими данными (kp-estimate-stand.jsx).
+const KpEstimateStand = lazy(() => import('./kp-estimate-stand.jsx'))
 // Реестр договоров — так же: его стили (ContractRegistry*.css, MobileCards.css) глобальные.
 const ObjectsPage = lazy(() => import('../../../src/pages/ObjectsPage'))
 const ContractsPage = lazy(() => import('../../../src/pages/ContractsPage'))
 const ContractsHubPage = lazy(() => import('../../../src/pages/ContractsHubPage'))
+// «Дерево договоров» (эксперимент): пример — в самой странице, реальные данные — договоры и заявки стенда.
+const ContractTreePage = lazy(() => import('../../../src/pages/ContractTreePage'))
 // «Проверка КП» — так же: стили страницы и рабочего слоя (workUi.css) не должны задеть другие стенды.
 const KpReviewPage = lazy(() => import('../../../src/pages/KpReviewPage'))
 // Реестр заявок на ДС — так же (DcRequestsPage.css, рабочий слой).
@@ -83,6 +87,8 @@ const ApiKeysStand = lazy(() => import('./api-keys-stand.jsx'))
 // «Организации СУ-10» — так же, со своим «сервером» в памяти (su10-orgs-stand.jsx).
 const Su10OrgsStand = lazy(() => import('./su10-orgs-stand.jsx'))
 const AddUserStand = lazy(() => import('./add-user-stand.jsx'))
+// «Администрирование» целиком — так же (AdminPage.css), пользователи — в admin-stand.jsx.
+const AdminStand = lazy(() => import('./admin-stand.jsx'))
 const AccessRightsStand = lazy(() => import('./access-rights-stand.jsx'))
 const FileListStand = lazy(() => import('./file-list-stand.jsx'))
 // Боковое меню — так же (Sidebar.css: .nav-item и др. глобальные), с темой (переключатель темы в меню).
@@ -120,9 +126,11 @@ const routes = (
     <Route path="/general/departments" element={<DepartmentsPage />} />
     <Route path="/tasks" element={<TasksPage />} />
     <Route path="/stand/dgp" element={<Suspense fallback={null}><DgpStand /></Suspense>} />
+    <Route path="/stand/kp-estimate" element={<Suspense fallback={null}><KpEstimateStand /></Suspense>} />
     <Route path="/stand/api-keys" element={<Suspense fallback={null}><ApiKeysStand /></Suspense>} />
     <Route path="/stand/su10-orgs" element={<Suspense fallback={null}><Su10OrgsStand /></Suspense>} />
     <Route path="/stand/add-user" element={<Suspense fallback={null}><AddUserStand /></Suspense>} />
+    <Route path="/admin" element={<Suspense fallback={null}><AdminStand /></Suspense>} />
     <Route path="/stand/access-rights" element={<Suspense fallback={null}><AccessRightsStand /></Suspense>} />
     <Route path="/stand/file-list" element={<Suspense fallback={null}><FileListStand /></Suspense>} />
     <Route path="/public/tenders" element={<PublicTendersPage />} />
@@ -131,6 +139,7 @@ const routes = (
     <Route path="/general/objects/:objectId" element={<Suspense fallback={null}><ObjectDetailPage /></Suspense>} />
     <Route path="/contracts" element={<Suspense fallback={null}><ContractsHubPage /></Suspense>} />
     <Route path="/contracts/registry" element={<Suspense fallback={null}><ContractsPage /></Suspense>} />
+    <Route path="/contracts/tree" element={<Suspense fallback={null}><ContractTreePage /></Suspense>} />
     <Route path="/kp-review" element={<Suspense fallback={null}><KpReviewPage /></Suspense>} />
     <Route path="/dc-requests" element={<Suspense fallback={null}><DcRequestsPage /></Suspense>} />
     <Route path="/dp-requests" element={<Suspense fallback={null}><DpStand page /></Suspense>} />

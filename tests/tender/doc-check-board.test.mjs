@@ -35,11 +35,10 @@ describe('Заявки на проверку ДП/ДС: правила без б
     assert.deepEqual(boardColumns(true).map(c => c.label), labels)
     assert.deepEqual(boardColumns(false).map(c => c.label), labels)
     assert.ok(boardColumns(true).every(c => c.kind === 'status'))
-    // Заявки в убранном статусе остались в базе: подпись прежняя, колонка для них — не статус (без «+», не принимает).
-    assert.equal(DOC_CHECK_STATUS_LABEL.tax_clause, 'Проверка документов (исключение налоговой оговорки)')
-    assert.deepEqual(extraColumn('tax_clause'), {
-      value: 'tax_clause', label: 'Проверка документов (исключение налоговой оговорки)', className: 'dcs-tax', kind: 'extra',
-    })
+    // «Проверки документов» нет совсем (12.11.2026): ни подписи, ни цвета — статус убран и из базы (миграция 20270202).
+    assert.equal(DOC_CHECK_STATUS_LABEL.tax_clause, undefined)
+    assert.ok(!Object.values(DOC_CHECK_STATUS_LABEL).some(l => /Проверка документов|налогов/.test(l)))
+    // Статус вне справочника не прячет заявку: колонка для него — не статус (без «+», не принимает).
     assert.deepEqual(extraColumn('bogus'), { value: 'bogus', label: 'bogus', className: '', kind: 'extra' })
   })
 
@@ -170,20 +169,21 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
     return r && { status: r.status, sort_order: r.sort_order, color: r.color, archived_at: r.archived_at, labels: r.labels }
   }, id)
 
-  it('доска: колонки, счётчики, карточка как на прежней доске; «Сводки» нет, убранный статус — колонкой без «+»', async () => {
+  it('доска: колонки, счётчики, карточка как на прежней доске; «Сводки» и «Проверки документов» нет, чужой статус — колонкой без «+»', async () => {
     const { page, errors, close } = await openPage()
     try {
-      // dcr-7 стенда — в убранной «Проверке документов»: заявка не пропала, колонка — после статусов, только пока она есть.
-      assert.deepEqual(await page.locator('.dc-column-title').allTextContents(),
-        [...boardColumns(true).map(c => c.label), 'Проверка документов (исключение налоговой оговорки)'])
+      // dcr-7 стенда — статус вне справочника: заявка не пропала, колонка — после статусов, только пока она есть.
+      const titles = await page.locator('.dc-column-title').allTextContents()
+      assert.deepEqual(titles, [...boardColumns(true).map(c => c.label), 'legacy'])
+      assert.ok(!titles.some((t) => /Проверка документов|налогов/.test(t)), titles.join())
       // Архивная и удалённая — не на доске.
       assert.deepEqual(await counts(page), {
-        new: 1, in_progress: 2, edo: 0, signal: 0, accounting: 0, done: 2, awaiting_scan: 1, tax_clause: 1,
+        new: 1, in_progress: 2, edo: 0, signal: 0, accounting: 0, done: 2, awaiting_scan: 1, legacy: 1,
       })
-      assert.equal(await page.locator('.dc-column[data-status="summary"], .dc-card-status').count(), 0)
-      // В убранную колонку не добавляют и не бросают.
-      assert.equal(await column(page, 'tax_clause').locator('.dc-column-add').count(), 0)
-      assert.equal(await column(page, 'tax_clause').getAttribute('data-droppable'), 'false')
+      assert.equal(await page.locator('.dc-column[data-status="summary"], .dc-column[data-status="tax_clause"], .dc-card-status').count(), 0)
+      // В колонку чужого статуса не добавляют и не бросают.
+      assert.equal(await column(page, 'legacy').locator('.dc-column-add').count(), 0)
+      assert.equal(await column(page, 'legacy').getAttribute('data-droppable'), 'false')
       assert.equal(await column(page, 'awaiting_scan').getAttribute('data-droppable'), 'true')
       // Ни в меню карточки, ни в окне заявки убранного статуса среди колонок нет.
       await column(page, 'new').locator('.dc-card[data-id="dcr-1"] .dc-card-more').click()
@@ -358,8 +358,8 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
       assert.equal((await row(page, 'dcr-3')).sort_order, 2)
       assert.deepEqual(await cardsIn(page, 'in_progress'), ['dcr-2', 'dcr-3'])
       assert.equal(await writes(page) - before, 1)
-      // В колонку убранного статуса — ничего не меняется.
-      await column(page, 'in_progress').locator('.dc-card[data-id="dcr-3"]').dragTo(column(page, 'tax_clause').locator('.dc-column-body'))
+      // В колонку статуса вне справочника — ничего не меняется.
+      await column(page, 'in_progress').locator('.dc-card[data-id="dcr-3"]').dragTo(column(page, 'legacy').locator('.dc-column-body'))
       await page.waitForTimeout(150)
       assert.equal((await row(page, 'dcr-3')).status, 'in_progress')
       assert.deepEqual(errors, [])
@@ -433,12 +433,12 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
       assert.equal(await column(page, 'edo').locator('.dc-column-empty').count(), 0, '«Пусто» заглушке не мешает')
       assert.equal(await column(page, 'in_progress').locator('.dc-card[data-id="dcr-2"]').isVisible(), false, 'оригинал поднят')
 
-      // Над колонкой убранного статуса бросить нельзя: заглушка на прежнем месте, отпускание ничего не изменит.
-      await column(page, 'tax_clause').scrollIntoViewIfNeeded()
-      const sum = await column(page, 'tax_clause').boundingBox()
+      // Над колонкой статуса вне справочника бросить нельзя: заглушка на прежнем месте, отпускание ничего не изменит.
+      await column(page, 'legacy').scrollIntoViewIfNeeded()
+      const sum = await column(page, 'legacy').boundingBox()
       await page.mouse.move(sum.x + 100, sum.y + 200, { steps: 3 })
       await page.waitForTimeout(50)
-      assert.equal(await column(page, 'tax_clause').locator('.dc-card-slot').count(), 0)
+      assert.equal(await column(page, 'legacy').locator('.dc-card-slot').count(), 0)
       assert.equal(await column(page, 'in_progress').locator('.dc-card-slot').count(), 1)
 
       await page.keyboard.press('Escape')
@@ -492,8 +492,8 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
         const el = document.querySelector('.dc-board')
         return el.scrollLeft >= el.scrollWidth - el.clientWidth - 1
       }, null, { timeout: 8000 })
-      // Последняя — колонка убранной «Проверки документов» (в ней ещё dcr-7): над ней бросок не принимается.
-      assert.doesNotMatch(await column(page, 'tax_clause').getAttribute('class'), /\bis-over\b/)
+      // Последняя — колонка статуса вне справочника (в ней dcr-7): над ней бросок не принимается.
+      assert.doesNotMatch(await column(page, 'legacy').getAttribute('class'), /\bis-over\b/)
       const scan = await column(page, 'awaiting_scan').locator('.dc-column-body').boundingBox()
       await page.mouse.move(scan.x + scan.width / 2, scan.y + scan.height - 20, { steps: 6 })
       assert.match(await column(page, 'awaiting_scan').getAttribute('class'), /\bis-over\b/)
@@ -846,8 +846,8 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
       // Длинное название колонки — в одну строку и целиком в подсказке.
       const heads = await page.locator('.dc-column-head').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height)))
       assert.equal(new Set(heads).size, 1, `шапки колонок вровень: ${heads}`)
-      assert.equal(await column(page, 'tax_clause').locator('.dc-column-title').getAttribute('title'),
-        'Проверка документов (исключение налоговой оговорки)')
+      assert.equal(await column(page, 'awaiting_scan').locator('.dc-column-title').getAttribute('title'),
+        'Ожидаем скан ДП/ДС, подписанного в бумажном виде')
 
       await page.getByRole('tab', { name: 'Реестр' }).click()
       await page.locator('.dc-table').waitFor()
@@ -939,6 +939,7 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
     try {
       const statuses = await page.locator('.dc-column').evaluateAll((els) => els.map((el) => el.dataset.status))
       assert.ok(!statuses.includes('tax_clause'))
+      assert.ok(!statuses.includes('legacy'))
       assert.ok(!statuses.includes('summary'))
       assert.equal((await counts(page)).in_progress, 2)
       assert.equal(await page.locator('.dc-mode-toggle', { hasText: 'Архив' }).count(), 0)

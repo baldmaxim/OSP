@@ -814,6 +814,41 @@
       "authenticated": [
         "select"
       ]
+    },
+    "kp_estimates": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "kp_estimate_rows": {
+      "authenticated": [
+        "insert",
+        "select"
+      ]
+    },
+    "kp_estimate_marks": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "kp_estimate_allocations": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "kp_estimate_log": {
+      "authenticated": [
+        "select"
+      ]
     }
   },
   "rpc": {
@@ -1121,6 +1156,9 @@
       "authenticated"
     ],
     "bid_company_save": [
+      "authenticated"
+    ],
+    "kp_estimate_activate": [
       "authenticated"
     ]
   }

@@ -17,7 +17,7 @@
 import fs from 'node:fs'
 
 export const SECTION_KEYS = new Set([
-  'objects', 'contacts', 'counterparties', 'general_documents', 'tasks', 'tenders', 'vors', 'tenders_materials',
+  'objects', 'kp_estimate', 'contacts', 'counterparties', 'general_documents', 'tasks', 'tenders', 'vors', 'tenders_materials',
   'cost_plan_docs', 'contracts', 'dc_requests', 'dp_requests', 'dp_requests_create', 'doc_check_requests',
   'doc_check_requests_create', 'analysis_kp', 'rates_registry', 'reports', 'reports_full', 'admin',
 ])

@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 // Меню действий по пользователю (кнопка «три точки»). Опасное действие «Удалить»
 // визуально отделено разделителем. Закрывается кликом снаружи и по Escape.
@@ -8,14 +9,62 @@ import { useState, useRef, useEffect } from 'react'
 // onConfirmEmail — только у тех, кто не подтвердил почту (иначе null).
 // onResetPassword — свой вход (tender.su10.ru): временный пароль от администратора (иначе null).
 // onUnlinkSso — вход через СУ-10: снять связь с учёткой СУ-10 (иначе null).
+//
+// Меню рисуется в <body> (position: fixed), а не внутри ячейки (12.11.2026): таблица пользователей лежит в блоке
+// с горизонтальной прокруткой, и он обрезал меню — при одной-двух строках (поиск) от меню оставалась полоска
+// «Редактировать» и лишняя полоса прокрутки. Встаёт под кнопкой правым краем к её правому краю, не помещается
+// снизу — над ней; при прокрутке едет вместе с кнопкой.
+const GAP = 4
+const EDGE = 8
+
 export default function UserActionsMenu({ status, onEdit, onSetStatus, onDelete, onConfirmEmail = null, onResetPassword = null, onUnlinkSso = null }) {
   const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState(null)
   const rootRef = useRef(null)
+  const btnRef = useRef(null)
+  const popRef = useRef(null)
+
+  useLayoutEffect(() => {
+    if (!open) return undefined
+    let raf = 0
+    const place = () => {
+      raf = 0
+      const btn = btnRef.current
+      const pop = popRef.current
+      if (!btn || !pop) return
+      const r = btn.getBoundingClientRect()
+      // Кнопку унесло прокруткой за край окна — меню закрывается, а не висит отдельно от строки.
+      if (r.bottom < 0 || r.top > window.innerHeight) { setOpen(false); return }
+      const w = pop.offsetWidth
+      const h = pop.offsetHeight
+      const left = Math.round(Math.max(EDGE, Math.min(r.right - w, window.innerWidth - w - EDGE)))
+      const below = r.bottom + GAP
+      const above = r.top - GAP - h
+      const top = Math.round(below + h <= window.innerHeight - EDGE || above < EDGE ? below : above)
+      setPos((p) => (p && p.top === top && p.left === left ? p : { top, left }))
+    }
+    place()
+    const onMove = () => { if (!raf) raf = requestAnimationFrame(place) }
+    window.addEventListener('scroll', onMove, true)
+    window.addEventListener('resize', onMove)
+    return () => {
+      if (raf) cancelAnimationFrame(raf)
+      window.removeEventListener('scroll', onMove, true)
+      window.removeEventListener('resize', onMove)
+    }
+  }, [open])
 
   useEffect(() => {
-    if (!open) return
-    const onDown = (e) => { if (!rootRef.current?.contains(e.target)) setOpen(false) }
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
+    if (!open) return undefined
+    const onDown = (e) => {
+      if (rootRef.current?.contains(e.target) || popRef.current?.contains(e.target)) return
+      setOpen(false)
+    }
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return
+      setOpen(false)
+      btnRef.current?.focus()
+    }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
     return () => {
@@ -35,6 +84,7 @@ export default function UserActionsMenu({ status, onEdit, onSetStatus, onDelete,
   return (
     <div className="adm-menu" ref={rootRef}>
       <button
+        ref={btnRef}
         type="button"
         className={`adm-iconbtn adm-menu-btn ${open ? 'is-open' : ''}`}
         onClick={() => setOpen(o => !o)}
@@ -45,8 +95,14 @@ export default function UserActionsMenu({ status, onEdit, onSetStatus, onDelete,
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
       </button>
-      {open && (
-        <div className="adm-menu-pop" role="menu">
+      {open && createPortal(
+        <div
+          ref={popRef}
+          className="adm-menu-pop"
+          role="menu"
+          // До замера — прозрачное, замер — до отрисовки, мигания нет.
+          style={pos ? { top: pos.top, left: pos.left } : { top: 0, left: 0, opacity: 0, pointerEvents: 'none' }}
+        >
           <button type="button" role="menuitem" className="adm-menu-item" onClick={() => run(onEdit)}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             Редактировать
@@ -88,7 +144,8 @@ export default function UserActionsMenu({ status, onEdit, onSetStatus, onDelete,
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             Удалить
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

@@ -480,6 +480,27 @@
             "deleted_at",
             "created_at"
           ]
+        },
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "edit"
+            ]
+          ],
+          "columns": [
+            "id",
+            "object_id",
+            "counterparty_id",
+            "contract_number",
+            "contract_date",
+            "record_type",
+            "deleted_at",
+            "tender_id",
+            "status",
+            "display_id",
+            "work_name"
+          ]
         }
       ],
       "insert": [
@@ -503,7 +524,7 @@
         }
       ],
       "delete": "admin",
-      "why": "Полное: ContractsPage, ContractDetailPage, PsdcBatchPage, ContractsImportModal, NotificationsContext, счётчик хаба, дерево договоров в карточке контрагента (только при canView(contracts)). Узко: fetchStats отчётов — СПОРНО (грузится для любого V(reports), хотя договорные подвкладки только при reports_full; предлагаю грузить договоры только при reports_full и сузить правило до reports_full); выбор договора заявки на ДС (DcRequestsPage) и договоры заявок в карточке контрагента (loadCounterpartyDcRequests при canView(dc_requests)); сводка «Договор» реестра контрагентов (loadCounterpartyContractSummary); ссылки задач (TasksPage). «Планы затрат» договоры не читают. Запись — решение: E(contracts); СПОРНО: окончательное delete в интерфейсе только isAdmin (handleHardDeleteContract) — предлагаю delete: admin."
+      "why": "Полное: ContractsPage, ContractDetailPage, PsdcBatchPage, ContractsImportModal, NotificationsContext, счётчик хаба, дерево договоров в карточке контрагента (только при canView(contracts)). Узко: fetchStats отчётов — СПОРНО (грузится для любого V(reports), хотя договорные подвкладки только при reports_full; предлагаю грузить договоры только при reports_full и сузить правило до reports_full); выбор договора заявки на ДС (DcRequestsPage) и договоры заявок в карточке контрагента (loadCounterpartyDcRequests при canView(dc_requests)); сводка «Договор» реестра контрагентов (loadCounterpartyContractSummary); ссылки задач (TasksPage). «Планы затрат» договоры не читают. Запись — решение: E(contracts); СПОРНО: окончательное delete в интерфейсе только isAdmin (handleHardDeleteContract) — предлагаю delete: admin. Смета КП / ПЗ объекта (право правки сметы): выбор тендера, подрядчика, договора и ответственного в распределении — только перечисленные колонки."
     },
     "cost_plan_calc_file_log": {
       "read": "sensitive",
@@ -600,6 +621,21 @@
             "status",
             "deleted_at"
           ]
+        },
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "edit"
+            ]
+          ],
+          "columns": [
+            "id",
+            "name",
+            "inn",
+            "status",
+            "deleted_at"
+          ]
         }
       ],
       "insert": [
@@ -636,7 +672,7 @@
         }
       ],
       "delete": "admin",
-      "why": "Читают: CounterpartiesPage, тендеры (реестр, карточка, участники, «Сравнение КП», заявки с сайта), договоры, заявки на ДС, доска ДП/ДС (counterpartyPicker), отчёт «Подрядчики» и «Заявки на ДС» (reports_full), AdminPage; узко (id, name) — победитель во «ВОРах и РД» (tenderWinners), fetchStats отчётов (winner), выбор подрядчика «Добавить расценку» (kpManualRates). Вставка: CounterpartiesPage (+импорт) и WinnerFromBase → createWinnerCounterparty при завершении тендера ОС (без права «Контрагентов», E(tenders), решение 03.11). Безвозвратное удаление — только isAdmin; мягкое — update deleted_at (canEditCp)."
+      "why": "Читают: CounterpartiesPage, тендеры (реестр, карточка, участники, «Сравнение КП», заявки с сайта), договоры, заявки на ДС, доска ДП/ДС (counterpartyPicker), отчёт «Подрядчики» и «Заявки на ДС» (reports_full), AdminPage; узко (id, name) — победитель во «ВОРах и РД» (tenderWinners), fetchStats отчётов (winner), выбор подрядчика «Добавить расценку» (kpManualRates). Вставка: CounterpartiesPage (+импорт) и WinnerFromBase → createWinnerCounterparty при завершении тендера ОС (без права «Контрагентов», E(tenders), решение 03.11). Безвозвратное удаление — только isAdmin; мягкое — update deleted_at (canEditCp). Смета КП / ПЗ объекта (право правки сметы): выбор тендера, подрядчика, договора и ответственного в распределении — только перечисленные колонки."
     },
     "counterparties_inn_backup_2026_09_21": {
       "read": "sensitive",
@@ -1226,11 +1262,15 @@
             [
               "admin",
               "view"
+            ],
+            [
+              "kp_estimate",
+              "edit"
             ]
           ]
         }
       ],
-      "why": "services/employees.js fetchEmployees: TasksPage, DcRequestsPage, DocCheckRequestsPage, CounterpartyContracts (карточка контрагента), SupplyPricingPanel (карточка тендера и страница снабжения), DpRecipientsModal (право admin)."
+      "why": "services/employees.js fetchEmployees: TasksPage, DcRequestsPage, DocCheckRequestsPage, CounterpartyContracts (карточка контрагента), SupplyPricingPanel (карточка тендера и страница снабжения), DpRecipientsModal (право admin). Смета КП / ПЗ объекта (право правки сметы): выбор тендера, подрядчика, договора и ответственного в распределении — только перечисленные колонки."
     },
     "employees": {
       "read": "sensitive",
@@ -2964,6 +3004,18 @@
               "view"
             ]
           ]
+        },
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "edit"
+            ]
+          ],
+          "columns": [
+            "tender_id",
+            "counterparty_id"
+          ]
         }
       ],
       "insert": [
@@ -2987,7 +3039,7 @@
           ]
         }
       ],
-      "why": "Вложено в TENDER_LIST_SELECT, карточку, TENDER_WINNERS_SELECT (VorsPage); отчёт «Подрядчики». Пишет окно завершения тендера (основной вид, canEditTenders = E(tenders)): delete+insert."
+      "why": "Вложено в TENDER_LIST_SELECT, карточку, TENDER_WINNERS_SELECT (VorsPage); отчёт «Подрядчики». Пишет окно завершения тендера (основной вид, canEditTenders = E(tenders)): delete+insert. Смета КП / ПЗ объекта (право правки сметы): выбор тендера, подрядчика, договора и ответственного в распределении — только перечисленные колонки."
     },
     "tenders": {
       "read": "reference",
@@ -3077,6 +3129,23 @@
             "tender_type",
             "created_at",
             "status"
+          ]
+        },
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "edit"
+            ]
+          ],
+          "columns": [
+            "id",
+            "object_id",
+            "public_tender_number",
+            "parent_tender_id",
+            "work_description",
+            "status",
+            "deleted_at"
           ]
         }
       ],
@@ -3187,7 +3256,7 @@
         }
       ],
       "delete": "admin",
-      "why": "Чтение полное: реестры (TendersPage, онлайн-подписка select *), карточка, ПЗ, «Проверка КП», сводка, «ВОРы и РД» (VorsPage, подписка select *), отчёты (fetchStats для любого V(reports)); узко: форма/реестр договоров (ContractsPage, ContractDetailPage tenders(work_description, public_tender_number)), история участия в карточке контрагента, ссылки задач (TasksPage), выбор тендера «Добавить расценку» (kpManualRates). NotificationsContext — при V(tenders) и E(tenders_materials) (последний ⊂ V(tenders_materials) обычно). Вставка: реестр (canEditTenders); у тендеров на материалы — «+ Добавить тендер» (tender_type=materials). Правка: E(tenders) — всё; E(vors) — VorsPage (статус, подразделение, СТО, ссылка, срок ВОР) и подразделение в реестре (canEditVorDivision); E(tenders_materials) — строка реестра материалов (приоритет, ответственный снабжения, сроки КП, ссылка на КП, статус, примечание, восстановление из «Удалённых»); V(tenders) — CostPlansPage без гейта (статус, ответственный, ссылка, сроки, примечание ПЗ; folder_path там же — только E(tenders)); роль economist — «ТГ» (canToggleTgPublished = canEditTenders || role economist; роли engineer в коде нет). Синхронизация work_description при чтении материалов (TendersPage fetchTenders) — дефект, не дана. Удаление (и мягкое, и окончательное) — isAdmin; мягкое — update deleted_at. СПОРНО: (1) вариант E(tenders_materials) по колонкам не отличает тендер на материалы от основного (status, notes, deleted_at основного тендера тоже пройдут; вставка — с любым tender_type) — предлагаю триггер/правило базы по tender_type=materials, а deleted_at можно убрать (восстановление из «Удалённых» у снабжения редкое); (2) роли engineer для «ТГ» в коде нет — дано только economist."
+      "why": "Чтение полное: реестры (TendersPage, онлайн-подписка select *), карточка, ПЗ, «Проверка КП», сводка, «ВОРы и РД» (VorsPage, подписка select *), отчёты (fetchStats для любого V(reports)); узко: форма/реестр договоров (ContractsPage, ContractDetailPage tenders(work_description, public_tender_number)), история участия в карточке контрагента, ссылки задач (TasksPage), выбор тендера «Добавить расценку» (kpManualRates). NotificationsContext — при V(tenders) и E(tenders_materials) (последний ⊂ V(tenders_materials) обычно). Вставка: реестр (canEditTenders); у тендеров на материалы — «+ Добавить тендер» (tender_type=materials). Правка: E(tenders) — всё; E(vors) — VorsPage (статус, подразделение, СТО, ссылка, срок ВОР) и подразделение в реестре (canEditVorDivision); E(tenders_materials) — строка реестра материалов (приоритет, ответственный снабжения, сроки КП, ссылка на КП, статус, примечание, восстановление из «Удалённых»); V(tenders) — CostPlansPage без гейта (статус, ответственный, ссылка, сроки, примечание ПЗ; folder_path там же — только E(tenders)); роль economist — «ТГ» (canToggleTgPublished = canEditTenders || role economist; роли engineer в коде нет). Синхронизация work_description при чтении материалов (TendersPage fetchTenders) — дефект, не дана. Удаление (и мягкое, и окончательное) — isAdmin; мягкое — update deleted_at. СПОРНО: (1) вариант E(tenders_materials) по колонкам не отличает тендер на материалы от основного (status, notes, deleted_at основного тендера тоже пройдут; вставка — с любым tender_type) — предлагаю триггер/правило базы по tender_type=materials, а deleted_at можно убрать (восстановление из «Удалённых» у снабжения редкое); (2) роли engineer для «ТГ» в коде нет — дано только economist. Смета КП / ПЗ объекта (право правки сметы): выбор тендера, подрядчика, договора и ответственного в распределении — только перечисленные колонки."
     },
     "user_roles": {
       "read": "sensitive",
@@ -3355,6 +3424,221 @@
         }
       ],
       "why": "CounterpartiesPage (вкладка «Виды работ», правка — canEditCp); отчёт «Подрядчики» ContractorStats (только при reports_full)."
+    },
+    "kp_estimates": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "view"
+            ],
+            [
+              "kp_estimate",
+              "edit"
+            ],
+            [
+              "objects",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Смета КП / ПЗ во вкладке «Смета» карточки объекта (components/kpEstimate, services/kpEstimate.js): читают «Объекты» или «Объекты: смета КП/ПЗ», пишет право правки сметы; охват объектов — правило базы (миграция 20270215). Удалить действующую — только администратор (правило базы); update — файлы и паспорт черновика."
+    },
+    "kp_estimate_rows": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "view"
+            ],
+            [
+              "kp_estimate",
+              "edit"
+            ],
+            [
+              "objects",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": "none",
+      "delete": "none",
+      "why": "Смета КП / ПЗ во вкладке «Смета» карточки объекта (components/kpEstimate, services/kpEstimate.js): читают «Объекты» или «Объекты: смета КП/ПЗ», пишет право правки сметы; охват объектов — правило базы (миграция 20270215). Строки пишутся только в черновик, потом не меняются."
+    },
+    "kp_estimate_marks": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "view"
+            ],
+            [
+              "kp_estimate",
+              "edit"
+            ],
+            [
+              "objects",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Смета КП / ПЗ во вкладке «Смета» карточки объекта (components/kpEstimate, services/kpEstimate.js): читают «Объекты» или «Объекты: смета КП/ПЗ», пишет право правки сметы; охват объектов — правило базы (миграция 20270215). Отметки: примечание, заливка, актуальный объём, ответственный."
+    },
+    "kp_estimate_allocations": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "view"
+            ],
+            [
+              "kp_estimate",
+              "edit"
+            ],
+            [
+              "objects",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Смета КП / ПЗ во вкладке «Смета» карточки объекта (components/kpEstimate, services/kpEstimate.js): читают «Объекты» или «Объекты: смета КП/ПЗ», пишет право правки сметы; охват объектов — правило базы (миграция 20270215). Распределения: тендер, подрядчик, договор, объёмы."
+    },
+    "kp_estimate_log": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "view"
+            ],
+            [
+              "kp_estimate",
+              "edit"
+            ],
+            [
+              "objects",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Смета КП / ПЗ во вкладке «Смета» карточки объекта (components/kpEstimate, services/kpEstimate.js): читают «Объекты» или «Объекты: смета КП/ПЗ», пишет право правки сметы; охват объектов — правило базы (миграция 20270215). История пишут только триггеры базы."
     }
   },
   "rpc": {
@@ -4306,6 +4590,21 @@
       "read": "sensitive",
       "call": "none",
       "why": "Вспомогательная для правил базы, интерфейс не вызывает."
+    },
+    "kp_estimate_activate": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Смета КП / ПЗ: черновик → действующая версия с переносом отметок (ObjectDetailPage → KpEstimateImportDialog)."
     }
   }
 }

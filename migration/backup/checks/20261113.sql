@@ -21,9 +21,11 @@ checks(n, ok, what) as (
   select 2, (select count(*) = 4 from cols where column_name in ('due_date', 'priority', 'color', 'archived_at')),
          'doc_check_requests: due_date, priority, color, archived_at'
   union all
+  -- Статус tax_clause, добавленный этой миграцией, убрала 20270202 — поэтому проверяется только список статусов доски;
+  -- что миграции нет, видно по строкам 1 и 2.
   select 3, exists (select 1 from pg_constraint where conrelid = 'public.doc_check_requests'::regclass
-                      and conname = 'doc_check_requests_status_check' and pg_get_constraintdef(oid) like '%tax_clause%'),
-         'статус «Проверка документов (исключение налоговой оговорки)»'
+                      and conname = 'doc_check_requests_status_check' and pg_get_constraintdef(oid) like '%awaiting_scan%'),
+         'список статусов доски (tax_clause в нём — до 20270202)'
   union all
   select 4, (select relrowsecurity from pg_class where oid = 'public.doc_check_requests'::regclass),
          'doc_check_requests: RLS на месте'

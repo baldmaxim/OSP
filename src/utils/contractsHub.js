@@ -4,6 +4,8 @@
 
 export const CONTRACTS_HUB_PATH = '/contracts'
 export const CONTRACTS_REGISTRY_PATH = '/contracts/registry'
+// «Дерево договоров» — эксперимент 12.11.2026, только администратору; в CONTRACT_SECTIONS не входит (своего права нет).
+export const CONTRACTS_TREE_PATH = '/contracts/tree'
 
 // Подписи счётчиков: «1 новая», «3 новые», «5 новых»; «в работе» не склоняется.
 const IN_WORK = ['в работе', 'в работе', 'в работе']

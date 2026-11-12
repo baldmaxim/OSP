@@ -163,6 +163,9 @@ export const CATEGORY_RULES = {
   objects: {
     cost_plan_direct_costs: [['cost_plan_docs', 'edit']],
     cost_plan_kp_before_transfers: [['cost_plan_docs', 'edit']],
+    // Исходные файлы сметы КП / ПЗ (вкладка «Смета», 20270215): загружает тот, кто загружает смету, — право kp_estimate.
+    kp_estimate_kp: [['kp_estimate', 'edit']],
+    kp_estimate_pz: [['kp_estimate', 'edit']],
   },
 }
 const rulesFor = (table, category) => {

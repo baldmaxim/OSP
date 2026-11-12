@@ -127,7 +127,8 @@ describe('столбец «.md» в «Документах» карточки о
       for (const t of ['objects', 'object_documents', 's3_documents']) window.__fakeTouch(t)
       window.__navigate('/general/objects/o-1?tab=documents')
     }, [docs, MD_FILE, missing])
-    await page.locator(`tr[data-doc-id="${docs.some((d) => d.id === 'gc') ? 'gc' : docs[0].id}"]`).waitFor({ timeout: 60000 })
+    // Строка таблицы или карточка телефона — у обеих data-doc-id.
+    await page.locator(`[data-doc-id="${docs.some((d) => d.id === 'gc') ? 'gc' : docs[0].id}"]`).first().waitFor({ timeout: 60000 })
     return { page, errors, dialogs, close: () => context.close().catch(() => {}) }
   }
 
@@ -458,19 +459,67 @@ describe('столбец «.md» в «Документах» карточки о
     }
   })
 
-  it('узкое окно: столбец на месте, таблица прокручивается в своей рамке', async () => {
-    const { page, errors, close } = await open({ viewport: { width: 420, height: 800 } })
+  it('телефон: документы карточками — название целиком, «.md» у каждого документа, страница вбок не едет', async () => {
+    const { page, errors, close } = await open({ viewport: { width: 390, height: 800 } })
     try {
+      assert.equal(await page.locator('.doc-table').count(), 0, 'таблицы на телефоне нет')
+      assert.equal(await page.locator('.odc-card').count(), DOCS.length, 'договор, приложения любого уровня, ДС, приложение ДС')
       assert.equal(await page.locator('.doc-md').count(), DOCS.length)
-      const { pageWide, tableWide } = await page.evaluate(() => ({
-        pageWide: document.documentElement.scrollWidth > window.innerWidth,
-        tableWide: document.querySelector('.doc-table').offsetWidth >= 616,
+      assert.equal(await page.locator('.odc-zip .doc-md-zip').count(), 1, '«Скачать все» — одна, над карточками')
+      // Название договора не обрезается многоточием, номер и дата — своей строкой, а не по букве.
+      const gc = page.locator('.odc-card[data-doc-id="gc"]')
+      assert.equal(await gc.locator(':scope > .odc-top .odc-name').innerText(), 'Договор генподряда')
+      assert.equal(await gc.locator(':scope > .odc-top .odc-meta').innerText(), '№ ГП-7')
+      assert.equal(await page.locator('.odc-card[data-doc-id="gc-att"] > .odc-top .odc-num').innerText(), 'Прил. 1')
+      // У каждой карточки ничего не вылезает за край экрана.
+      const overflow = await page.evaluate(() => ({
+        page: document.documentElement.scrollWidth > window.innerWidth,
+        cards: [...document.querySelectorAll('.odc-card')].filter((c) => c.getBoundingClientRect().right > window.innerWidth).length,
+        // Блок текста карточки (название, номер, примечание) — не узкая полоска, даже у приложения второго уровня;
+        // подписи файлов («Редактируемый») — целиком.
+        narrow: [...document.querySelectorAll('.odc-head')].filter((el) => el.getBoundingClientRect().width < 170).length,
+        cut: [...document.querySelectorAll('.odc-file-label')].filter((el) => el.scrollWidth > el.clientWidth).length,
       }))
-      assert.equal(pageWide, false, 'сама страница вбок не едет')
-      assert.equal(tableWide, true)
+      assert.deepEqual(overflow, { page: false, cards: 0, narrow: 0, cut: 0 })
+      // Приложения сворачиваются той же кнопкой, что и в таблице (общее состояние).
+      await gc.locator(':scope > .odc-foot .odc-toggle').click()
+      assert.equal(await page.locator('.odc-card[data-doc-id="gc-att"]').count(), 0)
+      await gc.locator(':scope > .odc-foot .odc-toggle').click()
+      assert.equal(await page.locator('.odc-card[data-doc-id="gc-att-att"]').count(), 1)
+      // Загрузка .md — из карточки, как из ячейки таблицы.
+      await choose(page, () => cell(page, 'gc-att').locator('button').click(), md('Приложение 1.md'))
+      await cell(page, 'gc-att').locator('.doc-md-yes').waitFor({ timeout: 10000 })
       assert.deepEqual(errors, [])
     } finally {
       await close()
+    }
+  })
+
+  it('планшет и узкий ноутбук: таблица прокручивается в своей рамке, «№ / дата» и «Описание ДС» не сжимаются до букв', async () => {
+    for (const width of [700, 900]) {
+      const { page, errors, close } = await open({ viewport: { width, height: 800 } })
+      try {
+        assert.equal(await page.locator('.odc-card').count(), 0, `${width}: карточки — только на телефоне`)
+        assert.equal(await page.locator('.doc-md').count(), DOCS.length)
+        const m = await page.evaluate(() => {
+          const col = (table, title) => {
+            const i = [...table.querySelectorAll('thead th')].findIndex((th) => th.textContent === title)
+            return table.querySelector('thead tr').cells[i].offsetWidth
+          }
+          const [contract, agreements] = document.querySelectorAll('.doc-table')
+          return {
+            pageWide: document.documentElement.scrollWidth > window.innerWidth,
+            numberDate: col(contract, '№ / дата'),
+            description: col(agreements, 'Описание ДС'),
+          }
+        })
+        assert.equal(m.pageWide, false, `${width}: сама страница вбок не едет`)
+        assert.ok(m.numberDate >= 150, `${width}: «№ / дата» — ${m.numberDate} px`)
+        assert.ok(m.description >= 150, `${width}: «Описание ДС» — ${m.description} px`)
+        assert.deepEqual(errors, [])
+      } finally {
+        await close()
+      }
     }
   })
 })

@@ -18,17 +18,12 @@ export const DOC_CHECK_STATUSES = [
   { value: 'awaiting_scan', label: 'Ожидаем скан ДП/ДС, подписанного в бумажном виде', className: 'dcs-scan' },
 ]
 
-// Убранные колонки (10.11.2026, решение пользователя: «Сводку по ДП» и «Проверку документов (исключение налоговой
-// оговорки)» удалить вообще). Статус tax_clause остаётся в базе (ограничение 20261113 не трогаем) только ради подписи у
-// заявок, которые в нём ещё стоят: такую заявку не предлагают ни колонкой, ни выбором, бросить в неё нельзя. Пока она
-// есть на доске, для неё рисуется колонка без «+» и без приёма карточек (как для любого статуса вне справочника); перенесли
-// или отправили в архив последнюю — колонка пропала сама. Разово: migration/data/20261110_doc_check_tax_clause_archive.sql.
-// «Ожидаем скан» остаётся колонкой (11.11.2026, решение пользователя).
-export const RETIRED_DOC_CHECK_STATUSES = [
-  { value: 'tax_clause', label: 'Проверка документов (исключение налоговой оговорки)', className: 'dcs-tax' },
-]
-export const DOC_CHECK_STATUS_LABEL = Object.fromEntries([...DOC_CHECK_STATUSES, ...RETIRED_DOC_CHECK_STATUSES].map(s => [s.value, s.label]))
-export const DOC_CHECK_STATUS_CLASS = Object.fromEntries([...DOC_CHECK_STATUSES, ...RETIRED_DOC_CHECK_STATUSES].map(s => [s.value, s.className]))
+// «Сводки по ДП» и «Проверки документов (исключение налоговой оговорки)» нет (решение пользователя 10.11.2026, повторено
+// 12.11: «полностью удали»). Статуса tax_clause нет и в базе: миграция 20270202 убрала 106 заявок в нём — все были копиями
+// заявок из «Завершено» (дубли — в «Удалённых») — и исключила его из списка статусов. «Ожидаем скан» остаётся колонкой
+// (11.11.2026, решение пользователя).
+export const DOC_CHECK_STATUS_LABEL = Object.fromEntries(DOC_CHECK_STATUSES.map(s => [s.value, s.label]))
+export const DOC_CHECK_STATUS_CLASS = Object.fromEntries(DOC_CHECK_STATUSES.map(s => [s.value, s.className]))
 
 // Статусы, доступные в базе: без колонок 20261113 — прежние семь (сейчас список один и тот же).
 export function availableStatuses(hasBoardFields) {
@@ -43,7 +38,7 @@ export function boardColumns(hasBoardFields) {
   return availableStatuses(hasBoardFields).map(s => ({ ...s, kind: 'status' }))
 }
 
-// Колонка для статуса вне справочника (убранный или после ручной правки в базе): не теряем заявку, но и не принимаем в неё.
+// Колонка для статуса вне справочника (база без ограничения статусов, ручная правка): не теряем заявку, но и не принимаем в неё.
 export function extraColumn(value) {
   return { value, label: DOC_CHECK_STATUS_LABEL[value] || value, className: DOC_CHECK_STATUS_CLASS[value] || '', kind: 'extra' }
 }

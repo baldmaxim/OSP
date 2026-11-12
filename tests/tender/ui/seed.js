@@ -1425,7 +1425,8 @@ if (params.get('docCheck') === '1') {
     // Исполнитель заблокирован: в справочнике сотрудников (employee_directory) его нет.
     req('dcr-5', { status: 'done', counterparty_id: 'cp-2', object_id: 'obj-2', doc_number: '5', sort_order: 2, assignee_ids: ['user-blocked'] }),
     req('dcr-6', { status: 'awaiting_scan', doc_type: 'dp', counterparty_id: 'cp-3', object_id: 'obj-2', doc_number: 'СУ2-006' }),
-    req('dcr-7', { status: 'tax_clause', doc_type: 'dp', doc_number: 'СУ2-007', color: 'yellow', labels: ['Переподписание'] }),
+    // Статус вне справочника (в базе Яндекса с 20270202 невозможен — ограничение; осталась страховка доски): заявка не прячется.
+    req('dcr-7', { status: 'legacy', doc_type: 'dp', doc_number: 'СУ2-007', color: 'yellow', labels: ['Переподписание'] }),
     req('dcr-8', { status: 'done', doc_type: 'dp', doc_number: 'СУ2-008', archived_at: '2026-10-25T10:00:00Z' }),
     req('dcr-9', { doc_number: '9', deleted_at: '2026-10-26T10:00:00Z' }),
   ]
@@ -1457,7 +1458,7 @@ if (params.get('docCheck') === '1') {
   // docCheckMany=N — ещё N заявок, большая часть в «Завершено», с примечанием и исполнителем: окно заявки не должно
   // перерисовывать всю доску (03.11: на сайте 844 заявки, окно открывалось с задержкой).
   for (let n = 1; n <= Number(params.get('docCheckMany') || 0); n++) {
-    const status = n % 8 === 0 ? 'tax_clause' : n % 5 === 0 ? 'in_progress' : 'done'
+    const status = n % 8 === 0 ? 'awaiting_scan' : n % 5 === 0 ? 'in_progress' : 'done'
     fdb.doc_check_requests.push(req(`dcr-many-${n}`, { status, sort_order: n, doc_number: String(n),
       counterparty_id: `cp-${(n % 3) + 1}`, object_id: n % 2 ? 'obj-1' : 'obj-2', notes: `ООО Подрядчик ${n % 40} / ДС № ${n}`,
       assignee_ids: n % 3 ? ['user-2'] : ['user-3'], manual_assignees: n % 4 ? [] : ['Сидорова Анна Павловна'],
@@ -1533,7 +1534,7 @@ if (params.get('docCheck') === '1') {
   if (params.get('docCheckLegacy') === '1') {
     const board = ['assignee_ids', 'due_date', 'priority', 'color', 'labels', 'archived_at']
     for (const r of fdb.doc_check_requests) for (const k of [...board, ...card]) delete r[k]
-    fdb.doc_check_requests = fdb.doc_check_requests.filter((r) => r.status !== 'tax_clause')
+    fdb.doc_check_requests = fdb.doc_check_requests.filter((r) => r.status !== 'legacy')
     window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}),
       doc_check_requests: [...board, ...card, 'request_number'] }
     noCardTables()

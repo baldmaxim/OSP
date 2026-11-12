@@ -1,0 +1,252 @@
+/* «Документы» карточки объекта на телефоне — карточками вместо таблицы (ObjectDocCards.jsx). */
+.odc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.5rem;
+}
+
+.odc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  min-width: 0;
+  padding: 0.625rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+
+.odc-card.is-linked {
+  background: var(--primary-light);
+  box-shadow: inset 3px 0 0 var(--primary-color);
+}
+
+/* Приложение — внутри карточки родителя, синяя полоса слева, как у строк-приложений таблицы. Поля меньше: каждый
+   уровень вложенности отнимает ширину у текста. */
+.odc-card-att {
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem 0.5rem 0.5625rem;
+  background: rgba(37, 99, 235, 0.03);
+  border-left: 3px solid #2563eb;
+  border-radius: 6px;
+}
+[data-theme='dark'] .odc-card-att {
+  background: rgba(96, 165, 250, 0.06);
+  border-left-color: #60a5fa;
+}
+
+/* Сверху — название, номер и примечание; справа в углу — «Редактировать» и «Удалить». */
+.odc-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.odc-head {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.odc-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  min-width: 0;
+  font-size: 0.9375rem;
+  line-height: 1.35;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.odc-card-att .odc-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.odc-num {
+  flex-shrink: 0;
+  padding: 0.0625rem 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.1);
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+[data-theme='dark'] .odc-num {
+  color: #93c5fd;
+  background: rgba(96, 165, 250, 0.15);
+}
+
+.odc-name { min-width: 0; }
+
+.odc-muted { color: var(--text-tertiary); font-weight: 400; font-style: italic; }
+
+.odc-meta {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.odc-notes {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* Три файла в ряд: подпись сверху, значки под ней. */
+.odc-files {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.375rem;
+}
+.odc-files.has-md {
+  grid-template-columns: minmax(0, 1fr) 2.75rem minmax(0, 1fr);
+}
+
+.odc-file {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+  min-width: 0;
+  padding: 0.25rem 0.375rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+.odc-file-md { align-items: center; }
+
+.odc-file-label {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.odc-file .muted {
+  font-size: 0.8125rem;
+  line-height: 2rem;
+  color: var(--text-tertiary);
+}
+
+/* Значки файла — под палец: 32 px вместо 24 в таблице. */
+.odc-file .doc-cell-file-compact { justify-content: flex-start; gap: 0.125rem; }
+.odc-file .doc-cell-file-btn { width: 32px; height: 32px; }
+.odc-file .doc-cell-file-btn svg { width: 16px; height: 16px; }
+.odc-file .doc-cell-file-icon-compact { width: 16px; height: 16px; }
+.odc-file .doc-md { min-height: 2rem; }
+.odc-file .doc-md-btn { min-width: 32px; min-height: 32px; }
+
+.odc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.odc-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 32px;
+  padding: 0 0.5rem 0 0.375rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.odc-chevron { width: 0.75rem; text-align: center; font-size: 0.75rem; }
+
+.odc-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: -0.125rem -0.125rem 0 0;
+}
+
+.odc-add {
+  margin-left: auto;
+  min-height: 32px;
+  padding: 0 0.625rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #2563eb;
+  background: transparent;
+  border: 1px dashed rgba(37, 99, 235, 0.4);
+  border-radius: 6px;
+  cursor: pointer;
+}
+[data-theme='dark'] .odc-add { color: #93c5fd; border-color: rgba(96, 165, 250, 0.45); }
+
+.odc-icon {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.odc-icon-danger { color: #dc2626; }
+[data-theme='dark'] .odc-icon-danger { color: #f87171; }
+
+.odc-toggle:focus-visible,
+.odc-add:focus-visible,
+.odc-icon:focus-visible {
+  outline: 2px solid var(--ui-link, #2563eb);
+  outline-offset: 1px;
+}
+
+.odc-children {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* «Скачать все» файлы .md объекта — над карточками (в таблице она стоит над столбцом «.md»). */
+.odc-zip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+.odc-zip .doc-md-zip {
+  min-height: 36px;
+  padding: 0 0.75rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.odc-zip .doc-md-zip:disabled { color: var(--text-tertiary); cursor: default; }
