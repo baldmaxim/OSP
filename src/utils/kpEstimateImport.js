@@ -46,6 +46,23 @@ export const codeText = (v) => (typeof v === 'number' ? posText(v) : text(v))
 // Ключ наименования: без регистра, ё, лишних пробелов и знаков по краям — для связи строк при новой версии файла.
 export const nameKey = (s) => norm(s).replace(/["«»'`]/g, '').replace(/\s*([,.;:()])\s*/g, '$1')
 
+// Ключ строки в базе — не длиннее 1000 знаков (kp_estimate_rows_row_key_check). У К14 наименования видеосерверов —
+// по 1,2–1,4 тыс. знаков, ключ «номер + наименование» в базу не проходил. Длинный ключ — начало и отпечаток всего
+// ключа: тот же текст даёт тот же ключ (перенос отметок на новую версию файла), короткие ключи — как раньше.
+export const ROW_KEY_MAX = 400
+function keyHash(s) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    h1 = Math.imul(h1 ^ c, 2654435761)
+    h2 = Math.imul(h2 ^ c, 1597334677)
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+  return (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0')
+}
+export const fitRowKey = (key) => (key.length <= ROW_KEY_MAX ? key : `${key.slice(0, ROW_KEY_MAX - 18)}~${keyHash(key)}`)
+
 // Допуск сверки формул: копейка или миллионная доля суммы (у К14 J = G × O считается Excel в double).
 const close = (a, b) => Math.abs((a || 0) - (b || 0)) <= Math.max(0.011, Math.abs(b || 0) * 1e-9)
 
@@ -472,7 +489,7 @@ export function buildEstimateRows({ kp = null, pz = null, kpFileName = '', pzFil
   // Ключ строки — для переноса отметок на новую версию файла: номер позиции + наименование (+ код для строк без номера).
   const seen = new Map()
   for (const r of rows) {
-    let key = r.pos_no ? `p:${r.pos_no}|${nameKey(r.name)}` : `c:${r.code || ''}|${nameKey(r.name)}|${r.kind}`
+    let key = fitRowKey(r.pos_no ? `p:${r.pos_no}|${nameKey(r.name)}` : `c:${r.code || ''}|${nameKey(r.name)}|${r.kind}`)
     const n = (seen.get(key) || 0) + 1
     seen.set(key, n)
     if (n > 1) key += `#${n}`

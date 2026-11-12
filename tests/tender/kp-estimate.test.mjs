@@ -15,7 +15,7 @@ import { createRequire } from 'node:module'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import { sampleKpWorkbook, samplePzWorkbook, SAMPLE_TOTAL } from './lib/kpEstimateSample.mjs'
-import { buildEstimateRows, detectEstimateWorkbook, masteringToAllocations, parseKpWorkbook, parsePzWorkbook } from '../../src/utils/kpEstimateImport.js'
+import { buildEstimateRows, detectEstimateWorkbook, fitRowKey, masteringToAllocations, parseKpWorkbook, parsePzWorkbook, ROW_KEY_MAX } from '../../src/utils/kpEstimateImport.js'
 import {
   buildTree, collapseToLevel, computeStates, groupStatus, linkedKpIds, linkedPzIds, markPayload, planTenderAllocation, positionState,
   rowMatchesFilters, sectionTree, visibleRowIds, EMPTY_FILTERS,
@@ -77,6 +77,28 @@ describe('смета КП / ПЗ: разбор файлов', () => {
     assert.equal(pz.positions.length, 9)
   })
 
+  it('длинное наименование: ключ строки не длиннее предела базы, тот же текст — тот же ключ', () => {
+    // К14: у видеосерверов SecurOS наименование 1,2–1,4 тыс. знаков — ключ «номер + наименование» база не пускала (≤ 1000).
+    const tail = ' Специализированный 209 канальный видеосервер для записи и воспроизведения'.repeat(20)
+    const a = `p:2939|видеосервер securos-ivs-nvr-industrial-a0.gapxhlpd${tail}`
+    const b = `p:2940|видеосервер securos-ivs-nvr-industrial-a0.gapxhlpe${tail}`
+    assert.ok(a.length > 1000)
+    assert.ok(fitRowKey(a).length <= ROW_KEY_MAX)
+    assert.equal(fitRowKey(a), fitRowKey(a))
+    assert.notEqual(fitRowKey(a), fitRowKey(b), 'отличие в середине наименования — другой ключ')
+    assert.notEqual(fitRowKey(a), fitRowKey(`${a}.`), 'отличие в конце — тоже')
+    assert.equal(fitRowKey('p:3|стена'), 'p:3|стена', 'короткий ключ — как раньше')
+    const { kp, pz } = sample()
+    const positions = kp.items.filter((it) => it.pos)
+    for (const it of positions.slice(0, 2)) it.name = `Видеосервер${tail}`
+    const { rows } = buildEstimateRows({ kp, pz })
+    const longRows = rows.filter((r) => r.name.length > 1000)
+    assert.equal(longRows.length, 2)
+    assert.ok(rows.every((r) => r.row_key.length <= ROW_KEY_MAX + 4), 'все ключи проходят ограничение базы')
+    assert.equal(new Set(rows.map((r) => r.row_key)).size, rows.length)
+    assert.deepEqual(buildEstimateRows({ kp, pz }).rows.map((r) => r.row_key), rows.map((r) => r.row_key), 'та же книга — те же ключи')
+  })
+
   it('расхождение формулы видно до загрузки; книга без формул — вложенность по кодам', () => {
     const wb = reread(sampleKpWorkbook(XLSX))
     const ws = wb.Sheets['Комм. затраты']
@@ -124,6 +146,8 @@ describe('смета КП / ПЗ: разбор файлов', () => {
       assert.ok(Math.abs(total.commTotal - 15800025574.65) < 0.02, 'итог сметы ПЗ — как в «Сводке» (с округлением)')
       assert.ok(Math.abs(total.direct - 11981170163.07) < 0.02, 'прямые затраты — как в «Паспорте»')
       assert.ok(JSON.stringify(built.rows).length < 3_500_000, 'строки без повторов названия раздела')
+      assert.equal(built.rows.filter((r) => r.name.length > 1000).length, 3, 'видеосерверы SecurOS — наименования длиннее 1000 знаков')
+      assert.ok(built.rows.every((r) => r.row_key.length <= 1000), 'ключи строк проходят kp_estimate_rows_row_key_check')
     })
 })
 
