@@ -1,4 +1,4 @@
-// «Отчёты» в настоящем браузере: две вкладки с подвкладками («Тендеры», «Договоры» — обзор и заявки на ДС) и подвкладка
+// «Отчёты» в настоящем браузере: две вкладки с подвкладками («Тендеры», «Договоры» — обзор, заявки на ДС, заключение ДП, проверка ДП/ДС) и подвкладка
 // «Коммерческие предложения» — загрузка, проверка и очередь КП. Данные — стенд (tests/tender/ui, kpStats=1):
 // 360 файлов КП за 120 дней, по 3 в день, каждый седьмой — гарантийный отдел.
 import { describe, it, before, after } from 'node:test'
@@ -37,7 +37,7 @@ describe('Отчёты: вкладки «Тендеры», «Договоры»,
   const kpRequests = (page) => page.evaluate(() => window.__supabaseStats.requests
     .filter((r) => r.table === 'tender_proposal_files').length)
 
-  it('две вкладки; в «Тендерах» — обзор, КП, подрядчики, материалы, планы затрат, ВОРы; в «Договорах» — обзор, заявки на ДС', async () => {
+  it('две вкладки; в «Тендерах» — обзор, КП, подрядчики, материалы, планы затрат, ВОРы; в «Договорах» — обзор, заявки на ДС, заключение ДП, проверка ДП/ДС', async () => {
     const { context, page, errors } = await open()
     try {
       assert.deepEqual(await page.locator('.reports-tab .reports-tab-label').allInnerTexts(), ['Тендеры', 'Договоры'])
@@ -53,7 +53,7 @@ describe('Отчёты: вкладки «Тендеры», «Договоры»,
       await page.locator('.reports-tab', { hasText: 'Договоры' }).click()
       await page.locator('h3', { hasText: 'По ответственным юристам' }).waitFor()
       const contractSubs = await page.locator('.reports-subtab').evaluateAll((els) => els.map((e) => e.childNodes[0].textContent))
-      assert.deepEqual(contractSubs, ['Обзор', 'Заявки на ДС'])
+      assert.deepEqual(contractSubs, ['Обзор', 'Заявки на ДС', 'Заключение ДП', 'Проверка ДП/ДС'])
       assert.deepEqual(errors, [])
     } finally {
       await context.close()

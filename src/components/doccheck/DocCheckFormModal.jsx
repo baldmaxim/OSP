@@ -52,6 +52,14 @@ const EMPTY = {
   assignee_ids: [], due_date: '', priority: '', color: '', labels: [], email_link: '',
 }
 
+// Файл, брошенный мимо частей с файлами, браузер не открывает вместо страницы: набранная форма не теряется. Части ловят файл
+// раньше (preventDefault), им это не мешает.
+const withFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files')
+const blockStrayDrop = {
+  onDragOver: (e) => { if (withFiles(e) && !e.defaultPrevented) { e.preventDefault(); e.dataTransfer.dropEffect = 'none' } },
+  onDrop: (e) => { if (withFiles(e) && !e.defaultPrevented) e.preventDefault() },
+}
+
 // Файлы новой заявки: уходят на сервер вместе с ней (строки ещё нет).
 function StagedFiles({ id, label, hint, testId, files, onFiles }) {
   const inputRef = useRef(null)
@@ -67,7 +75,7 @@ function StagedFiles({ id, label, hint, testId, files, onFiles }) {
         className={`dc-drop${dragging ? ' is-over' : ''}`}
         data-testid={testId}
         onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-        onDragLeave={() => setDragging(false)}
+        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false) }}
         onDrop={(e) => { e.preventDefault(); setDragging(false); add(e.dataTransfer?.files) }}
       >
         {files.map((file) => (
@@ -185,7 +193,7 @@ export default function DocCheckFormModal({
     .sort((a, b) => a.localeCompare(b, 'ru'))
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={onClose} {...blockStrayDrop}>
       <div className="modal dc-form-modal" role="dialog" aria-modal="true" aria-label={request ? 'Изменить заявку' : 'Новая заявка'} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div>
@@ -325,7 +333,7 @@ export default function DocCheckFormModal({
               <StagedFiles
                 id="dc-files"
                 label="Документы на проверку"
-                hint="ДП или ДС, приложения. Можно перетащить сюда. После создания файлы меняет отдел."
+                hint="ДП или ДС, приложения. Можно перетащить сюда. Пока заявка в «Новых», файлы можно добавить и удалить в её окне."
                 testId="dc-files"
                 files={files}
                 onFiles={setFiles}

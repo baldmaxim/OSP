@@ -4,7 +4,7 @@ import { downloadS3File } from '../FileDownload'
 import S3DocumentPreview from '../S3DocumentPreview'
 import PaperclipIcon from '../icons/PaperclipIcon'
 import { IconDownload, IconTrash } from '../icons/ActionIcons'
-import { DOC_CHECK_CONCEPT_CATEGORY, fmtDocDateTime } from '../../utils/docCheckHelpers'
+import { DOC_CHECK_CHAT_CATEGORY, DOC_CHECK_CONCEPT_CATEGORY, fmtDocDateTime, formatBytes } from '../../utils/docCheckHelpers'
 
 // Файлы заявки на проверку ДП/ДС — в разделе «Документы» вкладки «Общая» (11.11.2026, решение пользователя: вкладки
 // «Документы» больше нет, раздел разделён на две части). 1 — «Понятийное соглашение» (doc_category DOC_CHECK_CONCEPT_CATEGORY),
@@ -13,27 +13,25 @@ import { DOC_CHECK_CONCEPT_CATEGORY, fmtDocDateTime } from '../../utils/docCheck
 // Список — строками, а не таблицей общего S3DocumentList: раздел стоит в колонке окна шириной около 28rem. Имя файла открывает
 // просмотр (там же — переименовать, если можно менять), рядом — скачать и удалить. Файл можно перетащить на свою часть.
 // Права — как у прежней вкладки: менять файлы может право правки раздела (база — s3_documents_doc_check_guard), скачать — любой,
-// кто видит заявку. Один запрос на обе части.
+// кто видит заявку; автор своей заявки в «Новых» — тоже менять (canEdit решает окно, note — пояснение ему). Один запрос на все части.
+//
+// Файлы обсуждения (20270216) — не документы заявки: в двух частях их нет. Отправленные в переписке — третьей частью «Из
+// обсуждения», только просмотр и скачивание (отправленный файл не меняется и не удаляется никем); черновики вложений (сообщение
+// не ушло) не показываются. Какие отправлены — postedChatIds (из сообщений); число изменилось — список перечитывается.
 
 const OWNER = 'doc_check_request'
 export const DOC_CHECK_FILE_PARTS = [
   { key: 'concept', title: 'Понятийное соглашение', category: DOC_CHECK_CONCEPT_CATEGORY, empty: 'Не загружено' },
   { key: 'files', title: 'Загружаемые документы', category: null, empty: 'Документы не загружены' },
+  { key: 'chat', title: 'Из обсуждения', category: DOC_CHECK_CHAT_CATEGORY, readOnly: true },
 ]
-const partOf = (doc) => (doc.doc_category === DOC_CHECK_CONCEPT_CATEGORY ? 'concept' : 'files')
-
-function formatBytes(bytes) {
-  if (bytes == null) return ''
-  const units = ['Б', 'КБ', 'МБ', 'ГБ']
-  let v = Number(bytes)
-  let i = 0
-  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++ }
-  return `${v.toFixed(i === 0 ? 0 : 1).replace('.', ',')} ${units[i]}`
-}
+const partOf = (doc) => (doc.doc_category === DOC_CHECK_CONCEPT_CATEGORY ? 'concept'
+  : doc.doc_category === DOC_CHECK_CHAT_CATEGORY ? 'chat' : 'files')
+const NO_POSTED = new Set()
 
 const carriesFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files')
 
-export default function DocCheckFiles({ requestId, canEdit, onChange }) {
+export default function DocCheckFiles({ requestId, canEdit, note = null, onChange, postedChatIds = NO_POSTED }) {
   const [docs, setDocs] = useState([])
   const [state, setState] = useState('loading') // loading | ready | error
   const [uploading, setUploading] = useState(null) // ключ части, куда грузим
@@ -51,7 +49,9 @@ export default function DocCheckFiles({ requestId, canEdit, onChange }) {
       setState(prev => (prev === 'ready' ? prev : 'error'))
     }
   }, [requestId])
-  useEffect(() => { load() }, [load])
+  // Отправили файлы в переписке — перечитать (часть «Из обсуждения»).
+  const postedCount = postedChatIds.size
+  useEffect(() => { load() }, [load, postedCount])
 
   // Файлы — по одному: не загрузившийся не мешает остальным, причина — одним сообщением в конце.
   const upload = async (part, fileList) => {
@@ -105,6 +105,7 @@ export default function DocCheckFiles({ requestId, canEdit, onChange }) {
 
   return (
     <div className="dc-files">
+      {note && <p className="dc-files-note">{note}</p>}
       {state === 'error' && (
         <p className="dc-files-note">
           Не удалось загрузить список файлов.{' '}
@@ -112,20 +113,22 @@ export default function DocCheckFiles({ requestId, canEdit, onChange }) {
         </p>
       )}
       {DOC_CHECK_FILE_PARTS.map((part, i) => {
-        const list = docs.filter(d => partOf(d) === part.key)
+        const list = docs.filter(d => partOf(d) === part.key && (part.key !== 'chat' || postedChatIds.has(d.id)))
+        if (part.readOnly && !list.length) return null
+        const editable = canEdit && !part.readOnly
         return (
           <section
             key={part.key}
             className={`dc-files-part${over === part.key ? ' is-over' : ''}`}
             data-part={part.key}
             aria-label={part.title}
-            {...dropProps(part)}
+            {...(editable ? dropProps(part) : {})}
           >
             <div className="dc-files-head">
               <span className="dc-files-num" aria-hidden="true">{i + 1}</span>
               <span className="dc-files-title">{part.title}</span>
               {list.length > 0 && <span className="dc-files-count">{list.length}</span>}
-              {canEdit && (
+              {editable && (
                 <>
                   <button
                     type="button"
@@ -147,7 +150,7 @@ export default function DocCheckFiles({ requestId, canEdit, onChange }) {
             {state === 'loading' ? (
               <p className="dc-files-empty">Загрузка…</p>
             ) : state === 'error' ? null : list.length === 0 ? (
-              <p className="dc-files-empty">{part.empty}{canEdit ? ' · можно перетащить файл сюда' : ''}</p>
+              <p className="dc-files-empty">{part.empty}{editable ? ' · можно перетащить файл сюда' : ''}</p>
             ) : (
               <ul className="dc-files-list">
                 {list.map(doc => (
@@ -168,7 +171,7 @@ export default function DocCheckFiles({ requestId, canEdit, onChange }) {
                       title="Скачать"
                       onClick={() => download(doc)}
                     ><IconDownload size={15} /></button>
-                    {canEdit && (
+                    {editable && (
                       <button
                         type="button"
                         className="dc-icon-btn dc-file-btn dc-file-del"
@@ -185,7 +188,11 @@ export default function DocCheckFiles({ requestId, canEdit, onChange }) {
         )
       })}
       {preview && (
-        <S3DocumentPreview doc={preview} onClose={() => setPreview(null)} onRenamed={canEdit ? renamed : undefined} />
+        <S3DocumentPreview
+          doc={preview}
+          onClose={() => setPreview(null)}
+          onRenamed={canEdit && partOf(preview) !== 'chat' ? renamed : undefined}
+        />
       )}
     </div>
   )

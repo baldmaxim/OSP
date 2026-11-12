@@ -507,6 +507,86 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.equal((await download(U.contractor, `contracts/${CONTRACT_MINE}/x.docx`)).statusCode, 200)
     })
 
+    it('заявка на проверку ДП/ДС: файл в обсуждение — правом просмотра раздела, в «Документы» — только правкой', async () => {
+      const DCR = 'b1000000-0000-4000-8000-0000000000dc'
+      state.owners.doc_check_requests = { [DCR]: 'all' }
+      state.can[U.viewer.id] = ['doc_check_requests:view']
+      const body = (over) => fileBody({ owner_type: 'doc_check_request', owner_id: DCR, category: 'doc_check_chat', ...over })
+      const chat = await fn('s3-presign', U.viewer, { action: 'upload', ...body() })
+      assert.equal(chat.statusCode, 200, chat.body)
+      assert.match(chat.json().s3_key, new RegExp(`^doc-check-requests/${DCR}/`))
+      for (const category of [null, 'doc_check_concept_agreement']) {
+        const doc = await fn('s3-presign', U.viewer, { action: 'upload', ...body({ category, operation_id: OP(2) }) })
+        assert.equal(doc.statusCode, 403, String(category))
+      }
+      // Удаление файла обсуждения — тоже просмотром раздела: отправленный ли это файл и свой ли черновик, решает база.
+      state.docs[`doc-check-requests/${DCR}/c.pdf`] = { row: { id: 'dcc', owner_type: 'doc_check_request', owner_id: DCR, doc_category: 'doc_check_chat' }, visibleTo: 'all' }
+      state.docs[`doc-check-requests/${DCR}/d.pdf`] = { row: { id: 'dcd', owner_type: 'doc_check_request', owner_id: DCR, doc_category: 'general' }, visibleTo: 'all' }
+      assert.equal((await del(U.viewer, `doc-check-requests/${DCR}/d.pdf`)).statusCode, 403, 'документ заявки — правкой раздела')
+      assert.equal((await del(U.viewer, `doc-check-requests/${DCR}/c.pdf`)).statusCode, 200)
+    })
+
+    // Рукстрой и экономист объекта (право создания, без правки): окно своей заявки в «Новых» грузит, переименовывает и удаляет
+    // файлы (12.11.2026). Чья заявка и в какой колонке — решает база (s3_documents_doc_check_guard), служба пускает правом.
+    it('заявка на проверку ДП/ДС: право создания — загрузка в обе части, переименование и удаление (заявку проверяет база)', async () => {
+      const DCR = 'b1000000-0000-4000-8000-0000000000df'
+      state.owners.doc_check_requests = { [DCR]: 'all' }
+      state.can[U.viewer.id] = ['doc_check_requests:view', 'doc_check_requests_create:edit']
+      for (const [i, category] of [null, 'doc_check_concept_agreement'].entries()) {
+        const up = await fn('s3-presign', U.viewer, { action: 'upload', ...fileBody({ owner_type: 'doc_check_request', owner_id: DCR, category, operation_id: OP(950 + i) }) })
+        assert.equal(up.statusCode, 200, `${category}: ${up.body}`)
+      }
+      const key = `doc-check-requests/${DCR}/a.pdf`
+      state.docs[key] = { row: { id: 'dca', owner_type: 'doc_check_request', owner_id: DCR, doc_category: 'general', file_name: 'a.pdf' }, visibleTo: 'all' }
+      const renamed = await fn('s3-presign', U.viewer, { action: 'rename', s3_key: key, file_name: 'ДС № 2.pdf' })
+      assert.equal(renamed.statusCode, 200, renamed.body)
+      assert.equal((await del(U.viewer, key)).statusCode, 200)
+      // Без права создания — только просмотр.
+      state.can[U.viewer.id] = ['doc_check_requests:view']
+      state.docs[key] = { row: { id: 'dca', owner_type: 'doc_check_request', owner_id: DCR, doc_category: 'general', file_name: 'a.pdf' }, visibleTo: 'all' }
+      assert.equal((await del(U.viewer, key)).statusCode, 403)
+    })
+
+    it('отпечаток: подтверждение записывает ETag; объект перезаписан по ещё живой ссылке — файл заявки не отдаётся (409)', async () => {
+      const DCR = 'b1000000-0000-4000-8000-0000000000dd'
+      state.owners.doc_check_requests = { [DCR]: 'all' }
+      state.can[U.viewer.id] = ['doc_check_requests:view']
+      const body = fileBody({ owner_type: 'doc_check_request', owner_id: DCR, category: 'doc_check_chat', file_name: 'Акт.pdf' })
+      const up = (await fn('s3-presign', U.viewer, { action: 'upload', ...body })).json()
+      const put = (text) => fetch(up.presigned_url, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: text })
+      assert.equal((await put('hello')).status, 200)
+      const doc = (await fn('s3-presign', U.viewer, { action: 'confirm', ...body })).json().document
+      assert.equal(doc.content_etag, '"5d41402abc4b2a76b9719d911017c592"', 'MD5 «hello» — как ответило хранилище')
+      assert.equal((await download(U.viewer, up.s3_key)).statusCode, 200)
+      // Та же ссылка на загрузку ещё действует (15 минут): то же имя и размер, другое содержимое.
+      assert.equal((await put('HELLO')).status, 200)
+      const changed = await download(U.viewer, up.s3_key)
+      assert.equal(changed.statusCode, 409)
+      assert.deepEqual(changed.json(), { error: 'Файл в хранилище изменён после загрузки — открыть его нельзя. Сообщите администратору.', code: 'OSP_FILE_CHANGED' })
+      assert.ok(logs.some((l) => /s3 object differs from the confirmed upload/.test(l)), 'случай — в журнале службы')
+      s3.objects.delete(`/osp/${up.s3_key}`)
+      assert.equal((await download(U.viewer, up.s3_key)).statusCode, 404, 'объекта нет')
+      // Файлы без отпечатка (прежний портал) и других разделов — как раньше, без лишнего запроса к хранилищу.
+      s3.requests.length = 0
+      assert.equal((await download(U.emp, KEY_T1)).statusCode, 200)
+      assert.equal(s3.requests.length, 0)
+    })
+
+    it('база без колонки отпечатка (раньше миграции 20270216): подтверждение — строка без него, скачивание — без сверки', async () => {
+      state.noEtagColumn = true
+      const up = (await fn('s3-presign', U.emp, { action: 'upload', ...fileBody() })).json()
+      await fetch(up.presigned_url, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: 'hello' })
+      const res = await fn('s3-presign', U.emp, { action: 'confirm', ...fileBody() })
+      assert.equal(res.statusCode, 200, res.body)
+      assert.equal(res.json().document.content_etag, undefined)
+      const DCR = 'b1000000-0000-4000-8000-0000000000de'
+      state.owners.doc_check_requests = { [DCR]: 'all' }
+      state.can[U.emp.id] = [...state.can[U.emp.id], 'doc_check_requests:edit']
+      const key = `doc-check-requests/${DCR}/f.pdf`
+      state.docs[key] = { row: { id: 'dce', owner_type: 'doc_check_request', owner_id: DCR }, visibleTo: 'all' }
+      assert.equal((await download(U.emp, key)).statusCode, 200)
+    })
+
     it('загрузка: больше предела — 413; РД — свой предел; ссылка подписывает тип и длину', async () => {
       const big = await fn('s3-presign', U.emp, { action: 'upload', ...fileBody({ size_bytes: 100 * 1024 * 1024 + 1 }) })
       assert.equal(big.statusCode, 413)

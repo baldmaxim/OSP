@@ -5,6 +5,8 @@
 //     ничего не двигается; в форме — без исполнителей, срока, приоритета, цвета и меток, зато файлы двумя частями, как в окне
 //     заявки: понятийное соглашение (своя категория) и документы на проверку;
 //   • объект — из «Ролей»: один стоит серым, без выбора; несколько — выбор обязателен; заявка встаёт в «Новые заявки»;
+//   • в окне своей заявки, пока она в «Новых», автор добавляет и удаляет файлы (как пускает база); чужая и взятая в работу —
+//     только просмотр; файл, брошенный мимо частей формы, браузер не открывает вместо страницы;
 //   • с правом правки — форма прежняя. База (тот же запрет) — doc-check-create-db.test.mjs. Люди вымышленные.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -105,6 +107,93 @@ describe('Заявки на проверку ДП/ДС: создание рук�
       const [row] = await created(page)
       assert.equal(row.object_id, 'obj-1')
       assert.equal(row.status, 'new')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  // 12.11.2026: «проверь, что рукстрои и экономисты могут нормально подгружать, откреплять, удалять документы». База и osp-api
+  // пускают автора к файлам своей заявки, пока она в «Новых», а окно заявки кнопок ему не показывало.
+  it('автор своей заявки в «Новых» добавляет и удаляет файлы в окне заявки; чужая и взятая в работу — только просмотр', async () => {
+    const { page, errors, close } = await open(`${CREATOR}&scope=obj-1,obj-2`)
+    try {
+      const modal = page.locator('.dc-detail-modal')
+      const part = (key) => modal.locator(`.dc-files-part[data-part="${key}"]`)
+      const author = (id, user) => page.evaluate(([key, who]) => {
+        window.__fakeDb.doc_check_requests.find((r) => r.id === key).created_by = who
+      }, [id, user])
+      const openCard = async (id) => {
+        await page.locator(`.dc-column .dc-card[data-id="${id}"]`).first().click()
+        await modal.waitFor()
+        await part('files').locator('.dc-files-empty, .dc-file').first().waitFor()
+      }
+      const closeCard = async () => {
+        await modal.locator('.modal-close').click()
+        await modal.waitFor({ state: 'detached' })
+      }
+
+      // Чужая заявка в «Новых» — только просмотр.
+      await author('dcr-1', 'user-9')
+      await openCard('dcr-1')
+      await page.waitForTimeout(200)
+      assert.equal(await modal.locator('.dc-files-add').count(), 0)
+      assert.equal(await modal.locator('.dc-files-note').count(), 0)
+      await closeCard()
+
+      // Своя — «+ Загрузить» в обеих частях; выбор файла — кнопкой, как на сайте.
+      await author('dcr-1', 'boss-1')
+      await openCard('dcr-1')
+      await modal.locator('.dc-files-add').first().waitFor()
+      assert.equal(await modal.locator('.dc-files-add').count(), 2)
+      assert.match(await modal.locator('.dc-files-note').innerText(), /пока заявка в «Новых заявках»/i)
+      const chooser = page.waitForEvent('filechooser')
+      await part('files').locator('.dc-files-add').click()
+      await (await chooser).setFiles([FILE, { ...FILE, name: 'Приложение 1.pdf' }])
+      await part('files').getByText('Приложение 1.pdf').waitFor()
+      const concept = page.waitForEvent('filechooser')
+      await part('concept').locator('.dc-files-add').click()
+      await (await concept).setFiles({ ...FILE, name: 'Понятийное соглашение.pdf' })
+      await part('concept').getByText('Понятийное соглашение.pdf').waitFor()
+      const filesOf = () => page.evaluate(() => window.__fakeDb.s3_documents.filter((d) => d.owner_id === 'dcr-1')
+        .map((d) => [d.file_name, d.doc_category ?? null]).sort((a, b) => a[0].localeCompare(b[0])))
+      assert.deepEqual(await filesOf(), [
+        ['ДС № 7.pdf', null], ['Понятийное соглашение.pdf', 'doc_check_concept_agreement'], ['Приложение 1.pdf', null],
+      ])
+      await modal.getByRole('button', { name: 'Удалить Приложение 1.pdf' }).click()
+      await page.waitForFunction(() => !window.__fakeDb.s3_documents.some((d) => d.file_name === 'Приложение 1.pdf'))
+      assert.equal(await part('files').getByText('Приложение 1.pdf').count(), 0)
+      await closeCard()
+      await page.waitForFunction(() => document.querySelector('.dc-card[data-id="dcr-1"] .dc-count[title="Файлы заявки"]')?.textContent === '2')
+
+      // Своя, но отдел уже взял её в работу, — только просмотр.
+      await author('dcr-2', 'boss-1')
+      await openCard('dcr-2')
+      await page.waitForTimeout(200)
+      assert.equal(await modal.locator('.dc-files-add').count(), 0)
+      assert.equal(await modal.locator('.dc-file-del').count(), 0)
+      await closeCard()
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('форма новой заявки: файл, брошенный мимо частей с файлами, браузер не открывает вместо страницы', async () => {
+    const { page, errors, close } = await open(`${CREATOR}&scope=obj-2`)
+    try {
+      await page.getByRole('button', { name: '+ Новая заявка' }).click()
+      await form(page).waitFor()
+      const drop = (selector) => page.evaluate((sel) => {
+        const dt = new DataTransfer()
+        dt.items.add(new File(['%PDF-1.4'], 'Мимо.pdf', { type: 'application/pdf' }))
+        const target = document.querySelector(sel)
+        const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt })
+        target.dispatchEvent(over)
+        const dropped = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })
+        target.dispatchEvent(dropped)
+        return [over.defaultPrevented, dropped.defaultPrevented]
+      }, selector)
+      assert.deepEqual(await drop('.dc-form-modal .modal-header'), [true, true], 'мимо частей — браузер файл не открывает')
+      assert.equal(await form(page).getByText('Мимо.pdf').count(), 0, 'и в заявку он не попадает')
+      assert.deepEqual(await drop('[data-testid="dc-files"]'), [true, true])
+      await form(page).getByText('Мимо.pdf').waitFor()
       assert.deepEqual(errors, [])
     } finally { await close() }
   })

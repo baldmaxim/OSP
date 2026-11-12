@@ -10,6 +10,8 @@ import { reportAmounts } from '../utils/contractAmendments'
 import EngineersActivity from '../components/reports/EngineersActivity'
 import KpStats from '../components/reports/KpStats'
 import DcRequestStats from '../components/reports/DcRequestStats'
+import DpRequestStats from '../components/reports/DpRequestStats'
+import DocCheckStats from '../components/reports/DocCheckStats'
 import ContractorStats from '../components/reports/ContractorStats'
 import { BarChart, ProgressBar, StatusDonut } from '../components/reports/ReportCharts'
 import './ReportsPage.css'
@@ -135,7 +137,7 @@ function ReportsPage() {
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState(null)
   // Вкладки: «Тендеры» (внутри — обзор, КП, подрядчики, материалы, планы затрат,
-  // ВОРы и РД, работа инженеров) и «Договоры» (внутри — обзор и заявки на ДС).
+  // ВОРы и РД, работа инженеров) и «Договоры» (внутри — обзор, заявки на ДС, заключение ДП, проверка ДП/ДС).
   // Какие отчёты видны роли. С правом «Отчёты: все вкладки» (reports_full, миграция
   // 20260930 выдала его всем ролям, у которых отчёты уже были) — все, как раньше.
   // Без него — только отчёты рабочих разделов: у «Сметный отдел_Руководители»
@@ -148,8 +150,13 @@ function ReportsPage() {
         ...(canView('tenders_materials') ? ['materials'] : []),
       ]
   const contractSubs = fullReports
-    // Заявки на ДС — тому, кто видит и все отчёты, и сам реестр заявок (его строки отдаёт база).
-    ? ['overview', ...(canView('dc_requests') ? ['dc_requests'] : [])]
+    // Заявки на ДС, на заключение ДП и на проверку ДП/ДС — тому, кто видит и все отчёты, и сам раздел заявок (его строки отдаёт база).
+    ? [
+        'overview',
+        ...(canView('dc_requests') ? ['dc_requests'] : []),
+        ...(canView('dp_requests') ? ['dp_requests'] : []),
+        ...(canView('doc_check_requests') ? ['doc_check'] : []),
+      ]
     : []
   const allowedTabs = [
     ...(tenderSubs.length > 0 ? ['tenders'] : []),
@@ -169,6 +176,9 @@ function ReportsPage() {
   const [kpVisited, setKpVisited] = useState(false)
   // То же у «Заявок на ДС»: заявки и журнал статусов грузятся при первом открытии подвкладки.
   const [dcVisited, setDcVisited] = useState(false)
+  // И у «Заключения ДП» и «Проверки ДП/ДС» (12.11.2026).
+  const [dpVisited, setDpVisited] = useState(false)
+  const [docCheckVisited, setDocCheckVisited] = useState(false)
   // И у «Подрядчиков»: участники тендеров, файлы КП и справочники — при первом открытии.
   const [contractorsVisited, setContractorsVisited] = useState(false)
   // null = обзор, 'construction' | 'warranty' = детализация по выбранному отделу
@@ -606,8 +616,10 @@ function ReportsPage() {
   ].filter(tab => tenderSubs.includes(tab.key))
   const contractTabs = [
     { key: 'overview', label: 'Обзор', count: s.cTotal },
-    // Счётчика нет: заявки грузятся отдельно, при открытии подвкладки.
+    // Счётчиков нет: заявки грузятся отдельно, при открытии подвкладки.
     { key: 'dc_requests', label: 'Заявки на ДС' },
+    { key: 'dp_requests', label: 'Заключение ДП' },
+    { key: 'doc_check', label: 'Проверка ДП/ДС' },
   ].filter(tab => contractSubs.includes(tab.key))
   const updatedLabel = loadedAt
     ? `Обновлено: сегодня, ${loadedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
@@ -618,7 +630,7 @@ function ReportsPage() {
       <div className="reports-header">
         <div>
           <h2>Отчёты</h2>
-          <div className="reports-subtitle">{fullReports ? 'Аналитика по тендерам, договорам и заявкам на ДС' : 'Аналитика по вашим разделам'}</div>
+          <div className="reports-subtitle">{fullReports ? 'Аналитика по тендерам, договорам и заявкам' : 'Аналитика по вашим разделам'}</div>
         </div>
         <div className="report-toolbar">
           {updatedLabel && <span className="reports-updated">{updatedLabel}</span>}
@@ -670,6 +682,8 @@ function ReportsPage() {
           onSelect={(key) => {
             setContractSub(key)
             if (key === 'dc_requests') setDcVisited(true)
+            if (key === 'dp_requests') setDpVisited(true)
+            if (key === 'doc_check') setDocCheckVisited(true)
           }}
         />
       )}
@@ -1252,6 +1266,18 @@ function ReportsPage() {
         {(dcVisited || showContractSub('dc_requests')) && contractSubs.includes('dc_requests') && (
           <div className="reports-subview" hidden={!showContractSub('dc_requests')}>
             <DcRequestStats scopedObjectIds={scopedObjectIds} canOpenRegistry={canView('dc_requests')} />
+          </div>
+        )}
+
+        {/* Заключение ДП и проверка ДП/ДС: так же — свои данные, после первого открытия остаются смонтированными. */}
+        {(dpVisited || showContractSub('dp_requests')) && contractSubs.includes('dp_requests') && (
+          <div className="reports-subview" hidden={!showContractSub('dp_requests')}>
+            <DpRequestStats scopedObjectIds={scopedObjectIds} canOpenRegistry={canView('dp_requests')} />
+          </div>
+        )}
+        {(docCheckVisited || showContractSub('doc_check')) && contractSubs.includes('doc_check') && (
+          <div className="reports-subview" hidden={!showContractSub('doc_check')}>
+            <DocCheckStats scopedObjectIds={scopedObjectIds} canOpenBoard={canView('doc_check_requests')} />
           </div>
         )}
       </div>

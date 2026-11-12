@@ -2,6 +2,7 @@
 // supabase-js в osp-api настоящий — проверяются и сами запросы (фильтры, токен, ключ), а не только
 // логика маршрутов. Персональных данных нет: пользователи и строки синтетические.
 import http from 'node:http'
+import crypto from 'node:crypto'
 
 function readBody(req) {
   return new Promise((resolve) => {
@@ -40,6 +41,7 @@ function pick(row, select) {
 //   views       { kp_rates_registry: [...], supply_rates_registry: [...] }
 //   viewTotal   число для Content-Range при count=exact; countFails — подсчёт падает;
 //   missingView — представления нет (42P01)
+//   noEtagColumn — у s3_documents нет колонки content_etag (база раньше 20270216): запись с ней — PGRST204, чтение — 42703
 export async function startFakeSupabase(state) {
   const requests = []
   const server = http.createServer(async (req, res) => {
@@ -82,10 +84,16 @@ export async function startFakeSupabase(state) {
         if (!wantsObject) return send(status, rows)
         return rows.length === 1 ? send(status, rows[0]) : send(406, { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' })
       }
+      if (state.noEtagColumn && req.method === 'GET' && /\bcontent_etag\b/.test(select || '')) {
+        return send(400, { code: '42703', details: null, hint: null, message: 'column s3_documents.content_etag does not exist' })
+      }
       if (req.method === 'GET') return reply(found.map((f) => pick(f.row, select)))
       if (req.method === 'POST') {
         const input = JSON.parse(body || '{}')
         const rows = Array.isArray(input) ? input : [input]
+        if (state.noEtagColumn && rows.some((r) => 'content_etag' in r)) {
+          return send(400, { code: 'PGRST204', details: null, hint: null, message: "Could not find the 'content_etag' column of 's3_documents' in the schema cache" })
+        }
         for (const r of rows) state.onInsert?.(r)
         for (const r of rows) {
           if (state.docs[r.s3_key] || Object.values(state.docs).some((d) => d.row.id === r.id)) {
@@ -165,11 +173,13 @@ export async function startFakeSupabase(state) {
 // «S3» (path-style: /<bucket>/<key>): запоминает запросы; PUT сохраняет размер объекта (objects) и
 // содержимое (bodies), HEAD отвечает размером или 404, GET — содержимым (объект без содержимого — пустой
 // ответ, нет объекта — 404 NoSuchKey), DELETE удаляет. failDelete — удаление в хранилище падает (500).
+// ETag — как у настоящего хранилища при обычной загрузке: MD5 содержимого в кавычках (объект без содержимого — "fake").
 export async function startFakeS3() {
   const requests = []
   const objects = new Map()
   const bodies = new Map()
   const fake = { failDelete: false }
+  const etagOf = (objectPath) => (bodies.has(objectPath) ? `"${crypto.createHash('md5').update(bodies.get(objectPath)).digest('hex')}"` : '"fake"')
   const server = http.createServer(async (req, res) => {
     const chunks = []
     for await (const c of req) chunks.push(c)
@@ -188,12 +198,12 @@ export async function startFakeS3() {
     }
     if (req.method === 'GET') {
       const data = bodies.get(objectPath) || Buffer.alloc(0)
-      res.writeHead(200, { 'content-length': String(data.length), etag: '"fake"' })
+      res.writeHead(200, { 'content-length': String(data.length), etag: etagOf(objectPath) })
       return res.end(data)
     }
     if (req.method === 'HEAD') {
       if (!objects.has(objectPath)) { res.writeHead(404); return res.end() }
-      res.writeHead(200, { 'content-length': String(objects.get(objectPath)), 'last-modified': new Date().toUTCString(), etag: '"fake"' })
+      res.writeHead(200, { 'content-length': String(objects.get(objectPath)), 'last-modified': new Date().toUTCString(), etag: etagOf(objectPath) })
       return res.end()
     }
     if (req.method === 'DELETE') {

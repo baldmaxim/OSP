@@ -1237,6 +1237,28 @@
 .dcs-nowrap { white-space: nowrap; }
 .dcs-more { margin-top: 0.5rem; align-self: flex-start; }
 
+/* ===== Подвкладки «Заключение ДП» (dps-) и «Проверка ДП/ДС» (dck-): components/reports/DpRequestStats.jsx, DocCheckStats.jsx ===== */
+.dps-kpi .kpi-value.dcs-money { font-size: 1.25rem; line-height: 1.75rem; white-space: nowrap; }
+.dps-groups { min-width: 52rem; }
+.dps-groups td:first-child, .dck-groups td:first-child { min-width: 12rem; }
+.dps-groups thead th, .dck-groups thead th, .dps-waiting thead th, .dck-overdue thead th { vertical-align: bottom; }
+.dps-waiting { min-width: 64rem; }
+.dps-waiting td.money-col { white-space: nowrap; }
+.dps-role {
+  display: block;
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  color: var(--text-tertiary);
+}
+/* Поле, которое ещё не заполнил отдел, — заметно, но не как ошибка. */
+.dense-table td.dps-gap { color: #b45309; font-style: italic; }
+[data-theme='dark'] .dense-table td.dps-gap { color: #fbbf24; }
+.dps-open { color: var(--ui-link, #2563eb); font-weight: 600; text-decoration: none; }
+.dps-open:hover { text-decoration: underline; }
+.dck-groups { min-width: 66rem; }
+.dck-groups th.num, .dck-groups td.num { white-space: nowrap; }
+.dck-overdue { min-width: 56rem; }
+
 /* ===== Подвкладка «Подрядчики» (до 29.10.2026 — «Победители»): components/reports/ContractorStats.jsx ===== */
 .cs-toolbar { margin-bottom: 0; }
 .cs-search { cursor: text; padding-right: 0.625rem; color: var(--text-tertiary); }

@@ -244,8 +244,9 @@ describe('Исполнители и создание заявки в брауз�
       await modal.getByRole('tab', { name: /^История/ }).click()
       await modal.locator('.dc-history li').first().waitFor()
       const history = await modal.locator('.dc-history').textContent()
-      assert.match(history, /Дата создания20\.10\.2026.*→\s*15\.09\.2026, 09:30/)
-      assert.match(history, /Кто создалСтендов С\. С\.\s*→\s*Автор Настоящий/)
+      // Между подписью поля и значениями — время записи (с миграцией 20270216 историю пишет база и ставит его сама).
+      assert.match(history, /Дата создания[^→]*20\.10\.2026[^→]*→\s*15\.09\.2026, 09:30/)
+      assert.match(history, /Кто создал[^→]*Стендов С\. С\.\s*→\s*Автор Настоящий/)
       assert.deepEqual(errors, [])
     } finally {
       await close()

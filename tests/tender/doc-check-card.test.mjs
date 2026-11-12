@@ -235,7 +235,7 @@ describe('Окно заявки на проверку ДП/ДС в браузе�
       const modal = await openCard(page, 'dcr-2')
       assert.deepEqual(await modal.locator('.dc-detail-tab').allTextContents(), ['Общая', 'История'])
       assert.deepEqual(await modal.locator('.dc-box-head').evaluateAll((els) => els.map((e) => e.firstChild.textContent)),
-        ['Примечание', 'Документы', 'Срок и приоритет', 'Статус', 'Исполнители', 'Создание'])
+        ['Примечание', 'Документы', 'Срок и приоритет', 'Статус', 'Исполнители', 'Согласование ПСДЦ', 'Создание'])
       const cols = await modal.locator('.dc-info-col').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)))
       assert.equal(cols.length, 2)
       assert.ok(cols[1] > cols[0] + 300, `колонки рядом: ${cols}`)
@@ -380,7 +380,7 @@ describe('Окно заявки на проверку ДП/ДС в браузе�
 
       // У dcr-2 исполнители — юрист и сотрудник другой роли (выбор его не показывает): снять юриста — другой остаётся в базе.
       const other = await openCard(page, 'dcr-2')
-      await other.locator('.dc-assign .fdrop-trigger').click()
+      await other.locator('.dc-box', { hasText: 'Исполнители' }).locator('.dc-assign .fdrop-trigger').click()
       await options.filter({ hasText: 'Юристова Мария Андреевна' }).click()
       await page.waitForFunction(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-2').assignee_ids.length === 1)
       assert.deepEqual((await row(page, 'dcr-2')).assignee_ids, ['user-2'])
@@ -398,7 +398,7 @@ describe('Окно заявки на проверку ДП/ДС в браузе�
         window.__fakeHold = ({ table, op }) => (table === 'doc_check_requests' && op === 'update'
           ? { error: { code: '42501', message: 'нет права' } } : {})
       })
-      await modal.locator('.dc-assign .fdrop-trigger').click()
+      await modal.locator('.dc-box', { hasText: 'Исполнители' }).locator('.dc-assign .fdrop-trigger').click()
       await page.locator('.fdrop-panel .fdrop-option', { hasText: 'Юристова Мария Андреевна' }).click()
       await page.waitForFunction(() => document.querySelector('.dc-detail-modal')?.textContent.includes('Не назначены'))
       assert.match(dialogs.at(-1), /Не удалось сохранить заявку: нет права/)
@@ -475,7 +475,8 @@ describe('Окно заявки на проверку ДП/ДС в браузе�
           if (phone) {
             assert.deepEqual(detailBox.window, [0, 0, 390, 780], `стили других разделов: ${mode}: заявка на весь экран телефона`)
           } else {
-            assert.deepEqual(detailBox.window, [226, 91, 1248, 768], `стили других разделов: ${mode}: заявка по центру, 78 × 48 rem`)
+            // 12.11.2026: окно больше — до 104 × 64 rem, с полями 1 rem; при 1700 × 950 — 1664 × 918 по центру.
+            assert.deepEqual(detailBox.window, [18, 16, 1664, 918], `стили других разделов: ${mode}: заявка по центру, 104 rem в ширину`)
             assert.equal(formBox.window[2], 640, `стили других разделов: ${mode}: форма шириной 40 rem`)
             const centre = formBox.window[0] + formBox.window[2] / 2
             assert.equal(centre, viewport.width / 2, `стили других разделов: ${mode}: форма по центру`)
@@ -791,7 +792,9 @@ describe('Окно заявки на проверку ДП/ДС в браузе�
     try {
       const modal = await openCard(page, 'dcr-2')
       await modal.locator('.dc-file-name').first().waitFor()
-      assert.equal(await modal.locator('.dc-files-add, .dc-file-del, input[type="file"], .dc-assign').count(), 0)
+      assert.equal(await modal.locator('.dc-files-add, .dc-file-del, .dc-docs input[type="file"], .dc-assign').count(), 0)
+      // Файл в переписку прикладывает и просмотр (как пишет сообщение, 20270216).
+      assert.equal(await modal.getByRole('button', { name: 'Прикрепить файл' }).count(), 1)
       assert.equal(await modal.getByRole('button', { name: /^Скачать / }).count(), 2)
       assert.deepEqual(await modal.locator('.dc-files-empty').count(), 0)
       await modal.locator('.modal-close').click()

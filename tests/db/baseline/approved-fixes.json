@@ -5208,5 +5208,255 @@
     "to": "empty",
     "why": "новая таблица: счётчик номеров договоров по схеме КОД-ДП-ГГ-NNN (на копии пусто); читает сотрудник, пишет только триггер договоров",
     "candidate": "20270110_contract_number_scheme.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "admin",
+    "table": "doc_check_talk_reads",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: «прочитано» в обсуждении заявок на проверку ДП/ДС (у каждого своё); вошедшим и гостю не выдана, только функции doc_check_talk_state и doc_check_talk_mark",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "employee_full",
+    "table": "doc_check_talk_reads",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: «прочитано» в обсуждении заявок на проверку ДП/ДС (у каждого своё); вошедшим и гостю не выдана, только функции doc_check_talk_state и doc_check_talk_mark",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "employee_none",
+    "table": "doc_check_talk_reads",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: «прочитано» в обсуждении заявок на проверку ДП/ДС (у каждого своё); вошедшим и гостю не выдана, только функции doc_check_talk_state и doc_check_talk_mark",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "vors_only",
+    "table": "doc_check_talk_reads",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: «прочитано» в обсуждении заявок на проверку ДП/ДС (у каждого своё); вошедшим и гостю не выдана, только функции doc_check_talk_state и doc_check_talk_mark",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "contractor_own",
+    "table": "doc_check_talk_reads",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: «прочитано» в обсуждении заявок на проверку ДП/ДС (у каждого своё); вошедшим и гостю не выдана, только функции doc_check_talk_state и doc_check_talk_mark",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "contractor_noorg",
+    "table": "doc_check_talk_reads",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: «прочитано» в обсуждении заявок на проверку ДП/ДС (у каждого своё); вошедшим и гостю не выдана, только функции doc_check_talk_state и doc_check_talk_mark",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "unapproved",
+    "table": "doc_check_talk_reads",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: «прочитано» в обсуждении заявок на проверку ДП/ДС (у каждого своё); вошедшим и гостю не выдана, только функции doc_check_talk_state и doc_check_talk_mark",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "blocked",
+    "table": "doc_check_talk_reads",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: «прочитано» в обсуждении заявок на проверку ДП/ДС (у каждого своё); вошедшим и гостю не выдана, только функции doc_check_talk_state и doc_check_talk_mark",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "no_user_roles",
+    "table": "doc_check_talk_reads",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: «прочитано» в обсуждении заявок на проверку ДП/ДС (у каждого своё); вошедшим и гостю не выдана, только функции doc_check_talk_state и doc_check_talk_mark",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "anon",
+    "table": "doc_check_talk_reads",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: «прочитано» в обсуждении заявок на проверку ДП/ДС (у каждого своё); вошедшим и гостю не выдана, только функции doc_check_talk_state и doc_check_talk_mark",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "service_role",
+    "table": "doc_check_talk_reads",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: «прочитано» в обсуждении заявок на проверку ДП/ДС (у каждого своё); вошедшим и гостю не выдана, только функции doc_check_talk_state и doc_check_talk_mark",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "admin",
+    "table": "doc_check_request_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "запись истории заявки на проверку не удалить — только вместе с заявкой (doc_check_keep_history, 20270216); раньше на прежнем портале мог любой сотрудник",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "admin",
+    "table": "doc_check_request_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "историю заявки на проверку пишет база (триггеры 20270216): запись страницы от вошедшего молча отбрасывается — подделать событие, автора или время нельзя",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "admin",
+    "table": "doc_check_request_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "запись истории заявки на проверку не исправить (doc_check_keep_history, 20270216); раньше на прежнем портале мог любой сотрудник",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "employee_full",
+    "table": "doc_check_request_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "запись истории заявки на проверку не удалить — только вместе с заявкой (doc_check_keep_history, 20270216); раньше на прежнем портале мог любой сотрудник",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "employee_full",
+    "table": "doc_check_request_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "историю заявки на проверку пишет база (триггеры 20270216): запись страницы от вошедшего молча отбрасывается — подделать событие, автора или время нельзя",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "employee_full",
+    "table": "doc_check_request_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "запись истории заявки на проверку не исправить (doc_check_keep_history, 20270216); раньше на прежнем портале мог любой сотрудник",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "employee_none",
+    "table": "doc_check_request_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "запись истории заявки на проверку не удалить — только вместе с заявкой (doc_check_keep_history, 20270216); раньше на прежнем портале мог любой сотрудник",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "employee_none",
+    "table": "doc_check_request_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "историю заявки на проверку пишет база (триггеры 20270216): запись страницы от вошедшего молча отбрасывается — подделать событие, автора или время нельзя",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "employee_none",
+    "table": "doc_check_request_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "запись истории заявки на проверку не исправить (doc_check_keep_history, 20270216); раньше на прежнем портале мог любой сотрудник",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "vors_only",
+    "table": "doc_check_request_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "запись истории заявки на проверку не удалить — только вместе с заявкой (doc_check_keep_history, 20270216); раньше на прежнем портале мог любой сотрудник",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "vors_only",
+    "table": "doc_check_request_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "историю заявки на проверку пишет база (триггеры 20270216): запись страницы от вошедшего молча отбрасывается — подделать событие, автора или время нельзя",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "vors_only",
+    "table": "doc_check_request_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "запись истории заявки на проверку не исправить (doc_check_keep_history, 20270216); раньше на прежнем портале мог любой сотрудник",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "admin",
+    "table": "doc_check_requests",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заявку на проверку вошедший удаляет только мягко (deleted_at): с ней ушли бы переписка, история и сведения о файлах (20270216); страница строку не удаляет",
+    "candidate": "20270216_doc_check_chat_history.sql"
+  },
+  {
+    "release": "20270216",
+    "class": "employee_full",
+    "table": "doc_check_requests",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заявку на проверку вошедший удаляет только мягко (deleted_at): с ней ушли бы переписка, история и сведения о файлах (20270216); страница строку не удаляет",
+    "candidate": "20270216_doc_check_chat_history.sql"
   }
 ]

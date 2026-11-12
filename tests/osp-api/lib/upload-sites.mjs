@@ -34,6 +34,8 @@ export const UPLOAD_SITES = [
   { file: 'src/pages/DocCheckRequestsPage.jsx', calls: 1, owner: 'doc_check_request', table: 'doc_check_requests' },
   // Окно заявки на проверку ДП/ДС, раздел «Документы» (11.11.2026): понятийное соглашение и загружаемые документы.
   { file: 'src/components/doccheck/DocCheckFiles.jsx', calls: 1, owner: 'doc_check_request', table: 'doc_check_requests' },
+  // Файл сообщения в обсуждении заявки (20270216): категория doc_check_chat — правом просмотра раздела (CATEGORY_RULES).
+  { file: 'src/services/docCheckCard.js', calls: 1, owner: 'doc_check_request', table: 'doc_check_requests' },
   { file: 'src/services/dpRequests.js', calls: 1, owner: 'dp_request', table: 'dp_requests' }, // понятийное соглашение и документ договора (20261227)
   { file: 'src/components/ConceptAgreementCell.jsx', calls: 1, owner: 'contract', table: 'contracts' },
   { file: 'src/components/ContractClausesTab.jsx', calls: 1, owner: 'contract', table: 'contracts' },

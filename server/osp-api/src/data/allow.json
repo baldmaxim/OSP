@@ -918,6 +918,12 @@
     "doc_check_scope": [
       "authenticated"
     ],
+    "doc_check_talk_mark": [
+      "authenticated"
+    ],
+    "doc_check_talk_state": [
+      "authenticated"
+    ],
     "dp_request_alerts_ack": [
       "authenticated"
     ],
@@ -1053,9 +1059,6 @@
     "psdc_visible": [
       "authenticated"
     ],
-    "profile_update_own": [
-      "authenticated"
-    ],
     "refresh_rates_registry": [
       "authenticated"
     ],
@@ -1156,6 +1159,9 @@
       "authenticated"
     ],
     "bid_company_save": [
+      "authenticated"
+    ],
+    "profile_update_own": [
       "authenticated"
     ],
     "kp_estimate_activate": [

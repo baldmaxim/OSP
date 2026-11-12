@@ -32,6 +32,10 @@
 // Ключ операции один на выбранный файл: повтор любого шага не создаёт второй документ и второй объект.
 // Тот же operation_id с другим файлом (владелец, имя, тип, размер, sha256) — 409 OSP_KEY_REUSE.
 //
+// Отпечаток (20270216): confirm пишет ETag объекта в s3_documents.content_etag (база без колонки — строка без него); download
+// файла заявки на проверку ДП/ДС сверяет его с хранилищем — объект, перезаписанный по ещё действующей ссылке на загрузку,
+// не отдаётся (409 OSP_FILE_CHANGED).
+//
 // Права (11.11.2026): загрузка — WRITE_RULES (как было); изменение и удаление — CHANGE_RULES по таблице владельца и категории
 // (правка раздела, а не просмотр); скачивание — строка видна, ключ в каталоге своего владельца, владелец виден и есть
 // право чтения его раздела (READ_RULES). Предел размера — по категории; ссылка на загрузку подписывает тип и длину;
@@ -167,6 +171,12 @@ export const CATEGORY_RULES = {
     kp_estimate_kp: [['kp_estimate', 'edit']],
     kp_estimate_pz: [['kp_estimate', 'edit']],
   },
+  // Файл сообщения в обсуждении заявки на проверку ДП/ДС (20270216): прикладывает, кто видит раздел, — как пишет сообщение.
+  // Отправленный файл не меняется и не удаляется никем, свой черновик (сообщение не ушло) автор убрать может — решает триггер
+  // базы s3_documents_doc_check_guard: здесь нет разницы между своим файлом и чужим, отправленным и нет.
+  doc_check_requests: {
+    doc_check_chat: [['doc_check_requests', 'view'], ['doc_check_requests', 'edit']],
+  },
 }
 const rulesFor = (table, category) => {
   const own = CATEGORY_RULES[table]
@@ -197,6 +207,12 @@ const CATEGORY_RE = /^[a-z0-9_]{1,64}$/
 const FINGERPRINT = ['owner_type', 'owner_id', 'file_name', 'mime_type', 'size_bytes', 'sha256']
 // Ошибки PostgREST «функции нет»: osp_can появляется с миграцией Р2a.
 const MISSING_FUNCTION = new Set(['PGRST202', '42883'])
+// «Колонки нет» (content_etag — миграция 20270216): чтение — 42703, запись — PGRST204.
+const MISSING_COLUMN = new Set(['42703', 'PGRST204'])
+// Чьи файлы при скачивании сверяются с отпечатком подтверждённой загрузки: заявки на проверку ДП/ДС — документы и файлы
+// переписки, подмена которых без ведома недопустима (решение пользователя 12.11.2026).
+const CHECKED_OWNERS = new Set(['doc_check_request'])
+const FILE_CHANGED_TEXT = 'Файл в хранилище изменён после загрузки — открыть его нельзя. Сообщите администратору.'
 
 // Файлы тендера, которые подрядчику открывает правило s3_documents (портал: свой тендер или заявка не отклонена).
 const CONTRACTOR_TENDER_CATEGORIES = new Set(['tender_package', 'vor', 'rd', 'vor_statement'])
@@ -408,6 +424,7 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
     // Ссылку по «угаданному» ключу не выдаём: строка s3_documents должна быть видна пользователю, ключ — лежать в каталоге
     // своего владельца (иначе строку переставили на другого владельца — только администратор). Сотруднику ещё нужно видеть
     // владельца и иметь право чтения его раздела (READ_RULES).
+    // Ответ — строка файла (id, владелец, категория), если скачивать можно, иначе null.
     const assertKeyAllowed = async (s3Key) => {
       const { data, error } = await supabase
         .from('s3_documents')
@@ -415,7 +432,27 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
         .eq('s3_key', s3Key)
         .maybeSingle()
       if (error) throw error
-      if (!data) return false
+      if (!data) return null
+      return await keyAllowed(data) ? data : null
+    }
+    // Объект в хранилище — тот же, что при подтверждении загрузки? Отпечаток (ETag) записан при confirm; нет его (файл
+    // прежнего портала, база раньше 20270216) — сверять не с чем. 'missing' — объекта в хранилище нет.
+    const contentChanged = async (doc) => {
+      const { data, error } = await supabase.from('s3_documents').select('content_etag').eq('id', doc.id).maybeSingle()
+      if (error) {
+        if (MISSING_COLUMN.has(error.code)) return false
+        throw error
+      }
+      if (!data?.content_etag) return false
+      try {
+        const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: doc.s3_key }))
+        return head.ETag !== data.content_etag
+      } catch (e) {
+        if (e?.name === 'NotFound' || e?.$metadata?.httpStatusCode === 404) return 'missing'
+        throw e
+      }
+    }
+    const keyAllowed = async (data) => {
       if (!keyInOwnerFolder(data) || !Object.hasOwn(OWNER_TABLES, data.owner_type)) return !isContractor && allowed(UNKNOWN_OWNER_RULES)
       if (!isContractor) {
         const table = await ownerTable(data.owner_type, data.owner_id)
@@ -477,6 +514,9 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           if (Number(stored.ContentLength) !== file.size_bytes) {
             return reply.code(409).send({ error: 'Размер файла в хранилище не совпадает с выбранным', code: 'OSP_SIZE_MISMATCH' })
           }
+          // Отпечаток объекта на момент подтверждения: ссылка на загрузку действует ещё до 15 минут, и объект по ней можно
+          // перезаписать другим содержимым того же размера. Скачивание файла заявки на проверку сверяет отпечаток (download).
+          const etag = typeof stored.ETag === 'string' && stored.ETag ? stored.ETag.slice(0, 200) : null
 
           const row = {
             id: file.operation_id,
@@ -491,8 +531,16 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
             uploaded_by: user.id,
             uploaded_by_name: roleRow.full_name || null,
             ...(category ? { doc_category: category } : {}),
+            ...(etag ? { content_etag: etag } : {}),
           }
-          const { data, error } = await supabase.from('s3_documents').insert(row).select('*').single()
+          const insert = (values) => supabase.from('s3_documents').insert(values).select('*').single()
+          let { data, error } = await insert(row)
+          // База без колонки отпечатка (раньше миграции 20270216) — строка без неё, как прежде.
+          if (error && etag && MISSING_COLUMN.has(error.code) && /content_etag/.test(error.message || '')) {
+            const plain = { ...row }
+            delete plain.content_etag
+            ;({ data, error } = await insert(plain))
+          }
           if (error) {
             // Параллельный повтор успел первым — та же строка; другой файл с этим ключом — отказ.
             if (error.code === '23505') {
@@ -510,7 +558,16 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
         case 'download': {
           const s3Key = String(body.s3_key || '')
           if (!s3Key) return reply.code(400).send({ error: 'Missing s3_key' })
-          if (!await assertKeyAllowed(s3Key)) return reply.code(404).send({ error: 'Файл не найден' })
+          const doc = await assertKeyAllowed(s3Key)
+          if (!doc) return reply.code(404).send({ error: 'Файл не найден' })
+          if (CHECKED_OWNERS.has(doc.owner_type)) {
+            const changed = await contentChanged(doc)
+            if (changed === 'missing') return reply.code(404).send({ error: 'Файла нет в хранилище' })
+            if (changed) {
+              request.log.error({ document: doc.id, owner_type: doc.owner_type }, 's3 object differs from the confirmed upload')
+              return reply.code(409).send({ error: FILE_CHANGED_TEXT, code: 'OSP_FILE_CHANGED' })
+            }
+          }
           const rawName = String(body.file_name || '')
           const wantDownload = body.download === true || body.download === 'true'
           const params = { Bucket: bucket, Key: s3Key }

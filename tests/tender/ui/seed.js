@@ -1117,6 +1117,71 @@ if (params.get('dcStats') === '1') {
   }
 }
 
+// ── «Отчёты → Договоры → Заключение ДП / Проверка ДП/ДС» (?route=/reports&contractStats=1) ─────────────────────
+// Заявки на ДП: новая сегодня без полей отдела, новая 10 дней, в работе 20 дней (ЖК Бета), завершённая, удалённая.
+// Заявки на проверку: новая сегодня со сроком через 3 дня, ДП в работе с просроченным сроком и двумя юристами (ЖК Бета),
+// завершённая (в архиве) с историей, «Ожидаем скан» 45 дней, удалённая; в истории — переносы и одна правка поля.
+// ?contractStats=missing — таблицы заявок на ДП нет (база раньше миграции 20261227). Люди вымышленные.
+if (params.get('contractStats')) {
+  const fdb = window.__fakeDb
+  const iso = (offset) => new Date(Date.now() + offset * 24 * 3600 * 1000).toISOString()
+  const day = (offset) => {
+    const d = new Date()
+    d.setDate(d.getDate() + offset)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  const objA = { id: 'obj-1', name: 'ЖК Альфа', status: 'main_construction' }
+  const objB = { id: 'obj-2', name: 'ЖК Бета', status: 'warranty_service' }
+  const dp = (id, n, over) => ({
+    id, request_number: n, object_id: objA.id, objects: objA, contract_title: `Договор ${n}`, amount: 1000000,
+    responsible_name: 'Экономов А. П.', responsible_role: 'economist', status: 'new', status_changed_at: iso(-1),
+    created_by_name: 'Строев Б. И.', created_at: iso(-1), deleted_at: null, ...over,
+  })
+  fdb.dp_requests = [
+    dp('dps-1', 1, { created_at: iso(0), status_changed_at: iso(0), object_id: null, objects: null, contract_title: null, amount: null,
+      responsible_name: null, responsible_role: null }),
+    dp('dps-2', 2, { created_at: iso(-10), status_changed_at: iso(-10), amount: 500000 }),
+    dp('dps-3', 3, { status: 'in_work', created_at: iso(-30), status_changed_at: iso(-20), object_id: objB.id, objects: objB,
+      responsible_name: 'Строев Б. И.', responsible_role: 'construction_manager' }),
+    dp('dps-4', 4, { status: 'completed', created_at: iso(-40), status_changed_at: iso(-30), amount: 2000000 }),
+    dp('dps-5', 5, { deleted_at: iso(-2), amount: 999999999 }),
+  ]
+  fdb.employee_directory.push(
+    { user_id: 'law-1', display_name: 'Юристова М. А.', full_name: 'Юристова Мария Андреевна', email: 'law1@example.invalid', role: 'lawyer' },
+    { user_id: 'law-2', display_name: 'Правов П. П.', full_name: 'Правов Пётр Петрович', email: 'law2@example.invalid', role: 'lawyer' },
+  )
+  const dc = (id, n, over) => ({
+    id, request_number: n, object_id: objA.id, objects: objA, counterparty_id: 'cp-1', counterparties: { id: 'cp-1', name: 'Подрядчик 01' },
+    doc_type: 'ds', doc_number: String(n), doc_date: null, status: 'new', notes: null, sort_order: n, deleted_at: null,
+    created_at: iso(-1), updated_at: iso(-1), created_by_name: 'Строев Б. И.', assignee_ids: [], due_date: null, priority: null,
+    color: null, labels: [], archived_at: null, email_link: null, ...over,
+  })
+  fdb.doc_check_requests = [
+    dc('dck-1', 1, { created_at: iso(0), due_date: day(3) }),
+    dc('dck-2', 2, { status: 'in_progress', doc_type: 'dp', doc_number: 'СУ-002', object_id: objB.id, objects: objB, due_date: day(-2),
+      assignee_ids: ['law-1', 'law-2'], created_at: iso(-10) }),
+    dc('dck-3', 3, { status: 'done', assignee_ids: ['law-2'], created_at: iso(-20), archived_at: iso(-1) }),
+    dc('dck-4', 4, { status: 'awaiting_scan', assignee_ids: ['law-1'], created_at: iso(-60) }),
+    dc('dck-5', 5, { deleted_at: iso(-3) }),
+  ]
+  const ev = (id, request_id, event_type, new_value, offset) => ({
+    id, request_id, event_type, field_name: event_type === 'status_changed' ? 'status' : 'notes', old_value: null, new_value,
+    description: null, changed_at: iso(offset), changed_by_role: 'lawyer', changed_by_name: 'Юристова М. А.',
+  })
+  fdb.doc_check_request_audit_log = [
+    ev('dca-1', 'dck-2', 'status_changed', 'in_progress', -9),
+    ev('dca-2', 'dck-3', 'status_changed', 'in_progress', -18),
+    ev('dca-3', 'dck-3', 'status_changed', 'done', -2),
+    ev('dca-4', 'dck-4', 'status_changed', 'awaiting_scan', -45),
+    // Не смена статуса — отчёт её не читает.
+    ev('dca-5', 'dck-1', 'field_updated', 'done', 0),
+  ]
+  if (params.get('contractStats') === 'missing') {
+    window.__fakeErrors = { ...(window.__fakeErrors || {}),
+      dp_requests: { code: 'PGRST205', message: "Could not find the table 'public.dp_requests' in the schema cache" } }
+  }
+}
+
 // ?contracts=N — реестр «Договоры и ДС» (route=/contracts/registry): N договоров, у каждого третьего — ДС, у каждого седьмого —
 // понятийное соглашение (s3_documents, doc_category='concept_agreement'). &contractsMixed=1 — каждый второй договор
 // с ДС «Завершено», его ДС — «В работе» (вкладки и счётчики «Договоров и ДС»).
@@ -1393,12 +1458,19 @@ if (params.get('dgpLegacy') === '1') {
 // ?docCheck=1 — «Заявки на проверку ДП/ДС» (/doc-check-requests): заявки во всех колонках доски, исполнители,
 // сроки, метки, цвет, файл, одна в архиве и одна удалённая. ?docCheckLegacy=1 — колонок миграции 20261113 ещё нет
 // (выборка с ними отвечает 42703, как PostgREST). Люди вымышленные.
+// Миграция 20270216 (по умолчанию есть): история заявки — от «базы» (__fakeAfter, как триггеры: события и поля те же), снимок
+// файлов сообщения — от «базы» по id, «прочитано» — функции doc_check_talk_state / _mark (у каждого пользователя своё,
+// window.__fakeDb.doc_check_talk_reads), ответственный за ПСДЦ — экономист ОСП (user-4, user-5). ?dcNoChat=1 — миграции ещё нет
+// (колонки psdc_responsible_id нет: история — от страницы, «прочитано» — в браузере, файлов в переписке нет).
+// dcChatFiles=1 — у dcr-3 сообщение с файлом.
 if (params.get('docCheck') === '1') {
   const fdb = window.__fakeDb
   const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10)
   fdb.employee_directory.push(
     { user_id: 'user-1', display_name: 'Стендов Стенд Стендович', full_name: 'Стендов Стенд Стендович', email: 't@example.invalid', role: 'lawyer' },
     { user_id: 'user-3', display_name: 'Юристова Мария Андреевна', full_name: 'Юристова Мария Андреевна', email: 'm@example.invalid', role: 'lawyer' },
+    { user_id: 'user-4', display_name: 'Экономова Елена Сергеевна', full_name: 'Экономова Елена Сергеевна', email: 'ec@example.invalid', role: 'economist' },
+    { user_id: 'user-5', display_name: 'Расчётов Роман Игоревич', full_name: 'Расчётов Роман Игоревич', email: 'rr@example.invalid', role: 'economist' },
   )
   for (const cp of fdb.counterparties.slice(0, 3)) cp.status = 'active'
   const obj = (id) => fdb.objects.find((o) => o.id === id)
@@ -1411,7 +1483,7 @@ if (params.get('docCheck') === '1') {
     id, object_id: 'obj-1', counterparty_id: 'cp-1', doc_type: 'ds', doc_number: null, doc_date: null, status: 'new',
     notes: null, sort_order: 1, deleted_at: null, created_at: '2026-10-20T09:00:00Z', updated_at: '2026-10-20T09:00:00Z',
     created_by_name: 'Стендов С. С.', assignee_ids: [], due_date: null, priority: null, color: null, labels: [],
-    archived_at: null, email_link: null, manual_assignees: [], ...o,
+    archived_at: null, email_link: null, manual_assignees: [], psdc_responsible_id: null, ...o,
   })
   fdb.doc_check_requests = [
     req('dcr-1', { doc_number: '1', assignee_ids: ['user-1'] }),
@@ -1500,19 +1572,103 @@ if (params.get('docCheck') === '1') {
   // Встраивание objects(...) / counterparties(...) после записи — как PostgREST (стенд встраивания не разбирает).
   // Дату добавления ставит база (значение колонки по умолчанию).
   window.__fakeTriggers = { ...(window.__fakeTriggers || {}),
-    doc_check_requests: (row) => {
+    doc_check_requests: (row, old) => {
       row.created_at ??= new Date().toISOString()
+      // Автора ставит база (doc_check_requests_write_guard, 20270102): при создании — вошедший (страница его не шлёт).
+      if (!old) row.created_by = params.get('asUser') || 'user-1'
       // Номер ставит база (GENERATED ALWAYS AS IDENTITY) — следующий после наибольшего.
       if (!(window.__fakeMissingColumns?.doc_check_requests || []).includes('request_number')) {
         row.request_number ??= Math.max(0, ...fdb.doc_check_requests.map((r) => r.request_number || 0)) + 1
       }
       embed(row)
     },
-    // Автора и время сообщения ставит база (триггер doc_check_request_comments_stamp): что прислал клиент — не важно.
+    // Автора и время сообщения ставит база (триггер doc_check_request_comments_stamp): что прислал клиент — не важно. Файлы
+    // сообщения (20270216) — снимок строки файла по id, как в базе: имя, размер и ключ из запроса не берутся.
     doc_check_request_comments: (row) => {
       row.author_user_id = params.get('asUser') || 'user-1'
       row.author_name = 'Тест'
+      if (!chatMigration()) return
+      row.attachments = (row.attachments || []).map((a) => fdb.s3_documents.find((d) => d.id === (typeof a === 'string' ? a : a?.id)))
+        .filter(Boolean).map((d) => ({ id: d.id, file_name: d.file_name, mime_type: d.mime_type ?? null, size_bytes: d.size_bytes ?? null,
+          sha256: d.sha256 ?? null, s3_key: d.s3_key }))
     } }
+  // История заявки от «базы» (20270216) — как триггеры doc_check_requests_history, s3_documents_doc_check_history,
+  // doc_check_request_comments_history: страница её больше не пишет.
+  const chatMigration = () => !(window.__fakeMissingColumns?.doc_check_requests || []).includes('psdc_responsible_id')
+  const HISTORY_FIELDS = ['object_id', 'counterparty_id', 'doc_type', 'doc_number', 'doc_date', 'notes', 'assignee_ids', 'manual_assignees',
+    'email_link', 'due_date', 'priority', 'color', 'labels', 'created_at', 'created_by_name', 'psdc_responsible_id']
+  const PART = (c) => (c === 'doc_check_concept_agreement' ? 'Понятийное соглашение' : c === 'doc_check_chat' ? 'Обсуждение' : 'Загружаемые документы')
+  let historySeq = 0
+  const history = (requestId, event_type, field_name, old_value, new_value, description) => {
+    fdb.doc_check_request_audit_log.push({ id: `h-${++historySeq}`, request_id: requestId, event_type, field_name: field_name ?? null,
+      old_value: old_value ?? null, new_value: new_value ?? null, description: description ?? null,
+      changed_at: new Date(Date.now() + historySeq).toISOString(), changed_by_role: 'lawyer', changed_by_name: params.get('asName') || 'Тест' })
+  }
+  const fileJson = (d) => ({ id: d.id, file_name: d.file_name, category: d.doc_category ?? 'general', size_bytes: d.size_bytes ?? null })
+  const prevAfter = window.__fakeAfter || {}
+  window.__fakeAfter = { ...prevAfter,
+    doc_check_requests: (op, row, old) => {
+      prevAfter.doc_check_requests?.(op, row, old)
+      if (!chatMigration() || op === 'delete') return
+      if (op === 'insert') { history(row.id, 'created', null, null, null, 'Заявка создана'); return }
+      if (row.status !== old.status) history(row.id, 'status_changed', 'status', old.status, row.status)
+      if (!old.deleted_at && row.deleted_at) history(row.id, 'soft_deleted', null, null, null, 'Заявка удалена')
+      if (old.deleted_at && !row.deleted_at) history(row.id, 'restored', null, null, null, 'Заявка восстановлена')
+      if (!old.archived_at && row.archived_at) history(row.id, 'archived', null, null, null, 'Заявка отправлена в архив')
+      if (old.archived_at && !row.archived_at) history(row.id, 'unarchived', null, null, null, 'Заявка возвращена из архива')
+      for (const f of HISTORY_FIELDS) {
+        if (f in row && JSON.stringify(row[f] ?? null) !== JSON.stringify(old[f] ?? null)) history(row.id, 'field_updated', f, old[f] ?? null, row[f] ?? null)
+      }
+    },
+    s3_documents: (op, row, old) => {
+      prevAfter.s3_documents?.(op, row, old)
+      const d = row || old
+      if (!chatMigration() || d.owner_type !== 'doc_check_request' || d.doc_category === 'doc_check_chat') return
+      if (op === 'insert') history(d.owner_id, 'file_attached', 'file', null, fileJson(d), `${PART(d.doc_category)}: ${d.file_name}`)
+      else if (op === 'delete') history(d.owner_id, 'file_removed', 'file', fileJson(d), null, `${PART(d.doc_category)}: ${d.file_name}`)
+      else if (row.file_name !== old.file_name) history(d.owner_id, 'file_renamed', 'file', fileJson(old), fileJson(row), `${old.file_name} → ${row.file_name}`)
+    },
+    doc_check_request_comments: (op, row, old) => {
+      prevAfter.doc_check_request_comments?.(op, row, old)
+      if (!chatMigration() || op !== 'insert') return
+      for (const a of row.attachments || []) {
+        history(row.request_id, 'file_attached', 'file', null, { ...a, category: 'doc_check_chat', comment_id: row.id }, `Обсуждение: ${a.file_name}`)
+      }
+    },
+  }
+  // «Прочитано» — у каждого пользователя своё (asUser); первый вызов переносит отметки браузера, дальше ничего не меняет.
+  const talkUser = () => params.get('asUser') || 'user-1'
+  window.__fakeRpc = { ...(window.__fakeRpc || {}),
+    doc_check_talk_state: ({ p_since, p_seen }) => {
+      if (window.__fakeTalkError) return { data: null, error: window.__fakeTalkError }
+      const store = (fdb.doc_check_talk_reads ||= {})
+      const me = talkUser()
+      store[me] ||= { since: Math.min(p_since ?? Date.now(), Date.now()), seen: { ...(p_seen || {}) } }
+      return { data: { since: store[me].since, seen: { ...store[me].seen } }, error: null }
+    },
+    doc_check_talk_mark: ({ p_request, p_at }) => {
+      const store = (fdb.doc_check_talk_reads ||= {})
+      const me = talkUser()
+      store[me] ||= { since: Date.now(), seen: {} }
+      store[me].seen[p_request] = Math.max(store[me].seen[p_request] || 0, Math.min(p_at, Date.now()))
+      return { data: store[me].seen[p_request], error: null }
+    },
+  }
+  // dcTalkSince=<мс> — у вошедшего (asUser) отметки «прочитано» уже есть в «базе»: граница — эта, прочитанного нет.
+  if (params.get('dcTalkSince') != null) {
+    (fdb.doc_check_talk_reads ||= {})[talkUser()] = { since: Number(params.get('dcTalkSince')), seen: {} }
+  }
+  // dcChatFiles=1 — у dcr-3 сообщение коллеги с файлом (снимок в сообщении, строка файла — категории «обсуждение»).
+  if (params.get('dcChatFiles') === '1') {
+    fdb.s3_documents.push({ id: 'dcr-chat-1', owner_type: 'doc_check_request', owner_id: 'dcr-3', doc_category: 'doc_check_chat',
+      file_name: 'Замечания юриста.pdf', mime_type: 'application/pdf', s3_key: 'doc-check-requests/dcr-3/remarks.pdf', size_bytes: 2048,
+      created_at: '2026-10-21T09:29:00Z', uploaded_by: 'user-3', uploaded_by_name: 'Юристова Мария Андреевна' })
+    fdb.doc_check_request_comments.push({ id: 'cm-file', request_id: 'dcr-3', author_user_id: 'user-3', author_name: 'Юристова Мария Андреевна',
+      body: 'Замечания во вложении', created_at: '2026-10-21T09:31:00Z',
+      attachments: [{ id: 'dcr-chat-1', file_name: 'Замечания юриста.pdf', mime_type: 'application/pdf', size_bytes: 2048, sha256: null,
+        s3_key: 'doc-check-requests/dcr-3/remarks.pdf' }] })
+    window.__fakeFiles = { ...(window.__fakeFiles || {}), 'doc-check-requests/dcr-3/remarks.pdf': 'data:application/pdf;base64,JVBERi0xLjQ=' }
+  }
   // dcBadLink=1 — в базе не адрес (правка мимо страницы): ссылкой стать не должно.
   if (params.get('dcBadLink') === '1') fdb.doc_check_requests.find((r) => r.id === 'dcr-3').email_link = 'javascript:alert(1)'
   const card = ['email_link', 'manual_assignees']
@@ -1526,6 +1682,12 @@ if (params.get('docCheck') === '1') {
     window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}), doc_check_requests: card }
     noCardTables()
   }
+  // ?dcNoChat=1 (и прежние базы) — миграции 20270216 ещё нет: колонки psdc_responsible_id нет.
+  if (params.get('dcNoChat') === '1' || params.get('docCheckLegacy') === '1' || params.get('docCheckNoCard') === '1') {
+    for (const r of fdb.doc_check_requests) delete r.psdc_responsible_id
+    window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}),
+      doc_check_requests: [...(window.__fakeMissingColumns?.doc_check_requests || []), 'psdc_responsible_id'] }
+  }
   if (params.get('dcNoNumber') === '1' || params.get('docCheckLegacy') === '1' || params.get('docCheckNoCard') === '1') {
     for (const r of fdb.doc_check_requests) delete r.request_number
     window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}),
@@ -1536,7 +1698,7 @@ if (params.get('docCheck') === '1') {
     for (const r of fdb.doc_check_requests) for (const k of [...board, ...card]) delete r[k]
     fdb.doc_check_requests = fdb.doc_check_requests.filter((r) => r.status !== 'legacy')
     window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}),
-      doc_check_requests: [...board, ...card, 'request_number'] }
+      doc_check_requests: [...board, ...card, 'request_number', 'psdc_responsible_id'] }
     noCardTables()
   }
 }

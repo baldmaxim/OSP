@@ -154,7 +154,8 @@ describe('Заявки на проверку: создание — база', { 
     assert.throws(() => as(U.manager, `update public.doc_check_requests set status = 'done' where id = '${id}'`), /только сотрудник с правом правки/)
     assert.throws(() => as(U.manager, `update public.doc_check_requests set notes = 'исправил' where id = '${id}'`), /только сотрудник с правом правки/)
     assert.throws(() => as(U.manager, `update public.doc_check_requests set deleted_at = now() where id = '${id}'`), /только сотрудник с правом правки/)
-    assert.throws(() => as(U.manager, `delete from public.doc_check_requests where id = '${id}'`), /только сотрудник с правом правки/)
+    // Удалить заявку целиком нельзя никому из вошедших (20270216 — раньше этой проверки), мягко — только правом правки.
+    assert.throws(() => as(U.manager, `delete from public.doc_check_requests where id = '${id}'`), /только сотрудник с правом правки|удаляют в «Удалённые»/)
     assert.throws(() => as(U.viewer, INSERT({ object_id: `'${O.b}'` })), /только сотрудник с правом правки/)
     assert.throws(() => as(U.viewer, `update public.doc_check_requests set notes = 'x' where id = '${R.b}'`), /только сотрудник с правом правки/)
     assert.equal(sql(`update public.doc_check_requests set notes = 'служебно' where id = '${id}' returning notes`), 'служебно')
@@ -167,7 +168,9 @@ describe('Заявки на проверку: создание — база', { 
     const id = as(U.manager, INSERT())
     assert.equal(as(U.engineer, `update public.doc_check_requests set status = 'in_progress', created_by = '${U.engineer}' where id = '${id}' returning status`), 'in_progress')
     assert.equal(row(id).created_by, U.manager)
-    assert.equal(as(U.engineer, `delete from public.doc_check_requests where id = '${own}' returning id`), own)
+    // Удаляют заявку только мягко (20270216, кандидат после этой миграции): с ней ушли бы переписка и история.
+    assert.throws(() => as(U.engineer, `delete from public.doc_check_requests where id = '${own}'`), /удаляют в «Удалённые»/)
+    assert.equal(as(U.engineer, `update public.doc_check_requests set deleted_at = now() where id = '${own}' returning id`), own)
   })
 
   it('файлы: автор — у своей заявки, пока она в «Новых»; у чужой и после переноса — нет; юрист — всегда', () => {

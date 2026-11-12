@@ -49,3 +49,4 @@
 20270105_supply_rate_comments.sql
 20270110_contract_number_scheme.sql
 20270123_doc_check_request_number.sql
+20270216_doc_check_chat_history.sql

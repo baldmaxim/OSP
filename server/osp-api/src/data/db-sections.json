@@ -3816,6 +3816,44 @@
       "call": "none",
       "why": "Вспомогательная для правил базы, интерфейс не вызывает."
     },
+    "doc_check_talk_mark": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "doc_check_requests",
+              "view"
+            ],
+            [
+              "doc_check_requests",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "DocCheckRequestsPage / окно заявки: «прочитано» в обсуждении — своя отметка заявки (20270216; своя строка, только растёт, только видимые заявки — проверяет функция)."
+    },
+    "doc_check_talk_state": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "doc_check_requests",
+              "view"
+            ],
+            [
+              "doc_check_requests",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "DocCheckRequestsPage: свои отметки «прочитано» (20270216; первый вызов заводит строку — граница и прежние отметки браузера)."
+    },
     "dp_request_alerts_ack": {
       "kind": "write",
       "read": "sensitive",

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { db } from '../../api'
+import { fetchAllRows } from '../../utils/fetchAllRows'
 import FilterDropdown from '../FilterDropdown'
 import DocCheckDiscussion from './DocCheckDiscussion'
 import DocCheckFiles from './DocCheckFiles'
 import { IconCheck, IconLink } from '../icons/ActionIcons'
 import { IconUser } from '../icons/ToolbarIcons'
 import { employeeName } from '../../services/employees'
-import { fetchComments } from '../../services/docCheckCard'
+import { fetchComments, fetchRequestAuthor } from '../../services/docCheckCard'
 import { safeHttpUrl } from '../../utils/publicTenders'
 import { talkTimes } from '../../utils/docCheckTalkRead'
 import {
@@ -26,9 +27,14 @@ import {
   dueState,
   fmtDocDate,
   fmtDocDateTime as fmtDateTime,
+  fileCategoryLabel,
+  formatBytes,
   initials,
+  postedChatFileIds,
+  psdcStaffOptions,
   requestIdLabel,
   shownAssigneeIds,
+  shownPsdcResponsible,
 } from '../../utils/docCheckHelpers'
 
 // Карточка заявки: две вкладки — «Общая» и «История» (11.11.2026, решение пользователя: шагов нет, «Документы» и «Обсуждение» —
@@ -36,7 +42,9 @@ import {
 //
 // «Общая»: слева сведения — две колонки разделов (03.11: «визуальное разделение, читаемый текст»). В левой — примечание,
 // «Документы» и срок: раздел «Документы» — объект, контрагент, номер и дата, под ними файлы двумя частями, «Понятийное
-// соглашение» и «Загружаемые документы» (DocCheckFiles; прежняя вкладка «Документы»). В правой — то, что меняется в работе:
+// соглашение» и «Загружаемые документы» (DocCheckFiles; прежняя вкладка «Документы»). Файлы меняет право правки раздела, а свою
+// заявку, пока она в «Новых», — и её автор с правом создания (рукстрой, экономист объекта; 12.11.2026): так пускают база
+// (s3_documents_doc_check_guard) и osp-api, отдел взял заявку в работу — автор пишет в обсуждение. В правой — то, что меняется в работе:
 // статус, исполнители, — и создание. Справа от сведений — переписка (DocCheckDiscussion), со своей прокруткой. Окно постоянной
 // высоты: вкладки разной длины его не дёргают.
 //
@@ -49,6 +57,11 @@ import {
 //
 // Закрывается только «×» и «Закрыть», как карточка задачи: щелчок мимо окна (или
 // выделение текста, отпущенное за его краем) уносил бы недописанное сообщение.
+//
+// 12.11.2026 (решения пользователя; миграция 20270216, hasChatFields): окно больше, переписка шире; файлы в переписке
+// (DocCheckDiscussion); под исполнителями — «Согласование ПСДЦ»: ответственный — один из экономистов ОСП, необязателен,
+// назначает право правки раздела (юрист ОСП) — сразу, без формы, как исполнителей. Историю заявки пишет база: файлы — кто
+// прикрепил, открепил, переименовал, перенёс; файл, брошенный мимо частей окна, браузер не открывает вместо заявки.
 
 const EVENT_LABEL = {
   created: 'Заявка создана',
@@ -58,12 +71,34 @@ const EVENT_LABEL = {
   restored: 'Заявка восстановлена',
   archived: 'Заявка в архиве',
   unarchived: 'Заявка возвращена из архива',
+  file_attached: 'Файл прикреплён',
+  file_removed: 'Файл откреплён',
+  file_renamed: 'Файл переименован',
+  file_moved: 'Файл перенесён',
+  file_replaced: 'Файл заменён',
+}
+const FILE_EVENTS = new Set(['file_attached', 'file_removed', 'file_renamed', 'file_moved', 'file_replaced'])
+
+// Файл, брошенный мимо частей окна (документы, переписка), браузер не открывает вместо заявки: недописанное не теряется.
+const withFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files')
+const blockStrayDrop = {
+  onDragOver: (e) => { if (withFiles(e) && !e.defaultPrevented) { e.preventDefault(); e.dataTransfer.dropEffect = 'none' } },
+  onDrop: (e) => { if (withFiles(e) && !e.defaultPrevented) e.preventDefault() },
+}
+
+// Строка истории о файле: что и где (описание пишет база), размер — если он есть.
+function fileHistoryText(h) {
+  const file = h.new_value || h.old_value || {}
+  const size = h.event_type === 'file_attached' || h.event_type === 'file_removed' ? formatBytes(file.size_bytes) : ''
+  const text = h.description || [fileCategoryLabel(file.category), file.file_name].filter(Boolean).join(': ')
+  return size ? `${text} · ${size}` : text
 }
 
 // Значение поля в истории — словами, а не кодом базы.
 function historyValue(field, value, ctx) {
   if (value == null || value === '' || (Array.isArray(value) && !value.length)) return '—'
   if (field === 'assignee_ids') return value.map(id => employeeName(ctx.employees, id)).join(', ')
+  if (field === 'psdc_responsible_id') return employeeName(ctx.employees, value)
   if (field === 'labels' || field === 'manual_assignees') return value.join(', ')
   if (field === 'priority') return DOC_CHECK_PRIORITY_LABEL[value] || value
   if (field === 'color') return DOC_CHECK_COLOR_LABEL[value] || value
@@ -96,8 +131,8 @@ function Row({ label, className, children }) {
 }
 
 export default function DocCheckDetailModal({
-  request, employees, objects, counterparties, canEdit, hasBoardFields, hasCardFields, currentUserId, deletion, refreshKey,
-  onStatusChange, onAssign, onEdit, onDelete, onClose, onCardCounts,
+  request, employees, objects, counterparties, canEdit, canCreateOwn = false, hasBoardFields, hasCardFields, hasChatFields = false, currentUserId, deletion,
+  refreshKey, onStatusChange, onAssign, onPsdcAssign, onEdit, onDelete, onClose, onCardCounts,
   talkReadMark = Number.POSITIVE_INFINITY, onTalkSeen,
 }) {
   const [tab, setTab] = useState('general')
@@ -108,6 +143,21 @@ export default function DocCheckDetailModal({
   const filesChanged = useRef(false)
   const markFilesChanged = useCallback(() => { filesChanged.current = true }, [])
   const close = () => onClose(filesChanged.current)
+
+  // Автор своей заявки в «Новых» (право создания без права правки) меняет её файлы. Чья заявка — спрашиваем у базы: на доске
+  // автора нет. Не узнали (нет колонки, сбой) — только просмотр, как раньше. Заявку взяли в работу при открытом окне — база
+  // откажет, причина придёт сообщением.
+  const authorCandidate = !canEdit && canCreateOwn && !!currentUserId && request.status === 'new' && !request.deleted_at
+  const [authorId, setAuthorId] = useState(null)
+  useEffect(() => {
+    if (!authorCandidate) return undefined
+    let cancelled = false
+    fetchRequestAuthor(request.id)
+      .then(id => { if (!cancelled) setAuthorId(id) })
+      .catch(err => console.warn('Не удалось узнать автора заявки:', err.message))
+    return () => { cancelled = true }
+  }, [authorCandidate, request.id])
+  const authorFiles = authorCandidate && authorId === currentUserId
   const [history, setHistory] = useState([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [comments, setComments] = useState([])
@@ -148,29 +198,24 @@ export default function DocCheckDetailModal({
   }, [cardState, tab, times, request.id, onTalkSeen])
   const unreadAfter = Math.max(openReadMark, times.lastMine)
 
-  // История нужна редко — грузим только при открытии своей вкладки.
+  // История — при каждом переходе на свою вкладку (и при возврате на вкладку браузера): её пишет база (20270216), и сделанное
+  // в окне — файлы, исполнители, ответственный за ПСДЦ — видно сразу. Пока читается — прежний список. Постранично: потолок
+  // 1000 строк на ответ.
   useEffect(() => {
-    if (tab !== 'history' || historyLoaded) return
+    if (tab !== 'history') return undefined
     let cancelled = false
-    const load = async () => {
-      try {
-        const { data, error } = await db
-          .from('doc_check_request_audit_log')
-          .select('*')
-          .eq('request_id', request.id)
-          .order('changed_at', { ascending: false })
-          .order('id', { ascending: true })
-        if (error) throw error
-        if (!cancelled) setHistory(data || [])
-      } catch (err) {
-        console.warn('Не удалось загрузить историю заявки:', err.message)
-      } finally {
-        if (!cancelled) setHistoryLoaded(true)
-      }
-    }
-    load()
+    fetchAllRows((from, to) => db
+      .from('doc_check_request_audit_log')
+      .select('*')
+      .eq('request_id', request.id)
+      .order('changed_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to))
+      .then(rows => { if (!cancelled) setHistory(rows) })
+      .catch(err => console.warn('Не удалось загрузить историю заявки:', err.message))
+      .finally(() => { if (!cancelled) setHistoryLoaded(true) })
     return () => { cancelled = true }
-  }, [tab, historyLoaded, request.id])
+  }, [tab, request.id, refreshKey])
 
   // Контрагентов — тысячи: собираем только для вкладки истории, и один раз.
   const ctx = useMemo(() => (tab !== 'history' ? null : {
@@ -186,6 +231,13 @@ export default function DocCheckDetailModal({
   const isDeleted = !!request.deleted_at
   const canAssign = canEdit && hasBoardFields && !isDeleted
   const lawyerOptions = useMemo(() => (canAssign ? assigneeStaffOptions(employees) : []), [canAssign, employees])
+  // Согласование ПСДЦ — с миграцией 20270216: ответственный — экономист ОСП; назначает право правки раздела (юрист ОСП).
+  const psdcId = shownPsdcResponsible(request, employees)
+  const canPsdc = canAssign && hasChatFields && !!onPsdcAssign
+  const psdcOptions = useMemo(() => (canPsdc
+    ? [{ value: '', label: 'Не назначен' }, ...psdcStaffOptions(employees)] : []), [canPsdc, employees])
+  // Файлы, отправленные в переписке, — третьей частью «Документов»; число изменилось — список файлов перечитывается.
+  const postedIds = useMemo(() => postedChatFileIds(comments), [comments])
 
   const tabs = [
     { key: 'general', label: 'Общая' },
@@ -194,7 +246,7 @@ export default function DocCheckDetailModal({
 
   return (
     <div className="modal-overlay">
-      <div className="modal dc-detail-modal" role="dialog" aria-modal="true" aria-label={cardTitle(request)}>
+      <div className="modal dc-detail-modal" role="dialog" aria-modal="true" aria-label={cardTitle(request)} {...blockStrayDrop}>
         <div className="modal-header dc-detail-head">
           <div className="dc-detail-heading">
             <h3>{cardTitle(request)}</h3>
@@ -256,7 +308,13 @@ export default function DocCheckDetailModal({
                         </Row>
                       )}
                     </dl>
-                    <DocCheckFiles requestId={request.id} canEdit={canEdit && !isDeleted} onChange={markFilesChanged} />
+                    <DocCheckFiles
+                      requestId={request.id}
+                      canEdit={(canEdit && !isDeleted) || authorFiles}
+                      note={authorFiles ? 'Пока заявка в «Новых заявках», файлы можно добавить и удалить. Потом их меняет отдел.' : null}
+                      onChange={markFilesChanged}
+                      postedChatIds={postedIds}
+                    />
                   </Box>
 
                   {hasBoardFields && (
@@ -331,6 +389,39 @@ export default function DocCheckDetailModal({
                     </Box>
                   )}
 
+                  {hasChatFields && (
+                    <Box title="Согласование ПСДЦ" className="dc-psdc">
+                      {psdcId ? (
+                        <ul className="dc-detail-people">
+                          <li>
+                            <span className={`dc-avatar dc-avatar--t${avatarTone(psdcId)}`} aria-hidden="true">
+                              {initials(employeeName(employees, psdcId))}
+                            </span>
+                            <span className="dc-person-name">{employeeName(employees, psdcId)}</span>
+                            <span className="dc-person-role">экономист ОСП</span>
+                          </li>
+                        </ul>
+                      ) : <p className="dc-box-text dc-box-empty">Ответственный не назначен</p>}
+                      {canPsdc && (
+                        <div className="dc-assign">
+                          <FilterDropdown
+                            label=""
+                            searchable
+                            searchPlaceholder="Поиск экономиста…"
+                            allLabel="Не назначен"
+                            icon={<IconUser size={15} />}
+                            value={psdcId || ''}
+                            onChange={(id) => { if ((id || null) !== psdcId) onPsdcAssign(request, id || null) }}
+                            options={psdcOptions}
+                            formatTrigger={() => (psdcId ? 'Сменить или снять' : 'Назначить ответственного')}
+                            triggerTitle="Экономист ОСП — ответственный за согласование ПСДЦ; сохраняется сразу"
+                            className="dc-assign-picker dc-psdc-picker"
+                          />
+                        </div>
+                      )}
+                    </Box>
+                  )}
+
                   <Box title={isDeleted ? 'Создание и удаление' : 'Создание'}>
                     <dl className="dc-kv">
                       <Row label="Заявку создал">{request.created_by_name || '—'}</Row>
@@ -355,6 +446,8 @@ export default function DocCheckDetailModal({
                 canWrite={!isDeleted}
                 state={cardState}
                 onRetry={retryCard}
+                chatFiles={hasChatFields}
+                onFilesSent={markFilesChanged}
               />
             </aside>
           )}
@@ -380,6 +473,8 @@ export default function DocCheckDetailModal({
                             {' → '}
                             {DOC_CHECK_STATUS_LABEL[h.new_value] || h.new_value || '—'}
                           </div>
+                        ) : FILE_EVENTS.has(h.event_type) ? (
+                          <div className="dc-history-text">{fileHistoryText(h)}</div>
                         ) : h.event_type === 'field_updated' ? (
                           <div className="dc-history-text">
                             <span className="dc-history-old">{historyValue(h.field_name, h.old_value, ctx)}</span>

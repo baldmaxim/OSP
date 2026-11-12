@@ -1,9 +1,9 @@
 // Непрочитанные сообщения обсуждения заявок на проверку ДП/ДС (11.11.2026, просьба пользователя: «чтобы непрочитанное
 // сообщение в обсуждении подсвечивалось цветом»).
 //
-// «Прочитано» хранится в браузере (localStorage, по пользователю) — как прочитанные уведомления (NotificationsContext):
-// таблицы в базе и миграции не нужно. Цена — отметка своя у каждого браузера: прочитанное на телефоне на компьютере
-// останется новым.
+// До миграции 20270216 «прочитано» хранится в браузере (localStorage, по пользователю) — как прочитанные уведомления
+// (NotificationsContext). Цена — отметка своя у каждого браузера: прочитанное на телефоне на компьютере останется новым.
+// С миграцией — в базе, см. «Отметки в базе» ниже.
 //
 // Непрочитанное — сообщение коллеги позже всех трёх границ:
 //   • since — первое открытие доски в этом браузере: всё, что написано раньше, считается прочитанным (иначе в первый раз
@@ -51,6 +51,39 @@ export function loadTalkReads(userId, now = Date.now()) {
   const fresh = { since: now, seen: {} }
   storageSet(key, fresh)
   return fresh
+}
+
+// ── Отметки в базе (миграция 20270216, решение пользователя 12.11.2026: «у каждого человека отдельный статус прочтения») ──
+// С миграцией «прочитано» хранит база — своё у каждого сотрудника, одно и то же на телефоне и компьютере (doc_check_talk_reads,
+// функции doc_check_talk_state / doc_check_talk_mark). Вид тот же — { since, seen }, правила непрочитанного те же. Отметки этого
+// браузера при первом входе переносятся в базу (граница и прочитанное — ничего не подсветится заново) и здесь больше не хранятся.
+
+// Отметки браузера как есть — без новой записи (для переноса в базу). Нет — null.
+export function readLocalTalkReads(userId) {
+  return userId ? parse(storageGet(talkReadKey(userId))) : null
+}
+
+export function dropLocalTalkReads(userId) {
+  try { localStorage.removeItem(talkReadKey(userId)) } catch { /* приватный режим */ }
+}
+
+// Ответ базы → { since, seen } с числами; испорченное — null (непрочитанных нет, лучше, чем подсветить всё).
+export function normalizeTalkReads(raw) {
+  const since = Number(raw?.since)
+  if (!Number.isFinite(since)) return null
+  const seen = {}
+  for (const [id, ms] of Object.entries(raw?.seen && typeof raw.seen === 'object' ? raw.seen : {})) {
+    const n = Number(ms)
+    if (Number.isFinite(n)) seen[id] = n
+  }
+  return { since, seen }
+}
+
+// Новая отметка заявки поверх прежних (растёт, назад не идёт); без изменений — тот же объект.
+export function withSeen(reads, requestId, at) {
+  const ms = toMs(at)
+  if (!reads || ms <= (reads.seen[requestId] || 0)) return reads
+  return { ...reads, seen: { ...reads.seen, [requestId]: ms } }
 }
 
 // Граница «прочитано» заявки без учёта своих сообщений.

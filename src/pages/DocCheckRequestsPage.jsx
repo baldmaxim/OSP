@@ -19,7 +19,7 @@ import { counterpartyPickerOptions, filterCounterpartyOptions, isPickableCounter
 import { fetchPickerCounterparties } from '../services/counterpartyPicker'
 import { chunkList } from '../utils/inChunks'
 import { employeeName, employeesById, fetchEmployees } from '../services/employees'
-import { fetchCardCounts as readCardCounts, fetchDeletions } from '../services/docCheckCard'
+import { fetchCardCounts as readCardCounts, fetchDeletions, fetchTalkReads, saveTalkRead } from '../services/docCheckCard'
 import { uploadFile } from '../services/s3'
 import useBodyClass from '../hooks/useBodyClass'
 import { useIsPhone } from '../hooks/useMediaQuery'
@@ -55,7 +55,10 @@ import {
   sameCardCounts,
   shownAssigneeIds,
 } from '../utils/docCheckHelpers'
-import { loadTalkReads, markTalkRead, readMarkOf, talkReadKey, unreadTalkCount } from '../utils/docCheckTalkRead'
+import {
+  dropLocalTalkReads, loadTalkReads, markTalkRead, normalizeTalkReads, readLocalTalkReads, readMarkOf, talkReadKey, unreadTalkCount,
+  withSeen,
+} from '../utils/docCheckTalkRead'
 import '../styles/workUi.css'
 import '../components/MobileCards.css'
 import './DocCheckRequestsPage.css'
@@ -77,6 +80,8 @@ import './DocCheckRequestsPage.css'
 // полей и работает как раньше: без исполнителей, сроков, меток, цвета и архива.
 // Без миграции 20261124 — без обсуждения. Шагов в заявке нет с 11.11.2026 (решение
 // пользователя), ссылку на письмо при создании не вводят — у прежних заявок она видна.
+// С миграцией 20270216 (hasChatFields): историю заявки пишет база (страница — нет), файлы в
+// переписке, «Согласование ПСДЦ», «прочитано» — в базе, у каждого своё.
 
 const VIEW_KEY = 'docCheckView'
 const QUIET_RELOAD_MS = 30000
@@ -136,6 +141,11 @@ export default function DocCheckRequestsPage() {
   const [cardCounts, setCardCounts] = useState(() => new Map())
   const [hasBoardFields, setHasBoardFields] = useState(true)
   const [hasCardFields, setHasCardFields] = useState(false)
+  const [hasChatFields, setHasChatFields] = useState(false)
+  // Какая база — известно после первого чтения заявок: до него «прочитано» не берётся ни из браузера, ни из базы.
+  const [schemaKnown, setSchemaKnown] = useState(false)
+  // Историю пишет база (20270216) — страница её не пишет: иначе запись страницы отбросила бы сама база, а лишний запрос не нужен.
+  const historyByDb = useRef(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -193,6 +203,9 @@ export default function DocCheckRequestsPage() {
       lastLoad.current = Date.now()
       setHasBoardFields(DOC_CHECK_SELECTS[selectAt.current].board)
       setHasCardFields(DOC_CHECK_SELECTS[selectAt.current].card)
+      setHasChatFields(DOC_CHECK_SELECTS[selectAt.current].chat)
+      historyByDb.current = DOC_CHECK_SELECTS[selectAt.current].chat
+      setSchemaKnown(true)
       setRequests(rows.map(normalizeRequest))
       setError(null)
     } catch (err) {
@@ -245,18 +258,55 @@ export default function DocCheckRequestsPage() {
     })
   }, [])
 
-  // Непрочитанные сообщения обсуждения (11.11.2026, docCheckTalkRead.js): отметки «прочитано» — в браузере, по пользователю.
-  // Окно заявки с перепиской отмечает её прочитанной; другая вкладка с доской узнаёт об этом из события storage.
-  const [talkReads, setTalkReads] = useState(() => (myId ? loadTalkReads(myId) : null))
+  // Непрочитанные сообщения обсуждения (11.11.2026, docCheckTalkRead.js). С миграцией 20270216 отметки «прочитано» — в базе, у
+  // каждого сотрудника свои и одни на всех его устройствах (12.11.2026, решение пользователя); отметки этого браузера при первом
+  // входе переносятся туда. До миграции — в браузере, по пользователю; другая вкладка узнаёт об отметке из события storage.
+  // Окно заявки с перепиской отмечает её прочитанной. Пока не прочитано, откуда брать отметки, непрочитанных нет.
+  const [talkReads, setTalkReads] = useState(null)
+  const talkReadsRef = useRef(null)
+  talkReadsRef.current = talkReads
+  const talkSeq = useRef(0)
+  const loadTalkFromDb = useCallback(async () => {
+    if (!myId) return
+    const seq = ++talkSeq.current
+    try {
+      const local = readLocalTalkReads(myId)
+      const state = normalizeTalkReads(await fetchTalkReads(local))
+      if (local) dropLocalTalkReads(myId)
+      if (seq !== talkSeq.current || !state) return
+      // Отметка, поставленная, пока шёл запрос, не теряется.
+      setTalkReads(prev => {
+        if (!prev) return state
+        let next = state
+        for (const [id, ms] of Object.entries(prev.seen)) next = withSeen(next, id, ms)
+        return next
+      })
+    } catch (err) {
+      console.warn('Не удалось прочитать отметки «прочитано»:', err.message)
+    }
+  }, [myId])
   useEffect(() => {
-    setTalkReads(myId ? loadTalkReads(myId) : null)
-    if (!myId) return undefined
+    talkSeq.current += 1
+    setTalkReads(null)
+    if (!myId || !schemaKnown) return undefined
+    if (hasChatFields) {
+      loadTalkFromDb()
+      return undefined
+    }
+    setTalkReads(loadTalkReads(myId))
     const onStorage = (e) => { if (e.key === talkReadKey(myId)) setTalkReads(loadTalkReads(myId)) }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
-  }, [myId])
+  }, [myId, schemaKnown, hasChatFields, loadTalkFromDb])
   const handleTalkSeen = useCallback((id, at) => {
     if (!myId) return
+    if (historyByDb.current) {
+      const prev = talkReadsRef.current
+      if (prev && at <= readMarkOf(prev, id)) return
+      if (prev) setTalkReads(cur => withSeen(cur, id, at))
+      saveTalkRead(id, at).catch(err => console.warn('Не удалось отметить сообщения прочитанными:', err.message))
+      return
+    }
     setTalkReads(prev => (at > readMarkOf(prev, id) ? markTalkRead(myId, id, at, prev) : prev))
   }, [myId])
   // Таблицы обсуждения нет, пока нет колонок той же миграции — до этого не обращаемся.
@@ -303,6 +353,8 @@ export default function DocCheckRequestsPage() {
       fetchRequests({ quiet: true })
       fetchDocCounts()
       if (hasCardFields) fetchCardCounts()
+      // «Прочитано» с другого устройства или вкладки.
+      if (hasChatFields) loadTalkFromDb()
       setDetailRefresh(n => n + 1)
     }
     document.addEventListener('visibilitychange', onBack)
@@ -311,10 +363,11 @@ export default function DocCheckRequestsPage() {
       document.removeEventListener('visibilitychange', onBack)
       window.removeEventListener('focus', onBack)
     }
-  }, [fetchRequests, fetchDocCounts, fetchCardCounts, hasCardFields])
+  }, [fetchRequests, fetchDocCounts, fetchCardCounts, hasCardFields, hasChatFields, loadTalkFromDb])
 
   // ── История ───────────────────────────────────────────────────────────────
   const logEvent = useCallback(async (requestId, entry) => {
+    if (historyByDb.current) return
     try {
       const { error: e } = await db.from('doc_check_request_audit_log').insert({
         request_id: requestId,
@@ -398,6 +451,12 @@ export default function DocCheckRequestsPage() {
     const patch = { assignee_ids: assigneeIdsToSave(request.assignee_ids, selected, employees) }
     const events = fieldEvents(request, patch)
     if (events.length) patchRequest(request, patch, events)
+  }
+
+  // Ответственный за согласование ПСДЦ (20270216) — из окна заявки, сразу. История — от базы.
+  const handlePsdcAssign = (request, id) => {
+    const patch = { psdc_responsible_id: id || null }
+    if ((request.psdc_responsible_id || null) !== patch.psdc_responsible_id) patchRequest(request, patch)
   }
 
   // Кружок на карточке: завершить / вернуть в работу.
@@ -963,8 +1022,10 @@ export default function DocCheckRequestsPage() {
           objects={objects}
           counterparties={counterparties}
           canEdit={canEditSection}
+          canCreateOwn={createOnly}
           hasBoardFields={hasBoardFields}
           hasCardFields={hasCardFields}
+          hasChatFields={hasChatFields}
           currentUserId={myId}
           deletion={deletions?.get(detail.id) || null}
           refreshKey={detailRefresh}
@@ -973,6 +1034,7 @@ export default function DocCheckRequestsPage() {
           onTalkSeen={handleTalkSeen}
           onStatusChange={(r, status) => moveTo(r, status)}
           onAssign={handleAssign}
+          onPsdcAssign={handlePsdcAssign}
           onEdit={(r) => { setDetailId(null); setFormFor({ request: r }) }}
           onDelete={handleDelete}
           onClose={closeDetail}

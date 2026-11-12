@@ -190,6 +190,38 @@ export const MAX_COMMENT_LENGTH = 4000
 // — свободный текст, права на файлы заявки — те же (s3_documents_doc_check_guard, WRITE_RULES.doc_check_requests).
 export const DOC_CHECK_CONCEPT_CATEGORY = 'doc_check_concept_agreement'
 
+// Файл сообщения в обсуждении (миграция 20270216, решение пользователя 12.11.2026): своя категория. Сообщение хранит снимок
+// файла (attachments: id, имя, тип, размер, отпечаток, ключ) — его собирает база по id; отправленный файл не меняется и не
+// удаляется никем (триггер s3_documents_doc_check_guard), свой черновик (сообщение не ушло) автор убрать может. В «Документах»
+// отправленные файлы — отдельной частью «Из обсуждения», только для просмотра. Не больше 20 файлов в сообщении — как в базе.
+export const DOC_CHECK_CHAT_CATEGORY = 'doc_check_chat'
+export const MAX_CHAT_FILES = 20
+
+// Файлы, уже отправленные в обсуждении (id из снимков сообщений).
+export function postedChatFileIds(comments) {
+  const ids = new Set()
+  for (const c of comments || []) for (const a of c.attachments || []) if (a?.id) ids.add(a.id)
+  return ids
+}
+
+// Согласование ПСДЦ (20270216, решение пользователя 12.11.2026): ответственный необязателен и это один из действующих
+// экономистов ОСП (роль economist — не «Экономист объекта»). Назначает право правки раздела — по умолчанию юрист ОСП; база
+// принимает только экономиста ОСП (doc_check_requests_psdc_guard). Сменили человеку роль или заблокировали — в окне его нет,
+// значение в базе остаётся (как у исполнителей).
+const isPsdcStaff = (employee) => employee?.role === ROLES.ECONOMIST
+
+export function shownPsdcResponsible(request, employees) {
+  const id = request?.psdc_responsible_id || null
+  return id && isPsdcStaff(employees?.get(id)) ? id : null
+}
+
+export function psdcStaffOptions(employees) {
+  return [...(employees?.values() || [])]
+    .filter(isPsdcStaff)
+    .map(e => ({ value: e.user_id, label: e.display_name || e.full_name || e.email || 'Без имени' }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+}
+
 // Счётчик на карточке доски: заявка → сколько сообщений, а для «непрочитанных» (docCheckTalkRead.js) — время каждого
 // сообщения коллег (мс) и своего последнего. Без myId все сообщения — чужие.
 export const NO_CARD_COUNTS = Object.freeze({ commentsCount: 0, otherAts: Object.freeze([]), lastMineAt: 0 })
@@ -401,19 +433,23 @@ const EMBED = `,
   counterparties(id, name)`
 // Поля карточки (миграция 20261124): та же миграция заводит обсуждение, поэтому её колонки — признак всего набора.
 export const CARD_FIELDS = ['email_link']
+// Колонка миграции 20270216 — признак всего, что она делает: файлы в обсуждении, история заявки от базы (страница её больше
+// не пишет), согласование ПСДЦ, «прочитано» в базе. Нет колонки — всё как раньше.
+export const CHAT_FIELDS = ['psdc_responsible_id']
 // Постоянный номер заявки — «ID» (миграция 20270123): колонка позже остальных, поэтому у каждого набора полей — вариант с ней
 // и без неё. Без колонки номер не показываем вовсе: номер, посчитанный страницей, у сотрудника объекта (видит только свои
 // заявки) разошёлся бы с номером базы.
 export const NUMBER_FIELD = 'request_number'
 const LEVELS = [
-  { board: true, card: true, fields: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}, ${CARD_FIELDS.join(', ')}` },
-  { board: true, card: false, fields: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}` },
-  { board: false, card: false, fields: BASE_SELECT },
+  { board: true, card: true, chat: true, fields: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}, ${CARD_FIELDS.join(', ')}, ${CHAT_FIELDS.join(', ')}` },
+  { board: true, card: true, chat: false, fields: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}, ${CARD_FIELDS.join(', ')}` },
+  { board: true, card: false, chat: false, fields: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}` },
+  { board: false, card: false, chat: false, fields: BASE_SELECT },
 ]
 // Что читать — от полного набора к прежнему: первая выборка, на которую база ответила без 42703.
-export const DOC_CHECK_SELECTS = LEVELS.flatMap(({ board, card, fields }) => [
-  { board, card, number: true, select: `${fields}, ${NUMBER_FIELD}${EMBED}` },
-  { board, card, number: false, select: `${fields}${EMBED}` },
+export const DOC_CHECK_SELECTS = LEVELS.flatMap(({ board, card, chat, fields }) => [
+  { board, card, chat, number: true, select: `${fields}, ${NUMBER_FIELD}${EMBED}` },
+  { board, card, chat, number: false, select: `${fields}${EMBED}` },
 ])
 
 // «ID 123» — номер заявки на доске, в реестре и в окне. Нет номера — пусто.
@@ -486,6 +522,25 @@ export const FIELD_LABEL = {
   archived_at: 'Архив',
   created_at: 'Дата создания',
   created_by_name: 'Кто создал',
+  psdc_responsible_id: 'Согласование ПСДЦ: ответственный',
+}
+
+// Часть заявки, к которой относится файл, — в истории и в окне.
+export function fileCategoryLabel(category) {
+  if (category === DOC_CHECK_CONCEPT_CATEGORY) return 'Понятийное соглашение'
+  if (category === DOC_CHECK_CHAT_CATEGORY) return 'Обсуждение'
+  return 'Загружаемые документы'
+}
+
+// Размер файла: «1,2 МБ».
+export function formatBytes(bytes) {
+  if (bytes == null || bytes === '') return ''
+  const units = ['Б', 'КБ', 'МБ', 'ГБ']
+  let v = Number(bytes)
+  if (!Number.isFinite(v)) return ''
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++ }
+  return `${v.toFixed(i === 0 ? 0 : 1).replace('.', ',')} ${units[i]}`
 }
 
 // Поле изменилось? Массивы (исполнители, метки) — по составу и порядку.
