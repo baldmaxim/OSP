@@ -192,16 +192,19 @@ describe('Заявки на ДС: строка файла', { skip: !launch && '
     } finally { await close() }
   })
 
-  it('без права правки: нажатие на PDF — просмотр, на другой файл — ничего, двойное — скачать; правки и удаления нет', async () => {
+  it('без права правки: нажатие на PDF и Word — просмотр, двойное — скачать; правки и удаления нет', async () => {
     const { page, errors, close } = await open({ query: '&canEdit=0', flags: { __fakeRemoteFiles: true } })
     try {
       const chips = await generalChips(page)
       assert.equal(await page.locator('.dcr-doc-chip-del').count(), 0)
 
+      // Word (13.11.2026) — тоже просмотр: глазик и нажатие.
+      assert.equal(await chips.filter({ hasText: 'Письмо.docx' }).getByRole('button', { name: 'Просмотр' }).count(), 1)
       await chips.locator('.dcr-doc-chip-main', { hasText: 'Письмо.docx' }).click()
-      await pastDoubleClick(page)
+      await page.locator('.s3-doc-preview .docx-preview-wrap').waitFor()
       assert.equal(await input(page).count(), 0)
-      assert.equal(await page.locator('.s3-doc-preview').count(), 0)
+      await page.locator('.s3-doc-modal-close').click()
+      await page.locator('.s3-doc-preview').waitFor({ state: 'detached' })
 
       const [download] = await Promise.all([
         page.waitForEvent('download'),

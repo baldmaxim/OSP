@@ -1,20 +1,29 @@
-// Таблица сметы КП / ПЗ: только видимые строки (VirtualTableBody), шапка и три левых столбца закреплены.
-//   • строка — нажатие открывает подробности справа; флажок слева (Shift — диапазон) выделяет строки, у группы — со всем
-//     её составом;
-//   • «Выделять ячейки» — протянуть мышью прямоугольник ячеек для заливки;
-//   • нажатие по «Актуальному объёму» или «Примечанию» (с правом правки) — правка прямо в ячейке, панель не открывается
-//     (Enter — сохранить, Esc — отмена): иначе панель сдвигала таблицу между нажатиями.
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+// Таблица сметы КП / ПЗ: только видимые строки (VirtualTableBody), шапка, флажок и код закреплены слева.
+//   • наименование — одной строкой и целиком (13.11.2026, просьба пользователя): ширина столбца — по самому длинному
+//     видимому наименованию; столбцы после него закреплены справа, поэтому длинное наименование уходит под них, а не
+//     уводит числа за край. Не уместилось — при наведении наименование показывается целиком одной строкой поверх чисел
+//     (подсказка не ловит мышь, ничему не мешает); ещё — прокрутка таблицы вбок (Shift + колесо). Узкое окно — без закрепления;
+//   • нажатие по строке открывает окно строки; флажок слева (Shift — диапазон) выделяет строки, у группы — со всем её
+//     составом; «Ячейки» — протянуть мышью прямоугольник ячеек для заливки;
+//   • нажатие по «Актуальному» или «Примечанию» (с правом правки) — правка прямо в ячейке (Enter — сохранить, Esc — отмена).
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import VirtualTableBody from '../VirtualTableBody'
-import {
-  STATUS_LABELS, fmtMoney, fmtMoneyShort, fmtQty, groupStatus, hasVolume, isPosition, linkedPzIds, parseQtyInput,
-} from '../../utils/kpEstimate'
+import { allocQty, allocationText, fmtMoney, fmtQty, hasVolume, isPosition, originalQty, parseQtyInput } from '../../utils/kpEstimate'
 
-const STICKY_LEFT = { sel: 0 }
+const SEL_W = 2.25
+const MIN_NAME_REM = 16
+const MIN_FREE_NAME_REM = 18
 
-function statusChip(status, title) {
-  return <span className={`kpe-status kpe-status--${status}`} title={title}>{STATUS_LABELS[status]}</span>
+// Ширина текста в пикселях (canvas): наименование меряется один раз на шрифт.
+let canvas = null
+function measure(text, font) {
+  canvas = canvas || document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  ctx.font = font
+  return ctx.measureText(text).width
 }
+const WEIGHT = { section: 600, group: 500 }
 
 function qtyCell(v, { sign = false } = {}) {
   if (v === null || v === undefined) return ''
@@ -22,88 +31,58 @@ function qtyCell(v, { sign = false } = {}) {
   return sign && v > 0 ? `+${s}` : s
 }
 
-// Что показать в ячейке. ctx: { state, sum, mark, allocs, linkedCount }.
+// Что показать в ячейке. ctx: { state, sum, mark, allocs }.
 function cellContent(col, row, ctx) {
   const { state: s, sum, mark } = ctx
   const pos = isPosition(row)
+  const group = !!sum
   switch (col.key) {
     case 'code': return row.code || (row.pos_no ? <span className="kpe-muted">№ {row.pos_no}</span> : '')
+    case 'qty_gp': {
+      if (!row.unit) return ''
+      return <>{fmtQty(originalQty(row))} <span className="kpe-unit">{row.unit}</span></>
+    }
     case 'actual': {
       if (!hasVolume(row)) return ''
       const set = mark?.actual_qty !== null && mark?.actual_qty !== undefined
-      if (pos) return <span className={s?.changed ? 'kpe-changed' : (set ? '' : 'kpe-muted')}>{fmtQty(s?.actual)}</span>
-      return set ? <span className="kpe-changed">{fmtQty(mark.actual_qty)}</span> : <span className="kpe-muted">{fmtQty(row.kp?.qty_gp)}</span>
+      if (!set) return ''
+      const diff = Number(mark.actual_qty) - originalQty(row)
+      const title = `Было ${fmtQty(originalQty(row))}, разница ${qtyCell(diff, { sign: true })}${mark.actual_reason ? `. Причина: ${mark.actual_reason}` : ''}`
+      return <span className={diff > 0 ? 'kpe-up' : diff < 0 ? 'kpe-down' : ''} title={title}>{fmtQty(mark.actual_qty)}</span>
     }
-    case 'diff': {
-      if (pos && s?.changed) return <span className={s.diff > 0 ? 'kpe-up' : 'kpe-down'} title={mark?.actual_reason || 'Причина не указана'}>{qtyCell(s.diff, { sign: true })}</span>
-      if (row.kind === 'aggregate' && mark?.actual_qty !== null && mark?.actual_qty !== undefined) {
-        const d = Number(mark.actual_qty) - (row.kp?.qty_gp || 0)
-        return d ? <span className={d > 0 ? 'kpe-up' : 'kpe-down'}>{qtyCell(d, { sign: true })}</span> : ''
-      }
-      if (!pos && sum?.changed) return <span className="kpe-muted" title="Позиций с уточнённым объёмом">изм.: {sum.changed}</span>
-      return ''
+    case 'total': {
+      const v = group ? sum.total : row.kp?.total
+      return v || v === 0 ? (v === 0 && !row.unit ? '' : fmtMoney(v)) : ''
     }
-    case 'distributed':
-      if (pos) return s && s.status !== 'empty' ? fmtQty(s.distributed) : ''
-      return sum?.distributedMoney ? <span className="kpe-muted" title={`${fmtMoney(sum.distributedMoney)} ₽`}>{fmtMoneyShort(sum.distributedMoney)}</span> : ''
+    case 'direct': {
+      const v = group ? sum.direct : row.pz?.direct
+      return v ? fmtMoney(v) : ''
+    }
     case 'free':
       if (pos) {
-        if (!s || s.status === 'empty') return ''
-        return <span className={s.status === 'over' ? 'kpe-over' : (s.status === 'full' ? 'kpe-ok' : '')}>{s.status === 'over' ? '⚠ ' : ''}{fmtQty(s.free)}</span>
+        if (!s || s.status === 'empty' || s.status === 'none') return ''
+        const title = `Распределено ${fmtQty(s.distributed)} из ${fmtQty(s.actual)}`
+        if (s.status === 'over') return <span className="kpe-over" title={title}>{qtyCell(s.free)}</span>
+        return <span className={s.status === 'full' ? 'kpe-ok' : ''} title={title}>{fmtQty(s.free)}</span>
       }
-      if (sum?.overMoney) return <span className="kpe-over" title={`Превышение: ${fmtMoney(sum.overMoney)} ₽`}>⚠ {sum.counts.over} поз.</span>
-      return sum?.freeMoney ? <span className="kpe-muted" title={`${fmtMoney(sum.freeMoney)} ₽`}>{fmtMoneyShort(sum.freeMoney)}</span> : ''
-    case 'taken':
-      if (pos) return s?.distributedMoney ? fmtMoney(s.distributedMoney) : ''
-      return sum?.distributedMoney ? fmtMoney(sum.distributedMoney) : ''
-    case 'rest':
-      if (pos) return s && s.status !== 'empty' ? <span className={s.freeMoney < -0.005 ? 'kpe-over' : ''}>{fmtMoney(s.freeMoney)}</span> : ''
-      return sum ? <span>{fmtMoney(sum.freeMoney - sum.overMoney)}</span> : ''
-    case 'status':
-      if (pos) return s ? statusChip(s.status) : ''
-      if (!sum?.positions) return ''
-      return statusChip(groupStatus(sum), `Распределено ${sum.counts.full}, частично ${sum.counts.partial}, не распределено ${sum.counts.none}, превышение ${sum.counts.over}`)
-    case 'tenders':
-      if (!pos || !s?.groups?.length) return ''
-      return (
-        <span className="kpe-chips">
-          {s.groups.filter((g) => g.tender_id || g.tender_label).map((g) => (
-            <span key={g.key} className={`kpe-chip${g.contractOver ? ' is-over' : ''}`}
-              title={g.contractOver ? `По договорам этого тендера закреплено ${fmtQty(g.contractQty)} — больше, чем взято в расчёт ПЗ (${fmtQty(g.pzQty)})` : `Взято в расчёт ПЗ: ${fmtQty(g.pzQty)}`}>
-              {g.tender_label || 'тендер'} · {fmtQty(g.pzQty)}
-            </span>
-          ))}
-        </span>
-      )
-    case 'contractors': {
-      const list = (ctx.allocs || []).filter((a) => a.counterparty_id || a.counterparty_name)
-      if (!list.length) return ''
+      if (sum?.counts?.over) return <span className="kpe-over" title="Позиций с превышением внутри">⚠ {sum.counts.over} поз.</span>
+      return ''
+    case 'alloc': {
+      const list = ctx.allocs || []
+      if (!pos || !list.length) return ''
       return (
         <span className="kpe-chips">
           {list.map((a) => (
-            <span key={a.id} className="kpe-chip kpe-chip--cp" title={[a.counterparty_name, a.contract_label, `закреплено ${fmtQty(a.contract_qty)}`].filter(Boolean).join(' · ')}>
-              {a.counterparty_name || 'подрядчик'} · {fmtQty(a.contract_qty)}
+            <span key={a.id} className="kpe-chip" title={`${allocationText(a)}: ${fmtQty(allocQty(a))} ${row.unit || ''}`.trim()}>
+              {allocationText(a)} · {fmtQty(allocQty(a))}
             </span>
           ))}
         </span>
       )
     }
-    case 'responsible': return mark?.responsible_name || ''
     case 'note': return mark?.note ? <span className="kpe-note-text">{mark.note}</span> : ''
-    default: {
-      if (!col.get) return ''
-      const v = col.get(row, ctx)
-      if (v === null || v === undefined || v === '') return ''
-      return col.fmt ? col.fmt(v) : v
-    }
+    default: return ''
   }
-}
-
-// Переход КП ↔ ПЗ: из КП — к позициям ПЗ строки (у группы и укрупнённой — их число), из ПЗ — к строке КП.
-function linkLabel(row, ctx, view) {
-  if (view === 'pz') return row.pz ? 'КП' : ''
-  if (row.pz) return 'ПЗ'
-  return ctx.linkedCount ? `ПЗ · ${ctx.linkedCount}` : ''
 }
 
 function InlineEditor({ kind, initial, onCommit, onCancel }) {
@@ -134,14 +113,13 @@ function InlineEditor({ kind, initial, onCommit, onCancel }) {
 }
 
 const Row = memo(function Row({
-  row, index, columns, view, ctx, level, collapsed, hasChildren, selected, active, highlighted, remote, cellSel, brush,
-  canEdit, editing, lefts, onToggle, onSelect, onOpen, onCellDown, onCellEnter, onStartEdit, onCommitEdit, onCancelEdit, onLink,
+  row, index, columns, place, ctx, level, collapsed, hasChildren, selected, active, highlighted, remote, cellSel, brush,
+  canEdit, editing, onToggle, onSelect, onOpen, onCellDown, onCellEnter, onStartEdit, onCommitEdit, onCancelEdit, onNameHover,
 }) {
   const mark = ctx.mark
   const rowFill = mark?.fill || null
   const cellFills = mark?.cell_fills || {}
-  const isGroup = hasChildren
-  const cls = ['kpe-row', `kpe-row--${row.kind}`, `kpe-lv${Math.min(level, 6)}`]
+  const cls = ['kpe-row', `kpe-row--${row.kind}`]
   if (selected) cls.push('is-selected')
   if (active) cls.push('is-active')
   if (highlighted) cls.push('is-highlight')
@@ -151,23 +129,23 @@ const Row = memo(function Row({
   return (
     <tr className={cls.join(' ')} data-id={row.id} data-index={index} style={rowFill ? { '--kpe-fill': rowFill } : undefined}
       onClick={(e) => { if (!brush && !e.target.closest('button, input, textarea, a, .kpe-inline')) onOpen(row.id) }}>
-      <td className="kpe-c-sel kpe-sticky" style={{ left: lefts.sel }} onClick={(e) => e.stopPropagation()}>
+      <td className="kpe-c-sel kpe-pin-l" style={{ left: 0 }} onClick={(e) => e.stopPropagation()}>
         <input type="checkbox" checked={selected} aria-label={`Выделить: ${row.code || ''} ${row.name}`.trim()}
-          onChange={() => {}} onClick={(e) => onSelect(row.id, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey })} />
+          onChange={() => {}} onClick={(e) => onSelect(row.id, { shift: e.shiftKey })} />
       </td>
       {columns.map((col, ci) => {
         const fill = cellFills[col.key]
         const inSel = cellSel && index >= cellSel.r1 && index <= cellSel.r2 && ci >= cellSel.c1 && ci <= cellSel.c2
+        const p = place[col.key]
         const tdCls = [`kpe-c-${col.key}`]
         if (col.num) tdCls.push('kpe-num')
-        if (col.sticky) tdCls.push('kpe-sticky')
+        if (p?.cls) tdCls.push(p.cls)
         if (col.strong) tdCls.push('kpe-strong')
         if (fill) tdCls.push('has-cell-fill')
         if (inSel) tdCls.push('is-cell-sel')
         const editable = canEdit && col.editable && (col.editable === 'note' || hasVolume(row))
         if (editable) tdCls.push('is-editable')
-        const style = {}
-        if (col.sticky) style.left = lefts[col.key]
+        const style = p?.style ? { ...p.style } : {}
         if (fill) style['--kpe-cell-fill'] = fill
         const isEditing = editing && editing.id === row.id && editing.key === col.key
         if (isEditing) tdCls.push('is-editing')
@@ -179,19 +157,14 @@ const Row = memo(function Row({
         } else if (col.key === 'name') {
           content = (
             <span className="kpe-name" style={{ paddingLeft: `${(level - 1) * 0.85}rem` }}>
-              {isGroup
+              {hasChildren
                 ? <button type="button" className={`kpe-toggle${collapsed ? '' : ' is-open'}`} aria-label={collapsed ? 'Развернуть' : 'Свернуть'}
                     aria-expanded={!collapsed} onClick={(e) => { e.stopPropagation(); onToggle(row.id) }}>
                     <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
                   </button>
                 : <span className="kpe-toggle-space" />}
-              {row.kind === 'aggregate' && <span className="kpe-tag" title="Укрупнённая позиция КП: состав — подробные позиции ниже">укрупн.</span>}
-              <span className="kpe-name-text" title={row.name}>{row.name}</span>
+              <span className="kpe-name-text" onMouseEnter={(e) => onNameHover(e.currentTarget, row)} onMouseLeave={() => onNameHover(null)}>{row.name}</span>
               {mark?.note && <span className="kpe-dot" title={`Примечание: ${mark.note}`} />}
-              {linkLabel(row, ctx, view) && (
-                <button type="button" className="kpe-link-btn" title={view === 'pz' ? 'Показать строку в КП' : 'Показать подробные позиции ПЗ'}
-                  onClick={(e) => { e.stopPropagation(); onLink(row.id) }}>{linkLabel(row, ctx, view)}</button>
-              )}
             </span>
           )
         } else {
@@ -212,22 +185,84 @@ const Row = memo(function Row({
 })
 
 export default function KpEstimateTable({
-  tree, ids, columns, view, marks, allocsByRow, states, sums, collapsed, selection, activeId, highlight, remoteIds,
-  cellSel, setCellSel, brush, canEdit, scrollTo, onToggle, onSelect, onOpen, onEdit, onLink,
+  tree, ids, columns, marks, allocsByRow, states, sums, collapsed, selection, activeId, highlight, remoteIds,
+  cellSel, setCellSel, brush, canEdit, scrollTo, onToggle, onSelect, onOpen, onEdit,
 }) {
   const scrollRef = useRef(null)
   const [editing, setEditing] = useState(null)
   const dragRef = useRef(null)
+  const [box, setBox] = useState({ width: 0, rem: 16, font: '' })
+  const [peek, setPeek] = useState(null)
 
-  // Отступы закреплённых столбцов: флажок, код, наименование.
-  const lefts = { sel: '0rem' }
-  let acc = 2.25
-  for (const c of columns) {
-    if (!c.sticky) continue
-    lefts[c.key] = `${acc}rem`
-    acc += c.width
-  }
-  const minWidth = 2.25 + columns.reduce((s, c) => s + c.width, 0)
+  // Ширина окна таблицы и шрифт — для ширины наименования и закрепления справа.
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return undefined
+    const read = () => {
+      const cs = getComputedStyle(el)
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+      setBox({ width: el.clientWidth, rem, font: `${cs.fontSize} ${cs.fontFamily}` })
+    }
+    read()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(read) : null
+    ro?.observe(el)
+    return () => ro?.disconnect()
+  }, [])
+
+  // Самое длинное видимое наименование (с отступом уровня, стрелкой и отметкой примечания).
+  const widthCache = useRef({ font: '', map: new Map() })
+  const nameNeed = useMemo(() => {
+    if (!box.font) return MIN_NAME_REM * box.rem
+    if (widthCache.current.font !== box.font) widthCache.current = { font: box.font, map: new Map() }
+    const cache = widthCache.current.map
+    let max = 0
+    for (const id of ids) {
+      let w = cache.get(id)
+      if (w === undefined) {
+        const r = tree.byId.get(id)
+        w = measure(r.name || '', `${r.kind === 'title' ? 'italic ' : ''}${WEIGHT[r.kind] || 400} ${box.font}`) + ((r.level || 1) - 1) * 0.85 * box.rem
+        cache.set(id, w)
+      }
+      if (w > max) max = w
+    }
+    // Стрелка, отступы ячейки, отметка примечания, запас на округление шрифта.
+    return Math.ceil(max + 2.75 * box.rem + 8)
+  }, [ids, tree, box.font, box.rem])
+
+  const leftRem = SEL_W + columns.filter((c) => c.left).reduce((s, c) => s + c.width, 0)
+  const right = columns.filter((c) => !c.left && c.key !== 'name')
+  const rightRem = right.reduce((s, c) => s + c.width, 0)
+  const room = box.width - (leftRem + rightRem) * box.rem
+  const pinRight = room >= MIN_FREE_NAME_REM * box.rem
+  const nameWidth = Math.max(nameNeed, MIN_NAME_REM * box.rem, pinRight ? Math.floor(room) - 1 : 0)
+  const tableWidth = (leftRem + rightRem) * box.rem + nameWidth
+
+  // Где стоит столбец: закреплён слева / справа (отступ — сумма ширин соседей).
+  const place = useMemo(() => {
+    const out = {}
+    let acc = SEL_W
+    for (const c of columns) if (c.left) { out[c.key] = { cls: 'kpe-pin-l', style: { left: `${acc}rem` } }; acc += c.width }
+    if (pinRight) {
+      let r = rightRem
+      right.forEach((c, i) => {
+        r -= c.width
+        out[c.key] = { cls: `kpe-pin-r${i === 0 ? ' kpe-pin-edge' : ''}`, style: { right: `${r}rem` } }
+      })
+    }
+    return out
+  }, [columns, pinRight, rightRem]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Наименование не уместилось (ушло под закреплённые столбцы или за край) — показать целиком поверх таблицы.
+  const onNameHover = useCallback((el, row) => {
+    const wrap = scrollRef.current
+    if (!el || !wrap || brush) { setPeek(null); return }
+    const r = el.getBoundingClientRect()
+    const host = wrap.getBoundingClientRect()
+    const leftEdge = host.left + leftRem * box.rem
+    const rightEdge = host.left + wrap.clientWidth - (pinRight ? rightRem * box.rem : 0)
+    if (r.left >= leftEdge - 1 && r.right <= rightEdge + 1) { setPeek(null); return }
+    setPeek({ text: row.name, kind: row.kind, left: Math.max(r.left, leftEdge), top: r.top + r.height / 2 })
+  }, [brush, box.rem, leftRem, rightRem, pinRight])
 
   useEffect(() => {
     const up = () => { dragRef.current = null }
@@ -274,9 +309,9 @@ export default function KpEstimateTable({
     const exact = () => {
       const tr = el.querySelector(`tr[data-id="${scrollTo.id}"]`)
       if (tr) {
-        const box = tr.getBoundingClientRect()
+        const r = tr.getBoundingClientRect()
         const host = el.getBoundingClientRect()
-        el.scrollTop += box.top - host.top - el.clientHeight / 3
+        if (r.top < host.top + 44 || r.bottom > host.bottom) el.scrollTop += r.top - host.top - el.clientHeight / 3
       } else if (tries++ < 10) requestAnimationFrame(exact)
     }
     requestAnimationFrame(exact)
@@ -291,39 +326,42 @@ export default function KpEstimateTable({
       sum: hasChildren ? sums.get(id) : null,
       mark: marks.get(id),
       allocs: allocsByRow.get(id),
-      linkedCount: view === 'kp' && hasChildren ? linkedPzIds(tree, id).length : 0,
     }
     const rowSel = cellSel && index >= cellSel.r1 && index <= cellSel.r2 ? cellSel : null
     return (
-      <Row key={id} row={row} index={index} columns={columns} view={view} ctx={ctx} level={row.level}
+      <Row key={id} row={row} index={index} columns={columns} place={place} ctx={ctx} level={row.level}
         collapsed={collapsed.has(id)} hasChildren={hasChildren} selected={selection.has(id)} active={activeId === id}
         highlighted={highlight.has(id)} remote={remoteIds.has(id)} cellSel={rowSel} brush={brush} canEdit={canEdit}
-        editing={editing && editing.id === id ? editing : null} lefts={lefts}
+        editing={editing && editing.id === id ? editing : null}
         onToggle={onToggle} onSelect={onSelect} onOpen={onOpen} onCellDown={onCellDown} onCellEnter={onCellEnter}
-        onStartEdit={onStartEdit} onCommitEdit={onCommitEdit} onCancelEdit={onCancelEdit} onLink={onLink} />
+        onStartEdit={onStartEdit} onCommitEdit={onCommitEdit} onCancelEdit={onCancelEdit} onNameHover={onNameHover} />
     )
   }
 
   return (
-    <div className={`kpe-table-wrap${brush ? ' is-brush' : ''}`} ref={scrollRef}>
-      <table className="kpe-table" style={{ minWidth: `${minWidth}rem` }}>
+    <div className={`kpe-table-wrap${brush ? ' is-brush' : ''}`} ref={scrollRef} onScroll={peek ? () => setPeek(null) : undefined}>
+      {peek && createPortal(
+        <div className={`kpe-peek kpe-peek--${peek.kind}`} role="tooltip" style={{ left: `${peek.left}px`, top: `${peek.top}px` }}>{peek.text}</div>,
+        document.body,
+      )}
+      <table className="kpe-table" style={{ width: `${tableWidth}px` }}>
         <colgroup>
-          <col style={{ width: '2.25rem' }} />
-          {columns.map((c) => <col key={c.key} style={{ width: `${c.width}rem` }} />)}
+          <col style={{ width: `${SEL_W}rem` }} />
+          {columns.map((c) => <col key={c.key} style={{ width: c.key === 'name' ? `${nameWidth}px` : `${c.width}rem` }} />)}
         </colgroup>
         <thead>
           <tr>
-            <th className="kpe-c-sel kpe-sticky" style={{ left: STICKY_LEFT.sel }} aria-label="Выделение" />
+            <th className="kpe-c-sel kpe-pin-l" style={{ left: 0 }} aria-label="Выделение" />
             {columns.map((c) => (
-              <th key={c.key} className={`kpe-c-${c.key}${c.num ? ' kpe-num' : ''}${c.sticky ? ' kpe-sticky' : ''}`}
-                style={c.sticky ? { left: lefts[c.key] } : undefined} title={c.hint || undefined}>{c.label}</th>
+              <th key={c.key} className={`kpe-c-${c.key}${c.num ? ' kpe-num' : ''}${place[c.key]?.cls ? ` ${place[c.key].cls}` : ''}`}
+                style={place[c.key]?.style} title={c.hint || undefined}>{c.label}</th>
             ))}
           </tr>
         </thead>
         {ids.length ? (
           <VirtualTableBody rowCount={ids.length} renderRow={renderRow} colSpan={columns.length + 1} scrollRef={scrollRef} rowHeight={34} />
         ) : (
-          <tbody><tr><td colSpan={columns.length + 1} className="kpe-empty-row">Ничего не найдено — измените поиск или фильтры</td></tr></tbody>
+          <tbody><tr><td colSpan={columns.length + 1} className="kpe-empty-row">Ничего не найдено — измените поиск или «Показать»</td></tr></tbody>
         )}
       </table>
     </div>

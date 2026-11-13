@@ -304,6 +304,9 @@
   background: #fff;
 }
 
+/* Word в окне просмотра (13.11.2026): лист — на всю высоту окна, а не 62vh, как во вкладке договора. */
+.s3-doc-modal-body > .docx-preview-wrap { flex: 1; width: 100%; max-height: none; border-radius: 0; }
+
 .s3-doc-modal-img {
   max-width: 100%;
   max-height: 100%;

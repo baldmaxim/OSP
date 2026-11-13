@@ -240,6 +240,53 @@ describe('Окно заявки 12.11 в браузере', { skip: !launch && '
     } finally { await close() }
   })
 
+  it('скриншот (13.11.2026): Ctrl+V в поле и в любом месте окна — к сообщению с именем «Скриншот …»; в переписке — миниатюрой; текст из буфера — текстом', async () => {
+    const { page, errors, close } = await openPage()
+    try {
+      const modal = await openCard(page, 'dcr-4')
+      const field = modal.getByRole('textbox', { name: 'Новое сообщение' })
+      await field.waitFor()
+      assert.match(await field.getAttribute('placeholder'), /скриншот \(Ctrl\+V\)/)
+      // PNG 1×1 — как снимок экрана из буфера: браузер называет его «image.png».
+      const paste = (target, { text = '' } = {}) => target.evaluate((el, t) => {
+        const dt = new DataTransfer()
+        const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0))
+        dt.items.add(new File([png], 'image.png', { type: 'image/png' }))
+        if (t) dt.setData('text/plain', t)
+        const ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })
+        el.dispatchEvent(ev)
+        return ev.defaultPrevented
+      }, text)
+      assert.equal(await paste(field), true)
+      const pending = modal.locator('.dc-talk-pending-item')
+      await pending.first().waitFor()
+      const shotName = /^Скриншот \d\d\.\d\d\.\d{4} \d\d-\d\d-\d\d( \(\d\))?\.png$/
+      assert.match(await pending.first().locator('.dc-talk-pending-name').innerText(), shotName)
+      await pending.first().locator('img.dc-talk-pending-thumb').waitFor()
+      // Вставка в любом месте окна (не в поле ввода) — тоже к сообщению; второе имя — с номером, если та же секунда.
+      assert.equal(await paste(modal.locator('.dc-info')), true)
+      await pending.nth(1).waitFor()
+      const names = await modal.locator('.dc-talk-pending-name').allInnerTexts()
+      assert.equal(new Set(names).size, 2, `имена разные: ${names}`)
+      // Ячейки из Excel кладут в буфер и картинку: есть текст — вставляется текст, файла нет.
+      assert.equal(await paste(field, { text: 'Сумма 1 200 000' }), false)
+      assert.equal(await pending.count(), 2)
+      await field.fill('Скрин замечаний')
+      await modal.getByRole('button', { name: 'Отправить' }).click()
+      const shots = modal.locator('.dc-talk-msg').last().locator('.dc-talk-shot')
+      await shots.nth(1).waitFor({ timeout: 30000 })
+      await shots.first().locator('img').waitFor()
+      assert.equal(await modal.locator('.dc-talk-msg').last().locator('.dc-talk-file').count(), 0, 'картинки — миниатюрами, не строками файлов')
+      const sent = await chatFilesOf(page, 'dcr-4')
+      assert.equal(sent.length, 2)
+      for (const n of sent) assert.match(n, shotName)
+      // Нажатие — картинка во весь экран.
+      await shots.first().locator('.dc-talk-shot-open').click()
+      await page.locator('.s3-doc-preview img.s3-doc-modal-img').waitFor()
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
   it('сообщение не ушло: загруженные черновики убираются, текст и выбранные файлы остаются', async () => {
     const { page, errors, dialogs, close } = await openPage()
     try {

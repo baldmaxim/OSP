@@ -920,6 +920,22 @@ s.sp-was { display: inline; }
   text-align: right;
 }
 .sp-td-empty { display: flex; align-items: center; gap: 0.375rem; margin: 0; padding: 1.5rem 0; color: var(--text-secondary); }
+/* Над таблицей слева: «Убрать неотмеченные», чьи цены показывать, сколько убрано (13.11.2026). */
+.sp-td-tools { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 0.375rem 0.75rem; }
+.sp-td-tools .sp-td-hide { display: inline-flex; align-items: center; gap: 0.375rem; height: var(--ui-control-h); padding: 0 0.75rem; }
+.sp-td-view { display: inline-flex; align-items: center; gap: 0.375rem; min-width: 0; color: var(--text-secondary); font-size: var(--ui-th); line-height: var(--ui-th-lh); }
+.sp-td-view select {
+  max-width: min(32rem, 70vw);
+  height: var(--ui-control-h);
+  padding: 0 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  text-overflow: ellipsis;
+}
+.sp-td-hidden { display: inline-flex; align-items: center; gap: 0.375rem; font-size: var(--ui-th); line-height: var(--ui-th-lh); }
 /* Таблица: наименования — двумя равными колонками, чтобы сравнивать глазами; отличия подсвечены. */
 .sp-td-wrap { flex: 1; min-height: 12rem; padding-bottom: 0; overflow: auto; border: 1px solid var(--border-color); border-radius: var(--ui-radius); }
 .ui-work.ui-work .sp-td-table { width: 100%; min-width: 60rem; table-layout: fixed; border-collapse: collapse; }

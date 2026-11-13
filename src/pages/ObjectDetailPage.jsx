@@ -10,7 +10,6 @@ import ObjectDocMdCell from '../components/ObjectDocMdCell'
 import ObjectDocMdZipButton from '../components/ObjectDocMdZipButton'
 import ObjectDocCards from '../components/ObjectDocCards'
 import { useIsPhone } from '../hooks/useMediaQuery'
-import ObjectDgpFiles from '../components/ObjectDgpFiles'
 // Смета КП / ПЗ (миграция 20270215) — только во вкладке «Смета»: код, стили и библиотека Excel грузятся при её открытии.
 const KpEstimateWorkspace = lazy(() => import('../components/kpEstimate/KpEstimateWorkspace'))
 import S3DocumentPreview from '../components/S3DocumentPreview'
@@ -2483,8 +2482,6 @@ function ObjectDetailPage() {
       {/* Смета */}
       {activeTab === 'estimate' && (
         <div className={`tab-content estimate-content${isEstimateFullscreen ? ' estimate-fullscreen' : ''}`}>
-          {/* ДГП (единый ПСДЦ) — файлы, отдельно от сметы ниже; в полноэкранной смете не нужен. */}
-          {!isEstimateFullscreen && <ObjectDgpFiles objectId={objectId} canEdit={canEditObj} />}
           {!isEstimateFullscreen && (
             <Suspense fallback={<p className="estimate-hint">Загрузка сметы КП / ПЗ…</p>}>
               <KpEstimateWorkspace objectId={objectId} objectName={object.name} />

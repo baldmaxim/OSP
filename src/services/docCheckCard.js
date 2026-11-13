@@ -2,7 +2,7 @@ import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { chunkList } from '../utils/inChunks'
 import { DOC_CHECK_CHAT_CATEGORY, cardCountsById, isMissingBoardColumn } from '../utils/docCheckHelpers'
-import { deleteDocument, uploadFile } from './s3'
+import { deleteDocument, fetchDocuments, uploadFile } from './s3'
 
 // Запросы карточки заявки на проверку ДП/ДС: обсуждение (миграция 20261124), файлы в нём и «прочитано» (20270216). Шагов в
 // заявке нет с 11.11.2026 — их таблицу не читаем. Автора и время сообщения ставит база (триггер), клиент их не шлёт.
@@ -48,6 +48,31 @@ export async function fetchRequestAuthor(requestId) {
 export async function fetchComments(requestId) {
   return fetchAllRows((from, to) => db.from(COMMENTS).select('*').eq('request_id', requestId)
     .order('created_at', { ascending: true }).order('id', { ascending: true }).range(from, to))
+}
+
+// Чтение окна заявки — заранее (13.11.2026: «окно медленно открывается»): кнопку мыши на карточке нажали — переписка и файлы
+// уже читаются, пока её не отпустили; окно берёт готовый ответ (takePrefetched) вместо своего запроса. Ответ годен PREFETCH_MS
+// и берётся один раз: дальше (возврат на вкладку, после загрузки файла) окно читает само. comments — есть ли таблица обсуждения.
+const PREFETCH_MS = 15000
+const prefetched = new Map() // id заявки → { at, comments, files } (обещания)
+export function prefetchCard(requestId, { comments = true } = {}) {
+  if (!requestId) return
+  const now = Date.now()
+  for (const [id, hit] of prefetched) if (now - hit.at >= PREFETCH_MS) prefetched.delete(id)
+  if (prefetched.has(requestId)) return
+  const entry = { at: now, comments: comments ? fetchComments(requestId) : null, files: fetchDocuments('doc_check_request', requestId) }
+  // Ошибка — забота окна: оно возьмёт отказ и покажет «Повторить», как при своём запросе.
+  entry.comments?.catch(() => {})
+  entry.files.catch(() => {})
+  prefetched.set(requestId, entry)
+}
+export function takePrefetched(requestId, part) {
+  const hit = prefetched.get(requestId)
+  if (!hit || Date.now() - hit.at >= PREFETCH_MS || !hit[part]) return null
+  const promise = hit[part]
+  hit[part] = null
+  if (!hit.comments && !hit.files) prefetched.delete(requestId)
+  return promise
 }
 
 // fileIds — файлы сообщения (миграция 20270216): база запишет их снимок (имя, размер, отпечаток, ключ) сама, по id. Без файлов

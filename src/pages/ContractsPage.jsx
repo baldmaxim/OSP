@@ -3175,8 +3175,10 @@ function ContractRegistry() {
                     {/* Бейдж только у ГО: объектов ОС большинство, метка на каждом — визуальный шум. */}
                     {isWarrantyObject(contract.objects?.status) && <ObjectDeptBadge status={contract.objects?.status} />}
                   </td>
+                  {/* Красная полоса — только у договора без номера: без даты договоров много, полоса у них мешала
+                      (13.11.2026, просьба пользователя); «дата не указана» в строке осталась. */}
                   <td
-                    className={`cell-contract-num ${(!dsNum || !dsDate) && !docDeleted ? 'is-incomplete' : ''}`}
+                    className={`cell-contract-num ${!dsNum && !docDeleted ? 'is-incomplete' : ''}`}
                     onClick={(e) => e.stopPropagation()}
                     title={missingLabel ? `Не заполнено: ${missingLabel}` : undefined}
                   >

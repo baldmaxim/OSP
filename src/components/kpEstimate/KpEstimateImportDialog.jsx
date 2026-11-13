@@ -1,6 +1,6 @@
-// Загрузка документа сметы КП / ПЗ: файл КП и/или файл сметы ПЗ (можно оба сразу, бросить в окно). До загрузки —
-// сводка: строки, разделы, укрупнённые позиции, связь КП ↔ ПЗ, сверка формул и итогов, коэффициенты; при замене
-// действующей версии — сколько отметок и распределений перейдёт на новую.
+// Загрузка документа сметы КП / ПЗ: один файл «КП до перекидок + план затрат» (13.11.2026) или, как раньше, файл КП и
+// файл сметы ПЗ отдельно (можно оба сразу, бросить в окно). До загрузки — сводка: строки, разделы, сверка формул и
+// итогов, коэффициенты; при замене действующей версии — сколько отметок и распределений перейдёт на новую.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildEstimateRows, detectEstimateWorkbook, masteringToAllocations, parseKpWorkbook, parsePzWorkbook } from '../../utils/kpEstimateImport'
 import { fmtMoney } from '../../utils/kpEstimate'
@@ -33,7 +33,7 @@ export default function KpEstimateImportDialog({ objectId, current, currentRows,
 
   const addFiles = async (list) => {
     const excel = [...list].filter(isExcel)
-    if (!excel.length) { setProblem('Нужен файл Excel (.xlsx): КП до перекидок и/или смета ПЗ.'); return }
+    if (!excel.length) { setProblem('Нужен файл Excel (.xlsx): КП до перекидок и план затрат.'); return }
     setReading(true)
     setProblem('')
     try {
@@ -43,6 +43,17 @@ export default function KpEstimateImportDialog({ objectId, current, currentRows,
         const { XLSX, wb } = await readWorkbook(file)
         const kind = detectEstimateWorkbook(XLSX, wb)
         if (!kind) { setProblem(`«${file.name}»: не похоже ни на КП (лист с «Номером раздела», «Номером позиции», «Коммерческой стоимостью»), ни на смету ПЗ (лист «Смета» с «Прямыми затратами»).`); continue }
+        if (kind === 'both') {
+          // Один файл: КП и план затрат — в одной книге (листом «Смета» или столбцами прямых затрат у строк КП).
+          const kp = parseKpWorkbook(XLSX, wb)
+          if (kp.error) { setProblem(`«${file.name}»: ${kp.message}`); continue }
+          const pz = kp.hasInlinePz ? null : parsePzWorkbook(XLSX, wb)
+          nextFiles.kp = file
+          nextParsed.kp = kp
+          nextFiles.pz = pz && !pz.error ? file : null
+          nextParsed.pz = pz && !pz.error ? pz : null
+          continue
+        }
         const result = kind === 'kp' ? parseKpWorkbook(XLSX, wb) : parsePzWorkbook(XLSX, wb)
         if (result.error) { setProblem(`«${file.name}»: ${result.message}`); continue }
         nextFiles[kind] = file
@@ -118,16 +129,22 @@ export default function KpEstimateImportDialog({ objectId, current, currentRows,
         </header>
         <div className="kpe-modal-body">
           <div className={`kpe-drop${drag ? ' is-drag' : ''}`}>
-            <p><b>КП до перекидок</b> — укрупнённые позиции по системам (лист «Комм. затраты»), и <b>смета ПЗ</b> — те же позиции с прямыми затратами и коэффициентами (листы «Смета», «Коэффициенты», «Паспорт»).</p>
-            <p className="kpe-muted">Перетащите один или оба файла сюда или выберите. Можно загрузить только один из них.</p>
+            <p>Файл сметы: <b>КП до перекидок</b> и <b>план затрат</b> (прямые затраты, коэффициенты, паспорт) — одной книгой.</p>
+            <p className="kpe-muted">Перетащите файл сюда или выберите. Прежний вариант — КП и смета ПЗ двумя файлами — тоже принимается.</p>
             <input ref={inputRef} type="file" accept=".xlsx,.xlsm,.xls" multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = '' }} />
-            <button type="button" className="kpe-btn" disabled={busy || reading} onClick={() => inputRef.current?.click()}>Выбрать файлы</button>
-            <ul className="kpe-file-list">
-              <li className={files.kp ? 'is-ok' : ''}>КП: {files.kp ? files.kp.name : <span className="kpe-muted">не выбран</span>}
-                {files.kp && !busy && <button type="button" className="kpe-text-btn" onClick={() => { setFiles({ ...files, kp: null }); setParsed({ ...parsed, kp: null }) }}>убрать</button>}</li>
-              <li className={files.pz ? 'is-ok' : ''}>Смета ПЗ: {files.pz ? files.pz.name : <span className="kpe-muted">не выбрана</span>}
-                {files.pz && !busy && <button type="button" className="kpe-text-btn" onClick={() => { setFiles({ ...files, pz: null }); setParsed({ ...parsed, pz: null }) }}>убрать</button>}</li>
-            </ul>
+            <button type="button" className="kpe-btn" disabled={busy || reading} onClick={() => inputRef.current?.click()}>Выбрать файл</button>
+            {(files.kp || files.pz) && (
+              <ul className="kpe-file-list">
+                {[...new Set([files.kp, files.pz].filter(Boolean))].map((f) => (
+                  <li key={f.name} className="is-ok">{f.name}
+                    {!busy && <button type="button" className="kpe-text-btn" onClick={() => {
+                      setFiles({ kp: files.kp === f ? null : files.kp, pz: files.pz === f ? null : files.pz })
+                      setParsed({ kp: files.kp === f ? null : parsed.kp, pz: files.pz === f ? null : parsed.pz })
+                    }}>убрать</button>}
+                  </li>
+                ))}
+              </ul>
+            )}
             {reading && <p className="kpe-muted">Читаем файл…</p>}
           </div>
 
@@ -139,8 +156,8 @@ export default function KpEstimateImportDialog({ objectId, current, currentRows,
               <dl className="kpe-dl">
                 <dt>Строк</dt><dd>{built.rows.length.toLocaleString('ru-RU')}: разделов {kinds.section || 0}, групп {kinds.group || 0}, укрупнённых позиций {kinds.aggregate || 0}, позиций {(kinds.position || 0) + (kinds.adjust || 0)}</dd>
                 {parsed.kp && <><dt>КП</dt><dd>лист «{parsed.kp.sheetName}», итог {fmtMoney(fc?.totals?.total)} ₽{parsed.kp.hasSubtotals ? ', вложенность — по формулам SUBTOTAL' : ', формул SUBTOTAL нет — вложенность по кодам'}</dd></>}
-                {parsed.pz && <><dt>Смета ПЗ</dt><dd>{st.pzPositions.toLocaleString('ru-RU')} позиций; с КП связано {st.linked.toLocaleString('ru-RU')}{st.pzOnly ? `, только в ПЗ — ${st.pzOnly}` : ''}{meta.pz_file?.totals ? `; прямые ${fmtMoney(meta.pz_file.totals.direct)} ₽, коммерция ${fmtMoney(meta.pz_file.totals.total)} ₽` : ''}</dd></>}
-                {parsed.kp && parsed.pz && st.kpLeavesWithoutPz > 0 && <><dt>Нет в ПЗ</dt><dd>{st.kpLeavesWithoutPz} позиций КП (нулевые строки «Учтено» и т. п.)</dd></>}
+                {(parsed.pz || parsed.kp?.hasInlinePz) && <><dt>План затрат</dt><dd>{parsed.pz ? `лист «${parsed.pz.sheetName}», ` : 'столбцами строк КП, '}позиций с прямыми затратами {st.linked.toLocaleString('ru-RU')}{st.pzOnly ? `, только в ПЗ — ${st.pzOnly}` : ''}{meta.pz_file?.totals ? `; прямые ${fmtMoney(meta.pz_file.totals.direct)} ₽` : ''}</dd></>}
+                {parsed.kp && !parsed.pz && !parsed.kp.hasInlinePz && <><dt>План затрат</dt><dd className="kpe-muted">в файле нет — столбец «Прямые затраты» будет пустым</dd></>}
                 <dt>Формулы</dt><dd>{fc?.issue_count ? <span className="kpe-over">расхождений: {fc.issue_count} — список в «Паспорте» после загрузки</span> : 'сверены: кол-во × цена, суммы групп и итог совпадают'}</dd>
                 {meta.vat && <><dt>НДС</dt><dd>{meta.vat}</dd></>}
                 {meta.coefficients?.length > 0 && <><dt>Коэффициенты</dt><dd>лист «Коэффициенты» сохранён ({meta.coefficients.length} строк)</dd></>}
@@ -159,7 +176,7 @@ export default function KpEstimateImportDialog({ objectId, current, currentRows,
           {progress && (
             <div className="kpe-progress" role="status">
               {progress.stage === 'rows' && <>Загружаем строки: {progress.done.toLocaleString('ru-RU')} из {progress.total.toLocaleString('ru-RU')}<progress max={progress.total} value={progress.done} /></>}
-              {progress.stage === 'file' && <>Сохраняем исходный файл {progress.kind === 'kp' ? 'КП' : 'сметы ПЗ'}…</>}
+              {progress.stage === 'file' && <>Сохраняем исходный файл…</>}
               {progress.stage === 'activate' && <>Делаем версию действующей{current ? ' и переносим отметки' : ''}…</>}
               {progress.stage === 'mastering' && <>Переносим списания листа «Освоение»…</>}
             </div>

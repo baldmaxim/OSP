@@ -64,6 +64,50 @@ export function offersByGroup(docs, groups) {
   return out
 }
 
+// Позиция, убранная из окна у документа (13.11.2026, просьба пользователя: «разом убрать позиции, которые я не захотел
+// расценивать, чтобы они не мешались с ценами нового документа»). Ключи — группы и всех сложенных в неё записей: так убранное
+// остаётся убранным, если человек разделит или сложит записи. Убрано при файле (notes, xh): новый документ предлагает эти позиции
+// заново — убранное касается только цен тех документов, которые были в окне.
+export const groupHideKeys = (g) => [g.key, ...(g.sameAs || []).map((s) => s.key)]
+const hiddenIn = (set, g) => !!set && groupHideKeys(g).some((k) => set.has(k))
+
+// Цены окна «Счета и КП тендера»: byGroup (offersByGroup) без убранных человеком и только документов docIds (Set; null — всех).
+// Ответ: { byGroup, hidden } — hidden: у скольких позиций убрана хоть одна цена выбранных документов (их можно вернуть).
+export function windowOffers(byGroup, docs, docIds = null) {
+  const hiddenByDoc = new Map()
+  for (const { doc, offer } of docs || []) if (offer?.hidden?.length) hiddenByDoc.set(doc.id, new Set(offer.hidden))
+  if (!hiddenByDoc.size && !docIds) return { byGroup, hidden: 0 }
+  const out = new Map()
+  let hidden = 0
+  for (const [key, list] of byGroup) {
+    const inView = docIds ? list.filter((o) => docIds.has(o.doc.id)) : list
+    if (!inView.length) continue
+    const keep = hiddenByDoc.size ? inView.filter((o) => !hiddenIn(hiddenByDoc.get(o.doc.id), o.group)) : inView
+    if (keep.length < inView.length) hidden += 1
+    if (keep.length) out.set(key, keep)
+  }
+  return { byGroup: out, hidden }
+}
+// Позиция убрана у документа (docs — [{ doc, offer }]).
+export const isHiddenAt = (docs, docId, group) => {
+  const offer = (docs || []).find((x) => x.doc.id === docId)?.offer
+  return !!offer?.hidden?.length && hiddenIn(new Set(offer.hidden), group)
+}
+// Убрать позиции строк окна: какие ключи дописать каким документам — Map id документа → ключи. Убираются цены всех документов
+// окна у позиции (rows — строки autoPickRows, offers — уже только документов окна): иначе на месте убранной цены всплыла бы
+// цена другого документа.
+export function hideKeysByDoc(rows) {
+  const out = new Map()
+  for (const r of rows) {
+    for (const o of r.offers) {
+      const keys = out.get(o.doc.id) || new Set()
+      for (const k of groupHideKeys(r.group)) keys.add(k)
+      out.set(o.doc.id, keys)
+    }
+  }
+  return out
+}
+
 const newer = (a, b) => String(b.date || '').localeCompare(String(a.date || ''))
 const bySimilarity = (a, b) => Number(isSure(b)) - Number(isSure(a)) || b.score - a.score || newer(a, b) || a.price - b.price
 // Цифры строки со скана не сошлись между собой (unsure) — как цена × кол-во ≠ сумма: видно, но сама не берётся.

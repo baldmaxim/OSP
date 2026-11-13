@@ -105,8 +105,8 @@ describe('Реестр заявок на ДС: файлы в Excel и ссылк
     } finally { await close() }
   })
 
-  it('ссылка из выгрузки открывает файл: PDF — просмотр, docx — скачивание под своим именем', async () => {
-    for (const [id, name, inside] of [['dcf-1', 'Было-стало.pdf', 'iframe'], ['dcf-2', 'Письмо.docx', 'button.s3-doc-btn-primary']]) {
+  it('ссылка из выгрузки открывает файл: PDF — просмотр, docx — просмотр Word и «Скачать» под своим именем', async () => {
+    for (const [id, name, inside] of [['dcf-1', 'Было-стало.pdf', 'iframe'], ['dcf-2', 'Письмо.docx', '.docx-preview-wrap']]) {
       const { page, errors, dialogs, close } = await open(`/dc-requests?file=${id}`)
       try {
         const modal = page.locator('.s3-doc-modal')
@@ -117,6 +117,9 @@ describe('Реестр заявок на ДС: файлы в Excel и ссылк
         const size = await modal.boundingBox()
         assert.ok(size.width >= 1600 - 26 && size.height >= 1000 - 26, `окно ${size.width}×${size.height}`)
         if (id === 'dcf-2') {
+          // Word виден в окне (13.11.2026); скачать — кнопкой в шапке, под своим именем.
+          await modal.getByRole('button', { name: 'Скачать' }).click()
+          await page.waitForFunction(() => window.__fakeLastPresign?.download === true)
           const presign = await page.evaluate(() => window.__fakeLastPresign)
           assert.equal(presign?.download, true, 'ссылка на скачивание')
           assert.equal(presign?.file_name, name)

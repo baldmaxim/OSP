@@ -31,7 +31,7 @@ import {
   estimateVersion, fileVersion, planCleanup, planFileImports, planTabImports,
 } from '../../utils/supplyAutoImport'
 import { mergeSamePositions, offerMatches, offerPrice, positionGroups } from '../../utils/supplyDocMatch'
-import { autoPickRows, isSure, offersByGroup, otherUnitIndex, otherUnitPrices, suspectPrice } from '../../utils/supplyAutoPick'
+import { autoPickRows, isSure, offersByGroup, otherUnitIndex, otherUnitPrices, suspectPrice, windowOffers } from '../../utils/supplyAutoPick'
 import { lineForGroup, lineNotForGroup, offerInRoubles, offerNotes, offerWithVat, readOffer, scanProgressText } from '../../utils/supplyOffers'
 import {
   carrySuggestions, carryTargets, composeChanges, revisionTitle, unitMismatch, versionQuestions,
@@ -1564,6 +1564,22 @@ export default function SupplyPricingPanel({
   const setLinePack = (group, doc, line, n) => rewriteLine(doc, line, (l) => ({ ...l, packs: { ...l.packs, [group.k]: n } }))
   const setOfferRate = async (doc, rate) => { const o = offerOf(doc); if (o) await rewriteOffer(doc, offerInRoubles(o, rate)) }
   const setOfferVat = async (doc, mode) => { const o = offerOf(doc); if (o) await rewriteOffer(doc, offerWithVat(o, mode)) }
+  // Убрать позиции из окна «Счета и КП» (byDoc — Map id документа → ключи позиций; show — вернуть именно их) и вернуть всё убранное
+  // у документов docIds: при файле.
+  const hideInWindow = async (byDoc, { show = false } = {}) => {
+    for (const [id, keys] of byDoc) {
+      const o = offerOf({ id })
+      const doc = (offerDocsRef.current || []).find((x) => x.doc.id === id)?.doc
+      if (!o || !doc) continue
+      const hidden = show ? (o.hidden || []).filter((k) => !keys.has(k)) : [...new Set([...(o.hidden || []), ...keys])]
+      await rewriteOffer(doc, { ...o, hidden })
+    }
+  }
+  const unhideInWindow = async (docIds) => {
+    for (const { doc, offer } of offerDocsRef.current || []) {
+      if (docIds.has(doc.id) && offer.hidden?.length) await rewriteOffer(doc, { ...offer, hidden: [] })
+    }
+  }
   // Что сейчас в расценке у позиций группы: свои цены и когда их правили, цены из других тендеров, позиции без цены.
   const currentOf = useCallback((group) => {
     const own = []
@@ -1675,6 +1691,7 @@ export default function SupplyPricingPanel({
     }
     registerDoc(doc, offer)
     await attachDoc(doc, attachTo)
+    return doc
   }
   const closeSuggest = useCallback((restoreFocus) => {
     setSuggest((cur) => {
@@ -1966,7 +1983,7 @@ export default function SupplyPricingPanel({
   // Сколько позиций можно заполнить по документам тендера — на кнопке окна (цена, которая уже стоит, сюда не входит).
   const autoPickReady = useMemo(() => {
     if (!editable || !offerDocs?.length) return 0
-    return autoPickRows(pickByGroup, tenderGroups, { currentOf }).rows.filter((r) => r.auto).length
+    return autoPickRows(windowOffers(pickByGroup, offerDocs).byGroup, tenderGroups, { currentOf }).rows.filter((r) => r.auto).length
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rates: currentOf читает цены из ссылки, пересчёт — при их смене
   }, [editable, offerDocs, pickByGroup, tenderGroups, currentOf, rates])
 
@@ -2454,6 +2471,7 @@ export default function SupplyPricingPanel({
           <SupplyTenderDocsDialog docs={offerDocs || []} others={otherDocs} byGroup={pickByGroup} groups={tenderGroups} rates={rates} filesOn={filesOn} currentOf={currentOf}
             initialFiles={tenderDocs.files} attachTo={tenderDocs.attachTo || null} onAddFile={addTenderFile} onAttachDoc={attachDoc} onDeleteDoc={deleteFile} onOpenFile={setPreview}
             onApply={applyAutoPick} onPickLine={pickLine} onRejectLine={rejectLine} onPack={setLinePack} onSetRate={setOfferRate} onSetVat={setOfferVat}
+            onHide={hideInWindow} onUnhide={unhideInWindow}
             onClose={() => setTenderDocs(null)} />
         </Suspense>
       )}

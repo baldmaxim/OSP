@@ -11,7 +11,8 @@
 // строку не сопоставлять, so — 1: цена × количество не сходится с суммой, pq — сколько в упаковке. Файл не распознался — вместо
 // строк причина (failed): его не скачиваем при каждом открытии расценки. При файле: date — дата документа, currency — цены
 // не в рублях, total — сверка с итогом документа { ok, read, doc }, ocr — строки со скана (распознаны, а не прочитаны), rv —
-// версия чтения. У строки со скана un — 1, если её цифры не сошлись между собой и цену надо сверить с файлом.
+// версия чтения, xh — позиции (ключи групп), которые человек убрал из окна «Счета и КП тендера» у этого документа: их цены из него
+// окно больше не предлагает (13.11.2026). У строки со скана un — 1, если её цифры не сошлись между собой и цену надо сверить с файлом.
 import { roundMoney } from './money.js'
 
 export const OFFER_KIND = 'supply_offer'
@@ -30,6 +31,10 @@ export const offerNeedsReread = (offer) => !!offer?.failed && !offer.lines.lengt
 // osp-api ограничен 2 МБ (BODY_LIMIT).
 export const OFFER_LINES_MAX = 1500
 const NAME_MAX = 250
+// Убранных из окна позиций у документа — не больше (ключ — до ~300 знаков): notes остаются меньше предела записи.
+export const OFFER_HIDDEN_MAX = 1000
+// Ключ группы — как есть (пробелы не схлопываются: иначе ключ не совпал бы с группой).
+const hiddenKey = (k) => (k == null ? '' : String(k).slice(0, 400))
 
 const text = (v, max = NAME_MAX) => {
   const s = String(v ?? '').replace(/\s+/g, ' ').trim()
@@ -38,8 +43,9 @@ const text = (v, max = NAME_MAX) => {
 const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v))
 
 // JSON для notes. lines — [{ name, unit, qty, code, price, docPrice, docVat, k, also, no, packs, skip, unsure }]; строки без цены не
-// хранятся. source — 'pdf' | 'sheet' | 'image'; vat — { mode, rate } (как посчитаны цены); delivery — множитель доставки.
-export function offerNotes({ source = null, vat = null, delivery = 1, lines, date = null, currency = null, total = null, ocr = false }) {
+// хранятся. source — 'pdf' | 'sheet' | 'image'; vat — { mode, rate } (как посчитаны цены); delivery — множитель доставки; hidden —
+// ключи позиций, убранных из окна у этого документа.
+export function offerNotes({ source = null, vat = null, delivery = 1, lines, date = null, currency = null, total = null, ocr = false, hidden = null }) {
   const out = []
   for (const l of lines || []) {
     const p = num(l.price)
@@ -64,11 +70,13 @@ export function offerNotes({ source = null, vat = null, delivery = 1, lines, dat
     out.push(row)
     if (out.length >= OFFER_LINES_MAX) break
   }
+  const xh = [...new Set((hidden || []).map(hiddenKey).filter(Boolean))].slice(-OFFER_HIDDEN_MAX)
   return JSON.stringify({
     kind: OFFER_KIND, v: OFFER_VERSION, rv: READER_VERSION, at: new Date().toISOString(), source,
     vat: vat ? { mode: vat.mode || null, rate: num(vat.rate) } : null,
     delivery: num(delivery) && num(delivery) > 1 ? Math.round(num(delivery) * 10000) / 10000 : 1,
     ...(date ? { date } : {}), ...(currency ? { currency } : {}), ...(total ? { total } : {}), ...(ocr ? { ocr: true } : {}),
+    ...(xh.length ? { xh } : {}),
     lines: out,
   })
 }
@@ -78,8 +86,9 @@ export const unreadableOfferNotes = (reason) => JSON.stringify({
   kind: OFFER_KIND, v: OFFER_VERSION, rv: READER_VERSION, at: new Date().toISOString(), failed: String(reason), lines: [],
 })
 
-// notes файла → { at, source, vat, delivery, failed, date, currency, total, ocr, rv, lines: [{ name, unit, qty, code, price, docPrice,
+// notes файла → { at, source, vat, delivery, failed, date, currency, total, ocr, rv, hidden, lines: [{ name, unit, qty, code, price, docPrice,
 // docVat, k, also, no, packs, skip, sumOff, packQty, unsure }] } или null (не документ «в похожие цены», испорченный JSON, другая версия).
+// hidden — ключи позиций, убранных из окна у документа ([] — нет).
 // also, no, packs, sumOff, packQty, unsure — только если есть.
 export function readOffer(notes) {
   if (!notes || typeof notes !== 'string' || !notes.includes(OFFER_KIND)) return null
@@ -108,7 +117,8 @@ export function readOffer(notes) {
   }
   return {
     at: o.at || null, source: o.source || null, vat: o.vat || null, delivery: num(o.delivery) || 1, failed: o.failed || null, date: o.date || null,
-    currency: o.currency || null, total: o.total || null, ocr: o.ocr === true, rv: num(o.rv) || 0, lines,
+    currency: o.currency || null, total: o.total || null, ocr: o.ocr === true, rv: num(o.rv) || 0,
+    hidden: Array.isArray(o.xh) ? o.xh.map(hiddenKey).filter(Boolean) : [], lines,
   }
 }
 

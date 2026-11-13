@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { describeDocument, renameDocument } from '../services/s3'
 import { composeFileName, fileNameProblem, splitFileName } from '../utils/fileRename'
+import { previewKind } from '../utils/filePreview'
 
 // Строка файла в «Заявках на ДС». Надпись — описание файла, а его нет — имя (решение пользователя 03.11: на копии прода
 // 15.10 описание есть у 804 файлов из 892). Нажатие правит то, что написано в строке; двойное нажатие скачивает файл.
-// Без права правки нажатие открывает просмотр PDF и картинки. Ввод — состояние этой строки, не страницы: набор текста
+// Без права правки нажатие открывает просмотр PDF, картинки, Word и Excel. Ввод — состояние этой строки, не страницы: набор текста
 // не перерисовывает реестр.
 // details — размер и кто загрузил (для подсказки); onChanged(строка s3_documents) — родитель обновляет файл у себя.
 
@@ -25,8 +26,8 @@ export default function DcRequestDocChip({ doc, details, canEdit, onPreview, onD
   const pressTimer = useRef(null)
   const editing = draft !== null
 
-  const mime = (doc.mime_type || '').toLowerCase()
-  const previewable = mime === 'application/pdf' || mime.startsWith('image/')
+  // Глазик — у PDF, картинок, Word и Excel (13.11.2026: «Отчёт по документам» — почти всегда .docx, глазика у него не было).
+  const previewable = previewKind(doc.mime_type, doc.file_name) != null
   const { stem, ext } = splitFileName(doc.file_name)
 
   useEffect(() => () => clearTimeout(pressTimer.current), [])

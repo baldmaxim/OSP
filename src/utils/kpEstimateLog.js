@@ -7,13 +7,13 @@ const MARK_FIELDS = {
   cell_fills: 'Заливка ячеек',
   actual_qty: 'Актуальный объём',
   actual_reason: 'Причина изменения объёма',
-  responsible_name: 'Ответственный',
+  responsible_name: 'Ответственный', // до 13.11.2026 — в старых записях истории
 }
 const ALLOC_FIELDS = {
   tender_label: 'Тендер',
-  pz_qty: 'Объём в расчёте ПЗ',
+  pz_qty: 'Объём',
   counterparty_name: 'Подрядчик',
-  contract_label: 'Договор',
+  contract_label: 'Договор', // до 13.11.2026: договор и закреплённый объём — в старых записях истории
   contract_qty: 'Закреплённый объём',
   note: 'Примечание',
 }

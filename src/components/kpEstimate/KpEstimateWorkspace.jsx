@@ -1,39 +1,31 @@
 // Смета КП / ПЗ объекта — совместная работа экономистов с одним загруженным документом (вкладка «Смета» карточки
-// объекта, миграция 20270215). Виды «КП» (укрупнённые позиции по системам) и «ПЗ» (прямые затраты и коммерция) — одни и
-// те же строки: отметки и распределения в обоих одни. Дерево разделов, поиск, фильтры, свёртка, подробности строки,
-// заливка строк и ячеек, групповые действия, история, выгрузка в Excel. Всё сохраняется само; правки коллег приходят по
-// истории (раз в 10 с, пока вкладка открыта). Правила — utils/kpEstimate.js, запросы — services/kpEstimate.js.
+// объекта, миграция 20270215). 13.11.2026 упрощено по просьбе пользователя: одна таблица (КП до перекидок и план затрат
+// вместе, без переключателя и переходов КП ↔ ПЗ), объём — только «Количество (ГП)», без ответственного; строка
+// открывается окном — там тендер (может не быть) и подрядчик-победитель с объёмом; «Показать» вместо фильтров и
+// плиток; «во весь экран» — значок справа сверху. Всё сохраняется само; правки коллег приходят по истории (раз в 10 с,
+// пока вкладка открыта). Правила — utils/kpEstimate.js, запросы — services/kpEstimate.js.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { saveAs } from 'file-saver'
 import { useRole } from '../../contexts/RoleContext'
 import { downloadS3File } from '../FileDownload'
 import {
-  EMPTY_FILTERS, FILL_COLORS, STATUS_LABELS, allocationGroupKey, ancestorsOf, buildTree, collapseToLevel, computeStates,
-  counterpartyKey, descendantsOf, filtersActive, fmtMoney, fmtMoneyShort, isPosition, linkedKpIds, linkedPzIds,
-  markPayload, planTenderAllocation, responsibleKey, rowHaystack, rowMatchesFilters, searchTokens, visibleRowIds,
+  FILL_COLORS, SHOW_OPTIONS, ancestorsOf, buildTree, collapseToLevel, computeStates, descendantsOf, fmtMoneyShort, isPosition,
+  markPayload, planTenderAllocation, rowHaystack, rowMatchesShow, searchTokens, showActive, visibleRowIds,
 } from '../../utils/kpEstimate'
 import { mergeNote } from '../../utils/dcRequestNotes'
 import {
   deleteAllocation, deleteEstimate, fetchMark, insertAllocations, loadAllocations, loadEstimateInfo, loadLatestLogId, loadLog,
   loadLogSince, loadMarks, loadPickers, loadRows, loadSourceFiles, reloadForRows, saveMark, updateAllocation,
 } from '../../services/kpEstimate'
-import { COLUMN_GROUPS, FILLABLE, columnsFor } from './columns'
+import { COLUMNS, FILLABLE } from './columns'
 import KpEstimateTable from './KpEstimateTable'
-import KpEstimateTree from './KpEstimateTree'
-import KpEstimateDetail from './KpEstimateDetail'
+import KpEstimateRowDialog from './KpEstimateRowDialog'
 import KpEstimateImportDialog from './KpEstimateImportDialog'
-import { ExportDialog, HistoryDialog, PassportDialog, TenderBulkDialog } from './KpEstimateDialogs'
+import { HistoryDialog, PassportDialog, TenderBulkDialog } from './KpEstimateDialogs'
 import './KpEstimate.css'
 
 const POLL_MS = 10_000
-const ECONOMIST_ROLES = new Set(['economist', 'economist_object'])
 
-function readPrefs(objectId) {
-  try { return JSON.parse(localStorage.getItem(`kpEstimate:ui:${objectId}`) || '{}') || {} } catch { return {} }
-}
-function writePrefs(objectId, prefs) {
-  try { localStorage.setItem(`kpEstimate:ui:${objectId}`, JSON.stringify(prefs)) } catch { /* без памяти вида */ }
-}
 const groupAllocs = (list) => {
   const m = new Map()
   for (const a of list || []) {
@@ -45,16 +37,23 @@ const groupAllocs = (list) => {
 const errText = (e) => {
   const msg = String(e?.message || e || '')
   if (/kp_estimate_not_active/.test(msg)) return 'Смета заменена новой версией — правка закрыта. Обновите страницу.'
-  if (/kp_estimate_allocations_pair|duplicate key/.test(msg)) return 'Этот тендер с этим подрядчиком у позиции уже есть — поправьте объём в существующей строке.'
+  if (/kp_estimate_allocations_pair|duplicate key/.test(msg)) return 'Этот тендер с этим подрядчиком у позиции уже есть — поправьте объём в его строке.'
   if (e?.code === '42501' || /row-level security|permission/i.test(msg)) return 'Нет права менять смету (раздел «Объекты: смета КП/ПЗ»).'
   return msg || 'Не удалось сохранить'
 }
+
+const ExpandIcon = ({ on }) => (
+  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    {on
+      ? <path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4" />
+      : <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" />}
+  </svg>
+)
 
 export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
   const { canEdit, isAdmin, isSuperAdmin, user } = useRole()
   const editRight = canEdit('kp_estimate')
   const myId = user?.id || null
-  const prefs0 = useMemo(() => readPrefs(objectId), [objectId])
 
   const [info, setInfo] = useState({ loading: true, estimate: null, versions: [], missing: false, error: '' })
   const [viewEstimateId, setViewEstimateId] = useState(null)
@@ -62,15 +61,10 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
   const [marks, setMarks] = useState(() => new Map())
   const [allocsByRow, setAllocsByRow] = useState(() => new Map())
   const [loadError, setLoadError] = useState('')
-  const [view, setView] = useState(prefs0.view === 'pz' ? 'pz' : 'kp')
-  const [hidden, setHidden] = useState(() => new Set(prefs0.hidden || []))
-  const [treeOpen, setTreeOpen] = useState(prefs0.treeOpen !== false)
   const [collapsed, setCollapsed] = useState(() => new Set())
-  const [scope, setScope] = useState(null)
   const [query, setQuery] = useState('')
   const [search, setSearch] = useState('')
-  const [filters, setFilters] = useState(EMPTY_FILTERS)
-  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [show, setShow] = useState('all')
   const [selection, setSelection] = useState(() => new Set())
   const anchorRef = useRef(null)
   const [cellSel, setCellSel] = useState(null)
@@ -88,6 +82,7 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
   const [newVersion, setNewVersion] = useState(null)
   const [sourceFiles, setSourceFiles] = useState([])
   const [transferNote, setTransferNote] = useState(null)
+  const [exporting, setExporting] = useState(false)
 
   const shown = useMemo(() => {
     if (viewEstimateId) return info.versions.find((v) => v.id === viewEstimateId) || null
@@ -95,8 +90,6 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
   }, [info, viewEstimateId])
   const estimateId = shown?.id || null
   const writable = editRight && shown?.status === 'active'
-
-  useEffect(() => { writePrefs(objectId, { view, hidden: [...hidden], treeOpen }) }, [objectId, view, hidden, treeOpen])
 
   // ── Загрузка ────────────────────────────────────────────────────────────
   const loadInfo = useCallback(async () => {
@@ -130,7 +123,7 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
       try {
         const [r, m, a, logId, files] = await Promise.all([
           loadRows(estimateId), loadMarks(estimateId), loadAllocations(estimateId), loadLatestLogId(estimateId).catch(() => 0),
-          loadSourceFiles([shown.kp_s3_document_id, shown.pz_s3_document_id]).catch(() => []),
+          loadSourceFiles([...new Set([shown.kp_s3_document_id, shown.pz_s3_document_id])]).catch(() => []),
         ])
         if (!alive) return
         lastLogId.current = logId
@@ -151,7 +144,7 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
   useEffect(() => { if (tree) setCollapsed(collapseToLevel(tree, 2)) }, [tree])
   const computed = useMemo(() => (tree ? computeStates(tree, marks, allocsByRow) : null), [tree, marks, allocsByRow])
 
-  // ── Поиск и фильтры ─────────────────────────────────────────────────────
+  // ── Поиск и «Показать» ──────────────────────────────────────────────────
   useEffect(() => {
     const t = setTimeout(() => setSearch(query), 200)
     return () => clearTimeout(t)
@@ -159,25 +152,22 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
   const match = useMemo(() => {
     if (!tree || !computed) return null
     const tokens = searchTokens(search)
-    const fa = filtersActive(filters)
-    if (!tokens.length && !fa) return null
+    const on = showActive(show)
+    if (!tokens.length && !on) return null
     const out = new Set()
     for (const r of tree.rows) {
       const mark = marks.get(r.id)
-      const allocs = allocsByRow.get(r.id)
-      if (fa && !rowMatchesFilters(r, mark, allocs, computed.states.get(r.id), filters)) continue
+      if (on && !rowMatchesShow(r, mark, computed.states.get(r.id), show)) continue
       if (tokens.length) {
-        const hay = rowHaystack(r, mark, allocs)
+        const hay = rowHaystack(r, mark, allocsByRow.get(r.id))
         if (!tokens.every((t) => hay.includes(t))) continue
       }
       out.add(r.id)
     }
     return out
-  }, [tree, computed, marks, allocsByRow, search, filters])
-  const ids = useMemo(() => (tree ? visibleRowIds(tree, { view, scope, match, collapsed }) : []), [tree, match, scope, view, collapsed])
-  useEffect(() => { setCellSel(null) }, [ids, view])
-  const columns = useMemo(() => columnsFor(view, hidden), [view, hidden])
-  const foundPositions = match ? [...match].filter((id) => isPosition(tree.byId.get(id))).length : null
+  }, [tree, computed, marks, allocsByRow, search, show])
+  const ids = useMemo(() => (tree ? visibleRowIds(tree, { match, collapsed }) : []), [tree, match, collapsed])
+  useEffect(() => { setCellSel(null) }, [ids])
 
   // ── Сохранение отметок ──────────────────────────────────────────────────
   const syncSaveState = useCallback((message) => {
@@ -309,7 +299,7 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
     }
   }, [putAllocs])
   const onAllocDelete = useCallback(async (alloc) => {
-    if (!window.confirm(`Удалить распределение${alloc.tender_label ? ` «${alloc.tender_label}»` : ''}${alloc.counterparty_name ? ` (${alloc.counterparty_name})` : ''}?`)) return
+    if (!window.confirm(`Удалить распределение «${[alloc.tender_label, alloc.counterparty_name].filter(Boolean).join(' · ')}»?`)) return
     try {
       await deleteAllocation(alloc.id)
       putAllocs([], [alloc.id])
@@ -320,12 +310,8 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
 
   const ensurePickers = useCallback(() => {
     if (pickers || !writable) return
-    setPickers({ loading: true, tenders: [], contracts: [], counterparties: [], employees: [], winners: [] })
-    loadPickers(objectId).then((p) => {
-      const employees = p.employees.map((e) => ({ ...e, isEconomist: ECONOMIST_ROLES.has(e.role) }))
-        .sort((a, b) => (b.isEconomist - a.isEconomist) || String(a.display_name || a.full_name || '').localeCompare(String(b.display_name || b.full_name || ''), 'ru'))
-      setPickers({ ...p, employees })
-    }).catch(() => setPickers({ tenders: [], contracts: [], counterparties: [], employees: [], winners: [] }))
+    setPickers({ loading: true, tenders: [], counterparties: [], winners: [] })
+    loadPickers(objectId).then(setPickers).catch(() => setPickers({ tenders: [], counterparties: [], winners: [] }))
   }, [pickers, writable, objectId])
 
   // ── Правки коллег: по истории ───────────────────────────────────────────
@@ -377,7 +363,7 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
     return () => { stop = true; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible) }
   }, [estimateId, rows, shown?.status, myId])
 
-  // ── Выделение ───────────────────────────────────────────────────────────
+  // ── Выделение и заливка ─────────────────────────────────────────────────
   const onSelect = useCallback((id, { shift }) => {
     setSelection((prev) => {
       const next = new Set(prev)
@@ -399,7 +385,7 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
   const applyFill = (color) => {
     if (!writable) return
     if (cellSel) {
-      const keys = columns.slice(cellSel.c1, cellSel.c2 + 1).map((c) => c.key).filter((k) => FILLABLE.has(k))
+      const keys = COLUMNS.slice(cellSel.c1, cellSel.c2 + 1).map((c) => c.key).filter((k) => FILLABLE.has(k))
       for (const id of ids.slice(cellSel.r1, cellSel.r2 + 1)) {
         const cf = { ...(marks.get(id)?.cell_fills || {}) }
         for (const k of keys) { if (color) cf[k] = color; else delete cf[k] }
@@ -412,54 +398,21 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
       else editMark(id, { fill: null, cell_fills: {} })
     }
   }
-  const applyResponsible = (empId) => {
-    const emp = (pickers?.employees || []).find((e) => e.user_id === empId)
-    for (const id of selection) {
-      if (!tree.byId.get(id) || !isPosition(tree.byId.get(id))) continue
-      editMark(id, { responsible_id: emp?.user_id || null, responsible_name: emp ? (emp.display_name || emp.full_name || emp.email) : null })
-    }
-  }
 
-  // ── Переходы КП ↔ ПЗ ────────────────────────────────────────────────────
-  const reveal = useCallback((targets, nextView, focusId) => {
-    if (!tree) return
-    if (nextView) setView(nextView)
-    const v = nextView || view
-    if (scope && !targets.every((id) => id === scope || descendantsOf(tree, scope).includes(id))) setScope(null)
-    if (match && !targets.every((id) => match.has(id))) { setQuery(''); setSearch(''); setFilters(EMPTY_FILTERS) }
+  // ── Переход к строке (из истории, ↑ ↓ в окне строки) ────────────────────
+  const goTo = useCallback((id) => {
+    if (!tree?.byId.has(id)) return
+    if (match && !match.has(id)) { setQuery(''); setSearch(''); setShow('all') }
     setCollapsed((prev) => {
       const next = new Set(prev)
-      for (const id of targets) for (const a of ancestorsOf(tree, id)) next.delete(a)
+      for (const a of ancestorsOf(tree, id)) next.delete(a)
       return next
     })
-    const focus = focusId || targets.find((id) => v !== 'pz' || tree.hasPz.has(id)) || targets[0]
-    setHighlight(new Set(targets))
-    setScrollTo({ id: focus, t: Date.now() })
-    setTimeout(() => setHighlight(new Set()), 6000)
-  }, [tree, view, scope, match])
-
-  const onLink = useCallback((id) => {
-    if (view === 'kp') {
-      const targets = linkedPzIds(tree, id)
-      if (targets.length) reveal(targets, 'pz', targets[0])
-    } else {
-      reveal(linkedKpIds(tree, id), 'kp', id)
-    }
     setActiveId(id)
-  }, [tree, view, reveal])
-  const onShow = useCallback((id, v) => {
-    if (v === 'pz') {
-      const targets = linkedPzIds(tree, id)
-      if (targets.length) reveal(targets, 'pz', tree.byId.get(id)?.pz ? id : targets[0])
-    } else {
-      reveal(linkedKpIds(tree, id), 'kp', id)
-    }
-  }, [tree, reveal])
-  const onNavigate = useCallback((id) => {
-    setActiveId(id)
-    const nextView = view === 'pz' && !tree.hasPz.has(id) ? 'kp' : null
-    reveal([id], nextView, id)
-  }, [tree, view, reveal])
+    setHighlight(new Set([id]))
+    setScrollTo({ id, t: Date.now() })
+    setTimeout(() => setHighlight(new Set()), 4000)
+  }, [tree, match])
   const onPrevNext = useCallback((dir) => {
     const i = ids.indexOf(activeId)
     const next = ids[i + dir]
@@ -479,43 +432,52 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
 
   const loadRowLog = useCallback((rowId) => (estimateId ? loadLog(estimateId, { rowId, limit: 30 }) : Promise.resolve([])), [estimateId])
 
-  // ── Выгрузка ────────────────────────────────────────────────────────────
-  const doExport = async ({ scope: what, sheets }) => {
-    const { exportRowIds, buildEstimateWorkbook } = await import('../../utils/kpEstimateExport')
-    const picked = what === 'selected' ? [...selection] : (what === 'found' ? [...(match || [])] : null)
-    const exportIds = exportRowIds(tree, picked)
-    const label = what === 'selected' ? `выделенные строки (${selection.size})` : (what === 'found' ? `найденные (${match?.size || 0})` : 'вся смета')
-    const buf = await buildEstimateWorkbook({ tree, marks, allocsByRow, states: computed.states, sums: computed.sums, total: computed.total, meta: shown.meta, estimate: shown },
-      { ids: exportIds, sheets, scopeLabel: label })
-    const day = new Date().toLocaleDateString('ru-RU')
-    const name = `Смета КП-ПЗ — ${(shown.title || objectName || 'объект').replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 80)} — ${day}.xlsx`
-    saveAs(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), name)
+  // ── Выгрузка: выделенное, иначе найденное, иначе вся смета ──────────────
+  const exportScope = selection.size ? 'selected' : (match ? 'found' : 'all')
+  const exportTitle = exportScope === 'selected' ? `Выгрузить в Excel выделенные строки (${selection.size})`
+    : exportScope === 'found' ? `Выгрузить в Excel найденное (${match.size})` : 'Выгрузить в Excel всю смету'
+  const doExport = async () => {
+    setExporting(true)
+    try {
+      const { exportRowIds, buildEstimateWorkbook } = await import('../../utils/kpEstimateExport')
+      const picked = exportScope === 'selected' ? [...selection] : (exportScope === 'found' ? [...match] : null)
+      const label = exportScope === 'selected' ? `выделенные строки (${selection.size})` : (exportScope === 'found' ? `найденные (${match.size})` : 'вся смета')
+      const buf = await buildEstimateWorkbook({ tree, marks, allocsByRow, states: computed.states, sums: computed.sums, total: computed.total, meta: shown.meta, estimate: shown },
+        { ids: exportRowIds(tree, picked), scopeLabel: label })
+      const day = new Date().toLocaleDateString('ru-RU')
+      const name = `Смета КП-ПЗ — ${(shown.title || objectName || 'объект').replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 80)} — ${day}.xlsx`
+      saveAs(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), name)
+    } catch (e) {
+      setNotice({ kind: 'error', text: `Выгрузка не получилась: ${e.message || e}` })
+    } finally {
+      setExporting(false)
+    }
   }
 
-  const applyTender = async (target) => {
-    const plan = planTenderAllocation({ rowIds: [...selection], tree, states: computed.states, allocsByRow, tender: target })
+  const applyBulk = async (target) => {
+    const plan = planTenderAllocation({ rowIds: [...selection], tree, states: computed.states, allocsByRow, target })
     const created = plan.inserts.length ? await insertAllocations(estimateId, objectId, plan.inserts) : []
     const updated = []
     for (const u of plan.updates) {
       const alloc = (allocsByRow.get(u.row_id) || []).find((a) => a.id === u.id)
-      const res = await updateAllocation(alloc, { pz_qty: u.pz_qty })
+      const res = await updateAllocation(alloc, { pz_qty: u.pz_qty, ...(Number(alloc?.contract_qty) ? { contract_qty: 0 } : {}) })
       if (res.allocation) updated.push(res.allocation)
     }
     putAllocs([...created, ...updated])
-    setNotice({ kind: 'info', text: `В тендер ${target.tender_label} распределено позиций: ${created.length + updated.length}${plan.skipped.length ? `; без свободного остатка — ${plan.skipped.length}` : ''}.` })
+    setNotice({ kind: 'info', text: `Распределено позиций: ${created.length + updated.length}${plan.skipped.length ? `; без свободного остатка — ${plan.skipped.length}` : ''}.` })
   }
 
-  // ── Escape: снять выделение, закрыть полноэкранный режим ────────────────
+  // ── Escape: снять выделение, выйти из «во весь экран» (окна закрываются сами) ──
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key !== 'Escape' || dialog) return
+      if (e.key !== 'Escape' || dialog || activeId) return
       if (cellSel || selection.size) { setCellSel(null); setSelection(new Set()); return }
       if (brush) { setBrush(false); return }
       if (fullscreen) setFullscreen(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [dialog, cellSel, selection, brush, fullscreen])
+  }, [dialog, activeId, cellSel, selection, brush, fullscreen])
 
   // ── Отрисовка ───────────────────────────────────────────────────────────
   if (info.loading) return <section className="kpe-root kpe-root--empty"><p className="kpe-muted">Загрузка сметы КП / ПЗ…</p></section>
@@ -529,29 +491,7 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
   }
   const versions = info.versions.filter((v) => v.status !== 'draft')
   const total = computed?.total
-  const counts = total?.counts || {}
-  const filterCount = Object.entries(filters).filter(([k, v]) => (Array.isArray(v) ? v.length : !!v) && k).length
-
-  const responsibleOptions = []
-  const tenderOptions = new Map()
-  const cpOptions = new Map()
-  if (tree) {
-    const seen = new Set()
-    for (const m of marks.values()) {
-      const key = responsibleKey(m)
-      if (key && !seen.has(key)) { seen.add(key); responsibleOptions.push({ key, label: m.responsible_name || 'сотрудник' }) }
-    }
-    for (const list of allocsByRow.values()) {
-      for (const a of list) {
-        const tk = allocationGroupKey(a)
-        if ((a.tender_id || a.tender_label) && !tenderOptions.has(tk)) tenderOptions.set(tk, a.tender_label || 'тендер')
-        const ck = counterpartyKey(a)
-        if (ck && !cpOptions.has(ck)) cpOptions.set(ck, a.counterparty_name || 'подрядчик')
-      }
-    }
-  }
-  const setFilter = (patch) => setFilters((f) => ({ ...f, ...patch }))
-  const toggleStatus = (st) => setFilters((f) => ({ ...f, statuses: f.statuses.includes(st) ? f.statuses.filter((x) => x !== st) : [...f.statuses, st] }))
+  const share = total?.total ? Math.round((total.distributedMoney / total.total) * 1000) / 10 : 0
 
   return (
     <section className={`kpe-root${fullscreen ? ' is-fullscreen' : ''}`} aria-label="Смета КП / ПЗ">
@@ -560,14 +500,15 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
           <h3 className="kpe-h">Смета КП / ПЗ{shown ? <span className="kpe-h-sub"> — {shown.title}</span> : null}</h3>
           {shown && (
             <p className="kpe-muted kpe-head-meta">
-              {shown.status === 'archived' ? 'Прежняя версия' : 'Действующая версия'} от {new Date(shown.activated_at || shown.created_at).toLocaleDateString('ru-RU')}
-              {shown.created_by_name ? `, загрузил(а) ${shown.created_by_name}` : ''}
+              {shown.status === 'archived' ? 'Прежняя версия' : 'Версия'} от {new Date(shown.activated_at || shown.created_at).toLocaleDateString('ru-RU')}
+              {shown.created_by_name ? `, ${shown.created_by_name}` : ''}
               {sourceFiles.map((f) => (
                 <button key={f.id} type="button" className="kpe-text-btn" title="Скачать исходный файл"
                   onClick={() => downloadS3File(f.s3_key, f.file_name).catch((e) => setNotice({ kind: 'error', text: e.message || String(e) }))}>
                   · {f.file_name}
                 </button>
               ))}
+              <button type="button" className="kpe-text-btn" onClick={() => setDialog('passport')}>· Паспорт и коэффициенты</button>
             </p>
           )}
         </div>
@@ -581,9 +522,8 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
               ))}
             </select>
           )}
-          {shown && <button type="button" className="kpe-btn" onClick={() => setDialog('passport')}>Паспорт и коэффициенты</button>}
           {shown && <button type="button" className="kpe-btn" onClick={() => setDialog('history')}>История</button>}
-          {shown && tree && <button type="button" className="kpe-btn" onClick={() => setDialog('export')}>Excel</button>}
+          {shown && tree && <button type="button" className="kpe-btn" title={exportTitle} disabled={exporting} onClick={doExport}>{exporting ? 'Excel…' : 'Excel'}</button>}
           {editRight && !viewEstimateId && <button type="button" className="kpe-btn kpe-btn--primary" onClick={() => setDialog('import')}>{info.estimate ? 'Загрузить новую версию' : 'Загрузить смету'}</button>}
           {shown && (isAdmin || isSuperAdmin) && shown.status === 'archived' && (
             <button type="button" className="kpe-btn kpe-btn--danger-ghost" onClick={async () => {
@@ -591,7 +531,12 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
               try { await deleteEstimate(shown.id); setViewEstimateId(null); loadInfo() } catch (e) { setNotice({ kind: 'error', text: errText(e) }) }
             }}>Удалить версию</button>
           )}
-          {tree && <button type="button" className="kpe-btn" aria-pressed={fullscreen} onClick={() => setFullscreen((f) => !f)}>{fullscreen ? 'Свернуть' : 'Во весь экран'}</button>}
+          {tree && (
+            <button type="button" className="kpe-icon-btn kpe-fs-btn" aria-pressed={fullscreen} onClick={() => setFullscreen((f) => !f)}
+              aria-label={fullscreen ? 'Свернуть (Esc)' : 'Во весь экран'} title={fullscreen ? 'Свернуть (Esc)' : 'Во весь экран'}>
+              <ExpandIcon on={fullscreen} />
+            </button>
+          )}
         </div>
       </header>
 
@@ -619,7 +564,7 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
       {!shown && (
         <div className="kpe-empty">
           <p><b>Смета КП / ПЗ не загружена.</b></p>
-          <p className="kpe-muted">Один документ для всех экономистов объекта: «КП до перекидок» (укрупнённые позиции по системам) и «Смета» (их связь с подробными позициями ПЗ и коэффициентами). По каждой позиции — примечания, заливка, уточнённый объём и причина, тендеры и подрядчики, остаток и ответственный.</p>
+          <p className="kpe-muted">Один документ для всех экономистов объекта: КП до перекидок и план затрат. По каждой позиции — примечание, заливка, уточнённый объём и причина, тендер и подрядчик-победитель с объёмом, свободный остаток.</p>
           {!editRight && <p className="kpe-muted">Загружает экономист с правом «Объекты: смета КП/ПЗ».</p>}
         </div>
       )}
@@ -628,90 +573,26 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
 
       {tree && computed && (
         <>
-          <div className="kpe-summary" role="group" aria-label="Итоги">
-            <div className="kpe-tile"><span>Стоимость КП</span><b title={`${fmtMoney(total.total)} ₽`}>{fmtMoneyShort(total.total)}</b></div>
-            {total.direct ? <div className="kpe-tile"><span>Прямые затраты ПЗ</span><b title={`${fmtMoney(total.direct)} ₽`}>{fmtMoneyShort(total.direct)}</b></div> : null}
-            <div className="kpe-tile"><span>Распределено</span><b title={`${fmtMoney(total.distributedMoney)} ₽`}>{fmtMoneyShort(total.distributedMoney)}</b>
-              <i>{total.total ? `${((total.distributedMoney / total.total) * 100).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} %` : ''}</i></div>
-            <div className="kpe-tile"><span>Свободно</span><b title={`${fmtMoney(total.freeMoney)} ₽`}>{fmtMoneyShort(total.freeMoney)}</b></div>
-            <button type="button" className={`kpe-tile kpe-tile--btn${filters.statuses.includes('over') ? ' is-on' : ''}${counts.over ? ' is-alert' : ''}`} onClick={() => toggleStatus('over')}>
-              <span>Превышение</span><b>{counts.over || 0}</b></button>
-            <button type="button" className={`kpe-tile kpe-tile--btn${filters.statuses.includes('none') ? ' is-on' : ''}`} onClick={() => toggleStatus('none')}>
-              <span>Не распределено</span><b>{counts.none || 0}</b></button>
-            <button type="button" className={`kpe-tile kpe-tile--btn${filters.statuses.includes('partial') ? ' is-on' : ''}`} onClick={() => toggleStatus('partial')}>
-              <span>Частично</span><b>{counts.partial || 0}</b></button>
-            <button type="button" className={`kpe-tile kpe-tile--btn${filters.changed ? ' is-on' : ''}`} onClick={() => setFilter({ changed: !filters.changed })}>
-              <span>Объём изменён</span><b>{total.changed || 0}</b></button>
-            <button type="button" className={`kpe-tile kpe-tile--btn${filters.withNote ? ' is-on' : ''}`} onClick={() => setFilter({ withNote: !filters.withNote })}>
-              <span>С примечанием</span><b>{total.notes || 0}</b></button>
-          </div>
+          <p className="kpe-summary" aria-label="Итоги">
+            <span>Стоимость КП <b title={`${total.total.toLocaleString('ru-RU', { minimumFractionDigits: 2 })} ₽`}>{fmtMoneyShort(total.total)}</b></span>
+            {total.direct ? <span>Прямые затраты <b title={`${total.direct.toLocaleString('ru-RU', { minimumFractionDigits: 2 })} ₽`}>{fmtMoneyShort(total.direct)}</b></span> : null}
+            <span>Распределено <b>{fmtMoneyShort(total.distributedMoney)}</b> ({share.toLocaleString('ru-RU')} %)</span>
+            <span>Свободно <b>{fmtMoneyShort(total.freeMoney)}</b></span>
+            {total.counts.over ? <button type="button" className="kpe-text-btn kpe-over" onClick={() => setShow('over')}>Превышение: {total.counts.over}</button> : null}
+          </p>
 
           <div className="kpe-toolbar">
-            <div className="kpe-seg" role="group" aria-label="Вид">
-              <button type="button" className={view === 'kp' ? 'is-on' : ''} aria-pressed={view === 'kp'} onClick={() => setView('kp')}>КП</button>
-              <button type="button" className={view === 'pz' ? 'is-on' : ''} aria-pressed={view === 'pz'} onClick={() => setView('pz')}>ПЗ</button>
-            </div>
             <input type="search" className="kpe-field kpe-search" value={query} onChange={(e) => setQuery(e.target.value)}
-              placeholder="Поиск по разделам и позициям: код, наименование, примечание, тендер, подрядчик" aria-label="Поиск по разделам и позициям" />
-            {match && <span className="kpe-muted kpe-found">Найдено: {match.size}{foundPositions !== null ? ` (позиций ${foundPositions})` : ''}</span>}
-            <div className="kpe-pop-wrap">
-              <button type="button" className={`kpe-btn${filterCount ? ' is-on' : ''}`} aria-expanded={filtersOpen} onClick={() => setFiltersOpen((o) => !o)}>
-                Фильтры{filterCount ? ` (${filterCount})` : ''}</button>
-              {filtersOpen && (
-                <div className="kpe-pop" role="dialog" aria-label="Фильтры">
-                  <fieldset className="kpe-fieldset"><legend>Статус позиции</legend>
-                    {['none', 'partial', 'full', 'over', 'empty'].map((st) => (
-                      <label key={st}><input type="checkbox" checked={filters.statuses.includes(st)} onChange={() => toggleStatus(st)} /> {STATUS_LABELS[st]}</label>
-                    ))}
-                  </fieldset>
-                  <fieldset className="kpe-fieldset"><legend>Отметки</legend>
-                    <label><input type="checkbox" checked={filters.changed} onChange={() => setFilter({ changed: !filters.changed })} /> Объём изменён</label>
-                    <label><input type="checkbox" checked={filters.contractOver} onChange={() => setFilter({ contractOver: !filters.contractOver })} /> По договорам больше, чем взято в тендер</label>
-                    <label><input type="checkbox" checked={filters.withNote} onChange={() => setFilter({ withNote: !filters.withNote })} /> С примечанием</label>
-                    <label><input type="checkbox" checked={filters.withFill} onChange={() => setFilter({ withFill: !filters.withFill })} /> С заливкой</label>
-                    <label><input type="checkbox" checked={filters.noResponsible} onChange={() => setFilter({ noResponsible: !filters.noResponsible })} /> Без ответственного</label>
-                  </fieldset>
-                  <label className="kpe-block-label">Ответственный
-                    <select className="kpe-field" value={filters.responsible} onChange={(e) => setFilter({ responsible: e.target.value })}>
-                      <option value="">Любой</option>
-                      {responsibleOptions.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-                    </select>
-                  </label>
-                  <label className="kpe-block-label">Тендер
-                    <select className="kpe-field" value={filters.tender} onChange={(e) => setFilter({ tender: e.target.value })}>
-                      <option value="">Любой</option>
-                      {[...tenderOptions].map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-                    </select>
-                  </label>
-                  <label className="kpe-block-label">Подрядчик
-                    <select className="kpe-field" value={filters.counterparty} onChange={(e) => setFilter({ counterparty: e.target.value })}>
-                      <option value="">Любой</option>
-                      {[...cpOptions].map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-                    </select>
-                  </label>
-                  <div className="kpe-pop-foot">
-                    <button type="button" className="kpe-btn" onClick={() => setFilters(EMPTY_FILTERS)}>Сбросить</button>
-                    <button type="button" className="kpe-btn kpe-btn--primary" onClick={() => setFiltersOpen(false)}>Готово</button>
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="kpe-seg" role="group" aria-label="Свернуть до уровня">
+              placeholder="Поиск: код, наименование, примечание, тендер, подрядчик" aria-label="Поиск по смете" />
+            <select className={`kpe-field kpe-field--compact${showActive(show) ? ' is-on' : ''}`} value={show} aria-label="Показать" onChange={(e) => setShow(e.target.value)}>
+              {SHOW_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.key === 'all' ? 'Показать: все строки' : `${o.label} (${o.count(total)})`}</option>)}
+            </select>
+            {match && <span className="kpe-muted kpe-found">Найдено: {[...match].filter((id) => isPosition(tree.byId.get(id))).length} поз.
+              <button type="button" className="kpe-text-btn" onClick={() => { setQuery(''); setSearch(''); setShow('all') }}>сбросить</button></span>}
+            <div className="kpe-seg" role="group" aria-label="Свернуть до уровня" title="Свернуть до уровня">
               {[1, 2, 3].map((lv) => <button key={lv} type="button" title={`Свернуть до уровня ${lv}`} onClick={() => setCollapsed(collapseToLevel(tree, lv))}>{lv}</button>)}
               <button type="button" title="Развернуть всё" onClick={() => setCollapsed(new Set())}>Все</button>
             </div>
-            <div className="kpe-pop-wrap">
-              <details className="kpe-cols">
-                <summary className="kpe-btn">Столбцы</summary>
-                <div className="kpe-pop kpe-pop--small">
-                  {COLUMN_GROUPS.map((g) => (
-                    <label key={g.key}><input type="checkbox" checked={!hidden.has(g.key)}
-                      onChange={() => setHidden((h) => { const n = new Set(h); if (n.has(g.key)) n.delete(g.key); else n.add(g.key); return n })} /> {g.label}</label>
-                  ))}
-                </div>
-              </details>
-            </div>
-            <button type="button" className="kpe-btn" aria-pressed={treeOpen} onClick={() => setTreeOpen((o) => !o)}>{treeOpen ? 'Скрыть разделы' : 'Разделы'}</button>
             <span className={`kpe-save${saveState.errors ? ' is-error' : ''}`} role="status" aria-live="polite">
               {!writable ? (shown.status === 'archived' ? 'Только просмотр' : 'Только просмотр: нет права правки сметы')
                 : saveState.errors ? <>Не сохранено: {saveState.errors}{saveState.message ? ` — ${saveState.message}` : ''} <button type="button" className="kpe-text-btn" onClick={retryFailed}>Повторить</button></>
@@ -721,11 +602,11 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
 
           {writable && (
             <div className="kpe-selbar" role="toolbar" aria-label="Выделенное">
-              <button type="button" className={`kpe-btn${brush ? ' is-on' : ''}`} aria-pressed={brush} onClick={() => { setBrush((b) => !b); setCellSel(null) }}
-                title="Протяните мышью по ячейкам, затем выберите цвет">Выделять ячейки</button>
               <span className="kpe-muted">
-                {cellSel ? `Ячеек: ${(cellSel.r2 - cellSel.r1 + 1) * (cellSel.c2 - cellSel.c1 + 1)}` : selection.size ? `Выделено строк: ${selection.size}` : 'Выделите строки флажками (Shift — диапазон) или ячейки'}
+                {cellSel ? `Ячеек: ${(cellSel.r2 - cellSel.r1 + 1) * (cellSel.c2 - cellSel.c1 + 1)}` : selection.size ? `Выделено строк: ${selection.size}` : 'Заливка: отметьте строки флажками (Shift — диапазон) или'}
               </span>
+              <button type="button" className={`kpe-btn kpe-btn--sm${brush ? ' is-on' : ''}`} aria-pressed={brush} onClick={() => { setBrush((b) => !b); setCellSel(null) }}
+                title="Протяните мышью по ячейкам, затем выберите цвет">ячейки</button>
               <span className="kpe-palette" role="group" aria-label="Заливка">
                 {FILL_COLORS.map((c) => (
                   <button key={c.key} type="button" className="kpe-swatch" style={{ '--sw': c.key }} aria-label={`Залить: ${c.label}`} title={c.label}
@@ -733,18 +614,7 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
                 ))}
                 <button type="button" className="kpe-swatch kpe-swatch--none" aria-label="Снять заливку" title="Снять заливку" disabled={!cellSel && !selection.size} onClick={() => applyFill(null)} />
               </span>
-              {selection.size > 0 && (
-                <>
-                  <select className="kpe-field kpe-field--compact" value="" aria-label="Назначить ответственного выделенным"
-                    onFocus={ensurePickers} onChange={(e) => { if (e.target.value) applyResponsible(e.target.value === '__none' ? null : e.target.value) }}>
-                    <option value="">Ответственный…</option>
-                    <option value="__none">— снять —</option>
-                    {(pickers?.employees || []).map((emp) => <option key={emp.user_id} value={emp.user_id}>{emp.display_name || emp.full_name || emp.email}{emp.isEconomist ? ' — экономист' : ''}</option>)}
-                  </select>
-                  <button type="button" className="kpe-btn" onClick={() => { ensurePickers(); setDialog('tender') }}>Распределить в тендер…</button>
-                  <button type="button" className="kpe-btn" onClick={() => setDialog('export')}>Выгрузить выделенное</button>
-                </>
-              )}
+              {selection.size > 0 && <button type="button" className="kpe-btn kpe-btn--sm" onClick={() => { ensurePickers(); setDialog('bulk') }}>Тендер и подрядчик…</button>}
               {(selection.size > 0 || cellSel) && <button type="button" className="kpe-text-btn" onClick={clearSelection}>Снять выделение</button>}
             </div>
           )}
@@ -756,23 +626,22 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
             </div>
           )}
 
-          <div className={`kpe-main${treeOpen ? ' with-tree' : ''}${activeId ? ' with-detail' : ''}`}>
-            {treeOpen && <KpEstimateTree tree={tree} sums={computed.sums} view={view} scope={scope} onScope={(id) => { setScope(id); if (id) setCollapsed((prev) => { const n = new Set(prev); n.delete(id); for (const a of ancestorsOf(tree, id)) n.delete(a); return n }) }} />}
-            <KpEstimateTable tree={tree} ids={ids} columns={columns} view={view} marks={marks} allocsByRow={allocsByRow}
+          <div className="kpe-main">
+            <KpEstimateTable tree={tree} ids={ids} columns={COLUMNS} marks={marks} allocsByRow={allocsByRow}
               states={computed.states} sums={computed.sums} collapsed={collapsed} selection={selection} activeId={activeId}
               highlight={highlight} remoteIds={remoteIds} cellSel={cellSel} setCellSel={setCellSel} brush={brush} canEdit={writable}
-              scrollTo={scrollTo} onToggle={toggle} onSelect={onSelect} onOpen={setActiveId} onEdit={onEditCell} onLink={onLink} />
-            {activeId && tree.byId.has(activeId) && (
-              <KpEstimateDetail tree={tree} rowId={activeId} view={view} marks={marks} allocsByRow={allocsByRow}
-                states={computed.states} sums={computed.sums} canEdit={writable} pickers={pickers} employees={pickers?.employees}
-                onNeedPickers={ensurePickers} onMark={editMark} onAllocInsert={onAllocInsert} onAllocUpdate={onAllocUpdate}
-                onAllocDelete={onAllocDelete} onNavigate={onNavigate} onShow={onShow} onClose={() => setActiveId(null)}
-                loadRowLog={loadRowLog} logVersion={logVersion} onPrevNext={onPrevNext} />
-            )}
+              scrollTo={scrollTo} onToggle={toggle} onSelect={onSelect} onOpen={setActiveId} onEdit={onEditCell} />
           </div>
         </>
       )}
 
+      {activeId && tree?.byId.has(activeId) && (
+        <KpEstimateRowDialog tree={tree} rowId={activeId} marks={marks} allocsByRow={allocsByRow}
+          states={computed.states} sums={computed.sums} canEdit={writable} pickers={pickers}
+          onNeedPickers={ensurePickers} onMark={editMark} onAllocInsert={onAllocInsert} onAllocUpdate={onAllocUpdate}
+          onAllocDelete={onAllocDelete} onClose={() => setActiveId(null)}
+          loadRowLog={loadRowLog} logVersion={logVersion} onPrevNext={onPrevNext} />
+      )}
       {dialog === 'import' && (
         <KpEstimateImportDialog objectId={objectId} current={info.estimate} currentRows={rows} currentMarks={marks} currentAllocs={allocsByRow}
           onClose={() => setDialog(null)}
@@ -789,14 +658,11 @@ export default function KpEstimateWorkspace({ objectId, objectName = '' }) {
             loadInfo()
           }} />
       )}
-      {dialog === 'history' && shown && <HistoryDialog estimateId={shown.id} onClose={() => setDialog(null)} onGoto={(rowId) => { setDialog(null); if (tree?.byId.has(rowId)) onNavigate(rowId) }} />}
+      {dialog === 'history' && shown && <HistoryDialog estimateId={shown.id} onClose={() => setDialog(null)} onGoto={(rowId) => { setDialog(null); goTo(rowId) }} />}
       {dialog === 'passport' && shown && <PassportDialog estimate={shown} onClose={() => setDialog(null)} />}
-      {dialog === 'export' && tree && (
-        <ExportDialog counts={{ selected: selection.size, found: match ? match.size : null, all: tree.rows.length }} onClose={() => setDialog(null)} onExport={doExport} />
-      )}
-      {dialog === 'tender' && (
-        <TenderBulkDialog count={selection.size} pickers={pickers} onClose={() => setDialog(null)} onApply={applyTender}
-          preview={(target) => planTenderAllocation({ rowIds: [...selection], tree, states: computed.states, allocsByRow, tender: target })} />
+      {dialog === 'bulk' && (
+        <TenderBulkDialog count={selection.size} pickers={pickers} onClose={() => setDialog(null)} onApply={applyBulk}
+          preview={(target) => planTenderAllocation({ rowIds: [...selection], tree, states: computed.states, allocsByRow, target })} />
       )}
     </section>
   )

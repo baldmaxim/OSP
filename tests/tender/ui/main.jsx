@@ -4,7 +4,7 @@
 //             /general (разделы «Общей информации» и порталы компании), /public/tenders (страница без входа;
 //             publicNoContact=1 — колонок ответственного ещё нет, как до миграции 20261101);
 //             /general/departments (отделы; departments=missing — таблицы ещё нет), /tasks?task=task-1 (карточка
-//             задачи с чек-листом; taskChecklist=N — ещё N пунктов, taskList=N — ещё N задач), /stand/dgp (блок ДГП вкладки «Смета» объекта), /reports&dcStats=1 (заявки на ДС),
+//             задачи с чек-листом; taskChecklist=N — ещё N пунктов, taskList=N — ещё N задач), /reports&dcStats=1 (заявки на ДС),
 //             /contracts/registry&contracts=N (реестр договоров, понятийные соглашения; contractsDivision=1 — колонка
 //             подразделения, миграция 20261112, и три ДС у договора ctr-2; contractsEstimat=1 — колонки отметки Estimat,
 //             миграция 20261211; contractsPaths=1 — пути документа у 1/26, 2/26, 4/26), /tenders/other&tendersDept=other
@@ -64,9 +64,8 @@ import GeneralInfoPage from '../../../src/pages/GeneralInfoPage'
 import PublicTendersPage from '../../../src/pages/PublicTendersPage'
 import DepartmentsPage from '../../../src/pages/DepartmentsPage'
 import TasksPage from '../../../src/pages/TasksPage'
-// Блок ДГП — только по требованию: стили карточки объекта (ObjectDetailPage.css) не должны задеть другие стенды.
-const DgpStand = lazy(() => import('./dgp-stand.jsx'))
-// «Смета КП / ПЗ» вкладки «Смета» объекта — со своими данными (kp-estimate-stand.jsx).
+// «Смета КП / ПЗ» вкладки «Смета» объекта — по требованию и со своими данными (kp-estimate-stand.jsx): стили карточки
+// объекта (ObjectDetailPage.css) не должны задеть другие стенды.
 const KpEstimateStand = lazy(() => import('./kp-estimate-stand.jsx'))
 // Реестр договоров — так же: его стили (ContractRegistry*.css, MobileCards.css) глобальные.
 const ObjectsPage = lazy(() => import('../../../src/pages/ObjectsPage'))
@@ -127,7 +126,6 @@ const routes = (
     <Route path="/general" element={<GeneralInfoPage />} />
     <Route path="/general/departments" element={<DepartmentsPage />} />
     <Route path="/tasks" element={<TasksPage />} />
-    <Route path="/stand/dgp" element={<Suspense fallback={null}><DgpStand /></Suspense>} />
     <Route path="/stand/kp-estimate" element={<Suspense fallback={null}><KpEstimateStand /></Suspense>} />
     <Route path="/stand/api-keys" element={<Suspense fallback={null}><ApiKeysStand /></Suspense>} />
     <Route path="/stand/su10-orgs" element={<Suspense fallback={null}><Su10OrgsStand /></Suspense>} />

@@ -102,3 +102,18 @@ export const IconSortNewest = ({ size }) => (
 export const IconSortOldest = ({ size }) => (
   <AiSvg size={size}><path d="M7 20V4" /><path d="m3 8 4-4 4 4" /><path d="M13 6h4M13 12h6M13 18h8" /></AiSvg>
 )
+// Глаз — просмотр файла; перечёркнутый — убрать из списка.
+export const IconEye = ({ size }) => (
+  <AiSvg size={size}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" /><circle cx="12" cy="12" r="3" /></AiSvg>
+)
+export const IconEyeOff = ({ size }) => (
+  <AiSvg size={size}>
+    <path d="M9.9 4.2A10.9 10.9 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.2 3.2" />
+    <path d="M6.6 6.6A18.4 18.4 0 0 0 1 12s4 8 11 8a10.8 10.8 0 0 0 5.4-1.4" />
+    <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /><path d="m2 2 20 20" />
+  </AiSvg>
+)
+// Картинка — скриншот в переписке.
+export const IconImage = ({ size }) => (
+  <AiSvg size={size}><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8.5" cy="9.5" r="1.5" /><path d="m21 16-5-5-9 9" /></AiSvg>
+)

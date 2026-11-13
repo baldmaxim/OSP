@@ -67,11 +67,16 @@ export function formatDateRu(dateStr) {
   return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}`
 }
 
+// Форматтеры — один раз: toLocaleTimeString с параметрами строит форматтер заново на каждый вызов (~50 мкс), а время сообщений
+// переписки считается при каждой перерисовке (13.11.2026, окно заявки ДП/ДС подтормаживало при вводе). Строка — та же.
+const RU_DATE = new Intl.DateTimeFormat('ru-RU')
+const RU_TIME = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' })
+
 export function formatDateTimeRu(ts) {
   if (!ts) return ''
   const d = new Date(ts)
   if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString('ru-RU') + ', ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  return RU_DATE.format(d) + ', ' + RU_TIME.format(d)
 }
 
 // Короткая подпись срока для карточки: «просрочено 3 дн.» / «сегодня» / «12.09».

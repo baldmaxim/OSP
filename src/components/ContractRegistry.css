@@ -2677,7 +2677,7 @@
   white-space: nowrap;
 }
 
-/* ===== Договор без номера и/или даты — спокойная красная подсветка ===== */
+/* ===== Договор без номера — спокойная красная подсветка (без даты — нет, 13.11.2026) ===== */
 .contracts-table-compact td.cell-contract-num.is-incomplete {
   background: rgba(185, 28, 28, 0.06);
   box-shadow: inset 3px 0 0 rgba(185, 28, 28, 0.55);

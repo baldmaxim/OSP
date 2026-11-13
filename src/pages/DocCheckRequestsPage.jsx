@@ -19,7 +19,7 @@ import { counterpartyPickerOptions, filterCounterpartyOptions, isPickableCounter
 import { fetchPickerCounterparties } from '../services/counterpartyPicker'
 import { chunkList } from '../utils/inChunks'
 import { employeeName, employeesById, fetchEmployees } from '../services/employees'
-import { fetchCardCounts as readCardCounts, fetchDeletions, fetchTalkReads, saveTalkRead } from '../services/docCheckCard'
+import { fetchCardCounts as readCardCounts, fetchDeletions, fetchTalkReads, prefetchCard, saveTalkRead } from '../services/docCheckCard'
 import { uploadFile } from '../services/s3'
 import useBodyClass from '../hooks/useBodyClass'
 import { useIsPhone } from '../hooks/useMediaQuery'
@@ -681,6 +681,15 @@ export default function DocCheckRequestsPage() {
   }, [showBoard])
   useEffect(() => () => headPan.current?.(), [])
 
+  // Нажали на заявку (карточку доски, строку реестра) — переписка и файлы окна читаются уже сейчас, пока кнопку не отпустили
+  // (13.11.2026: «окно медленно открывается»). Отметка «готово» и меню карточки окно не открывают — им чтение не нужно.
+  const prefetchOnPress = useCallback((e) => {
+    if (e.button !== 0 || !(e.target instanceof Element)) return
+    const el = e.target.closest('.dc-card[data-id], [data-dc-open]')
+    if (!el || e.target.closest('.dc-card-check, .dc-card-more')) return
+    prefetchCard(el.getAttribute('data-dc-open') || el.getAttribute('data-id'), { comments: hasCardFields })
+  }, [hasCardFields])
+
   // Номера заявок (ID) есть — после миграции 20270123; до неё столбца «ID» в реестре нет.
   const hasNumbers = useMemo(() => requests.some(r => r.request_number != null), [requests])
 
@@ -693,6 +702,7 @@ export default function DocCheckRequestsPage() {
             role="button"
             tabIndex={0}
             className={`mcard is-tappable dc-mcard${r.color ? ` has-color dc-c-${r.color}` : ''}`}
+            data-dc-open={r.id}
             onClick={() => setDetailId(r.id)}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailId(r.id) } }}
           >
@@ -764,7 +774,7 @@ export default function DocCheckRequestsPage() {
           </thead>
           <tbody>
             {listRows.map(r => (
-              <tr key={r.id} onClick={() => setDetailId(r.id)} className={`dc-row${r.color ? ` has-color dc-c-${r.color}` : ''}`}>
+              <tr key={r.id} data-dc-open={r.id} onClick={() => setDetailId(r.id)} className={`dc-row${r.color ? ` has-color dc-c-${r.color}` : ''}`}>
                 {hasNumbers && <td className="dc-col-id ui-num">{r.request_number ?? '—'}</td>}
                 <td>
                   <div className="dc-row-title">{cardTitle(r)}</div>
@@ -839,7 +849,7 @@ export default function DocCheckRequestsPage() {
   if (loading) return <div className="loading">Загрузка...</div>
 
   return (
-    <div ref={pageRef} className={`doc-check-page ui-work${showBoard ? ' is-board' : ''}`}>
+    <div ref={pageRef} className={`doc-check-page ui-work${showBoard ? ' is-board' : ''}`} onPointerDownCapture={prefetchOnPress}>
       {/* Шапка — две низкие строки (решение пользователя 03.11.2026: больше заявок на экране): название, вид, поиск и
           действия; под ними фильтры. */}
       <div className="page-header dc-head" onPointerDown={panFromHead}>

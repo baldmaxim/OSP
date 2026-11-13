@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { deleteDocument, fetchDocuments, uploadFile } from '../../services/s3'
+import { takePrefetched } from '../../services/docCheckCard'
 import { downloadS3File } from '../FileDownload'
 import S3DocumentPreview from '../S3DocumentPreview'
 import PaperclipIcon from '../icons/PaperclipIcon'
@@ -41,7 +42,8 @@ export default function DocCheckFiles({ requestId, canEdit, note = null, onChang
 
   const load = useCallback(async () => {
     try {
-      const list = await fetchDocuments(OWNER, requestId)
+      // Нажали на карточку — файлы уже читаются (prefetchCard); иначе — свой запрос.
+      const list = await (takePrefetched(requestId, 'files') || fetchDocuments(OWNER, requestId))
       setDocs(list)
       setState('ready')
     } catch (err) {
@@ -49,9 +51,17 @@ export default function DocCheckFiles({ requestId, canEdit, note = null, onChang
       setState(prev => (prev === 'ready' ? prev : 'error'))
     }
   }, [requestId])
-  // Отправили файлы в переписке — перечитать (часть «Из обсуждения»).
-  const postedCount = postedChatIds.size
-  useEffect(() => { load() }, [load, postedCount])
+  useEffect(() => { load() }, [load])
+  // Отправили файлы в переписке — перечитать (часть «Из обсуждения»), если их ещё нет среди прочитанных. При открытии окна
+  // переписка и файлы читаются разом, и файлы переписки уже в списке — второй запрос не нужен (13.11.2026: окно открывалось
+  // с лишним чтением файлов).
+  const docsRef = useRef(docs)
+  docsRef.current = docs
+  useEffect(() => {
+    if (state !== 'ready' || !postedChatIds.size) return
+    const known = new Set(docsRef.current.map(d => d.id))
+    if ([...postedChatIds].some(id => !known.has(id))) load()
+  }, [postedChatIds, state, load])
 
   // Файлы — по одному: не загрузившийся не мешает остальным, причина — одним сообщением в конце.
   const upload = async (part, fileList) => {

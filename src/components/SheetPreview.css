@@ -1,0 +1,23 @@
+/* Просмотр таблицы Excel в окне файла: листы вкладками сверху, таблица со своей прокруткой. */
+.sheet-preview { display: flex; flex: 1; flex-direction: column; width: 100%; min-width: 0; min-height: 0; }
+.sheet-preview-tabs { display: flex; flex: none; flex-wrap: wrap; gap: 0.25rem; padding: 0.5rem 0.75rem 0; border-bottom: 1px solid var(--border-color); }
+.sheet-preview-tabs button {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.sheet-preview-tabs button.is-active { background: var(--bg-primary); color: var(--text-primary); font-weight: 600; }
+.sheet-preview-scroll { flex: 1; min-height: 0; overflow: auto; padding: 0.75rem; }
+.sheet-preview-table { border-collapse: collapse; background: #fff; color: #1a1a1a; font-size: 0.8125rem; line-height: 1.35; }
+.sheet-preview-table td,
+.sheet-preview-table th { min-width: 2.5rem; padding: 0.25rem 0.5rem; border: 1px solid #d4d9e1; vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }
+.sheet-preview-table th { position: sticky; left: 0; z-index: 1; min-width: 2.25rem; background: #f1f4f8; color: #64748b; font-weight: 500; text-align: right; }
+.sheet-preview-rownum { width: 2.75rem; }
+.sheet-preview-status { margin: auto; padding: 1.25rem; color: var(--text-secondary); text-align: center; }
+.sheet-preview-status.is-error { color: var(--danger-color, #c0392b); }

@@ -1688,6 +1688,67 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
+  it('Счета и КП: убрать неотмеченные — разом и запоминается при файле; новый документ — отдельно от прежних; галочка в шапке; вернуть', async () => {
+    const { page, context, errors } = await openPage()
+    try {
+      const docs = await openTenderDocs(page)
+      await docs.locator('input[type=file]').setInputFiles({ name: 'Счёт 15 ТеплоСнаб.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx() })
+      const rowOfPick = (text) => docs.locator('.sp-td-table tbody tr').filter({ has: page.locator('b.sp-td-name', { hasText: text }) })
+      await rowOfPick('Изоляция K-Flex').waitFor({ timeout: 60000 })
+      // Один документ — выбора документа нет.
+      assert.equal(await docs.getByLabel('Цены каких документов показывать').count(), 0)
+      // Галочка в шапке: снять все — применять нечего; отметить все — снова все.
+      const head = docs.getByRole('checkbox', { name: 'Отметить все строки' })
+      const rows = await docs.locator('.sp-td-table tbody tr:not(.sp-td-group)').count()
+      await head.check()
+      await docs.getByRole('button', { name: `Применить цены: ${rows}` }).waitFor()
+      await head.uncheck()
+      await docs.getByRole('button', { name: 'Применить цены: 0' }).waitFor()
+      await head.check()
+      // Изоляцию расценивать не стали — убрать её одну.
+      await applyBox(rowOfPick('Изоляция K-Flex')).uncheck()
+      await docs.getByRole('button', { name: 'Убрать неотмеченные: 1' }).click()
+      await rowOfPick('Изоляция K-Flex').waitFor({ state: 'detached' })
+      await rowOfPick('Труба медная').waitFor()
+      await docs.getByText('Убрано позиций: 1').waitFor()
+      // Запомнено при файле: ключ позиции — в notes.
+      const hidden = await offerDoc(page, 'Счёт 15 ТеплоСнаб.xlsx')
+      assert.equal(hidden.offer.xh.length, 1, JSON.stringify(hidden.offer.xh))
+      assert.match(hidden.offer.xh[0], /flex/i)
+      // Новый документ — отдельно: в окне только его цены; изоляция им предложена заново, трубы в нём нет.
+      await docs.locator('input[type=file]').setInputFiles({ name: 'КП 3 Климат-Опт.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx2() })
+      await fileChips(docs).locator('.sp-td-file', { hasText: 'КП 3 Климат-Опт.xlsx' }).waitFor({ timeout: 60000 })
+      const view = docs.getByLabel('Цены каких документов показывать')
+      await view.waitFor()
+      assert.match(await view.locator('option:checked').innerText(), /^новый: КП 3 Климат-Опт\.xlsx/)
+      await rowOfPick('Изоляция K-Flex').waitFor()
+      assert.match(await rowOfPick('Изоляция K-Flex').locator('.sp-td-line .sp-td-file').innerText(), /КП 3 Климат-Опт\.xlsx/)
+      assert.equal(await rowOfPick('Труба медная').count(), 0, 'цены прежнего документа не смешиваются с новыми')
+      assert.equal(await docs.getByText('Убрано позиций:', { exact: false }).count(), 0, 'у нового документа ничего не убрано')
+      // Все документы: труба снова видна, у изоляции — только цена нового документа (из прежнего убрана).
+      await view.selectOption('all')
+      await rowOfPick('Труба медная').waitFor()
+      assert.match(await rowOfPick('Изоляция K-Flex').locator('.sp-td-line .sp-td-file').innerText(), /КП 3 Климат-Опт\.xlsx/)
+      // Окно открыли снова — убранное остаётся убранным.
+      await closeTenderDocs(page)
+      const again = await openTenderDocs(page)
+      const rowAgain = (text) => again.locator('.sp-td-table tbody tr').filter({ has: page.locator('b.sp-td-name', { hasText: text }) })
+      await rowAgain('Труба медная').waitFor({ timeout: 30000 })
+      const viewAgain = again.getByLabel('Цены каких документов показывать')
+      await viewAgain.selectOption(await viewAgain.locator('option', { hasText: 'Счёт 15 ТеплоСнаб' }).getAttribute('value'))
+      await rowAgain('Труба медная').waitFor()
+      assert.equal(await rowAgain('Изоляция K-Flex').count(), 0)
+      // Вернуть — у выбранного документа.
+      await again.getByText('Убрано позиций: 1').waitFor()
+      await again.getByRole('button', { name: 'вернуть' }).click()
+      await rowAgain('Изоляция K-Flex').waitFor()
+      assert.equal((await offerDoc(page, 'Счёт 15 ТеплоСнаб.xlsx')).offer.xh, undefined)
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
   it('цена за упаковку, введённая руками: подсказка в строке и «исправить» — цена за единицу', async () => {
     const { page, context, errors } = await openPage()
     try {

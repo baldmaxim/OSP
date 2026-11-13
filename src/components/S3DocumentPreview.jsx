@@ -1,26 +1,22 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { renameDocument, requestDownloadUrl } from '../services/s3'
 import { composeFileName, fileNameProblem, splitFileName } from '../utils/fileRename'
+import { previewKind } from '../utils/filePreview'
 import { downloadS3File } from './FileDownload'
 import { IconDownload, IconPencil } from './icons/ActionIcons'
 import './S3DocumentList.css'
 
+// Word и Excel — отдельными частями: библиотеки крупные, грузятся, только когда открыт такой файл.
+const DocxPreview = lazy(() => import('./DocxPreview'))
+const SheetPreview = lazy(() => import('./SheetPreview'))
+
 // Модалка просмотра S3-документа. PDF и изображения рендерятся прямо в окне
-// (iframe / <img>). Для остальных типов — fallback с кнопкой скачать.
+// (iframe / <img>); Word (.docx) и Excel — с 13.11.2026 тоже (DocxPreview, SheetPreview), с кнопкой
+// «Скачать» в шапке. Для остальных типов — fallback с кнопкой скачать.
 // Стили живут в S3DocumentList.css — импортируем здесь, чтобы компонент
 // можно было использовать независимо от S3DocumentList.
 // onRenamed(строка s3_documents) — передаёт родитель тому, кому можно менять файлы этого списка: есть — в шапке кнопка
 // «Переименовать», и родитель обновляет имя у себя. Меняется только подпись файла, просмотр не перезагружается.
-
-function isPdf(mime, name) {
-  if (mime === 'application/pdf') return true
-  return /\.pdf$/i.test(name || '')
-}
-
-function isImage(mime, name) {
-  if (mime && mime.startsWith('image/')) return true
-  return /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(name || '')
-}
 
 export default function S3DocumentPreview({ doc, onClose, onRenamed }) {
   const [url, setUrl] = useState(null)
@@ -31,8 +27,11 @@ export default function S3DocumentPreview({ doc, onClose, onRenamed }) {
   const [renameError, setRenameError] = useState(null)
   const inputRef = useRef(null)
   const editing = draft !== null
-  const pdf = isPdf(doc.mime_type, doc.file_name)
-  const img = isImage(doc.mime_type, doc.file_name)
+  const kind = previewKind(doc.mime_type, doc.file_name)
+  const pdf = kind === 'pdf'
+  const img = kind === 'image'
+  // Word и Excel файл читают сами (по ключу), ссылка окну не нужна.
+  const office = kind === 'docx' || kind === 'sheet'
   const { ext } = splitFileName(fileName)
 
   // Без предпросмотра ссылка — на скачивание под именем файла (иначе браузер сохранит ключ хранилища «uuid-имя»).
@@ -42,11 +41,12 @@ export default function S3DocumentPreview({ doc, onClose, onRenamed }) {
     let cancelled = false
     setUrl(null)
     setError(null)
+    if (office) return undefined
     requestDownloadUrl(doc.s3_key, linkName ? { fileName: linkName, download: true } : {})
       .then(({ presigned_url }) => { if (!cancelled) setUrl(presigned_url) })
       .catch(e => { if (!cancelled) setError(e.message || 'Не удалось получить ссылку') })
     return () => { cancelled = true }
-  }, [doc.s3_key, linkName])
+  }, [doc.s3_key, linkName, office])
 
   useEffect(() => {
     setFileName(doc.file_name)
@@ -160,20 +160,30 @@ export default function S3DocumentPreview({ doc, onClose, onRenamed }) {
                   <IconPencil size={14} /> Переименовать
                 </button>
               )}
+              {office && (
+                <button type="button" className="s3-doc-rename-btn" onClick={download}>
+                  <IconDownload size={14} /> Скачать
+                </button>
+              )}
             </div>
           )}
           <button type="button" className="s3-doc-modal-close" onClick={onClose} aria-label="Закрыть">✕</button>
         </div>
         <div className="s3-doc-modal-body">
           {error && <div className="s3-doc-error" style={{ margin: 'auto' }}>Ошибка: {error}</div>}
-          {!url && !error && <div className="s3-doc-empty" style={{ margin: 'auto' }}>Получение ссылки…</div>}
+          {office && (
+            <Suspense fallback={<div className="s3-doc-empty" style={{ margin: 'auto' }}>Открываем…</div>}>
+              {kind === 'docx' ? <DocxPreview s3Key={doc.s3_key} /> : <SheetPreview s3Key={doc.s3_key} />}
+            </Suspense>
+          )}
+          {!office && !url && !error && <div className="s3-doc-empty" style={{ margin: 'auto' }}>Получение ссылки…</div>}
           {url && pdf && (
             <iframe src={url} className="s3-doc-modal-frame" title={fileName} />
           )}
           {url && !pdf && img && (
             <img src={url} className="s3-doc-modal-img" alt={fileName} />
           )}
-          {url && !pdf && !img && (
+          {url && !pdf && !img && !office && (
             <div className="s3-doc-preview-fallback">
               <p>Предпросмотр для этого типа файла не поддерживается.</p>
               <button type="button" className="s3-doc-btn-primary" onClick={download}>

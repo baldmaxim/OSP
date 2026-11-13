@@ -9,8 +9,11 @@
 //     Строка сметы связана со строкой КП по «№ п/п» = «Номер позиции» КП (у К14 совпали 3144 из 3145, последняя —
 //     техническая «Округление до копеек»).
 //
-// Результат — одна таблица строк: строка КП со своими данными ПЗ (kp / pz). Отметки и распределения экономистов
-// привязаны к строке, поэтому в видах «КП» и «ПЗ» они одни и те же. Формулы файла сверяются при разборе
+//   • один файл (13.11.2026: «переработанный файл совмещает КП до перекидок и план затрат») — книга, где есть и лист КП,
+//     и лист «Смета», или лист КП, у которого рядом со столбцами КП — прямые затраты («Прямые затраты», «Прямые:
+//     основные материалы» …): тогда план затрат берётся из той же строки.
+//
+// Результат — одна таблица строк: строка КП со своими данными ПЗ (kp / pz). Формулы файла сверяются при разборе
 // (formulaCheck), коэффициенты и паспорт — как в файле (meta). Модуль чистый: XLSX передаётся снаружи (в браузере
 // грузится лениво), тесты — tests/tender/kp-estimate.test.mjs.
 
@@ -125,6 +128,12 @@ const KP_COLUMNS = {
   unitCommercial: ['за единицу (коммерч.)', 'за единицу (коммерч)'],
   unitMaterials: ['за единицу материалов'],
   unitWorks: ['за единицу работ'],
+  // План затрат в той же строке (один файл «КП + ПЗ»).
+  direct: ['прямые затраты', 'прямые затраты, руб', 'прямые затраты (пз)', 'пз: прямые затраты'],
+  directMain: ['прямые: основные материалы', 'основные материалы (пз)', 'прямые затраты: основные материалы'],
+  directAux: ['прямые: вспом. материалы', 'вспомогательные материалы (пз)', 'прямые затраты: вспомогательные материалы'],
+  directWorks: ['прямые: работы', 'работы (пз)', 'прямые затраты: работы'],
+  pzNote: ['примечание пз', 'примечание (пз)'],
 }
 const KP_REQUIRED = ['code', 'pos', 'name', 'unit', 'total']
 
@@ -191,6 +200,17 @@ export function parseKpWorkbook(XLSX, wb) {
         total: formula(row, c.total),
       },
       range: sub ? [Number(sub[1]), Number(sub[2])] : null,
+      pzInline: c.direct === undefined ? null : {
+        direct: cellNumber(val(row, c.direct)),
+        direct_main: cellNumber(val(row, c.directMain)),
+        direct_aux: cellNumber(val(row, c.directAux)),
+        direct_works: cellNumber(val(row, c.directWorks)),
+        comm_materials: cellNumber(val(row, c.materials)),
+        comm_works: cellNumber(val(row, c.works)),
+        comm_total: cellNumber(val(row, c.total)),
+        note: text(val(row, c.pzNote)),
+        qty_gp: cellNumber(val(row, c.qtyGp)),
+      },
     })
   }
   if (!items.length) return { error: 'kp_empty', message: `На листе «${sheetName}» нет строк КП под шапкой.` }
@@ -226,7 +246,7 @@ export function parseKpWorkbook(XLSX, wb) {
     for (const it of items) if (it.parentIndex !== null) items[it.parentIndex].range = items[it.parentIndex].range || [0, 0]
   }
   items.forEach((it, index) => { it.index = index })
-  return { sheetName, headerRow: header.headerRow, items, fileTotals, hasSubtotals }
+  return { sheetName, headerRow: header.headerRow, items, fileTotals, hasSubtotals, hasInlinePz: c.direct !== undefined }
 }
 
 // ── Смета (ПЗ) ──────────────────────────────────────────────────────────────
@@ -349,11 +369,17 @@ export function parsePzWorkbook(XLSX, wb) {
   }
 }
 
-// Какой это файл: 'kp' | 'pz' | null. У сметы есть лист «Смета» с «Прямыми затратами».
+// Какой это файл: 'both' (КП и план затрат в одной книге: лист КП + лист «Смета», или лист КП с прямыми затратами) |
+// 'kp' | 'pz' | null. У сметы есть лист «Смета» с «Прямыми затратами».
 export function detectEstimateWorkbook(XLSX, wb) {
   const pz = parsePzWorkbook(XLSX, wb)
-  if (!pz.error && pz.positions.length) return 'pz'
-  if (findKpSheet(XLSX, wb)) return 'kp'
+  const pzOk = !pz.error && pz.positions.length > 0
+  const kp = findKpSheet(XLSX, wb)
+  // Лист «Смета» сам похож на КП («Код», «Наименование», «Ед. изм.»), но не им: КП — другой лист книги.
+  const kpOk = !!kp && (!pzOk || kp.sheetName !== pz.sheetName)
+  if (kpOk && (pzOk || kp.header.cols.direct !== undefined)) return 'both'
+  if (pzOk) return 'pz'
+  if (kpOk) return 'kp'
   return null
 }
 
@@ -440,8 +466,13 @@ export function buildEstimateRows({ kp = null, pz = null, kpFileName = '', pzFil
       const kind = kindOf(it, hasChildren)
       let p = null
       if (!hasChildren && kind !== 'title') {
-        p = (it.pos && pzByPos.get(it.pos)) || pzByCodeName.get(`${it.code}|${nameKey(it.name)}`) || null
-        if (p && used.has(p)) p = null
+        if (!pz && it.pzInline) {
+          // Один файл: план затрат — столбцами той же строки.
+          if (it.pzInline.direct !== null || it.pzInline.comm_total) p = { pz: { ...it.pzInline }, sheetRow: it.sheetRow, inline: true }
+        } else {
+          p = (it.pos && pzByPos.get(it.pos)) || pzByCodeName.get(`${it.code}|${nameKey(it.name)}`) || null
+          if (p && used.has(p)) p = null
+        }
         if (p) { used.add(p); stats.linked++ } else if (kind === 'position') stats.kpLeavesWithoutPz++
       }
       rows.push({
@@ -499,7 +530,7 @@ export function buildEstimateRows({ kp = null, pz = null, kpFileName = '', pzFil
   const meta = {
     parser: KP_ESTIMATE_PARSER_VERSION,
     title: titleFrom(pz, kp, kpFileName || pzFileName),
-    kp_file: kp ? { name: kpFileName, sheet: kp.sheetName, header_row: kp.headerRow, has_subtotals: kp.hasSubtotals, totals: kp.fileTotals } : null,
+    kp_file: kp ? { name: kpFileName, sheet: kp.sheetName, header_row: kp.headerRow, has_subtotals: kp.hasSubtotals, totals: kp.fileTotals, inline_pz: !pz && !!kp.hasInlinePz } : null,
     pz_file: pz ? { name: pzFileName, sheet: pz.sheetName, header_row: pz.headerRow, totals: pz.summaryTotals } : null,
     passport: pz?.passport || [],
     coefficients: pz?.coefficients || [],
@@ -539,6 +570,11 @@ function pzOnlyRow(p, rowNo, parentRowNo, level) {
 // ПЗ строки без повторов: код и номер — только если отличаются от КП, название раздела — один раз в meta.pz_sections
 // (у К14 полное название раздела в каждой позиции — треть всего объёма), НДС — только если не как у сметы.
 function slimPz(p, kpItem) {
+  if (p.inline) {
+    const rest = { ...p.pz }
+    delete rest.qty_gp
+    return { ...rest, sheet_row: p.sheetRow }
+  }
   const { code, pos, ...rest } = p.pz
   delete rest.section
   const out = { ...rest, sheet_row: p.sheetRow }
@@ -593,10 +629,8 @@ export function masteringToAllocations(mastering, rows) {
   return { allocations: out, skipped }
 }
 
-// Объём позиции, по которому считана её цена: Кол-во ГП, иначе Кол-во заказчика (как «Цена за ед. коммерч.» сметы).
+// Объём позиции, по которому считана её цена: только «Количество (ГП)» (13.11.2026: кол-во заказчика — другое, у К14
+// позиции без ГП — с нулевой стоимостью).
 export function rowQuantity(row) {
-  const gp = row?.kp?.qty_gp ?? row?.pz?.qty_gp
-  if (gp) return gp
-  const cust = row?.kp?.qty_customer ?? row?.pz?.qty_customer
-  return cust || 0
+  return row?.kp?.qty_gp ?? row?.pz?.qty_gp ?? 0
 }

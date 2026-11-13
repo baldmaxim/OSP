@@ -1,28 +1,9 @@
-// Окна сметы КП / ПЗ: история изменений, паспорт и коэффициенты, выгрузка в Excel, распределение выделенного в тендер.
+// Окна сметы КП / ПЗ: история изменений, паспорт и коэффициенты, распределение выделенных строк (тендер + подрядчик).
 import { useCallback, useEffect, useState } from 'react'
 import { describeLogEntry, fmtLogTime } from '../../utils/kpEstimateLog'
-import { fmtMoney } from '../../utils/kpEstimate'
+import { allocationText, fmtMoney } from '../../utils/kpEstimate'
 import { loadLog } from '../../services/kpEstimate'
-
-function Modal({ title, onClose, children, footer, wide = false }) {
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-  return (
-    <div className="kpe-modal-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className={`kpe-modal${wide ? ' kpe-modal--wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
-        <header className="kpe-modal-head">
-          <h3>{title}</h3>
-          <button type="button" className="kpe-icon-btn" aria-label="Закрыть" onClick={onClose}>✕</button>
-        </header>
-        <div className="kpe-modal-body">{children}</div>
-        {footer && <footer className="kpe-modal-foot">{footer}</footer>}
-      </div>
-    </div>
-  )
-}
+import { Modal, TenderContractorFields } from './KpEstimateFields'
 
 // История всей сметы: от новых к старым, порциями по 100; фильтр по сотруднику; нажатие на позицию — перейти к ней.
 export function HistoryDialog({ estimateId, onClose, onGoto }) {
@@ -90,8 +71,8 @@ export function PassportDialog({ estimate, onClose }) {
         <table className="kpe-plain">
           <tbody>
             <tr><th>Название</th><td>{estimate.title}</td></tr>
-            {estimate.kp_file_name && <tr><th>Файл КП</th><td>{estimate.kp_file_name}{meta.kp_file?.sheet ? `, лист «${meta.kp_file.sheet}»` : ''}</td></tr>}
-            {estimate.pz_file_name && <tr><th>Файл сметы ПЗ</th><td>{estimate.pz_file_name}{meta.pz_file?.sheet ? `, лист «${meta.pz_file.sheet}»` : ''}</td></tr>}
+            {estimate.kp_file_name && <tr><th>{estimate.pz_file_name && estimate.pz_file_name !== estimate.kp_file_name ? 'Файл КП' : 'Файл'}</th><td>{estimate.kp_file_name}{meta.kp_file?.sheet ? `, лист «${meta.kp_file.sheet}»` : ''}</td></tr>}
+            {estimate.pz_file_name && estimate.pz_file_name !== estimate.kp_file_name && <tr><th>Файл сметы ПЗ</th><td>{estimate.pz_file_name}{meta.pz_file?.sheet ? `, лист «${meta.pz_file.sheet}»` : ''}</td></tr>}
             <tr><th>Загрузил(а)</th><td>{estimate.created_by_name || '—'}, {fmtLogTime(estimate.activated_at || estimate.created_at)}</td></tr>
             <tr><th>Строк</th><td>{(estimate.row_count || 0).toLocaleString('ru-RU')}</td></tr>
             {meta.vat && <tr><th>НДС</th><td>{meta.vat}</td></tr>}
@@ -143,74 +124,30 @@ export function PassportDialog({ estimate, onClose }) {
   )
 }
 
-// Выгрузка: что (выделенное, найденное, всё) и какие листы.
-export function ExportDialog({ counts, onClose, onExport }) {
-  const [scope, setScope] = useState(counts.selected ? 'selected' : (counts.found !== null ? 'found' : 'all'))
-  const [sheets, setSheets] = useState({ kp: true, pz: true, mastering: true, allocations: true, coefficients: true, passport: true })
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const toggle = (k) => setSheets((s) => ({ ...s, [k]: !s[k] }))
-  const run = async () => {
-    setBusy(true)
-    setError('')
-    try { await onExport({ scope, sheets }); onClose() } catch (e) { setError(e.message || String(e)); setBusy(false) }
-  }
-  return (
-    <Modal title="Выгрузка в Excel" onClose={onClose}
-      footer={<><button type="button" className="kpe-btn" onClick={onClose}>Отмена</button>
-        <button type="button" className="kpe-btn kpe-btn--primary" disabled={busy || !Object.values(sheets).some(Boolean)} onClick={run}>{busy ? 'Собираем…' : 'Выгрузить'}</button></>}>
-      <fieldset className="kpe-fieldset">
-        <legend>Строки</legend>
-        <label><input type="radio" name="kpe-scope" checked={scope === 'selected'} disabled={!counts.selected} onChange={() => setScope('selected')} /> Выделенные ({counts.selected})</label>
-        <label><input type="radio" name="kpe-scope" checked={scope === 'found'} disabled={counts.found === null} onChange={() => setScope('found')} /> Найденные поиском и фильтрами{counts.found !== null ? ` (${counts.found})` : ''}</label>
-        <label><input type="radio" name="kpe-scope" checked={scope === 'all'} onChange={() => setScope('all')} /> Вся смета ({counts.all})</label>
-        <p className="kpe-small kpe-muted">Группы над выбранными строками выгружаются тоже — для структуры и сумм (SUBTOTAL).</p>
-      </fieldset>
-      <fieldset className="kpe-fieldset">
-        <legend>Листы</legend>
-        {[['kp', 'КП (с формулами Кол-во × цена и SUBTOTAL)'], ['pz', 'Смета ПЗ (с формулами «Забрано», «Остаток», «Статус»)'], ['mastering', 'Освоение (распределения в рублях)'],
-          ['allocations', 'Распределение (тендеры, подрядчики, договоры)'], ['coefficients', 'Коэффициенты'], ['passport', 'Паспорт']].map(([k, label]) => (
-          <label key={k}><input type="checkbox" checked={sheets[k]} onChange={() => toggle(k)} /> {label}</label>
-        ))}
-      </fieldset>
-      {error && <div className="kpe-warn">{error}</div>}
-    </Modal>
-  )
-}
-
-// Распределить свободный остаток выделенных позиций в тендер.
+// Распределить выделенные позиции: каждой — её свободный остаток, тендер (может не быть) и подрядчик-победитель.
 export function TenderBulkDialog({ count, pickers, onClose, onApply, preview }) {
-  const [tenderId, setTenderId] = useState('')
-  const [manual, setManual] = useState('')
+  const [draft, setDraft] = useState({ tender_id: null, tender_label: null, counterparty_id: null, counterparty_name: null })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const tenders = pickers?.tenders || []
-  const t = tenders.find((x) => x.id === tenderId)
-  const target = t ? { tender_id: t.id, tender_label: `№ ${t.public_tender_number ?? '—'}` } : (manual.trim() ? { tender_id: null, tender_label: manual.trim() } : null)
+  const target = draft.tender_id || (draft.tender_label || '').trim() || draft.counterparty_id || (draft.counterparty_name || '').trim()
+    ? { tender_id: draft.tender_id || null, tender_label: (draft.tender_label || '').trim() || null, counterparty_id: draft.counterparty_id || null, counterparty_name: (draft.counterparty_name || '').trim() || null }
+    : null
   const plan = target ? preview(target) : null
   return (
-    <Modal title="Распределить в тендер" onClose={onClose}
+    <Modal title="Распределить выделенное" onClose={onClose}
       footer={<><button type="button" className="kpe-btn" onClick={onClose}>Отмена</button>
         <button type="button" className="kpe-btn kpe-btn--primary" disabled={busy || !plan || !(plan.inserts.length + plan.updates.length)}
           onClick={async () => { setBusy(true); setError(''); try { await onApply(target); onClose() } catch (e) { setError(e.message || String(e)); setBusy(false) } }}>
           {busy ? 'Распределяем…' : 'Распределить'}</button></>}>
-      <p>Выделено строк: {count}. Каждой позиции в тендер уйдёт её свободный остаток (без превышения); позиции без остатка пропускаются.</p>
-      <label className="kpe-block-label">Тендер объекта
-        <select className="kpe-field" value={tenderId} onChange={(e) => { setTenderId(e.target.value); setManual('') }} aria-label="Тендер">
-          <option value="">— выберите —</option>
-          {tenders.map((x) => <option key={x.id} value={x.id}>№ {x.public_tender_number ?? '—'}{x.work_description ? ` — ${String(x.work_description).slice(0, 90)}` : ''}</option>)}
-        </select>
-      </label>
-      <label className="kpe-block-label">или вручную (тендера нет в портале)
-        <input className="kpe-field" value={manual} onChange={(e) => { setManual(e.target.value); setTenderId('') }} placeholder="№ тендера, лот" aria-label="Тендер вручную" />
-      </label>
+      <p>Выделено строк: {count}. Каждой позиции уйдёт её свободный остаток; позиции без остатка пропускаются.</p>
+      <div className="kpe-bulk-grid">
+        <TenderContractorFields draft={draft} setDraft={setDraft} pickers={pickers} disabled={busy} />
+      </div>
       {plan && (
-        <p className="kpe-note-box">Будет распределено позиций: {plan.inserts.length + plan.updates.length}
-          {plan.updates.length ? ` (у ${plan.updates.length} увеличится объём уже взятого в этот тендер)` : ''}{plan.skipped.length ? `; без остатка — ${plan.skipped.length}` : ''}.</p>
+        <p className="kpe-note-box">{allocationText(target)}: позиций — {plan.inserts.length + plan.updates.length}
+          {plan.updates.length ? ` (у ${plan.updates.length} объём добавится к уже распределённому этой паре)` : ''}{plan.skipped.length ? `; без остатка — ${plan.skipped.length}` : ''}.</p>
       )}
       {error && <div className="kpe-warn">{error}</div>}
     </Modal>
   )
 }
-
-export { Modal }

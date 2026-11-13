@@ -25,7 +25,6 @@ export const UPLOAD_SITES = [
   { file: 'src/components/ObjectDocumentFileSlot.jsx', calls: 1, owner: 'object', table: 'objects' },
   { file: 'src/services/objectDocMd.js', calls: 1, owner: 'object', table: 'objects' }, // файл .md документа объекта (20261202)
   { file: 'src/components/WarrantyActSignModal.jsx', calls: 1, owner: 'object', table: 'objects' },
-  { file: 'src/components/ObjectDgpFiles.jsx', calls: 1, owner: 'object', table: 'objects' }, // ДГП во вкладке «Смета»
   // Исходные файлы сметы КП / ПЗ во вкладке «Смета» (20270215; право kp_estimate — osp-api CATEGORY_RULES).
   { file: 'src/services/kpEstimate.js', calls: 1, owner: 'object', table: 'objects' },
   { file: 'src/components/CounterpartyCardChip.jsx', calls: 1, owner: 'counterparty', table: 'counterparties' },

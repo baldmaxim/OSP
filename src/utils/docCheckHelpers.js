@@ -204,6 +204,18 @@ export function postedChatFileIds(comments) {
   return ids
 }
 
+// Скриншот из буфера обмена браузер отдаёт с именем «image.png» (13.11.2026: скриншоты в переписке) — в переписке и в «Из
+// обсуждения» он получает понятное имя: «Скриншот 13.11.2026 14-05-33.png» (двоеточий в имени файла Windows не допускает);
+// несколько разом — с номером. Свои имена (файл скопировали в проводнике) не меняются.
+const GENERIC_PASTE = /^image\.(png|jpe?g|gif|webp|bmp)$/i
+export function screenshotFileName(mime, at = new Date(), n = 0) {
+  const p = (x) => String(x).padStart(2, '0')
+  const ext = { 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/bmp': 'bmp' }[String(mime || '').toLowerCase()] || 'png'
+  const stamp = `${p(at.getDate())}.${p(at.getMonth() + 1)}.${at.getFullYear()} ${p(at.getHours())}-${p(at.getMinutes())}-${p(at.getSeconds())}`
+  return `Скриншот ${stamp}${n ? ` (${n})` : ''}.${ext}`
+}
+export const isGenericPasteName = (name) => !name || GENERIC_PASTE.test(String(name))
+
 // Согласование ПСДЦ (20270216, решение пользователя 12.11.2026): ответственный необязателен и это один из действующих
 // экономистов ОСП (роль economist — не «Экономист объекта»). Назначает право правки раздела — по умолчанию юрист ОСП; база
 // принимает только экономиста ОСП (doc_check_requests_psdc_guard). Сменили человеку роль или заблокировали — в окне его нет,
@@ -264,13 +276,19 @@ export function avatarTone(id) {
   return h % AVATAR_TONES
 }
 
+// Форматтеры дат — один раз на страницу: toLocale…String с параметрами строит форматтер заново на каждый вызов, а даты
+// считаются у сотен карточек доски и у каждого сообщения переписки (13.11.2026). Строки — те же, что у toLocale…String.
+const FMT_DATE = new Intl.DateTimeFormat('ru-RU')
+const FMT_DAY_MONTH = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit' })
+const FMT_DATE_TIME = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+
 // Дата в формате дд.мм.гггг; пустое значение отдаём как пустую строку, чтобы
 // вызывающий сам решал, ставить ли прочерк.
 export function fmtDocDate(value) {
   if (!value) return ''
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString('ru-RU')
+  return FMT_DATE.format(d)
 }
 
 // «23.10» — когда заявку добавили, на карточке доски: без года (полная дата — в подсказке).
@@ -278,12 +296,14 @@ export function createdShort(value) {
   if (!value) return ''
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
+  return FMT_DAY_MONTH.format(d)
 }
 
-export const fmtDocDateTime = (value) => (value ? new Date(value).toLocaleString('ru-RU', {
-  day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-}) : '')
+export const fmtDocDateTime = (value) => {
+  if (!value) return ''
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? '' : FMT_DATE_TIME.format(d)
+}
 
 // Значение поля datetime-local: время браузера, как и на экране.
 export function toDateTimeInput(value) {

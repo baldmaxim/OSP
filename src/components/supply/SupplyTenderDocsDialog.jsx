@@ -1,10 +1,10 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { IconUpload } from '../icons/BsmIcons'
-import { IconAlert, IconCheck, IconTrash } from '../icons/ActionIcons'
+import { IconAlert, IconCheck, IconEyeOff, IconTrash } from '../icons/ActionIcons'
 import { IconSearch } from '../icons/ToolbarIcons'
 import PaperclipIcon from '../icons/PaperclipIcon'
 import { formatAmount, roundMoney } from '../../utils/money'
-import { autoPickRows, unplacedLines } from '../../utils/supplyAutoPick'
+import { autoPickRows, groupHideKeys, hideKeysByDoc, isHiddenAt, unplacedLines, windowOffers } from '../../utils/supplyAutoPick'
 import { searchGroups } from '../../utils/supplyDocMatch'
 import { DOC_READ_PROBLEM } from '../../utils/supplyDocPrice'
 import { nameDiff } from '../../utils/supplyNameDiff'
@@ -185,9 +185,16 @@ function UnplacedLine({ item, groups, busy, onPick }) {
 // onDeleteDoc(doc); onOpenFile(doc) — просмотр; onApply(lines, onProgress) — записать [{ group, price, doc }], ответ { error }
 // оставляет окно открытым. Выбор человека — при файле (и в следующий раз): onPickLine(group, doc, line), onRejectLine(group, doc,
 // line), onPack(group, doc, line, n), onSetRate(doc, rate) — курс, если цены не в рублях, onSetVat(doc, mode).
+//
+// 13.11.2026 (просьба пользователя: «разом убрать позиции, которые я не захотел расценивать, и чтобы они не мешались с ценами нового
+// документа — вносить раздельно»): слева над таблицей — «Убрать неотмеченные»: позиции без галочки уходят из окна, у документов,
+// чьи цены они показывали (onHide(Map id документа → ключи позиций), при файле; «вернуть» — onUnhide(Set id документов)). Новый
+// документ предлагает эти позиции заново. Цены — по документам: «Цены из» — все документы или один; файл, загруженный в окне, сразу
+// показывается один — его цены не смешиваются с прежними, автовыбор идёт только среди его строк. Галочка в шапке — отметить или
+// снять все строки разом. onAddFile отвечает загруженным файлом.
 export default function SupplyTenderDocsDialog({
   docs, others, byGroup, groups, rates, filesOn, currentOf, initialFiles = null, attachTo = null, onAddFile, onAttachDoc, onDeleteDoc, onOpenFile, onApply, onClose,
-  onPickLine, onRejectLine, onPack, onSetRate, onSetVat,
+  onPickLine, onRejectLine, onPack, onSetRate, onSetVat, onHide, onUnhide,
 }) {
   const [uploads, setUploads] = useState([]) // [{ id, name, status: reading | failed | duplicate, error }]
   const [chosen, setChosen] = useState(() => new Map()) // ключ группы → id цены, выбранной человеком
@@ -197,9 +204,14 @@ export default function SupplyTenderDocsDialog({
   const [progress, setProgress] = useState(null)
   const [error, setError] = useState('')
   const [dragOver, setDragOver] = useState(false)
+  const [hiding, setHiding] = useState(false)
+  // Чьи цены в окне: null — всех документов, иначе Set id. Загруженные в окне — fresh: окно сразу показывает их одних.
+  const [view, setView] = useState(null)
+  const [fresh, setFresh] = useState(() => new Set())
   const fileRef = useRef(null)
+  const headBoxRef = useRef(null)
   const uploading = uploads.some((u) => u.status === 'reading')
-  const busy = applying || uploading
+  const busy = applying || uploading || hiding
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape' && !busy) onClose() }
@@ -215,6 +227,7 @@ export default function SupplyTenderDocsDialog({
     const list = [...(fileList || [])]
     if (!list.length) return
     setError(list.length > FILES_MAX ? `За один раз — не больше ${FILES_MAX} файлов: остальные добавьте следующим заходом.` : '')
+    const added = []
     for (const file of list.slice(0, FILES_MAX)) {
       const id = ++nextId.current
       // Тот же файл второй раз (то же имя и размер) — не загружаем: его цены уже есть и считались бы дважды.
@@ -226,11 +239,17 @@ export default function SupplyTenderDocsDialog({
       }
       setUploads((prev) => [...prev, { id, name: file.name, status: 'reading' }])
       try {
-        await onAddFile(file, attach, ({ page, pages }) => setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, progress: scanProgressText(page, pages) } : u))))
+        const doc = await onAddFile(file, attach, ({ page, pages }) => setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, progress: scanProgressText(page, pages) } : u))))
+        if (doc?.id != null) added.push(doc.id)
         setUploads((prev) => prev.filter((u) => u.id !== id))
       } catch (e) {
         setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, status: 'failed', error: e.message || 'ошибка загрузки' } : u)))
       }
+    }
+    // Новые документы — отдельно от прежних: окно показывает цены только из них (переключается в «Цены из»).
+    if (added.length) {
+      setFresh((prev) => new Set([...prev, ...added]))
+      setView(new Set(added))
     }
   }
   // Файлы, уже выбранные до окна: окно открылось с ними.
@@ -243,18 +262,68 @@ export default function SupplyTenderDocsDialog({
   }, [])
 
   // ── Автовыбор ─────────────────────────────────────────────────────────────────────────────────────
+  // Выбранные документы, у которых есть строки с ценами; ни одного (файл не прочитался, удалён) — все документы.
+  const viewIds = view && docs.some((x) => view.has(x.doc.id)) ? view : null
+  const viewDocs = useMemo(() => (viewIds ? docs.filter((x) => viewIds.has(x.doc.id)) : docs), [docs, viewIds])
+  const shownOffers = useMemo(() => windowOffers(byGroup, docs, viewIds), [byGroup, docs, viewIds])
   // eslint-disable-next-line react-hooks/exhaustive-deps -- rates: currentOf читает цены из ссылки, пересчёт — при их смене
-  const { rows } = useMemo(() => autoPickRows(byGroup, groups, { chosen, currentOf }), [byGroup, groups, chosen, currentOf, rates])
+  const { rows } = useMemo(() => autoPickRows(shownOffers.byGroup, groups, { chosen, currentOf }), [shownOffers, groups, chosen, currentOf, rates])
   const isChecked = (r) => r.shown.unitOk && (ticked.has(r.group.key) || (r.auto && !unticked.has(r.group.key)))
   const toApply = rows.filter(isChecked)
+  const unchecked = rows.filter((r) => !isChecked(r))
+  const checkable = rows.filter((r) => r.shown.unitOk)
   const sum = toApply.reduce((s, r) => s + totalOf(r.group, r.shown.price), 0)
   const checkRows = rows.filter((r) => r.check)
   const sureRows = rows.filter((r) => !r.check)
-  const unplaced = useMemo(() => unplacedLines(docs, byGroup), [docs, byGroup])
-  const allLines = useMemo(() => docs.filter((x) => !x.offer.currency).flatMap(({ doc, offer }) => offer.lines.filter((l) => !l.skip).map((line) => ({ doc, line }))), [docs])
+  const unplaced = useMemo(() => unplacedLines(viewDocs, byGroup), [viewDocs, byGroup])
+  const allLines = useMemo(() => viewDocs.filter((x) => !x.offer.currency).flatMap(({ doc, offer }) => offer.lines.filter((l) => !l.skip).map((line) => ({ doc, line }))), [viewDocs])
   const onCheck = (key, on) => {
     setTicked((prev) => { const s = new Set(prev); if (on) s.add(key); else s.delete(key); return s })
     setUnticked((prev) => { const s = new Set(prev); if (on) s.delete(key); else s.add(key); return s })
+  }
+  // Галочка в шапке: отметить или снять все строки окна (строки с неподходящей ед. изм. не отмечаются).
+  const allOn = checkable.length > 0 && checkable.every(isChecked)
+  const someOn = toApply.length > 0 && !allOn
+  useEffect(() => { if (headBoxRef.current) headBoxRef.current.indeterminate = someOn }, [someOn])
+  const checkAll = (on) => {
+    const keys = checkable.map((r) => r.group.key)
+    setTicked((prev) => { const s = new Set(prev); for (const k of keys) { if (on) s.add(k); else s.delete(k) } return s })
+    setUnticked((prev) => { const s = new Set(prev); for (const k of keys) { if (on) s.delete(k); else s.add(k) } return s })
+  }
+  // Убрать неотмеченные — при файлах; вернуть — убранное у документов окна.
+  const hideUnchecked = async () => {
+    if (!unchecked.length || busy) return
+    setError('')
+    setHiding(true)
+    try {
+      await onHide(hideKeysByDoc(unchecked))
+    } catch (e) {
+      setError(`Позиции не убрались: ${e.message || e}`)
+    } finally {
+      setHiding(false)
+    }
+  }
+  const unhide = async () => {
+    if (busy) return
+    setError('')
+    setHiding(true)
+    try {
+      await onUnhide(new Set(viewDocs.map((x) => x.doc.id)))
+    } catch (e) {
+      setError(`Убранное не вернулось: ${e.message || e}`)
+    } finally {
+      setHiding(false)
+    }
+  }
+  const viewValue = !viewIds ? 'all' : fresh.size > 1 && viewIds.size === fresh.size && [...fresh].every((id) => viewIds.has(id)) ? 'fresh'
+    : viewIds.size === 1 ? String([...viewIds][0]) : 'all'
+  const changeView = (value) => {
+    if (value === 'all') setView(null)
+    else if (value === 'fresh') setView(new Set(fresh))
+    else {
+      const x = docs.find((d) => String(d.doc.id) === value)
+      setView(x ? new Set([x.doc.id]) : null)
+    }
   }
   // Выбор человека — сразу в этой строке и при файле: строка помнится и при следующем открытии.
   const pickLine = (group, doc, line, replaced = null) => {
@@ -262,7 +331,9 @@ export default function SupplyTenderDocsDialog({
     onCheck(group.key, true)
     // Прежняя строка этой позиции больше не предлагается: иначе при следующем открытии она вернулась бы, если её документ свежее.
     const swapped = replaced && replaced.line !== line ? onRejectLine(group, replaced.doc, replaced.line) : null
-    Promise.all([swapped, onPickLine(group, doc, line)]).catch((e) => setError(`Выбор не сохранился: ${e.message}`))
+    // Строку выбрали сами, а позиция у её документа убрана из окна — вернуть: иначе выбор не был бы виден.
+    const shown = isHiddenAt(docs, doc.id, group) ? onHide(new Map([[doc.id, new Set(groupHideKeys(group))]]), { show: true }) : null
+    Promise.all([swapped, shown, onPickLine(group, doc, line)]).catch((e) => setError(`Выбор не сохранился: ${e.message}`))
   }
   const rejectLine = (group, doc, line) => {
     setChosen((prev) => { const m = new Map(prev); m.delete(group.key); return m })
@@ -299,8 +370,9 @@ export default function SupplyTenderDocsDialog({
       if (!applying) addFiles(e.dataTransfer.files)
     },
   }
-  const rowProps = { busy: applying, allLines, onCheck, onPick: pickLine, onReject: rejectLine, onPack: setPack, onOpenFile }
+  const rowProps = { busy: applying || hiding, allLines, onCheck, onPick: pickLine, onReject: rejectLine, onPack: setPack, onOpenFile }
   const noFiles = !docs.length && !others.length && !uploads.length
+  const showTools = rows.length > 0 || shownOffers.hidden > 0 || docs.length > 1
 
   return (
     <div className="sp-modal-backdrop sp-modal-backdrop-full" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose() }}>
@@ -370,8 +442,40 @@ export default function SupplyTenderDocsDialog({
           )}
 
           {noFiles && <p className="sp-td-empty">Закиньте счёт или КП — Excel, PDF, скан или фото. Цены подберутся к позициям ВОР сами, останется сравнить и применить.</p>}
+          {showTools && (
+            <div className="sp-td-tools">
+              {rows.length > 0 && (
+                <button type="button" className="btn-secondary sp-td-hide" onClick={hideUnchecked} disabled={busy || !unchecked.length}
+                  title="Позиции без галочки уйдут из окна: цены этих документов им больше не предлагаются. Новый документ предложит их заново.">
+                  <IconEyeOff size={15} /> {hiding ? 'Убираем…' : `Убрать неотмеченные: ${unchecked.length}`}
+                </button>
+              )}
+              {docs.length > 1 && (
+                <label className="sp-td-view">
+                  <span>Цены из</span>
+                  <select value={viewValue} disabled={busy} onChange={(e) => changeView(e.target.value)} aria-label="Цены каких документов показывать">
+                    <option value="all">всех документов ({docs.length})</option>
+                    {fresh.size > 1 && <option value="fresh">загруженных сейчас ({fresh.size})</option>}
+                    {docs.map(({ doc, offer }) => (
+                      <option key={doc.id} value={String(doc.id)}>
+                        {fresh.has(doc.id) ? 'новый: ' : ''}{doc.file_name}{offer.date || doc.created_at ? ` · ${fmtDay(offer.date || doc.created_at)}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {shownOffers.hidden > 0 && (
+                <span className="sp-td-hidden sp-muted">
+                  Убрано позиций: {shownOffers.hidden}
+                  <button type="button" className="sp-link-btn" onClick={unhide} disabled={busy}>вернуть</button>
+                </span>
+              )}
+            </div>
+          )}
           {!noFiles && !rows.length && !uploading && docs.length > 0 && (
-            <p className="sp-td-empty" role="status"><IconCheck size={16} /> Все цены из документов уже стоят в расценке.</p>
+            <p className="sp-td-empty" role="status"><IconCheck size={16} /> {shownOffers.hidden > 0 || viewIds
+              ? 'Ставить больше нечего: цены этих документов уже стоят или позиции убраны.'
+              : 'Все цены из документов уже стоят в расценке.'}</p>
           )}
 
           {rows.length > 0 && (
@@ -382,7 +486,10 @@ export default function SupplyTenderDocsDialog({
                 </colgroup>
                 <thead>
                   <tr>
-                    <th><span className="ui-sr-only">Применить</span></th>
+                    <th className="sp-td-sel">
+                      <input ref={headBoxRef} type="checkbox" checked={allOn} disabled={busy || !checkable.length}
+                        onChange={(e) => checkAll(e.target.checked)} aria-label="Отметить все строки" title={allOn ? 'Снять все' : 'Отметить все'} />
+                    </th>
                     <th>Позиция ВОР</th>
                     <th>В счёте</th>
                     <th>Ед. изм.</th>
@@ -410,7 +517,7 @@ export default function SupplyTenderDocsDialog({
             <details className="sp-td-unplaced">
               <summary>Строки счетов без позиции ВОР: {unplaced.length}</summary>
               <ul>
-                {unplaced.map((u) => <UnplacedLine key={`${u.doc.id}:${u.line.name}`} item={u} groups={groups} busy={applying} onPick={pickLine} />)}
+                {unplaced.map((u) => <UnplacedLine key={`${u.doc.id}:${u.line.name}`} item={u} groups={groups} busy={applying || hiding} onPick={pickLine} />)}
               </ul>
             </details>
           )}

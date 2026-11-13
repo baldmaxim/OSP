@@ -7,7 +7,7 @@ import DocCheckFiles from './DocCheckFiles'
 import { IconCheck, IconLink } from '../icons/ActionIcons'
 import { IconUser } from '../icons/ToolbarIcons'
 import { employeeName } from '../../services/employees'
-import { fetchComments, fetchRequestAuthor } from '../../services/docCheckCard'
+import { fetchComments, fetchRequestAuthor, takePrefetched } from '../../services/docCheckCard'
 import { safeHttpUrl } from '../../utils/publicTenders'
 import { talkTimes } from '../../utils/docCheckTalkRead'
 import {
@@ -169,7 +169,8 @@ export default function DocCheckDetailModal({
   const loadCard = useCallback(async () => {
     const seq = ++loadSeq.current
     try {
-      const rows = await fetchComments(request.id)
+      // Нажали на карточку — переписка уже читается (prefetchCard); иначе — свой запрос.
+      const rows = await (takePrefetched(request.id, 'comments') || fetchComments(request.id))
       if (seq !== loadSeq.current) return
       setComments(rows)
       setCardState('ready')

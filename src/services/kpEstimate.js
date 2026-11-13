@@ -148,6 +148,8 @@ export async function uploadEstimate({ objectId, built, files, onProgress = () =
     for (const kind of ['kp', 'pz']) {
       const file = files[kind]
       if (!file) continue
+      // Один файл «КП + план затрат» — сохраняется один раз, обе ссылки на него.
+      if (kind === 'pz' && file === files.kp) { if (fileIds.kp_s3_document_id) fileIds.pz_s3_document_id = fileIds.kp_s3_document_id; continue }
       onProgress({ stage: 'file', kind })
       try {
         const doc = await uploadFile({ file, ownerType: 'object', ownerId: objectId, category: `kp_estimate_${kind}`, notes: `Смета КП / ПЗ: ${meta.title || ''}`.trim() })
@@ -183,34 +185,22 @@ export async function loadLeftovers(estimateId) {
 }
 
 // ── Справочники для распределения (только с правом правки сметы) ─────────────
+// Тендеры объекта, контрагенты и победители тендеров: в окне строки выбрали тендер — подрядчиком встаёт победитель.
 export async function loadPickers(objectId) {
   const settle = async (p) => { try { return await p } catch { return [] } }
-  const [tenders, contracts, counterparties, employees] = await Promise.all([
+  const [tenders, counterparties] = await Promise.all([
     settle(fetchAllRows((from, to) => db.from('tenders')
       .select('id, object_id, public_tender_number, parent_tender_id, work_description, status, deleted_at')
       .eq('object_id', objectId).order('public_tender_number', { ascending: false }).order('id', { ascending: true }).range(from, to))),
-    settle(fetchAllRows((from, to) => db.from('contracts')
-      .select('id, object_id, counterparty_id, contract_number, contract_date, record_type, deleted_at, tender_id, status, display_id, work_name')
-      .eq('object_id', objectId).order('contract_date', { ascending: false }).order('id', { ascending: true }).range(from, to))),
     settle(fetchAllRows((from, to) => db.from('counterparties')
       .select('id, name, inn, status, deleted_at').order('name', { ascending: true }).order('id', { ascending: true }).range(from, to))),
-    settle(fetchAllRows((from, to) => db.from('employee_directory')
-      .select('user_id, display_name, full_name, email, role').order('display_name', { ascending: true }).order('user_id', { ascending: true }).range(from, to))),
   ])
   const liveTenders = tenders.filter((t) => !t.deleted_at && !t.parent_tender_id)
-  let winners = []
-  if (liveTenders.length) {
-    for (const part of chunkList(liveTenders.map((t) => t.id), 100)) {
-      winners.push(...await settle(db.from('tender_winners').select('tender_id, counterparty_id').in('tender_id', part).then(check)))
-    }
+  const winners = []
+  for (const part of chunkList(liveTenders.map((t) => t.id), 100)) {
+    winners.push(...await settle(db.from('tender_winners').select('tender_id, counterparty_id').in('tender_id', part).then(check)))
   }
-  return {
-    tenders: liveTenders,
-    contracts: contracts.filter((c) => !c.deleted_at),
-    counterparties: counterparties.filter((c) => !c.deleted_at),
-    employees,
-    winners,
-  }
+  return { tenders: liveTenders, counterparties: counterparties.filter((c) => !c.deleted_at), winners }
 }
 
 // Исходные файлы версии (для «Скачать»): строки s3_documents по id.

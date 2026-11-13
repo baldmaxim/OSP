@@ -24,11 +24,13 @@ const SEC2 = [
 
 const commercial = (p) => ({ j: p[4] * p[6], k: p[4] * p[7] })
 
-export function sampleKpWorkbook(XLSX) {
+// inlinePz — один файл «КП + план затрат» (13.11.2026): справа от столбцов КП — прямые затраты строки.
+export function sampleKpWorkbook(XLSX, { inlinePz = false } = {}) {
   const rows = []
   const header = ['Номер раздела', 'Номер позиции', 'Название', 'Примечание Заказчика', 'Примечание ГП', 'Единица', 'Количество (ГП)',
     'Кол-во Заказчика', 'Базовая стоимость', 'Итого материалов (КП), руб', 'Итого работ (КП), руб', 'Коммерческая стоимость',
     'За единицу (база)', 'За единицу (коммерч.)', 'За единицу материалов', 'За единицу работ']
+  if (inlinePz) header.push('Прямые затраты', 'Прямые: основные материалы', 'Прямые: вспом. материалы', 'Прямые: работы')
   rows.push({ cells: header })
   const pos = (p) => {
     const R = rows.length + 1
@@ -36,7 +38,8 @@ export function sampleKpWorkbook(XLSX) {
     const direct = p[9] + p[10] + p[11]
     return {
       cells: [p[0], p[1], p[2], '', p[8], p[3], p[4], p[5], direct, { v: j, f: `G${R}*O${R}` }, { v: k, f: `G${R}*P${R}` }, { v: j + k, f: `J${R}+K${R}` },
-        p[4] ? Math.round((direct / p[4]) * 100) / 100 : 0, p[4] ? Math.round(((j + k) / p[4]) * 100) / 100 : 0, p[6], p[7]],
+        p[4] ? Math.round((direct / p[4]) * 100) / 100 : 0, p[4] ? Math.round(((j + k) / p[4]) * 100) / 100 : 0, p[6], p[7],
+        ...(inlinePz ? [direct, p[9], p[10], p[11]] : [])],
     }
   }
   const zero = (p) => {
@@ -74,6 +77,14 @@ export function sampleKpWorkbook(XLSX) {
   rows.push({ cells: ['', '', 'ИТОГО', '', '', '', null, null, null, { v: totals(9), f: `SUBTOTAL(9,J2:J${last})` }, { v: totals(10), f: `SUBTOTAL(9,K2:K${last})` }, { v: totals(11), f: `SUBTOTAL(9,L2:L${last})` }] })
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, toSheet(XLSX, rows.map((r) => r.cells)), 'Комм. затраты')
+  return wb
+}
+
+// Книга, где КП и смета ПЗ — листами одного файла.
+export function sampleBothSheetsWorkbook(XLSX) {
+  const wb = sampleKpWorkbook(XLSX)
+  const pz = samplePzWorkbook(XLSX)
+  for (const name of pz.SheetNames) XLSX.utils.book_append_sheet(wb, pz.Sheets[name], name)
   return wb
 }
 
