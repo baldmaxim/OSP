@@ -1052,10 +1052,19 @@ describe('Расценка снабжением: таблица', { skip: !launc
       const kran = pickRow(docs, 'Кран шаровой Ду 15')
       assert.equal((await kran.locator('b.sp-td-name').innerText()).trim(), 'Кран шаровой Ду15')
       assert.equal(await applyBox(kran).isChecked(), true)
-      // Своя цена старше документа — документ важнее: отмечено, видно, что заменится.
+      // Своя цена, введённая вручную (18.11.2026: ручная важнее документа), — последним блоком, видно, что заменится, сама не
+      // отмечена; заменить может человек — отметкой в строке или галочкой блока.
       const iso = pickRow(docs, 'Изоляция K-Flex 13x15')
-      assert.match(await iso.locator('.sp-td-now.is-replace').innerText(), /96,00/)
+      assert.match(await iso.locator('.sp-td-now.is-manual').innerText(), /96,00[\s\S]*введена вручную/)
+      assert.equal(await applyBox(iso).isChecked(), false)
+      const blocks = await docs.locator('.sp-td-group .sp-td-block-title').allInnerTexts()
+      assert.deepEqual(blocks, ['Не расценены', 'Заменят цены, введённые вручную'])
+      const manualAll = docs.getByRole('checkbox', { name: 'Отметить все: Заменят цены, введённые вручную' })
+      await manualAll.check()
       assert.equal(await applyBox(iso).isChecked(), true)
+      await manualAll.uncheck()
+      assert.equal(await applyBox(iso).isChecked(), false)
+      await applyBox(iso).check()
       // Строки, которым нет позиции, — свёрнуты внизу, не в таблице.
       assert.equal(await pickRow(docs, 'Болт М12х80').count(), 0)
       await docs.getByText('Строки счетов без позиции ВОР: 1').waitFor()
@@ -1131,6 +1140,22 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.equal((await rateOf(page, 'Хомут монтажный', 'ОВ')).supply_price, 43.31)
       assert.equal((await rateOf(page, 'Кран шаровой Ду15', 'ОВ')).supply_price, 1220)
       assert.deepEqual(await page.evaluate(() => window.__fakeDb.s3_documents.filter((d) => d.doc_category === 'supply_doc').map((d) => d.file_name).sort()), ['КП 7.pdf', 'скан.pdf'])
+      await page.waitForFunction(() => window.__fakeDb.tender_supply_links.filter((l) => l.s3_document_id).length >= 2)
+
+      // Тендер № 704: документ уже применён, НДС у него поменяли — цены из этого же документа предлагаются заново и отмечены.
+      const again = await openTenderDocs(page)
+      await again.getByText('Все цены из документов уже стоят в расценке.').waitFor()
+      await again.getByLabel('НДС в ценах: КП 7.pdf').selectOption('gross')
+      const hom = pickRow(again, 'Хомут монтажный')
+      await hom.waitFor()
+      assert.match(await hom.locator('.sp-td-now.is-doc').innerText(), /43,31[\s\S]*из этого же документа/)
+      assert.equal(await applyBox(hom).isChecked(), true)
+      assert.deepEqual(await again.locator('.sp-td-group .sp-td-block-title').allInnerTexts(), ['Заменят цены из документов'])
+      await again.getByText('НДС в «КП 7.pdf» изменён', { exact: false }).waitFor()
+      await again.getByRole('button', { name: 'Применить цены: 2' }).click()
+      await again.waitFor({ state: 'detached', timeout: 30000 })
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Хомут монтажный' && Number(r.supply_price) === 35.5))
+      assert.equal((await rateOf(page, 'Кран шаровой Ду15', 'ОВ')).supply_price, 1000)
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
@@ -1614,14 +1639,14 @@ describe('Расценка снабжением: таблица', { skip: !launc
       const notesOf = (id) => page.evaluate((x) => window.__fakeDb.s3_documents.find((d) => d.id === x).notes, id)
       await page.waitForFunction(() => JSON.parse(window.__fakeDb.s3_documents.find((d) => d.id === 'doc-1c').notes).lines.length > 0, null, { timeout: 60000 })
       const book = JSON.parse(await notesOf('doc-1c'))
-      assert.equal(book.rv, 2)
+      assert.equal(book.rv, 3)
       assert.equal(book.date, '2026-11-02')
       assert.deepEqual(book.lines.map((l) => [l.n, l.u, l.p]), [['Хомут монтажный (75)', 'упак', 737.25]])
 
       await page.waitForFunction(() => JSON.parse(window.__fakeDb.s3_documents.find((d) => d.id === 'doc-scan').notes).lines.length > 0, null, { timeout: 240000 })
       const read = JSON.parse(await notesOf('doc-scan'))
       assert.equal(read.ocr, true)
-      assert.equal(read.rv, 2)
+      assert.equal(read.rv, 3)
       assert.equal(read.date, '2026-11-02')
       assert.equal(read.total?.ok, true, 'итог сошёлся')
       const lines = read.lines.map((l) => [l.n.replace(/\s+/g, ' '), l.u, l.q, l.p, l.un ?? 0])
@@ -1665,10 +1690,10 @@ describe('Расценка снабжением: таблица', { skip: !launc
       await kran.locator('.sp-td-opt', { hasText: 'КП 3 Климат-Опт.xlsx' }).click()
       await page.waitForFunction(() => /500,00/.test(document.querySelector('.sp-td-table')?.innerText || ''))
       assert.equal(plain(await kran.locator('.sp-td-price').innerText()), '500,00')
-      // Изоляция: свою цену заменит документ — отметку можно снять.
+      // Изоляция: своя ручная цена — строка видна, но сама не отмечена (ручная важнее документа).
       const iso = rowOfPick('Изоляция K-Flex')
-      assert.match(await iso.locator('.sp-td-now.is-replace').innerText(), /96,00/)
-      await applyBox(iso).uncheck()
+      assert.match(await iso.locator('.sp-td-now.is-manual').innerText(), /96,00/)
+      assert.equal(await applyBox(iso).isChecked(), false)
 
       await docs.getByRole('button', { name: /^Применить цены:/ }).click()
       await docs.waitFor({ state: 'detached', timeout: 30000 })

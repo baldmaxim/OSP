@@ -35,9 +35,17 @@ export const cellText = (v) => String(v ?? '').replace(SPACE_RE, ' ').trim()
 const norm = (v) => cellText(v).toLowerCase().replace(/ё/g, 'е')
 
 // Число из ячейки документа: «18 450,00», «1.234,56», «1,234.56», «95,00 руб.», «22%» → число; иначе null.
+// Пробелы внутри числа — только разряды по три цифры: «22 350 6 496» — это два числа одно под другим (две строки КП в одной
+// ячейке, тендер № 546), а не 223 506 496.
+const GROUP_GAP_RE = /[0-9][\s\u00a0\u2007\u202f'][0-9]/
+const GROUPED_RE = /^[-−–]?[0-9]{1,3}(?:[\s\u00a0\u2007\u202f'][0-9]{3})+(?:[.,][0-9]+)?$/
 export function parseNum(v) {
   if (v == null || v === '') return null
   if (typeof v === 'number') return Number.isFinite(v) ? v : null
+  if (GROUP_GAP_RE.test(String(v))) {
+    const core = String(v).trim().replace(/[\s\u00a0\u2007\u202f]*(руб\.?|р\.?|₽|rub|rur|%)$/i, '')
+    if (!GROUPED_RE.test(core.replace(/^([-−–])\s+/, '$1'))) return null
+  }
   let s = String(v).replace(/[\s\u00a0\u2007\u202f']/g, '').replace(/(руб\.?|р\.?|₽|rub|rur|%)$/i, '')
   if (!/^[-−–]?[0-9][0-9.,]*$/.test(s)) return null
   const negative = /^[-−–]/.test(s)
@@ -272,25 +280,30 @@ export function totalsCheck(items, totals) {
 
 // Дата документа: «от 02.11.2026», «от 02 ноября 2026 г.», «от 27.10.26»; иначе первая дата в тексте. Ответ: 'ГГГГ-ММ-ДД' или null.
 const MONTHS = ['январ', 'феврал', 'март', 'апрел', 'ма', 'июн', 'июл', 'август', 'сентябр', 'октябр', 'ноябр', 'декабр']
-export function docDateFromText(text) {
+// Дата из будущего (дальше FUTURE_DAYS от сегодня) — не дата документа: так читались коды и телефоны («03.10.54» → 2054 год у
+// спецификаций ЭТМ тендера № 704), а «самый свежий документ» тогда побеждал всегда. Такая дата пропускается, ищется следующая.
+const FUTURE_DAYS = 31
+export function docDateFromText(text, today = new Date()) {
   const t = norm(text)
+  const latest = new Date(today.getTime() + FUTURE_DAYS * 86400000).toISOString().slice(0, 10)
   const fmt = (d, m, y) => {
     const year = y < 100 ? 2000 + y : y
     if (year < 2000 || year > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return null
-    return `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const iso = `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    return iso > latest ? null : iso
   }
-  const num = /(?:^|[^0-9.])([0-9]{1,2})[.\-/]([0-9]{1,2})[.\-/]([0-9]{4}|[0-9]{2})(?![0-9])/
-  const word = /(?:^|[^0-9.])([0-9]{1,2})\s+(январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр)[а-я]*\s+([0-9]{4})/
+  const num = /(?:^|[^0-9.])([0-9]{1,2})[.\-/]([0-9]{1,2})[.\-/]([0-9]{4}|[0-9]{2})(?![0-9])/g
+  const word = /(?:^|[^0-9.])([0-9]{1,2})\s+(январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр)[а-я]*\s+([0-9]{4})/g
+  // Первая настоящая дата текста (по месту в тексте).
   const parse = (s) => {
-    const a = num.exec(s)
-    const b = word.exec(s)
-    const first = a && (!b || a.index <= b.index) ? a : b
-    if (!first) return null
-    if (first === a) return fmt(Number(a[1]), Number(a[2]), Number(a[3]))
-    return fmt(Number(b[1]), MONTHS.findIndex((m) => b[2].startsWith(m)) + 1, Number(b[3]))
+    const found = [
+      ...[...s.matchAll(num)].map((a) => ({ at: a.index, iso: fmt(Number(a[1]), Number(a[2]), Number(a[3])) })),
+      ...[...s.matchAll(word)].map((b) => ({ at: b.index, iso: fmt(Number(b[1]), MONTHS.findIndex((m) => b[2].startsWith(m)) + 1, Number(b[3])) })),
+    ].filter((x) => x.iso).sort((p, q) => p.at - q.at)
+    return found[0]?.iso || null
   }
   const at = t.search(/(?:^|[^а-я])от\s+[0-9]/)
-  return (at >= 0 ? parse(t.slice(at + 1)) : null) || parse(t)
+  return (at >= 0 ? parse(t.slice(at + 1, at + 40)) : null) || parse(t)
 }
 
 // ── PDF: слова с координатами ────────────────────────────────────────────────────────────────────────
@@ -733,6 +746,73 @@ function anchorRows(block, isAnchor, isNumbered, ruled) {
   return out
 }
 
+// Несколько позиций в одной ячейке рамки (тендер № 546, КП «Тушино»: «Светильник „Баррель“…» и «Торшер „Румб“…» в одной строке
+// таблицы, цены «22 350» и «6 496» одна под другой — читалось как одна позиция за 223 506 496 ₽). Признак — в колонке цены
+// несколько целых чисел друг под другом (перенос «18» + «450,00» — одно число). Тексты колонок в такой ячейке идут каждый сверху
+// сам по себе, поэтому делим по колонкам, а не по строкам: числа и короткие колонки (артикул, ед. изм.) — по одной строке на
+// позицию; наименование — по строкам, которые начинаются с заглавного слова. Не делится наименование — позиции получают общее
+// и пометку unsure (цену сама расценка не ставит); числа в колонках не сходятся по количеству — ячейка не делится (null).
+const STACK_HEAD_RE = /^[-−]?[0-9]{1,3}( [0-9]{3})*$/
+const STACK_TAIL_RE = /^[0-9]{3}([.,][0-9]+)?/
+const ITEM_START_RE = /^[А-ЯЁA-Z][а-яёa-z]{2,}/
+function splitStacked(row, cols, numbersIn) {
+  const main = cols.prices[0] || cols.sums[0]
+  if (!main) return null
+  // Числа колонки сверху вниз. «1 200» над «800» — перенос одного числа «1 200 800» (в узкой колонке так переносится и цена
+  // «32» + «299», и артикул «LUGA K» + «O 3K» — по соседним колонкам не отличить), поэтому делим, только когда переносом это
+  // быть не может: «22 350» над «6 496», «14 004» над «14 004».
+  const stackOf = (c) => {
+    const list = []
+    for (const b of row) {
+      const ws = numbersIn(b, c)
+      if (!ws.length) continue
+      const text = ws.map((w) => w.text).join(' ')
+      const prev = list[list.length - 1]
+      if (prev != null && STACK_HEAD_RE.test(prev) && STACK_TAIL_RE.test(ws[0].text)) list[list.length - 1] = `${prev} ${text}`
+      else list.push(text)
+    }
+    return list
+  }
+  const numeric = [cols.qty, ...cols.prices, ...cols.sums, cols.vat, cols.vatRate, cols.delivery].filter(Boolean)
+  const numericIdx = new Set(numeric.map((c) => c.index))
+  const textIdx = new Set()
+  for (const b of row) for (const idx of b.cells.keys()) if (!numericIdx.has(idx)) textIdx.add(idx)
+  const linesOf = (idx) => row.map((b) => (b.cells.get(idx) || []).map((w) => w.text).join(' ')).filter(Boolean)
+  const n = stackOf(main).length
+  if (n < 2) return null
+  const parts = Array.from({ length: n }, () => ({ words: new Map(), unsure: false }))
+  for (const c of numeric) {
+    const stack = stackOf(c)
+    if (!stack.length) continue
+    if (stack.length !== n) return null
+    stack.forEach((t, i) => parts[i].words.set(c.index, [t]))
+  }
+  for (const idx of textIdx) {
+    const lines = linesOf(idx)
+    if (lines.length === n) { lines.forEach((t, i) => parts[i].words.set(idx, [t])); continue }
+    if (lines.length > n) {
+      // Начало позиции: в наименовании — строка с заглавного слова; в любой колонке — строка с того же слова, что первая
+      // («Торшер …» / «Торшер …», артикул по словам в узкой колонке «TP» / «DECOR» / «90 3K» / «TP» / …).
+      const firstWord = (t) => t.split(' ')[0]
+      const byCapital = idx === cols.name?.index ? lines.map((t, k) => (k > 0 && ITEM_START_RE.test(t) ? k : -1)).filter((k) => k > 0) : []
+      const byRepeat = lines.map((t, k) => (k > 0 && firstWord(t) === firstWord(lines[0]) ? k : -1)).filter((k) => k > 0)
+      const starts = [byCapital, byRepeat].find((list) => list.length === n - 1)
+      if (starts) {
+        const bounds = [0, ...starts, lines.length]
+        for (let i = 0; i < n; i++) parts[i].words.set(idx, lines.slice(bounds[i], bounds[i + 1]))
+        continue
+      }
+    }
+    // Не делится: всем позициям — целиком; ед. изм. одной строкой — общая, без сомнений.
+    const shared = idx === cols.unit?.index && lines.length === 1
+    for (const p of parts) {
+      p.words.set(idx, lines)
+      if (!shared) p.unsure = true
+    }
+  }
+  return parts
+}
+
 // Строки PDF после шапки → строки документа. Таблица кончается на «Итого / Всего»; на следующей странице — повтор
 // шапки (пропускается) или продолжение без шапки. Строки таблицы: на странице с линиями между строками данных —
 // по линиям (полоса между соседними линиями — строка таблицы); без линий — по промежуткам (wrapLimit). Внутри
@@ -827,8 +907,13 @@ export function pdfRows(lines, first, rules = null) {
       cur.push(b)
     })
   }
-  const rows = blocks.flatMap((block) => anchorRows(block, isAnchor, isNumbered, ruledBlocks.has(block)))
-  for (const row of rows) {
+  const rows = blocks.flatMap((block) => anchorRows(block, isAnchor, isNumbered, ruledBlocks.has(block)).map((lines) => ({ lines, ruled: ruledBlocks.has(block) })))
+  for (const { lines: row, ruled } of rows) {
+    const split = ruled ? splitStacked(row, cols, numbersIn) : null
+    if (split) {
+      for (const part of split) out.push({ ...part, page: row[0].line.page })
+      continue
+    }
     const words = new Map()
     for (const { cells } of row) {
       for (const [idx, ws] of cells) {
@@ -847,6 +932,7 @@ export function pdfRows(lines, first, rules = null) {
       prices: cols.prices.map((c) => text(row, c)), sums: cols.sums.map((c) => text(row, c)),
     },
     page: row.page + 1,
+    ...(row.unsure ? { unsure: true } : {}),
   }))
   // Где таблица кончилась (искать следующую) и её итоги.
   result.end = i
@@ -944,6 +1030,8 @@ export function itemsFromRows(rows, columns, { keepBlank = false } = {}) {
       deliveryDoc: del != null && del > 0 ? { value: del, perUnit: !!columns.delivery.perUnit, vat: columns.delivery.vat || null } : null,
       source: r.row ? `строка ${r.row}` : r.page ? `стр. ${r.page}` : null,
       ...(twoParts ? { parts: { material: partOf(c, 'material'), work: partOf(c, 'work') } } : {}),
+      // Несколько позиций в одной ячейке, наименование не поделилось (pdfRows, splitStacked): цена своя, а чья — сверить с файлом.
+      ...(r.unsure ? { unsure: true } : {}),
     })
   }
   return items

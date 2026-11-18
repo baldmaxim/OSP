@@ -9,6 +9,14 @@ export const fileVersion = (doc) => `file:${doc.id}:${doc.created_at}`
 // шапкой и анкетой ВОР) перечитываются один раз сами — цены не трогаются.
 export const estimateVersion = (sig) => `vor2:${sig.count}:${sig.latest || ''}`
 
+// Список из файла разобран до расчёта формул (в карте колонок нет calc), а у позиций нет объёма: в файле ВОР из Estimat объём —
+// формула без сохранённого значения (18.11.2026, тендер № 772). Такой файл служба osp-api перечитывает один раз — уже с расчётом;
+// после этого calc в карте есть, и без объёмов (объёма нет и в файле) список больше не трогается. volume_gaps — признак из её
+// запроса (позиции она не читает), иначе — по самим позициям.
+const FORMULAS_MARK = 1
+export const needsVolumeRecalc = (s) => !!s && !(Number(s.column_map?.calc) >= FORMULAS_MARK)
+  && (s.volume_gaps ?? (s.positions || []).some((p) => p?.volume == null && !p?.units?.length)) === true
+
 // Имя ВОР для файла: прежняя привязка этого файла (в том числе как прежней версии ВОР — prior_document_ids, миграция
 // 20261029) → ВОР карточки с тем же именем (без учёта регистра и пробелов) → прежний список с тем же именем файла →
 // имя файла без расширения. Прежняя версия ВОР, которую заменили файлом с другим именем, так не заводит отдельный ВОР:
@@ -26,10 +34,13 @@ export function targetNameForFile(doc, sources, cardDocNames = []) {
 }
 
 // Файлы, которые надо (пере)загрузить: ещё не загружены этой версией. Новые — первыми; два файла в одно
-// имя ВОР — берётся новый, старый отмечается skipped (позиции дал бы устаревший файл).
+// имя ВОР — берётся новый, старый отмечается skipped (позиции дал бы устаревший файл). recalc — файлы, уже загруженные этой
+// версией, но разобранные до расчёта формул и без объёмов (needsVolumeRecalc): их перечитывает только служба. Отдельно от jobs:
+// страница по jobs показывает «ещё не загружены» и «не загрузился», а такой список загружен.
 export function planFileImports(files, sources, cardDocNames = []) {
   const jobs = []
   const skipped = []
+  const recalc = []
   const taken = new Set()
   const sorted = [...files].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
   for (const doc of sorted) {
@@ -37,10 +48,13 @@ export function planFileImports(files, sources, cardDocNames = []) {
     const existing = sources.find((s) => s.estimate_name === name) || null
     if (taken.has(name)) { skipped.push({ doc, name }); continue }
     taken.add(name)
-    if (existing && existing.s3_document_id === doc.id && existing.source_version === fileVersion(doc)) continue
+    if (existing && existing.s3_document_id === doc.id && existing.source_version === fileVersion(doc)) {
+      if (needsVolumeRecalc(existing)) recalc.push({ doc, name, existing })
+      continue
+    }
     jobs.push({ doc, name, existing })
   }
-  return { jobs, skipped }
+  return { jobs, skipped, recalc }
 }
 
 // Вкладка «ВОР» карточки — только если позиций из файлов нет: новые ВОР и перезагруженные (другая версия).

@@ -4,7 +4,7 @@ import { IconAlert, IconCheck, IconEyeOff, IconTrash } from '../icons/ActionIcon
 import { IconSearch } from '../icons/ToolbarIcons'
 import PaperclipIcon from '../icons/PaperclipIcon'
 import { formatAmount, roundMoney } from '../../utils/money'
-import { autoPickRows, groupHideKeys, hideKeysByDoc, isHiddenAt, unplacedLines, windowOffers } from '../../utils/supplyAutoPick'
+import { PICK_BLOCKS, autoPickRows, groupHideKeys, hideKeysByDoc, isHiddenAt, unplacedLines, windowOffers } from '../../utils/supplyAutoPick'
 import { searchGroups } from '../../utils/supplyDocMatch'
 import { DOC_READ_PROBLEM } from '../../utils/supplyDocPrice'
 import { nameDiff } from '../../utils/supplyNameDiff'
@@ -98,19 +98,58 @@ function LinePicker({ row, allLines, busy, onPick, onReject, onClose }) {
   )
 }
 
-// Что сейчас в расценке: пусто, цена другого тендера, своя другая цена (заменится).
-function NowCell({ row }) {
-  const { status, wrong } = row
-  if (status.kind === 'replace') {
-    return (
-      <span className="sp-td-now is-replace">
-        <span className="ui-num">{status.prices.slice(0, 2).map((p) => formatAmount(p)).join(', ')}</span>
-        {wrong && <span className="sp-td-meta">похоже на ошибку</span>}
-      </span>
-    )
+// Откуда цена, которую заменит строка (utils/supplyAutoPick.replacedBy): подставлена из другого тендера — каким; из документа —
+// каким (этот же документ — значит, у него сменили НДС или пересчёт); введена вручную — как.
+const tenderOf = (o) => (o?.tender_number ? `тендера № ${o.tender_number}${o.price_date ? ` от ${fmtDay(o.price_date)}` : ''}` : 'другого тендера')
+function nowSource(x, row) {
+  if (x.kind === 'auto') return `подставлена сама из ${tenderOf(x.origin)}`
+  if (x.kind === 'doc') {
+    if (row.sameDoc) return 'из этого же документа — до смены НДС или пересчёта'
+    return `из «${x.offer.doc.file_name}»${x.offer.date ? ` от ${fmtDay(x.offer.date)}` : ''}`
   }
-  if (status.kind === 'copy') return <span className="sp-td-now"><span className="sp-td-meta">цена другого тендера</span></span>
-  return <span className="sp-muted">—</span>
+  if (x.how === 'pick') return `взята вручную из ${tenderOf(x.origin)}`
+  if (x.how === 'import') return 'загружена из Excel'
+  return 'введена вручную'
+}
+function NowCell({ row }) {
+  const items = row.replaced.filter((x) => x.kind !== 'empty')
+  if (!items.length) return <span className="sp-muted">нет цены</span>
+  const prices = [...new Set(items.map((x) => roundMoney(x.price)))]
+  const main = items.find((x) => x.kind === row.block) || items[0]
+  return (
+    <span className={`sp-td-now is-${row.block}`}>
+      <span className="ui-num">{prices.slice(0, 2).map((p) => formatAmount(p)).join(', ')}</span>
+      <span className="sp-td-meta" title={main.origin?.object_name || undefined}>{nowSource(main, row)}</span>
+      {row.wrong && <span className="sp-td-meta is-warn">похоже на ошибку</span>}
+    </span>
+  )
+}
+
+// Шапка блока: галочка «все в блоке» (строки с неподходящей ед. изм. не отмечаются), название, сколько строк и отмечено.
+const BLOCK_HINT = {
+  auto: 'цены других тендеров, которые расценка поставила сама',
+  manual: 'сами не отмечаются: цена, введённая вручную, важнее документа',
+}
+function BlockHead({ block, rows, isChecked, busy, onAll }) {
+  const ref = useRef(null)
+  const checkable = rows.filter((r) => r.shown.unitOk)
+  const on = checkable.filter(isChecked).length
+  const all = checkable.length > 0 && on === checkable.length
+  useEffect(() => { if (ref.current) ref.current.indeterminate = on > 0 && !all }, [on, all])
+  return (
+    <tr className={`sp-td-group is-${block.key}`}>
+      <td className="sp-td-sel">
+        <input ref={ref} type="checkbox" checked={all} disabled={busy || !checkable.length} onChange={(e) => onAll(checkable, e.target.checked)}
+          aria-label={`Отметить все: ${block.title}`} title={all ? 'Снять все в блоке' : 'Отметить все в блоке'} />
+      </td>
+      <td colSpan={5}>
+        <span className="sp-td-block-title">{block.title}</span>
+        <span className="sp-td-block-count ui-num">{rows.length}</span>
+        {on > 0 && <span className="sp-td-block-on">отмечено {on}</span>}
+        {BLOCK_HINT[block.key] && <span className="sp-td-block-hint">{BLOCK_HINT[block.key]}</span>}
+      </td>
+    </tr>
+  )
 }
 
 // Строка: отметка, позиция ВОР (полужирным) и строка счёта рядом, единицы, цена, что сейчас в расценке.
@@ -137,8 +176,13 @@ const PickRow = memo(function PickRow({ row, checked, busy, allLines, onCheck, o
         {!sure && <span className="sp-td-tag">похоже на {Math.round(shown.score * 100)} %</span>}
         {spread && <span className="sp-td-tag is-warn">цены в счетах отличаются в {spread} раз</span>}
         {shown.line.sumOff && <span className="sp-td-tag is-warn">цена × кол-во ≠ сумма</span>}
-        {shown.line.unsure && !shown.line.sumOff && <span className="sp-td-tag is-warn" title="Строка со скана, а суммы для сверки в ней нет: цифры могли распознаться неверно.">со скана: сверьте с файлом</span>}
+        {shown.line.unsure && !shown.line.sumOff && (shown.ocr
+          ? <span className="sp-td-tag is-warn" title="Строка со скана, а суммы для сверки в ней нет: цифры могли распознаться неверно.">со скана: сверьте с файлом</span>
+          : <span className="sp-td-tag is-warn" title="В ячейке документа несколько позиций одна под другой: наименование могло разделиться неверно.">сверьте с файлом</span>)}
         {shown.qtyFar && <span className="sp-td-tag is-warn">после пересчёта количество не похоже на объём</span>}
+        {shown.over && <span className="sp-td-tag is-warn" title="Цена строки больше итога всего документа: строка прочитана неверно (например, склеились две цены).">цена больше итога документа</span>}
+        {!shown.over && shown.docOk === false && <span className="sp-td-tag is-warn" title="Сумма прочитанных строк не сошлась с итогом документа: часть строк могла прочитаться неверно. Сами такие цены не отмечаются.">итог документа не сошёлся — сверьте</span>}
+        {shown.twins?.length > 0 && <span className="sp-td-meta" title={shown.twins.map((d) => d.file_name).join('\n')}>та же цена и в {shown.twins.length === 1 ? `«${shown.twins[0].file_name}»` : `${shown.twins.length} документах`}</span>}
         {open && <LinePicker row={row} allLines={allLines} busy={busy} onPick={(d, l) => onPick(group, d, l, shown)} onReject={(d, l) => onReject(group, d, l)} onClose={() => setOpen(false)} />}
       </td>
       <td><UnitCell offer={shown} group={group} busy={busy} onPack={(o, n) => onPack(group, o.doc, o.line, n)} /></td>
@@ -192,8 +236,13 @@ function UnplacedLine({ item, groups, busy, onPick }) {
 // документ предлагает эти позиции заново. Цены — по документам: «Цены из» — все документы или один; файл, загруженный в окне, сразу
 // показывается один — его цены не смешиваются с прежними, автовыбор идёт только среди его строк. Галочка в шапке — отметить или
 // снять все строки разом. onAddFile отвечает загруженным файлом.
+//
+// 18.11.2026 (просьба пользователя): строки — блоками по тому, что заменит цена (utils/supplyAutoPick.PICK_BLOCKS): не расценены;
+// подставленные автоматически (видно, из какого тендера); цены из документов (из какого; этот же документ — после смены НДС);
+// введённые вручную — последними и без отметки: ручная цена важнее. У каждого блока слева галочка «все в блоке». Один и тот же
+// документ, загруженный дважды, — в списке файлов пометкой «повтор» (dupes — [{ doc, of }]), его цены не повторяются.
 export default function SupplyTenderDocsDialog({
-  docs, others, byGroup, groups, rates, filesOn, currentOf, initialFiles = null, attachTo = null, onAddFile, onAttachDoc, onDeleteDoc, onOpenFile, onApply, onClose,
+  docs, dupes = [], others, byGroup, groups, rates, filesOn, currentOf, initialFiles = null, attachTo = null, onAddFile, onAttachDoc, onDeleteDoc, onOpenFile, onApply, onClose,
   onPickLine, onRejectLine, onPack, onSetRate, onSetVat, onHide, onUnhide,
 }) {
   const [uploads, setUploads] = useState([]) // [{ id, name, status: reading | failed | duplicate, error }]
@@ -203,6 +252,7 @@ export default function SupplyTenderDocsDialog({
   const [applying, setApplying] = useState(false)
   const [progress, setProgress] = useState(null)
   const [error, setError] = useState('')
+  const [note, setNote] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [hiding, setHiding] = useState(false)
   // Чьи цены в окне: null — всех документов, иначе Set id. Загруженные в окне — fresh: окно сразу показывает их одних.
@@ -221,7 +271,7 @@ export default function SupplyTenderDocsDialog({
 
   // ── Файлы ─────────────────────────────────────────────────────────────────────────────────────────
   const known = useRef(null)
-  known.current = [...docs.map((x) => x.doc), ...others.map((x) => x.doc)]
+  known.current = [...docs.map((x) => x.doc), ...dupes.map((x) => x.doc), ...others.map((x) => x.doc)]
   const nextId = useRef(0)
   const addFiles = async (fileList, attach = null) => {
     const list = [...(fileList || [])]
@@ -267,14 +317,14 @@ export default function SupplyTenderDocsDialog({
   const viewDocs = useMemo(() => (viewIds ? docs.filter((x) => viewIds.has(x.doc.id)) : docs), [docs, viewIds])
   const shownOffers = useMemo(() => windowOffers(byGroup, docs, viewIds), [byGroup, docs, viewIds])
   // eslint-disable-next-line react-hooks/exhaustive-deps -- rates: currentOf читает цены из ссылки, пересчёт — при их смене
-  const { rows } = useMemo(() => autoPickRows(shownOffers.byGroup, groups, { chosen, currentOf }), [shownOffers, groups, chosen, currentOf, rates])
+  const { rows } = useMemo(() => autoPickRows(shownOffers.byGroup, groups, { chosen, currentOf, allByGroup: byGroup }), [shownOffers, groups, chosen, currentOf, rates, byGroup])
   const isChecked = (r) => r.shown.unitOk && (ticked.has(r.group.key) || (r.auto && !unticked.has(r.group.key)))
   const toApply = rows.filter(isChecked)
+  // Неотмеченные — и строки блока «введённые вручную» (сами не отмечаются): убрать их — оставить ручные цены как есть.
   const unchecked = rows.filter((r) => !isChecked(r))
   const checkable = rows.filter((r) => r.shown.unitOk)
   const sum = toApply.reduce((s, r) => s + totalOf(r.group, r.shown.price), 0)
-  const checkRows = rows.filter((r) => r.check)
-  const sureRows = rows.filter((r) => !r.check)
+  const blocks = PICK_BLOCKS.map((block) => ({ block, rows: rows.filter((r) => r.block === block.key) })).filter((b) => b.rows.length)
   const unplaced = useMemo(() => unplacedLines(viewDocs, byGroup), [viewDocs, byGroup])
   const allLines = useMemo(() => viewDocs.filter((x) => !x.offer.currency).flatMap(({ doc, offer }) => offer.lines.filter((l) => !l.skip).map((line) => ({ doc, line }))), [viewDocs])
   const onCheck = (key, on) => {
@@ -285,8 +335,8 @@ export default function SupplyTenderDocsDialog({
   const allOn = checkable.length > 0 && checkable.every(isChecked)
   const someOn = toApply.length > 0 && !allOn
   useEffect(() => { if (headBoxRef.current) headBoxRef.current.indeterminate = someOn }, [someOn])
-  const checkAll = (on) => {
-    const keys = checkable.map((r) => r.group.key)
+  const checkAll = (on, list = checkable) => {
+    const keys = list.map((r) => r.group.key)
     setTicked((prev) => { const s = new Set(prev); for (const k of keys) { if (on) s.add(k); else s.delete(k) } return s })
     setUnticked((prev) => { const s = new Set(prev); for (const k of keys) { if (on) s.delete(k); else s.add(k) } return s })
   }
@@ -371,7 +421,7 @@ export default function SupplyTenderDocsDialog({
     },
   }
   const rowProps = { busy: applying || hiding, allLines, onCheck, onPick: pickLine, onReject: rejectLine, onPack: setPack, onOpenFile }
-  const noFiles = !docs.length && !others.length && !uploads.length
+  const noFiles = !docs.length && !dupes.length && !others.length && !uploads.length
   const showTools = rows.length > 0 || shownOffers.hidden > 0 || docs.length > 1
 
   return (
@@ -414,7 +464,9 @@ export default function SupplyTenderDocsDialog({
                       </span>
                     ) : (
                       <select className="sp-td-vat" value={vat} disabled={busy} aria-label={`НДС в ценах: ${doc.file_name}`} title="Какие цены в документе. Цена в расценке — с НДС."
-                        onChange={(e) => Promise.resolve(onSetVat(doc, e.target.value)).catch((err) => setError(err.message))}>
+                        onChange={(e) => Promise.resolve(onSetVat(doc, e.target.value))
+                          .then(() => setNote(`НДС в «${doc.file_name}» изменён: где его цены уже стоят, новые — в блоке «Заменят цены из документов», отмечены.`))
+                          .catch((err) => setError(err.message))}>
                         <option value="gross">с НДС</option>
                         <option value="net">без НДС, +{offer.vat?.rate ?? 22} %</option>
                       </select>
@@ -430,6 +482,14 @@ export default function SupplyTenderDocsDialog({
                   </li>
                 )
               })}
+              {dupes.map(({ doc, of }) => (
+                <li key={doc.id} className="is-dup">
+                  <button type="button" className="sp-td-file" onClick={() => onOpenFile(doc)} title="Открыть файл"><PaperclipIcon size={12} /> {doc.file_name}</button>
+                  <span className="sp-td-meta">повтор «{of.file_name}» — цены не считаются второй раз</span>
+                  <button type="button" className="sp-icon-btn sp-td-del" onClick={() => onDeleteDoc(doc)} disabled={busy}
+                    aria-label={`Удалить файл «${doc.file_name}»`} title="Удалить повтор — пропадёт у всех позиций, где он документ"><IconTrash size={14} /></button>
+                </li>
+              ))}
               {others.map(({ doc, failed, progress: reading }) => (
                 <li key={doc.id} className={failed ? 'is-off' : undefined}>
                   <button type="button" className="sp-td-file" onClick={() => onOpenFile(doc)} title="Открыть файл"><PaperclipIcon size={12} /> {doc.file_name}</button>
@@ -494,21 +554,15 @@ export default function SupplyTenderDocsDialog({
                     <th>В счёте</th>
                     <th>Ед. изм.</th>
                     <th className="ui-money">Цена, ₽</th>
-                    <th>Сейчас</th>
+                    <th>Сейчас в расценке</th>
                   </tr>
                 </thead>
-                {checkRows.length > 0 && (
-                  <tbody>
-                    {sureRows.length > 0 && <tr className="sp-td-group"><td colSpan={6}>Проверьте: {checkRows.length}</td></tr>}
-                    {checkRows.map((r) => <PickRow key={r.group.key} row={r} checked={isChecked(r)} {...rowProps} />)}
+                {blocks.map(({ block, rows: list }) => (
+                  <tbody key={block.key} className={`sp-td-block is-${block.key}`}>
+                    <BlockHead block={block} rows={list} isChecked={isChecked} busy={applying || hiding} onAll={(items, on) => checkAll(on, items)} />
+                    {list.map((r) => <PickRow key={r.group.key} row={r} checked={isChecked(r)} {...rowProps} />)}
                   </tbody>
-                )}
-                {sureRows.length > 0 && (
-                  <tbody>
-                    {checkRows.length > 0 && <tr className="sp-td-group"><td colSpan={6}>Та же позиция: {sureRows.length}</td></tr>}
-                    {sureRows.map((r) => <PickRow key={r.group.key} row={r} checked={isChecked(r)} {...rowProps} />)}
-                  </tbody>
-                )}
+                ))}
               </table>
             </div>
           )}
@@ -521,6 +575,7 @@ export default function SupplyTenderDocsDialog({
               </ul>
             </details>
           )}
+          {note && !error && <p className="sp-td-note" role="status">{note}</p>}
           {error && <p className="sp-error-text" role="alert">{error}</p>}
         </div>
         <div className="sp-modal-actions sp-td-actions">

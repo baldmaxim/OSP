@@ -313,7 +313,8 @@ export function ocrChecked(items) {
     if (it.price > 0 && it.qty > 0 && it.sum > 0) {
       const made = it.price * it.qty
       const fits = VAT_FACTORS.some((f) => near(made * f, it.sum) || near(made, it.sum * f))
-      return fits ? { ...it, sumOff: false, unsure: false } : { ...it, sumOff: true, unsure: true }
+      // unsure из разбора (несколько позиций в одной ячейке) сверка не снимает.
+      return fits ? { ...it, sumOff: false, unsure: raw.unsure === true } : { ...it, sumOff: true, unsure: true }
     }
     return { ...it, unsure: true }
   })

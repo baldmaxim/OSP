@@ -19,13 +19,20 @@ export const OFFER_KIND = 'supply_offer'
 export const OFFER_VERSION = 1
 // Версия чтения файлов: растёт, когда чтение научилось новому. Файл, отвергнутый прежней версией, читается заново один раз:
 // причина записана при файле, и иначе он так и остался бы непрочитанным (тендер № 902: скан — «failed: scan», счёт 1С со
-// шапкой в 50-й строке — «failed: no_table»). 2 — распознавание сканов и шапка глубже 40-й строки.
-export const READER_VERSION = 2
+// шапкой в 50-й строке — «failed: no_table»). 2 — распознавание сканов и шапка глубже 40-й строки. 3 (18.11.2026) — несколько
+// позиций в одной ячейке PDF и числа только с разрядами по три (тендер № 546: две цены «22 350» и «6 496» читались как 223 506 496).
+export const READER_VERSION = 3
 // Отказы, которые новая версия чтения может исправить. Пароль и испорченный файл от чтения не зависят.
 const RETRY_FAILED = new Set(['scan', 'no_table', 'empty'])
 // Скан распознаётся секунды на страницу: «читаем…» без хода выглядело бы как зависание.
 export const scanProgressText = (page, pages) => (pages > 1 ? `распознаём скан: страница ${page} из ${pages}…` : 'распознаём скан…')
 export const offerNeedsReread = (offer) => !!offer?.failed && !offer.lines.length && RETRY_FAILED.has(offer.failed) && (offer.rv || 0) < READER_VERSION
+// Выбор человека при файле: выбранные и отвергнутые строки, пересчёт, «не сопоставлять», убранные из окна позиции.
+export const offerHasMarks = (offer) => !!offer?.hidden?.length || !!offer?.lines?.some((l) => l.k || l.also?.length || l.no?.length
+  || (l.packs && Object.keys(l.packs).length) || l.skip)
+// Документ со строками, у которого итог не сошёлся, прочитан прежней версией — перечитать один раз (строки могли склеиться). Только
+// без выбора человека: его при перечитывании не перенести.
+export const offerNeedsRefresh = (offer) => !!offer?.lines?.length && (offer.rv || 0) < READER_VERSION && offer.total?.ok === false && !offerHasMarks(offer)
 // Больше строк в одном документе не храним (счёт на тысячи строк — уже не документ к позициям); наименование —
 // не длиннее NAME_MAX. Так notes даже в худшем случае (кириллица — 2 байта) меньше 1 МБ: запрос записи файла в
 // osp-api ограничен 2 МБ (BODY_LIMIT).
@@ -100,12 +107,17 @@ export function readOffer(notes) {
   }
   if (!o || o.kind !== OFFER_KIND || o.v !== OFFER_VERSION || !Array.isArray(o.lines)) return null
   const lines = []
+  const k = 1 + (num(o.vat?.rate) ?? DEFAULT_RATE) / 100
+  const delivery = num(o.delivery) || 1
+  // Чинить цену по колонке — только у документа, где есть и строки без НДС в колонке: там переключатель их не меняет (если колонка
+  // НДС у всех строк, переключатель меняет все — это выбор человека).
+  const mixed = o.lines.some((r) => r && r.dv !== 'gross' && r.dv !== 'net')
   for (const r of o.lines) {
     const name = text(r?.n)
     const price = num(r?.p)
     if (!name || price == null || price <= 0) continue
     lines.push({
-      name, price, unit: text(r.u, 40), qty: num(r.q), code: text(r.c, 80), docPrice: num(r.d),
+      name, price: mixed ? priceByColumn(price, num(r.d), r.dv, k, delivery) : price, unit: text(r.u, 40), qty: num(r.q), code: text(r.c, 80), docPrice: num(r.d),
       docVat: r.dv === 'net' || r.dv === 'gross' ? r.dv : null, k: r.k ? String(r.k) : null, skip: r.x === 1,
       ...(Array.isArray(r.ka) && r.ka.length ? { also: r.ka.map(String) } : {}),
       ...(Array.isArray(r.kn) && r.kn.length ? { no: r.kn.map(String) } : {}),
@@ -123,21 +135,34 @@ export function readOffer(notes) {
 }
 
 // Какие цены в документе: 'net' — без НДС, в расценку прибавлен НДС; иначе 'gross' (с НДС или как есть). По самим строкам: колонка
-// «Цена без НДС» и надпись над таблицей считаются одинаково, а в notes лежит итог.
+// «Цена без НДС» и надпись над таблицей считаются одинаково, а в notes лежит итог. Строки, где НДС сказан колонкой (docVat), — в
+// последнюю очередь: переключатель меняет остальные.
 export function offerVatMode(offer) {
-  const line = offer?.lines?.find((l) => l.docPrice > 0 && l.price > 0)
+  const priced = (offer?.lines || []).filter((l) => l.docPrice > 0 && l.price > 0)
+  const line = priced.find((l) => !l.docVat) || priced[0]
   if (!line) return offer?.vat?.mode === 'net' ? 'net' : 'gross'
   return line.price / (line.docPrice * (offer.delivery || 1)) > 1.005 ? 'net' : 'gross'
 }
 const DEFAULT_RATE = 22
+// Цена строки, где НДС сказан колонкой («Цена с НДС», «Цена без НДС»), не зависит от переключателя у документа. До 18.11.2026
+// переключатель умножал и её: у документа из двух частей (тендер № 704, «130_MLN.pdf» — прайс без НДС и таблица «с НДС») строки
+// «с НДС» стали дороже на 22 % (1 687,50 → 2 058,75). Такая цена при чтении возвращается к цене по колонке.
+function priceByColumn(price, docPrice, docVat, k, delivery) {
+  if (!(docPrice > 0) || (docVat !== 'gross' && docVat !== 'net')) return price
+  const expected = roundMoney(docPrice * (docVat === 'net' ? k : 1) * delivery)
+  const near = (a, b) => Math.abs(a - b) <= Math.max(0.011, b * 0.001)
+  return near(price, expected * k) || near(price, expected / k) ? expected : price
+}
 // Те же строки с другим НДС (человек видит, что документ понят неверно): цены пересчитываются. Тот же режим — без изменений.
+// Строки, где НДС сказан колонкой, не меняются (если такие все — меняются все: иначе переключатель ничего бы не делал).
 export function offerWithVat(offer, mode) {
   if (offerVatMode(offer) === mode) return offer
   const k = 1 + (offer.vat?.rate ?? DEFAULT_RATE) / 100
+  const free = offer.lines.some((l) => !l.docVat)
   return {
     ...offer,
     vat: { mode, rate: offer.vat?.rate ?? DEFAULT_RATE },
-    lines: offer.lines.map((l) => ({ ...l, price: roundMoney(mode === 'net' ? l.price * k : l.price / k) })),
+    lines: offer.lines.map((l) => (free && l.docVat ? l : { ...l, price: roundMoney(mode === 'net' ? l.price * k : l.price / k) })),
   }
 }
 // Те же строки в рублях: человек указал курс.

@@ -5,7 +5,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { autoPickRows, groupHideKeys, hideKeysByDoc, isHiddenAt, offersByGroup, windowOffers } from '../../src/utils/supplyAutoPick.js'
 import { mergeSamePositions, positionGroups } from '../../src/utils/supplyDocMatch.js'
-import { OFFER_HIDDEN_MAX, offerNotes, readOffer } from '../../src/utils/supplyOffers.js'
+import { OFFER_HIDDEN_MAX, offerNotes, offerVatMode, offerWithVat, readOffer } from '../../src/utils/supplyOffers.js'
 import { normName } from '../../src/utils/supplyRateHelpers.js'
 
 const position = (name, unit, volume = 10) => ({ name, unit, volume, k: normName(name) })
@@ -91,5 +91,28 @@ describe('окно «Счета и КП»: убранные позиции и ц
       assert.equal(keys[0], g.key)
       assert.deepEqual(keys.slice(1), (g.sameAs || []).map((s) => s.key))
     }
+  })
+})
+
+// 18.11.2026, тендер № 704: «130_MLN.pdf» — прайс без НДС и таблица с колонкой «Цена с НДС». Переключатель НДС у документа меняет
+// только строки без НДС в колонке; строки, которые прежний переключатель сделал дороже на 22 %, при чтении возвращаются к цене колонки.
+describe('НДС у документа из двух частей', () => {
+  const notesOf = (vat, lines) => JSON.stringify({ kind: 'supply_offer', v: 1, rv: 2, vat, delivery: 1, lines })
+  it('переключатель не трогает строки «с НДС» по колонке; испорченные прежним переключателем — чинятся при чтении', () => {
+    const offer = readOffer(notesOf({ mode: 'net', rate: 22 }, [
+      { n: 'Кабель 1х120 (прайс)', p: 1687.5, u: 'м', d: 1383.2 },
+      { n: 'Кабель 1х120 (таблица)', p: 2058.75, u: 'м', d: 1687.5, dv: 'gross' },
+    ]))
+    assert.deepEqual(offer.lines.map((l) => l.price), [1687.5, 1687.5], 'строка «с НДС» — по колонке')
+    assert.equal(offerVatMode(offer), 'net', 'режим — по строке без колонки НДС')
+    const gross = offerWithVat(offer, 'gross')
+    assert.deepEqual(gross.lines.map((l) => l.price), [1383.2, 1687.5])
+    const back = readOffer(offerNotes(offerWithVat(readOffer(offerNotes(gross)), 'net')))
+    assert.deepEqual(back.lines.map((l) => l.price), [1687.5, 1687.5])
+  })
+  it('колонка НДС у всех строк: переключатель меняет все, и чтение это не откатывает', () => {
+    const offer = readOffer(notesOf({ mode: 'gross', rate: 22 }, [{ n: 'Кран', p: 100, u: 'шт', d: 100, dv: 'gross' }]))
+    const net = readOffer(offerNotes(offerWithVat(offer, 'net')))
+    assert.equal(net.lines[0].price, 122)
   })
 })

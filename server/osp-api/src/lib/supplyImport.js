@@ -88,6 +88,11 @@ export function parseInChild(bytes, saved, { timeoutMs = SUPPLY_IMPORT_DEFAULTS.
 }
 
 // ── Запросы ─────────────────────────────────────────────────────────────────────────────────────────────
+// У списка из файла есть позиция без объёма (позиции со списком единиц — units — не в счёт: объёмы у них внутри). Позиции
+// сами службе не нужны — только признак (supplyAutoImport.needsVolumeRecalc).
+const VOLUME_GAPS = `(s.source = 'vor_file' and exists (select 1 from jsonb_array_elements(case when jsonb_typeof(s.positions) = 'array'
+  then s.positions else '[]'::jsonb end) e where jsonb_typeof(e->'volume') is distinct from 'number' and not (e ? 'units')))`
+
 // Основные тендеры с тендером на материалы (у тендера на материалы без основного — он сам): файлы ВОР, списки
 // позиций, прежнее состояние, закрыт ли. Всё — json из базы: время в том же виде, что отдаёт PostgREST
 // странице, иначе версии файлов (file:<id>:<время>) у службы и страницы не совпали бы.
@@ -106,7 +111,7 @@ select json_build_object(
   'sources', (select coalesce(json_agg(json_build_object('id', s.id, 'estimate_name', s.estimate_name, 'source', s.source,
                 's3_document_id', s.s3_document_id, 'file_name', s.file_name, 'source_version', s.source_version,
                 'row_version', s.row_version, 'column_map', s.column_map, 'positions_count', s.positions_count,
-                'prior_document_ids', to_jsonb(s)->'prior_document_ids')), '[]'::json)
+                'prior_document_ids', to_jsonb(s)->'prior_document_ids', 'volume_gaps', ${VOLUME_GAPS})), '[]'::json)
               from public.tender_supply_sources s where s.tender_id = t.id),
   'state', (select to_json(st) from public.tender_supply_import_state st where st.tender_id = t.id)
 ) as tender
@@ -131,9 +136,10 @@ select coalesce(json_agg(json_build_object('estimate_name', i.estimate_name, 'co
          'material_consumption', i.material_consumption, 'is_section', i.is_section) order by i.id), '[]'::json) as items
 from public.tender_estimate_items i where i.tender_id = $1`
 
-// Прежние файлы ВОР (миграция 20261029) — через to_jsonb: до миграции колонки нет, и запрос не падает (null).
+// Прежние файлы ВОР (миграция 20261029) — через to_jsonb: до миграции колонки нет, и запрос не падает (null). volume_gaps — у списка из
+// файла есть позиции без объёма (supplyAutoImport.needsVolumeRecalc: разобран до расчёта формул — перечитать один раз).
 const SOURCE_COLUMNS = `id, estimate_name, source, s3_document_id, file_name, source_version, row_version, column_map, positions_count,
-  to_jsonb(s)->'prior_document_ids' as prior_document_ids`
+  to_jsonb(s)->'prior_document_ids' as prior_document_ids, ${VOLUME_GAPS} as volume_gaps`
 
 // Подпись файлов и вкладки — признак «с прошлого прохода ничего не менялось».
 const filesSignature = (files) => files.map(fileVersion).sort().join(',')
@@ -235,8 +241,9 @@ export function createSupplyImport({ db, s3, bucket, log = console, parse = pars
     const issues = []
     let pending = false
     let changed = false
-    const { jobs } = planFileImports(files, sources, cardNames)
-    for (const job of jobs) {
+    // Новые и заменённые файлы, затем загруженные до расчёта формул и оставшиеся без объёмов (один раз).
+    const planned = planFileImports(files, sources, cardNames)
+    for (const job of [...planned.jobs, ...planned.recalc]) {
       const known = fileIssueFor(job.doc)
       if (known) { issues.push(known); continue }
       if (budget.files <= 0 || Date.now() > budget.until) { pending = true; continue }

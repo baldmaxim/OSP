@@ -15,7 +15,7 @@ import { isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
 import { deleteDocument, fetchFileBytes, saveSupplyDocNotesRow, uploadFile } from './s3'
 import { VOR_STATEMENT_CATEGORY, LEGACY_VOR_CATEGORY, isNetworkError } from './tenderVorRd'
 import { isWorkbookFileName } from '../utils/vorFiles'
-import { offerNeedsReread, readOffer, unreadableOfferNotes } from '../utils/supplyOffers'
+import { offerNeedsReread, offerNeedsRefresh, readOffer, unreadableOfferNotes } from '../utils/supplyOffers'
 import { isFreshPriceDate } from '../utils/supplyRateHelpers'
 import { mergeNote } from '../utils/dcRequestNotes'
 // Библиотека Excel (vorMaterialsSheet → xlsx, 430 КБ) — только по требованию: сервис импортирует и реестр
@@ -452,7 +452,9 @@ export const fetchSupplyDocBytes = (doc) => fetchFileBytes(doc.s3_key)
 // Документы поставщиков тендера (utils/supplyOffers). Ответ: { offers, unread, others }: offers — файлы с распознанными
 // строками [{ doc, offer }], новые первыми; unread — файлы счетов и таблиц, которые ещё не читали (прикреплены колонкой
 // «Документ» до 02.11.2026) или которые отвергла прежняя версия чтения (offerNeedsReread): их расценка прочтёт сама, старые notes
-// — doc.notes; others — [{ doc, failed }]: не прочитались, Word и прочее (failed — причина для окна файлов тендера).
+// — doc.notes; others — [{ doc, failed }]: не прочитались, Word и прочее (failed — причина для окна файлов тендера). refresh — файлы
+// со строками, которые стоит перечитать новой версией чтения (offerNeedsRefresh: итог не сошёлся, выбора человека нет): их строки
+// уже в offers и видны, пока файл перечитывается; старые notes — doc.notes.
 const UNREAD_FILE_RE = /\.(xlsx|xlsm|xls|csv|pdf|jpe?g|png|webp)$/i
 const UNREAD_MAX_BYTES = 15 * 1024 * 1024
 export async function loadSupplyOffers(mainId) {
@@ -468,13 +470,17 @@ export async function loadSupplyOffers(mainId) {
   const offers = []
   const unread = []
   const others = []
+  const refresh = []
   for (const { notes, ...doc } of rows) {
     const offer = readOffer(notes)
-    if (offer?.lines.length) offers.push({ doc, offer })
+    if (offer?.lines.length && offerNeedsRefresh(offer) && UNREAD_FILE_RE.test(doc.file_name || '') && !(doc.size_bytes > UNREAD_MAX_BYTES)) {
+      offers.push({ doc, offer })
+      refresh.push({ ...doc, notes })
+    } else if (offer?.lines.length) offers.push({ doc, offer })
     else if ((!notes || offerNeedsReread(offer)) && UNREAD_FILE_RE.test(doc.file_name || '') && !(doc.size_bytes > UNREAD_MAX_BYTES)) unread.push({ ...doc, notes: notes ?? null })
     else others.push({ doc, failed: offer?.failed || (doc.size_bytes > UNREAD_MAX_BYTES ? 'big' : 'unsupported') })
   }
-  return { offers, unread, others }
+  return { offers, unread, others, refresh }
 }
 
 // Откуда цена из другого тендера — для окна «Откуда цена»: сама исходная цена и файлы счетов и КП её тендера. Ответ: { source, offers,

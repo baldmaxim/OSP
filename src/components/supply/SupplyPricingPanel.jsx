@@ -23,6 +23,7 @@ import {
   sourcesSignature, SUGGEST_BATCH, uploadSupplyDoc, loadCommentsMarker, loadComments, saveComment, SUPPLY_COMMENT_MAX,
 } from '../../services/supplyPricing'
 import { fmtPriceDate, isFreshPriceDate, normName, rateUnitPrice } from '../../utils/supplyRateHelpers'
+import { canonUnit } from '../../utils/supplySimilarity'
 import { formatAmount, parseAmount, roundMoney } from '../../utils/money'
 import { baseTotalFromFull, composePrice, rateBasePrice, rateDelivery, ratePriceInput, sameDelivery } from '../../utils/supplyDelivery'
 import { positionsFromEstimate } from '../../utils/vorMaterials'
@@ -31,8 +32,8 @@ import {
   estimateVersion, fileVersion, planCleanup, planFileImports, planTabImports,
 } from '../../utils/supplyAutoImport'
 import { mergeSamePositions, offerMatches, offerPrice, positionGroups } from '../../utils/supplyDocMatch'
-import { autoPickRows, isSure, offersByGroup, otherUnitIndex, otherUnitPrices, suspectPrice, windowOffers } from '../../utils/supplyAutoPick'
-import { lineForGroup, lineNotForGroup, offerInRoubles, offerNotes, offerWithVat, readOffer, scanProgressText } from '../../utils/supplyOffers'
+import { autoPickRows, isSure, offersByGroup, otherUnitIndex, otherUnitPrices, suspectPrice, uniqueOfferDocs, windowOffers } from '../../utils/supplyAutoPick'
+import { lineForGroup, lineNotForGroup, offerInRoubles, offerNotes, offerVatMode, offerWithVat, readOffer, scanProgressText } from '../../utils/supplyOffers'
 import {
   carrySuggestions, carryTargets, composeChanges, revisionTitle, unitMismatch, versionQuestions,
 } from '../../utils/supplyVorVersions'
@@ -773,13 +774,23 @@ export default function SupplyPricingPanel({
   const editableRef = useRef(editable)
   editableRef.current = editable
   const unreadAsked = useRef(new Set())
-  const readUnreadDocs = useCallback(async (docs) => {
+  // refresh — файл уже со строками (итог не сошёлся, прочитан прежней версией): строки видны, пока он перечитывается; НДС, который
+  // выбрал человек, переносится; перечитали хуже (строк нет) — остаются прежние.
+  const readUnreadDocs = useCallback(async (docs, { refresh = false } = {}) => {
     for (const { notes: was = null, ...doc } of docs) {
       if (unreadAsked.current.has(doc.id)) continue
       unreadAsked.current.add(doc.id)
       const showProgress = ({ page, pages }) => setOtherDocs((prev) => prev.map((x) => (x.doc.id === doc.id ? { ...x, progress: scanProgressText(page, pages) } : x)))
       try {
-        const { notes, reason } = await readSupplyDocBytes(await fetchSupplyDocBytes(doc), doc.file_name, { onProgress: showProgress })
+        const read = await readSupplyDocBytes(await fetchSupplyDocBytes(doc), doc.file_name, { onProgress: refresh ? null : showProgress })
+        let { notes } = read
+        const { reason } = read
+        if (refresh) {
+          const before = readOffer(was)
+          const fresh = notes ? readOffer(notes) : null
+          if (!fresh?.lines.length || !before) continue
+          notes = offerNotes(offerWithVat(fresh, offerVatMode(before)))
+        }
         const offer = notes ? readOffer(notes) : null
         if (offer?.lines.length) setOfferDocs((prev) => [{ doc, offer }, ...(prev || []).filter((x) => x.doc.id !== doc.id)])
         setOtherDocs((prev) => [...prev.filter((x) => x.doc.id !== doc.id), ...(offer?.lines.length ? [] : [{ doc, failed: reason || 'broken' }])])
@@ -798,12 +809,12 @@ export default function SupplyPricingPanel({
     if (!mainId || !filesOn || (throttled && Date.now() - offersAt.current < OFFERS_REFRESH_MS)) return
     offersAt.current = Date.now()
     try {
-      const { offers, unread, others } = await loadSupplyOffers(mainId)
+      const { offers, unread, others, refresh = [] } = await loadSupplyOffers(mainId)
       setOfferDocs(offers)
       for (const { doc } of offers) rememberDoc(doc)
       const reading = editableRef.current ? unread : []
       setOtherDocs([...others, ...reading.map((doc) => ({ doc, failed: null }))])
-      readUnreadDocs(reading)
+      readUnreadDocs(reading).then(() => (editableRef.current && refresh.length ? readUnreadDocs(refresh, { refresh: true }) : null))
     } catch { /* следующий раз */ }
   }, [mainId, filesOn, rememberDoc, readUnreadDocs])
   const reloadOffersRef = useRef(reloadOffers)
@@ -849,21 +860,42 @@ export default function SupplyPricingPanel({
   // Цены поставщиков по позициям («ВОР∣ключ» → [{ line, score, exact, picked, unitOk }]): строки документов тендера → похожие
   // позиции (utils/supplyDocMatch.offerMatches). Сначала выбранные и с тем же наименованием, затем самые похожие, при равенстве —
   // дешевле. Пересчёт — только при смене документов или позиций, не при каждой цене.
+  // Один и тот же документ, загруженный дважды (у копии другое имя или размер), — цены один раз (utils/supplyAutoPick.uniqueOfferDocs):
+  // остаётся тот, где больше выбора человека, затем документ позиций, затем загруженный раньше. Повторы видны в окне файлов.
+  const docWeight = useMemo(() => {
+    const m = new Map()
+    for (const l of links || []) if (l.s3_document_id) m.set(l.s3_document_id, (m.get(l.s3_document_id) || 0) + 1)
+    return m
+  }, [links])
+  const offerView = useMemo(() => uniqueOfferDocs(offerDocs || [], (doc) => docWeight.get(doc.id) || 0), [offerDocs, docWeight])
+  const shownOfferDocs = offerView.docs
+  // Файл документа позиции — повтор: цены его — у оставленного документа.
+  const dupOf = useMemo(() => new Map(offerView.dupes.map((x) => [x.doc.id, x.of.id])), [offerView])
   const offersByKey = useMemo(() => {
     const out = new Map()
-    if (!offerDocs?.length) return out
+    if (!shownOfferDocs.length) return out
     const lines = []
-    for (const { doc, offer } of offerDocs) if (!offer.currency) for (const line of offer.lines) lines.push({ ...line, doc })
+    // Та же строка с той же ценой в двух документах — одна цена поставщика (из более свежего: документы идут новыми вперёд).
+    const seen = new Set()
+    for (const { doc, offer } of shownOfferDocs) {
+      if (offer.currency) continue
+      for (const line of offer.lines) {
+        const sign = `${normName(line.name)}|${canonUnit(line.unit)}|${line.price}`
+        if (seen.has(sign)) continue
+        seen.add(sign)
+        lines.push({ ...line, doc })
+      }
+    }
     const rank = (o) => (o.picked || o.exact ? 2 : o.score)
     for (const list of offerMatches(lines, tenderGroups).values()) {
       const sorted = list.sort((a, b) => rank(b) - rank(a) || offerPrice(a) - offerPrice(b))
       for (const t of sorted[0].group.targets) out.set(posKey(t.doc, t.position.k), sorted)
     }
     return out
-  }, [offerDocs, tenderGroups])
+  }, [shownOfferDocs, tenderGroups])
 
   // Автовыбор: цены всех документов тендера по позициям (utils/supplyAutoPick); сколько позиций можно заполнить — на кнопке окна.
-  const pickByGroup = useMemo(() => offersByGroup(offerDocs || [], tenderGroups), [offerDocs, tenderGroups])
+  const pickByGroup = useMemo(() => offersByGroup(shownOfferDocs, tenderGroups), [shownOfferDocs, tenderGroups])
   // Цены других тендеров в другой ед. изм.: сами не подставляются, в меню похожих — с пометкой. Считаются только для показанных
   // строк (otherUnitFor), результат — в памяти, пока те же цены и позиции.
   const [otherIndex, setOtherIndex] = useState(null)
@@ -1580,23 +1612,38 @@ export default function SupplyPricingPanel({
       if (docIds.has(doc.id) && offer.hidden?.length) await rewriteOffer(doc, { ...offer, hidden: [] })
     }
   }
-  // Что сейчас в расценке у позиций группы: свои цены и когда их правили, цены из других тендеров, позиции без цены.
+  // Что сейчас в расценке у позиций группы: свои цены и когда их правили, цены из других тендеров, позиции без цены; targets — по
+  // каждой позиции: kind ('empty' | 'auto' — подставлена сама из другого тендера | 'pick' — взята человеком из меню похожих | 'own'),
+  // цена, как введена (price_input: 'import' — из Excel), файл документа позиции и откуда копия (тендер, день) — окно «Счета и КП»
+  // делит строки по тому, что заменит цена (utils/supplyAutoPick.replacedBy).
   const currentOf = useCallback((group) => {
     const own = []
     let copies = 0
     let empty = 0
     let ownAt = null
+    const targets = []
     for (const t of group.targets) {
-      const r = rateIn(ratesRef.current, posKey(t.doc, t.position.k))
-      if (!r) empty += 1
-      else if (r.source_kind) copies += 1
-      else {
-        own.push(rateUnitPrice(r))
+      const key = posKey(t.doc, t.position.k)
+      const r = rateIn(ratesRef.current, key)
+      if (!r) {
+        empty += 1
+        targets.push({ kind: 'empty', price: null })
+        continue
+      }
+      const price = rateUnitPrice(r)
+      const linked = linksByKey?.get(key)?.s3_document_id || null
+      const docId = (linked && dupOf.get(linked)) || linked
+      if (r.source_kind) {
+        copies += 1
+        targets.push({ kind: r.source_kind === 'auto' ? 'auto' : 'pick', price, origin: origins.get(r.id) || null, docId })
+      } else {
+        own.push(price)
         if (r.updated_at && (!ownAt || r.updated_at > ownAt)) ownAt = r.updated_at
+        targets.push({ kind: 'own', price, input: r.price_input || null, docId })
       }
     }
-    return { own, copies, empty, ownAt }
-  }, [ratesRef])
+    return { own, copies, empty, ownAt, targets }
+  }, [ratesRef, linksByKey, origins, dupOf])
 
   // Записать цены строк документа: цены всех позиций групп — той же очередью, что ввод руками (версия строки, повтор при сбое сети,
   // «изменено другим»), по нескольку разом; та же своя цена не переписывается. Цена документа — вся цена позиции (с доставкой): своя
@@ -1982,10 +2029,10 @@ export default function SupplyPricingPanel({
 
   // Сколько позиций можно заполнить по документам тендера — на кнопке окна (цена, которая уже стоит, сюда не входит).
   const autoPickReady = useMemo(() => {
-    if (!editable || !offerDocs?.length) return 0
-    return autoPickRows(windowOffers(pickByGroup, offerDocs).byGroup, tenderGroups, { currentOf }).rows.filter((r) => r.auto).length
+    if (!editable || !shownOfferDocs.length) return 0
+    return autoPickRows(windowOffers(pickByGroup, shownOfferDocs).byGroup, tenderGroups, { currentOf, allByGroup: pickByGroup }).rows.filter((r) => r.auto).length
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rates: currentOf читает цены из ссылки, пересчёт — при их смене
-  }, [editable, offerDocs, pickByGroup, tenderGroups, currentOf, rates])
+  }, [editable, shownOfferDocs, pickByGroup, tenderGroups, currentOf, rates])
 
   // Комментарий позиции (миграция 20270105) — всем записям строки (строка бывает сложена из разных записей одной позиции в
   // разных ВОР). Ответ ячейке: { ok: true, text — что теперь в базе } или { ok: false, message }.
@@ -2468,7 +2515,7 @@ export default function SupplyPricingPanel({
       )}
       {tenderDocs && (
         <Suspense fallback={<div className="sp-modal-backdrop"><div className="sp-modal"><p className="sp-modal-body">Открываем…</p></div></div>}>
-          <SupplyTenderDocsDialog docs={offerDocs || []} others={otherDocs} byGroup={pickByGroup} groups={tenderGroups} rates={rates} filesOn={filesOn} currentOf={currentOf}
+          <SupplyTenderDocsDialog docs={shownOfferDocs} dupes={offerView.dupes} others={otherDocs} byGroup={pickByGroup} groups={tenderGroups} rates={rates} filesOn={filesOn} currentOf={currentOf}
             initialFiles={tenderDocs.files} attachTo={tenderDocs.attachTo || null} onAddFile={addTenderFile} onAttachDoc={attachDoc} onDeleteDoc={deleteFile} onOpenFile={setPreview}
             onApply={applyAutoPick} onPickLine={pickLine} onRejectLine={rejectLine} onPack={setLinePack} onSetRate={setOfferRate} onSetVat={setOfferVat}
             onHide={hideInWindow} onUnhide={unhideInWindow}

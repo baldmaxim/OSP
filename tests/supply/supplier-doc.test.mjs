@@ -12,7 +12,7 @@ import * as XLSX from 'xlsx'
 import { chromium } from 'playwright'
 import { browserLaunchOptions } from '../tender/lib/stand.mjs'
 import { classifyHeader, deliveryUnitWithVat, detectGridHeader, docDateFromText, parseNum, rulingsFromOps, unitPriceWithVat, vatFromText } from '../../src/utils/supplierDoc.js'
-import { autoPickRows, offersByGroup, otherUnitIndex, otherUnitPrices, suspectPrice, unplacedLines } from '../../src/utils/supplyAutoPick.js'
+import { autoPickRows, offerDate, offersByGroup, otherUnitIndex, otherUnitPrices, suspectPrice, uniqueOfferDocs, unplacedLines, windowOffers } from '../../src/utils/supplyAutoPick.js'
 import { parseSupplierPdfPages, parseSupplierWorkbook, readPdfPages, readWorkbookBytes } from '../../src/utils/supplierDocRead.js'
 import { codeTokens, deliveryFactor, docPack, expandName, groupUnitOk, itemCandidates, matchDocItems, mergeSamePositions, offerMatches, offerPrice, positionConfidence, positionGroups, sameMaterial, searchGroups } from '../../src/utils/supplyDocMatch.js'
 import { offerNotesOfDoc } from '../../src/utils/supplyDocPrice.js'
@@ -884,7 +884,12 @@ describe('казусы документов поставщиков', () => {
     assert.equal(groupUnitOk('комп', groupOf('Прибор', 'компл.')), true)
     assert.equal(groupUnitOk('пара', groupOf('Перчатки', 'пар')), true)
     assert.equal(groupUnitOk('метр', groupOf('Кабель', 'м. пог.')), true)
-    assert.equal(groupUnitOk('шт', groupOf('Прибор', 'компл')), false)
+    // Штука и комплект — одно (тендер № 860: щит ЩФО в ВОР «компл», в КП «шт.»); сказано, сколько штук в комплекте, — пересчёт.
+    assert.equal(groupUnitOk('шт.', groupOf('Щит фасадного освещения ЩФО-1', 'компл')), true)
+    assert.equal(docPack({ name: 'ЩФО-1', unit: 'шт.' }, 'компл', 'Щит фасадного освещения ЩФО-1'), null)
+    assert.equal(docPack({ name: 'Винт М6', unit: 'шт' }, 'компл', 'Комплект крепежа (10 шт)'), 0.1)
+    assert.equal(docPack({ name: 'Набор винтов (10 шт)', unit: 'компл' }, 'шт', 'Винт М6'), 10)
+    assert.equal(groupUnitOk('м', groupOf('Прибор', 'компл')), false)
     const pack = (name, unit, to, g) => docPack({ name, unit }, to, g)
     assert.equal(pack('Кабель ВВГ', 'км', 'м'), 1000)
     assert.equal(pack('Арматура', 'т', 'кг'), 1000)
@@ -956,26 +961,139 @@ describe('автовыбор цен по документам тендера', (
     for (const r of res.rows) assert.deepEqual([r.sure, r.check], [false, true])
   })
 
-  it('что показывать: цена стоит правильно — строки нет; свежий документ заменяет цену из старого; руками после загрузки — решение человека', () => {
+  // 18.11.2026, решения пользователя: строки — блоками по тому, что заменит цена; цена, введённая вручную, важнее документа.
+  it('что показывать: цена стоит правильно — строки нет; свежий документ заменяет цену из старого; ручная цена — блок «вручную», без отметки', () => {
     const name = 'Кран шаровой Ду15'
-    const cur = (own, ownAt) => () => ({ own, copies: 0, empty: 0, ownAt })
+    // Цена из документа — когда к позиции прикреплён его файл (docId); без файла — введена вручную.
+    const cur = (own, ownAt, docId = null) => () => ({ own, copies: 0, empty: 0, ownAt, targets: own.map((price) => ({ kind: 'own', price, docId })) })
     const stamp = (id, created, date, price) => ({ doc: { id, file_name: `${id}.xlsx`, created_at: created }, offer: { date, currency: null, lines: [line(name, price)] } })
     const a = stamp('a', '2026-10-30T10:00:00Z', '2026-10-30', 100)
     const b = stamp('b', '2026-11-02T10:00:00Z', '2026-11-02', 120)
     // Та же цена — нет строки.
-    const same = rowsOf([a], { currentOf: cur([100], '2026-11-05T09:00:00Z') })
+    const same = rowsOf([a], { currentOf: cur([100], '2026-11-05T09:00:00Z', 'a') })
     assert.deepEqual([same.rows.length, same.hidden], [0, 1])
-    // Цена поставлена сегодня из A, загружен B: свежее A, хотя дата B раньше дня ввода цены, — заменит и отмечено.
-    const fresh = rowFor(rowsOf([a, b], { currentOf: cur([100], '2026-11-05T09:00:00Z') }), name)
-    assert.deepEqual([fresh.choice.doc.id, fresh.choice.price, fresh.status.kind, fresh.auto], ['b', 120, 'replace', true])
-    // Руками до загрузки документа — документ свежее; после — решение человека, строки нет.
-    const before = rowFor(rowsOf([a], { currentOf: cur([90], '2026-10-01T09:00:00Z') }), name)
-    assert.deepEqual([before.status.kind, before.auto], ['replace', true])
-    assert.equal(rowsOf([a], { currentOf: cur([90], '2026-11-01T09:00:00Z') }).rows.length, 0)
-    // Просто похожая строка — не повод считать свою цену неверной.
+    // Цена из A (та же цена строки A), загружен B свежее — заменит цену из документа и отмечено.
+    const fresh = rowFor(rowsOf([a, b], { currentOf: cur([100], '2026-11-05T09:00:00Z', 'a') }), name)
+    assert.deepEqual([fresh.choice.doc.id, fresh.choice.price, fresh.block, fresh.replaced[0].offer.doc.id, fresh.auto], ['b', 120, 'doc', 'a', true])
+    // Стоит цена из более свежего A, а B старше — строки нет (цена из самого свежего документа уже стоит); стоит цена из старого B —
+    // свежий A заменяет её сам.
+    const older = stamp('b', '2026-11-02T10:00:00Z', '2026-10-01', 120)
+    assert.equal(rowsOf([a, older], { currentOf: cur([100], '2026-11-05T09:00:00Z', 'a') }).rows.length, 0)
+    const stale = rowFor(rowsOf([a, older], { currentOf: cur([120], '2026-11-05T09:00:00Z', 'b') }), name)
+    assert.deepEqual([stale.shown.doc.id, stale.block, stale.replaced[0].offer.doc.id, stale.auto], ['a', 'doc', 'b', true])
+    // Своя цена не из документов — введена вручную: строка видна (в документе та же позиция), но сама не отмечается — ни до, ни после
+    // загрузки документа.
+    for (const at of ['2026-10-01T09:00:00Z', '2026-11-01T09:00:00Z']) {
+      const manual = rowFor(rowsOf([a], { currentOf: cur([90], at) }), name)
+      assert.deepEqual([manual.block, manual.replaced[0].how, manual.auto], ['manual', 'typed', false], at)
+    }
+    // Ручную цену человек может заменить сам: выбрал строку — отмечено.
+    const r = rowFor(rowsOf([a], { currentOf: cur([90], '2026-11-01T09:00:00Z') }), name)
+    assert.equal(rowFor(rowsOf([a], { currentOf: cur([90], '2026-11-01T09:00:00Z'), chosen: new Map([[r.group.key, r.shown.id]]) }), name).auto, true)
+    // Просто похожая строка — не повод показывать замену ручной цены.
     const analog = stamp('c', '2026-11-02T10:00:00Z', '2026-11-02', 300)
     analog.offer.lines = [line('Кран шаровой полнопроходной латунный Ду15 PN40', 300)]
     assert.equal(rowsOf([analog], { currentOf: cur([100], '2026-10-01T09:00:00Z') }).rows.length, 0)
+  })
+
+  it('блоки окна: не расценены, подставленные автоматически (из какого тендера), из документов, вручную — в этом порядке', () => {
+    const t = (kind, price, extra = {}) => ({ kind, price, ...extra })
+    const docs = [docOf('a', '2026-11-01', [line('Кран шаровой Ду15', 100), line('Кран шаровой Ду20', 150), line('Манометр общего назначения', 300), line('Кабель ВВГнг 3х1,5', 50, { unit: 'м' })])]
+    const byName = {
+      'Кран шаровой Ду15': [t('own', 77)], // вручную
+      'Кран шаровой Ду20': [t('auto', 140, { origin: { tender_number: 841, price_date: '2026-10-12' } })],
+      'Манометр общего назначения': [t('empty', null)],
+      'Кабель ВВГнг 3х1,5': [t('pick', 45, { origin: { tender_number: 802 } })],
+    }
+    const res = rowsOf(docs, { currentOf: (g) => ({ own: [], copies: 0, empty: 0, targets: byName[g.name] }) })
+    assert.deepEqual(res.rows.map((r) => [r.group.name, r.block, r.auto]), [
+      ['Манометр общего назначения', 'empty', true],
+      ['Кран шаровой Ду20', 'auto', true],
+      ['Кран шаровой Ду15', 'manual', false],
+      ['Кабель ВВГнг 3х1,5', 'manual', false],
+    ])
+    const auto = rowFor(res, 'Кран шаровой Ду20').replaced[0]
+    assert.deepEqual([auto.kind, auto.origin.tender_number], ['auto', 841])
+    assert.equal(rowFor(res, 'Кабель ВВГнг 3х1,5').replaced[0].how, 'pick', 'взятая человеком из меню похожих — ручная')
+    // Одна позиция в двух ВОР: одна пустая, другая с ручной ценой — блок «вручную» (ручная важнее), без отметки.
+    const mixed = rowsOf(docs, { currentOf: (g) => ({ targets: g.name === 'Кран шаровой Ду15' ? [t('empty', null), t('own', 77)] : [t('empty', null)] }) })
+    assert.deepEqual([rowFor(mixed, 'Кран шаровой Ду15').block, rowFor(mixed, 'Кран шаровой Ду15').auto], ['manual', false])
+    // Загружена из Excel — тоже ручная.
+    const imp = rowsOf(docs, { currentOf: () => ({ targets: [t('own', 1, { input: 'import' })] }) })
+    assert.ok(imp.rows.every((r) => r.block === 'manual' && r.replaced[0].how === 'import' && !r.auto))
+  })
+
+  it('НДС у применённого документа (тендер № 704): цена из этого же документа предлагается заново и отмечена, с любым НДС', () => {
+    const name = 'Кран шаровой Ду15'
+    // Документ прочитан «с НДС», применили 1 687,50; человек поменял на «без НДС» — строка теперь 2 058,75.
+    const net = { doc: { id: 'mln', file_name: '130_MLN.pdf', created_at: '2026-11-13T13:01:00Z' }, offer: { date: '2026-11-02', currency: null, vat: { mode: 'net', rate: 22 }, lines: [line(name, 2058.75)] } }
+    const cur = (docId) => () => ({ own: [1687.5], copies: 0, empty: 0, ownAt: '2026-11-13T14:13:48Z', targets: [{ kind: 'own', price: 1687.5, docId }] })
+    const r = rowFor(rowsOf([net], { currentOf: cur('mln') }), name)
+    assert.deepEqual([r.block, r.sameDoc, r.shown.price, r.auto], ['doc', true, 2058.75, true])
+    // Файл к позиции не прикреплён — цена «вручную», хоть и совпала: сама не отмечается.
+    const typed = rowFor(rowsOf([net], { currentOf: cur(null) }), name)
+    assert.deepEqual([typed.block, typed.auto], ['manual', false])
+    // Цена прикреплена от повтора документа (та же цена — у оставленного, twins) — тот же документ.
+    const twin = { ...net, doc: { ...net.doc, id: 'mln-copy', created_at: '2026-11-14T00:00:00Z' } }
+    const viaTwin = rowFor(rowsOf([net, twin], { currentOf: cur('mln-copy') }), name)
+    assert.deepEqual([viaTwin.block, viaTwin.sameDoc, viaTwin.auto], ['doc', true, true])
+    // И обратно: стояло 2 058,75, документ вернули «с НДС».
+    const gross = { ...net, offer: { ...net.offer, vat: { mode: 'gross', rate: 22 }, lines: [line(name, 1687.5)] } }
+    const back = rowFor(rowsOf([gross], { currentOf: () => ({ targets: [{ kind: 'own', price: 2058.75, docId: 'mln' }] }) }), name)
+    assert.deepEqual([back.block, back.sameDoc, back.auto], ['doc', true, true])
+  })
+
+  it('тендер № 860: ручная правка совпала с ценой другого файла тендера — всё равно ручная, сама не отмечается', () => {
+    const name = 'Кран шаровой Ду15'
+    // Позиция прикреплена к файлу «старый» (851,15), человек ввёл 595,81 — такая цена есть в «ВОР для заполнения».
+    const old = { doc: { id: 'old', file_name: 'старый.pdf', created_at: '2026-11-13T13:20:00Z' }, offer: { date: '2026-11-13', currency: null, lines: [line(name, 851.15)] } }
+    const fill = { doc: { id: 'fill', file_name: 'ВОР для заполнения.xlsx', created_at: '2026-11-13T13:27:00Z' }, offer: { date: '2026-10-20', currency: null, lines: [line(name, 595.81)] } }
+    const cur = () => ({ own: [595.81], ownAt: '2026-11-13T13:39:00Z', targets: [{ kind: 'own', price: 595.81, docId: 'old' }] })
+    const res = rowsOf([old, fill], { currentOf: cur })
+    const r = rowFor(res, name)
+    // Свежий «старый» (13.11) предлагает 851,15 — но цена ручная: строка видна, без отметки.
+    assert.deepEqual([r.shown.price, r.block, r.replaced[0].how, r.auto], [851.15, 'manual', 'typed', false])
+  })
+
+  it('дата документа из будущего (копии спецификаций ЭТМ, 2054 год) — день загрузки файла', () => {
+    const name = 'Кран шаровой Ду15'
+    const future = { doc: { id: 'f', file_name: 'f.xlsx', created_at: '2026-11-17T11:51:00Z' }, offer: { date: '2054-10-03', currency: null, lines: [line(name, 90)] } }
+    const real = { doc: { id: 'r', file_name: 'r.xlsx', created_at: '2026-11-18T12:00:00Z' }, offer: { date: '2026-11-18', currency: null, lines: [line(name, 100)] } }
+    assert.equal(rowFor(rowsOf([future, real]), name).shown.doc.id, 'r', 'документ «из 2054 года» не самый свежий')
+    assert.equal(offerDate(future.offer, future.doc), '2026-11-17')
+  })
+
+  it('документ с несошедшимся итогом и строка дороже итога (тендер № 546, торшер за 223 506 496 ₽) — сами не отмечаются', () => {
+    const name = 'Кран шаровой Ду15'
+    const total = (ok, doc) => ({ ok, read: 1, doc })
+    const bad = { doc: { id: 'k', file_name: 'КП.pdf' }, offer: { date: '2026-11-06', currency: null, total: total(false, 14403537), lines: [line(name, 223506496, { qty: null }), line('Кран шаровой Ду20', 1453, { qty: null })] } }
+    const res = rowsOf([bad])
+    const torch = rowFor(res, name)
+    assert.deepEqual([torch.shown.over, torch.choice, torch.auto, torch.check], [true, null, false, true])
+    const ok = rowFor(res, 'Кран шаровой Ду20')
+    assert.deepEqual([ok.shown.over, ok.shown.docOk, ok.auto, ok.check], [false, false, false, true], 'итог не сошёлся — на проверку')
+    const good = { ...bad, offer: { ...bad.offer, total: total(true, 1453), lines: [line('Кран шаровой Ду20', 1453, { qty: null })] } }
+    assert.equal(rowFor(rowsOf([good]), 'Кран шаровой Ду20').auto, true)
+  })
+
+  it('один и тот же документ дважды (тендер № 704: спецификации ЭТМ) — цены один раз; та же цена в двух документах — одна строка', () => {
+    const name = 'Кран шаровой Ду15'
+    const d = (id, created, lines, extra = {}) => ({ doc: { id, file_name: `${id}.xlsx`, created_at: created }, offer: { date: '2026-11-16', currency: null, lines, ...extra } })
+    const first = d('spec', '2026-11-17T07:32:00Z', [line(name, 100, { docPrice: 100 }), line('Болт М12', 5, { docPrice: 5 })])
+    const again = d('spec-2', '2026-11-17T11:51:00Z', [line('Болт М12', 5, { docPrice: 5 }), line(name, 100, { docPrice: 100 })])
+    const other = d('kp', '2026-11-10T10:00:00Z', [line(name, 100)])
+    const { docs, dupes } = uniqueOfferDocs([again, first, other])
+    assert.deepEqual([docs.map((x) => x.doc.id), dupes.map((x) => [x.doc.id, x.of.id])], [['spec', 'kp'], [['spec-2', 'spec']]], 'остаётся загруженный раньше')
+    // Где человек выбирал строки — тот и остаётся.
+    const marked = { ...again, offer: { ...again.offer, lines: again.offer.lines.map((l) => (l.name === name ? { ...l, k: normName(name) } : l)) } }
+    assert.deepEqual(uniqueOfferDocs([marked, first]).docs.map((x) => x.doc.id), ['spec-2'])
+    // Та же цена в другом документе — одна строка выбора, документ — более свежий, второй — в twins.
+    const r = rowFor(rowsOf(docs), name)
+    assert.equal(r.offers.length, 1)
+    assert.deepEqual([r.shown.doc.id, r.shown.twins.map((x) => x.id)], ['spec', ['kp']])
+    // «Цены из» одного документа: его цена видна, хотя совпала с другим.
+    const view = windowOffers(offersByGroup(docs, groups), docs, new Set(['kp']))
+    assert.equal(rowFor({ rows: autoPickRows(view.byGroup, groups, { currentOf: () => ({ own: [], copies: 0, empty: 1 }) }).rows }, name).shown.doc.id, 'kp')
   })
 
   it('своя цена похожа на ошибку — показывается, даже если введена после документа; разброс цен — отметку ставит человек', () => {

@@ -9,14 +9,23 @@
 //  2) есть та же позиция (то же наименование, артикул, выбрано человеком, похожа от 90 %) — из самого свежего документа: новая цена
 //     заменяет прежнюю сама; иначе — самая похожая строка, при равной похожести — из более свежего документа. Дешёвый аналог
 //     не перебивает ту же позицию.
-// Что показывать. Цена уже стоит правильно — строки нет. Своя другая цена — только если есть та же позиция в документе и документ
-// свежее цены или цена похожа на ошибку (за упаковку, в 5 раз): просто похожая строка не повод считать цену неверной, а
-// введённая после загрузки документа цена — решение человека. Свежее цены: цена совпала со строкой другого документа (значит, из
-// него) — по датам документов; иначе (ввели руками) — файл загружен позже последней правки цены: день сравнивать мало, цену и
-// файл часто вносят в один день.
+// Что показывать (18.11.2026, решения пользователя: «цены, выставленные вручную, должны иметь приоритет», окно — по группам). Цена
+// уже стоит правильно — строки нет. Остальные строки — четырьмя блоками по тому, что цена заменит (replacedBy):
+//  • не расценены — позиции без цены;
+//  • подставленные автоматически — цена другого тендера, которую расценка поставила сама (supply_autofill, source_kind auto);
+//    видно, из какого тендера;
+//  • цены из документов — своя цена совпадает с ценой строки документа (файл документа позиции или любой документ тендера), в том
+//    числе с другим НДС: человек поменял НДС у уже применённого документа — цена «из этого же документа» предлагается заново и
+//    отмечена;
+//  • введённые вручную — своя цена не из документов, взятая из меню похожих цен другого тендера, загруженная из Excel: такая
+//    строка показывается, только если в документе та же позиция (или цена похожа на ошибку), и сама НЕ отмечается никогда.
+// Документ, у которого итог не сошёлся со строками (часть строк могла прочитаться неверно, тендер № 546: 223 506 496 ₽ за
+// торшер), и строка дороже итога всего документа сами не отмечаются. Одна и та же цена из двух документов (тот же файл загрузили
+// дважды) — одна строка (dedupeOffers), одинаковые документы целиком — uniqueOfferDocs.
 import { roundMoney } from './money.js'
 import { AUTO_MIN, SAME_POSITION_MIN, groupUnitOk, lineManualPack, linePack, lineSameAsGroup, matchDocItems, matchIndex, pickedGroups, offerPrice, packQtyFar, thicknessM, docPack } from './supplyDocMatch.js'
 import { canonUnit, isSimilar, nameParts, normUnit } from './supplySimilarity.js'
+import { normName } from './supplyRateHelpers.js'
 
 const SPREAD = 3
 // Своя цена позиции подозрительна: совпала с ценой упаковки в документе или в FAR_FROM раз и больше от надёжных цен.
@@ -24,12 +33,37 @@ const SAME_AS_PACK = 0.03
 const FAR_FROM = 5
 
 export const isSure = (o) => o.exact || o.picked || o.article || o.same
-const entry = (doc, date, line, c) => ({
-  id: `${doc.id}:${line.name}:${c.group.key}`, doc, date, line, group: c.group, exact: !!c.exact, picked: !!c.picked, article: !!c.article,
-  score: c.score ?? 1, same: (c.score ?? 1) >= SAME_POSITION_MIN && lineSameAsGroup(line, c.group),
-  pack: c.pack ?? null, unitOk: c.unitOk, price: roundMoney(line.price / (c.pack || 1)),
-  qtyFar: lineManualPack(line, c.group) == null && packQtyFar(line, c.group, c.pack),
+// Дата документа: из него самого, иначе день загрузки файла. Дата дальше месяца вперёд — прочитана неверно (у копий спецификаций
+// ЭТМ тендера № 704 — 2054 год, такой документ был бы «самым свежим» всегда): день загрузки.
+const FUTURE_DAYS = 31
+export function offerDate(offer, doc, today = new Date()) {
+  const latest = new Date(today.getTime() + FUTURE_DAYS * 86400000).toISOString().slice(0, 10)
+  const own = offer?.date && offer.date <= latest ? offer.date : null
+  return own || String(doc?.created_at || '').slice(0, 10) || null
+}
+const DEFAULT_VAT = 22
+// Строка дороже итога всего документа (с запасом на НДС сверху) — прочитана неверно: так склеивались две цены одной ячейки.
+const OVER_TOTAL = 1.25
+// Что известно о документе для его строк: ставка НДС (цены строки с другим НДС — чтобы узнать «цену из этого документа» после
+// смены НДС), итог сошёлся ли, со скана ли.
+const docInfo = (offer) => ({
+  vatK: 1 + (offer.vat?.rate ?? DEFAULT_VAT) / 100,
+  docOk: !offer.total || offer.total.ok !== false,
+  total: offer.total?.doc > 0 ? offer.total.doc : null,
+  ocr: !!offer.ocr,
 })
+const entry = (doc, date, line, c, info) => {
+  const price = roundMoney(line.price / (c.pack || 1))
+  return {
+    id: `${doc.id}:${line.name}:${c.group.key}`, doc, date, line, group: c.group, exact: !!c.exact, picked: !!c.picked, article: !!c.article,
+    score: c.score ?? 1, same: (c.score ?? 1) >= SAME_POSITION_MIN && lineSameAsGroup(line, c.group),
+    pack: c.pack ?? null, unitOk: c.unitOk, price,
+    alts: [roundMoney(price * info.vatK), roundMoney(price / info.vatK)],
+    qtyFar: lineManualPack(line, c.group) == null && packQtyFar(line, c.group, c.pack),
+    docOk: info.docOk, ocr: info.ocr,
+    over: !!info.total && line.price * Math.max(1, Number(line.qty) || 1) > info.total * OVER_TOTAL,
+  }
+}
 
 // Документы тендера → по позициям. docs — [{ doc, offer }] (строки в notes файла; цены в валюте ждут курса и сюда не идут).
 // Ответ — Map ключ группы → цены документов [{ id, doc, date, line, group, exact, picked, article, score, pack, unitOk, price }].
@@ -44,24 +78,70 @@ export function offersByGroup(docs, groups) {
   }
   for (const { doc, offer } of docs || []) {
     if (offer.currency) continue
-    const date = offer.date || String(doc.created_at || '').slice(0, 10) || null
+    const date = offerDate(offer, doc)
+    const info = docInfo(offer)
     const taken = new Set()
     for (const line of offer.lines) {
       if (line.skip || !line.k) continue
       for (const g of pickedGroups(line, index)) {
         const pack = g.units ? null : linePack(line, g)
         taken.add(g.key)
-        put(entry(doc, date, line, { group: g, picked: true, pack, unitOk: pack != null || groupUnitOk(line.unit, g) }))
+        put(entry(doc, date, line, { group: g, picked: true, pack, unitOk: pack != null || groupUnitOk(line.unit, g) }, info))
       }
     }
     const free = offer.lines.filter((l) => !l.skip && !l.k)
     for (const m of matchDocItems(free, groups, { packs: true, index })) {
       for (const c of m.match ? [m.match, ...m.also] : []) {
-        if (!taken.has(c.group.key)) put(entry(doc, date, m.item, c))
+        if (!taken.has(c.group.key)) put(entry(doc, date, m.item, c, info))
       }
     }
   }
+  for (const [key, list] of out) out.set(key, dedupeOffers(list))
   return out
+}
+
+// Одна и та же цена позиции из разных документов (тот же счёт загрузили дважды, КП и счёт одного поставщика) — одна: выбранная
+// человеком, иначе из более свежего документа; у неё twins — остальные документы с этой ценой (показать «также в …»).
+const lineSign = (o) => `${normName(o.line.name)}|${canonUnit(o.line.unit)}|${o.price}`
+export function dedupeOffers(list) {
+  if (list.length < 2) return list
+  const order = [...list].sort((a, b) => Number(b.picked) - Number(a.picked) || newer(a, b)
+    || String(b.doc.created_at || '').localeCompare(String(a.doc.created_at || '')))
+  const kept = new Map()
+  for (const o of order) {
+    const sign = lineSign(o)
+    const first = kept.get(sign)
+    if (!first) kept.set(sign, { ...o, twins: [] })
+    else if (first.doc.id !== o.doc.id && !first.twins.some((d) => d.id === o.doc.id)) first.twins.push(o.doc)
+  }
+  return list.map((o) => kept.get(lineSign(o))).filter((o, i, all) => all.indexOf(o) === i)
+}
+
+// Документы с одинаковыми строками (тот же счёт загрузили дважды — в тендере № 704 так семь спецификаций ЭТМ, у копий другой размер
+// файла): цены считаются один раз. Остаётся тот, у которого больше выбора человека (выбранные и отвергнутые строки, пересчёт,
+// убранные позиции), при равных — документ позиций (weightOf), затем более ранний. Ответ: { docs, dupes: [{ doc, of }] }.
+const docSign = (offer) => `${offer.currency || ''}#` + offer.lines
+  .map((l) => `${normName(l.name)}|${canonUnit(l.unit)}|${l.docPrice ?? l.price}|${l.qty ?? ''}`).sort().join('\n')
+const humanMarks = (offer) => offer.lines.reduce((n, l) => n + (l.k ? 1 : 0) + (l.also?.length || 0) + (l.no?.length || 0)
+  + (l.packs ? Object.keys(l.packs).length : 0) + (l.skip ? 1 : 0), 0) + (offer.hidden?.length || 0)
+export function uniqueOfferDocs(docs, weightOf = () => 0) {
+  const groups = new Map()
+  for (const x of docs || []) {
+    if (!x.offer?.lines?.length) continue
+    const sign = docSign(x.offer)
+    const list = groups.get(sign)
+    if (list) list.push(x)
+    else groups.set(sign, [x])
+  }
+  const dupes = []
+  const drop = new Set()
+  for (const list of groups.values()) {
+    if (list.length < 2) continue
+    const best = [...list].sort((a, b) => humanMarks(b.offer) - humanMarks(a.offer) || weightOf(b.doc) - weightOf(a.doc)
+      || String(a.doc.created_at || '').localeCompare(String(b.doc.created_at || '')))[0]
+    for (const x of list) if (x !== best) { drop.add(x); dupes.push({ doc: x.doc, of: best.doc }) }
+  }
+  return { docs: drop.size ? (docs || []).filter((x) => !drop.has(x)) : (docs || []), dupes }
 }
 
 // Позиция, убранная из окна у документа (13.11.2026, просьба пользователя: «разом убрать позиции, которые я не захотел
@@ -80,7 +160,12 @@ export function windowOffers(byGroup, docs, docIds = null) {
   const out = new Map()
   let hidden = 0
   for (const [key, list] of byGroup) {
-    const inView = docIds ? list.filter((o) => docIds.has(o.doc.id)) : list
+    // Та же цена из выбранного документа могла остаться у другого (dedupeOffers): показывается от имени выбранного.
+    const inView = docIds ? list.flatMap((o) => {
+      if (docIds.has(o.doc.id)) return [o]
+      const twin = (o.twins || []).find((d) => docIds.has(d.id))
+      return twin ? [{ ...o, doc: twin, twins: [o.doc, ...o.twins.filter((d) => d !== twin)] }] : []
+    }) : list
     if (!inView.length) continue
     const keep = hiddenByDoc.size ? inView.filter((o) => !hiddenIn(hiddenByDoc.get(o.doc.id), o.group)) : inView
     if (keep.length < inView.length) hidden += 1
@@ -100,9 +185,11 @@ export function hideKeysByDoc(rows) {
   const out = new Map()
   for (const r of rows) {
     for (const o of r.offers) {
-      const keys = out.get(o.doc.id) || new Set()
-      for (const k of groupHideKeys(r.group)) keys.add(k)
-      out.set(o.doc.id, keys)
+      for (const doc of [o.doc, ...(o.twins || [])]) {
+        const keys = out.get(doc.id) || new Set()
+        for (const k of groupHideKeys(r.group)) keys.add(k)
+        out.set(doc.id, keys)
+      }
     }
   }
   return out
@@ -111,7 +198,7 @@ export function hideKeysByDoc(rows) {
 const newer = (a, b) => String(b.date || '').localeCompare(String(a.date || ''))
 const bySimilarity = (a, b) => Number(isSure(b)) - Number(isSure(a)) || b.score - a.score || newer(a, b) || a.price - b.price
 // Цифры строки со скана не сошлись между собой (unsure) — как цена × кол-во ≠ сумма: видно, но сама не берётся.
-const usable = (o) => o.unitOk && o.price > 0 && !o.line.sumOff && !o.line.unsure && !o.qtyFar
+const usable = (o) => o.unitOk && o.price > 0 && !o.line.sumOff && !o.line.unsure && !o.qtyFar && !o.over
 
 // Цена для позиции (см. начало файла) или null.
 export function bestOffer(offers) {
@@ -124,27 +211,72 @@ export function bestOffer(offers) {
 // Что сейчас в расценке против новой цены: своя другая цена — { kind: 'replace', prices }; цена из другого тендера — 'copy'; пусто
 // хотя бы где-то — 'new'; везде та же — 'same'. cur — { own: [цены], copies, empty, ownAt } (ownAt — последняя правка своей цены).
 export function priceStatus(cur, price) {
-  const differ = [...new Set(cur.own.map(roundMoney).filter((p) => p !== price))]
+  const targets = Array.isArray(cur.targets) ? cur.targets : null
+  const own = cur.own || (targets || []).filter((t) => t.kind === 'own').map((t) => t.price)
+  const copies = cur.copies ?? (targets || []).filter((t) => t.kind === 'auto' || t.kind === 'pick').length
+  const empty = cur.empty ?? (targets || []).filter((t) => t.kind === 'empty').length
+  const differ = [...new Set(own.map(roundMoney).filter((p) => p !== price))]
   if (differ.length) return { kind: 'replace', prices: differ }
-  return cur.copies ? { kind: 'copy' } : cur.empty ? { kind: 'new' } : { kind: 'same' }
+  return copies ? { kind: 'copy' } : empty ? { kind: 'new' } : { kind: 'same' }
 }
 
-// Документ свежее своей цены позиции (см. начало файла).
-function isFresher(shown, offers, cur) {
-  const own = new Set(cur.own.map(roundMoney))
-  const sources = offers.filter((o) => o !== shown && own.has(o.price))
-  if (sources.length) return sources.every((o) => !o.date || !shown.date || shown.date >= o.date)
-  const uploaded = Date.parse(shown.doc?.created_at || '')
-  const edited = Date.parse(cur.ownAt || '')
-  return !Number.isFinite(uploaded) || !Number.isFinite(edited) || uploaded >= edited
+// Блоки окна: что заменит цена строки. Порядок — как в окне; введённые вручную — последними и сами не отмечаются.
+export const PICK_BLOCKS = [
+  { key: 'empty', title: 'Не расценены' },
+  { key: 'auto', title: 'Заменят цены, подставленные автоматически' },
+  { key: 'doc', title: 'Заменят цены из документов' },
+  { key: 'manual', title: 'Заменят цены, введённые вручную' },
+]
+const BLOCK_RANK = { empty: 0, auto: 1, doc: 2, manual: 3 }
+// Позиции группы сейчас: [{ kind: 'empty' | 'auto' | 'pick' | 'own', price, input, docId, origin }] (панель — currentOf.targets);
+// прежний вид ({ own, copies, empty }) — тоже понимаем.
+function targetsOf(cur) {
+  if (Array.isArray(cur.targets)) return cur.targets
+  return [
+    ...(cur.own || []).map((price) => ({ kind: 'own', price })),
+    ...Array.from({ length: cur.copies || 0 }, () => ({ kind: 'auto', price: null })),
+    ...Array.from({ length: cur.empty || 0 }, () => ({ kind: 'empty', price: null })),
+  ]
+}
+const near = (a, b) => a != null && b != null && Math.abs(roundMoney(a) - roundMoney(b)) <= 0.011
+const pricesOf = (o) => [o.price, ...(o.alts || [])]
+// Документ, из которого своя цена: только файл документа позиции (его прикрепляет «Применить» и «Взять»), и только если цена
+// совпала с его строкой — как есть или с другим НДС. Совпала с ценой другого файла — всё равно ручная: человек мог ввести ту же
+// цену (тендер № 860, 13.11: ручные правки совпадали с ценами «ВОР для заполнения» и снова отметились бы сами). Та же цена,
+// оставленная у другого документа (dedupeOffers), — тоже этот файл.
+function offerOfPrice(t, all) {
+  if (t.docId == null) return null
+  const isFile = (o) => o.doc.id === t.docId || (o.twins || []).some((d) => d.id === t.docId)
+  return all.find((o) => isFile(o) && pricesOf(o).some((p) => near(p, t.price))) || null
+}
+// Что заменит цена price у позиций группы: { block, items: [{ kind: 'empty' | 'auto' | 'doc' | 'manual', price, how, origin,
+// offer }] } — только позиции, где цена другая или её нет. how у введённых вручную: 'typed' | 'pick' (взята из меню похожих
+// цен другого тендера) | 'import' (загружена из Excel). all — цены всех документов этой позиции (и убранные из окна).
+export function replacedBy(cur, price, all) {
+  const items = []
+  for (const t of targetsOf(cur)) {
+    if (t.kind === 'empty') { items.push({ kind: 'empty', price: null }); continue }
+    if (t.price != null && near(t.price, price)) continue
+    if (t.kind === 'auto') items.push({ kind: 'auto', price: t.price, origin: t.origin || null })
+    else if (t.kind === 'pick') items.push({ kind: 'manual', how: 'pick', price: t.price, origin: t.origin || null })
+    else if (t.input === 'import') items.push({ kind: 'manual', how: 'import', price: t.price })
+    else {
+      const offer = offerOfPrice(t, all || [])
+      items.push(offer ? { kind: 'doc', price: t.price, offer } : { kind: 'manual', how: 'typed', price: t.price })
+    }
+  }
+  const block = items.reduce((b, x) => (BLOCK_RANK[x.kind] > BLOCK_RANK[b] ? x.kind : b), 'empty')
+  return { block, items }
 }
 
-// Строки окна — только те, где человеку есть что решать: { group, offers, choice, shown, spread, sure, status, auto, check }.
-// offers — цены позиции, самые похожие первыми; choice — выбранная цена или null (ни одну нельзя взять как есть); shown — что
-// показать (choice или самая похожая); auto — отметить сразу; check — проверить глазами: похоже не наверняка, ед. изм., разброс цен.
-// chosen — Map ключ группы → id цены, выбранной человеком; currentOf(group) — что сейчас в расценке. hidden — сколько позиций с
-// ценами из документов не показано: цена уже стоит правильно.
-export function autoPickRows(byGroup, groups, { chosen = null, currentOf }) {
+// Строки окна — только те, где человеку есть что решать: { group, offers, choice, shown, spread, sure, status, wrong, auto, check,
+// block, replaced, sameDoc }. offers — цены позиции, самые похожие первыми; choice — выбранная цена или null (ни одну нельзя взять
+// как есть); shown — что показать (choice или самая похожая); auto — отметить сразу; check — проверить глазами: похоже не наверняка,
+// ед. изм., разброс цен, итог документа не сошёлся; block — блок окна (PICK_BLOCKS), replaced — что заменится (replacedBy.items),
+// sameDoc — заменится цена из этого же документа (другой НДС, пересчёт). chosen — Map ключ группы → id цены, выбранной человеком;
+// currentOf(group) — что сейчас в расценке; allByGroup — цены всех документов (узнать документ своей цены, когда окно показывает
+// один документ). hidden — сколько позиций с ценами из документов не показано: цена уже стоит правильно.
+export function autoPickRows(byGroup, groups, { chosen = null, currentOf, allByGroup = null }) {
   const rows = []
   let hidden = 0
   for (const group of groups) {
@@ -157,21 +289,32 @@ export function autoPickRows(byGroup, groups, { chosen = null, currentOf }) {
     const shown = choice || sorted[0]
     const cur = currentOf(group)
     const status = priceStatus(cur, shown.price)
+    const { block, items } = replacedBy(cur, shown.price, allByGroup?.get(group.key) || offers)
+    if (!items.length) { hidden += 1; continue }
     const sure = isSure(shown)
-    // Своя другая цена: документ свежее цены или цена похожа на ошибку.
-    const fresher = isFresher(shown, offers, cur)
-    const wrong = cur.own.some((p) => suspectPrice(roundMoney(p), offers))
-    const show = status.kind === 'same' ? false
-      : status.kind === 'replace' ? !!byPerson || (sure && (fresher || wrong))
-        : true
+    const wrong = items.some((x) => (x.kind === 'doc' || x.kind === 'manual') && suspectPrice(roundMoney(x.price), offers))
+    const docItems = items.filter((x) => x.kind === 'doc')
+    const sameDoc = docItems.length > 0 && docItems.every((x) => x.offer.doc.id === shown.doc.id)
+    // Документ позиции новее (по дате документа) того, из которого стоит цена.
+    const fresher = docItems.every((x) => !x.offer.date || !shown.date || shown.date >= x.offer.date)
+    const show = block === 'empty' || block === 'auto' ? true
+      : block === 'doc' ? !!byPerson || sameDoc || sure || wrong
+        : !!byPerson || sure || wrong
     if (!show) { hidden += 1; continue }
     const sureOthers = offers.filter((o) => usable(o) && isSure(o)).map((o) => o.price)
     const prices = sure && usable(shown) ? [shown.price, ...sureOthers] : []
     const times = prices.length > 1 ? Math.max(...prices) / Math.min(...prices) : 1
     const spread = times >= SPREAD ? Math.round(times) : null
-    const auto = !!choice && !spread && (status.kind === 'replace' ? sure : sure || choice.score >= AUTO_MIN)
-    rows.push({ group, offers: sorted, choice, shown, spread, sure, status, wrong, auto, check: !choice || !sure || !!spread })
+    const ready = !!choice && !spread && shown.docOk !== false
+    const auto = byPerson ? !!byPerson.unitOk
+      : block === 'manual' ? false
+        : block === 'doc' ? ready && (sameDoc || (sure && fresher))
+          : ready && (sure || choice.score >= AUTO_MIN)
+    rows.push({ group, offers: sorted, choice, shown, spread, sure, status, wrong, auto, check: !choice || !sure || !!spread || shown.docOk === false,
+      block, replaced: items, sameDoc })
   }
+  const order = (r) => BLOCK_RANK[r.block] * 2 + (r.check ? 0 : 1)
+  rows.sort((a, b) => order(a) - order(b))
   return { rows, hidden }
 }
 

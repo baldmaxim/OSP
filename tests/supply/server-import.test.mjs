@@ -257,6 +257,38 @@ describe('Позиции ВОР — заранее, службой osp-api', { s
     assert.equal(state(T.heat).status, 'ok')
   })
 
+  it('ВОР из Estimat: список, разобранный без расчёта формул (объёмов нет), перечитывается один раз — объём из листа «КП»', async () => {
+    const TE = '00000000-0000-4000-8000-00000000e30a'
+    const DE = '00000000-0000-4000-8000-00000000a30a'
+    // Объём — формула без сохранённого значения, как пишет Estimat.
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['№', 'Вид', 'Наименование', 'Общий расход'],
+      ['1.1', 'Мат', 'Уголок 70*70*6', 0.1377], ['1.2', 'Мат', 'Уголок 70*70*6', 0.5], ['1.3', 'Р', 'Уголок 70*70*6', 9]]), 'КП')
+    const mat = XLSX.utils.aoa_to_sheet([['МАТЕРИАЛЫ'], ['№', 'Наименование', 'Ед. изм.', 'Объём'], [1, 2, 3, 4], [1, 'Уголок 70*70*6', 'т']])
+    mat.D4 = { t: 'n', f: 'SUMIFS(КП!D:D,КП!C:C,B4,КП!B:B,"Мат")' }
+    mat['!ref'] = 'A1:D4'
+    XLSX.utils.book_append_sheet(wb, mat, 'МАТЕРИАЛЫ')
+    store.set('k/estimat.xlsx', new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' })))
+    sql(`insert into public.tenders (id, work_description, object_id, status) values ('${TE}', 'КМ', '${OBJ}', 'Идет тендерная процедура');
+      insert into public.tenders (id, work_description, object_id, status, tender_type, parent_tender_id)
+        values ('${TE.replace('e3', 'f3')}', 'КМ', '${OBJ}', 'В работе', 'materials', '${TE}');
+      ${doc(DE, TE, 'ВОР_ограждения.xlsx', 'k/estimat.xlsx')}
+      insert into public.tender_supply_sources (tender_id, estimate_name, source, s3_document_id, file_name, sheet_name, column_map, source_version, positions)
+      select '${TE}', 'ВОР_ограждения', 'vor_file', d.id, d.file_name, 'МАТЕРИАЛЫ', '{"sheetName":"МАТЕРИАЛЫ","columns":{"name":1,"unit":2,"volume":3}}',
+        'file:' || d.id || ':' || (to_json(d.created_at) #>> '{}'), '[{"k":"x","name":"Уголок 70*70*6","unit":"т","volume":null,"order":1}]'
+      from public.s3_documents d where d.id = '${DE}';`)
+    calls.length = 0
+    await job().runOnce()
+    const [src] = sources(TE)
+    assert.deepEqual(strip(src.positions).map((p) => [p.name, p.volume]), [['Уголок 70*70*6', 0.6377]])
+    assert.equal(src.column_map.calc, 1)
+    assert.ok(calls.includes('GetObjectCommand:k/estimat.xlsx'))
+    // Перечитан — больше не скачивается.
+    calls.length = 0
+    await job().runOnce()
+    assert.ok(!calls.includes('GetObjectCommand:k/estimat.xlsx'))
+  })
+
   it('такт расписания: база не менялась — прохода нет; запись в таблицу, не успели, страховка — проход есть', async () => {
     // Собственные записи прохода сдвигают счётчики, а статистика приходит с задержкой: такт может пройти лишний раз, но
     // проходы обязаны прекратиться, как только база успокоилась.

@@ -852,10 +852,12 @@ s.sp-was { display: inline; }
 .sp-subbar .sp-sel-bar { flex: none; flex-wrap: nowrap; margin-left: 0; }
 
 /* ── Окно «Счета и КП тендера»: файлы строкой сверху, под ними позиция ВОР и строка счёта рядом ──────── */
-.sp-modal-backdrop-full { padding: 0.75rem; }
-.sp-modal-full { width: min(120rem, 100%); height: calc(100vh - 1.5rem); max-height: none; }
-.sp-modal-full > .sp-modal-body { display: flex; flex: 1; flex-direction: column; gap: 0.5rem; min-height: 0; overflow: hidden; }
-.sp-td-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: 1rem 1.25rem 0.25rem; }
+/* 18.11.2026: окно почти во весь экран, поля и рамки тоньше — больше места строкам. */
+.sp-modal-backdrop-full { padding: 0.25rem; }
+.sp-modal-full { width: 100%; height: calc(100vh - 0.5rem); max-height: none; border-radius: 6px; }
+.sp-modal-full > .sp-modal-body { display: flex; flex: 1; flex-direction: column; gap: 0.375rem; min-height: 0; padding: 0.25rem 0.75rem; overflow: hidden; }
+.sp-modal-full > .sp-modal-actions { padding: 0.5rem 0.75rem; }
+.sp-td-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: 0.5rem 0.75rem 0.25rem; }
 .sp-td-head h3 { margin-right: 0.75rem; padding: 0; }
 .sp-td-head .btn-primary { display: inline-flex; align-items: center; gap: 0.375rem; height: var(--ui-control-h); padding: 0 0.75rem; }
 .sp-td-meta { color: var(--text-secondary); font-size: var(--ui-hint); font-weight: var(--ui-regular, 400); line-height: var(--ui-hint-lh); }
@@ -873,6 +875,7 @@ s.sp-was { display: inline; }
   background: var(--bg-primary);
 }
 .sp-td-files > li.is-off { border-color: var(--warning-muted); background: var(--warning-light); }
+.sp-td-files > li.is-dup { border-style: dashed; opacity: 0.8; }
 .sp-td-file {
   display: inline-flex;
   align-items: center;
@@ -937,30 +940,54 @@ s.sp-was { display: inline; }
 }
 .sp-td-hidden { display: inline-flex; align-items: center; gap: 0.375rem; font-size: var(--ui-th); line-height: var(--ui-th-lh); }
 /* Таблица: наименования — двумя равными колонками, чтобы сравнивать глазами; отличия подсвечены. */
-.sp-td-wrap { flex: 1; min-height: 12rem; padding-bottom: 0; overflow: auto; border: 1px solid var(--border-color); border-radius: var(--ui-radius); }
+.sp-td-wrap { flex: 1; min-height: 12rem; padding-bottom: 0; overflow: auto; border-top: 1px solid var(--border-color); }
 .ui-work.ui-work .sp-td-table { width: 100%; min-width: 60rem; table-layout: fixed; border-collapse: collapse; }
 .sp-td-table .sp-td-c-sel { width: 2.25rem; }
 .sp-td-table .sp-td-c-unit { width: 7.5rem; }
 .sp-td-table .sp-td-c-price { width: 7.5rem; }
-.sp-td-table .sp-td-c-now { width: 7rem; }
+.sp-td-table .sp-td-c-now { width: 13rem; }
 .ui-work.ui-work .sp-td-table > thead > tr > th {
   position: sticky;
   top: 0;
-  z-index: 1;
-  padding: 0.375rem 0.625rem;
+  z-index: 2;
+  height: 2rem;
+  box-sizing: border-box;
+  padding: 0.25rem 0.5rem;
   background: var(--bg-secondary);
   font-size: var(--ui-hint);
   line-height: var(--ui-hint-lh);
 }
-.ui-work.ui-work .sp-td-table > tbody > tr > td { padding: 0.5rem 0.625rem; font-size: var(--ui-text); line-height: var(--ui-text-lh); vertical-align: top; }
-.ui-work.ui-work .sp-td-table > tbody > tr > td.sp-td-line { border-left: 1px solid var(--border-color); }
-.ui-work.ui-work .sp-td-table > tbody > tr.sp-td-group > td { padding: 0.25rem 0.625rem; background: var(--hover-bg); color: var(--text-secondary); font-size: var(--ui-hint); font-weight: var(--ui-medium); line-height: var(--ui-hint-lh); }
+.ui-work.ui-work .sp-td-table > tbody > tr > td { padding: 0.375rem 0.5rem; font-size: var(--ui-text); line-height: var(--ui-text-lh); vertical-align: top; }
+.ui-work.ui-work .sp-td-table > tbody > tr > td.sp-td-line { border-left: 1px dotted var(--border-color); }
+/* Шапка блока — под шапкой таблицы при прокрутке; слева галочка «все в блоке». */
+.ui-work.ui-work .sp-td-table > tbody > tr.sp-td-group > td {
+  position: sticky;
+  top: 2rem;
+  z-index: 1;
+  padding: 0.3125rem 0.5rem;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--hover-bg);
+  color: var(--text-secondary);
+  font-size: var(--ui-th);
+  font-weight: var(--ui-regular, 400);
+  line-height: var(--ui-th-lh);
+  vertical-align: middle;
+}
+.sp-td-block-title { color: var(--text-primary); font-weight: var(--ui-semibold); }
+.sp-td-block-count { margin-left: 0.375rem; padding: 0 0.375rem; border-radius: 999px; background: var(--bg-secondary); color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.sp-td-block-on { margin-left: 0.5rem; }
+.sp-td-block-hint { margin-left: 0.75rem; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.sp-td-group.is-manual .sp-td-block-hint { color: var(--warning-color); }
+.sp-td-note { margin: 0; color: var(--text-secondary); font-size: var(--ui-th); line-height: var(--ui-th-lh); }
 .ui-work.ui-work .sp-td-table > thead > tr > th.ui-money, .sp-td-price { text-align: right; }
 .sp-td-sel { text-align: center; }
 .sp-td-sel input { width: 1rem; height: 1rem; margin: 0.125rem 0 0; accent-color: var(--primary-color); cursor: pointer; }
 .sp-td-name { display: block; overflow-wrap: anywhere; }
 b.sp-td-name { font-weight: var(--ui-semibold); }
 .ui-work.ui-work .sp-td-table > tbody > tr:not(.sp-td-group) > td { border-bottom: 1px solid var(--border-color); background: var(--bg-secondary); }
+.ui-work.ui-work .sp-td-table > tbody > tr.is-checked:not(.sp-td-group) > td { background: var(--bg-secondary); }
+.ui-work.ui-work .sp-td-table > tbody > tr:not(.sp-td-group):hover > td { background: var(--hover-bg); }
 .sp-td-diff { padding: 0 0.125rem; border-radius: 3px; background: rgba(245, 158, 11, 0.24); color: inherit; }
 .sp-td-pos > .sp-td-meta { display: block; margin-top: 0.125rem; font-variant-numeric: tabular-nums; }
 .sp-td-line > .sp-td-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.125rem 0.75rem; margin-top: 0.125rem; }
@@ -973,7 +1000,8 @@ b.sp-td-name { font-weight: var(--ui-semibold); }
 .sp-td-unit.is-off .sp-td-pack { color: var(--text-primary); }
 .ui-work.ui-work .sp-td-table > tbody > tr > td.sp-td-price { font-variant-numeric: tabular-nums; font-weight: var(--ui-semibold); white-space: nowrap; }
 .sp-td-now { display: inline-flex; flex-direction: column; font-size: var(--ui-th); line-height: var(--ui-th-lh); }
-.sp-td-now.is-replace { color: var(--warning-color); }
+.sp-td-now.is-doc, .sp-td-now.is-manual { color: var(--warning-color); }
+.sp-td-now .sp-td-meta.is-warn { color: var(--danger-color); }
 /* «Другая строка»: самые похожие и поиск по всем строкам документов. */
 .sp-td-picker { display: grid; gap: 0.375rem; margin-top: 0.375rem; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: var(--ui-radius); background: var(--bg-primary); }
 .sp-td-picker ul, .sp-td-picker-list { display: grid; gap: 0.125rem; margin: 0; padding: 0; list-style: none; }
@@ -1024,6 +1052,8 @@ b.sp-td-name { font-weight: var(--ui-semibold); }
   .ui-work.ui-work .sp-td-table > tbody > tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.25rem 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); }
   .ui-work.ui-work .sp-td-table > tbody > tr > td { padding: 0; border: 0; }
   .ui-work.ui-work .sp-td-table > tbody > tr > td.sp-td-line { grid-column: 1 / -1; border: 0; }
-  .ui-work.ui-work .sp-td-table > tbody > tr.sp-td-group { display: block; padding: 0; }
+  .ui-work.ui-work .sp-td-table > tbody > tr.sp-td-group { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0; }
+  .ui-work.ui-work .sp-td-table > tbody > tr.sp-td-group > td { position: static; padding: 0; border: 0; background: none; }
+  .sp-td-block-hint { display: block; margin-left: 0; }
   .sp-td-unplaced > ul > li { grid-template-columns: minmax(0, 1fr); }
 }

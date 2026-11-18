@@ -68,10 +68,16 @@ export function positionGroups(docViews) {
 }
 
 // Ед. изм. строки документа подходит позиции: та же (шт. = штук, м = м.п., упак = уп, тн = т), не указана — подходит.
+// Штука и комплект — одно (18.11.2026, тендер № 860: щит ЩФО в ВОР «компл», в КП «шт.» — окно требовало «1 шт = 1 компл»), если
+// в наименовании не сказано, сколько штук в комплекте («Комплект крепежа (10 шт)» — пересчёт, docPack).
 const PACK_UNITS = new Set(['уп', 'набор'])
+const PIECE_UNITS = new Set(['шт', 'компл'])
 const ROLL_UNITS = new Set(['шт', 'бухта', 'катушка', 'рулон', 'барабан', 'моток', ...PACK_UNITS])
 const sameUnit = (a, b) => unitsCompatible(a, b) || canonUnit(a) === canonUnit(b) || (PACK_UNITS.has(canonUnit(a)) && PACK_UNITS.has(canonUnit(b)))
+  || (PIECE_UNITS.has(canonUnit(a)) && PIECE_UNITS.has(canonUnit(b)))
 export const groupUnitOk = (unit, g) => (g.units ? g.units.some((u) => sameUnit(unit, u)) : sameUnit(unit, g.unit))
+// Подходит только как «штука = комплект», а не та же ед. изм.
+const pieceForSet = (unit, g) => !g.units && !!unit && !!g.unit && canonUnit(unit) !== canonUnit(g.unit) && PIECE_UNITS.has(canonUnit(unit)) && PIECE_UNITS.has(canonUnit(g.unit))
 
 // Единицы, которые пересчитываются сами: кабель в км, металл в т и кг, крепёж в тысячах и сотнях.
 const UNIT_SCALE = { 'км>м': 1000, 'м>км': 0.001, 'т>кг': 1000, 'кг>т': 0.001, 'тыс шт>шт': 1000 }
@@ -114,6 +120,11 @@ export const thicknessM = (name) => {
 export function docPack(item, unit, groupName = null) {
   const from = canonUnit(item?.unit)
   const to = canonUnit(unit)
+  if (from !== to && PIECE_UNITS.has(from) && PIECE_UNITS.has(to)) {
+    const count = countIn(textOf(groupName)) || countIn(textOf(item.name))
+    if (!(count > 1)) return null
+    return to === 'шт' ? count : 1 / count
+  }
   if (!from || !to || sameUnit(from, to)) return null
   const scale = unitScale(from, to)
   if (scale) return scale
@@ -150,7 +161,8 @@ export const lineRejects = (line, g) => !!line?.no?.length && groupKeys(g).some(
 export function pickedGroups(line, index) {
   const groups = [...new Set([line.k, ...(line.also || [])].filter(Boolean).flatMap((k) => index.byKey.get(k) || []))].filter((g) => !lineRejects(line, g))
   const fits = groups.filter((g) => (g.units ? null : linePack(line, g)) != null || groupUnitOk(line.unit, g))
-  return fits.length ? fits : groups
+  const exact = fits.filter((g) => !pieceForSet(line.unit, g))
+  return exact.length ? exact : fits.length ? fits : groups
 }
 
 // Объёмы позиции: в каждом ВОР и во всех вместе.
@@ -505,7 +517,9 @@ function articleGroups(ix, token) {
   return out
 }
 
-const rankOf = (c) => (c.exact ? 2 : c.score) - (c.unitOk ? 0 : UNIT_PENALTY)
+// Штука при позиции в комплектах (и наоборот) подходит, но та же ед. изм. вернее: «Кран шаровой Ду15» бывает в ВОР и в шт, и в компл.
+const NEAR_UNIT_PENALTY = 0.01
+const rankOf = (c) => (c.exact ? 2 : c.score) - (c.unitOk ? (c.unitNear ? NEAR_UNIT_PENALTY : 0) : UNIT_PENALTY)
 const byRank = (a, b) => rankOf(b) - rankOf(a)
 
 // Кандидаты одной строки документа: [{ group, score, exact, unitOk, pack, code, article, qty, sameNums }] — лучшие
@@ -547,10 +561,14 @@ export function itemCandidates(item, groups, index = null, limit = MATCH_CANDIDA
     const r = pairScore({ ...a, code: byCode.has(g), article }, g, shared.get(g) || 0)
     if (r.score >= LIST_MIN) out.set(g.key, { group: g, ...r, exact: false, article })
   }
-  return [...out.values()].map((c) => {
+  const list = [...out.values()].map((c) => {
     const pack = packs && !c.group.units ? linePack(item, c.group) : null
-    return { ...c, pack, unitOk: pack != null || groupUnitOk(item.unit, c.group) }
-  }).filter((c) => !lineRejects(item, c.group)).sort(byRank).slice(0, limit)
+    const unitOk = pack != null || groupUnitOk(item.unit, c.group)
+    return { ...c, pack, unitOk, unitNear: unitOk && pack == null && pieceForSet(item.unit, c.group) }
+  }).filter((c) => !lineRejects(item, c.group))
+  // То же наименование есть и в той же ед. изм. — «штука = комплект» не предлагается: это другая позиция ВОР.
+  const exactKeys = new Set(list.filter((c) => c.unitOk && !c.unitNear).map((c) => c.group.k))
+  return list.filter((c) => !c.unitNear || !exactKeys.has(c.group.k)).sort(byRank).slice(0, limit)
 }
 
 // Сопоставляется сама: точно или не ниже AUTO_MIN.

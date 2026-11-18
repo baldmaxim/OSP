@@ -8,7 +8,7 @@ import {
 } from '../../src/utils/supplierOcrPage.js'
 import { parseSupplierPdfPages } from '../../src/utils/supplierDocRead.js'
 import { offerNotesOfDoc } from '../../src/utils/supplyDocPrice.js'
-import { readOffer } from '../../src/utils/supplyOffers.js'
+import { readOffer, READER_VERSION } from '../../src/utils/supplyOffers.js'
 
 // Картинка в серых тонах: фон 250 и нарисованные тёмные прямоугольники.
 function canvas(w, h) {
@@ -235,7 +235,7 @@ describe('скан: разбор строк и проверка цифр', () =>
     ] }
     const offer = readOffer(offerNotesOfDoc(r).notes)
     assert.equal(offer.ocr, true)
-    assert.equal(offer.rv, 2)
+    assert.equal(offer.rv, READER_VERSION)
     assert.equal(offer.lines[0].unsure, undefined)
     assert.equal(offer.lines[1].unsure, true)
   })
