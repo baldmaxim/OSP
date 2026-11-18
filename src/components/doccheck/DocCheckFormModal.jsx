@@ -9,9 +9,7 @@ import { safeHttpUrl } from '../../utils/publicTenders'
 import { filterCounterpartyOptions } from '../../utils/counterpartyPicker'
 import { ownObjectChoice } from '../../utils/ownObjectChoice'
 import {
-  DOC_CHECK_COLORS,
   DOC_CHECK_CONCEPT_CATEGORY,
-  DOC_CHECK_PRIORITIES,
   DOC_CHECK_STATUS_LABEL,
   DOC_TYPES,
   MAX_CREATOR_NAME,
@@ -49,7 +47,7 @@ import {
 
 const EMPTY = {
   object_id: '', counterparty_id: '', doc_type: 'ds', doc_number: '', doc_date: '', notes: '',
-  assignee_ids: [], due_date: '', priority: '', color: '', labels: [], email_link: '',
+  assignee_ids: [], due_date: '', labels: [], email_link: '',
 }
 
 // Файл, брошенный мимо частей с файлами, браузер не открывает вместо страницы: набранная форма не теряется. Части ловят файл
@@ -115,8 +113,6 @@ export default function DocCheckFormModal({
       notes: request.notes || '',
       assignee_ids: shownAssigneeIds(request, employees),
       due_date: request.due_date || '',
-      priority: request.priority || '',
-      color: request.color || '',
       labels: request.labels || [],
       email_link: request.email_link || '',
       created_at: toDateTimeInput(request.created_at),
@@ -170,8 +166,6 @@ export default function DocCheckFormModal({
         Object.assign(payload, {
           assignee_ids: assigneeIdsToSave(request?.assignee_ids, form.assignee_ids, employees),
           due_date: form.due_date || null,
-          priority: form.priority || null,
-          color: form.color || null,
           labels: normalizeLabels(form.labels),
         })
       }
@@ -367,47 +361,6 @@ export default function DocCheckFormModal({
                     value={form.due_date}
                     onChange={(e) => set({ due_date: e.target.value })}
                   />
-                </div>
-              </div>
-
-              <div className="dc-form-grid dc-form-grid--wide">
-                <div className="dc-form-row">
-                  <span className="dc-form-label">Приоритет</span>
-                  <div className="dc-type-switch">
-                    {[{ value: '', label: 'Не указан' }, ...DOC_CHECK_PRIORITIES].map(p => (
-                      <button
-                        key={p.value || 'none'}
-                        type="button"
-                        className={`dc-type-opt${form.priority === p.value ? ' is-active' : ''}`}
-                        aria-pressed={form.priority === p.value}
-                        onClick={() => set({ priority: p.value })}
-                      >{p.label}</button>
-                    ))}
-                  </div>
-                </div>
-                <div className="dc-form-row">
-                  <span className="dc-form-label">Цвет карточки</span>
-                  <div className="dc-menu-colors">
-                    <button
-                      type="button"
-                      className={`dc-swatch dc-swatch--none${!form.color ? ' is-current' : ''}`}
-                      aria-label="Без цвета"
-                      aria-pressed={!form.color}
-                      title="Без цвета"
-                      onClick={() => set({ color: '' })}
-                    />
-                    {DOC_CHECK_COLORS.map(c => (
-                      <button
-                        key={c.value}
-                        type="button"
-                        className={`dc-swatch dc-c-${c.value}${form.color === c.value ? ' is-current' : ''}`}
-                        aria-label={c.label}
-                        aria-pressed={form.color === c.value}
-                        title={c.label}
-                        onClick={() => set({ color: c.value })}
-                      />
-                    ))}
-                  </div>
                 </div>
               </div>
 

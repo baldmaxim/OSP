@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS tenders (
   department TEXT NOT NULL DEFAULT 'construction',
   tender_type TEXT NOT NULL DEFAULT 'main',
   parent_tender_id UUID REFERENCES tenders(id) ON DELETE SET NULL,
+  -- «Перезапуск»: каким тендером перезапущен этот (миграция 20270217); действует, пока статус — «Перезапуск».
+  restarted_by_tender_id UUID REFERENCES tenders(id) ON DELETE SET NULL,
   materials_proposal_start_date DATE,
   materials_proposal_deadline DATE,
   materials_proposal_link TEXT,
@@ -67,7 +69,8 @@ CREATE TABLE IF NOT EXISTS tenders (
   CONSTRAINT valid_tender_type CHECK (tender_type IN ('main', 'materials')),
   CONSTRAINT tenders_parent_only_for_materials CHECK (
     (tender_type = 'materials') OR (parent_tender_id IS NULL)
-  )
+  ),
+  CONSTRAINT tenders_restarted_by_not_self CHECK (restarted_by_tender_id IS NULL OR restarted_by_tender_id <> id)
 );
 
 -- Индексы для оптимизации запросов
@@ -85,6 +88,7 @@ CREATE INDEX IF NOT EXISTS idx_tenders_department ON tenders(department);
 CREATE INDEX IF NOT EXISTS idx_tenders_department_type ON tenders(department, tender_type);
 CREATE INDEX IF NOT EXISTS idx_tenders_tender_type ON tenders(tender_type);
 CREATE INDEX IF NOT EXISTS idx_tenders_parent_tender_id ON tenders(parent_tender_id);
+CREATE INDEX IF NOT EXISTS idx_tenders_restarted_by_tender_id ON tenders(restarted_by_tender_id) WHERE restarted_by_tender_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tenders_public_tender_number ON tenders(public_tender_number);
 
 -- Триггер для автоматического обновления updated_at
@@ -139,6 +143,7 @@ COMMENT ON COLUMN tenders.notes IS 'Примечание по тендеру (с
 COMMENT ON COLUMN tenders.department IS 'Направление: construction | warranty | joint (совместные) | other (прочее). См. миграцию 20260820_tender_departments.sql — там же триггер синхронизации со статусом объекта';
 COMMENT ON COLUMN tenders.tender_type IS 'Тип тендера: main (основной — работы) | materials (тендер на закупку материалов)';
 COMMENT ON COLUMN tenders.parent_tender_id IS 'Ссылка на родительский основной тендер (только для tender_type = materials)';
+COMMENT ON COLUMN tenders.restarted_by_tender_id IS 'Тендер, которым перезапущен этот (статус «Перезапуск»); NULL — не указан. Действует, пока статус — «Перезапуск»';
 COMMENT ON COLUMN tenders.materials_proposal_deadline IS 'Срок предоставления КП на материалы (для tender_type = materials)';
 COMMENT ON COLUMN tenders.materials_proposal_start_date IS 'Начало срока предоставления КП на материалы (окончание — materials_proposal_deadline)';
 COMMENT ON COLUMN tenders.materials_proposal_link IS 'Ссылка на КП на материалы (для tender_type = materials)';

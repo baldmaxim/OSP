@@ -50,6 +50,8 @@ export const DOC_TYPES = [
 export const DOC_TYPE_LABEL = Object.fromEntries(DOC_TYPES.map(t => [t.value, t.label]))
 export const DOC_TYPE_TITLE = Object.fromEntries(DOC_TYPES.map(t => [t.value, t.title]))
 
+// Приоритет и цвет карточки — только чтобы прежние записи истории («Приоритет: Высокий → —») читались словами: на доске,
+// в форме и фильтрах их нет с 18.11.2026.
 export const DOC_CHECK_PRIORITIES = [
   { value: 'high', label: 'Высокий' },
   { value: 'normal', label: 'Обычный' },
@@ -57,9 +59,7 @@ export const DOC_CHECK_PRIORITIES = [
 ]
 export const DOC_CHECK_PRIORITY_LABEL = Object.fromEntries(DOC_CHECK_PRIORITIES.map(p => [p.value, p.label]))
 
-// Цвет карточки — как на прежней доске: красный — проблема, жёлтый — ждём и т. п.
-// Значение пишется в базу (ограничение doc_check_requests_color_check), оттенок —
-// в CSS (dc-card--c-<цвет>), чтобы светлая и тёмная темы подбирали его сами.
+// Цвет карточки (doc_check_requests.color) — подписи для прежних записей истории.
 export const DOC_CHECK_COLORS = [
   { value: 'red', label: 'Красный' },
   { value: 'orange', label: 'Оранжевый' },
@@ -443,8 +443,9 @@ export function nextSortOrder(rows, status) {
 }
 
 // Поля доски (миграция 20261113). Без них страница читает прежний набор и
-// работает как раньше: без исполнителей, сроков, меток, цвета и архива.
-export const BOARD_FIELDS = ['assignee_ids', 'due_date', 'priority', 'color', 'labels', 'archived_at']
+// работает как раньше: без исполнителей, сроков, меток и архива. Приоритет и цвет карточки (те же колонки 20261113) с
+// 18.11.2026 не читаются и не пишутся (решение пользователя; у всех заявок их сбросила миграция 20270218).
+export const BOARD_FIELDS = ['assignee_ids', 'due_date', 'labels', 'archived_at']
 const BASE_SELECT = `
   id, object_id, counterparty_id, doc_type, doc_number, doc_date, status, notes,
   sort_order, deleted_at, created_at, updated_at, created_by_name`

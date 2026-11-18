@@ -94,7 +94,8 @@ function fileHistoryText(h) {
   return size ? `${text} · ${size}` : text
 }
 
-// Значение поля в истории — словами, а не кодом базы.
+// Значение поля в истории — словами, а не кодом базы. Приоритет и цвет страница больше не показывает и не пишет (18.11.2026),
+// но прежние записи истории о них остаются — читаются словами.
 function historyValue(field, value, ctx) {
   if (value == null || value === '' || (Array.isArray(value) && !value.length)) return '—'
   if (field === 'assignee_ids') return value.map(id => employeeName(ctx.employees, id)).join(', ')
@@ -319,12 +320,11 @@ export default function DocCheckDetailModal({
                   </Box>
 
                   {hasBoardFields && (
-                    <Box title="Срок и приоритет">
+                    <Box title="Срок и метки">
                       <dl className="dc-kv">
                         <Row label="Срок" className={request.due_date ? `ui-num dc-due-text is-${due}` : 'ui-num'}>
                           {fmtDocDate(request.due_date) || '—'}{due === 'overdue' ? ' · срок прошёл' : ''}
                         </Row>
-                        <Row label="Приоритет">{DOC_CHECK_PRIORITY_LABEL[request.priority] || '—'}</Row>
                         {request.labels?.length > 0 && (
                           <Row label="Метки" className="dc-card-chips">
                             {request.labels.map(l => <span key={l} className="dc-chip dc-chip--label">{l}</span>)}

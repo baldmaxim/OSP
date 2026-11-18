@@ -1766,3 +1766,26 @@ if (params.get('restartBl') === '1') {
     t5.tender_winners = [{ counterparty_id: 'cp-2', scope_note: '', counterparties: { id: 'cp-2', name: cp2.name, status: 'blacklist' } }]
   }
 }
+
+// restartLink=1 (18.11.2026) — колонка tenders.restarted_by_tender_id есть (миграция 20270217): «Перезапуск» в «Основном
+// строительстве» — окном выбора нового тендера. В примечании tender-7 (№ 194) — «Перезапуск тендера № 198» (tender-3): окно
+// предлагает его первым. restartPair=1 — ещё и tender-4 (№ 197) «Перезапуск», заменён tender-1 (№ 200).
+if (params.get('restartLink') === '1') {
+  const fdb = window.__fakeDb
+  for (const t of fdb.tenders) if (!('restarted_by_tender_id' in t)) t.restarted_by_tender_id = null
+  const t7 = fdb.tenders.find(t => t.id === 'tender-7')
+  if (t7) t7.notes = 'Перезапуск тендера № 198 по обновлённой РД'
+  if (params.get('restartPair') === '1') {
+    const t4 = fdb.tenders.find(t => t.id === 'tender-4')
+    if (t4) Object.assign(t4, { status: 'Перезапуск', restarted_by_tender_id: 'tender-1' })
+  }
+}
+
+// sharedLetter=1 — в app_settings уже сохранён общий шаблон письма ОС (tests/tender/letter-template.test.mjs).
+if (params.get('sharedLetter') === '1') {
+  window.__fakeDb.app_settings.push({
+    key: 'tender_letter_template:construction',
+    value: 'Общий шаблон. Тендер № {tender_number}, объект «{object_name}».\nВопросы — по телефону {employee_phone}.',
+    updated_at: '2026-11-17T09:00:00.000Z',
+  })
+}

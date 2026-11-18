@@ -1,12 +1,11 @@
 import { memo } from 'react'
 import PaperclipIcon from '../icons/PaperclipIcon'
 import { IconTag } from '../icons/ToolbarIcons'
-import { IconCalendar, IconCheck, IconFlag, IconMore } from '../icons/ActionIcons'
+import { IconCalendar, IconCheck, IconMore } from '../icons/ActionIcons'
 import DocCheckAvatars from './DocCheckAvatars'
 import DocCheckCardCounts from './DocCheckCardCounts'
 import {
   CLOSED_DOC_CHECK_STATUSES,
-  DOC_CHECK_PRIORITY_LABEL,
   cardTitle,
   createdShort,
   dueShort,
@@ -26,8 +25,8 @@ const DUE_TITLE = {
 
 // Карточка заявки на проверку ДП/ДС на доске — по образцу прежней доски отдела:
 // кружок «завершить», заголовок «Контрагент / ДС № 1» с примечанием, внизу
-// номер заявки (ID, с 20270123), объект, дата добавления и метки, срок, приоритет, файлы, сообщения, письмо и кружки
-// исполнителей; цвет карточки — заливкой. Остальное — в карточке заявки по щелчку.
+// номер заявки (ID, с 20270123), объект, дата добавления и метки, срок, файлы, сообщения, письмо и кружки
+// исполнителей. Цвета и приоритета нет (18.11.2026, решение пользователя). Остальное — в карточке заявки по щелчку.
 function DocCheckCard({ request, employees, canEdit, onOpen, onToggleDone, onMenu }) {
   const done = CLOSED_DOC_CHECK_STATUSES.has(request.status)
   const due = dueState(request)
@@ -35,7 +34,6 @@ function DocCheckCard({ request, employees, canEdit, onOpen, onToggleDone, onMen
   const classes = [
     'dc-card',
     canEdit ? 'is-movable' : '',
-    request.color ? `has-color dc-c-${request.color}` : '',
     done ? 'is-done' : '',
     due === 'overdue' ? 'is-overdue' : '',
   ].filter(Boolean).join(' ')
@@ -94,12 +92,6 @@ function DocCheckCard({ request, employees, canEdit, onOpen, onToggleDone, onMen
           {request.due_date && (
             <span className={`dc-chip dc-due is-${due}`} title={`${DUE_TITLE[due] || 'Срок'}: ${fmtDocDate(request.due_date)}`}>
               <IconCalendar size={11} />{dueShort(request.due_date)}
-            </span>
-          )}
-          {request.priority && (
-            <span className={`dc-prio is-${request.priority}`} title={`Приоритет: ${DOC_CHECK_PRIORITY_LABEL[request.priority]}`}>
-              <IconFlag size={12} />
-              <span className="ui-sr-only">Приоритет: {DOC_CHECK_PRIORITY_LABEL[request.priority]}</span>
             </span>
           )}
           {request.docsCount > 0 && (

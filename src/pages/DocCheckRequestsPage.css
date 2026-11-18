@@ -15,16 +15,6 @@
 .dcs-done { --dcs: #16a34a; }
 .dcs-scan { --dcs: #b45309; }
 
-/* Цвет карточки (doc_check_requests.color): заливка карточки, строка реестра, образец в меню. */
-.dc-c-red { --dcc: #ef4444; }
-.dc-c-orange { --dcc: #f97316; }
-.dc-c-yellow { --dcc: #eab308; }
-.dc-c-green { --dcc: #22c55e; }
-.dc-c-teal { --dcc: #14b8a6; }
-.dc-c-blue { --dcc: #3b82f6; }
-.dc-c-violet { --dcc: #8b5cf6; }
-.dc-c-pink { --dcc: #ec4899; }
-
 .dc-header-actions { display: flex; align-items: center; gap: 0.375rem; flex-wrap: wrap; }
 
 /* Шапка — две низкие строки (03.11.2026: 233 px над доской → около 80): чем ниже шапка, тем больше заявок на экране. */
@@ -287,12 +277,6 @@
   border-radius: 8px;
   background: color-mix(in srgb, var(--primary-color) 10%, transparent);
 }
-/* Цвет карточки — заливкой, как на прежней доске; текст остаётся основного цвета (контраст ≥ 4,5:1). */
-.dc-card.has-color {
-  border-color: color-mix(in srgb, var(--dcc) 55%, var(--border-color));
-  background: color-mix(in srgb, var(--dcc) 16%, var(--bg-secondary));
-}
-[data-theme='dark'] .dc-card.has-color { background: color-mix(in srgb, var(--dcc) 30%, var(--bg-secondary)); }
 /* Срок прошёл, заявка не завершена — красная рамка. */
 .dc-card.is-overdue { border-color: var(--danger-color); box-shadow: 0 0 0 1px var(--danger-color); }
 
@@ -404,10 +388,6 @@
 .dc-due.is-today > svg, .dc-due.is-soon > svg { color: var(--warning-color); }
 .dc-due-text.is-overdue { color: var(--danger-color); font-weight: var(--ui-medium); }
 .dc-due-text.is-today, .dc-due-text.is-soon { color: var(--warning-color); }
-.dc-prio { display: inline-flex; align-items: center; color: var(--text-tertiary); }
-.dc-prio.is-high { color: var(--danger-color); }
-.dc-prio.is-normal { color: #2563eb; }
-[data-theme='dark'] .dc-prio.is-normal { color: #93c5fd; }
 .dc-count {
   display: inline-flex;
   align-items: center;
@@ -507,27 +487,11 @@
   background: var(--dcs, var(--text-tertiary));
 }
 .dc-menu-item:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
-.dc-menu-colors { display: flex; flex-wrap: wrap; gap: 0.375rem; padding: 0.25rem 0.5rem; }
-.dc-swatch {
-  width: 1.375rem;
-  height: 1.375rem;
-  padding: 0;
-  border: 2px solid transparent;
-  border-radius: 50%;
-  background: var(--dcc);
-  cursor: pointer;
-}
-.dc-swatch--none {
-  border-color: var(--border-color-dark);
-  background: linear-gradient(135deg, transparent 45%, var(--danger-color) 45%, var(--danger-color) 55%, transparent 55%);
-}
-.dc-swatch.is-current { box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 4px var(--text-primary); }
 
 /* ── Реестр ─────────────────────────────────────────────────────────────── */
 .doc-check-page .dc-table-wrap { margin: 0.5rem 0.625rem 0; padding: 0; border: 1px solid var(--border-color); border-radius: 8px; }
 .dc-table { width: 100%; min-width: 62rem; }
 .dc-row { cursor: pointer; }
-.dc-row.has-color > td:first-child { box-shadow: inset 4px 0 0 var(--dcc); }
 .dc-row-title { font-weight: var(--ui-medium); }
 .dc-row-notes { margin-top: 0.125rem; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); color: var(--text-secondary); }
 .dc-row-people { display: inline-flex; align-items: center; gap: 0.375rem; }
@@ -681,9 +645,6 @@
 .dc-drop-add:hover { text-decoration: underline; }
 .dc-drop-hint { color: var(--text-tertiary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh, 1rem); }
 .dc-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 0.75rem; }
-/* Приоритет (четыре кнопки) — по своей ширине, цвет — в остаток строки. */
-.dc-form-grid--wide { grid-template-columns: auto 1fr; gap: 0 1.5rem; }
-.dc-form-grid--wide .dc-type-switch { flex-wrap: nowrap; }
 .dc-form-error { margin: 0 0 0.5rem; color: var(--danger-color); font-size: var(--ui-th); }
 
 .dc-type-switch { display: flex; gap: 0.375rem; flex-wrap: wrap; }
@@ -1387,7 +1348,6 @@
   .dc-mcards { padding: 0.75rem; }
   .dc-mcard .mcard-head { align-items: flex-start; }
   .dc-mcard .dc-status-chip { flex: none; white-space: nowrap; }
-  .dc-mcard.has-color { border-left: 4px solid var(--dcc); }
   .dc-mcard .mcard-foot:empty { display: none; }
   .dc-mcard .dc-restore { min-height: 2.25rem; }
   .dc-form-select { min-height: 2.5rem; font-size: 16px; }
@@ -1395,8 +1355,7 @@
   .dc-board { padding: 0.75rem; scroll-snap-type: x mandatory; }
   .dc-column { flex-basis: 85vw; max-height: none; scroll-snap-align: start; }
   .dc-table-wrap, .dc-empty, .dc-error, .dc-note, .dc-mode-banner { margin-left: 0.75rem; margin-right: 0.75rem; }
-  .dc-form-grid, .dc-form-grid--wide { grid-template-columns: 1fr; }
-  .dc-form-grid--wide .dc-type-switch { flex-wrap: wrap; }
+  .dc-form-grid { grid-template-columns: 1fr; }
   .dc-form-row input[type='text'],
   .dc-form-row input[type='date'],
   .dc-form-row input[type='datetime-local'],

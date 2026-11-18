@@ -156,7 +156,7 @@ describe('Отчёты: проверка ДП/ДС', () => {
     assert.equal(s.deadlines.dueSoon, 1)
     assert.equal(s.deadlines.noDeadline, 1)
     assert.equal(s.attention.unassigned, 1, 'r1: сметчик — не исполнитель')
-    assert.equal(s.attention.highPriority, 1)
+    assert.ok(!('highPriority' in s.attention), 'приоритета у заявок больше нет (18.11.2026)')
     assert.equal(s.attention.staleNew, 1)
     assert.equal(s.attention.oldestNewDays, 5)
     assert.equal(s.attention.staleScan, 1)

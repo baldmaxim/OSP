@@ -24,6 +24,7 @@ import VirtualTableBody from '../components/VirtualTableBody'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import { IconTrophy } from '../components/icons/ActionIcons'
 import BlacklistMark from '../components/BlacklistMark'
+import { TenderRestartHeaderMark } from '../components/TenderRestartMark'
 import { vorStartDate } from '../utils/vorDates'
 import AccessDenied from '../components/AccessDenied'
 import FilterDropdown from '../components/FilterDropdown'
@@ -2045,6 +2046,8 @@ function TenderDetailPage() {
             )}
             {tenderObjectName(tender, 'Тендер')}
           </h2>
+          {/* «Перезапуск»: у нового — «перезапуск № 40», у прежнего — «заменён № 984» (мельче номера). */}
+          <TenderRestartHeaderMark tender={tender} />
           {tender.objects?.address && (
             <p className="tender-object-address" style={{ margin: '0.25rem 0 0', color: 'var(--text-tertiary)', fontSize: '0.875rem' }}>
               {tender.objects.address}

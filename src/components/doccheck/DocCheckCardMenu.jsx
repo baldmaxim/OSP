@@ -1,9 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { IconArchive, IconRestore, IconTrash } from '../icons/ActionIcons'
-import { DOC_CHECK_COLORS } from '../../utils/docCheckHelpers'
 
-// Меню карточки на доске («⋮»): цвет, перенос в колонку, архив, удаление.
+// Меню карточки на доске («⋮»): перенос в колонку, архив, удаление (цвета карточек нет с 18.11.2026).
 // Рисуется в <body> с fixed-позицией у кнопки: колонка доски прокручивается и
 // обрезала бы меню у нижней карточки. Закрывается щелчком мимо, Escape и прокруткой.
 export default function DocCheckCardMenu({ request, anchor, statuses, hasBoardFields, onAction, onClose }) {
@@ -43,31 +42,6 @@ export default function DocCheckCardMenu({ request, anchor, statuses, hasBoardFi
   return createPortal(
     <div ref={ref} className="dc-menu" role="menu" style={{ top: pos.top, left: pos.left }}>
       <button type="button" role="menuitem" className="dc-menu-item" onClick={() => act('open')}>Открыть заявку</button>
-
-      {hasBoardFields && (
-        <div className="dc-menu-group">
-          <div className="dc-menu-caption">Цвет карточки</div>
-          <div className="dc-menu-colors">
-            <button
-              type="button"
-              className={`dc-swatch dc-swatch--none${!request.color ? ' is-current' : ''}`}
-              aria-label="Без цвета"
-              title="Без цвета"
-              onClick={() => act('color', null)}
-            />
-            {DOC_CHECK_COLORS.map(c => (
-              <button
-                key={c.value}
-                type="button"
-                className={`dc-swatch dc-c-${c.value}${request.color === c.value ? ' is-current' : ''}`}
-                aria-label={c.label}
-                title={c.label}
-                onClick={() => act('color', c.value)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="dc-menu-group">
         <div className="dc-menu-caption">Переместить в колонку</div>

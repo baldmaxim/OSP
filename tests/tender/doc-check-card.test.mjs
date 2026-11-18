@@ -235,7 +235,7 @@ describe('Окно заявки на проверку ДП/ДС в браузе�
       const modal = await openCard(page, 'dcr-2')
       assert.deepEqual(await modal.locator('.dc-detail-tab').allTextContents(), ['Общая', 'История'])
       assert.deepEqual(await modal.locator('.dc-box-head').evaluateAll((els) => els.map((e) => e.firstChild.textContent)),
-        ['Примечание', 'Документы', 'Срок и приоритет', 'Статус', 'Исполнители', 'Согласование ПСДЦ', 'Создание'])
+        ['Примечание', 'Документы', 'Срок и метки', 'Статус', 'Исполнители', 'Согласование ПСДЦ', 'Создание'])
       const cols = await modal.locator('.dc-info-col').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)))
       assert.equal(cols.length, 2)
       assert.ok(cols[1] > cols[0] + 300, `колонки рядом: ${cols}`)

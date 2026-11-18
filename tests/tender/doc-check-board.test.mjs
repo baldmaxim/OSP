@@ -201,10 +201,11 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
       assert.deepEqual(await card.locator('.dc-chip--label').allTextContents(), ['Переподписание'])
       assert.deepEqual(await card.locator('.dc-avatar').allTextContents(), ['ЮМ'], 'исполнители — только юристы ОСП')
       assert.equal(await card.locator('.dc-count').textContent(), '2', 'файлы заявки (документ и понятийное соглашение) — скрепка с числом')
-      assert.match(await card.getAttribute('class'), /\bhas-color dc-c-red\b/)
+      // Цвета и приоритета нет (18.11.2026): у dcr-2 стенда они записаны (база до миграции 20270218) — карточка их не показывает.
+      assert.doesNotMatch(await card.getAttribute('class'), /has-color|dc-c-/)
+      assert.equal(await card.locator('.dc-prio').count(), 0)
       assert.match(await card.getAttribute('class'), /\bis-overdue\b/, 'срок прошёл — красная рамка')
       assert.match(await card.locator('.dc-due').getAttribute('class'), /is-overdue/)
-      assert.equal(await card.locator('.dc-prio.is-high').count(), 1)
       assert.doesNotMatch(await column(page, 'in_progress').locator('.dc-card[data-id="dcr-3"]').getAttribute('class'), /is-overdue/)
       assert.equal(await column(page, 'done').locator('.dc-card.is-done').count(), 2)
       assert.deepEqual(errors, [])
@@ -221,6 +222,7 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
       const toolbar = await page.locator('.dc-toolbar .fdrop-trigger').allTextContents()
       assert.ok(toolbar.some((t) => t.includes('Объект')), toolbar.join())
       assert.ok(!toolbar.some((t) => t.includes('Метка')), 'фильтра меток нет')
+      assert.ok(!toolbar.some((t) => t.includes('Приоритет')), 'фильтра приоритета нет (18.11.2026)')
 
       await pickObject(page, 'Бизнес-центр')
       assert.deepEqual((await counts(page)).in_progress, 1)
@@ -234,7 +236,7 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
     }
   })
 
-  it('кружок «завершить», меню карточки: цвет и перенос в колонку; история пишется', async () => {
+  it('кружок «завершить», меню карточки: перенос в колонку, цвета нет; история пишется', async () => {
     const { page, errors, close } = await openPage()
     try {
       await column(page, 'in_progress').locator('.dc-card[data-id="dcr-3"] .dc-card-check').click()
@@ -248,21 +250,18 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
       await column(page, 'in_progress').locator('.dc-card[data-id="dcr-3"]').waitFor()
 
       await column(page, 'new').locator('.dc-card[data-id="dcr-1"] .dc-card-more').click()
-      await page.locator('.dc-menu .dc-swatch[aria-label="Зелёный"]').click()
-      await page.waitForFunction(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-1').color === 'green')
-      assert.match(await column(page, 'new').locator('.dc-card[data-id="dcr-1"]').getAttribute('class'), /dc-c-green/)
-
-      await column(page, 'new').locator('.dc-card[data-id="dcr-1"] .dc-card-more').click()
+      await page.locator('.dc-menu .dc-menu-status').first().waitFor()
+      assert.equal(await page.locator('.dc-menu .dc-swatch, .dc-menu .dc-menu-colors').count(), 0, 'цвета карточки в меню нет')
+      assert.equal(await page.locator('.dc-menu', { hasText: 'Цвет' }).count(), 0)
       await page.locator('.dc-menu .dc-menu-status', { hasText: 'Загрузка в 1С' }).click()
       await column(page, 'accounting').locator('.dc-card[data-id="dcr-1"]').waitFor()
-      await page.waitForFunction(() => window.__fakeDb.doc_check_request_audit_log.length === 4)
+      await page.waitForFunction(() => window.__fakeDb.doc_check_request_audit_log.length === 3)
       assert.equal((await row(page, 'dcr-1')).status, 'accounting')
 
       const log = await page.evaluate(() => window.__fakeDb.doc_check_request_audit_log.map((l) => [l.request_id, l.event_type, l.field_name, l.new_value]))
       assert.deepEqual(log, [
         ['dcr-3', 'status_changed', 'status', 'done'],
         ['dcr-3', 'status_changed', 'status', 'in_progress'],
-        ['dcr-1', 'field_updated', 'color', 'green'],
         ['dcr-1', 'status_changed', 'status', 'accounting'],
       ])
       assert.deepEqual(errors, [])
@@ -290,15 +289,16 @@ describe('«Заявки на проверку ДП/ДС» в браузере',
       await form.locator('.dc-form-assignees .fdrop-trigger').click()
       await page.locator('.fdrop-panel .fdrop-option', { hasText: 'Юристова Мария Андреевна' }).click()
       await page.keyboard.press('Escape')
-      await form.getByRole('button', { name: 'Высокий' }).click()
-      await form.locator('.dc-swatch[aria-label="Синий"]').click()
+      // Приоритета и цвета в форме нет (18.11.2026).
+      assert.equal(await form.getByText('Приоритет', { exact: true }).count(), 0)
+      assert.equal(await form.getByText('Цвет карточки').count(), 0)
+      assert.equal(await form.locator('.dc-swatch').count(), 0)
       await form.getByRole('button', { name: 'Создать заявку' }).click()
       await column(page, 'edo').locator('.dc-card').waitFor()
       const created = await page.evaluate(() => window.__fakeDb.doc_check_requests.find((r) => r.status === 'edo'))
       assert.equal(created.notes, 'Письмо застройщика: проверить ДС по лоту 18')
       assert.deepEqual(created.labels, ['Направлены правки', 'ДП'])
-      assert.equal(created.priority, 'high')
-      assert.equal(created.color, 'blue')
+      assert.ok(!('priority' in created) && !('color' in created), 'приоритет и цвет не отправляются')
       assert.equal(created.due_date, day(3))
       assert.equal(created.sort_order, 1)
       assert.equal(created.counterparty_id, null)

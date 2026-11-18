@@ -50,6 +50,8 @@ import {
   pickSiteContact, fillSiteContact, upgradeLetterTemplate,
 } from '../utils/siteContacts'
 import { fetchSiteContact, fetchObjectManagers } from '../services/siteContacts'
+import { checkLetterTemplate, letterTemplateView } from '../utils/tenderLetterTemplate'
+import { fetchSharedLetterTemplate, saveSharedLetterTemplate } from '../services/tenderLetterTemplate'
 import { fetchCostPlanEconomists } from '../services/costPlanEconomists'
 import { economistByObject, pickCostPlanResponsible } from '../utils/costPlanEconomists'
 import {
@@ -65,7 +67,10 @@ import {
   IconJoint, IconOther, IconFolderTree, IconDocsStack, IconSearch,
 } from '../components/icons/ToolbarIcons'
 import { departmentConfig, objectDeptBadge, tenderObjectName, isConstructionTender } from '../utils/tenderDepartments'
-import { mainTenderStatuses, initialMainTenderStatus, shownMainTenderStatus, isClosedMainStatus } from '../utils/tenderStatuses'
+import { mainTenderStatuses, initialMainTenderStatus, shownMainTenderStatus, isClosedMainStatus, RESTART_STATUS } from '../utils/tenderStatuses'
+import { RESTART_LINK_FIELD, buildRestartIndex, hasRestartLink, restartLinkDescription } from '../utils/tenderRestart'
+import TenderRestartMark from '../components/TenderRestartMark'
+import TenderRestartDialog from '../components/TenderRestartDialog'
 import { weekKey } from '../utils/weeks'
 import { TENDER_DUTY_NAMES, DUTY_OVERRIDE_KEY, parseDutyOverride, currentDuty } from '../utils/tenderDuty'
 import TenderCallReminder from '../components/TenderCallReminder'
@@ -171,6 +176,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // Подразделение ВОР под описанием работ — то же поле, что в «ВОРах и РД», и
   // правит его тот же круг, что там: правка «Тендеров» или «ВОРов и РД».
   const canEditVorDivision = canEdit('tenders') || canEdit('vors')
+  // «Перезапуск» с выбором нового тендера (решение пользователя 18.11.2026) — в «Основном строительстве»; колонки
+  // tenders.restarted_by_tender_id ещё нет (миграция 20270217) — статус ставится без выбора, как раньше.
+  const restartLinkUi = !isMaterialsView && department === 'construction'
   // Телефон: список рендерим карточками вместо широкой таблицы
   const isPhone = useIsPhone()
   // Руководитель строительства (привязан к объекту) не видит внутренние примечания,
@@ -191,6 +199,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     } catch { return {} }
   })
   const [tenders, setTenders] = useState([])
+  // «Перезапуск»: какой тендер какие прежние заменил — по списку раздела (все вкладки читают один список).
+  const restartIndex = useMemo(() => buildRestartIndex(tenders), [tenders])
   const [objects, setObjects] = useState([])
   const [counterparties, setCounterparties] = useState([])
   const [responsibleContacts, setResponsibleContacts] = useState([])
@@ -288,6 +298,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [selectedCounterpartyIds, setSelectedCounterpartyIds] = useState([])
   const [showWinnerModal, setShowWinnerModal] = useState(false)
   const [tenderForWinnerSelection, setTenderForWinnerSelection] = useState(null)
+  // Окно «Перезапуск тендера № N»: тендер (прежний), для которого выбирают новый.
+  const [restartFor, setRestartFor] = useState(null)
   const [conceptSignedCount, setConceptSignedCount] = useState(0)
   // task 215: несколько победителей — массив { counterparty_id, scope_note }
   const [selectedWinners, setSelectedWinners] = useState([])
@@ -340,6 +352,18 @@ ${ATTACHMENT_BLOCK}
     }
   })
   const [templateSaved, setTemplateSaved] = useState(false)
+  // Общий шаблон письма ОС (18.11.2026): один на всех, в app_settings, меняет администратор. Остальные
+  // направления и ОС, пока общий не сохранён, — как раньше: свой шаблон в браузере (letterTemplate).
+  // Страница одна на все направления (без key), поэтому что применять — считаем от department, а не храним.
+  const sharedTemplateOn = department === 'construction' && !isMaterialsView
+  // state: loading | ready | error; text = null — общий шаблон не задан.
+  const [sharedTemplate, setSharedTemplate] = useState({ state: 'loading', text: null, updatedAt: null, error: '' })
+  const sharedTemplateRef = useRef(null)
+  // Черновик администратора: null — поле не трогали (показываем сохранённое). Отдельно от прочитанного из
+  // базы: ответ, пришедший позже, не затирает набранное.
+  const [templateDraft, setTemplateDraft] = useState(null)
+  const [templateBusy, setTemplateBusy] = useState(false)
+  const [templateError, setTemplateError] = useState('')
   // Фильтры множественного выбора: пустой массив = фильтр не применён.
   const [objectFilter, setObjectFilter] = useState(() => Array.isArray(savedFilters.objectFilter) ? savedFilters.objectFilter : [])
   const [responsibleFilter, setResponsibleFilter] = useState(() => Array.isArray(savedFilters.responsibleFilter) ? savedFilters.responsibleFilter : [])
@@ -859,6 +883,16 @@ ${ATTACHMENT_BLOCK}
       <span className="expand-toggle-chevron" aria-hidden>›</span>
     </button>
   )
+  // «Перезапуск» у номера: у нового — «перезапуск № 40», у прежнего — «заменён № 984» (правка — у кого правка тендеров).
+  const renderRestartMark = (tender) => (isMaterialsView ? null : (
+    <TenderRestartMark
+      tender={tender}
+      index={restartIndex}
+      canOpen={canOpenTenderCard}
+      onEdit={restartLinkUi && canEditTenders && activeTab !== 'deleted' ? setRestartFor : null}
+    />
+  ))
+
   const renderKpCounter = (tender) => {
     const requests = bidRequestCounts[tender.id] || 0
     const counter = renderKpCounterBase(tender)
@@ -1611,10 +1645,10 @@ ${ATTACHMENT_BLOCK}
       alert('Сначала назначьте ответственного по тендеру — без него нельзя сформировать письмо.')
       return
     }
-    const site = await resolveSiteContact(tender)
+    const [site, template] = await Promise.all([resolveSiteContact(tender), currentLetterTemplate()])
     const objectName = tenderObjectName(tender, '[Объект не указан]')
     const employee = responsibleContacts.find(c => c.id === tender.responsible_contact_id)
-    const letter = generateRequestLetter(tender, objectName, employee, site.text)
+    const letter = generateRequestLetter(tender, objectName, employee, site.text, template)
     setGeneratedLetter(letter)
     setLetterNotice(site.notice)
     setShowLetterModal(true)
@@ -1773,11 +1807,18 @@ ${ATTACHMENT_BLOCK}
     // Остальное из формы сохраняется, статус остаётся прежним, пока окно не завершит тендер.
     const completeInModal = !isMaterialsView && !!editingTender && formData.status === COMPLETED_STATUS
       && completionNeedsConcept(editingTender)
+    // «Перезапуск», выбранный в форме у тендера ОС, — так же окном: какой тендер его заменяет (TenderRestartDialog).
+    const restartInModal = restartLinkUi && !!editingTender && hasRestartLink(editingTender)
+      && formData.status === RESTART_STATUS && editingTender.status !== RESTART_STATUS
+    let restartAfter = null
     try {
       if (editingTender) {
         // Update existing tender — отправляем все поля
         const updatePayload = { ...normalizePayload(formData), ...(resolveCustomObject() || {}) }
-        if (completeInModal) updatePayload.status = editingTender.status
+        if (completeInModal || restartInModal) updatePayload.status = editingTender.status
+        // Статус ушёл из «Перезапуска» — ссылка на новый тендер снимается.
+        if (editingTender[RESTART_LINK_FIELD] && updatePayload.status !== RESTART_STATUS) updatePayload[RESTART_LINK_FIELD] = null
+        if (restartInModal) restartAfter = { ...editingTender, ...updatePayload }
         const { error } = await db
           .from('tenders')
           .update(updatePayload)
@@ -1826,7 +1867,7 @@ ${ATTACHMENT_BLOCK}
           }
         }
         // Если статус изменился через форму — отдельно
-        if (!completeInModal && (editingTender.status || null) !== (formData.status || null)) {
+        if (!completeInModal && !restartInModal && (editingTender.status || null) !== (formData.status || null)) {
           await logTenderEvent(editingTender.id, 'status_changed', {
             oldValue: editingTender.status || null,
             newValue: formData.status,
@@ -2053,6 +2094,7 @@ ${ATTACHMENT_BLOCK}
       })
       fetchTenders()
       if (completeInModal) await handleStatusChange(editingTender.id, COMPLETED_STATUS)
+      if (restartAfter) setRestartFor(restartAfter)
     } catch (error) {
       console.error('Ошибка сохранения тендера:', error.message)
       alert('Ошибка: ' + error.message)
@@ -2097,12 +2139,12 @@ ${ATTACHMENT_BLOCK}
   }, [editFromCardId, loading])
 
   useEffect(() => {
-    // Открыто окно завершения тендера (статус «Завершен» выбрали в этой форме) — в карточку после него.
-    if (showModal || tenderForWinnerSelection || !returnToCardRef.current) return
+    // Открыто окно завершения тендера или перезапуска (статус выбрали в этой форме) — в карточку после него.
+    if (showModal || tenderForWinnerSelection || restartFor || !returnToCardRef.current) return
     const id = returnToCardRef.current
     returnToCardRef.current = null
     navigate(`/tenders/${id}`)
-  }, [showModal, tenderForWinnerSelection, navigate])
+  }, [showModal, tenderForWinnerSelection, restartFor, navigate])
 
   const handleEditTender = (tender) => {
     setEditingTender(tender)
@@ -2237,6 +2279,14 @@ ${ATTACHMENT_BLOCK}
   // Открыть форму создания дочернего тендера на материалы для конкретного родительского тендера
 
   const handleStatusChange = async (tenderId, newStatus) => {
+    // «Перезапуск» в «Основном строительстве» — окно выбора нового тендера: статус и ссылку пишет оно (handleSaveRestart).
+    if (restartLinkUi && newStatus === RESTART_STATUS) {
+      const tender = tenders.find(t => t.id === tenderId) || (editingTender?.id === tenderId ? editingTender : null)
+      if (tender && hasRestartLink(tender)) {
+        setRestartFor(tender)
+        return
+      }
+    }
     // Для тендеров на материалы выбор победителя не требуется — статус ставится напрямую.
     // Для основных тендеров при переходе в «Завершен» открываем модал выбора победителя.
     if (!isMaterialsView && newStatus === 'Завершен') {
@@ -2267,10 +2317,13 @@ ${ATTACHMENT_BLOCK}
     try {
       const prev = tenders.find(t => t.id === tenderId)
       const oldStatus = prev?.status || null
+      // Ушёл из «Перезапуска» — ссылка на новый тендер снимается вместе со статусом.
+      const patch = { status: newStatus }
+      if (prev?.[RESTART_LINK_FIELD] && newStatus !== RESTART_STATUS) patch[RESTART_LINK_FIELD] = null
 
       const { error } = await db
         .from('tenders')
-        .update({ status: newStatus })
+        .update(patch)
         .eq('id', tenderId)
 
       if (error) throw error
@@ -2288,6 +2341,38 @@ ${ATTACHMENT_BLOCK}
       console.error('Ошибка изменения статуса:', error.message)
       alert('Ошибка изменения статуса: ' + error.message)
     }
+  }
+
+  // Окно «Перезапуск»: статус «Перезапуск» и тендер, который его заменил (или без него). Тендер уже в «Перезапуске» —
+  // меняется только ссылка. Ошибка — исключением: окно покажет её и останется открытым.
+  const handleSaveRestart = async (targetId) => {
+    const tender = restartFor
+    if (!tender) return
+    const prevStatus = tender.status || null
+    const prevTarget = tender[RESTART_LINK_FIELD] || null
+    const nextTarget = targetId || null
+    const patch = { status: RESTART_STATUS, [RESTART_LINK_FIELD]: nextTarget }
+    const { data, error } = await db.from('tenders').update(patch).eq('id', tender.id).select('id')
+    if (error) throw new Error(error.message)
+    if (!data?.length) throw new Error('тендер не изменён — нет права или он удалён')
+    if (prevStatus !== RESTART_STATUS) {
+      await logTenderEvent(tender.id, 'status_changed', {
+        oldValue: prevStatus,
+        newValue: RESTART_STATUS,
+        description: `Статус: ${prevStatus || '—'} → ${RESTART_STATUS}`,
+      })
+    }
+    if (prevTarget !== nextTarget) {
+      const target = nextTarget ? restartIndex.byId.get(nextTarget) || tenders.find(t => t.id === nextTarget) : null
+      await logTenderEvent(tender.id, 'field_updated', {
+        fieldName: RESTART_LINK_FIELD,
+        oldValue: prevTarget,
+        newValue: nextTarget,
+        description: restartLinkDescription(nextTarget ? (target || {}) : null),
+      })
+    }
+    setRestartFor(null)
+    fetchTenders()
   }
 
   // task 215: помощники для выбора нескольких победителей
@@ -2321,13 +2406,12 @@ ${ATTACHMENT_BLOCK}
       // основной победитель (первый выбранный) — для обратной совместимости
       const primaryWinnerId = selectedWinners[0]?.counterparty_id || null
 
-      // Обновляем статус тендера и основного победителя
+      // Обновляем статус тендера и основного победителя; ссылка «перезапущен тендером» у завершённого не нужна.
+      const completePatch = { status: 'Завершен', winner_counterparty_id: primaryWinnerId }
+      if (tenderForWinnerSelection[RESTART_LINK_FIELD]) completePatch[RESTART_LINK_FIELD] = null
       const { error: tenderError } = await db
         .from('tenders')
-        .update({
-          status: 'Завершен',
-          winner_counterparty_id: primaryWinnerId
-        })
+        .update(completePatch)
         .eq('id', tenderForWinnerSelection.id)
 
       if (tenderError) throw tenderError
@@ -2462,7 +2546,7 @@ ${ATTACHMENT_BLOCK}
   }
 
   // siteContactText — контакт площадки (resolveSiteContact); null — строки о выезде в письме нет.
-  const generateRequestLetter = (tenderData, objectName, employee, siteContactText = null) => {
+  const generateRequestLetter = (tenderData, objectName, employee, siteContactText = null, template = letterTemplate) => {
     const replacements = {
       '{work_description}': tenderData.work_description || '[Описание работ]',
       '{object_name}': objectName || '[Объект не указан]',
@@ -2480,20 +2564,100 @@ ${ATTACHMENT_BLOCK}
       '{tender_package_link}': tenderData.tender_package_link || '[Ссылка не указана]'
     }
 
-    let result = letterTemplate
+    let result = template
     for (const [key, value] of Object.entries(replacements)) {
       result = result.replaceAll(key, value)
     }
     return fillSiteContact(result, siteContactText)
   }
 
-  const handleSaveTemplate = () => {
-    localStorage.setItem(LETTER_TEMPLATE_KEY, letterTemplate)
+  // ── Общий шаблон письма ОС ──
+  // → текст из базы или null. Не прочитался — остаётся прочитанное раньше (у письма будет хотя бы оно).
+  const loadSharedTemplate = async () => {
+    try {
+      const row = await fetchSharedLetterTemplate()
+      sharedTemplateRef.current = row.text
+      setSharedTemplate({ state: 'ready', text: row.text, updatedAt: row.updatedAt, error: '' })
+    } catch (err) {
+      console.warn('Не удалось прочитать общий шаблон письма:', err?.message || err)
+      setSharedTemplate(prev => (prev.state === 'ready' ? prev : { ...prev, state: 'error', error: describeSupabaseError(err) }))
+    }
+    return sharedTemplateRef.current
+  }
+
+  useEffect(() => {
+    if (sharedTemplateOn) loadSharedTemplate()
+  }, [sharedTemplateOn])
+
+  // Шаблон для письма. В ОС общий перечитывается при каждом письме: правку администратора коллеги
+  // получают без обновления страницы. Общего нет — свой из браузера, как раньше.
+  const currentLetterTemplate = async () => {
+    if (!sharedTemplateOn) return letterTemplate
+    return (await loadSharedTemplate()) || letterTemplate
+  }
+
+  const templateView = letterTemplateView({
+    shared: sharedTemplateOn,
+    sharedText: sharedTemplate.text,
+    localText: letterTemplate,
+    isAdmin,
+  })
+  const templateAdmin = templateView.mode === 'shared-admin'
+  // Администратор не правит, пока общий шаблон не прочитан: иначе сохранил бы поверх него текст из браузера.
+  const templateEditable = templateAdmin
+    ? sharedTemplate.state === 'ready' && !templateBusy
+    : templateView.mode === 'local' && canEditTenders
+  const templateText = templateAdmin && templateDraft != null ? templateDraft : templateView.text
+  const templateDirty = templateAdmin && templateDraft != null && templateDraft !== templateView.text
+
+  const flashTemplateSaved = () => {
     setTemplateSaved(true)
     setTimeout(() => setTemplateSaved(false), 2000)
   }
 
+  const saveSharedTemplate = async (raw) => {
+    const check = checkLetterTemplate(raw)
+    if (check.error) {
+      setTemplateError(check.error)
+      return
+    }
+    setTemplateBusy(true)
+    setTemplateError('')
+    try {
+      const row = await saveSharedLetterTemplate(check.value)
+      sharedTemplateRef.current = row.text
+      setSharedTemplate({ state: 'ready', text: row.text, updatedAt: row.updatedAt, error: '' })
+      setTemplateDraft(null)
+      flashTemplateSaved()
+    } catch (err) {
+      setTemplateError(err?.code === '42501'
+        ? 'Общий шаблон письма меняет только администратор.'
+        : 'Не удалось сохранить шаблон: ' + describeSupabaseError(err))
+    } finally {
+      setTemplateBusy(false)
+    }
+  }
+
+  const handleTemplateInput = (value) => {
+    setTemplateError('')
+    if (templateAdmin) setTemplateDraft(value)
+    else setLetterTemplate(value)
+  }
+
+  const handleSaveTemplate = () => {
+    if (templateAdmin) {
+      saveSharedTemplate(templateText)
+      return
+    }
+    localStorage.setItem(LETTER_TEMPLATE_KEY, letterTemplate)
+    flashTemplateSaved()
+  }
+
   const handleResetTemplate = () => {
+    if (templateAdmin) {
+      if (window.confirm('Вернуть шаблон по умолчанию для всех сотрудников?')) saveSharedTemplate(DEFAULT_LETTER_TEMPLATE)
+      return
+    }
     if (window.confirm('Вернуть шаблон по умолчанию?')) {
       setLetterTemplate(DEFAULT_LETTER_TEMPLATE)
       localStorage.setItem(LETTER_TEMPLATE_KEY, DEFAULT_LETTER_TEMPLATE)
@@ -3636,6 +3800,7 @@ ${ATTACHMENT_BLOCK}
                         {tender.status}
                       </span>
                     )}
+                    {renderRestartMark(tender)}
                     <TgPublishToggle tender={tender} canEdit={canToggleTgPublished} onToggle={handleToggleTgPublished} short />
                     <CompletionLetterToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleCompletionLetter} iconOnly />
                     {department === 'construction' && (
@@ -3838,12 +4003,14 @@ ${ATTACHMENT_BLOCK}
                           <span className="tp-num-value">{tender.public_tender_number ?? '—'}</span>
                           {renderExpandToggle(tender)}
                         </div>
+                        {renderRestartMark(tender)}
                         {renderKpCounter(tender)}
                       </td>
                     ) : (
                       <>
                         <td className="tp-num">
                           {tender.public_tender_number ?? '—'}
+                          {renderRestartMark(tender)}
                         </td>
                         <td>
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
@@ -4726,9 +4893,35 @@ ${ATTACHMENT_BLOCK}
             className="tender-docs-back"
             onClick={() => setActiveTab('all')}
           >← К тендерам</button>
-          <p style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', marginBottom: '1rem' }}>
-            Редактируйте шаблон письма для запроса КП. Используйте переменные в фигурных скобках — они будут заменены реальными данными при создании тендера:
+          <p className="letter-template-lead" style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', marginBottom: '1rem' }}>
+            {templateAdmin && (
+              <>
+                Шаблон письма для запроса КП — общий для всех сотрудников: после сохранения по нему формируются
+                письма у каждого.{' '}
+                {sharedTemplate.state === 'ready' && !sharedTemplate.text && (
+                  <>Общий шаблон ещё не сохранён: сейчас у каждого сотрудника свой текст из его браузера, ниже — ваш.{' '}</>
+                )}
+              </>
+            )}
+            {templateView.mode === 'shared-view' && (
+              <>Шаблон письма для запроса КП — общий для всех сотрудников, его меняет администратор.{' '}</>
+            )}
+            {templateView.mode === 'local' && <>Редактируйте шаблон письма для запроса КП.{' '}</>}
+            {templateView.mode === 'shared-view'
+              ? 'Переменные в фигурных скобках заменяются данными тендера:'
+              : 'Используйте переменные в фигурных скобках — они будут заменены реальными данными тендера:'}
           </p>
+          {templateAdmin && sharedTemplate.state === 'error' && (
+            <p className="letter-template-error" role="alert" style={{ fontSize: '0.8125rem', color: 'var(--danger-color)', marginBottom: '1rem' }}>
+              Не удалось прочитать общий шаблон{sharedTemplate.error ? `: ${sharedTemplate.error}` : ''}. Пока он не
+              прочитан, править нельзя — иначе сохранённый текст был бы затёрт.{' '}
+              <button
+                type="button"
+                onClick={loadSharedTemplate}
+                style={{ padding: 0, border: 'none', background: 'none', color: 'inherit', font: 'inherit', fontWeight: 600, textDecoration: 'underline', cursor: 'pointer' }}
+              >Повторить</button>
+            </p>
+          )}
 
           <div style={{
             display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '1rem'
@@ -4765,10 +4958,12 @@ ${ATTACHMENT_BLOCK}
             ))}
           </div>
           <textarea
-            value={letterTemplate}
-            onChange={(e) => setLetterTemplate(e.target.value)}
-            readOnly={!canEditTenders}
-            disabled={!canEditTenders}
+            className="letter-template-text"
+            aria-label="Шаблон письма"
+            value={templateText}
+            onChange={(e) => handleTemplateInput(e.target.value)}
+            readOnly={!templateEditable}
+            disabled={!templateEditable}
             style={{
               width: '100%',
               minHeight: '400px',
@@ -4784,19 +4979,44 @@ ${ATTACHMENT_BLOCK}
               boxSizing: 'border-box',
             }}
           />
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center' }}>
-            {canEditTenders && (
+          {templateError && (
+            <p className="letter-template-error" role="alert" style={{ fontSize: '0.8125rem', color: 'var(--danger-color)', margin: '0.5rem 0 0' }}>
+              {templateError}
+            </p>
+          )}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center' }}>
+            {(templateAdmin || (templateView.mode === 'local' && canEditTenders)) && (
               <>
-                <button className="btn-primary" onClick={handleSaveTemplate}>
-                  {templateSaved ? 'Сохранено!' : 'Сохранить шаблон'}
+                <button type="button" className="btn-primary" onClick={handleSaveTemplate} disabled={!templateEditable}>
+                  {templateBusy ? 'Сохраняем…' : templateSaved ? 'Сохранено!' : templateAdmin ? 'Сохранить для всех' : 'Сохранить шаблон'}
                 </button>
-                <button className="btn-secondary" onClick={handleResetTemplate}>
+                <button type="button" className="btn-secondary" onClick={handleResetTemplate} disabled={!templateEditable}>
                   По умолчанию
                 </button>
               </>
             )}
             {templateSaved && (
-              <span style={{ fontSize: '0.8125rem', color: '#16a34a' }}>Шаблон сохранён</span>
+              <span className="letter-template-saved" style={{ fontSize: '0.8125rem', color: '#16a34a' }}>
+                {templateAdmin ? 'Шаблон сохранён — теперь он у всех сотрудников' : 'Шаблон сохранён'}
+              </span>
+            )}
+            {templateDirty && !templateBusy && (
+              <>
+                <span className="letter-template-dirty" style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>
+                  Изменения не сохранены
+                </span>
+                <button
+                  type="button"
+                  className="letter-template-discard"
+                  onClick={() => { setTemplateDraft(null); setTemplateError('') }}
+                  style={{ padding: 0, border: 'none', background: 'none', color: 'var(--text-tertiary)', font: 'inherit', fontSize: '0.8125rem', textDecoration: 'underline', cursor: 'pointer' }}
+                >отменить</button>
+              </>
+            )}
+            {sharedTemplateOn && sharedTemplate.text && sharedTemplate.updatedAt && !templateDirty && !templateSaved && (
+              <span className="letter-template-stamp" style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>
+                Общий шаблон изменён {new Date(sharedTemplate.updatedAt).toLocaleDateString('ru-RU')}
+              </span>
             )}
           </div>
         </div>
@@ -5203,15 +5423,19 @@ ${ATTACHMENT_BLOCK}
                       const selectedContact = responsibleContacts.find(c => c.id === formData.responsible_contact_id)
                       // Подразделения в форме нет (оно правится плашкой в реестре) — берём у
                       // редактируемого тендера; объект — из формы.
-                      const site = await resolveSiteContact({
-                        ...editingTender, ...formData, objects: selectedObject || editingTender?.objects,
-                      })
+                      const [site, template] = await Promise.all([
+                        resolveSiteContact({
+                          ...editingTender, ...formData, objects: selectedObject || editingTender?.objects,
+                        }),
+                        currentLetterTemplate(),
+                      ])
                       // Номера в форме нет — он присваивается базой, берём из редактируемого тендера.
                       const letter = generateRequestLetter(
                         { ...formData, public_tender_number: editingTender?.public_tender_number },
                         objectName,
                         selectedContact,
                         site.text,
+                        template,
                       )
                       setGeneratedLetter(letter)
                       setLetterNotice(site.notice)
@@ -5551,6 +5775,15 @@ ${ATTACHMENT_BLOCK}
       })()}
 
       {/* Модальное окно выбора победителя */}
+      {restartFor && (
+        <TenderRestartDialog
+          tender={restartFor}
+          tenders={tenders}
+          onSave={handleSaveRestart}
+          onCancel={() => setRestartFor(null)}
+        />
+      )}
+
       {showWinnerModal && tenderForWinnerSelection && (() => {
         const tenderCps = tenderCounterparties[tenderForWinnerSelection.id] || []
         // Основное строительство: победитель и подписанное понятийное соглашение обязательны (см. utils/tenderConceptAgreement.js).

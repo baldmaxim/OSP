@@ -295,9 +295,6 @@ function DocCheckStats({ scopedObjectIds = [], canOpenBoard = false }) {
                   hint={at.oldestNewDays != null ? `самая давняя — ${at.oldestNewDays} дн.` : 'новых заявок нет'} />
                 <QueueItem tone="warn" label={`Скан не вернулся за ${DOC_CHECK_SCAN_STALE_DAYS} дней`} value={at.staleScan}
                   hint="«Ожидаем скан», бумажный оригинал" />
-                {hasBoard && (
-                  <QueueItem tone="warn" label="Высокий приоритет" value={at.highPriority} hint="не в «Завершено»" />
-                )}
               </div>
             </section>
           </div>

@@ -125,7 +125,7 @@ export function computeDocCheckStats(rows, times = new Map(), employees = new Ma
   const byStatus = { ...Object.fromEntries(DOC_CHECK_STAT_STATUSES.map(s => [s, 0])), other: 0 }
   const byType = { dp: 0, ds: 0 }
   const deadlines = { overdue: 0, dueSoon: 0, noDeadline: 0, overdueList: [] }
-  const attention = { unassigned: 0, highPriority: 0, staleNew: 0, oldestNewDays: null, staleScan: 0 }
+  const attention = { unassigned: 0, staleNew: 0, oldestNewDays: null, staleScan: 0 }
   let archived = 0
   const objects = new Map()
   const people = new Map()
@@ -172,7 +172,6 @@ export function computeDocCheckStats(rows, times = new Map(), employees = new Ma
     }
     if (isOpen) {
       if (!assignees.length) attention.unassigned += 1
-      if (r.priority === 'high') attention.highPriority += 1
       if (r.status === 'new' && days != null) {
         if (days >= DOC_CHECK_NEW_STALE_DAYS) attention.staleNew += 1
         attention.oldestNewDays = Math.max(attention.oldestNewDays ?? 0, days)

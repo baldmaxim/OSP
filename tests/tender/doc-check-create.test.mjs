@@ -204,7 +204,9 @@ describe('Заявки на проверку ДП/ДС: создание рук�
       assert.ok(await page.locator('.dc-column-add').count() > 1)
       await page.getByRole('button', { name: '+ Новая заявка' }).click()
       const shown = await labels(page)
-      for (const work of ['Исполнители', 'Срок', 'Приоритет', 'Метки', 'Объект']) assert.ok(shown.includes(work), `${work}: ${shown.join(' | ')}`)
+      for (const work of ['Исполнители', 'Срок', 'Метки', 'Объект']) assert.ok(shown.includes(work), `${work}: ${shown.join(' | ')}`)
+      // Приоритета и цвета карточки нет (18.11.2026, решение пользователя).
+      assert.ok(!shown.includes('Приоритет') && !shown.includes('Цвет карточки'), shown.join(' | '))
       assert.equal(await form(page).locator('#dc-own-object').count(), 0)
       assert.equal(await page.locator('[data-testid="dc-files"]').count(), 0)
       assert.deepEqual(errors, [])

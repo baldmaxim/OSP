@@ -11,7 +11,7 @@ import { panByDrag } from '../components/doccheck/boardGestures'
 import FilterDropdown from '../components/FilterDropdown'
 import IconTile from '../components/IconTile'
 import { IconFilter, IconObject, IconSearch, IconUser } from '../components/icons/ToolbarIcons'
-import { IconArchive, IconCalendar, IconFlag, IconRestore, IconTrash } from '../components/icons/ActionIcons'
+import { IconArchive, IconCalendar, IconRestore, IconTrash } from '../components/icons/ActionIcons'
 import { IconDocCheck } from '../components/icons/NavIcons'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { counterpartyNumbers } from '../utils/counterpartyFilters'
@@ -25,7 +25,6 @@ import useBodyClass from '../hooks/useBodyClass'
 import { useIsPhone } from '../hooks/useMediaQuery'
 import {
   DEADLINE_FILTERS,
-  DOC_CHECK_PRIORITIES,
   DOC_CHECK_SELECTS,
   DOC_CHECK_STATUS_CLASS,
   DOC_CHECK_STATUS_LABEL,
@@ -157,7 +156,6 @@ export default function DocCheckRequestsPage() {
   const [filterTypes, setFilterTypes] = useState([])
   const [filterAssignees, setFilterAssignees] = useState([])
   const [filterDeadline, setFilterDeadline] = useState('')
-  const [filterPriorities, setFilterPriorities] = useState([])
 
   const [formFor, setFormFor] = useState(null)   // { request, status } | null
   const [detailId, setDetailId] = useState(null)
@@ -540,11 +538,7 @@ export default function DocCheckRequestsPage() {
 
   const handleCardAction = (request, type, value) => {
     if (type === 'open') setDetailId(request.id)
-    else if (type === 'color') {
-      if ((request.color || null) !== value) {
-        patchRequest(request, { color: value }, fieldEvents(request, { color: value }))
-      }
-    } else if (type === 'status') moveTo(request, value)
+    else if (type === 'status') moveTo(request, value)
     else if (type === 'archive') archive(request)
     else if (type === 'unarchive') unarchive(request)
     else if (type === 'delete') handleDelete(request)
@@ -596,7 +590,6 @@ export default function DocCheckRequestsPage() {
       if (filterCounterpartyIds.length && !filterCounterpartyIds.includes(r.counterparty_id)) return false
       if (filterTypes.length && !filterTypes.includes(r.doc_type)) return false
       if (!matchesAssignees(r, filterAssignees, employees)) return false
-      if (filterPriorities.length && !filterPriorities.includes(r.priority)) return false
       if (!matchesDeadline(r, filterDeadline)) return false
       if (!q) return true
       // Номер заявки (ID): «ID 12» / «№ 12» / «#12» — только она; «12» — она и тексты с «12».
@@ -608,7 +601,7 @@ export default function DocCheckRequestsPage() {
       ].some(v => (v || '').toLowerCase().includes(q))
     })
   }, [inMode, search, filterObjectIds, filterCounterpartyIds, filterTypes, filterAssignees,
-    filterPriorities, filterDeadline, employees])
+    filterDeadline, employees])
 
   // Реестр — в порядке колонок доски, внутри колонки — как на доске; удалённые — сначала последние.
   const listRows = useMemo(() => {
@@ -658,12 +651,12 @@ export default function DocCheckRequestsPage() {
     }, { replace: true })
   }, [linkedId, loading, requests, setSearchParams])
   // Сколько фильтров панели выбрано (поиск — в шапке, не считается): число на кнопке «Фильтры» телефона.
-  const activeFilters = [filterObjectIds, filterCounterpartyIds, filterTypes, filterAssignees, filterPriorities]
+  const activeFilters = [filterObjectIds, filterCounterpartyIds, filterTypes, filterAssignees]
     .filter(list => list.length > 0).length + (filterDeadline ? 1 : 0)
   const hasFilters = activeFilters > 0 || search.trim() !== ''
   const resetFilters = () => {
     setSearch(''); setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterTypes([])
-    setFilterAssignees([]); setFilterPriorities([]); setFilterDeadline('')
+    setFilterAssignees([]); setFilterDeadline('')
   }
   const deletedCount = requests.filter(r => r.deleted_at).length
   const archivedCount = requests.filter(r => !r.deleted_at && r.archived_at).length
@@ -701,7 +694,7 @@ export default function DocCheckRequestsPage() {
             key={r.id}
             role="button"
             tabIndex={0}
-            className={`mcard is-tappable dc-mcard${r.color ? ` has-color dc-c-${r.color}` : ''}`}
+            className="mcard is-tappable dc-mcard"
             data-dc-open={r.id}
             onClick={() => setDetailId(r.id)}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailId(r.id) } }}
@@ -774,7 +767,7 @@ export default function DocCheckRequestsPage() {
           </thead>
           <tbody>
             {listRows.map(r => (
-              <tr key={r.id} data-dc-open={r.id} onClick={() => setDetailId(r.id)} className={`dc-row${r.color ? ` has-color dc-c-${r.color}` : ''}`}>
+              <tr key={r.id} data-dc-open={r.id} onClick={() => setDetailId(r.id)} className="dc-row">
                 {hasNumbers && <td className="dc-col-id ui-num">{r.request_number ?? '—'}</td>}
                 <td>
                   <div className="dc-row-title">{cardTitle(r)}</div>
@@ -935,12 +928,6 @@ export default function DocCheckRequestsPage() {
               icon={<IconCalendar size={15} />}
               value={filterDeadline} onChange={(v) => setFilterDeadline(v || '')}
               options={[{ value: '', label: 'Любой срок' }, ...DEADLINE_FILTERS]}
-            />
-            <FilterDropdown
-              label="" multiple allLabel="Приоритет"
-              icon={<IconFlag size={15} />}
-              value={filterPriorities} onChange={setFilterPriorities}
-              options={DOC_CHECK_PRIORITIES}
             />
           </>
         )}
