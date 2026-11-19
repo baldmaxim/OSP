@@ -77,7 +77,7 @@ const ContractTreePage = lazy(() => import('../../../src/pages/ContractTreePage'
 const KpReviewPage = lazy(() => import('../../../src/pages/KpReviewPage'))
 // Реестр заявок на ДС — так же (DcRequestsPage.css, рабочий слой).
 const DcRequestsPage = lazy(() => import('../../../src/pages/DcRequestsPage'))
-// «Заявка на заключение ДП» и большое окно о новой заявке — так же, со своими данными (dp-stand.jsx).
+// «+ Заявка на заключение ДП» реестра договоров и большое окно о новой заявке — так же (dp-stand.jsx, данные — seed.js ?dcDpc=1).
 const DpStand = lazy(() => import('./dp-stand.jsx'))
 // «Заявки на проверку ДП/ДС» — так же (DocCheckRequestsPage.css, рабочий слой).
 const DocCheckRequestsPage = lazy(() => import('../../../src/pages/DocCheckRequestsPage'))
@@ -142,7 +142,7 @@ const routes = (
     <Route path="/contracts/tree" element={<Suspense fallback={null}><ContractTreePage /></Suspense>} />
     <Route path="/kp-review" element={<Suspense fallback={null}><KpReviewPage /></Suspense>} />
     <Route path="/dc-requests" element={<Suspense fallback={null}><DcRequestsPage /></Suspense>} />
-    <Route path="/dp-requests" element={<Suspense fallback={null}><DpStand page /></Suspense>} />
+    <Route path="/stand/dp-create" element={<Suspense fallback={null}><DpStand button /></Suspense>} />
     <Route path="/stand/dp-alert" element={<Suspense fallback={null}><DpStand /></Suspense>} />
     <Route path="/doc-check-requests" element={<Suspense fallback={null}><DocCheckRequestsPage /></Suspense>} />
     <Route path="/cost-plans" element={<Suspense fallback={null}><CostPlansPage /></Suspense>} />

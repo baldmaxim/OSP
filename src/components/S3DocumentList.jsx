@@ -3,6 +3,8 @@ import { useRole } from '../contexts/RoleContext'
 import { deleteDocument, fetchDocuments, uploadFile } from '../services/s3'
 import { downloadS3File } from './FileDownload'
 import S3DocumentPreview from './S3DocumentPreview'
+import DocListZipButton from './DocListZipButton'
+import { filesCountLabel, groupDocsByDay, localTime } from '../utils/docDateFolders'
 import './S3DocumentList.css'
 
 // Универсальный список S3-документов для произвольной сущности.
@@ -13,6 +15,11 @@ import './S3DocumentList.css'
 // переименование (по умолчанию = canEdit): сервер меняет файлы по праву правки раздела, а загружать бывает можно и с
 // просмотром (файлы договора — server/osp-api/src/routes/s3Presign.js, CHANGE_RULES). canDeleteDoc(doc) — ещё и по самому
 // файлу (файл задачи меняют загрузивший, постановщик и администратор).
+// downloadAllOwner — кнопка «Скачать всё» (все файлы списка одним ZIP «<владелец> — <title>.zip», DocListZipButton);
+// без пропа кнопки нет. Видна всем, кто видит список: скачивание — по тому же праву, что и одного файла.
+// dateFolders — файлы по папкам дня загрузки (utils/docDateFolders.js): новая папка открыта, прежние свёрнуты; загруженное
+// сегодня ложится в папку сегодняшнего дня. Без пропа — плоский список, как прежде.
+// Несколько файлов за раз: ошибка одного не останавливает остальные; в конце — список незагруженных.
 
 // Аккуратные inline SVG-иконки (вместо эмодзи, которые на части систем рендерятся криво).
 const Icon = ({ children }) => (
@@ -25,6 +32,11 @@ const EyeIcon = () => <Icon><circle cx="12" cy="12" r="3" /><path d="M2 12s3.5-7
 const DownloadIcon = () => <Icon><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /><path d="M12 15V3" /></Icon>
 const TrashIcon = () => <Icon><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></Icon>
 const UploadIcon = () => <Icon><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" /></Icon>
+const FolderIcon = () => <Icon><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /></Icon>
+const ChevronIcon = () => <Icon><path d="m9 6 6 6-6 6" /></Icon>
+
+// Сколько незагруженных файлов перечислять в сообщении.
+const FAILED_SHOWN = 10
 
 function formatBytes(bytes) {
   if (bytes == null) return '—'
@@ -47,7 +59,7 @@ function formatDateTime(iso) {
   return `${dd}.${mm}.${yyyy} ${hh}:${mi}`
 }
 
-export default function S3DocumentList({ ownerType, ownerId, title = 'Документы', canEdit: canEditProp, canDelete: canDeleteProp, canDeleteDoc = null, category = null, excludeCategory = null, onChange }) {
+export default function S3DocumentList({ ownerType, ownerId, title = 'Документы', canEdit: canEditProp, canDelete: canDeleteProp, canDeleteDoc = null, category = null, excludeCategory = null, downloadAllOwner = null, dateFolders = false, onChange }) {
   const { isEmployee } = useRole()
   const canEdit = canEditProp !== undefined ? canEditProp : isEmployee
   const canDelete = canDeleteProp !== undefined ? canDeleteProp : canEdit
@@ -56,6 +68,10 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [uploading, setUploading] = useState(false)
+  // { done, total } — пока идёт загрузка нескольких файлов.
+  const [uploadProgress, setUploadProgress] = useState(null)
+  // Папки, раскрытые или свёрнутые вручную: день → true/false; остальные — по умолчанию (открыта только новая).
+  const [folderOpen, setFolderOpen] = useState({})
   const [previewDoc, setPreviewDoc] = useState(null)
   const fileInputRef = useRef(null)
 
@@ -80,19 +96,59 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
     setUploading(true)
+    setUploadProgress({ done: 0, total: files.length })
+    const failed = []
     try {
-      for (const file of files) {
-        await uploadFile({ file, ownerType, ownerId, category })
+      for (const [i, file] of files.entries()) {
+        try {
+          await uploadFile({ file, ownerType, ownerId, category })
+        } catch (err) {
+          failed.push({ name: file.name, message: err?.message || String(err) })
+        }
+        setUploadProgress({ done: i + 1, total: files.length })
       }
-      await reload()
-      onChange?.()
-    } catch (err) {
-      alert('Ошибка загрузки: ' + (err.message || err))
     } finally {
       setUploading(false)
+      setUploadProgress(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
+    // Загруженные показываем и тогда, когда часть файлов не прошла.
+    if (failed.length < files.length) {
+      await reload()
+      onChange?.()
+    }
+    if (failed.length === 1 && files.length === 1) {
+      alert('Ошибка загрузки: ' + failed[0].message)
+    } else if (failed.length) {
+      const lines = failed.slice(0, FAILED_SHOWN).map((f) => `• ${f.name}: ${f.message}`)
+      if (failed.length > FAILED_SHOWN) lines.push(`…и ещё ${failed.length - FAILED_SHOWN}`)
+      alert(`Не загружено ${failed.length} из ${files.length}:\n${lines.join('\n')}`)
+    }
   }
+
+  const toggleFolder = (key, open) => setFolderOpen((prev) => ({ ...prev, [key]: !open }))
+
+  const renderRow = (doc, when) => (
+    <tr key={doc.id}>
+      <td className="s3-doc-name">{doc.file_name}</td>
+      <td>{formatBytes(doc.size_bytes)}</td>
+      <td>{doc.uploaded_by_name || '—'}</td>
+      <td className="s3-doc-when" title={dateFolders ? formatDateTime(doc.created_at) : undefined}>{when}</td>
+      <td className="s3-doc-actions">
+        <button type="button" title="Просмотр" aria-label="Просмотр" onClick={() => setPreviewDoc(doc)}><EyeIcon /></button>
+        <button type="button" title="Скачать" aria-label="Скачать" onClick={() => handleDownload(doc)}><DownloadIcon /></button>
+        {canDelete && (!canDeleteDoc || canDeleteDoc(doc)) && (
+          <button
+            type="button"
+            title="Удалить"
+            aria-label="Удалить"
+            className="s3-doc-btn-danger"
+            onClick={() => handleDelete(doc)}
+          ><TrashIcon /></button>
+        )}
+      </td>
+    </tr>
+  )
 
   const handleDownload = async (doc) => {
     try {
@@ -122,26 +178,33 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
     <div className="s3-doc-list">
       <div className="s3-doc-toolbar">
         <h3 className="s3-doc-title">{title}</h3>
-        {canEdit && (
-          <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              style={{ display: 'none' }}
-              onChange={handlePickFiles}
-            />
-            <button
-              type="button"
-              className="s3-doc-btn-primary"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading || !ownerId}
-            >
-              <UploadIcon />
-              {uploading ? 'Загрузка…' : 'Загрузить'}
-            </button>
-          </>
-        )}
+        <div className="s3-doc-toolbar-actions">
+          {downloadAllOwner != null && !loading && documents.length > 0 && (
+            <DocListZipButton docs={documents} ownerName={downloadAllOwner} title={title} />
+          )}
+          {canEdit && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                style={{ display: 'none' }}
+                onChange={handlePickFiles}
+              />
+              <button
+                type="button"
+                className="s3-doc-btn-primary"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading || !ownerId}
+                title={dateFolders ? 'Можно выбрать несколько файлов — они лягут в папку с сегодняшней датой' : undefined}
+              >
+                <UploadIcon />
+                {!uploading ? 'Загрузить'
+                  : uploadProgress?.total > 1 ? `Загрузка ${uploadProgress.done} из ${uploadProgress.total}…` : 'Загрузка…'}
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {loading && <div className="s3-doc-empty">Загрузка списка…</div>}
@@ -157,33 +220,37 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
               <th>Название</th>
               <th>Размер</th>
               <th>Кто загрузил</th>
-              <th>Когда</th>
+              <th>{dateFolders ? 'Время' : 'Когда'}</th>
               <th className="s3-doc-actions-col">Действия</th>
             </tr>
           </thead>
-          <tbody>
-            {documents.map(doc => (
-              <tr key={doc.id}>
-                <td className="s3-doc-name">{doc.file_name}</td>
-                <td>{formatBytes(doc.size_bytes)}</td>
-                <td>{doc.uploaded_by_name || '—'}</td>
-                <td className="s3-doc-when">{formatDateTime(doc.created_at)}</td>
-                <td className="s3-doc-actions">
-                  <button type="button" title="Просмотр" aria-label="Просмотр" onClick={() => setPreviewDoc(doc)}><EyeIcon /></button>
-                  <button type="button" title="Скачать" aria-label="Скачать" onClick={() => handleDownload(doc)}><DownloadIcon /></button>
-                  {canDelete && (!canDeleteDoc || canDeleteDoc(doc)) && (
+          {dateFolders ? groupDocsByDay(documents).map((folder, i) => {
+            const open = folderOpen[folder.key] ?? i === 0
+            return (
+              <tbody key={folder.key || 'no-date'} className="s3-doc-folder">
+                <tr className="s3-doc-folder-row">
+                  <td colSpan={5}>
                     <button
                       type="button"
-                      title="Удалить"
-                      aria-label="Удалить"
-                      className="s3-doc-btn-danger"
-                      onClick={() => handleDelete(doc)}
-                    ><TrashIcon /></button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
+                      className={`s3-doc-folder-toggle${open ? ' is-open' : ''}`}
+                      aria-expanded={open}
+                      onClick={() => toggleFolder(folder.key, open)}
+                    >
+                      <span className="s3-doc-folder-chevron"><ChevronIcon /></span>
+                      <FolderIcon />
+                      <span className="s3-doc-folder-date">{folder.label}</span>
+                      <span className="s3-doc-folder-count">{filesCountLabel(folder.docs.length)}</span>
+                    </button>
+                  </td>
+                </tr>
+                {open && folder.docs.map((doc) => renderRow(doc, localTime(doc.created_at)))}
+              </tbody>
+            )
+          }) : (
+            <tbody>
+              {documents.map((doc) => renderRow(doc, formatDateTime(doc.created_at)))}
+            </tbody>
+          )}
         </table>
       )}
 

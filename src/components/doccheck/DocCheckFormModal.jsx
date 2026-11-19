@@ -12,6 +12,7 @@ import {
   DOC_CHECK_CONCEPT_CATEGORY,
   DOC_CHECK_STATUS_LABEL,
   DOC_TYPES,
+  DP_CONCLUSION,
   MAX_CREATOR_NAME,
   assigneeIdsToSave,
   assigneeStaffOptions,
@@ -44,6 +45,10 @@ import {
 // такую заявку не примет и база). creatorOnly — право только создавать (20270102, руководитель строительства, экономист объекта):
 // исполнителей, срока, приоритета, цвета и меток нет (их ставит отдел, база их у автора снимает), зато сразу — файлы, двумя
 // частями, как «Документы» в окне заявки: понятийное соглашение и документы на проверку. После создания автор их не меняет.
+//
+// «Заключение ДП» (третий тип, 19.11.2026): у подающего понятийное соглашение обязательно — как было в разделе «Заявка на заключение
+// ДП» (там его держала база при подаче; здесь строка рождается раньше файлов, поэтому держит форма), контрагент и примечание —
+// нет. fixedType — тип задан заранее и не меняется (кнопка «+ Заявка на заключение ДП» в «Реестре по договорам»).
 
 const EMPTY = {
   object_id: '', counterparty_id: '', doc_type: 'ds', doc_number: '', doc_date: '', notes: '',
@@ -59,7 +64,7 @@ const blockStrayDrop = {
 }
 
 // Файлы новой заявки: уходят на сервер вместе с ней (строки ещё нет).
-function StagedFiles({ id, label, hint, testId, files, onFiles }) {
+function StagedFiles({ id, label, hint, testId, files, onFiles, required = false }) {
   const inputRef = useRef(null)
   const [dragging, setDragging] = useState(false)
   const add = (list) => {
@@ -68,9 +73,9 @@ function StagedFiles({ id, label, hint, testId, files, onFiles }) {
   }
   return (
     <div className="dc-form-row">
-      <span className="dc-form-label" id={`${id}-label`}>{label}</span>
+      <span className="dc-form-label" id={`${id}-label`}>{label}{required && <b className="dc-form-req" title="Обязательно"> *</b>}</span>
       <div
-        className={`dc-drop${dragging ? ' is-over' : ''}`}
+        className={`dc-drop${dragging ? ' is-over' : ''}${required && !files.length ? ' is-required' : ''}`}
         data-testid={testId}
         onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
         onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false) }}
@@ -101,7 +106,8 @@ function StagedFiles({ id, label, hint, testId, files, onFiles }) {
 
 export default function DocCheckFormModal({
   request, status, objects, counterpartyOptions, employees, labelSuggestions,
-  hasBoardFields, hasCardFields, canEditCreated, creatorOnly = false, ownObjects, ownObjectsFailed = false, onSave, onClose,
+  hasBoardFields, hasCardFields, canEditCreated, creatorOnly = false, ownObjects, ownObjectsFailed = false, fixedType = null,
+  onSave, onClose,
 }) {
   const [form, setForm] = useState(() => (request
     ? {
@@ -118,7 +124,7 @@ export default function DocCheckFormModal({
       created_at: toDateTimeInput(request.created_at),
       created_by_name: request.created_by_name || '',
     }
-    : EMPTY))
+    : { ...EMPTY, doc_type: fixedType || EMPTY.doc_type }))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [conceptFiles, setConceptFiles] = useState([])
@@ -131,6 +137,13 @@ export default function DocCheckFormModal({
     ? ownObjectChoice({ ownObjects, failed: ownObjectsFailed, objectId: form.object_id })
     : null
   const ownPick = ownChoice && !(ownObjects && ownObjects.length === 0)
+  const dpConclusion = form.doc_type === DP_CONCLUSION
+  // Файлы при создании — у подающего (право только создавать); понятийное соглашение «Заключения ДП» — обязательно.
+  const stagedFiles = creatorOnly && !request
+  const conceptRequired = stagedFiles && dpConclusion
+  // Подающий заявку на заключение ДП номера и даты договора ещё не знает (договора нет) — их вносит отдел в правке заявки,
+  // как в прежней короткой форме «Заявки на заключение ДП» (понятийка, документы, примечание).
+  const showDocFields = !(stagedFiles && dpConclusion)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -138,7 +151,11 @@ export default function DocCheckFormModal({
       setError(ownChoice.problem[0].toUpperCase() + ownChoice.problem.slice(1))
       return
     }
-    if (!form.counterparty_id && !form.notes.trim()) {
+    if (conceptRequired && !conceptFiles.length) {
+      setError('Приложите понятийное соглашение — без него заявку на заключение ДП не подать')
+      return
+    }
+    if (!dpConclusion && !form.counterparty_id && !form.notes.trim()) {
       setError('Укажите контрагента или опишите заявку в примечании')
       return
     }
@@ -173,7 +190,7 @@ export default function DocCheckFormModal({
         payload.email_link = emailLink || null
       }
       Object.assign(payload, created.patch)
-      const staged = creatorOnly && !request
+      const staged = stagedFiles
         ? [...conceptFiles.map(file => ({ file, category: DOC_CHECK_CONCEPT_CATEGORY })), ...files.map(file => ({ file, category: null }))]
         : []
       await onSave(payload, staged)
@@ -191,7 +208,7 @@ export default function DocCheckFormModal({
       <div className="modal dc-form-modal" role="dialog" aria-modal="true" aria-label={request ? 'Изменить заявку' : 'Новая заявка'} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <h3>{request ? 'Изменить заявку' : 'Новая заявка на проверку'}</h3>
+            <h3>{request ? 'Изменить заявку' : fixedType === DP_CONCLUSION ? 'Заявка на заключение ДП' : 'Новая заявка на проверку'}</h3>
             {!request && status && (
               <p className="dc-detail-sub">Колонка: {DOC_CHECK_STATUS_LABEL[status] || status}</p>
             )}
@@ -200,22 +217,25 @@ export default function DocCheckFormModal({
         </div>
 
         <form className="dc-form" onSubmit={handleSubmit}>
-          <div className="dc-form-row">
-            <span className="dc-form-label">Тип документа</span>
-            <div className="dc-type-switch">
-              {DOC_TYPES.map(t => (
-                <button
-                  key={t.value}
-                  type="button"
-                  className={`dc-type-opt${form.doc_type === t.value ? ' is-active' : ''}`}
-                  aria-pressed={form.doc_type === t.value}
-                  onClick={() => set({ doc_type: t.value })}
-                  title={t.title}
-                >{t.label} — {t.title}</button>
-              ))}
+          {!fixedType && (
+            <div className="dc-form-row">
+              <span className="dc-form-label">Тип документа</span>
+              <div className="dc-type-switch">
+                {DOC_TYPES.map(t => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    className={`dc-type-opt${t.value === DP_CONCLUSION ? ' dc-type-opt--dpc' : ''}${form.doc_type === t.value ? ' is-active' : ''}`}
+                    aria-pressed={form.doc_type === t.value}
+                    onClick={() => set({ doc_type: t.value })}
+                    title={t.title}
+                  >{t.option}</button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
+          {showDocFields && (
           <div className="dc-form-grid">
             <div className="dc-form-row">
               <label htmlFor="dc-num">Номер документа</label>
@@ -237,6 +257,7 @@ export default function DocCheckFormModal({
               />
             </div>
           </div>
+          )}
 
           <div className="dc-form-grid">
             <div className="dc-form-row">
@@ -296,7 +317,9 @@ export default function DocCheckFormModal({
               rows={3}
               value={form.notes}
               onChange={(e) => set({ notes: e.target.value })}
-              placeholder="Что проверить, что запросили и у кого — видно на карточке"
+              placeholder={dpConclusion
+                ? 'Причина: какой подрядчик, на какие работы — видно на карточке'
+                : 'Что проверить, что запросили и у кого — видно на карточке'}
             />
           </div>
 
@@ -314,20 +337,23 @@ export default function DocCheckFormModal({
             </div>
           )}
 
-          {creatorOnly && !request && (
+          {stagedFiles && (
             <>
               <StagedFiles
                 id="dc-concept-files"
                 label="Понятийное соглашение"
-                hint="Если есть. Можно перетащить сюда."
+                required={conceptRequired}
+                hint={conceptRequired ? 'Обязательно. Можно перетащить сюда.' : 'Если есть. Можно перетащить сюда.'}
                 testId="dc-concept-files"
                 files={conceptFiles}
-                onFiles={setConceptFiles}
+                onFiles={(list) => { setConceptFiles(list); setError('') }}
               />
               <StagedFiles
                 id="dc-files"
-                label="Документы на проверку"
-                hint="ДП или ДС, приложения. Можно перетащить сюда. Пока заявка в «Новых», файлы можно добавить и удалить в её окне."
+                label={dpConclusion ? 'Документы' : 'Документы на проверку'}
+                hint={dpConclusion
+                  ? 'Если есть: проект договора, приложения. Можно перетащить сюда. Пока заявка в «Новых», файлы можно добавить и удалить в её окне.'
+                  : 'ДП или ДС, приложения. Можно перетащить сюда. Пока заявка в «Новых», файлы можно добавить и удалить в её окне.'}
                 testId="dc-files"
                 files={files}
                 onFiles={setFiles}

@@ -11,6 +11,7 @@ import {
   dueShort,
   dueState,
   fmtDocDate,
+  isDpConclusion,
   requestIdLabel,
   shownAssigneeIds,
 } from '../../utils/docCheckHelpers'
@@ -27,12 +28,14 @@ const DUE_TITLE = {
 // кружок «завершить», заголовок «Контрагент / ДС № 1» с примечанием, внизу
 // номер заявки (ID, с 20270123), объект, дата добавления и метки, срок, файлы, сообщения, письмо и кружки
 // исполнителей. Цвета и приоритета нет (18.11.2026, решение пользователя). Остальное — в карточке заявки по щелчку.
+// «Заключение ДП» — светло-фиолетовая карточка, тип — в заголовке (19.11.2026, решение пользователя).
 function DocCheckCard({ request, employees, canEdit, onOpen, onToggleDone, onMenu }) {
   const done = CLOSED_DOC_CHECK_STATUSES.has(request.status)
   const due = dueState(request)
   const created = createdShort(request.created_at)
   const classes = [
     'dc-card',
+    isDpConclusion(request) ? 'is-dp-conclusion' : '',
     canEdit ? 'is-movable' : '',
     done ? 'is-done' : '',
     due === 'overdue' ? 'is-overdue' : '',

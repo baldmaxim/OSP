@@ -38,6 +38,41 @@
 .s3-doc-btn-primary:hover { opacity: 0.92; }
 .s3-doc-btn-primary:disabled { opacity: 0.55; cursor: default; }
 
+/* Кнопки шапки: «Скачать всё» (если включена пропом) и «Загрузить». На телефоне переносятся под заголовок. */
+.s3-doc-toolbar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* «Скачать всё» — вторичная: рамкой, не заливкой, чтобы «Загрузить» оставалась главной. */
+.s3-doc-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: calc(0.4375rem - 1px) calc(0.875rem - 1px);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.s3-doc-btn-secondary:hover { background: var(--bg-tertiary); border-color: var(--primary-color, #2563eb); }
+.s3-doc-btn-secondary:disabled { opacity: 0.55; cursor: default; }
+.s3-doc-btn-secondary:focus-visible { outline: 2px solid var(--primary-color, #2563eb); outline-offset: 2px; }
+
+@media (max-width: 768px) {
+  .s3-doc-toolbar { flex-wrap: wrap; }
+  .s3-doc-toolbar-actions { justify-content: flex-start; }
+}
+
 .s3-doc-empty {
   padding: 1rem;
   text-align: center;
@@ -121,6 +156,56 @@
   background: #fee2e2;
   color: #b91c1c;
   border-color: #fecaca;
+}
+
+/* Папки по дню загрузки (проп dateFolders, «Должная осмотрительность»): строка-заголовок на всю ширину таблицы, кнопка
+   раскрывает и сворачивает папку; файлы папки — с отступом под датой. */
+.s3-doc-table .s3-doc-folder-row > td { padding: 0; }
+
+.s3-doc-folder-toggle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.s3-doc-folder-toggle:hover { background: var(--bg-tertiary); }
+.s3-doc-folder-toggle:focus-visible { outline: 2px solid var(--primary-color, #2563eb); outline-offset: -2px; }
+.s3-doc-folder-toggle > svg { color: var(--text-secondary); flex-shrink: 0; }
+
+.s3-doc-folder-chevron {
+  display: inline-flex;
+  color: var(--text-secondary);
+  transition: transform 0.12s ease;
+}
+
+.s3-doc-folder-toggle.is-open .s3-doc-folder-chevron { transform: rotate(90deg); }
+
+.s3-doc-folder-date {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.s3-doc-folder-count {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.s3-doc-folder .s3-doc-name { padding-left: 2.75rem; }
+
+/* Телефон: колонка имени и так узкая — без отступа под датой. */
+@media (max-width: 768px) {
+  .s3-doc-folder .s3-doc-name { padding-left: 0.625rem; }
 }
 
 /* Модалка просмотра. */

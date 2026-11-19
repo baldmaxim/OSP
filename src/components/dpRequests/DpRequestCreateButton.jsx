@@ -1,60 +1,56 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { useRole } from '../../contexts/RoleContext'
-import DpRequestFormModal from './DpRequestFormModal'
+import DocCheckFormModal from '../doccheck/DocCheckFormModal'
 import { IconClose } from '../icons/ToolbarIcons'
-import { loadDpObjects, loadDpStaff } from '../../services/dpRequests'
-import { DP_CREATED_EVENT, DP_REQUEST_PARAM, dpErrorText } from '../../utils/dpRequests'
+import { fetchPickerCounterparties } from '../../services/counterpartyPicker'
+import { createDocCheckRequest, failedFilesText, loadPickerObjects, topSortOrder } from '../../services/docCheckRequests'
+import { counterpartyNumbers } from '../../utils/counterpartyFilters'
+import { counterpartyPickerOptions, isPickableCounterparty } from '../../utils/counterpartyPicker'
+import { DP_CONCLUSION } from '../../utils/docCheckHelpers'
+import { DP_CREATED_EVENT } from '../../utils/dpRequests'
+import '../../styles/workUi.css'
+import '../../pages/DocCheckRequestsPage.css'
 import './DpRequestCreateButton.css'
 
-// «+ Заявка на заключение ДП» в «Реестре по договорам» (10.11.2026, решение пользователя: подать заявку — плюсиком рядом с
-// вкладкой «Все»; с 10.11.2026, позже — единственное место подачи: на странице /dp-requests кнопки нет, там работа с заявками;
-// 11.11.2026 вкладки «Все» не стало — кнопка среди действий шапки реестра). Окно —
-// DpRequestFormModal, с теми же правами: кнопка — у права dp_requests_create, подающий с привязкой к объектам
-// выбирает свой объект, работающий с заявками (dp_requests) видит ещё блок «Заполняет отдел». Запреты — в базе (20261227, 20261231).
-// После подачи — плашка с номером и ссылкой на заявку (если раздел заявок открыт), окно о новой заявке у получателей; открытая страница
-// заявок (событие DP_CREATED_EVENT с id) перечитывает реестр и подсвечивает строку.
+// «+ Заявка на заключение ДП» в «Реестре по договорам» (10.11.2026 — плюсиком у вкладок, с 11.11.2026 — среди действий шапки).
+// С 19.11.2026 (решение пользователя) заявка на заключение ДП — карточка доски «Заявки на проверку ДП/ДС» (doc_type 'dp_conclusion',
+// светло-фиолетовая), отдельного раздела /dp-requests нет. Окно — форма доски с заданным типом: объект (свой — из «Ролей»),
+// контрагент (если известен), примечание, понятийное соглашение (обязательно) и документы. Заявка встаёт в «Новые заявки».
+// Кнопка — у права создания заявок доски (doc_check_requests_create: руководитель строительства и экономист объекта; администратор
+// всегда) — у тех же ролей, что раньше было право «Заявка на заключение ДП: создание». Запреты — в базе (20270102, 20270219).
+// После подачи — плашка со ссылкой на заявку на доске; окно о новой заявке у получателей заводит база.
 const NOTE_MS = 15000
 
 export default function DpRequestCreateButton() {
-  const { role, userProfile, canEdit, canView, scopedObjectIds } = useRole()
-  const canCreate = canEdit('dp_requests_create')
-  const canWork = canEdit('dp_requests')
+  const { userProfile, user, canEdit, canView, scopedObjectIds } = useRole()
+  const canCreate = canEdit('doc_check_requests_create')
   const scopeKey = (scopedObjectIds || []).join(',')
-  const pickOwnObject = !canWork && canCreate && scopeKey !== ''
 
   const [open, setOpen] = useState(false)
-  const [objects, setObjects] = useState([])
-  const [staff, setStaff] = useState([])
-  const [ownObjects, setOwnObjects] = useState(null)
-  const [ownObjectsFailed, setOwnObjectsFailed] = useState(false)
+  const [objects, setObjects] = useState(null)
+  const [objectsFailed, setObjectsFailed] = useState(false)
+  const [counterparties, setCounterparties] = useState([])
   const [loadError, setLoadError] = useState('')
-  const [created, setCreated] = useState(null) // { id, request_number }
+  const [created, setCreated] = useState(null) // { id }
 
   // Справочники — при открытии окна, а не с реестром договоров: кнопку нажимают редко.
   useEffect(() => {
     if (!open) return undefined
     let alive = true
     setLoadError('')
-    if (pickOwnObject) {
-      setOwnObjects(null)
-      setOwnObjectsFailed(false)
-      loadDpObjects(scopeKey.split(',')).then((rows) => { if (alive) setOwnObjects(rows) }).catch((err) => {
-        if (!alive) return
-        setOwnObjectsFailed(true)
-        setLoadError(`Ваши объекты не загрузились: ${dpErrorText(err)}`)
-      })
-    }
-    if (canWork) {
-      const ids = scopeKey ? scopeKey.split(',') : []
-      loadDpObjects(ids).then((rows) => { if (alive) setObjects(rows) })
-        .catch((err) => { if (alive) setLoadError(`Объекты не загрузились: ${dpErrorText(err)}`) })
-      loadDpStaff().then((rows) => { if (alive) setStaff(rows) })
-        .catch((err) => { if (alive) setLoadError(`Сотрудники объектов не загрузились: ${dpErrorText(err)}`) })
-    }
+    setObjects(null)
+    setObjectsFailed(false)
+    loadPickerObjects(scopeKey ? scopeKey.split(',') : []).then((rows) => { if (alive) setObjects(rows) }).catch((err) => {
+      if (!alive) return
+      setObjectsFailed(true)
+      setLoadError(`Объекты не загрузились: ${err?.message || err}`)
+    })
+    fetchPickerCounterparties().then((rows) => { if (alive) setCounterparties(rows || []) })
+      .catch((err) => { if (alive) setLoadError(`Контрагенты не загрузились: ${err?.message || err}`) })
     return () => { alive = false }
-  }, [open, pickOwnObject, canWork, scopeKey])
+  }, [open, scopeKey])
 
   useEffect(() => {
     if (!created) return undefined
@@ -62,13 +58,31 @@ export default function DpRequestCreateButton() {
     return () => clearTimeout(t)
   }, [created])
 
+  const counterpartyOptions = useMemo(() => {
+    const numbers = counterpartyNumbers(counterparties)
+    return counterpartyPickerOptions(counterparties.filter(isPickableCounterparty), numbers)
+  }, [counterparties])
+  const employees = useMemo(() => new Map(), [])
+
   if (!canCreate) return null
 
-  const onSaved = (row) => {
-    setOpen(false)
-    if (!row?.id) return
-    setCreated(row)
-    window.dispatchEvent(new CustomEvent(DP_CREATED_EVENT, { detail: { id: row.id } }))
+  const onSave = async (payload, files = []) => {
+    try {
+      const sortOrder = await topSortOrder('new').catch(() => 1)
+      const { id, failed } = await createDocCheckRequest({
+        payload: { ...payload, doc_type: DP_CONCLUSION },
+        status: 'new',
+        sortOrder,
+        author: userProfile?.full_name || user?.email || 'Пользователь',
+        files,
+      })
+      setOpen(false)
+      setCreated({ id })
+      window.dispatchEvent(new CustomEvent(DP_CREATED_EVENT, { detail: { id } }))
+      if (failed.length) alert(failedFilesText(failed))
+    } catch (err) {
+      alert('Заявка не подана: ' + (err?.message || err))
+    }
   }
 
   return (
@@ -83,30 +97,35 @@ export default function DpRequestCreateButton() {
         Заявка на заключение ДП
       </button>
       {(open || created) && createPortal(
-        // ui-work — тот же рабочий слой, что у страницы заявок: окно выглядит одинаково, откуда бы его ни открыли.
-        <div className="ui-work dpr-portal">
+        // Окно — форма доски: её стили — под корнем страницы доски (doc-check-page). Обёртка без своего бокса: оверлей — fixed.
+        <div className="ui-work doc-check-page dpr-portal" style={{ display: 'contents' }}>
           {open && (
-            <DpRequestFormModal
+            <DocCheckFormModal
               request={null}
-              objects={objects}
-              staff={staff}
-              me={{ role, name: userProfile?.full_name || '' }}
-              canWork={canWork}
-              ownObjects={pickOwnObject ? ownObjects : undefined}
-              ownObjectsFailed={ownObjectsFailed}
+              status="new"
+              objects={objects || []}
+              counterpartyOptions={counterpartyOptions}
+              employees={employees}
+              labelSuggestions={[]}
+              hasBoardFields
+              hasCardFields={false}
+              canEditCreated={false}
+              creatorOnly
+              ownObjects={scopeKey ? objects : undefined}
+              ownObjectsFailed={objectsFailed}
+              fixedType={DP_CONCLUSION}
+              onSave={onSave}
               onClose={() => setOpen(false)}
-              onSaved={onSaved}
             />
           )}
-          {open && loadError && <p className="dpr-error cr-dp-load-error" role="alert">{loadError}</p>}
+          {open && loadError && <p className="cr-dp-load-error" role="alert">{loadError}</p>}
           {created && (
             <div className="cr-dp-created" role="status">
               <span>
-                Заявка на заключение ДП{created.request_number ? ` № ${created.request_number}` : ''} подана.
-                {' '}Объект, договор и сумму заполнит отдел.
+                Заявка на заключение ДП подана: «Заявки на проверку ДП/ДС», колонка «Новые заявки».
               </span>
-              {canView('dp_requests') && (
-                <Link to={`/dp-requests?${DP_REQUEST_PARAM}=${encodeURIComponent(created.id)}`} onClick={() => setCreated(null)}>
+              {canView('doc_check_requests') && (
+                <Link to={`/doc-check-requests?request=${encodeURIComponent(created.id)}`} onClick={() => setCreated(null)}>
                   Открыть заявку
                 </Link>
               )}

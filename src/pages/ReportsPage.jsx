@@ -10,7 +10,6 @@ import { reportAmounts } from '../utils/contractAmendments'
 import EngineersActivity from '../components/reports/EngineersActivity'
 import KpStats from '../components/reports/KpStats'
 import DcRequestStats from '../components/reports/DcRequestStats'
-import DpRequestStats from '../components/reports/DpRequestStats'
 import DocCheckStats from '../components/reports/DocCheckStats'
 import ContractorStats from '../components/reports/ContractorStats'
 import { BarChart, ProgressBar, StatusDonut } from '../components/reports/ReportCharts'
@@ -154,7 +153,8 @@ function ReportsPage() {
     ? [
         'overview',
         ...(canView('dc_requests') ? ['dc_requests'] : []),
-        ...(canView('dp_requests') ? ['dp_requests'] : []),
+        // «Заключение ДП» с 19.11.2026 — карточки доски проверки ДП/ДС: отчёт доски по одному виду, то же право.
+        ...(canView('doc_check_requests') ? ['dp_requests'] : []),
         ...(canView('doc_check_requests') ? ['doc_check'] : []),
       ]
     : []
@@ -1272,7 +1272,7 @@ function ReportsPage() {
         {/* Заключение ДП и проверка ДП/ДС: так же — свои данные, после первого открытия остаются смонтированными. */}
         {(dpVisited || showContractSub('dp_requests')) && contractSubs.includes('dp_requests') && (
           <div className="reports-subview" hidden={!showContractSub('dp_requests')}>
-            <DpRequestStats scopedObjectIds={scopedObjectIds} canOpenRegistry={canView('dp_requests')} />
+            <DocCheckStats scopedObjectIds={scopedObjectIds} canOpenBoard={canView('doc_check_requests')} fixedDocType="dp_conclusion" />
           </div>
         )}
         {(docCheckVisited || showContractSub('doc_check')) && contractSubs.includes('doc_check') && (

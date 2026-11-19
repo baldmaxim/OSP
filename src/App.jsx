@@ -60,6 +60,13 @@ function HomeRedirect() {
   return <Navigate to={to} replace />
 }
 
+// Раздела «Заявка на заключение ДП» (/dp-requests) нет с 19.11.2026: заявки — карточки «Заключение ДП» на доске «Заявки на
+// проверку ДП/ДС» (перенесены миграцией 20270219 с тем же id). Прежние ссылки (письма, закладки, ?request=<id>) ведут туда же.
+function DpRequestsRedirect() {
+  const { search, hash } = useLocation()
+  return <Navigate to={`/doc-check-requests${search}${hash}`} replace />
+}
+
 // Lazy load всех страниц — загружаются только при переходе
 const ObjectsPage = lazy(() => import('./pages/ObjectsPage'))
 const ObjectDetailPage = lazy(() => import('./pages/ObjectDetailPage'))
@@ -93,7 +100,6 @@ const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 const ContractDetailPage = lazy(() => import('./pages/ContractDetailPage'))
 const PsdcBatchPage = lazy(() => import('./pages/PsdcBatchPage'))
 const DcRequestsPage = lazy(() => import('./pages/DcRequestsPage'))
-const DpRequestsPage = lazy(() => import('./pages/DpRequestsPage'))
 const DocCheckRequestsPage = lazy(() => import('./pages/DocCheckRequestsPage'))
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 const PublicTendersPage = lazy(() => import('./pages/PublicTendersPage'))
@@ -180,7 +186,7 @@ function EmployeeLayout() {
             <Route path={CONTRACTS_TREE_PATH} element={<PermissionRoute section="contracts"><ContractTreePage /></PermissionRoute>} />
             <Route path="/contracts/:contractId" element={<PermissionRoute section="contracts"><ContractDetailPage /></PermissionRoute>} />
             <Route path="/dc-requests" element={<PermissionRoute section="dc_requests"><DcRequestsPage /></PermissionRoute>} />
-            <Route path="/dp-requests" element={<PermissionRoute section="dp_requests"><DpRequestsPage /></PermissionRoute>} />
+            <Route path="/dp-requests" element={<DpRequestsRedirect />} />
             <Route path="/doc-check-requests" element={<PermissionRoute section="doc_check_requests"><DocCheckRequestsPage /></PermissionRoute>} />
             {/* /profile — без отдельной секции в role_permissions: доступен любому
                 сотруднику. PermissionRoute без section всё равно гейтит загрузку/ошибку

@@ -1,6 +1,7 @@
 // «Реестр по договорам» глазами сотрудника объекта (10.11.2026, решение пользователя): руководитель строительства и экономист
 // объекта видят договоры только своих объектов, без общей папки раздела, без «+ Добавить договор», без «Структуры хранения» и
-// «Стандартных приложений»; заявку на заключение ДП подают кнопкой «+ Заявка на заключение ДП» — то же окно, что на /dp-requests.
+// «Стандартных приложений»; заявку на заключение ДП подают кнопкой «+ Заявка на заключение ДП» — с 19.11.2026 это форма доски
+// «Заявки на проверку ДП/ДС» с типом «Заключение ДП»: заявка встаёт в «Новые заявки» доски (раздела /dp-requests нет).
 // 11.11.2026 вкладки «Все» не стало (это «Договоры и ДС») — кнопка среди действий шапки реестра, не между вкладками.
 // У администратора и сотрудника без привязки к объектам — всё как раньше, плюс та же кнопка, если есть право подавать заявки.
 // Стенд tests/tender/ui (route=/contracts/registry), Chromium. Люди и объекты вымышленные.
@@ -11,8 +12,8 @@ import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 
 const launch = browserLaunchOptions()
 const BASE = 'route=/contracts/registry&contracts=12&latency=0'
-// Руководитель строительства одного объекта: просмотр договоров, подаёт заявки на ДП, с ними не работает.
-const SITE = 'asRole=construction_manager&asUser=boss-1&asName=Строев%20Борис%20Иванович&noEdit=contracts,dp_requests,admin&scope=obj-2'
+// Руководитель строительства одного объекта: просмотр договоров, подаёт заявки на доску проверки ДП/ДС, с ними не работает.
+const SITE = 'asRole=construction_manager&asUser=boss-1&asName=Строев%20Борис%20Иванович&noEdit=contracts,doc_check_requests,admin&scope=obj-2'
 const CONCEPT = { name: 'Понятийное.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4') }
 
 describe('Реестр по договорам: сотрудник объекта и «+ Заявка на заключение ДП»', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
@@ -79,55 +80,47 @@ describe('Реестр по договорам: сотрудник объект�
     } finally { await close() }
   })
 
-  it('«+ Заявка на заключение ДП»: то же окно, свой объект стоит сам; после подачи — номер и ссылка на заявку', async () => {
+  it('«+ Заявка на заключение ДП»: форма доски с этим типом, свой объект стоит сам; после подачи — ссылка на карточку доски', async () => {
     const { page, errors, close } = await open(SITE)
     try {
-      // Отметки базы на подаче (как dp_requests_guard): черновик, затем «новая» с номером.
-      await page.evaluate(() => {
-        window.__fakeTriggers = {
-          ...(window.__fakeTriggers || {}),
-          dp_requests: (row, old) => {
-            if (!old) { row.status = 'draft'; return }
-            if (old.status === 'draft' && row.status === 'new') row.request_number = 41
-          },
-        }
-      })
       await page.locator('.cr-dp-add').click()
-      const d = page.locator('.dpr-dialog')
+      const d = page.locator('.dc-form-modal')
       await d.waitFor()
-      assert.equal(await d.locator('h3').innerText(), 'Новая заявка на заключение ДП')
-      // Окно — в <body>, поверх реестра, на рабочем слое (тот же вид, что на странице заявок).
+      assert.equal(await d.locator('h3').innerText(), 'Заявка на заключение ДП')
+      // Окно — в <body>, поверх реестра, на стилях доски и рабочем слое (тот же вид, что на доске).
       const where = await d.evaluate((el) => ({
-        portal: !!el.closest('body > .dpr-portal.ui-work'),
+        portal: !!el.closest('body > .dpr-portal.ui-work.doc-check-page'),
         inTabs: !!el.closest('.status-tabs'),
-        overlay: getComputedStyle(el.closest('.dpr-overlay')).position,
+        overlay: getComputedStyle(el.closest('.modal-overlay')).position,
         font: getComputedStyle(el).fontFamily,
       }))
       assert.deepEqual({ portal: where.portal, inTabs: where.inTabs, overlay: where.overlay }, { portal: true, inTabs: false, overlay: 'fixed' })
       assert.match(where.font, /Inter/)
+      assert.equal(await d.locator('.dc-type-opt').count(), 0, 'тип задан кнопкой')
 
       const select = d.getByLabel('Объект')
       await select.locator('option', { hasText: 'Бизнес-центр «Нурлы»' }).waitFor({ state: 'attached' })
       assert.equal(await select.isDisabled(), true, 'один объект — стоит сам')
-      assert.equal(await d.getByLabel('Сумма, ₽').count(), 0, 'поля отдела подающему не показываются')
+      assert.equal(await d.getByText('Исполнители').count(), 0, 'работа отдела подающему не показывается')
 
-      await page.locator('[data-testid="dpr-concept-files"] input[type=file]').setInputFiles(CONCEPT)
+      await page.locator('[data-testid="dc-concept-files"] input[type=file]').setInputFiles(CONCEPT)
       await d.getByLabel('Примечание').fill('Новый подрядчик по фасаду')
       await d.getByRole('button', { name: 'Создать заявку' }).click()
       await d.waitFor({ state: 'detached' })
 
       const note = page.locator('.cr-dp-created')
       await note.waitFor()
-      assert.match(await note.innerText(), /Заявка на заключение ДП № 41 подана/)
+      assert.match(await note.innerText(), /Заявка на заключение ДП подана/)
       const saved = await page.evaluate(() => {
-        const r = window.__fakeDb.dp_requests.find((x) => x.request_number === 41)
-        const files = window.__fakeDb.s3_documents.filter((f) => f.owner_type === 'dp_request' && f.owner_id === r?.id)
-        return r && { id: r.id, status: r.status, object_id: r.object_id, reason: r.reason, files: files.map((f) => f.doc_category) }
+        const r = (window.__fakeDb.doc_check_requests || []).find((x) => x.doc_type === 'dp_conclusion')
+        const files = window.__fakeDb.s3_documents.filter((f) => f.owner_type === 'doc_check_request' && f.owner_id === r?.id)
+        return r && { id: r.id, status: r.status, object_id: r.object_id, notes: r.notes, files: files.map((f) => f.doc_category) }
       })
       assert.deepEqual({ ...saved, id: undefined }, {
-        id: undefined, status: 'new', object_id: 'obj-2', reason: 'Новый подрядчик по фасаду', files: ['dp_concept_agreement'],
+        id: undefined, status: 'new', object_id: 'obj-2', notes: 'Новый подрядчик по фасаду', files: ['doc_check_concept_agreement'],
       })
-      assert.equal(await note.getByRole('link', { name: 'Открыть заявку' }).getAttribute('href'), `/dp-requests?request=${saved.id}`)
+      assert.equal(await note.getByRole('link', { name: 'Открыть заявку' }).getAttribute('href'), `/doc-check-requests?request=${saved.id}`)
+      assert.equal(await page.evaluate(() => (window.__fakeDb.dp_requests || []).length), 0, 'в прежнюю таблицу не пишет')
       await note.getByRole('button', { name: 'Закрыть' }).click()
       await note.waitFor({ state: 'detached' })
       assert.deepEqual(errors, [])
@@ -149,8 +142,8 @@ describe('Реестр по договорам: сотрудник объект�
     } finally { await close() }
   })
 
-  it('без права подавать заявки на ДП кнопки нет', async () => {
-    const { page, errors, close } = await open('noEdit=dp_requests_create')
+  it('без права создавать заявки доски проверки ДП/ДС кнопки нет', async () => {
+    const { page, errors, close } = await open('noEdit=doc_check_requests_create')
     try {
       assert.equal(await page.locator('.cr-dp-add').count(), 0)
       assert.deepEqual((await headerActions(page)).slice(-1), ['+ Добавить договор'])
@@ -166,7 +159,7 @@ describe('Реестр по договорам: сотрудник объект�
       const box = await btn.boundingBox()
       assert.ok(box.height >= 34, `кнопка под палец: ${box.height}px`)
       await btn.tap()
-      const d = page.locator('.dpr-dialog')
+      const d = page.locator('.dc-form-modal')
       await d.waitFor()
       const dialog = await d.boundingBox()
       assert.ok(dialog.x >= 0 && dialog.x + dialog.width <= 390, `окно по ширине экрана: ${dialog.x}, ${dialog.width}`)

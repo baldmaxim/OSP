@@ -195,3 +195,32 @@ a.trs-num:hover, a.trs-num:focus-visible { color: var(--ui-link, var(--primary-c
   .trs-dialog .trs-search.trs-search { height: 2.75rem; min-height: 2.75rem; font-size: 16px; }
   .trs-btn { min-height: 2.75rem; flex: 1 1 auto; }
 }
+
+/* ── Форма «Добавить новый тендер»: галочка «Перезапуск тендера» и выбор прежнего (19.11.2026) ── */
+/* Общие правила формы (.form-group label / input — Tenders.css, workUi.css) делают подпись блоком с отступом и растягивают поле:
+   у галочки — своя строка: флажок и подпись рядом. */
+.trs-create { gap: 0.375rem; }
+.form-group.trs-create .trs-create-toggle {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  width: fit-content;
+  margin: 0;
+  color: var(--text-primary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.form-group.trs-create .trs-create-toggle input[type='checkbox'] {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  padding: 0;
+  box-shadow: none;
+  accent-color: var(--primary-color);
+  cursor: pointer;
+}
+.trs-create-pick { width: 100%; }
+.trs-create-pick .fdrop-trigger { width: 100%; max-width: 100%; justify-content: space-between; }
+.trs-create-hint { color: var(--text-tertiary); font-size: 0.75rem; }

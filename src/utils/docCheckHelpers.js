@@ -43,12 +43,18 @@ export function extraColumn(value) {
   return { value, label: DOC_CHECK_STATUS_LABEL[value] || value, className: DOC_CHECK_STATUS_CLASS[value] || '', kind: 'extra' }
 }
 
+// «Заключение ДП» (решение пользователя 19.11.2026): заявки на заключение договора подряда живут на этой доске, а не в отдельном
+// разделе /dp-requests. Это третий тип документа (миграция 20270219: doc_type 'dp_conclusion'), карточка — светло-фиолетовая.
+// Подают из «Реестра по договорам» (+ Заявка на заключение ДП) или здесь; понятийное соглашение у подающего обязательно (форма).
+export const DP_CONCLUSION = 'dp_conclusion'
 export const DOC_TYPES = [
-  { value: 'dp', label: 'ДП', title: 'Договор подряда' },
-  { value: 'ds', label: 'ДС', title: 'Дополнительное соглашение' },
+  { value: 'dp', label: 'ДП', title: 'Договор подряда', option: 'ДП — Договор подряда' },
+  { value: 'ds', label: 'ДС', title: 'Дополнительное соглашение', option: 'ДС — Дополнительное соглашение' },
+  { value: DP_CONCLUSION, label: 'Заключение ДП', title: 'Заявка на заключение договора подряда', option: 'Заключение ДП' },
 ]
 export const DOC_TYPE_LABEL = Object.fromEntries(DOC_TYPES.map(t => [t.value, t.label]))
 export const DOC_TYPE_TITLE = Object.fromEntries(DOC_TYPES.map(t => [t.value, t.title]))
+export const isDpConclusion = (request) => request?.doc_type === DP_CONCLUSION
 
 // Приоритет и цвет карточки — только чтобы прежние записи истории («Приоритет: Высокий → —») читались словами: на доске,
 // в форме и фильтрах их нет с 18.11.2026.

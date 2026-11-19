@@ -33,7 +33,7 @@ const DEPTS = [
   { id: 'main_construction', name: 'Основное строительство' },
   { id: 'warranty_service', name: 'Гарантийный отдел' },
 ]
-const DOC_TYPES = [{ id: 'dp', name: 'ДП' }, { id: 'ds', name: 'ДС' }]
+const DOC_TYPES = [{ id: 'dp', name: 'ДП' }, { id: 'ds', name: 'ДС' }, { id: 'dp_conclusion', name: 'Заключение ДП' }]
 const MATRIX_ROWS = [
   { key: 'created', label: 'Создано заявок', group: 'Поток заявок' },
   { key: 'createdDp', label: 'ДП', sub: true },
@@ -81,7 +81,8 @@ function GroupTable({ rows, nameTitle, empty, limit = null }) {
   )
 }
 
-function DocCheckStats({ scopedObjectIds = [], canOpenBoard = false }) {
+// fixedDocType — отчёт только по одному виду (подвкладка «Заключение ДП», 19.11.2026: заявки на заключение ДП — карточки этой доски).
+function DocCheckStats({ scopedObjectIds = [], canOpenBoard = false, fixedDocType = null }) {
   const [rows, setRows] = useState([])
   const [events, setEvents] = useState([])
   const [employees, setEmployees] = useState(() => new Map())
@@ -92,7 +93,7 @@ function DocCheckStats({ scopedObjectIds = [], canOpenBoard = false }) {
   const [dept, setDept] = useState('all')
   const [objectId, setObjectId] = useState('all')
   const [assignee, setAssignee] = useState('all')
-  const [docType, setDocType] = useState('all')
+  const [docType, setDocType] = useState(fixedDocType || 'all')
   const [granularity, setGranularity] = useState('month')
   // Какая выборка подошла базе (колонки доски, карточки, номер): при «Обновить» заведомо неподходящие не повторяем.
   const selectAt = useRef(0)
@@ -169,8 +170,8 @@ function DocCheckStats({ scopedObjectIds = [], canOpenBoard = false }) {
   const dynamics = useMemo(() => buildDocCheckDynamics(filtered, times, granularity, now), [filtered, times, granularity, now])
   const starts = periodStarts(now)
 
-  const fActive = dept !== 'all' || objectId !== 'all' || assignee !== 'all' || docType !== 'all'
-  const reset = () => { setDept('all'); setObjectId('all'); setAssignee('all'); setDocType('all') }
+  const fActive = dept !== 'all' || objectId !== 'all' || assignee !== 'all' || (!fixedDocType && docType !== 'all')
+  const reset = () => { setDept('all'); setObjectId('all'); setAssignee('all'); setDocType(fixedDocType || 'all') }
   const statusSegments = [
     ...DOC_CHECK_STATUSES.map(st => ({
       label: STATUS_LEGEND[st.value] || st.label, title: st.label, color: STATUS_COLOR[st.value], value: s.byStatus[st.value] || 0,
@@ -187,7 +188,7 @@ function DocCheckStats({ scopedObjectIds = [], canOpenBoard = false }) {
         {options.depts.length > 1 && <FilterChip label="Отдел" value={dept} onChange={setDept} options={options.depts} />}
         <FilterChip label="Объект" value={objectId} onChange={setObjectId} options={options.objects} />
         {knowsAssignees && <FilterChip label="Исполнитель" value={assignee} onChange={setAssignee} options={options.people} />}
-        <FilterChip label="Документ" value={docType} onChange={setDocType} options={DOC_TYPES} allLabel="ДП и ДС" />
+        {!fixedDocType && <FilterChip label="Документ" value={docType} onChange={setDocType} options={DOC_TYPES} allLabel="Все документы" />}
         {fActive && <button type="button" className="rf-reset" onClick={reset}>Сбросить</button>}
         <div className="kps-toolbar-end">
           {loadedAt && (
@@ -213,9 +214,12 @@ function DocCheckStats({ scopedObjectIds = [], canOpenBoard = false }) {
               <div className="kpi-label">Всего заявок</div>
               <div className="kpi-value">{s.total}</div>
               <div className="kpi-foot">
-                ДП: {s.byType.dp} · ДС: {s.byType.ds}
-                {s.archived > 0 ? ` · в архиве: ${s.archived}` : ''}
-                {s.deleted > 0 ? ` · в «Удалённых»: ${s.deleted}` : ''}
+                {[
+                  fixedDocType ? '' : `ДП: ${s.byType.dp} · ДС: ${s.byType.ds}`,
+                  !fixedDocType && s.byType.dp_conclusion > 0 ? `заключение ДП: ${s.byType.dp_conclusion}` : '',
+                  s.archived > 0 ? `в архиве: ${s.archived}` : '',
+                  s.deleted > 0 ? `в «Удалённых»: ${s.deleted}` : '',
+                ].filter(Boolean).join(' · ')}
               </div>
             </div>
             <div className="kpi-card">

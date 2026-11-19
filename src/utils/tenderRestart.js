@@ -76,6 +76,26 @@ export function restartCandidates(tender, tenders, query = '') {
       || (b.tender.public_tender_number ?? -Infinity) - (a.tender.public_tender_number ?? -Infinity))
 }
 
+// Обратный выбор — в форме «Добавить новый тендер» (решение пользователя 19.11.2026: «при добавлении тендера указать перезапуск и
+// выбрать тендер, который перезапускается»): какой прежний тендер заменяет новый. Основные тендеры списка, кроме удалённых и уже
+// заменённых другим (у прежнего — один заменивший; «Перезапуск» без указанного нового — можно). Сверху — того же объекта, что
+// выбран в форме, внутри — новые (больший номер) выше.
+export function restartSourceCandidates(tenders, objectId = '') {
+  const rank = (t) => (objectId && t.object_id === objectId ? 0 : 1)
+  return (tenders || [])
+    .filter((t) => t?.id && !t.deleted_at && (t.tender_type || 'main') === 'main' && !restartTargetId(t))
+    .sort((a, b) => rank(a) - rank(b)
+      || (b.public_tender_number ?? -Infinity) - (a.public_tender_number ?? -Infinity))
+}
+
+// Подпись прежнего тендера в выборе формы: «№ 40 · Объект · Описание (Статус)».
+export function restartSourceLabel(t, objectName) {
+  const desc = String(t?.work_description || '').replace(/\s+/g, ' ').trim()
+  const parts = [`№ ${t?.public_tender_number ?? '—'}`, objectName || 'Объект не указан']
+  if (desc) parts.push(desc.length > 90 ? `${desc.slice(0, 89)}…` : desc)
+  return `${parts.join(' · ')}${t?.status ? ` (${t.status})` : ''}`
+}
+
 // Запись в журнал тендера о смене ссылки.
 export function restartLinkDescription(target) {
   if (!target) return 'Перезапуск: новый тендер не указан'

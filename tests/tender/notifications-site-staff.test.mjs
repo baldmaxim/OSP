@@ -3,10 +3,10 @@
 // должно падать»). Правила — src/utils/siteNotifications.js, запросы — NotificationsContext, вид — NotificationsPage.
 //   • правила отбора — без браузера;
 //   • стенд (tests/tender/ui, route=/notifications, данные — notifications-stand.jsx), Chromium:
-//     вкладки «Тендеры», «Проверка ДП/ДС», «Заявки на ДП» — без «Договоров» и «Проверки КП», к их таблицам запросов нет;
+//     вкладки «Тендеры», «Проверка ДП/ДС» — без «Договоров» и «Проверки КП», к их таблицам запросов нет; заявки на заключение ДП
+//     с 19.11.2026 — карточки «Заключение ДП» той же доски, во вкладке «Проверка ДП/ДС» (отдельной нет);
 //     тендеры только своих объектов, без тендеров на материалы и давно закрытых; заявки своих объектов, кто бы их ни подал
-//     («их заявка — это все заявки объекта и статус по ним», 11.11.2026), и своя заявка на ДП без объекта; без черновиков,
-//     архива и чужих объектов;
+//     («их заявка — это все заявки объекта и статус по ним», 11.11.2026); без архива и чужих объектов;
 //     сменился статус — уведомление снова непрочитанное; из уведомления заявка на проверку ДП/ДС открывается сама;
 //     у остальных сотрудников — прежние вкладки.
 // Люди и объекты вымышленные.
@@ -15,7 +15,7 @@ import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import {
-  docCheckNotifications, dpRequestNotifications, isSiteStaffRole, tenderStatusNotifications,
+  docCheckNotifications, isSiteStaffRole, tenderStatusNotifications,
 } from '../../src/utils/siteNotifications.js'
 
 const ago = (days) => new Date(Date.now() - days * 86400000).toISOString()
@@ -48,37 +48,27 @@ describe('уведомления рукстроя и экономиста объ
     assert.equal(list[0].badge, '№1')
   })
 
-  it('заявки: ключ меняется со статусом; черновик, удалённые и давно завершённые не показываются', () => {
+  it('заявки: ключ меняется со статусом; удалённые, архив и давно завершённые не показываются; «Заключение ДП» — словами', () => {
     const checks = docCheckNotifications([
       { id: 'x', status: 'in_progress', doc_type: 'ds', doc_number: '7', updated_at: ago(1), counterparties: { name: 'ООО «Монолит»' } },
       { id: 'y', status: 'awaiting_scan', doc_type: 'dp', updated_at: ago(60) },
       { id: 'z', status: 'done', updated_at: ago(60) },
       { id: 'w', status: 'new', updated_at: ago(1), deleted_at: ago(1) },
       { id: 'v', status: 'done', updated_at: ago(1), archived_at: ago(1) },
+      { id: 'u', status: 'new', doc_type: 'dp_conclusion', updated_at: ago(2) },
     ], { since })
     assert.deepEqual(checks.map((n) => [n.key, n.subtitle]), [
       ['doc_check:x:in_progress', 'ДС № 7 — ООО «Монолит»'],
+      ['doc_check:u:new', 'Заключение ДП'],
       ['doc_check:y:awaiting_scan', 'ДП'],
     ])
     assert.equal(checks[0].to, '/doc-check-requests?request=x')
-
-    const dps = dpRequestNotifications([
-      { id: 'p', status: 'new', request_number: 3, created_at: ago(1) },
-      { id: 'q', status: 'completed', request_number: 4, status_changed_at: ago(2), contract_title: 'Договор' },
-      { id: 'r', status: 'completed', status_changed_at: ago(30) },
-      { id: 's', status: 'draft', created_at: ago(0) },
-    ], { since })
-    assert.deepEqual(dps.map((n) => [n.key, n.statusLabel, n.subtitle]), [
-      ['dp_request:p:new', 'Новая', 'Заявка № 3'],
-      ['dp_request:q:completed', 'Завершена', 'Заявка № 4 — Договор'],
-    ])
-    assert.equal(dps[0].objectName, 'Объект не указан')
-    assert.equal(dps[0].to, '/dp-requests?request=p')
+    assert.equal(checks[1].objectName, 'Объект не указан')
   })
 })
 
 const launch = browserLaunchOptions()
-const BOSS = '&asRole=construction_manager&asUser=boss-1&scope=obj-1&noEdit=doc_check_requests,dp_requests,admin'
+const BOSS = '&asRole=construction_manager&asUser=boss-1&scope=obj-1&noEdit=doc_check_requests,admin'
 
 describe('уведомления рукстроя и экономиста объекта: страница', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
   let stand
@@ -119,7 +109,7 @@ describe('уведомления рукстроя и экономиста объ
     const errors = watch(page)
     try {
       await go(page, BOSS)
-      assert.deepEqual(await tabs(page), ['Тендеры', 'Проверка ДП/ДС', 'Заявки на ДП'])
+      assert.deepEqual(await tabs(page), ['Тендеры', 'Проверка ДП/ДС'])
       const asked = await page.evaluate(() => [...new Set(window.__supabaseStats.requests.map((r) => r.table))])
       for (const table of ['contracts', 'tender_proposal_files']) assert.ok(!asked.includes(table), `запрос к ${table}: ${asked.join(', ')}`)
 
@@ -133,17 +123,13 @@ describe('уведомления рукстроя и экономиста объ
       const checks = await items(page)
       assert.deepEqual(checks.map(([, status, , sub]) => [status, sub.split(' — ')[0]]), [
         ['В работе', 'ДС № 7'],
+        ['Новые заявки', 'Заключение ДП'],
         ['Новые заявки', 'ДС № 4'],
         ['Завершено', 'ДП № СУ-12'],
       ])
       assert.equal(await page.locator('.notif-item', { hasText: 'ДС № 4' }).locator('.notif-author').innerText(), 'Подал(а): Экономов А. П.')
-
-      await tab(page, 'Заявки на ДП')
-      assert.deepEqual(await items(page), [
-        ['№13', 'В работе', 'ЖК «Северный квартал»', 'Заявка № 13 — Договор на монолит'],
-        ['№12', 'Новая', 'Объект не указан', 'Заявка № 12'],
-        ['№16', 'Новая', 'ЖК «Северный квартал»', 'Заявка № 16'],
-      ])
+      const asked2 = await page.evaluate(() => [...new Set(window.__supabaseStats.requests.map((r) => r.table))])
+      assert.ok(!asked2.includes('dp_requests'), 'прежней таблицы заявок на ДП не читает')
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
@@ -156,7 +142,7 @@ describe('уведомления рукстроя и экономиста объ
     const errors = watch(page)
     try {
       await go(page, BOSS)
-      assert.equal(await page.locator('.notif-mark-all-count').innerText(), '9')
+      assert.equal(await page.locator('.notif-mark-all-count').innerText(), '7')
       await page.getByRole('button', { name: /Прочитать все/ }).click()
       await page.locator('.notif-mark-all').waitFor({ state: 'detached' })
 

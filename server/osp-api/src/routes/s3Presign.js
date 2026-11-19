@@ -190,9 +190,19 @@ const changeRulesFor = (table, category) => {
   return WRITE_RULES[table]
 }
 const maxBytesFor = (category, limits) => (LARGE_CATEGORIES.has(category || '') ? limits.uploadMaxBytesRd : limits.uploadMaxBytes)
-const keyInOwnerFolder = (doc) =>
-  Object.hasOwn(FOLDER_BY_OWNER, doc.owner_type)
-  && String(doc.s3_key || '').startsWith(`${FOLDER_BY_OWNER[doc.owner_type]}/${String(doc.owner_id || '').toLowerCase()}/`)
+// Прежние каталоги владельца. Заявки на заключение ДП (20270219) перенесены на доску ДП/ДС с тем же id: строки файлов перешли к
+// заявке доски, а объекты в хранилище остались в dp-requests/<id>/ (SQL их не переносит). Только этот каталог и только тот же
+// id: файл чужой заявки так не открыть.
+export const LEGACY_FOLDERS_BY_OWNER = {
+  doc_check_request: ['dp-requests'],
+}
+const keyInOwnerFolder = (doc) => {
+  if (!Object.hasOwn(FOLDER_BY_OWNER, doc.owner_type)) return false
+  const key = String(doc.s3_key || '')
+  const id = String(doc.owner_id || '').toLowerCase()
+  const folders = [FOLDER_BY_OWNER[doc.owner_type], ...(LEGACY_FOLDERS_BY_OWNER[doc.owner_type] || [])]
+  return folders.some((folder) => key.startsWith(`${folder}/${id}/`))
+}
 
 // Уборка незавершённых загрузок — src/lib/uploadIntents.js (cleanupUploadIntents), запускает служба по такту.
 export { cleanupUploadIntents }

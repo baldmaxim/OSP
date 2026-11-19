@@ -68,7 +68,9 @@ import {
 } from '../components/icons/ToolbarIcons'
 import { departmentConfig, objectDeptBadge, tenderObjectName, isConstructionTender } from '../utils/tenderDepartments'
 import { mainTenderStatuses, initialMainTenderStatus, shownMainTenderStatus, isClosedMainStatus, RESTART_STATUS } from '../utils/tenderStatuses'
-import { RESTART_LINK_FIELD, buildRestartIndex, hasRestartLink, restartLinkDescription } from '../utils/tenderRestart'
+import {
+  RESTART_LINK_FIELD, buildRestartIndex, hasRestartLink, restartLinkDescription, restartSourceCandidates, restartSourceLabel,
+} from '../utils/tenderRestart'
 import TenderRestartMark from '../components/TenderRestartMark'
 import TenderRestartDialog from '../components/TenderRestartDialog'
 import { weekKey } from '../utils/weeks'
@@ -201,6 +203,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [tenders, setTenders] = useState([])
   // «Перезапуск»: какой тендер какие прежние заменил — по списку раздела (все вкладки читают один список).
   const restartIndex = useMemo(() => buildRestartIndex(tenders), [tenders])
+  // «Перезапуск» в форме нового тендера: в «Основном строительстве», у кого правка тендеров (прежнему ставится статус), и когда
+  // колонка ссылки есть (20270217: реестр читает tenders через «*», в строке её видно). Иначе блока в форме нет.
+  const restartOnCreateUi = restartLinkUi && canEditTenders && tenders.some(hasRestartLink)
   const [objects, setObjects] = useState([])
   const [counterparties, setCounterparties] = useState([])
   const [responsibleContacts, setResponsibleContacts] = useState([])
@@ -300,6 +305,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [tenderForWinnerSelection, setTenderForWinnerSelection] = useState(null)
   // Окно «Перезапуск тендера № N»: тендер (прежний), для которого выбирают новый.
   const [restartFor, setRestartFor] = useState(null)
+  // Форма «Добавить новый тендер»: новый — перезапуск прежнего (решение пользователя 19.11.2026). '' — не перезапуск;
+  // restartSourceId — какой прежний тендер он заменяет (обязателен, когда галочка стоит).
+  const [restartOn, setRestartOn] = useState(false)
+  const [restartSourceId, setRestartSourceId] = useState('')
   const [conceptSignedCount, setConceptSignedCount] = useState(0)
   // task 215: несколько победителей — массив { counterparty_id, scope_note }
   const [selectedWinners, setSelectedWinners] = useState([])
@@ -1247,25 +1256,6 @@ ${ATTACHMENT_BLOCK}
     }
   }
 
-  const handleUpdateMaterialsLink = async (tenderId, currentValue) => {
-    const next = window.prompt('Ссылка на КП на материалы (Google/Yandex Drive):', currentValue || '')
-    if (next === null) return
-    const trimmed = next.trim()
-    try {
-      const { error } = await db
-        .from('tenders')
-        .update({ materials_proposal_link: trimmed || null })
-        .eq('id', tenderId)
-      if (error) throw error
-      setTenders(prev => prev.map(t =>
-        t.id === tenderId ? { ...t, materials_proposal_link: trimmed || null } : t
-      ))
-    } catch (err) {
-      console.error('Ошибка сохранения ссылки на КП:', err.message)
-      alert('Ошибка: ' + err.message)
-    }
-  }
-
   const handleUpdateCounterpartyNotes = async (tenderId, tenderCounterpartyId, notes, oldNotes = '', cpName = '') => {
     // Текст, вставленный из Word/PDF/1С, приносит служебные символы, которые Postgres
     // отвергает (22P05) — снаружи это выглядело как необъяснимая «ошибка сохранения»
@@ -1811,6 +1801,14 @@ ${ATTACHMENT_BLOCK}
     const restartInModal = restartLinkUi && !!editingTender && hasRestartLink(editingTender)
       && formData.status === RESTART_STATUS && editingTender.status !== RESTART_STATUS
     let restartAfter = null
+    // Новый тендер — перезапуск прежнего: прежний выбран обязательно. Его статус и ссылка пишутся после создания нового.
+    const restartSource = !editingTender && !materialsParentTender && restartOnCreateUi && restartOn
+      ? tenders.find(t => t.id === restartSourceId) || null
+      : null
+    if (!editingTender && !materialsParentTender && restartOnCreateUi && restartOn && !restartSource) {
+      alert('Выберите тендер, который перезапускается, или снимите галочку «Перезапуск тендера»')
+      return
+    }
     try {
       if (editingTender) {
         // Update existing tender — отправляем все поля
@@ -2000,7 +1998,7 @@ ${ATTACHMENT_BLOCK}
           const attempt = async (p) => await db
             .from('tenders')
             .insert([p])
-            .select('id')
+            .select('id, public_tender_number')
             .single()
           let p = { ...payload }
           let res = await attempt(p)
@@ -2031,6 +2029,18 @@ ${ATTACHMENT_BLOCK}
             newValue: mainFinalPayload,
             description: 'Тендер создан'
           })
+        }
+
+        // Перезапуск: прежнему — статус «Перезапуск» и ссылка на этот. Не записалось — новый тендер остаётся, ссылку ставят у
+        // номера прежнего в реестре (карандаш «заменён № …» / «+ новый тендер»).
+        if (createdMainId && restartSource) {
+          try {
+            await writeRestartLink(restartSource, createdMainId, mainRes.data)
+          } catch (restartErr) {
+            console.error('Перезапуск не отмечен у прежнего тендера:', restartErr.message)
+            alert(`Тендер создан, но у прежнего № ${restartSource.public_tender_number ?? '—'} перезапуск не отмечен: `
+              + `${restartErr.message}. Отметьте его в реестре: статус «Перезапуск» у прежнего тендера.`)
+          }
         }
 
         // Автоматически создаём связанный тендер на материалы только для тендеров основного строительства.
@@ -2253,6 +2263,8 @@ ${ATTACHMENT_BLOCK}
   const handleAddNew = () => {
     setEditingTender(null)
     setMaterialsParentTender(null)
+    setRestartOn(false)
+    setRestartSourceId('')
     setFormData({
       object_id: '',
       work_description: '',
@@ -2348,9 +2360,16 @@ ${ATTACHMENT_BLOCK}
   const handleSaveRestart = async (targetId) => {
     const tender = restartFor
     if (!tender) return
+    await writeRestartLink(tender, targetId || null)
+    setRestartFor(null)
+    fetchTenders()
+  }
+
+  // Прежнему тендеру — статус «Перезапуск» и ссылка на новый (или без неё), с записями в журнал. Общая для окна «Перезапуск» и
+  // формы нового тендера. targetRow — строка нового, если её ещё нет в списке (только что создан).
+  const writeRestartLink = async (tender, nextTarget, targetRow = null) => {
     const prevStatus = tender.status || null
     const prevTarget = tender[RESTART_LINK_FIELD] || null
-    const nextTarget = targetId || null
     const patch = { status: RESTART_STATUS, [RESTART_LINK_FIELD]: nextTarget }
     const { data, error } = await db.from('tenders').update(patch).eq('id', tender.id).select('id')
     if (error) throw new Error(error.message)
@@ -2363,7 +2382,9 @@ ${ATTACHMENT_BLOCK}
       })
     }
     if (prevTarget !== nextTarget) {
-      const target = nextTarget ? restartIndex.byId.get(nextTarget) || tenders.find(t => t.id === nextTarget) : null
+      const target = nextTarget
+        ? (targetRow?.id === nextTarget ? targetRow : null) || restartIndex.byId.get(nextTarget) || tenders.find(t => t.id === nextTarget)
+        : null
       await logTenderEvent(tender.id, 'field_updated', {
         fieldName: RESTART_LINK_FIELD,
         oldValue: prevTarget,
@@ -2371,9 +2392,25 @@ ${ATTACHMENT_BLOCK}
         description: restartLinkDescription(nextTarget ? (target || {}) : null),
       })
     }
-    setRestartFor(null)
-    fetchTenders()
   }
+
+  // Форма нового тендера: выбор прежнего тендера, который этот перезапускает. Пустые объект и описание берутся у прежнего —
+  // перезапуск обычно того же объекта и тех же работ; заполненное не трогается.
+  const pickRestartSource = (id) => {
+    setRestartSourceId(id || '')
+    const src = id ? tenders.find(t => t.id === id) : null
+    if (!src) return
+    setFormData(prev => ({
+      ...prev,
+      object_id: prev.object_id || (src.object_id && objects.some(o => o.id === src.object_id) ? src.object_id : ''),
+      work_description: prev.work_description.trim() ? prev.work_description : (src.work_description || ''),
+    }))
+  }
+  const restartSourceOptions = useMemo(() => (showModal && !editingTender && restartOn
+    ? restartSourceCandidates(tenders, formData.object_id).map(t => ({
+      value: t.id, label: restartSourceLabel(t, tenderObjectName(t, '')),
+    }))
+    : []), [showModal, editingTender, restartOn, tenders, formData.object_id])
 
   // task 215: помощники для выбора нескольких победителей
   const isWinnerSelected = (cpId) => selectedWinners.some(w => w.counterparty_id === cpId)
@@ -3190,44 +3227,6 @@ ${ATTACHMENT_BLOCK}
         />
       </td>
       <td>
-        {tender.materials_proposal_link ? (
-          <div className="tp-link-row">
-            <a
-              href={tender.materials_proposal_link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="link"
-            >
-              Открыть
-            </a>
-            {canEditTenders && (
-              <button
-                type="button"
-                className="btn-icon btn-edit"
-                onClick={() => handleUpdateMaterialsLink(tender.id, tender.materials_proposal_link)}
-                title="Изменить ссылку"
-                aria-label="Изменить ссылку на КП"
-              >
-                <IconPencil size={14} />
-              </button>
-            )}
-          </div>
-        ) : (
-          canEditTenders ? (
-            <button
-              type="button"
-              className="tp-add-link"
-              onClick={() => handleUpdateMaterialsLink(tender.id, '')}
-              title="Добавить ссылку на КП"
-            >
-              + ссылка
-            </button>
-          ) : (
-            <span className="mat-muted">—</span>
-          )
-        )}
-      </td>
-      <td>
         {isCompletedTab || !canEditTenders ? (
           <span className={`status-badge tp-status-badge ${getStatusBadgeClass(tender.status)}`}>
             {tender.status}
@@ -3842,7 +3841,6 @@ ${ATTACHMENT_BLOCK}
                 <col className="tp-mc-mainresp" />
                 <col className="tp-mc-date" />
                 <col className="tp-mc-date" />
-                <col className="tp-mc-link" />
                 <col className="tp-mc-status" />
                 {!hideNotes && <col className="tp-mc-notes" />}
                 <col className="tp-mc-actions" />
@@ -3882,7 +3880,6 @@ ${ATTACHMENT_BLOCK}
                   >
                     Срок предоставления<br />КП на материалы{sortIndicator('materials_proposal_deadline')}
                   </th>
-                  <th>Ссылка на КП</th>
                   <th>Статус</th>
                   {!hideNotes && <th>Примечание</th>}
                   <th className="actions-column"><span className="ui-sr-only">Действия</span></th>
@@ -3891,7 +3888,7 @@ ${ATTACHMENT_BLOCK}
               {sortedTenders.length === 0 ? (
                 <tbody>
                   <tr>
-                    <td colSpan={hideNotes ? 11 : 12} className="no-data">
+                    <td colSpan={hideNotes ? 10 : 11} className="no-data">
                       {activeTab === 'deleted'
                         ? 'В корзине нет тендеров на материалы'
                         : activeTab === 'all'
@@ -3902,7 +3899,7 @@ ${ATTACHMENT_BLOCK}
                 </tbody>
               ) : virtualMaterials ? (
                 <VirtualTableBody viewport rowCount={sortedTenders.length} renderRow={(i) => cachedMaterialsRow(sortedTenders[i])}
-                  colSpan={hideNotes ? 11 : 12} rowHeight={96} />
+                  colSpan={hideNotes ? 10 : 11} rowHeight={96} />
               ) : (
                 <tbody>{sortedTenders.map(renderMaterialsRow)}</tbody>
               )}
@@ -5049,6 +5046,42 @@ ${ATTACHMENT_BLOCK}
 
             <form onSubmit={handleSubmit}>
               <div className="form-grid">
+                {/* Новый тендер — перезапуск прежнего (решение пользователя 19.11.2026): прежнему после создания — статус
+                    «Перезапуск» и ссылка на этот, как в окне «Перезапуск». */}
+                {!editingTender && !materialsParentTender && restartOnCreateUi && (
+                  <div className="form-group full-width trs-create">
+                    <label className="trs-create-toggle">
+                      <input
+                        type="checkbox"
+                        checked={restartOn}
+                        onChange={(e) => {
+                          setRestartOn(e.target.checked)
+                          if (!e.target.checked) setRestartSourceId('')
+                        }}
+                      />
+                      Перезапуск тендера
+                    </label>
+                    {restartOn && (
+                      <>
+                        <FilterDropdown
+                          label=""
+                          searchable
+                          searchPlaceholder="Номер, объект или описание"
+                          allLabel="Выберите тендер, который перезапускается"
+                          value={restartSourceId}
+                          onChange={pickRestartSource}
+                          options={restartSourceOptions}
+                          className="trs-create-pick"
+                        />
+                        <small className="trs-create-hint">
+                          У прежнего тендера будет статус «Перезапуск» и ссылка на этот, у нового — «перезапуск № …».
+                          Пустые объект и описание работ возьмутся у прежнего.
+                        </small>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 <div className="form-group full-width">
                   <label>Наименование объекта {objectRequired ? '*' : ''}</label>
                   {allowCustomObject && !materialsParentTender ? (

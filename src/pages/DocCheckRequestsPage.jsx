@@ -7,6 +7,7 @@ import DocCheckFormModal from '../components/doccheck/DocCheckFormModal'
 import DocCheckDetailModal from '../components/doccheck/DocCheckDetailModal'
 import DocCheckAvatars from '../components/doccheck/DocCheckAvatars'
 import DocCheckCardCounts from '../components/doccheck/DocCheckCardCounts'
+import DpRecipientsModal from '../components/dpRequests/DpRecipientsModal'
 import { panByDrag } from '../components/doccheck/boardGestures'
 import FilterDropdown from '../components/FilterDropdown'
 import IconTile from '../components/IconTile'
@@ -20,7 +21,7 @@ import { fetchPickerCounterparties } from '../services/counterpartyPicker'
 import { chunkList } from '../utils/inChunks'
 import { employeeName, employeesById, fetchEmployees } from '../services/employees'
 import { fetchCardCounts as readCardCounts, fetchDeletions, fetchTalkReads, prefetchCard, saveTalkRead } from '../services/docCheckCard'
-import { uploadFile } from '../services/s3'
+import { createDocCheckRequest, failedFilesText } from '../services/docCheckRequests'
 import useBodyClass from '../hooks/useBodyClass'
 import { useIsPhone } from '../hooks/useMediaQuery'
 import {
@@ -41,6 +42,7 @@ import {
   fieldEvents,
   fmtDocDate,
   fmtDocDateTime,
+  isDpConclusion,
   isMissingBoardColumn,
   labelSuggestions,
   matchesAssignees,
@@ -114,7 +116,7 @@ function RowAssignees({ request, employees }) {
 
 export default function DocCheckRequestsPage() {
   useBodyClass('ui-work-portal')
-  const { canEdit, role, userProfile, user, isAdmin, isSuperAdmin, scopedObjectIds } = useRole()
+  const { canEdit, role, roleLabels, userProfile, user, isAdmin, isSuperAdmin, scopedObjectIds } = useRole()
   const canEditSection = canEdit('doc_check_requests')
   // Право только создавать (20270102, по умолчанию — руководитель строительства и экономист объекта): новая заявка — только в
   // «Новые заявки», менять её потом — право правки раздела. То же держит база (doc_check_requests_write_guard).
@@ -158,6 +160,9 @@ export default function DocCheckRequestsPage() {
   const [filterDeadline, setFilterDeadline] = useState('')
 
   const [formFor, setFormFor] = useState(null)   // { request, status } | null
+  // Кому всплывает большое окно о новой заявке на заключение ДП (DpRequestAlert) — список ведёт администратор; до 19.11.2026 —
+  // на странице /dp-requests.
+  const [showDpRecipients, setShowDpRecipients] = useState(false)
   const [detailId, setDetailId] = useState(null)
   const [detailRefresh, setDetailRefresh] = useState(0)
 
@@ -411,23 +416,12 @@ export default function DocCheckRequestsPage() {
         if (!ok) return
       } else {
         const status = createOnly ? 'new' : (formFor?.status || 'new')
-        const { data, error: e } = await db
-          .from('doc_check_requests')
-          .insert({ ...payload, status, sort_order: nextSortOrder(requests, status), created_by_name: author })
-          .select('id')
-          .single()
-        if (e) throw e
-        await logEvent(data.id, { event_type: 'created', description: 'Заявка создана' })
-        const failed = []
-        for (const { file, category } of files) {
-          try {
-            await uploadFile({ file, ownerType: 'doc_check_request', ownerId: data.id, category })
-          } catch (err) {
-            failed.push(`${file.name}: ${err.message || err}`)
-          }
-        }
+        const { id, failed } = await createDocCheckRequest({
+          payload, status, sortOrder: nextSortOrder(requests, status), author, files,
+        })
+        await logEvent(id, { event_type: 'created', description: 'Заявка создана' })
         if (files.length) fetchDocCounts()
-        if (failed.length) alert(`Заявка создана, но не все файлы загрузились:\n${failed.join('\n')}`)
+        if (failed.length) alert(failedFilesText(failed))
       }
       setFormFor(null)
       // Объект и контрагент приходят из базы встраиванием — перечитываем.
@@ -694,7 +688,7 @@ export default function DocCheckRequestsPage() {
             key={r.id}
             role="button"
             tabIndex={0}
-            className="mcard is-tappable dc-mcard"
+            className={`mcard is-tappable dc-mcard${isDpConclusion(r) ? ' is-dp-conclusion' : ''}`}
             data-dc-open={r.id}
             onClick={() => setDetailId(r.id)}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailId(r.id) } }}
@@ -767,7 +761,7 @@ export default function DocCheckRequestsPage() {
           </thead>
           <tbody>
             {listRows.map(r => (
-              <tr key={r.id} data-dc-open={r.id} onClick={() => setDetailId(r.id)} className="dc-row">
+              <tr key={r.id} data-dc-open={r.id} onClick={() => setDetailId(r.id)} className={`dc-row${isDpConclusion(r) ? ' is-dp-conclusion' : ''}`}>
                 {hasNumbers && <td className="dc-col-id ui-num">{r.request_number ?? '—'}</td>}
                 <td>
                   <div className="dc-row-title">{cardTitle(r)}</div>
@@ -884,6 +878,14 @@ export default function DocCheckRequestsPage() {
               onClick={() => setFiltersOpen(o => !o)}
             ><IconFilter size={15} />Фильтры{activeFilters > 0 ? ` (${activeFilters})` : ''}</button>
           )}
+          {canEdit('admin') && (
+            <button
+              type="button"
+              className="dc-mode-toggle"
+              title="Кому всплывает окно о новой заявке на заключение ДП"
+              onClick={() => setShowDpRecipients(true)}
+            >Окно «Заключение ДП»</button>
+          )}
           {canCreate && (
             <button className="btn-primary dc-new-btn" onClick={() => setFormFor({ request: null, status: 'new' })}>
               + Новая заявка
@@ -947,9 +949,9 @@ export default function DocCheckRequestsPage() {
           filterOptions={filterCounterpartyOptions}
         />
         <FilterDropdown
-          label="" multiple allLabel="ДП и ДС"
+          label="" multiple allLabel="Тип документа"
           value={filterTypes} onChange={setFilterTypes}
-          options={DOC_TYPES.map(t => ({ value: t.value, label: `${t.label} — ${t.title}` }))}
+          options={DOC_TYPES.map(t => ({ value: t.value, label: t.option }))}
         />
         {hasFilters && (
           <button type="button" className="dc-reset" onClick={resetFilters}>Сбросить</button>
@@ -1010,6 +1012,8 @@ export default function DocCheckRequestsPage() {
           onClose={() => setFormFor(null)}
         />
       )}
+
+      {showDpRecipients && <DpRecipientsModal roleLabels={roleLabels} onClose={() => setShowDpRecipients(false)} />}
 
       {detail && (
         <DocCheckDetailModal

@@ -526,6 +526,30 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.equal((await del(U.viewer, `doc-check-requests/${DCR}/c.pdf`)).statusCode, 200)
     })
 
+    // Заявки на заключение ДП перенесены на доску (20270219) с тем же id: строки файлов — у заявки доски, объекты остались в
+    // каталоге dp-requests/<id>/. Прежний каталог принимается только у заявки доски и только с тем же id.
+    it('заявка на проверку ДП/ДС: файл перенесённой заявки на ДП (каталог dp-requests/<тот же id>/) скачивается и удаляется по правилам доски', async () => {
+      const DCR = 'b1000000-0000-4000-8000-0000000000d9'
+      const OTHER = 'b1000000-0000-4000-8000-0000000000d8'
+      state.owners.doc_check_requests = { [DCR]: 'all', [OTHER]: 'all' }
+      state.can[U.viewer.id] = ['doc_check_requests:view']
+      const moved = `dp-requests/${DCR}/0190-Понятийка.pdf`
+      state.docs[moved] = { row: { id: 'dpm', owner_type: 'doc_check_request', owner_id: DCR, doc_category: 'doc_check_concept_agreement' }, visibleTo: 'all' }
+      assert.equal((await download(U.viewer, moved)).statusCode, 200, 'прежний каталог той же заявки')
+      assert.equal((await del(U.viewer, moved)).statusCode, 403, 'удаление — правкой раздела, как у файлов доски')
+      // Каталог другой заявки на ДП — переставленная строка: только администратору.
+      const foreign = `dp-requests/${OTHER}/x.pdf`
+      state.docs[foreign] = { row: { id: 'dpf', owner_type: 'doc_check_request', owner_id: DCR, doc_category: 'general' }, visibleTo: 'all' }
+      assert.equal((await download(U.viewer, foreign)).statusCode, 404)
+      assert.equal((await download(U.admin, foreign)).statusCode, 200)
+      // Прежний каталог — только у заявки доски: у договора тот же приём не проходит.
+      const contractInDp = `dp-requests/${CONTRACT_MINE}/y.pdf`
+      state.docs[contractInDp] = { row: { id: 'dpc', owner_type: 'contract', owner_id: CONTRACT_MINE }, visibleTo: 'all' }
+      assert.equal((await download(U.contractor, contractInDp)).statusCode, 404)
+      state.can[U.viewer.id] = ['doc_check_requests:view', 'doc_check_requests:edit']
+      assert.equal((await del(U.viewer, moved)).statusCode, 200)
+    })
+
     // Рукстрой и экономист объекта (право создания, без правки): окно своей заявки в «Новых» грузит, переименовывает и удаляет
     // файлы (12.11.2026). Чья заявка и в какой колонке — решает база (s3_documents_doc_check_guard), служба пускает правом.
     it('заявка на проверку ДП/ДС: право создания — загрузка в обе части, переименование и удаление (заявку проверяет база)', async () => {

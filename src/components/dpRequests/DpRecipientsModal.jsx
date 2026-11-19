@@ -4,11 +4,13 @@ import { IconTrash } from '../icons/ActionIcons'
 import { fetchEmployees, employeesById, employeeName } from '../../services/employees'
 import { addDpRecipient, loadDpRecipients, removeDpRecipient } from '../../services/dpRequests'
 import { dpErrorText } from '../../utils/dpRequests'
+import './DpRecipientsModal.css'
 
 const SEARCH_LIMIT = 30
 
 // Кому при новой заявке всплывает большое окно. Список ведёт администратор: «в дальнейшем буду добавлять пользователей» (решение
-// пользователя 05.11.2026). Новому получателю окно придёт о заявках, созданных после добавления.
+// пользователя 05.11.2026). Новому получателю окно придёт о заявках, созданных после добавления. С 19.11.2026 заявки на заключение
+// ДП — на доске «Заявки на проверку ДП/ДС», окно получателей открывается там (администратору).
 export default function DpRecipientsModal({ roleLabels, onClose }) {
   const [recipients, setRecipients] = useState(null)
   const [employees, setEmployees] = useState([])
@@ -62,13 +64,13 @@ export default function DpRecipientsModal({ roleLabels, onClose }) {
     <div className="dpr-overlay">
       <div className="dpr-dialog is-narrow" role="dialog" aria-modal="true" aria-labelledby="dpr-recipients-title">
         <header className="dpr-dialog-head">
-          <h3 id="dpr-recipients-title">Кому показывать окно о новой заявке</h3>
+          <h3 id="dpr-recipients-title">Кому показывать окно о новой заявке на заключение ДП</h3>
           <button type="button" className="dpr-x" aria-label="Закрыть" onClick={onClose}><IconClose size={18} /></button>
         </header>
         <div className="dpr-dialog-body">
           <p className="dpr-hint">
             Окно всплывает на любой странице сайта и закрывается только кнопкой. Новому получателю оно придёт о заявках, созданных после
-            добавления. Чтобы открыть заявку из окна, его роли нужен просмотр раздела «Заявка на заключение ДП» (в «Правах доступа»).
+            добавления. Чтобы открыть заявку из окна, его роли нужен просмотр раздела «Заявки на проверку ДП/ДС» (в «Правах доступа»).
           </p>
           {error && <p className="dpr-error" role="alert">{error}</p>}
           {recipients == null ? <p className="dpr-empty">Загрузка…</p> : (

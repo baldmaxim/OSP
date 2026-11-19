@@ -2604,6 +2604,8 @@ function CounterpartiesPage() {
                       category="other"
                       title="Должная осмотрительность"
                       canEdit={canEditCp}
+                      downloadAllOwner={detailCp.name || ''}
+                      dateFolders
                     />
                   </section>
                 </div>

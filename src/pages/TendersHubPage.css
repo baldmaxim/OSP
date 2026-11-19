@@ -107,6 +107,9 @@
 .thub-grid--even .thub-title {
   flex: none;
 }
+/* Блоков три (19.11.2026: «Заявки на заключение ДП» — на доске проверки ДП/ДС): в ряд, пока помещаются, без одинокой карточки
+   во втором ряду; узко — по одной. */
+.contracts-hub .thub-grid--even { grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
 
 .thub-card-counts {
   display: flex;

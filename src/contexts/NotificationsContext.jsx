@@ -5,7 +5,7 @@ import { chunkList } from '../utils/inChunks'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { revisionTitle } from '../utils/supplyVorVersions'
 import {
-  RECENT_DAYS, docCheckNotifications, dpRequestNotifications, isSiteStaffRole, tenderStatusNotifications,
+  RECENT_DAYS, docCheckNotifications, isSiteStaffRole, tenderStatusNotifications,
 } from '../utils/siteNotifications'
 
 // Уведомления о приближающемся завершении тендеров и договоров.
@@ -99,7 +99,6 @@ export function NotificationsProvider({ children }) {
   // Рукстрой и экономист объекта: тендеры и заявки своих объектов вместо работы отдела.
   const siteStaff = isSiteStaffRole(role)
   const canDocCheck = canView('doc_check_requests') || canEdit('doc_check_requests_create')
-  const canDp = canView('dp_requests') || canEdit('dp_requests_create')
   const userId = user?.id || null
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(false)
@@ -225,8 +224,8 @@ export function NotificationsProvider({ children }) {
         : null
 
       // Заявки своих объектов (только рукстрою и экономисту объекта; решение пользователя 11.11.2026: «их заявка — это все
-      // заявки объекта и статус по ним»), кто бы их ни подал. Объектов нет — «своих» заявок тоже нет. Заявка на ДП бывает
-      // без объекта (его вносит отдел позже) — свою такую тоже показываем. Заявки на проверку ДП/ДС — `*`: колонки доски
+      // заявки объекта и статус по ним»), кто бы их ни подал. Объектов нет — «своих» заявок тоже нет. Заявки на заключение ДП с
+      // 19.11.2026 — карточки той же доски («Заключение ДП»). Заявки на проверку ДП/ДС — `*`: колонки доски
       // (archived_at, миграция 20261113) есть не во всех базах. Постранично: у объекта их бывает больше 1000 за всё время.
       const pages = (build) => fetchAllRows(build)
         .then((data) => ({ data, error: null }), (error) => ({ data: null, error }))
@@ -240,21 +239,8 @@ export function NotificationsProvider({ children }) {
           .order('id', { ascending: true })
           .range(from, to))
         : null
-      const dpQ = siteStaff && canDp && (scopedObjectIds.length > 0 || userId)
-        ? pages((from, to) => db
-          .from('dp_requests')
-          .select('id, request_number, status, status_changed_at, contract_title, created_by_name, created_at, deleted_at, objects(name)')
-          .or([
-            scopedObjectIds.length > 0 ? `object_id.in.(${scopedObjectIds.join(',')})` : null,
-            userId ? `created_by.eq.${userId}` : null,
-          ].filter(Boolean).join(','))
-          .is('deleted_at', null)
-          .order('created_at', { ascending: false })
-          .order('id', { ascending: true })
-          .range(from, to))
-        : null
 
-      const [tendersRes, contractsRes, kpReviewRes, myTasksRes, reviewTasksRes, supplyRes, docCheckRes, dpRes] = await Promise.all([
+      const [tendersRes, contractsRes, kpReviewRes, myTasksRes, reviewTasksRes, supplyRes, docCheckRes] = await Promise.all([
         tendersQ || EMPTY,
         contractsQ || EMPTY,
         kpReviewQ || EMPTY,
@@ -262,7 +248,6 @@ export function NotificationsProvider({ children }) {
         reviewTasksQ || EMPTY,
         supplyQ || EMPTY,
         docCheckQ || EMPTY,
-        dpQ || EMPTY,
       ])
       if (tendersRes.error) throw tendersRes.error
       if (contractsRes.error) throw contractsRes.error
@@ -271,7 +256,6 @@ export function NotificationsProvider({ children }) {
         out.push(...tenderStatusNotifications(tendersRes.data, { since: recentSince }))
         for (const [res, build, what] of [
           [docCheckRes, docCheckNotifications, 'Заявки на проверку ДП/ДС'],
-          [dpRes, dpRequestNotifications, 'Заявки на ДП'],
         ]) {
           // Сбой одного источника (нет миграции, шлюз не пустил) не гасит остальные уведомления.
           if (!res.error) out.push(...build(res.data, { since: recentSince }))
@@ -438,7 +422,7 @@ export function NotificationsProvider({ children }) {
     } finally {
       setLoading(false)
     }
-  }, [isLoggedIn, isEmployee, canTenders, canContracts, canTasks, canSupply, siteStaff, canDocCheck, canDp, userId, scopedObjectIds])
+  }, [isLoggedIn, isEmployee, canTenders, canContracts, canTasks, canSupply, siteStaff, canDocCheck, userId, scopedObjectIds])
 
   useEffect(() => { refresh() }, [refresh])
 

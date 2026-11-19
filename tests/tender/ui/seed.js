@@ -1118,10 +1118,9 @@ if (params.get('dcStats') === '1') {
 }
 
 // ── «Отчёты → Договоры → Заключение ДП / Проверка ДП/ДС» (?route=/reports&contractStats=1) ─────────────────────
-// Заявки на ДП: новая сегодня без полей отдела, новая 10 дней, в работе 20 дней (ЖК Бета), завершённая, удалённая.
 // Заявки на проверку: новая сегодня со сроком через 3 дня, ДП в работе с просроченным сроком и двумя юристами (ЖК Бета),
 // завершённая (в архиве) с историей, «Ожидаем скан» 45 дней, удалённая; в истории — переносы и одна правка поля.
-// ?contractStats=missing — таблицы заявок на ДП нет (база раньше миграции 20261227). Люди вымышленные.
+// «Заключение ДП» (с 19.11.2026 — карточки той же доски): новая сегодня без исполнителя, в работе у Правова (ЖК Бета). Люди вымышленные.
 if (params.get('contractStats')) {
   const fdb = window.__fakeDb
   const iso = (offset) => new Date(Date.now() + offset * 24 * 3600 * 1000).toISOString()
@@ -1132,20 +1131,6 @@ if (params.get('contractStats')) {
   }
   const objA = { id: 'obj-1', name: 'ЖК Альфа', status: 'main_construction' }
   const objB = { id: 'obj-2', name: 'ЖК Бета', status: 'warranty_service' }
-  const dp = (id, n, over) => ({
-    id, request_number: n, object_id: objA.id, objects: objA, contract_title: `Договор ${n}`, amount: 1000000,
-    responsible_name: 'Экономов А. П.', responsible_role: 'economist', status: 'new', status_changed_at: iso(-1),
-    created_by_name: 'Строев Б. И.', created_at: iso(-1), deleted_at: null, ...over,
-  })
-  fdb.dp_requests = [
-    dp('dps-1', 1, { created_at: iso(0), status_changed_at: iso(0), object_id: null, objects: null, contract_title: null, amount: null,
-      responsible_name: null, responsible_role: null }),
-    dp('dps-2', 2, { created_at: iso(-10), status_changed_at: iso(-10), amount: 500000 }),
-    dp('dps-3', 3, { status: 'in_work', created_at: iso(-30), status_changed_at: iso(-20), object_id: objB.id, objects: objB,
-      responsible_name: 'Строев Б. И.', responsible_role: 'construction_manager' }),
-    dp('dps-4', 4, { status: 'completed', created_at: iso(-40), status_changed_at: iso(-30), amount: 2000000 }),
-    dp('dps-5', 5, { deleted_at: iso(-2), amount: 999999999 }),
-  ]
   fdb.employee_directory.push(
     { user_id: 'law-1', display_name: 'Юристова М. А.', full_name: 'Юристова Мария Андреевна', email: 'law1@example.invalid', role: 'lawyer' },
     { user_id: 'law-2', display_name: 'Правов П. П.', full_name: 'Правов Пётр Петрович', email: 'law2@example.invalid', role: 'lawyer' },
@@ -1163,6 +1148,9 @@ if (params.get('contractStats')) {
     dc('dck-3', 3, { status: 'done', assignee_ids: ['law-2'], created_at: iso(-20), archived_at: iso(-1) }),
     dc('dck-4', 4, { status: 'awaiting_scan', assignee_ids: ['law-1'], created_at: iso(-60) }),
     dc('dck-5', 5, { deleted_at: iso(-3) }),
+    dc('dck-6', 6, { doc_type: 'dp_conclusion', counterparty_id: null, counterparties: null, doc_number: null, created_at: iso(0) }),
+    dc('dck-7', 7, { status: 'in_progress', doc_type: 'dp_conclusion', doc_number: null, object_id: objB.id, objects: objB,
+      assignee_ids: ['law-2'], created_at: iso(-10) }),
   ]
   const ev = (id, request_id, event_type, new_value, offset) => ({
     id, request_id, event_type, field_name: event_type === 'status_changed' ? 'status' : 'notes', old_value: null, new_value,
@@ -1175,11 +1163,8 @@ if (params.get('contractStats')) {
     ev('dca-4', 'dck-4', 'status_changed', 'awaiting_scan', -45),
     // Не смена статуса — отчёт её не читает.
     ev('dca-5', 'dck-1', 'field_updated', 'done', 0),
+    ev('dca-6', 'dck-7', 'status_changed', 'in_progress', -9),
   ]
-  if (params.get('contractStats') === 'missing') {
-    window.__fakeErrors = { ...(window.__fakeErrors || {}),
-      dp_requests: { code: 'PGRST205', message: "Could not find the table 'public.dp_requests' in the schema cache" } }
-  }
 }
 
 // ?contracts=N — реестр «Договоры и ДС» (route=/contracts/registry): N договоров, у каждого третьего — ДС, у каждого седьмого —
@@ -1657,6 +1642,50 @@ if (params.get('docCheck') === '1') {
         s3_key: 'doc-check-requests/dcr-3/remarks.pdf' }] })
     window.__fakeFiles = { ...(window.__fakeFiles || {}), 'doc-check-requests/dcr-3/remarks.pdf': 'data:application/pdf;base64,JVBERi0xLjQ=' }
   }
+  // dcDpc=1 — «Заключение ДП» (19.11.2026: заявки на заключение ДП — карточки этой доски, doc_type 'dp_conclusion', миграция
+  // 20270219): две в «Новых заявках» (перенесённые из прежнего раздела, с понятийным соглашением), получатель большого окна —
+  // вошедший (dpRecipient=0 — нет), dpAlerts=N — у него N непрочитанных уведомлений. Уведомление о новой заявке «Заключение ДП»
+  // заводит «база» (как триггер doc_check_dp_conclusion_alert). Стенд кнопки реестра и окна — tests/tender/ui/dp-stand.jsx.
+  if (params.get('dcDpc') === '1') {
+    const top = Math.max(0, ...fdb.doc_check_requests.map((r) => r.request_number || 0))
+    const dpc = [
+      req('dcr-dpc-1', { doc_type: 'dp_conclusion', counterparty_id: null, sort_order: 5, created_by_name: 'Автор Заявки',
+        notes: 'Новый подрядчик по монолиту\n\nПеренесена из «Заявки на заключение ДП» № 2', created_at: '2026-11-17T09:00:00Z' }),
+      req('dcr-dpc-2', { doc_type: 'dp_conclusion', counterparty_id: 'cp-2', object_id: 'obj-2', sort_order: 6, created_by_name: 'Автор Заявки',
+        created_at: '2026-11-18T09:00:00Z' }),
+    ]
+    dpc.forEach((r, i) => { embed(r); r.request_number = top + 1 + i })
+    fdb.doc_check_requests.push(...dpc)
+    fdb.s3_documents.push({ id: 'dpc-file-1', owner_type: 'doc_check_request', owner_id: 'dcr-dpc-1', doc_category: 'doc_check_concept_agreement',
+      file_name: 'Понятийка 2.pdf', s3_key: 'dp-requests/dcr-dpc-1/concept.pdf', size_bytes: 10, created_at: '2026-11-17T09:00:00Z' })
+    const me = params.get('asUser') || 'user-1'
+    fdb.dp_request_alert_recipients = params.get('dpRecipient') === '0' ? [] : [{ user_id: me, added_at: '2026-11-01T09:00:00Z' }]
+    const alerts = new Map()
+    const addAlert = (r) => alerts.set(r.id, {
+      request_id: r.id, request_number: r.request_number ?? null, object_name: r.objects?.name ?? obj(r.object_id)?.name ?? null,
+      contract_title: null, amount: null, responsible_name: null, responsible_role: null, reason: r.notes ?? null,
+      created_by_name: r.created_by_name ?? null, alerted_at: new Date().toISOString(),
+    })
+    for (const r of dpc.slice(0, Number(params.get('dpAlerts') || 0))) addAlert(r)
+    window.__dpAlerts = alerts
+    window.__dpAcks = []
+    window.__fakeRpc = { ...(window.__fakeRpc || {}),
+      dp_request_my_alerts: () => ({ data: [...alerts.values()], error: null }),
+      dp_request_alerts_ack: ({ p_requests: ids }) => {
+        window.__dpAcks.push(ids)
+        for (const id of ids) alerts.delete(id)
+        return { data: ids.length, error: null }
+      },
+    }
+    const before = window.__fakeTriggers.doc_check_requests
+    window.__fakeTriggers.doc_check_requests = (row, old) => {
+      before(row, old)
+      if (!old && row.doc_type === 'dp_conclusion' && !row.deleted_at && fdb.dp_request_alert_recipients.some((x) => x.user_id === me)) addAlert(row)
+    }
+    if (params.get('dpFailUpload') === '1') {
+      window.__fakeHold = ({ table, op }) => (table === 's3_documents' && op === 'insert' ? { error: { message: 'Хранилище не ответило' } } : {})
+    }
+  }
   // dcBadLink=1 — в базе не адрес (правка мимо страницы): ссылкой стать не должно.
   if (params.get('dcBadLink') === '1') fdb.doc_check_requests.find((r) => r.id === 'dcr-3').email_link = 'javascript:alert(1)'
   const card = ['email_link', 'manual_assignees']
@@ -1778,6 +1807,12 @@ if (params.get('restartLink') === '1') {
   if (params.get('restartPair') === '1') {
     const t4 = fdb.tenders.find(t => t.id === 'tender-4')
     if (t4) Object.assign(t4, { status: 'Перезапуск', restarted_by_tender_id: 'tender-1' })
+  }
+  // Новый тендер (форма «Добавить новый тендер», 19.11.2026: перезапуск при создании): номер и колонку ссылки ставит база.
+  window.__fakeTriggers.tenders = (row, old) => {
+    if (old) return
+    row.public_tender_number ??= Math.max(0, ...fdb.tenders.filter(t => t.tender_type !== 'materials').map(t => t.public_tender_number || 0)) + 1
+    if (!('restarted_by_tender_id' in row)) row.restarted_by_tender_id = null
   }
 }
 

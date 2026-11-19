@@ -9,12 +9,16 @@
 // tender-5 № 196); вкладка Larix — kp-registry-stand (larixMany=N).
 // 18.11.2026: «Перезапуск» с выбором нового тендера (миграция 20270217) — стенд restartLink=1 (колонка есть; у № 194 в
 // примечании «Перезапуск тендера № 198»), restartPair=1 — № 197 «Перезапуск», заменён № 200.
+// 19.11.2026: и наоборот — в форме «Добавить новый тендер» галочка «Перезапуск тендера» и выбор прежнего: после создания прежнему —
+// «Перезапуск» и ссылка на новый (тот же путь, что окно).
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import { mainTenderStatuses, isClosedMainStatus, RESTART_STATUS } from '../../src/utils/tenderStatuses.js'
-import { buildRestartIndex, restartCandidates, restartTargetId, mentionsRestartOf, hasRestartLink } from '../../src/utils/tenderRestart.js'
+import {
+  buildRestartIndex, restartCandidates, restartTargetId, mentionsRestartOf, hasRestartLink, restartSourceCandidates, restartSourceLabel,
+} from '../../src/utils/tenderRestart.js'
 import { tenderWinnersOf } from '../../src/utils/tenderWinners.js'
 import { fmtCount } from '../../src/utils/ratesRegistry.js'
 
@@ -242,6 +246,19 @@ describe('Перезапуск: какой тендер заменил — пр�
     const replaced = t('r', 120, { status: 'Перезапуск', restarted_by_tender_id: 'old' })
     assert.ok(!restartCandidates(old, [...list, replaced]).some(c => c.tender.id === 'r'))
   })
+
+  it('форма нового тендера: какой прежний он перезапускает — без удалённых, материалов и уже заменённых; свой объект выше', () => {
+    const list = [
+      t('a', 300, { object_id: 'o2' }), t('b', 250), t('c', 194, { object_id: 'o2' }),
+      t('r', 120, { status: 'Перезапуск', restarted_by_tender_id: 'a' }), // уже заменён № 300
+      t('free', 110, { status: 'Перезапуск' }), // «Перезапуск» без нового — можно указать
+      t('m', 400, { tender_type: 'materials' }), t('del', 500, { deleted_at: '2026-11-01' }),
+    ]
+    assert.deepEqual(restartSourceCandidates(list).map(x => x.public_tender_number), [300, 250, 194, 110])
+    assert.deepEqual(restartSourceCandidates(list, 'o2').map(x => x.public_tender_number), [300, 194, 250, 110])
+    assert.equal(restartSourceLabel(t('b', 250, { status: 'Завершен' }), 'ЖК «Альфа»'), '№ 250 · ЖК «Альфа» · Фасад (Завершен)')
+    assert.equal(restartSourceLabel(t('x', null, { work_description: '', status: null }), ''), '№ — · Объект не указан')
+  })
 })
 
 describe('Перезапуск: какой тендер заменил — страница', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 600000 }, () => {
@@ -410,6 +427,84 @@ describe('Перезапуск: какой тендер заменил — ст�
       assert.deepEqual(errors, [])
     } finally {
       await close()
+    }
+  })
+
+  it('«Добавить новый тендер» — перезапуск прежнего: без выбора не создать; объект и описание — от прежнего; прежнему — «Перезапуск» и ссылка', async () => {
+    const { page, errors, close } = await open('route=/tenders/construction&tenders=10&items=20&cps=4&restartLink=1')
+    try {
+      await registryRow(page, 198).waitFor({ timeout: 120000 })
+      const before = await page.evaluate(() => window.__fakeDb.tenders.length)
+      await page.getByRole('button', { name: '+ Добавить тендер' }).click()
+      const form = page.locator('.modal form')
+      await form.waitFor()
+      const toggle = form.getByLabel('Перезапуск тендера')
+      assert.equal(await toggle.isChecked(), false, 'по умолчанию — обычный тендер')
+      await toggle.check()
+      const pick198 = async () => {
+        await form.locator('.trs-create-pick .fdrop-trigger').click()
+        await page.locator('.fdrop-panel .fdrop-search').fill('198')
+        await page.locator('.fdrop-option', { hasText: '№ 198' }).click()
+      }
+      // Выбрали прежний — пустые объект и описание берутся у него.
+      await pick198()
+      const src = await page.evaluate(() => window.__fakeDb.tenders.find((r) => r.id === 'tender-3'))
+      assert.equal(await form.locator('select[name="object_id"]').inputValue(), src.object_id, 'объект — от прежнего')
+      assert.equal(await form.locator('textarea[name="work_description"]').inputValue(), src.work_description, 'описание — от прежнего')
+      // Галочку сняли и поставили — выбор сброшен: без прежнего тендер не создаётся (поля формы заполнены).
+      await toggle.uncheck()
+      await toggle.check()
+      await form.locator('button[type="submit"]').click()
+      for (let i = 0; i < 100 && !errors.some((e) => e.startsWith('окно:')); i++) await page.waitForTimeout(50)
+      assert.match(errors.pop() || '', /^окно: Выберите тендер, который перезапускается/)
+      assert.equal(await page.evaluate(() => window.__fakeDb.tenders.length), before)
+      await pick198()
+      await form.locator('button[type="submit"]').click()
+      await form.waitFor({ state: 'detached' })
+
+      await page.waitForFunction(() => window.__fakeDb.tenders.find((r) => r.id === 'tender-3').status === 'Перезапуск')
+      const made = await page.evaluate(() => window.__fakeDb.tenders.filter((r) => r.tender_type === 'main' && !/^tender-/.test(r.id)))
+      assert.equal(made.length, 1)
+      assert.equal((await fakeTender(page, 'tender-3')).link, made[0].id)
+      const log = await page.evaluate(() => window.__fakeDb.tender_audit_log.filter((l) => l.tender_id === 'tender-3')
+        .map((l) => [l.event_type, l.description]))
+      assert.deepEqual(log, [['status_changed', 'Статус: Идет тендерная процедура → Перезапуск'],
+        ['field_updated', `Перезапущен тендером № ${made[0].public_tender_number}`]], 'журнал — как у окна «Перезапуск»')
+      // У прежнего (№ 198) — «заменён № …» нового.
+      const mark = registryRow(page, 198).locator('.trs-mark--to')
+      await mark.waitFor({ timeout: 30000 })
+      assert.equal(text(await mark.innerText()), `заменён № ${made[0].public_tender_number}`)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('«Добавить новый тендер» без перезапуска — как раньше; колонки ссылки нет — галочки нет', async () => {
+    const plain = await open('route=/tenders/construction&tenders=10&items=20&cps=4&restartLink=1')
+    try {
+      await registryRow(plain.page, 198).waitFor({ timeout: 120000 })
+      await plain.page.getByRole('button', { name: '+ Добавить тендер' }).click()
+      const form = plain.page.locator('.modal form')
+      await form.locator('select[name="object_id"]').selectOption({ index: 1 })
+      await form.locator('textarea[name="work_description"]').fill('Кровля, новый тендер')
+      await form.locator('button[type="submit"]').click()
+      await form.waitFor({ state: 'detached' })
+      const made = await plain.page.evaluate(() => window.__fakeDb.tenders.filter((r) => r.tender_type === 'main' && !/^tender-/.test(r.id)))
+      assert.equal(made.length, 1)
+      assert.equal(await plain.page.evaluate(() => window.__fakeDb.tenders.filter((r) => r.status === 'Перезапуск').length), 0)
+      assert.deepEqual(plain.errors, [])
+    } finally {
+      await plain.close()
+    }
+    const legacy = await open('route=/tenders/construction&tenders=10&items=20&cps=4')
+    try {
+      await registryRow(legacy.page, 198).waitFor({ timeout: 120000 })
+      await legacy.page.getByRole('button', { name: '+ Добавить тендер' }).click()
+      await legacy.page.locator('.modal form').waitFor()
+      assert.equal(await legacy.page.locator('.modal form').getByLabel('Перезапуск тендера').count(), 0)
+    } finally {
+      await legacy.close()
     }
   })
 

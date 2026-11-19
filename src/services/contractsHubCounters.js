@@ -3,7 +3,6 @@
 // ВАЖНО: условия обязаны совпадать с вкладками самих страниц, иначе бейдж покажет одно число, а страница — другое:
 //   • реестр            — вкладка «В работе», inTab() в utils/contractRegistryTabs.js (пустой статус — новая заявка);
 //   • заявка на ДС      — вкладка «В работе» DcRequestsPage (пустой статус — «В работе»);
-//   • заявка на ДП      — вкладки «Новые» и «В работе» (utils/dpRequests.js); объекты сотрудника ограничивает правило базы;
 //   • проверка ДП/ДС    — колонки доски без архива и удалённых (DocCheckRequestsPage); с привязкой к объектам — только свои
 //                         (страница и правило базы 20270101; здесь — ещё и для «Посмотреть от имени роли»).
 // Считаем только разделы, открытые роли: запрос к чужому разделу не уходит вовсе.
@@ -22,10 +21,6 @@ const COUNTERS_BY_SECTION = {
   }),
   dc_requests: (objectIds) => ({
     dcInWork: () => scoped(count('dc_requests'), objectIds).or('status.is.null,status.eq.in_work'),
-  }),
-  dp_requests: () => ({
-    dpNew: () => count('dp_requests').eq('status', 'new'),
-    dpInWork: () => count('dp_requests').eq('status', 'in_work'),
   }),
   doc_check_requests: (objectIds) => ({
     docCheckNew: () => docCheck('new', objectIds),

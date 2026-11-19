@@ -1,0 +1,140 @@
+/* Окно «Кому показывать окно о новой заявке на заключение ДП» (DpRecipientsModal). Стили перенесены со страницы /dp-requests,
+   которой нет с 19.11.2026: окно открывают на доске «Заявки на проверку ДП/ДС». Окно рисуется поверх всего — свои классы dpr-*. */
+.dpr-file-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.dpr-file-btn:hover:not(:disabled) { border-color: var(--border-color); color: var(--text-primary); }
+.dpr-file-btn.is-danger:hover:not(:disabled) { color: var(--danger-color); }
+.dpr-file-add {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-link, var(--primary-hover));
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.dpr-file-add:hover:not(:disabled) { text-decoration: underline; }
+.dpr-file-add:disabled { color: var(--text-tertiary); cursor: default; }
+/* ── Окна ── */
+.dpr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1300; /* выше полосы меню на телефоне (1250) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.5);
+}
+.dpr-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(42rem, 100%);
+  max-height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: 0 1rem 3rem rgba(15, 23, 42, 0.3);
+}
+.dpr-dialog.is-narrow { width: min(34rem, 100%); }
+.dpr-dialog-head {
+  display: flex;
+  flex: none;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.dpr-dialog-head h3 { margin: 0; font-size: 1rem; font-weight: 600; line-height: 1.5rem; }
+.dpr-x {
+  display: inline-flex;
+  padding: 0.25rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.dpr-x:hover:not(:disabled) { color: var(--text-primary); background: var(--hover-bg); }
+.dpr-dialog-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.875rem;
+  min-height: 0;
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+}
+.dpr-dialog-foot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+}
+.dpr-dialog-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; }
+.dpr-field { display: flex; flex-direction: column; gap: 0.25rem; }
+.dpr-label { color: var(--text-secondary); font-size: 0.8125rem; font-weight: 500; line-height: 1.125rem; }
+.dpr-hint { color: var(--text-tertiary); font-size: 0.75rem; line-height: 1rem; }
+p.dpr-hint { margin: 0; }
+.dpr-error,
+.dpr-error-line { color: var(--danger-color); font-size: 0.8125rem; line-height: 1.125rem; }
+.dpr-error { display: flex; gap: 0.375rem; align-items: flex-start; margin: 0; }
+.dpr-error > svg { flex: none; margin-top: 0.125rem; }
+
+.dpr-recipients { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.dpr-recipients > li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.375rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.dpr-recipients > li:last-child { border-bottom: 0; }
+.dpr-recipient-name { flex: 1 1 auto; min-width: 0; font-size: 0.875rem; overflow-wrap: anywhere; }
+.dpr-recipients .dpr-hint { flex: none; max-width: 40%; text-align: right; }
+.dpr-search {
+  display: flex;
+  gap: 0.375rem;
+  align-items: center;
+  padding: 0 0.625rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 0.375rem;
+  color: var(--text-tertiary);
+}
+.dpr-search > input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.4375rem 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+@media (max-width: 640px) {
+  .dpr-overlay { align-items: stretch; padding: 0.5rem; }
+  /* Поле — 16px: мельче Safari при касании увеличивает страницу. */
+  .dpr-search > input { font-size: 16px; }
+  .dpr-file-btn { width: 2.25rem; height: 2.25rem; }
+  .dpr-file-add { min-height: 2.25rem; }
+}

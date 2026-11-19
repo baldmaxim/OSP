@@ -60,6 +60,9 @@ export function docCheckStatusTimes(statusEvents) {
   return out
 }
 
+// ДП или ДС для столбцов «ДП / ДС»: «Заключение ДП» — договор подряда.
+const dpOrDs = (type) => (type === 'ds' ? 'ds' : type === 'dp' || type === 'dp_conclusion' ? 'dp' : null)
+
 /** Отбор по фильтрам отчёта: отдел (статус объекта), объект, исполнитель, вид документа. Удалённые остаются — их только считаем. */
 export function filterDocCheckRequests(rows, { dept = 'all', objectId = 'all', assignee = 'all', docType = 'all' } = {}, employees = new Map()) {
   return (rows || []).filter(r => {
@@ -123,7 +126,8 @@ export function computeDocCheckStats(rows, times = new Map(), employees = new Ma
   const live = all.filter(r => !r.deleted_at)
 
   const byStatus = { ...Object.fromEntries(DOC_CHECK_STAT_STATUSES.map(s => [s, 0])), other: 0 }
-  const byType = { dp: 0, ds: 0 }
+  // «Заключение ДП» (19.11.2026) — своим счётом; в столбцах «ДП / ДС» и строке «ДП» потока — вместе с ДП (это договор подряда).
+  const byType = { dp: 0, ds: 0, dp_conclusion: 0 }
   const deadlines = { overdue: 0, dueSoon: 0, noDeadline: 0, overdueList: [] }
   const attention = { unassigned: 0, staleNew: 0, oldestNewDays: null, staleScan: 0 }
   let archived = 0
@@ -186,7 +190,8 @@ export function computeDocCheckStats(rows, times = new Map(), employees = new Ma
       g[status] += 1
       if (isOpen) g.open += 1
       if (overdue) g.overdue += 1
-      if (r.doc_type === 'dp' || r.doc_type === 'ds') g[r.doc_type] += 1
+      const kind = dpOrDs(r.doc_type)
+      if (kind) g[kind] += 1
     }
     add(objects, r.object_id || '_none', r.object_id ? (r.objects?.name || 'Объект') : 'Объект не указан')
     add(counterparties, r.counterparty_id || '_none', r.counterparty_id ? (r.counterparties?.name || 'Контрагент') : 'Не указан')
@@ -198,8 +203,8 @@ export function computeDocCheckStats(rows, times = new Map(), employees = new Ma
     for (const p of KP_PERIODS) {
       if (inPeriod(created, p)) {
         matrix.created[p] += 1
-        if (r.doc_type === 'dp') matrix.createdDp[p] += 1
-        if (r.doc_type === 'ds') matrix.createdDs[p] += 1
+        if (dpOrDs(r.doc_type) === 'dp') matrix.createdDp[p] += 1
+        if (dpOrDs(r.doc_type) === 'ds') matrix.createdDs[p] += 1
       }
       if (inPeriod(taken, p)) matrix.taken[p] += 1
       if (inPeriod(done, p)) matrix.completed[p] += 1

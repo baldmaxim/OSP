@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { IconArrowRight, IconChevronDown } from '../components/icons/TenderHubIcons'
-import { IconContracts, IconDcRequest, IconDocCheck, IconDpRequest } from '../components/icons/NavIcons'
+import { IconContracts, IconDcRequest, IconDocCheck } from '../components/icons/NavIcons'
 import AccessDenied from '../components/AccessDenied'
 import { useRole } from '../contexts/RoleContext'
 import { fetchContractsHubCounters } from '../services/contractsHubCounters'
@@ -12,7 +12,6 @@ import './TendersHubPage.css'
 const ICONS = {
   contracts: IconContracts,
   dc_requests: IconDcRequest,
-  dp_requests: IconDpRequest,
   doc_check_requests: IconDocCheck,
 }
 

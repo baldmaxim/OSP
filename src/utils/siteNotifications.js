@@ -4,14 +4,13 @@
 //   • тендеры своих объектов (`user_roles.object_ids`) — текущий статус;
 //   • заявки на проверку ДП/ДС своих объектов, кто бы их ни подал («их заявка — это все заявки объекта и статус по ним»,
 //     11.11.2026) — колонка доски; в архиве — нет;
-//   • заявки на заключение ДП своих объектов и свои без объекта (объект вносит отдел позже) — статус.
+//   • заявки на заключение ДП — с 19.11.2026 карточки «Заключение ДП» той же доски (раздела /dp-requests нет), идут вторым пунктом.
 // Ключ уведомления — с текущим статусом: сменился статус — уведомление снова непрочитанное (как у проверки КП). Закрытое
 // (тендер завершён, заявка завершена) видно RECENT_DAYS дней после последнего изменения, дальше пропадает.
 // Расчёт здесь — чистые функции, запросы — в NotificationsContext.
 import { ROLES } from '../contexts/roleConstants.js'
 import { isClosedMainStatus, shownMainTenderStatus } from './tenderStatuses.js'
-import { DOC_CHECK_STATUS_LABEL } from './docCheckHelpers.js'
-import { DP_STATUS_LABEL } from './dpRequests.js'
+import { DOC_CHECK_STATUS_LABEL, DOC_TYPE_LABEL } from './docCheckHelpers.js'
 
 // Роли «со стройки»: у них уведомления о своём, а не о работе отдела. Экономист объекта — не «Экономист ОСП» (economist).
 export const SITE_STAFF_ROLES = new Set([ROLES.CONSTRUCTION_MANAGER, 'economist_object'])
@@ -57,8 +56,6 @@ export function tenderStatusNotifications(tenders, { since }) {
   return out.sort((a, b) => b.sortAt - a.sortAt)
 }
 
-const DOC_TYPE = { dp: 'ДП', ds: 'ДС' }
-
 // Заявки на проверку ДП/ДС: «Завершено» — пока свежее; «Ожидаем скан» — ещё в работе (бумага не вернулась); убранные в
 // архив — уже не на доске.
 export function docCheckNotifications(requests, { since }) {
@@ -67,7 +64,7 @@ export function docCheckNotifications(requests, { since }) {
     if (r.deleted_at || r.archived_at) continue
     const done = r.status === 'done'
     if (done && !recent(r.updated_at, since)) continue
-    const doc = [DOC_TYPE[r.doc_type] || 'Документ', r.doc_number ? `№ ${r.doc_number}` : ''].filter(Boolean).join(' ')
+    const doc = [DOC_TYPE_LABEL[r.doc_type] || 'Документ', r.doc_number ? `№ ${r.doc_number}` : ''].filter(Boolean).join(' ')
     out.push({
       kind: 'doc_check',
       id: r.id,
@@ -83,35 +80,6 @@ export function docCheckNotifications(requests, { since }) {
       sortAt: time(r.updated_at || r.created_at),
       days: 0,
       to: `/doc-check-requests?request=${r.id}`,
-    })
-  }
-  return out.sort((a, b) => b.sortAt - a.sortAt)
-}
-
-// Заявки на заключение ДП. Черновик (идёт загрузка файлов) — ещё не подан.
-export function dpRequestNotifications(requests, { since }) {
-  const out = []
-  for (const r of requests || []) {
-    if (r.deleted_at || !r.status || r.status === 'draft') continue
-    const changedAt = r.status_changed_at || r.created_at
-    const done = r.status === 'completed'
-    if (done && !recent(changedAt, since)) continue
-    const number = r.request_number != null ? `Заявка № ${r.request_number}` : 'Заявка'
-    out.push({
-      kind: 'dp_request',
-      id: r.id,
-      key: `dp_request:${r.id}:${r.status}`,
-      objectName: r.objects?.name || 'Объект не указан',
-      subtitle: [number, r.contract_title].filter(Boolean).join(' — '),
-      author: r.created_by_name || '',
-      badge: r.request_number != null ? `№${r.request_number}` : null,
-      statusLabel: DP_STATUS_LABEL[r.status] || r.status,
-      statusTone: done ? 'closed' : r.status === 'new' ? 'new' : 'active',
-      date: changedAt || null,
-      dateLabel: r.status_changed_at ? 'Статус с' : 'Подана',
-      sortAt: time(changedAt),
-      days: 0,
-      to: `/dp-requests?request=${r.id}`,
     })
   }
   return out.sort((a, b) => b.sortAt - a.sortAt)

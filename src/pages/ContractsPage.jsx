@@ -2785,8 +2785,8 @@ function ContractRegistry() {
               <span>{hideTailColumns ? 'Все столбцы' : 'Компактный вид'}</span>
             </button>
           )}
-          {/* «+ Заявка на заключение ДП» (10.11.2026, решение пользователя: подавать — из реестра договоров) — у права
-              dp_requests_create; с 11.11.2026 — среди действий шапки (стояла между вкладками за «Все», вкладки «Все» нет). */}
+          {/* «+ Заявка на заключение ДП» (10.11.2026, решение пользователя: подавать — из реестра договоров) — с 11.11.2026 среди
+              действий шапки; с 19.11.2026 заявка встаёт на доску проверки ДП/ДС, кнопка — у права doc_check_requests_create. */}
           <DpRequestCreateButton />
           {!isDeletedTab && canEditContracts && (
             <button type="button" className="btn-primary" onClick={handleAddNew}>

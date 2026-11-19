@@ -4,6 +4,8 @@
 // соглашение не убрать; уведомления получателям — только функциями; откаты заявки не теряют. Нужны Docker и psql.
 // Второй блок — то же на копии прода, загруженной как база Яндекса (одна учётка, migration/yandex через migrate.sh); нужна проверенная
 // копия прода. Страница — dp-requests.test.mjs.
+// С 20270219 (doc-check-dp-conclusion-db.test.mjs) заявки на ДП — на доске ДП/ДС, прежний раздел заявок не принимает: здесь обе
+// базы — без неё и без миграций после неё, как до переезда.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -25,6 +27,9 @@ const SHORT_YANDEX = path.join(ROOT, 'migration', 'yandex', `${SHORT_NAME}.sql`)
 const SHORT_CHECK = path.join(ROOT, 'migration', 'backup', 'checks', '20261231.sql')
 const SHORT_ROLLBACK = path.join(ROOT, 'migration', 'rollback', `${SHORT_NAME}_rollback.sql`)
 const skip = skipReason()
+// Переезд на доску ДП/ДС и всё после него — не здесь (см. шапку).
+const MOVED = '20270219_doc_check_dp_conclusion'
+const beforeMove = (m) => m.split('/').pop() < MOVED
 
 const U = {
   worker: '00000000-0000-4000-8000-0000000d9101',     // работает с заявками
@@ -160,7 +165,7 @@ describe('Заявка на заключение ДП: база', { skip, timeou
     db = startSnapshot()
     for (const m of appliedAfter()) psqlAt(db.port, null, { file: path.join(MIGRATIONS, m) })
     for (const m of candidateMigrations()) {
-      if (m.startsWith(NAME) || m.startsWith(SHORT_NAME)) continue
+      if (m.startsWith(NAME) || m.startsWith(SHORT_NAME) || !beforeMove(m)) continue
       psqlAt(db.port, null, { file: path.join(ROOT, m.includes('/') ? m : path.join('supabase', 'migrations', m)) })
     }
     checkBefore = psqlAt(db.port, null, { file: CHECK })
@@ -537,10 +542,16 @@ describe('Заявка на заключение ДП: база Яндекса (
 
   before(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'osp-dp-requests-'))
+    // Миграции до переезда на доску (см. шапку): копия каталога без 20270219 и следующих.
+    const dir = path.join(tmp, 'yandex')
+    fs.mkdirSync(dir)
+    for (const f of fs.readdirSync(path.join(ROOT, 'migration', 'yandex'))) {
+      if (/^\d{8}_/.test(f) && beforeMove(f)) fs.copyFileSync(path.join(ROOT, 'migration', 'yandex', f), path.join(dir, f))
+    }
     db = startSingleOwner(latestVerifiedCopy())
     const res = spawnSync('bash', [path.join(ROOT, 'migration', 'target', 'migrate.sh'), db.envFile, '--yes'], {
       encoding: 'utf8', cwd: ROOT, timeout: 20 * 60 * 1000,
-      env: { ...process.env, PROBE_REPORT_DIR: path.join(tmp, 'reports'), BACKUP_OUT_DIR: path.join(tmp, 'exports'), PROBE_CONNECT_TIMEOUT: '5' } })
+      env: { ...process.env, OSP_MIGRATIONS_DIR: dir, PROBE_REPORT_DIR: path.join(tmp, 'reports'), BACKUP_OUT_DIR: path.join(tmp, 'exports'), PROBE_CONNECT_TIMEOUT: '5' } })
     assert.equal(res.status, 0, res.stdout + res.stderr)
     assert.match(res.stdout, new RegExp(`OK ${NAME}: применена`))
     assert.match(res.stdout, new RegExp(`OK ${SHORT_NAME}: применена`))

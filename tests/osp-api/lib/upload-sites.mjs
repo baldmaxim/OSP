@@ -29,13 +29,13 @@ export const UPLOAD_SITES = [
   { file: 'src/services/kpEstimate.js', calls: 1, owner: 'object', table: 'objects' },
   { file: 'src/components/CounterpartyCardChip.jsx', calls: 1, owner: 'counterparty', table: 'counterparties' },
   { file: 'src/pages/DcRequestsPage.jsx', calls: 1, owner: 'dc_request', table: 'dc_requests' },
-  // Файлы новой заявки на проверку ДП/ДС от того, у кого право только создавать (20270102): id из вставки doc_check_requests.
-  { file: 'src/pages/DocCheckRequestsPage.jsx', calls: 1, owner: 'doc_check_request', table: 'doc_check_requests' },
+  // Файлы новой заявки на проверку ДП/ДС от того, у кого право только создавать (20270102), и новой заявки на заключение ДП
+  // (19.11.2026, кнопка в «Реестре по договорам»): id из вставки doc_check_requests — общий сервис доски.
+  { file: 'src/services/docCheckRequests.js', calls: 1, owner: 'doc_check_request', table: 'doc_check_requests' },
   // Окно заявки на проверку ДП/ДС, раздел «Документы» (11.11.2026): понятийное соглашение и загружаемые документы.
   { file: 'src/components/doccheck/DocCheckFiles.jsx', calls: 1, owner: 'doc_check_request', table: 'doc_check_requests' },
   // Файл сообщения в обсуждении заявки (20270216): категория doc_check_chat — правом просмотра раздела (CATEGORY_RULES).
   { file: 'src/services/docCheckCard.js', calls: 1, owner: 'doc_check_request', table: 'doc_check_requests' },
-  { file: 'src/services/dpRequests.js', calls: 1, owner: 'dp_request', table: 'dp_requests' }, // понятийное соглашение и документ договора (20261227)
   { file: 'src/components/ConceptAgreementCell.jsx', calls: 1, owner: 'contract', table: 'contracts' },
   { file: 'src/components/ContractClausesTab.jsx', calls: 1, owner: 'contract', table: 'contracts' },
 ]

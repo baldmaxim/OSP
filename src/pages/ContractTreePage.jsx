@@ -22,6 +22,7 @@ import { makeDemoData, nextDemoContractNumber } from '../utils/contractTreeDemo'
 import { CONTRACTS_REGISTRY_PATH } from '../utils/contractsHub'
 import { DS_TYPE_LABEL } from '../utils/dcRequestOptions'
 import { DP_ROLE_LABEL } from '../utils/dpRequests'
+import { DOC_TYPE_LABEL } from '../utils/docCheckHelpers'
 import { formatMoney } from '../utils/estimateImport'
 import { formatDateRu, plural } from '../utils/taskHelpers'
 import './ContractTreePage.css'
@@ -59,7 +60,7 @@ const linkTitle = (doc) => `${isContractDoc(doc) ? 'договору' : 'ДС'} 
 // Документ проверки: «ДС № 1», «ДП № СУ2-12» — без повтора «ДС №», если он уже в номере.
 const checkDocLabel = (r) => {
   const num = String(r.doc_number || '').replace(/^\s*(ДС|ДП|договор)\s*№?\s*/i, '')
-  return `${r.doc_type === 'dp' ? 'ДП' : 'ДС'} № ${num || '—'}`
+  return `${DOC_TYPE_LABEL[r.doc_type] || 'ДС'} № ${num || '—'}`
 }
 const pctText = (pct) => (pct == null ? '' : `${pct > 0 ? '+' : ''}${pct.toLocaleString('ru-RU', { maximumFractionDigits: 1 })} %`)
 
@@ -269,7 +270,8 @@ function StepList({ item }) {
 function sectionLink(item) {
   const r = item.raw
   if (item.kind === KIND.CHECK) return { to: `/doc-check-requests?request=${r.id}`, label: 'Открыть на доске проверки' }
-  if (item.kind === KIND.DP) return { to: `/dp-requests?request=${r.id}`, label: 'Открыть в «Заявках на ДП»' }
+  // Заявки на заключение ДП с 19.11.2026 — карточки доски проверки (перенесены с тем же id).
+  if (item.kind === KIND.DP) return { to: `/doc-check-requests?request=${r.id}`, label: 'Открыть на доске проверки' }
   return {
     to: r.counterparty_id ? `/dc-requests?counterparty=${r.counterparty_id}` : '/dc-requests',
     label: 'Открыть в «Заявках на ДС»',
@@ -875,7 +877,7 @@ export default function ContractTreePage() {
         <Link className="ctree-section" to={CONTRACTS_REGISTRY_PATH}>Реестр<span className="ctree-section-count">{tree ? contractsCount : '…'}</span></Link>
         <Link className="ctree-section tone-green" to="/dc-requests">Заявки на ДС<span className="ctree-section-count">{tree ? tree.totals.dc : '…'}</span></Link>
         <Link className="ctree-section tone-slate" to="/doc-check-requests">Проверка ДП/ДС<span className="ctree-section-count">{tree ? tree.totals.check : '…'}</span></Link>
-        <Link className="ctree-section tone-violet" to="/dp-requests">Заявки на ДП<span className="ctree-section-count">{tree ? tree.totals.dp : '…'}</span></Link>
+        <Link className="ctree-section tone-violet" to="/doc-check-requests">Заявки на ДП<span className="ctree-section-count">{tree ? tree.totals.dp : '…'}</span></Link>
         <span className="ctree-sections-note">{mode === 'demo' ? 'числа — по примеру; ' : ''}у заявок — сколько в работе</span>
       </nav>
 

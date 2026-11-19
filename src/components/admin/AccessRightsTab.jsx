@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../../api'
 import { useRole, SECTIONS } from '../../contexts/RoleContext'
+import { RETIRED_SECTIONS } from '../../contexts/roleConstants'
 import FilterDropdown from '../FilterDropdown'
 import { IconPencil, IconTrash } from '../icons/ActionIcons'
 import { IconObject, IconUser } from '../icons/ToolbarIcons'
@@ -17,7 +18,8 @@ import { roleKeyFromLabel, sameRoleLabel } from '../../utils/roleKey'
 
 const ADMIN = 'admin'
 const CONTRACTOR = 'contractor'
-const sectionKeys = Object.keys(SECTIONS)
+// Без разделов, которых в интерфейсе нет (RETIRED_SECTIONS: их галочки ничего не открывают).
+const sectionKeys = Object.keys(SECTIONS).filter((s) => !RETIRED_SECTIONS.has(s))
 
 export default function AccessRightsTab({ objects, counterparties, onNeedCounterparties }) {
   const navigate = useNavigate()

@@ -5,13 +5,15 @@ import { useRole } from '../../contexts/RoleContext'
 import { ackDpAlerts, fetchDpAlerts, isDpAlertRecipient } from '../../services/dpRequests'
 import { formatAmount } from '../../utils/money'
 import {
-  DP_ALERTS_EVENT, DP_CREATED_EVENT, DP_REQUEST_PARAM, DP_ROLE_LABEL, newRequestsLabel,
+  DP_ALERTS_EVENT, DP_CREATED_EVENT, DP_ROLE_LABEL, newRequestsLabel,
 } from '../../utils/dpRequests'
 import { IconDpRequest } from '../icons/NavIcons'
 import './DpRequestAlert.css'
 
 // Большое окно о новой заявке на ДП (решение пользователя 05.11.2026: «большое всплывать») — на любой странице сайта, только у
-// получателей из списка (dp_request_alert_recipients, ведёт администратор на странице заявок).
+// получателей из списка (dp_request_alert_recipients, ведёт администратор на доске «Заявки на проверку ДП/ДС»).
+// С 19.11.2026 заявка на заключение ДП — карточка этой доски (doc_type 'dp_conclusion', миграция 20270219): уведомление заводит
+// база при её создании, «Открыть заявку» ведёт на доску. Номер — «ID» доски.
 //
 // Уведомление — строка в базе у каждого получателя, поэтому его не потерять: кто был не на сайте, увидит окно при входе, на любом
 // компьютере. Окно закрывается только кнопкой: щелчок мимо и Escape его не гасят, иначе заявку можно пропустить случайно. Пропало
@@ -25,7 +27,7 @@ export default function DpRequestAlert() {
   const { user, canView, previewActive } = useRole()
   const userId = user?.id || null
   const navigate = useNavigate()
-  const canOpen = canView('dp_requests')
+  const canOpen = canView('doc_check_requests')
   const [alerts, setAlerts] = useState([])
   const recipient = useRef({ yes: false, checkedAt: 0 })
   const knownIds = useRef(new Set())
@@ -89,7 +91,7 @@ export default function DpRequestAlert() {
 
   const openRequest = (requestId) => {
     dismiss([requestId])
-    navigate(`/dp-requests?${DP_REQUEST_PARAM}=${requestId}`)
+    navigate(`/doc-check-requests?request=${encodeURIComponent(requestId)}`)
   }
 
   // Фокус не уходит за окно: щелчок мимо его не снимает, Tab ходит только по кнопкам окна.
@@ -109,14 +111,14 @@ export default function DpRequestAlert() {
           <span className="dpa-icon"><IconDpRequest /></span>
           <div>
             <h2 id="dpa-title">{alerts.length === 1 ? 'Новая заявка на заключение ДП' : `Заявки на заключение ДП: ${newRequestsLabel(alerts.length)}`}</h2>
-            <p>Создана заявка на договор подряда.</p>
+            <p>Создана заявка на договор подряда — она в «Заявках на проверку ДП/ДС», колонка «Новые заявки».</p>
           </div>
         </header>
         <div className="dpa-list">
           {alerts.map((a) => (
             <article key={a.request_id} className="dpa-card">
               <div className="dpa-card-title">
-                <span className="dpa-num">№ {a.request_number}</span>
+                {a.request_number != null && <span className="dpa-num">ID {a.request_number}</span>}
                 <span className="dpa-object">{a.object_name || 'Объект не указан'}</span>
                 {canOpen && (
                   <button type="button" className="dpa-open" onClick={() => openRequest(a.request_id)}>Открыть заявку</button>

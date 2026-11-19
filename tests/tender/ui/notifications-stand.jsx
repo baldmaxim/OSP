@@ -43,26 +43,17 @@ const mine = [
   docCheck('dc-n5', { doc_number: '5', deleted_at: ago(1), updated_at: ago(1) }),
   docCheck('dc-n6', { created_by: 'someone-else', object_id: 'obj-2', doc_number: '6', updated_at: ago(1) }),
   docCheck('dc-n7', { status: 'done', doc_number: '77', archived_at: ago(1), updated_at: ago(1) }),
+  // «Заключение ДП» (с 19.11.2026 — карточка той же доски): заявка коллеги своего объекта, контрагента ещё нет.
+  docCheck('dc-n8', { doc_type: 'dp_conclusion', counterparty_id: null, created_by: 'someone-else', created_by_name: 'Экономов А. П.',
+    updated_at: ago(1.5) }),
 ]
 for (const r of mine) {
   r.objects = { id: r.object_id, name: objectName(r.object_id) }
-  r.counterparties = { id: r.counterparty_id, name: fdb.counterparties?.find((c) => c.id === r.counterparty_id)?.name || 'ООО «Монолит»' }
+  r.counterparties = r.counterparty_id
+    ? { id: r.counterparty_id, name: fdb.counterparties?.find((c) => c.id === r.counterparty_id)?.name || 'ООО «Монолит»' }
+    : null
 }
 fdb.doc_check_requests = [...(fdb.doc_check_requests || []), ...mine]
-
-const dp = (id, n, o) => ({
-  id, request_number: n, object_id: 'obj-1', objects: { name: objectName('obj-1') }, contract_title: null, status: 'new',
-  status_changed_at: null, created_by: me, created_at: ago(2), deleted_at: null, ...o,
-})
-fdb.dp_requests = [
-  dp('dp-n1', 12, { object_id: null, objects: null }),
-  dp('dp-n2', 13, { status: 'in_work', status_changed_at: ago(1), contract_title: 'Договор на монолит', created_at: ago(4) }),
-  dp('dp-n3', 14, { status: 'completed', status_changed_at: ago(60), created_at: ago(70) }),
-  dp('dp-n4', null, { status: 'draft' }),
-  dp('dp-n5', 16, { created_by: 'someone-else', created_by_name: 'Экономов А. П.', created_at: ago(3) }),
-  dp('dp-n6', 17, { created_by: 'someone-else', object_id: 'obj-2', objects: { name: objectName('obj-2') } }),
-  dp('dp-n7', 18, { created_by: 'someone-else', object_id: null, objects: null }),
-]
 
 export default function NotificationsStand() {
   return (

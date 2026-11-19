@@ -1,10 +1,8 @@
-// «Отчёты → Договоры → Заключение ДП» и «Проверка ДП/ДС»: расчёт статистики (без браузера) — статусы и колонки доски, суммы,
-// сроки, ожидание, незаполненные поля отдела, события за период, медианы, разрезы и фильтры.
+// «Отчёты → Договоры → Проверка ДП/ДС» (и «Заключение ДП» — тот же отчёт по одному виду с 19.11.2026, когда заявки на заключение
+// ДП стали карточками доски; см. dp-requests.test.mjs): расчёт статистики (без браузера) — колонки доски, сроки, события за период,
+// медианы, разрезы и фильтры.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import {
-  buildDpDynamics, computeDpStats, dpFilterOptions, dpMissingFields, filterDpRequests,
-} from '../../src/utils/dpRequestStats.js'
 import {
   buildDocCheckDynamics, computeDocCheckStats, docCheckFilterOptions, docCheckStatusTimes, filterDocCheckRequests,
 } from '../../src/utils/docCheckStats.js'
@@ -14,88 +12,6 @@ const NOW = new Date(2026, 9, 21, 12, 0, 0)
 const at = (y, m, d, h = 10) => new Date(y, m - 1, d, h).toISOString()
 const OBJ_A = { id: 'obj-a', name: 'ЖК Альфа', status: 'main_construction' }
 const OBJ_B = { id: 'obj-b', name: 'ЖК Бета', status: 'warranty_service' }
-
-describe('Отчёты: заключение ДП', () => {
-  const dp = (id, over = {}) => ({
-    id, request_number: Number(id.slice(1)), object_id: OBJ_A.id, objects: OBJ_A, contract_title: `Договор ${id}`, amount: 1000000,
-    responsible_name: 'Экономов А. П.', responsible_role: 'economist', status: 'new', status_changed_at: null,
-    created_by_name: 'Строев Б. И.', created_at: at(2026, 9, 1), deleted_at: null, ...over,
-  })
-  const ROWS = [
-    // Подана сегодня, ничего отделом не заполнено.
-    dp('p1', { object_id: null, objects: null, contract_title: null, amount: null, responsible_name: null, responsible_role: null,
-      created_at: at(2026, 10, 21, 9), status_changed_at: at(2026, 10, 21, 9) }),
-    // Новая 10 дней — ждёт долго.
-    dp('p2', { created_at: at(2026, 10, 11), status_changed_at: at(2026, 10, 11), amount: 500000 }),
-    // В работе 20 дней — залежалась; ответственный — руководитель строительства, ФИО в другом регистре и с «ё».
-    dp('p3', { status: 'in_work', status_changed_at: at(2026, 10, 1), responsible_name: 'строёв б. и.', responsible_role: 'construction_manager',
-      object_id: OBJ_B.id, objects: OBJ_B }),
-    // Завершена на неделе: 15 дней от подачи.
-    dp('p4', { status: 'completed', created_at: at(2026, 10, 5), status_changed_at: at(2026, 10, 20), amount: 2000000 }),
-    // Завершена давно: 5 дней от подачи.
-    dp('p5', { status: 'completed', created_at: at(2026, 3, 1), status_changed_at: at(2026, 3, 6), amount: 300000 }),
-    // Удалённая — только счётчик; черновик — не заявка.
-    dp('p6', { deleted_at: at(2026, 10, 2), amount: 999999999 }),
-    dp('p7', { status: 'draft', amount: 888888888 }),
-  ]
-  const s = computeDpStats(ROWS, NOW)
-
-  it('статусы, суммы, удалённые и черновики', () => {
-    assert.equal(s.total, 5)
-    assert.equal(s.deleted, 1, 'черновик не считается и удалённым')
-    assert.deepEqual(s.byStatus, { new: 2, in_work: 1, completed: 2 })
-    assert.equal(s.active, 3)
-    assert.equal(s.amounts.total, 500000 + 1000000 + 2000000 + 300000)
-    assert.equal(s.amounts.completed, 2300000)
-    assert.equal(s.amounts.withoutAmount, 1)
-  })
-
-  it('ожидание и незаполненные поля — только у незавершённых', () => {
-    assert.equal(s.stale.newCount, 1, 'новая 10 дней — да, поданная сегодня — нет')
-    assert.equal(s.stale.oldestNewDays, 10)
-    assert.equal(s.stale.workCount, 1)
-    assert.deepEqual(s.missing, { requests: 1, object: 1, contract: 1, amount: 1, responsible: 1 })
-    assert.deepEqual(dpMissingFields({ object_id: 'x', contract_title: ' ', amount: 0, responsible_name: 'А' }), ['contract'],
-      'сумма 0 — внесена')
-    assert.deepEqual(s.waiting.map(w => w.id), ['p3', 'p2', 'p1'], 'дольше ждут — выше')
-    assert.equal(s.waiting.find(w => w.id === 'p1').missing.length, 4)
-  })
-
-  it('события за период и медиана до завершения', () => {
-    assert.deepEqual(s.matrix.created, { today: 1, week: 1, month: 3, all: 5 })
-    assert.deepEqual(s.matrix.completed, { today: 0, week: 1, month: 1, all: 2 })
-    assert.equal(s.matrix.completedAmount.all, 2300000)
-    assert.equal(s.matrix.createdAmount.month, 2500000, 'p1 без суммы, p2 — 0,5 млн, p4 — 2 млн')
-    assert.equal(s.durations.completeCount, 2)
-    assert.equal(Math.round(s.durations.completeMedianMs / 86400000), 10, 'медиана 5 и 15 дней')
-  })
-
-  it('разрезы: ответственный по ФИО без учёта регистра и «ё», пустые — в конце', () => {
-    assert.deepEqual(s.byObject.map(g => g.name), ['ЖК Альфа', 'ЖК Бета', 'Объект не указан'])
-    const people = s.byResponsible.map(g => [g.name, g.total])
-    assert.deepEqual(people, [['Экономов А. П.', 3], ['строёв б. и.', 1], ['Не указан', 1]])
-    assert.equal(s.byResponsible[1].role, 'Руководитель строительства')
-    assert.equal(s.byObject[0].stale, 1)
-  })
-
-  it('фильтры и списки фильтров', () => {
-    const opts = dpFilterOptions(ROWS)
-    assert.deepEqual(opts.objects.map(o => o.id), ['obj-a', 'obj-b', '_none'])
-    assert.equal(opts.people.at(-1).id, '_none')
-    assert.equal(computeDpStats(filterDpRequests(ROWS, { dept: 'warranty_service' }), NOW).total, 1)
-    assert.equal(computeDpStats(filterDpRequests(ROWS, { objectId: '_none' }), NOW).total, 1)
-    const boss = opts.people.find(p => /стр/i.test(p.name)).id
-    assert.deepEqual(filterDpRequests(ROWS, { respKey: boss }).map(r => r.id), ['p3'])
-  })
-
-  it('динамика по месяцам: последний столбец совпадает с «месяцем»', () => {
-    const buckets = buildDpDynamics(ROWS, 'month', NOW)
-    assert.equal(buckets.length, 12)
-    assert.equal(buckets.at(-1).created, s.matrix.created.month)
-    assert.equal(buckets.at(-1).completed, s.matrix.completed.month)
-    assert.equal(buckets.reduce((n, b) => n + b.created, 0), 5, 'удалённые и черновики не входят')
-  })
-})
 
 describe('Отчёты: проверка ДП/ДС', () => {
   const LAWYER_1 = { user_id: 'u-1', display_name: 'Юристова М. А.', role: 'lawyer' }
@@ -144,7 +60,7 @@ describe('Отчёты: проверка ДП/ДС', () => {
     assert.equal(s.byStatus.in_progress, 1)
     assert.equal(s.byStatus.done, 2)
     assert.equal(s.byStatus.awaiting_scan, 1)
-    assert.deepEqual(s.byType, { dp: 2, ds: 4 })
+    assert.deepEqual(s.byType, { dp: 2, ds: 4, dp_conclusion: 0 })
     assert.equal(s.open, 4, '«Ожидаем скан» открыта')
     assert.equal(s.inWork, 3, 'у отдела — без ждущих скан')
   })

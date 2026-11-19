@@ -1,5 +1,6 @@
-// «Реестр по договорам» (/contracts/registry): страница-хаб, как у «Тендеров», внутри четыре блока — реестр и три вида заявок. Один пункт
-// меню вместо четырёх; права прежние: у каждого блока своё, закрытый блок не виден и к его таблице нет запроса.
+// «Реестр по договорам» (/contracts/registry): страница-хаб, как у «Тендеров», внутри три блока — реестр и два вида заявок (блока
+// «Заявка на заключение ДП» нет с 19.11.2026: эти заявки — карточки «Заключение ДП» доски проверки ДП/ДС, /dp-requests ведёт туда).
+// Один пункт меню; права прежние: у каждого блока своё, закрытый блок не виден и к его таблице нет запроса.
 // Стенд tests/tender/ui, Chromium. Сами страницы блоков — их тесты (contracts-*, dc-request-*, dp-requests, doc-check-*).
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -12,37 +13,37 @@ import { SECTIONS } from '../../src/contexts/roleConstants.js'
 
 const launch = browserLaunchOptions()
 const SHOTS = process.env.CONTRACTS_HUB_SHOTS || ''
-const TITLES = ['Реестр по договорам', 'Заявка на ДС', 'Заявка на заключение ДП', 'Заявки на проверку ДП/ДС']
+const TITLES = ['Реестр по договорам', 'Заявка на ДС', 'Заявки на проверку ДП/ДС']
 const DATA = 'contracts=12&contractsMixed=1&dcStats=1&docCheck=1&latency=0'
 const canViewOnly = (...open) => (section) => open.includes(section)
 
 describe('Договоры и ДС: правила блоков', () => {
   it('подпись блока и раздела прав — одна и та же, ключи прав прежние', () => {
-    assert.deepEqual(CONTRACT_SECTION_KEYS, ['contracts', 'dc_requests', 'dp_requests', 'doc_check_requests'])
+    assert.deepEqual(CONTRACT_SECTION_KEYS, ['contracts', 'dc_requests', 'doc_check_requests'])
     assert.deepEqual(CONTRACT_SECTIONS.map((s) => s.title), TITLES)
     for (const { section, title } of CONTRACT_SECTIONS) assert.equal(SECTIONS[section], title)
   })
 
   it('куда ведёт пункт меню: хаб, единственный блок или никуда', () => {
     assert.equal(contractsEntry(() => true), '/contracts')
-    assert.equal(contractsEntry(canViewOnly('contracts', 'dp_requests')), '/contracts')
+    assert.equal(contractsEntry(canViewOnly('contracts', 'doc_check_requests')), '/contracts')
     assert.equal(contractsEntry(canViewOnly('contracts')), '/contracts/registry')
     assert.equal(contractsEntry(canViewOnly('dc_requests')), '/dc-requests')
-    assert.equal(contractsEntry(canViewOnly('dp_requests')), '/dp-requests')
     assert.equal(contractsEntry(canViewOnly('doc_check_requests')), '/doc-check-requests')
     assert.equal(contractsEntry(canViewOnly('tenders')), null, 'чужой раздел не открывает пункт')
-    // «Заявка на заключение ДП: создание» без просмотра реестра заявок страницу не открывает — как раньше.
+    // Прежние права «Заявки на заключение ДП» блока больше не открывают.
+    assert.equal(contractsEntry(canViewOnly('dp_requests')), null)
     assert.equal(contractsEntry(canViewOnly('dp_requests_create')), null)
   })
 
   it('пункт меню подсвечен на всех страницах блоков, на чужих — нет', () => {
-    for (const p of ['/contracts', '/contracts/registry', '/contracts/psdc-batch', '/contracts/ab-12', '/dc-requests', '/dp-requests', '/doc-check-requests']) {
+    for (const p of ['/contracts', '/contracts/registry', '/contracts/psdc-batch', '/contracts/ab-12', '/dc-requests', '/doc-check-requests']) {
       assert.equal(isContractsPath(p), true, p)
     }
     for (const p of ['/contractor', '/contractor-bids', '/reports', '/tenders', '/general']) assert.equal(isContractsPath(p), false, p)
   })
 
-  it('маршруты: у каждой страницы прежнее право, хаб открыт при любом из четырёх', () => {
+  it('маршруты: у каждой страницы прежнее право, хаб открыт при любом из трёх; /dp-requests ведёт на доску', () => {
     const app = readFileSync(resolve(ROOT, 'src/App.jsx'), 'utf8')
     const gate = (path) => {
       const line = app.split('\n').find((l) => l.includes(`<Route path=${path} `))
@@ -54,9 +55,9 @@ describe('Договоры и ДС: правила блоков', () => {
     assert.equal(gate('"/contracts/psdc-batch"'), 'section="contracts"')
     assert.equal(gate('"/contracts/:contractId"'), 'section="contracts"')
     assert.equal(gate('"/dc-requests"'), 'section="dc_requests"')
-    assert.equal(gate('"/dp-requests"'), 'section="dp_requests"')
+    assert.match(app.split('\n').find((l) => l.includes('<Route path="/dp-requests" ')), /element={<DpRequestsRedirect \/>}/)
     assert.equal(gate('"/doc-check-requests"'), 'section="doc_check_requests"')
-    assert.match(app, /contractsEntry\(canView\)\) to = contractsEntry\(canView\)/, 'стартовая страница знает все четыре блока')
+    assert.match(app, /contractsEntry\(canView\)\) to = contractsEntry\(canView\)/, 'стартовая страница знает все блоки')
   })
 })
 
@@ -97,22 +98,21 @@ describe('Договоры и ДС: страница-хаб', { skip: !launch &&
     return window.__supabaseStats.active === 0 && tables.size > 0
   })
 
-  it('четыре блока одной сетки: заголовок, описание, переход; вид как у «Тендеров»', async () => {
+  it('три блока в ряд: заголовок, описание, переход; вид как у «Тендеров»', async () => {
     const { page, errors, close } = await open(`route=/contracts&${DATA}&shell=1`)
     try {
       await page.locator('.contracts-hub').waitFor({ timeout: 120000 })
       assert.equal(await page.locator('.thub-header h2').innerText(), 'Договоры и ДС')
       assert.deepEqual(await titles(page), TITLES)
       const hrefs = await page.locator('.contracts-hub .thub-btn').evaluateAll((els) => els.map((a) => a.getAttribute('href')))
-      assert.deepEqual(hrefs, ['/contracts/registry', '/dc-requests', '/dp-requests', '/doc-check-requests'])
-      assert.equal(await page.locator('.contracts-hub .thub-desc').count(), 4)
+      assert.deepEqual(hrefs, ['/contracts/registry', '/dc-requests', '/doc-check-requests'])
+      assert.equal(await page.locator('.contracts-hub .thub-desc').count(), 3)
 
-      // Стили «Тендеров» подключены самой страницей: блоки — по два в ряд, одной высоты.
+      // Стили «Тендеров» подключены самой страницей: три блока в один ряд (без одинокой карточки внизу), одной высоты.
       const boxes = await page.locator('.contracts-hub .thub-card').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON()))
       assert.equal(Math.round(boxes[0].top), Math.round(boxes[1].top))
-      assert.equal(Math.round(boxes[2].top), Math.round(boxes[3].top))
-      assert.ok(boxes[2].top > boxes[0].top)
-      assert.equal(Math.round(boxes[0].height), Math.round(boxes[1].height))
+      assert.equal(Math.round(boxes[1].top), Math.round(boxes[2].top))
+      assert.equal(Math.round(boxes[0].height), Math.round(boxes[2].height))
       await countersLoaded(page)
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/contracts-hub.png` })
       assert.deepEqual(errors, [])
@@ -135,17 +135,10 @@ describe('Договоры и ДС: страница-хаб', { skip: !launch &&
   })
 
   it('число на карточке равно вкладке или колонке на странице блока', async () => {
-    // Сначала страница заявок на ДП: её данные подгружает стенд этой страницы.
-    const { page, errors, close } = await open(`route=/dp-requests&${DATA}`)
+    const { page, errors, close } = await open(`route=/contracts&${DATA}`)
     try {
-      await page.locator('.dp-requests-page .status-tab').first().waitFor({ timeout: 120000 })
-      const dp = { new: await tabCount(page, 'Новые'), work: await tabCount(page, 'В работе') }
-      await page.evaluate(() => window.__navigate('/contracts'))
-      await page.locator('.contracts-hub').waitFor()
+      await page.locator('.contracts-hub').waitFor({ timeout: 120000 })
       await page.waitForFunction(() => document.querySelectorAll('.contracts-hub .thub-count').length >= 4)
-      assert.ok(dp.new > 0 && dp.work > 0)
-      assert.equal(await badge(page, 'Заявка на заключение ДП', 'нов'), dp.new)
-      assert.equal(await badge(page, 'Заявка на заключение ДП', 'в работе'), dp.work)
 
       const shown = {
         registry: await badge(page, 'Реестр по договорам', 'в работе'),
@@ -187,7 +180,7 @@ describe('Договоры и ДС: страница-хаб', { skip: !launch &&
   })
 
   it('закрытых блоков нет на странице, к их таблицам нет запросов', async () => {
-    const { page, errors, close } = await open(`route=/contracts&${DATA}&noView=dc_requests,dp_requests`)
+    const { page, errors, close } = await open(`route=/contracts&${DATA}&noView=dc_requests`)
     try {
       await page.locator('.contracts-hub').waitFor({ timeout: 120000 })
       assert.deepEqual(await titles(page), ['Реестр по договорам', 'Заявки на проверку ДП/ДС'])
@@ -213,9 +206,9 @@ describe('Договоры и ДС: страница-хаб', { skip: !launch &&
   })
 
   for (const [closed, selector] of [
-    ['dc_requests,dp_requests,doc_check_requests', '.contracts-page-v2'],
-    ['contracts,dp_requests,doc_check_requests', '.dc-requests-page'],
-    ['contracts,dc_requests,dp_requests', '.doc-check-page'],
+    ['dc_requests,doc_check_requests', '.contracts-page-v2'],
+    ['contracts,doc_check_requests', '.dc-requests-page'],
+    ['contracts,dc_requests', '.doc-check-page'],
   ]) {
     it(`один доступный блок открывается сразу, выбирать не из чего (${selector})`, async () => {
       const { page, errors, close } = await open(`route=/contracts&${DATA}&noView=${closed}`)
@@ -228,7 +221,7 @@ describe('Договоры и ДС: страница-хаб', { skip: !launch &&
   }
 
   it('ни одного доступного блока — отказ, а не пустая страница', async () => {
-    const { page, close } = await open(`route=/contracts&${DATA}&noView=contracts,dc_requests,dp_requests,doc_check_requests`)
+    const { page, close } = await open(`route=/contracts&${DATA}&noView=contracts,dc_requests,doc_check_requests`)
     try {
       await page.getByRole('heading', { name: 'Нет прав для просмотра раздела' }).waitFor({ timeout: 120000 })
       assert.equal(await page.locator('.contracts-hub').count(), 0)
@@ -267,7 +260,7 @@ describe('Договоры и ДС: страница-хаб', { skip: !launch &&
   })
 
   it('боковое меню по правам: один блок — сразу в него, ни одного — пункта нет', async () => {
-    const single = await open(`route=/dc-requests&dcStats=1&latency=0&shell=1&sidebar=1&noView=contracts,dp_requests,doc_check_requests`)
+    const single = await open(`route=/dc-requests&dcStats=1&latency=0&shell=1&sidebar=1&noView=contracts,doc_check_requests`)
     try {
       const item = single.page.locator('.sidebar-nav .nav-item[title="Договоры и ДС"]')
       await item.waitFor({ timeout: 120000 })
@@ -275,7 +268,7 @@ describe('Договоры и ДС: страница-хаб', { skip: !launch &&
       assert.match(await item.getAttribute('class'), /\bactive\b/)
     } finally { await single.close() }
 
-    const none = await open(`route=/reports&latency=0&shell=1&sidebar=1&noView=contracts,dc_requests,dp_requests,doc_check_requests`)
+    const none = await open(`route=/reports&latency=0&shell=1&sidebar=1&noView=contracts,dc_requests,doc_check_requests`)
     try {
       await none.page.locator('.sidebar .nav-item').first().waitFor({ timeout: 120000 })
       assert.equal(await none.page.locator('.sidebar-nav .nav-item[title="Договоры и ДС"]').count(), 0)
