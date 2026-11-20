@@ -9,15 +9,18 @@
 // tender-5 № 196); вкладка Larix — kp-registry-stand (larixMany=N).
 // 18.11.2026: «Перезапуск» с выбором нового тендера (миграция 20270217) — стенд restartLink=1 (колонка есть; у № 194 в
 // примечании «Перезапуск тендера № 198»), restartPair=1 — № 197 «Перезапуск», заменён № 200.
-// 19.11.2026: и наоборот — в форме «Добавить новый тендер» галочка «Перезапуск тендера» и выбор прежнего: после создания прежнему —
-// «Перезапуск» и ссылка на новый (тот же путь, что окно).
+// 19.11.2026: в форме «Добавить новый тендер» галочка «Перезапуск тендера» и выбор прежнего: после создания прежнему — «Перезапуск» и
+// ссылка на новый. В тот же день — «указывать в № тот тендер, который перезапускается, а не наоборот»: «+ перезапуск» и окно с
+// отметками прежних — у номера НОВОГО, статус «Перезапуск» ставится сразу, без окна; в столбце «№» отметка — только у нового,
+// у прежнего «заменён № …» — под статусом (во вкладке «Перезапуск» — в столбце победителя), на телефоне и в карточке.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import { mainTenderStatuses, isClosedMainStatus, RESTART_STATUS } from '../../src/utils/tenderStatuses.js'
 import {
-  buildRestartIndex, restartCandidates, restartTargetId, mentionsRestartOf, hasRestartLink, restartSourceCandidates, restartSourceLabel,
+  buildRestartIndex, restartSourceOptions, restartedSources, canPickRestartSources, restartTargetId, mentionsRestartOf, hasRestartLink,
+  restartSourceCandidates, restartSourceLabel,
 } from '../../src/utils/tenderRestart.js'
 import { tenderWinnersOf } from '../../src/utils/tenderWinners.js'
 import { fmtCount } from '../../src/utils/ratesRegistry.js'
@@ -231,20 +234,32 @@ describe('Перезапуск: какой тендер заменил — пр�
     assert.equal(idx.byId.get('gone').public_tender_number, 70, 'номер удалённого находится (у прежнего — «заменён № …»)')
   })
 
-  it('кандидаты: называющие номер — первыми, затем того же объекта, новые выше; поиск по номеру и тексту', () => {
-    const old = t('old', 198, { status: 'Перезапуск' })
-    const list = [old,
-      t('a', 300, { object_id: 'o2' }), t('b', 250), t('c', 194, { object_id: 'o2', notes: 'Перезапуск тендера № 198' }),
-      t('d', 260, { object_id: 'o2', notes: 'перезапуск № 1980' }), t('m', 400, { tender_type: 'materials' }),
-      t('del', 500, { deleted_at: '2026-11-01' })]
-    assert.equal(mentionsRestartOf(list[3], 198), true)
-    assert.equal(mentionsRestartOf(list[4], 198), false, '1980 — другой номер')
-    assert.deepEqual(restartCandidates(old, list).map(c => c.tender.public_tender_number), [194, 250, 300, 260])
-    assert.deepEqual(restartCandidates(old, list, '№ 26').map(c => c.tender.public_tender_number), [260])
-    assert.deepEqual(restartCandidates(old, list, 'фасад 194').map(c => c.tender.public_tender_number), [194])
-    // Кого он сам заменил — не предлагается (круг).
-    const replaced = t('r', 120, { status: 'Перезапуск', restarted_by_tender_id: 'old' })
-    assert.ok(!restartCandidates(old, [...list, replaced]).some(c => c.tender.id === 'r'))
+  it('окно у нового: отмеченные — первыми, затем названные в его тексте, того же объекта; без себя, удалённых, материалов, чужих и круга', () => {
+    const fresh = t('new', 984, { notes: 'Перезапуск тендера № 40' })
+    const list = [fresh,
+      t('p40', 40, { object_id: 'o2' }), t('b', 250), t('c', 194, { object_id: 'o2' }),
+      t('linked', 30, { status: 'Перезапуск', restarted_by_tender_id: 'new', object_id: 'o2' }),
+      t('other', 31, { status: 'Перезапуск', restarted_by_tender_id: 'b' }), // уже заменён № 250
+      t('m', 400, { tender_type: 'materials' }), t('del', 500, { deleted_at: '2026-11-01' }),
+      t('gone', 29, { status: 'Перезапуск', restarted_by_tender_id: 'new', deleted_at: '2026-11-01' })]
+    assert.equal(mentionsRestartOf(fresh, 40), true)
+    assert.equal(mentionsRestartOf(fresh, 4), false, '4 — другой номер')
+    const opts = restartSourceOptions(fresh, list)
+    assert.deepEqual(opts.map(c => [c.tender.public_tender_number, c.rank]), [[30, 0], [40, 1], [250, 2], [194, 3]])
+    assert.deepEqual(restartSourceOptions(fresh, list, '№ 19').map(c => c.tender.public_tender_number), [194])
+    assert.deepEqual(restartSourceOptions(fresh, list, 'фасад 250').map(c => c.tender.public_tender_number), [250])
+    assert.deepEqual(restartedSources(fresh, list).map(x => x.public_tender_number), [30], 'удалённый прежний — не в счёт')
+    // Кем заменён он сам — не предлагается (круг: 984 → 250 → 984).
+    const replaced = { ...fresh, status: 'Перезапуск', restarted_by_tender_id: 'b' }
+    assert.ok(!restartSourceOptions(replaced, list).some(c => c.tender.id === 'b'))
+  })
+
+  it('«+ перезапуск» — у основного, не удалённого, когда колонка есть', () => {
+    assert.equal(canPickRestartSources(t('a', 1)), true)
+    assert.equal(canPickRestartSources({ id: 'a', public_tender_number: 1 }), false, 'база до 20270217')
+    assert.equal(canPickRestartSources(t('a', 1, { deleted_at: '2026-11-01' })), false)
+    assert.equal(canPickRestartSources(t('a', 1, { tender_type: 'materials' })), false)
+    assert.equal(canPickRestartSources(null), false)
   })
 
   it('форма нового тендера: какой прежний он перезапускает — без удалённых, материалов и уже заменённых; свой объект выше', () => {
@@ -293,87 +308,92 @@ describe('Перезапуск: какой тендер заменил — ст�
     await page.locator('.status-dropdown-menu-portal .status-dropdown-option', { hasText: status }).click()
   }
 
-  it('«Перезапуск» в реестре ОС: окно выбора нового тендера, отметки у обоих номеров, ссылка в прежний', async () => {
+  it('«+ перезапуск» у номера нового: окно с отметками прежних, им — «Перезапуск»; отметка только у нового', async () => {
     const { page, errors, close } = await open('route=/tenders/construction&tenders=10&items=20&cps=4&restartLink=1')
     try {
       await registryRow(page, 198).waitFor({ timeout: 120000 })
       assert.equal(await page.locator('.trs-mark').count(), 0, 'связей ещё нет — отметок нет')
+      assert.ok(await registryRow(page, 194).locator('.trs-add').isVisible(), '«+ перезапуск» у номера')
 
-      // Отмена: статус не меняется.
+      // Статус «Перезапуск» у прежнего — сразу, без окна; связь у него не спрашивается.
       await pickStatus(page, 197, RESTART_STATUS)
+      await page.waitForFunction(() => window.__fakeDb.tenders.find((r) => r.id === 'tender-4').status === 'Перезапуск')
+      assert.equal(await page.locator('.trs-dialog').count(), 0)
+      assert.deepEqual(await fakeTender(page, 'tender-4'), { status: RESTART_STATUS, link: null })
+      await registryRow(page, 197).locator('.trs-add').waitFor({ state: 'detached' })
+
+      await registryRow(page, 194).locator('.trs-add').click()
       const dialog = page.locator('.trs-dialog')
       await dialog.waitFor()
-      assert.equal(text(await dialog.locator('h3').innerText()), 'Перезапуск тендера № 197')
-      await dialog.getByRole('button', { name: 'Отмена' }).click()
-      await dialog.waitFor({ state: 'detached' })
-      assert.deepEqual(await fakeTender(page, 'tender-4'), { status: 'Подведение итогов', link: null })
-
-      await pickStatus(page, 198, RESTART_STATUS)
-      await dialog.waitFor()
-      assert.equal(text(await dialog.locator('h3').innerText()), 'Перезапуск тендера № 198')
-      // Первым — тендер, который сам называет № 198 (примечание № 194), затем того же объекта.
-      const first = dialog.locator('.trs-opt:not(.trs-opt--none)').first()
-      assert.equal(text(await first.locator('.trs-opt-num').innerText()), '№ 194')
-      assert.equal(text(await first.locator('.trs-opt-hint').innerText()), 'называет № 198')
-      assert.equal(await dialog.locator('.trs-opt-num', { hasText: /^№ 198$/ }).count(), 0, 'себя в списке нет')
-      assert.equal(text(await dialog.locator('.trs-btn--primary').innerText()), 'Перезапуск без нового тендера')
-      await dialog.getByRole('searchbox').fill('200')
-      assert.deepEqual(await dialog.locator('.trs-opt-num').allInnerTexts(), ['№ 200'])
-      await dialog.locator('.trs-opt', { hasText: '№ 200' }).click()
-      assert.equal(text(await dialog.locator('.trs-btn--primary').innerText()), 'Перезапуск → № 200')
+      assert.equal(text(await dialog.locator('h3').innerText()), 'Тендер № 194 — перезапуск тендера')
+      // Первым — тендер, номер которого № 194 называет в примечании («Перезапуск тендера № 198»), затем того же объекта.
+      const first = dialog.locator('.trs-opt').first()
+      assert.equal(text(await first.locator('.trs-opt-num').innerText()), '№ 198')
+      assert.equal(text(await first.locator('.trs-opt-hint').innerText()), 'назван у № 194')
+      assert.equal(await dialog.locator('.trs-opt-num', { hasText: /^№ 194$/ }).count(), 0, 'себя в списке нет')
+      assert.equal(await dialog.locator('.trs-btn--primary').isDisabled(), true, 'ничего не отмечено — сохранять нечего')
+      await dialog.getByRole('searchbox').fill('197')
+      assert.deepEqual(await dialog.locator('.trs-opt-num').allInnerTexts(), ['№ 197'])
+      await dialog.locator('.trs-opt', { hasText: '№ 197' }).click()
+      assert.equal(await dialog.locator('.trs-warn').count(), 0, '№ 197 уже в «Перезапуске»')
+      await dialog.getByRole('searchbox').fill('')
+      await dialog.locator('.trs-opt', { hasText: '№ 198' }).click()
+      assert.equal(text(await dialog.locator('.trs-warn').innerText()),
+        'Статус станет «Перезапуск»: № 198 (сейчас «Идет тендерная процедура»)')
       await dialog.locator('.trs-btn--primary').click()
       await dialog.waitFor({ state: 'detached' })
-      await page.waitForFunction(() => window.__fakeDb.tenders.find((r) => r.id === 'tender-3').restarted_by_tender_id === 'tender-1')
-      assert.deepEqual(await fakeTender(page, 'tender-3'), { status: RESTART_STATUS, link: 'tender-1' })
-      const log = await page.evaluate(() => window.__fakeDb.tender_audit_log.filter((l) => l.tender_id === 'tender-3')
-        .map((l) => [l.event_type, l.description]))
-      assert.deepEqual(log, [['status_changed', 'Статус: Идет тендерная процедура → Перезапуск'], ['field_updated', 'Перезапущен тендером № 200']])
+      await page.waitForFunction(() => ['tender-3', 'tender-4'].every((id) => window.__fakeDb.tenders.find((r) => r.id === id).restarted_by_tender_id === 'tender-7'))
+      assert.deepEqual(await fakeTender(page, 'tender-3'), { status: RESTART_STATUS, link: 'tender-7' })
+      const log = (id) => page.evaluate((x) => window.__fakeDb.tender_audit_log.filter((l) => l.tender_id === x)
+        .map((l) => [l.event_type, l.description]), id)
+      assert.deepEqual(await log('tender-3'), [['status_changed', 'Статус: Идет тендерная процедура → Перезапуск'], ['field_updated', 'Перезапущен тендером № 194']])
+      assert.deepEqual(await log('tender-4'), [['status_changed', 'Статус: Подведение итогов → Перезапуск'], ['field_updated', 'Перезапущен тендером № 194']])
 
-      // У нового (№ 200) — «перезапуск № 198», мельче и тише номера; номер — ссылка в прежний.
-      const mark = registryRow(page, 200).locator('.trs-mark--from')
+      // У нового (№ 194) — «перезапуск № 197, № 198», мельче и тише номера; номер — ссылка в прежний.
+      const mark = registryRow(page, 194).locator('.trs-mark--from')
       await mark.waitFor({ timeout: 30000 })
-      assert.equal(text(await mark.innerText()), 'перезапуск № 198')
-      assert.equal(await mark.locator('a.trs-num').getAttribute('href'), '/tenders/tender-3')
-      const sizes = await registryRow(page, 200).evaluate((tr) => [
+      assert.equal(text(await mark.innerText()).replace(/\s+,/g, ','), 'перезапуск № 197, № 198')
+      assert.equal(await mark.locator('a.trs-num').first().getAttribute('href'), '/tenders/tender-4')
+      const sizes = await registryRow(page, 194).evaluate((tr) => [
         parseFloat(getComputedStyle(tr.querySelector('.tp-num-value')).fontSize),
         parseFloat(getComputedStyle(tr.querySelector('.trs-mark')).fontSize)])
       assert.ok(sizes[1] < sizes[0], `отметка мельче номера: ${sizes}`)
-      // Номер 200 в узкой колонке не переносится, отметка не вылезает из ячейки.
-      const fits = await registryRow(page, 200).locator('td.tp-num').evaluate((td) => td.scrollWidth <= td.clientWidth + 1)
+      const fits = await registryRow(page, 194).locator('td.tp-num').evaluate((td) => td.scrollWidth <= td.clientWidth + 1)
       assert.ok(fits, 'отметка помещается в колонку «№»')
-      // У прежнего (№ 198) — «заменён № 200».
-      assert.equal(text(await registryRow(page, 198).locator('.trs-mark--to').innerText()), 'заменён № 200')
+      // У прежних в «№» отметки нет (ни «заменён», ни «+ перезапуск» — они в «Перезапуске»); «заменён № 194» — под статусом.
+      for (const num of [198, 197]) {
+        assert.equal(await registryRow(page, num).locator('td.tp-num .trs-marks').count(), 0, `№ ${num}: в «№» пусто`)
+        const to = registryRow(page, num).locator('td:has(button[aria-label="Статус тендера"]) .trs-mark--to')
+        assert.equal(text(await to.innerText()), 'заменён № 194', `№ ${num}: под статусом`)
+        assert.equal(await to.locator('a.trs-num').getAttribute('href'), '/tenders/tender-7')
+      }
 
-      // Сменить: карандаш у прежнего — то же окно, статус не трогается; «Не указан» снимает ссылку.
-      await registryRow(page, 198).locator('.trs-edit').click()
+      // Карандаш у нового — то же окно с отмеченными; снятая отметка убирает только связь, статус прежнего остаётся.
+      await mark.locator('.trs-edit').click()
       await dialog.waitFor()
-      assert.equal(text(await dialog.locator('h3').innerText()), 'Тендер № 198: каким тендером перезапущен')
-      assert.equal(await dialog.locator('.trs-opt.is-picked .trs-opt-num').innerText(), '№ 200')
-      await dialog.locator('.trs-opt--none').click()
-      await dialog.locator('.trs-btn--primary', { hasText: 'Сохранить' }).click()
-      await dialog.waitFor({ state: 'detached' })
-      await page.waitForFunction(() => window.__fakeDb.tenders.find((r) => r.id === 'tender-3').restarted_by_tender_id === null)
-      await registryRow(page, 200).locator('.trs-mark').waitFor({ state: 'detached' })
-      // Не указан — у прежнего «+ новый тендер» (у кого правка тендеров).
-      await registryRow(page, 198).locator('.trs-add').click()
-      await dialog.waitFor()
-      await dialog.locator('.trs-opt', { hasText: '№ 194' }).click()
+      assert.deepEqual(await dialog.locator('.trs-opt.is-picked .trs-opt-num').allInnerTexts(), ['№ 198', '№ 197'])
+      await dialog.locator('.trs-opt', { hasText: '№ 197' }).click()
       await dialog.locator('.trs-btn--primary').click()
-      await page.waitForFunction(() => window.__fakeDb.tenders.find((r) => r.id === 'tender-3').restarted_by_tender_id === 'tender-7')
-      await registryRow(page, 194).locator('.trs-mark--from').waitFor()
+      await dialog.waitFor({ state: 'detached' })
+      await page.waitForFunction(() => window.__fakeDb.tenders.find((r) => r.id === 'tender-4').restarted_by_tender_id === null)
+      assert.deepEqual(await fakeTender(page, 'tender-4'), { status: RESTART_STATUS, link: null })
+      assert.deepEqual((await log('tender-4')).at(-1), ['field_updated', 'Перезапуск: новый тендер не указан'])
+      await registryRow(page, 197).locator('.trs-mark--to').waitFor({ state: 'detached' })
+      await page.waitForFunction(() => /перезапуск\s*№ 198$/.test((document.querySelector('.trs-mark--from')?.innerText || '').trim()))
 
-      // Статус ушёл из «Перезапуска» — ссылка снимается вместе с ним.
+      // Статус прежнего ушёл из «Перезапуска» — связь снимается, у нового снова «+ перезапуск».
       await pickStatus(page, 198, 'Идет тендерная процедура')
       await page.waitForFunction(() => window.__fakeDb.tenders.find((r) => r.id === 'tender-3').status === 'Идет тендерная процедура')
       assert.deepEqual(await fakeTender(page, 'tender-3'), { status: 'Идет тендерная процедура', link: null })
       await registryRow(page, 194).locator('.trs-mark').waitFor({ state: 'detached' })
+      await registryRow(page, 194).locator('.trs-add').waitFor()
       assert.deepEqual(errors, [])
     } finally {
       await close()
     }
   })
 
-  it('«Перезапуск» из формы тендера — то же окно после сохранения формы', async () => {
+  it('«Перезапуск» в форме тендера — сохраняется сразу, без окна', async () => {
     const { page, errors, close } = await open('route=/tenders/construction&tenders=10&items=20&cps=4&restartLink=1')
     try {
       await registryRow(page, 198).waitFor({ timeout: 120000 })
@@ -382,32 +402,60 @@ describe('Перезапуск: какой тендер заменил — ст�
       await form.waitFor()
       await form.locator('select[name="status"]').selectOption(RESTART_STATUS)
       await form.locator('button[type="submit"]').click()
-      const dialog = page.locator('.trs-dialog')
-      await dialog.waitFor({ timeout: 30000 })
-      assert.equal(await form.count(), 0, 'форма закрыта, открыто окно перезапуска')
-      // Пока окно не сохранено — статус прежний.
-      assert.equal((await fakeTender(page, 'tender-3')).status, 'Идет тендерная процедура')
-      await dialog.locator('.trs-opt', { hasText: '№ 194' }).click()
-      await dialog.locator('.trs-btn--primary').click()
-      await page.waitForFunction(() => window.__fakeDb.tenders.find((r) => r.id === 'tender-3').restarted_by_tender_id === 'tender-7')
-      assert.equal((await fakeTender(page, 'tender-3')).status, RESTART_STATUS)
+      await form.waitFor({ state: 'detached' })
+      await page.waitForFunction(() => window.__fakeDb.tenders.find((r) => r.id === 'tender-3').status === 'Перезапуск')
+      assert.equal(await page.locator('.trs-dialog').count(), 0)
+      assert.deepEqual(await fakeTender(page, 'tender-3'), { status: RESTART_STATUS, link: null })
       assert.deepEqual(errors, [])
     } finally {
       await close()
     }
   })
 
-  it('карточка тендера: у нового — «перезапуск № 197», у прежнего — «заменён № 200»; номер ведёт в тендер', async () => {
+  it('права: инженер ОСП — «+ перезапуск» и карандаш; без правки «Тендеров» — только показ', async () => {
+    const eng = await open('route=/tenders/construction&tenders=10&items=20&cps=4&restartLink=1&restartPair=1&asRole=engineer')
+    try {
+      await registryRow(eng.page, 200).locator('.trs-mark--from .trs-edit').waitFor({ timeout: 120000 })
+      assert.ok(await registryRow(eng.page, 198).locator('.trs-add').isVisible())
+      assert.deepEqual(eng.errors, [])
+    } finally {
+      await eng.close()
+    }
+    const viewer = await open('route=/tenders/construction&tenders=10&items=20&cps=4&restartLink=1&restartPair=1&asRole=engineer&noEdit=tenders')
+    try {
+      const mark = registryRow(viewer.page, 200).locator('.trs-mark--from')
+      await mark.waitFor({ timeout: 120000 })
+      assert.equal(text(await mark.innerText()), 'перезапуск № 197')
+      assert.equal(await viewer.page.locator('.trs-add, .trs-edit').count(), 0)
+      // Без права правки статус — плашкой; «заменён № 200» под ней.
+      assert.equal(text(await registryRow(viewer.page, 197).locator('.trs-mark--to').innerText()), 'заменён № 200')
+      // Вкладка «Перезапуск»: вместо статуса — столбец победителя; у перезапущенного там «заменён № 200», а не «Не выбран».
+      await viewer.page.getByRole('button', { name: /Статусы тендеров/ }).click()
+      await viewer.page.locator('.tender-tab-status', { hasText: RESTART_STATUS }).click()
+      const restarted = registryRow(viewer.page, 197)
+      await restarted.locator('.trs-mark--to').waitFor({ timeout: 30000 })
+      assert.equal(text(await restarted.locator('.trs-mark--to').innerText()), 'заменён № 200')
+      assert.equal(await restarted.locator('.responsible-empty', { hasText: 'Не выбран' }).count(), 0)
+      assert.equal(await restarted.locator('td.tp-num .trs-marks').count(), 0)
+      assert.deepEqual(viewer.errors, [])
+    } finally {
+      await viewer.close()
+    }
+  })
+
+  it('карточка тендера: у нового — «перезапуск № 197», номер ведёт в прежний; у прежнего — «заменён № 200»', async () => {
     const card = await open('route=/tenders/tender-1&items=20&cps=4&restartLink=1&restartPair=1')
     try {
       const mark = card.page.locator('.tender-detail-header .trs-marks--header .trs-mark--from')
       await mark.waitFor({ timeout: 120000 })
       assert.equal(text(await mark.innerText()), 'перезапуск № 197')
+      assert.equal(await card.page.locator('.tender-detail-header .trs-edit, .tender-detail-header .trs-add').count(), 0, 'в карточке — только показ')
       await mark.locator('a.trs-num').click()
+      // Карточка прежнего (№ 197): «заменён № 200» под названием (не столбец «№» — там отметки у прежнего нет).
       const back = card.page.locator('.tender-detail-header .trs-mark--to')
       await back.waitFor({ timeout: 30000 })
       assert.equal(text(await back.innerText()), 'заменён № 200')
-      assert.equal(await card.page.locator('.tender-detail-header .trs-edit, .tender-detail-header .trs-add').count(), 0, 'в карточке — только показ')
+      assert.equal(await card.page.locator('.tender-detail-header .trs-mark--from').count(), 0)
       assert.deepEqual(card.errors, [])
     } finally {
       await card.close()
@@ -422,6 +470,9 @@ describe('Перезапуск: какой тендер заменил — ст�
       const mark = row.locator('.tp-mrow-flags .trs-mark--from')
       assert.equal(text(await mark.innerText()), 'перезапуск № 197')
       assert.equal(await row.locator('.tp-mrow-main .trs-mark').count(), 0, 'не внутри ссылки строки')
+      // У прежнего (№ 197) — «заменён № 200» рядом со статусом (столбца «№» на телефоне нет).
+      const old = page.locator('.tp-mrow', { has: page.locator('.tp-mrow-num', { hasText: /^№197$/ }) })
+      assert.equal(text(await old.locator('.tp-mrow-flags .trs-mark--to').innerText()), 'заменён № 200')
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
       assert.ok(overflow <= 0, `без горизонтальной прокрутки: ${overflow}`)
       assert.deepEqual(errors, [])
@@ -470,10 +521,12 @@ describe('Перезапуск: какой тендер заменил — ст�
         .map((l) => [l.event_type, l.description]))
       assert.deepEqual(log, [['status_changed', 'Статус: Идет тендерная процедура → Перезапуск'],
         ['field_updated', `Перезапущен тендером № ${made[0].public_tender_number}`]], 'журнал — как у окна «Перезапуск»')
-      // У прежнего (№ 198) — «заменён № …» нового.
-      const mark = registryRow(page, 198).locator('.trs-mark--to')
+      // В «№» — только у нового: «перезапуск № 198»; у прежнего «заменён № …» — под статусом.
+      const mark = registryRow(page, made[0].public_tender_number).locator('.trs-mark--from')
       await mark.waitFor({ timeout: 30000 })
-      assert.equal(text(await mark.innerText()), `заменён № ${made[0].public_tender_number}`)
+      assert.equal(text(await mark.innerText()), 'перезапуск № 198')
+      assert.equal(await registryRow(page, 198).locator('td.tp-num .trs-marks').count(), 0)
+      assert.equal(text(await registryRow(page, 198).locator('.trs-mark--to').innerText()), `заменён № ${made[0].public_tender_number}`)
       assert.deepEqual(errors, [])
     } finally {
       await close()

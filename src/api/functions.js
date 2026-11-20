@@ -7,6 +7,7 @@ import { supabase } from './supabaseClient'
 import { isFeatureEnabled } from '../config/runtime'
 import { callOspFunction } from './ospApi'
 import { createOspFiles, sha256Hex } from './ospFiles'
+import { putToStorage } from './storagePut'
 import { auth } from './auth'
 import { sessionFetch } from './sessionClient'
 import { ownDbEnabled } from './db'
@@ -48,9 +49,14 @@ export function filesViaOspApi() {
   }) === 'osp'
 }
 
+// Шаги загрузки — с пределом ожидания и повтором (19.11.2026: загрузка «зависала» на одном из файлов): ответ сервера — до 60 с,
+// отправка в хранилище — пока идёт; встала на 60 с — обрыв и повтор с новой ссылкой (storagePut.js). Повтор безопасен: ключ
+// операции один на файл. Откат отправки на прежний fetch без хода — убрать putImpl ниже.
+export const FILES_CALL_TIMEOUT_MS = 60 * 1000
 export const ospFiles = createOspFiles({
-  call: (body) => callOspFunction('s3-presign', { body }, { getToken: ospToken, fetchImpl: sessionFetch }),
+  call: (body) => callOspFunction('s3-presign', { body, timeoutMs: FILES_CALL_TIMEOUT_MS }, { getToken: ospToken, fetchImpl: sessionFetch }),
   fetchImpl: (url, init) => fetch(url, init),
+  putImpl: putToStorage,
   digest: sha256Hex,
   newId: () => uuidv7(),
 })

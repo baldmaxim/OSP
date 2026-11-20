@@ -18,6 +18,7 @@ import {
   DOC_CHECK_STATUS_LABEL,
   DOC_TYPE_LABEL,
   DOC_TYPE_TITLE,
+  DP_CONCLUSION,
   FIELD_LABEL,
   assigneeStaffOptions,
   availableStatuses,
@@ -33,9 +34,12 @@ import {
   postedChatFileIds,
   psdcStaffOptions,
   requestIdLabel,
+  requestTenderLabel,
   shownAssigneeIds,
   shownPsdcResponsible,
 } from '../../utils/docCheckHelpers'
+import { useRole } from '../../contexts/RoleContext'
+import { Link } from 'react-router-dom'
 
 // Карточка заявки: две вкладки — «Общая» и «История» (11.11.2026, решение пользователя: шагов нет, «Документы» и «Обсуждение» —
 // не вкладки, а части «Общей»).
@@ -108,6 +112,7 @@ function historyValue(field, value, ctx) {
   if (field === 'created_at') return fmtDateTime(value) || value
   if (field === 'object_id') return ctx.objects.get(value) || 'объект удалён'
   if (field === 'counterparty_id') return ctx.counterparties.get(value) || 'контрагент удалён'
+  if (field === 'tender_id') return requestTenderLabel(value, ctx.tenders)
   return String(value)
 }
 
@@ -133,9 +138,11 @@ function Row({ label, className, children }) {
 
 export default function DocCheckDetailModal({
   request, employees, objects, counterparties, canEdit, canCreateOwn = false, hasBoardFields, hasCardFields, hasChatFields = false, currentUserId, deletion,
+  hasTenderField = false, tendersById = null,
   refreshKey, onStatusChange, onAssign, onPsdcAssign, onEdit, onDelete, onClose, onCardCounts,
   talkReadMark = Number.POSITIVE_INFINITY, onTalkSeen,
 }) {
+  const { canView } = useRole()
   const [tab, setTab] = useState('general')
   // Граница «прочитано» на момент открытия окна (окно у каждой заявки своё — key в DocCheckRequestsPage): сообщения коллег
   // позже неё подсвечены, пока окно открыто, хотя заявка уже отмечена прочитанной. Ответил сам — всё до ответа прочитано.
@@ -224,7 +231,8 @@ export default function DocCheckDetailModal({
     employees,
     objects: new Map(objects.map(o => [o.id, o.name])),
     counterparties: new Map(counterparties.map(c => [c.id, c.name])),
-  }), [tab, employees, objects, counterparties])
+    tenders: tendersById,
+  }), [tab, employees, objects, counterparties, tendersById])
   const due = dueState(request)
   const shownIds = shownAssigneeIds(request, employees)
   const people = shownIds.map(id => ({ key: id, name: employeeName(employees, id), tone: avatarTone(id) }))
@@ -297,6 +305,15 @@ export default function DocCheckDetailModal({
                     <dl className="dc-kv">
                       <Row label="Объект">{request.objects?.name || '—'}</Row>
                       <Row label="Контрагент">{request.counterparties?.name || '—'}</Row>
+                      {/* Тендер «Заключения ДП» (20270221, необязательно): ссылка на карточку — у кого есть раздел «Тендеры». */}
+                      {hasTenderField && request.doc_type === DP_CONCLUSION && (
+                        <Row label="Тендер">
+                          {!request.tender_id ? '—'
+                            : canView('tenders') && tendersById?.has(request.tender_id)
+                              ? <Link to={`/tenders/${request.tender_id}`} className="dc-detail-tender">{requestTenderLabel(request.tender_id, tendersById)}</Link>
+                              : requestTenderLabel(request.tender_id, tendersById)}
+                        </Row>
+                      )}
                       <Row label="Номер">{request.doc_number || '—'}</Row>
                       <Row label="Дата документа" className="ui-num">{fmtDocDate(request.doc_date) || '—'}</Row>
                       {/* Ссылку на письмо при создании больше не вводят (11.11.2026) — строка только у заявок, где она есть. */}

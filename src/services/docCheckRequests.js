@@ -3,9 +3,28 @@
 // doc_check_requests_write_guard (подающий с правом только создавать — только в «Новые заявки», работу отдела снимает) и
 // s3_documents_doc_check_guard (файлы своей заявки — пока она в «Новых»).
 import { db } from '../api'
-import { DOC_CHECK_CONCEPT_CATEGORY } from '../utils/docCheckHelpers'
+import { DOC_CHECK_CONCEPT_CATEGORY, TENDER_FIELD, isMissingBoardColumn } from '../utils/docCheckHelpers'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { uploadFile } from './s3'
+
+// Тендеры для привязки «Заключения ДП» (20270221) — те же колонки, что у выбора тендера в форме договора: их шлюз отдаёт и с правом
+// «Договоры» (просмотр), а оно есть у подающих (руководитель строительства, экономист объекта) и у отдела. Постранично: тендеров
+// больше тысячи. Нет права читать тендеры — отказ (вызывающий показывает тендер без номера).
+export const loadPickerTenders = () => fetchAllRows((from, to) => db
+  .from('tenders')
+  .select('id, object_id, work_description, winner_counterparty_id, status, public_tender_number, parent_tender_id, deleted_at')
+  .order('created_at', { ascending: false })
+  .order('id', { ascending: true })
+  .range(from, to))
+
+// Есть ли у заявок колонка тендера (миграция 20270221): там, где выборки доски нет (кнопка в «Реестре по договорам»). До миграции
+// поле не показывается и не пишется — иначе вставка упала бы на неизвестной колонке. Ошибка другого рода — тоже «нет»: заявку
+// без тендера подать можно, а с ошибкой — нет.
+export async function hasTenderColumn() {
+  const { error } = await db.from('doc_check_requests').select(`id, ${TENDER_FIELD}`).limit(1)
+  if (error && !isMissingBoardColumn(error)) console.warn('Колонку тендера заявок проверить не удалось:', error.message)
+  return !error
+}
 
 // Объекты для выбора в форме: с привязкой к объектам в «Ролях» — только свои (остальное база всё равно не примет).
 export const loadPickerObjects = (scopedObjectIds) => fetchAllRows((from, to) => {

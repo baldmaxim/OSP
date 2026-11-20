@@ -467,17 +467,30 @@ export const CHAT_FIELDS = ['psdc_responsible_id']
 // и без неё. Без колонки номер не показываем вовсе: номер, посчитанный страницей, у сотрудника объекта (видит только свои
 // заявки) разошёлся бы с номером базы.
 export const NUMBER_FIELD = 'request_number'
+// Тендер «Заключения ДП» (миграция 20270221, после 20270216): нет колонки — поля «Тендер» нет, остальное как было.
+export const TENDER_FIELD = 'tender_id'
+const CHAT_LEVEL = `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}, ${CARD_FIELDS.join(', ')}, ${CHAT_FIELDS.join(', ')}`
 const LEVELS = [
-  { board: true, card: true, chat: true, fields: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}, ${CARD_FIELDS.join(', ')}, ${CHAT_FIELDS.join(', ')}` },
-  { board: true, card: true, chat: false, fields: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}, ${CARD_FIELDS.join(', ')}` },
-  { board: true, card: false, chat: false, fields: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}` },
-  { board: false, card: false, chat: false, fields: BASE_SELECT },
+  { board: true, card: true, chat: true, tender: true, fields: `${CHAT_LEVEL}, ${TENDER_FIELD}` },
+  { board: true, card: true, chat: true, tender: false, fields: CHAT_LEVEL },
+  { board: true, card: true, chat: false, tender: false, fields: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}, ${CARD_FIELDS.join(', ')}` },
+  { board: true, card: false, chat: false, tender: false, fields: `${BASE_SELECT}, ${BOARD_FIELDS.join(', ')}` },
+  { board: false, card: false, chat: false, tender: false, fields: BASE_SELECT },
 ]
 // Что читать — от полного набора к прежнему: первая выборка, на которую база ответила без 42703.
-export const DOC_CHECK_SELECTS = LEVELS.flatMap(({ board, card, chat, fields }) => [
-  { board, card, chat, number: true, select: `${fields}, ${NUMBER_FIELD}${EMBED}` },
-  { board, card, chat, number: false, select: `${fields}${EMBED}` },
+export const DOC_CHECK_SELECTS = LEVELS.flatMap(({ board, card, chat, tender, fields }) => [
+  { board, card, chat, tender, number: true, select: `${fields}, ${NUMBER_FIELD}${EMBED}` },
+  { board, card, chat, tender, number: false, select: `${fields}${EMBED}` },
 ])
+
+// Тендер заявки словами: «№ 704 · описание». Тендера нет в списке (нет права читать тендеры, тендер удалён) — без номера.
+export function requestTenderLabel(tenderId, tendersById) {
+  if (!tenderId) return ''
+  const t = tendersById?.get(tenderId)
+  if (!t) return 'тендер указан'
+  const text = (t.work_description || '').trim()
+  return `№ ${t.public_tender_number ?? '—'}${text ? ` · ${text.length > 120 ? `${text.slice(0, 119)}…` : text}` : ''}`
+}
 
 // «ID 123» — номер заявки на доске, в реестре и в окне. Нет номера — пусто.
 export function requestIdLabel(request) {
@@ -550,6 +563,7 @@ export const FIELD_LABEL = {
   created_at: 'Дата создания',
   created_by_name: 'Кто создал',
   psdc_responsible_id: 'Согласование ПСДЦ: ответственный',
+  tender_id: 'Тендер',
 }
 
 // Часть заявки, к которой относится файл, — в истории и в окне.

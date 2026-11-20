@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import FilterDropdown from '../FilterDropdown'
 import DocCheckLabelsInput from './DocCheckLabelsInput'
 import renderCounterpartyOption from './DocCheckCounterpartyOption'
@@ -8,6 +8,7 @@ import { IconObject, IconUser } from '../icons/ToolbarIcons'
 import { safeHttpUrl } from '../../utils/publicTenders'
 import { filterCounterpartyOptions } from '../../utils/counterpartyPicker'
 import { ownObjectChoice } from '../../utils/ownObjectChoice'
+import { tenderChoices, tenderOptionLabel } from '../../utils/contractTender'
 import {
   DOC_CHECK_CONCEPT_CATEGORY,
   DOC_CHECK_STATUS_LABEL,
@@ -49,10 +50,15 @@ import {
 // «Заключение ДП» (третий тип, 19.11.2026): у подающего понятийное соглашение обязательно — как было в разделе «Заявка на заключение
 // ДП» (там его держала база при подаче; здесь строка рождается раньше файлов, поэтому держит форма), контрагент и примечание —
 // нет. fixedType — тип задан заранее и не меняется (кнопка «+ Заявка на заключение ДП» в «Реестре по договорам»).
+//
+// Тендер «Заключения ДП» (19.11.2026, решение пользователя: привязка к тендеру есть, но необязательна; колонка 20270221 —
+// hasTenderField): и у подающего при создании, и у отдела в правке. Выбор — как в форме договора (tenderChoices): тендеры объекта
+// заявки без тендеров на материалы. Выбранный тендер подставляет объект и победителя, если они ещё не указаны. tenders — список
+// для выбора (null — загружается; tendersFailed — не загрузился: поле видно, выбрать нельзя). У других типов заявки тендера нет.
 
 const EMPTY = {
   object_id: '', counterparty_id: '', doc_type: 'ds', doc_number: '', doc_date: '', notes: '',
-  assignee_ids: [], due_date: '', labels: [], email_link: '',
+  assignee_ids: [], due_date: '', labels: [], email_link: '', tender_id: '',
 }
 
 // Файл, брошенный мимо частей с файлами, браузер не открывает вместо страницы: набранная форма не теряется. Части ловят файл
@@ -107,6 +113,7 @@ function StagedFiles({ id, label, hint, testId, files, onFiles, required = false
 export default function DocCheckFormModal({
   request, status, objects, counterpartyOptions, employees, labelSuggestions,
   hasBoardFields, hasCardFields, canEditCreated, creatorOnly = false, ownObjects, ownObjectsFailed = false, fixedType = null,
+  hasTenderField = false, tenders = null, tendersFailed = false,
   onSave, onClose,
 }) {
   const [form, setForm] = useState(() => (request
@@ -121,6 +128,7 @@ export default function DocCheckFormModal({
       due_date: request.due_date || '',
       labels: request.labels || [],
       email_link: request.email_link || '',
+      tender_id: request.tender_id || '',
       created_at: toDateTimeInput(request.created_at),
       created_by_name: request.created_by_name || '',
     }
@@ -144,6 +152,27 @@ export default function DocCheckFormModal({
   // Подающий заявку на заключение ДП номера и даты договора ещё не знает (договора нет) — их вносит отдел в правке заявки,
   // как в прежней короткой форме «Заявки на заключение ДП» (понятийка, документы, примечание).
   const showDocFields = !(stagedFiles && dpConclusion)
+
+  const showTender = hasTenderField && dpConclusion
+  const tenderObjectId = (ownChoice ? ownChoice.objectId : form.object_id) || ''
+  const tenderOptions = useMemo(() => {
+    if (!showTender || !tenders) return []
+    return [
+      ...(form.tender_id ? [{ value: '', label: '— Без тендера —' }] : []),
+      ...tenderChoices(tenders, { objectId: tenderObjectId, selectedId: form.tender_id })
+        .map(t => ({ value: t.id, label: tenderOptionLabel(t) })),
+    ]
+  }, [showTender, tenders, tenderObjectId, form.tender_id])
+  // Тендер подставляет объект (если его выбирают здесь и он ещё пуст) и победителя (если контрагент не выбран и он есть в списке).
+  const pickTender = (id) => {
+    const t = id ? (tenders || []).find(x => x.id === id) : null
+    const patch = { tender_id: id || '' }
+    if (t?.object_id && !form.object_id && !ownPick && objects.some(o => o.id === t.object_id)) patch.object_id = t.object_id
+    if (t?.winner_counterparty_id && !form.counterparty_id && counterpartyOptions.some(o => o.value === t.winner_counterparty_id)) {
+      patch.counterparty_id = t.winner_counterparty_id
+    }
+    set(patch)
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -188,6 +217,10 @@ export default function DocCheckFormModal({
       }
       if (showEmailLink) {
         payload.email_link = emailLink || null
+      }
+      // Тендер — только у «Заключения ДП»; сменили тип — привязка снимается. Без колонки (до 20270221) не пишется вовсе.
+      if (hasTenderField) {
+        payload.tender_id = dpConclusion ? (form.tender_id || null) : null
       }
       Object.assign(payload, created.patch)
       const staged = stagedFiles
@@ -309,6 +342,22 @@ export default function DocCheckFormModal({
               </div>
             )}
           </div>
+
+          {showTender && (
+            <div className="dc-form-row" data-testid="dc-tender">
+              <span className="dc-form-label">Тендер (необязательно)</span>
+              <FilterDropdown
+                label=""
+                searchable
+                searchPlaceholder="Номер или описание тендера…"
+                allLabel={tenders ? '— Без тендера —' : tendersFailed ? 'Тендеры не загрузились' : 'Загрузка тендеров…'}
+                value={form.tender_id}
+                onChange={(v) => pickTender(v || '')}
+                options={tenderOptions}
+                disabled={!tenders}
+              />
+            </div>
+          )}
 
           <div className="dc-form-row">
             <label htmlFor="dc-notes">Примечание</label>

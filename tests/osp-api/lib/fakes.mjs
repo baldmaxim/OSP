@@ -42,6 +42,7 @@ function pick(row, select) {
 //   viewTotal   число для Content-Range при count=exact; countFails — подсчёт падает;
 //   missingView — представления нет (42P01)
 //   noEtagColumn — у s3_documents нет колонки content_etag (база раньше 20270216): запись с ней — PGRST204, чтение — 42703
+//   noFolderDateColumn — у s3_documents нет колонки folder_date (база раньше 20270220): запись с ней — PGRST204
 export async function startFakeSupabase(state) {
   const requests = []
   const server = http.createServer(async (req, res) => {
@@ -93,6 +94,9 @@ export async function startFakeSupabase(state) {
         const rows = Array.isArray(input) ? input : [input]
         if (state.noEtagColumn && rows.some((r) => 'content_etag' in r)) {
           return send(400, { code: 'PGRST204', details: null, hint: null, message: "Could not find the 'content_etag' column of 's3_documents' in the schema cache" })
+        }
+        if (state.noFolderDateColumn && rows.some((r) => 'folder_date' in r)) {
+          return send(400, { code: 'PGRST204', details: null, hint: null, message: "Could not find the 'folder_date' column of 's3_documents' in the schema cache" })
         }
         for (const r of rows) state.onInsert?.(r)
         for (const r of rows) {

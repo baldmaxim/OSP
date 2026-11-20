@@ -568,6 +568,37 @@ if (params.get('noComments') === '1') {
   window.__fakeErrors = { ...(window.__fakeErrors || {}), tender_supply_comments: { code: '42P01', message: 'relation "public.tender_supply_comments" does not exist' } }
 }
 
+// Следы удалённых файлов счетов и КП (миграция 20270223): строка на цену — какой файл удалён и цена на тот момент.
+//   noRemovedDocs=1 — таблицы нет (миграция не применена): цены файла можно снять только в момент его удаления.
+window.__fakeDb.tender_supply_removed_docs = []
+window.__fakeUnique.tender_supply_removed_docs = ['rate_id']
+// Как tender_supply_removed_docs_touch: имя без пробелов по краям, кто и когда.
+window.__fakeTriggers.tender_supply_removed_docs = (row) => {
+  row.doc_name = String(row.doc_name ?? '').trim()
+  row.removed_by = 'user-1'
+  row.removed_at = new Date().toISOString()
+}
+if (params.get('noRemovedDocs') === '1') {
+  window.__fakeErrors = { ...(window.__fakeErrors || {}), tender_supply_removed_docs: { code: '42P01', message: 'relation "public.tender_supply_removed_docs" does not exist' } }
+}
+// Каскады базы (ON DELETE CASCADE): удалили файл — он пропал у позиций; очистили цену — ушёл её след.
+{
+  const afterRate = window.__fakeAfter.tender_vor_supply_rates
+  window.__fakeAfter.tender_vor_supply_rates = (op, row, old) => {
+    afterRate(op, row, old)
+    if (op !== 'delete') return
+    window.__fakeDb.tender_supply_removed_docs = window.__fakeDb.tender_supply_removed_docs.filter((t) => t.rate_id !== old.id)
+    window.__fakeTouch?.('tender_supply_removed_docs')
+  }
+  const afterDoc = window.__fakeAfter.s3_documents
+  window.__fakeAfter.s3_documents = (op, row, old) => {
+    afterDoc?.(op, row, old)
+    if (op !== 'delete') return
+    window.__fakeDb.tender_supply_links = (window.__fakeDb.tender_supply_links || []).filter((l) => l.s3_document_id !== old.id)
+    window.__fakeTouch?.('tender_supply_links')
+  }
+}
+
 // Версии ВОР (миграция 20261029). Таблица версий есть всегда (пустая — изменений не было); noVersions=1 — её нет, как
 // до миграции. vorChanges=1 — сметный отдел обновил ВОР «ОВ»: у крана объём 40 → 48 (и цена за «компл», а в ВОР «шт»),
 // у изоляции ед. изм. «м2» → «м», хомут — новая позиция, «Труба медная Ø12,7 (бухта)» убрана, её цена 950 ₽ осталась —
@@ -1655,6 +1686,8 @@ if (params.get('docCheck') === '1') {
         created_at: '2026-11-18T09:00:00Z' }),
     ]
     dpc.forEach((r, i) => { embed(r); r.request_number = top + 1 + i })
+    // dcDpcTender=1 — у dcr-dpc-2 указан тендер своего объекта (tender-2, № 199; колонка 20270221).
+    if (params.get('dcDpcTender') === '1') dpc[1].tender_id = 'tender-2'
     fdb.doc_check_requests.push(...dpc)
     fdb.s3_documents.push({ id: 'dpc-file-1', owner_type: 'doc_check_request', owner_id: 'dcr-dpc-1', doc_category: 'doc_check_concept_agreement',
       file_name: 'Понятийка 2.pdf', s3_key: 'dp-requests/dcr-dpc-1/concept.pdf', size_bytes: 10, created_at: '2026-11-17T09:00:00Z' })
@@ -1704,6 +1737,12 @@ if (params.get('docCheck') === '1') {
     for (const r of fdb.doc_check_requests) delete r.psdc_responsible_id
     window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}),
       doc_check_requests: [...(window.__fakeMissingColumns?.doc_check_requests || []), 'psdc_responsible_id'] }
+  }
+  // ?dcNoTender=1 — миграции 20270221 ещё нет: колонки tender_id (тендер «Заключения ДП») нет.
+  if (params.get('dcNoTender') === '1') {
+    for (const r of fdb.doc_check_requests) delete r.tender_id
+    window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}),
+      doc_check_requests: [...(window.__fakeMissingColumns?.doc_check_requests || []), 'tender_id'] }
   }
   if (params.get('dcNoNumber') === '1' || params.get('docCheckLegacy') === '1' || params.get('docCheckNoCard') === '1') {
     for (const r of fdb.doc_check_requests) delete r.request_number

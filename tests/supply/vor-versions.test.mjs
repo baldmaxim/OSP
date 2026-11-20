@@ -4,7 +4,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  carrySuggestions, carryTargets, composeChanges, revisionCounts, revisionTitle, unitMismatch, versionQuestions,
+  carrySuggestions, carryTargets, composeChanges, revisionCounts, revisionTitle, unitMismatch, versionQuestions, versionlessName, vorTitle,
 } from '../../src/utils/supplyVorVersions.js'
 import { normName } from '../../src/utils/supplyRateHelpers.js'
 
@@ -40,6 +40,58 @@ describe('Новая версия ВОР или отдельный ВОР', () =
     const qs = versionQuestions([k1, k2, vk], [file('f1'), file('f2'), file('f3')], valuable)
     assert.deepEqual(qs.map((q) => [q.name, q.candidates.map((c) => c.name)]), [['Корпус 2', ['Корпус 1']]],
       '2 из 4 с обеих сторон — спросить; 1 из 5 — нет; загруженные одновременно (Корпус 2 и ВК) — друг про друга не спрашивают')
+  })
+
+  // Тендер № 704, 18.11.2026: файл «ЭОМ-6 V1» заменили на «ЭОМ-6 v2» — страница спросила про все ВОР ЭОМ, заведённые позже
+  // «ЭОМ-6» (у соседних секций треть материалов общая: кабель, лотки), в том числе про «ЭОМ-3», уже принятый на свою v2. «Да» у
+  // такого вопроса слило бы два разных ВОР; после ответа у верного вопроса остальные исчезли, и казалось, что «ЭОМ-3 не обновился».
+  it('удалён файл прежнего: соседний ВОР с частью общих материалов — не версия; версия — файл с тем же именем, кроме редакции', () => {
+    const cable = Array.from({ length: 30 }, (_, i) => p(`Кабель ВВГнг-LS 3x${i + 1}`, 'м', 100))
+    const own = (tag, n) => Array.from({ length: n }, (_, i) => p(`Светильник ${tag}-${i + 1}`, 'шт', 10))
+    const at = (s) => `2026-10-19T10:39:${s}Z`
+    const eom6 = list({ estimate_name: 'ВОР ЭОМ-6 V1', s3_document_id: 'gone', file_name: 'ВОР ЭОМ-6 V1.xlsx', created_at: at(24), positions: [...cable, ...own('6', 50)] })
+    const eom5 = list({ estimate_name: 'ВОР ЭОМ-5 v1', s3_document_id: 'f5', file_name: 'ВОР ЭОМ-5 v1.xlsx', created_at: at(25), positions: [...cable, ...own('5', 40)] })
+    // «ЭОМ-3» уже принят на свою v2: имя ВОР прежнее, файл новый.
+    const eom3 = list({ estimate_name: 'ВОР ЭОМ-3 V1', s3_document_id: 'f3', file_name: 'ВОР ЭОМ-3 v2.xlsx', created_at: at(26), positions: [...cable, ...own('3', 45)] })
+    const eom6v2 = list({ estimate_name: 'ВОР ЭОМ-6 v2', s3_document_id: 'f6', file_name: 'ВОР ЭОМ-6 v2.xlsx', created_at: '2026-11-18T08:50:19Z',
+      positions: [...cable, ...own('6', 52)] })
+    const files = [file('f5'), file('f3'), file('f6')]
+    const valuable = new Set(['ВОР ЭОМ-6 V1', 'ВОР ЭОМ-5 v1', 'ВОР ЭОМ-3 V1'])
+    const qs = versionQuestions([eom6, eom5, eom3, eom6v2], files, valuable)
+    assert.deepEqual(qs.map((q) => [q.name, q.candidates.map((c) => [c.name, c.named])]), [['ВОР ЭОМ-6 v2', [['ВОР ЭОМ-6 V1', true]]]])
+
+    // Без «ЭОМ-6 v2»: соседние ВОР не спрашиваются — общих материалов меньше половины.
+    assert.deepEqual(versionQuestions([eom6, eom5, eom3], [file('f5'), file('f3')], valuable), [])
+    // Соседний ВОР, похожий больше чем наполовину, при найденной версии про «ЭОМ-6» не спрашивается.
+    const twin = list({ estimate_name: 'ВОР ЭОМ-7 v1', s3_document_id: 'f7', file_name: 'ВОР ЭОМ-7 v1.xlsx', created_at: at(27), positions: eom6.positions })
+    assert.deepEqual(versionQuestions([eom6, twin], [file('f7')], valuable).map((q) => q.name), ['ВОР ЭОМ-7 v1'], 'версии нет — спросить по совпадению')
+    assert.deepEqual(versionQuestions([eom6, twin, eom6v2], [file('f7'), file('f6')], valuable).map((q) => q.name), ['ВОР ЭОМ-6 v2'])
+    // Новое имя файла без общей основы (ВОР переименовали) — по совпадению материалов, как с живым файлом.
+    const renamed = { ...eom6v2, estimate_name: 'ВОР ЭО секции 6', file_name: 'ВОР ЭО секции 6.xlsx' }
+    assert.deepEqual(versionQuestions([eom6, renamed], [file('f6')], valuable)[0].candidates.map((c) => [c.name, c.named]), [['ВОР ЭОМ-6 V1', false]])
+  })
+
+  it('имя без отметки редакции: v2, изм., версия, ред., дата, копия «(1)», подчёркивания — то же; номер раздела — нет', () => {
+    const same = [
+      ['ВОР ЭОМ-6 V1', 'ВОР ЭОМ-6 v2'], ['ВОР ОВ', 'ВОР ОВ изм.1'], ['ЭОМ-2-РД', 'ЭОМ-2-РД_Изм.2'], ['ВОР ЭН', 'ВОР ЭН от 03.11.2026 версия 2'],
+      ['ВОР площадок С1-5', 'ВОР площадок С1-5 (1)'], ['ВОР полов (-1,-2 эт)', 'ВОР_полов_1,_2_эт'], ['ВОР 2026-10-28 — 14.6', 'ВОР 2026-10-28 14.6'],
+      ['ВОР АСУД ред. 3', 'ВОР АСУД'], ['ВОР Корпус 5 17.11.2026', 'ВОР_Корпус_5 '],
+    ]
+    for (const [a, b] of same) assert.equal(versionlessName(a), versionlessName(b), `${a} = ${b}`)
+    const differ = [['ВОР ЭОМ-3 V1', 'ВОР ЭОМ-6 V1'], ['ВОР ЭОМ-АС v1', 'ВОР ЭОМ.НС v1'], ['ВОР 14.6', 'ВОР 14.5'], ['ВОР Редуктор 2', 'ВОР 2'], ['Секция 1.3', 'ВОР 1.3']]
+    for (const [a, b] of differ) assert.notEqual(versionlessName(a), versionlessName(b), `${a} ≠ ${b}`)
+  })
+
+  it('имя ВОР на странице: устаревшая редакция в имени — по файлу, который скачивается; имя ВОР карточки — как есть', () => {
+    const title = (estimate_name, file_name, o = {}) => vorTitle(list({ estimate_name, file_name, ...o }))
+    assert.equal(title('ВОР ЭОМ-6 V1', 'ВОР ЭОМ-6 v2.xlsx'), 'ВОР ЭОМ-6 v2', 'после «новой версии» ключ прежний')
+    assert.equal(title('ВОР ЭМ1-ПА, ЭО1-ПА v1', 'ВОР ЭО1-ПА v2.xlsx'), 'ВОР ЭО1-ПА v2', 'в прежнем имени — редакция: она устарела')
+    assert.equal(title('ВОР ЭН', 'ВОР ЭН от 03.11.2026 версия 2.xlsx'), 'ВОР ЭН от 03.11.2026 версия 2', 'то же имя с новой отметкой')
+    assert.equal(title('ОВ', 'ВОР_ОВ изм.1.xlsx'), 'ОВ', 'привязан к ВОР карточки')
+    assert.equal(title('Секция 1.3', 'ВОР 2026-10-26 1.3.xlsx'), 'Секция 1.3')
+    assert.equal(title('ВОР полов (-1,-2 эт)', 'ВОР_полов_1,_2_эт.xlsx'), 'ВОР полов (-1,-2 эт)', 'другое написание того же имени')
+    assert.equal(title('ВОР ОВ', null), 'ВОР ОВ')
+    assert.equal(title('Основная смета', 'x.xlsx', { source: 'vor_tab' }), 'Основная смета')
   })
 
   it('позиции из вкладки «ВОР», а файлы уже есть — прежний ВОР устарел; файл без позиций или не на месте — не спрашиваем', () => {

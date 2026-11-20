@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS s3_documents (
   uploaded_by_name TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   -- 20261011: SHA-256 содержимого (hex) у загруженных через osp-api — отпечаток для повторов.
-  sha256 TEXT CONSTRAINT s3_documents_sha256_hex CHECK (sha256 IS NULL OR sha256 ~ '^[0-9a-f]{64}$')
+  sha256 TEXT CONSTRAINT s3_documents_sha256_hex CHECK (sha256 IS NULL OR sha256 ~ '^[0-9a-f]{64}$'),
+  -- 20270220: папка с датой в списке (S3DocumentList с dateFolders), куда файл положили явно; NULL — папка по дню загрузки.
+  folder_date DATE CONSTRAINT s3_documents_folder_date_sane CHECK (folder_date IS NULL OR folder_date >= DATE '2000-01-01')
 );
 
 CREATE INDEX IF NOT EXISTS idx_s3_documents_owner ON s3_documents(owner_type, owner_id);

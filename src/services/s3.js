@@ -3,7 +3,7 @@
 // С флагом ospApiFilesV2 — через свой API osp-api с ключом операции (src/api/ospFiles.js): повтор не
 // создаёт второй документ, удаление — сначала строка, затем объект. Путь выбирается один раз, в начале
 // операции; без флага всё как прежде.
-import { db, auth, invokeFunction, filesViaOspApi, ospFiles, requestBidVorFile } from '../api'
+import { db, auth, invokeFunction, filesViaOspApi, ospFiles, requestBidVorFile, putToStorage } from '../api'
 import { chunkList } from '../utils/inChunks'
 
 const FUNCTION_NAME = 's3-presign'
@@ -79,9 +79,12 @@ export async function deleteS3Object(s3Key) {
 // Возвращает созданную запись. Если PUT упал, запись в БД не создаётся.
 // `category` (task 370) — опциональная категория документа (например 'final').
 // Если не передана, в БД пишется default 'general'.
-export async function uploadFile({ file, ownerType, ownerId, notes = null, category = null }) {
-  if (filesViaOspApi()) return ospFiles.upload({ file, ownerType, ownerId, notes, category })
+// folderDate ('YYYY-MM-DD') — папка с датой в списке с dateFolders (s3_documents.folder_date, миграция 20270220); без неё файл
+// лежит в папке дня загрузки. onProgress({ stage, loaded, total }) — ход загрузки для кнопки (src/api/ospFiles.js).
+export async function uploadFile({ file, ownerType, ownerId, notes = null, category = null, folderDate = null, onProgress = null }) {
+  if (filesViaOspApi()) return ospFiles.upload({ file, ownerType, ownerId, notes, category, folderDate, onProgress })
   const mimeType = file.type || 'application/octet-stream'
+  onProgress?.({ stage: 'prepare', loaded: 0, total: file.size })
 
   const { s3_key, presigned_url } = await requestUploadUrl({
     ownerType,
@@ -90,10 +93,11 @@ export async function uploadFile({ file, ownerType, ownerId, notes = null, categ
     mimeType
   })
 
-  const putResp = await fetch(presigned_url, {
-    method: 'PUT',
-    headers: { 'Content-Type': mimeType },
-    body: file
+  // Отправка — с ходом и сторожем (встала на 90 с — ошибка, а не вечное «Загрузка…»).
+  const putResp = await putToStorage(presigned_url, {
+    body: file,
+    contentType: mimeType,
+    onProgress: (loaded) => onProgress?.({ stage: 'send', loaded, total: file.size }),
   })
   if (!putResp.ok) {
     throw new Error(`S3 PUT не удался (${putResp.status} ${putResp.statusText})`)
@@ -115,6 +119,7 @@ export async function uploadFile({ file, ownerType, ownerId, notes = null, categ
     }
   } catch { /* без user — оставим null */ }
 
+  onProgress?.({ stage: 'save', loaded: file.size, total: file.size })
   const { data, error } = await db
     .from('s3_documents')
     .insert({
@@ -126,6 +131,7 @@ export async function uploadFile({ file, ownerType, ownerId, notes = null, categ
       size_bytes: file.size,
       notes,
       ...(category ? { doc_category: category } : {}),
+      ...(folderDate ? { folder_date: folderDate } : {}),
       uploaded_by,
       uploaded_by_name
     })

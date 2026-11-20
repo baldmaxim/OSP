@@ -241,9 +241,13 @@ function UnplacedLine({ item, groups, busy, onPick }) {
 // подставленные автоматически (видно, из какого тендера); цены из документов (из какого; этот же документ — после смены НДС);
 // введённые вручную — последними и без отметки: ручная цена важнее. У каждого блока слева галочка «все в блоке». Один и тот же
 // документ, загруженный дважды, — в списке файлов пометкой «повтор» (dupes — [{ doc, of }]), его цены не повторяются.
+// 19.11.2026 (просьба пользователя: «когда убираю счёт, как снять цены, которые из него проставлялись»): onDeleteDoc открывает окно
+// удаления (файл один или вместе с его ценами) и отвечает { note }; removed — удалённые файлы, чьи цены ещё стоят
+// ([{ docId, name, at, rows }], utils/supplyDocPrices.removedDocPrices): строка «удалён …» в списке файлов — «снять цены»
+// (onClearRemoved) или «оставить» (onKeepRemoved); оба отвечают текстом для строки состояния.
 export default function SupplyTenderDocsDialog({
   docs, dupes = [], others, byGroup, groups, rates, filesOn, currentOf, initialFiles = null, attachTo = null, onAddFile, onAttachDoc, onDeleteDoc, onOpenFile, onApply, onClose,
-  onPickLine, onRejectLine, onPack, onSetRate, onSetVat, onHide, onUnhide,
+  onPickLine, onRejectLine, onPack, onSetRate, onSetVat, onHide, onUnhide, removed = [], onClearRemoved, onKeepRemoved,
 }) {
   const [uploads, setUploads] = useState([]) // [{ id, name, status: reading | failed | duplicate, error }]
   const [chosen, setChosen] = useState(() => new Map()) // ключ группы → id цены, выбранной человеком
@@ -260,14 +264,31 @@ export default function SupplyTenderDocsDialog({
   const [fresh, setFresh] = useState(() => new Set())
   const fileRef = useRef(null)
   const headBoxRef = useRef(null)
+  const [removing, setRemoving] = useState(false) // снимаем или оставляем цены удалённого файла
   const uploading = uploads.some((u) => u.status === 'reading')
-  const busy = applying || uploading || hiding
+  const busy = applying || uploading || hiding || removing
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape' && !busy) onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [busy, onClose])
+
+  // Удаление файла — в своём окне (SupplyDocDeleteDialog): с ценами, поставленными из него, или без; итог — строкой здесь.
+  const deleteDoc = (doc) => Promise.resolve(onDeleteDoc(doc)).then((res) => { if (res?.note) { setError(''); setNote(res.note) } })
+  // Удалённые файлы, чьи цены ещё стоят (19.11.2026): снять цены или оставить их обычными ценами.
+  const removedAct = async (act, entry) => {
+    setError('')
+    setRemoving(true)
+    try {
+      const text = await act(entry)
+      if (text) setNote(text)
+    } catch (e) {
+      setError(e.message || String(e))
+    } finally {
+      setRemoving(false)
+    }
+  }
 
   // ── Файлы ─────────────────────────────────────────────────────────────────────────────────────────
   const known = useRef(null)
@@ -421,7 +442,7 @@ export default function SupplyTenderDocsDialog({
     },
   }
   const rowProps = { busy: applying || hiding, allLines, onCheck, onPick: pickLine, onReject: rejectLine, onPack: setPack, onOpenFile }
-  const noFiles = !docs.length && !dupes.length && !others.length && !uploads.length
+  const noFiles = !docs.length && !dupes.length && !others.length && !uploads.length && !removed.length
   const showTools = rows.length > 0 || shownOffers.hidden > 0 || docs.length > 1
 
   return (
@@ -477,7 +498,7 @@ export default function SupplyTenderDocsDialog({
                     {offer.total && !offer.total.ok && (
                       <span className="sp-td-tag is-warn" title={`Итог в документе ${formatAmount(offer.total.doc)} ₽, в прочитанных строках ${formatAmount(offer.total.read)} ₽: часть строк могла не прочитаться, или в документе скидка на весь заказ.`}>итог не сходится</span>
                     )}
-                    <button type="button" className="sp-icon-btn sp-td-del" onClick={() => onDeleteDoc(doc)} disabled={busy}
+                    <button type="button" className="sp-icon-btn sp-td-del" onClick={() => deleteDoc(doc)} disabled={busy}
                       aria-label={`Удалить файл «${doc.file_name}»`} title="Удалить файл — пропадёт у всех позиций, где он документ"><IconTrash size={14} /></button>
                   </li>
                 )
@@ -486,7 +507,7 @@ export default function SupplyTenderDocsDialog({
                 <li key={doc.id} className="is-dup">
                   <button type="button" className="sp-td-file" onClick={() => onOpenFile(doc)} title="Открыть файл"><PaperclipIcon size={12} /> {doc.file_name}</button>
                   <span className="sp-td-meta">повтор «{of.file_name}» — цены не считаются второй раз</span>
-                  <button type="button" className="sp-icon-btn sp-td-del" onClick={() => onDeleteDoc(doc)} disabled={busy}
+                  <button type="button" className="sp-icon-btn sp-td-del" onClick={() => deleteDoc(doc)} disabled={busy}
                     aria-label={`Удалить файл «${doc.file_name}»`} title="Удалить повтор — пропадёт у всех позиций, где он документ"><IconTrash size={14} /></button>
                 </li>
               ))}
@@ -494,8 +515,18 @@ export default function SupplyTenderDocsDialog({
                 <li key={doc.id} className={failed ? 'is-off' : undefined}>
                   <button type="button" className="sp-td-file" onClick={() => onOpenFile(doc)} title="Открыть файл"><PaperclipIcon size={12} /> {doc.file_name}</button>
                   <span className="sp-td-meta">{failed ? DOC_READ_PROBLEM[failed] || DOC_READ_PROBLEM.broken : (reading || 'читаем…')}</span>
-                  <button type="button" className="sp-icon-btn sp-td-del" onClick={() => onDeleteDoc(doc)} disabled={busy}
+                  <button type="button" className="sp-icon-btn sp-td-del" onClick={() => deleteDoc(doc)} disabled={busy}
                     aria-label={`Удалить файл «${doc.file_name}»`} title="Удалить файл — пропадёт у всех позиций, где он документ"><IconTrash size={14} /></button>
+                </li>
+              ))}
+              {removed.map((entry) => (
+                <li key={`gone-${entry.docId}`} className="is-gone">
+                  <span className="sp-td-gone"><IconTrash size={12} /> {entry.name}</span>
+                  <span className="sp-td-meta">удалён{entry.at ? ` ${fmtDay(entry.at)}` : ''} · его цены стоят у позиций: <b className="ui-num">{entry.rows.length}</b></span>
+                  <button type="button" className="sp-link-btn is-danger" disabled={busy} onClick={() => removedAct(onClearRemoved, entry)}
+                    title="Снять цены, поставленные из этого файла. Цены, которые после удаления файла меняли, останутся.">снять цены</button>
+                  <button type="button" className="sp-link-btn" disabled={busy} onClick={() => removedAct(onKeepRemoved, entry)}
+                    title="Оставить цены как обычные: строка удалённого файла пропадёт">оставить</button>
                 </li>
               ))}
             </ul>

@@ -731,6 +731,14 @@
         "select"
       ]
     },
+    "tender_supply_removed_docs": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
     "tender_supply_revisions": {
       "authenticated": [
         "select"

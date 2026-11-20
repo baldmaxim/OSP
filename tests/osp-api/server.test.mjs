@@ -185,6 +185,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
     Object.assign(state, supabaseState())
     delete state.noOspCan
     delete state.onInsert
+    delete state.noFolderDateColumn
     await makeApp()
   })
 
@@ -315,6 +316,10 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
         [{ size_bytes: 1.5 }, 'Invalid size_bytes'],
         [{ sha256: 'xyz' }, 'Invalid sha256'],
         [{ category: 'Bad Category' }, 'Invalid category'],
+        [{ folder_date: '19.11.2026' }, 'Invalid folder_date'],
+        [{ folder_date: '2026-02-30' }, 'Invalid folder_date'],
+        [{ folder_date: '1999-12-31' }, 'Папка с такой датой недоступна'],
+        [{ folder_date: '2999-01-01' }, 'Папка с такой датой недоступна'],
       ]
       for (const action of ['upload', 'confirm']) {
         for (const [over, error] of cases) {
@@ -594,6 +599,28 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       s3.requests.length = 0
       assert.equal((await download(U.emp, KEY_T1)).statusCode, 200)
       assert.equal(s3.requests.length, 0)
+    })
+
+    it('папка с датой (20270220): confirm пишет folder_date; без поля — как прежде; база без колонки — 409, строки нет', async () => {
+      const presign = (who, over) => fn('s3-presign', who, { action: 'upload', ...fileBody(over) })
+      const confirm = (who, over) => fn('s3-presign', who, { action: 'confirm', ...fileBody(over) })
+      const docsOf = (op) => Object.values(state.docs).filter((d) => d.row.id === op)
+      const up = (await presign(U.emp)).json()
+      await fetch(up.presigned_url, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: 'hello' })
+      state.noFolderDateColumn = true
+      const refused = await confirm(U.emp, { folder_date: '2025-03-14' })
+      assert.equal(refused.statusCode, 409, refused.body)
+      assert.equal(refused.json().code, 'OSP_NO_FOLDER_DATE')
+      assert.equal(docsOf(OP(1)).length, 0, 'файл не лёг молча в папку сегодняшнего дня')
+      state.noFolderDateColumn = false
+      const res = await confirm(U.emp, { folder_date: '2025-03-14' })
+      assert.equal(res.statusCode, 200, res.body)
+      assert.equal(res.json().document.folder_date, '2025-03-14')
+      const up2 = (await presign(U.emp, { operation_id: OP(2) })).json()
+      await fetch(up2.presigned_url, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: 'hello' })
+      const plain = await confirm(U.emp, { operation_id: OP(2) })
+      assert.equal(plain.statusCode, 200, plain.body)
+      assert.equal('folder_date' in plain.json().document, false, 'без папки поле не пишется (прежняя база его не знает)')
     })
 
     it('база без колонки отпечатка (раньше миграции 20270216): подтверждение — строка без него, скачивание — без сверки', async () => {

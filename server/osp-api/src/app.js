@@ -98,6 +98,15 @@ const READY_TIMEOUT_MS = 5_000
 // загрузки и удаления файлов; HeadBucket требует ListBucket, которого у ключа может не быть).
 export const READY_S3_KEY = 'osp-api/ready-check'
 
+// Сроки клиента хранилища (19.11.2026: загрузка в «Должную осмотрительность» «зависала» — на первом файле, потом на 4-м). Клиент
+// один на всю службу и держит соединения с хранилищем открытыми (keep-alive); таймаутов у него не было, и запрос по соединению,
+// которое оборвалось по дороге без уведомления (сеть, NAT), ждал ответа без конца — подтверждение загрузки (HeadObject) висело,
+// пока nginx не отвечал 504 через 3 минуты. Теперь: установка соединения — до 5 с, тишина в сокете — до 20 с (это срок простоя,
+// не всего запроса: идущее скачивание не обрывается); по таймауту SDK сам повторяет запрос (TimeoutError — переходная ошибка) уже
+// на новом соединении. s3.connectTimeoutMs / s3.requestTimeoutMs — только для тестов.
+export const S3_CONNECT_TIMEOUT_MS = 5_000
+export const S3_REQUEST_TIMEOUT_MS = 20_000
+
 export const defaultDeps = {
   createSupabase: (url, key, options) => createClient(url, key, options),
   createS3: (s3) => new S3Client({
@@ -105,6 +114,10 @@ export const defaultDeps = {
     region: s3.region,
     credentials: { accessKeyId: s3.accessKeyId, secretAccessKey: s3.secretAccessKey },
     forcePathStyle: true, // cloud.ru — path-style адреса
+    requestHandler: {
+      connectionTimeout: s3.connectTimeoutMs ?? S3_CONNECT_TIMEOUT_MS,
+      requestTimeout: s3.requestTimeoutMs ?? S3_REQUEST_TIMEOUT_MS,
+    },
   }),
   createAnthropic: (apiKey) => new Anthropic({ apiKey, timeout: AI_TIMEOUT_MS }),
   createDb: (options) => createDb(options),

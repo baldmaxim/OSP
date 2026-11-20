@@ -530,6 +530,7 @@
       "document_id",
       "download",
       "file_name",
+      "folder_date",
       "mime_type",
       "notes",
       "only_if",

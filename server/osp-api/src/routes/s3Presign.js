@@ -5,8 +5,10 @@
 //   upload   { operation_id, owner_type, owner_id, file_name, mime_type, size_bytes, sha256? }
 //            → { s3_key, presigned_url, expires_in } — ссылка на PUT; ключ объекта задан operation_id
 //            → { already: true, document }          — документ этой операции уже есть
-//   confirm  { те же поля, category?, notes? }      → { document } — объект в бакете есть и того же
-//            размера → строка s3_documents с id = operation_id; повтор — { already: true, document }
+//   confirm  { те же поля, category?, notes?, folder_date? } → { document } — объект в бакете есть и того же
+//            размера → строка s3_documents с id = operation_id; повтор — { already: true, document }.
+//            folder_date ('ГГГГ-ММ-ДД') — папка с датой, куда файл положили явно (20270220; не позже завтрашнего дня);
+//            база без колонки — 409 OSP_NO_FOLDER_DATE, файл не кладётся молча в папку сегодняшнего дня
 //   download { s3_key, file_name?, download? }      → { presigned_url, expires_in }
 //   delete   { s3_key }                             → { ok: true } — сначала строка, затем объект;
 //            строки уже нет (повтор) — { ok: true, already: true }
@@ -213,6 +215,20 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const UUID_V7_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const SHA256_RE = /^[0-9a-f]{64}$/
 const CATEGORY_RE = /^[a-z0-9_]{1,64}$/
+const DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/
+const DAY_MS = 24 * 60 * 60 * 1000
+
+// День папки ('ГГГГ-ММ-ДД'): настоящая дата с 2000 года и не позже завтрашнего (у браузера в поясе восточнее UTC уже завтра).
+// Нет — null; ошибка — { error }.
+export function readFolderDate(value, now = Date.now()) {
+  if (value == null || value === '') return null
+  const m = DAY_RE.exec(String(value))
+  if (!m) return { error: 'Invalid folder_date' }
+  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  if (new Date(t).toISOString().slice(0, 10) !== m[0]) return { error: 'Invalid folder_date' }
+  if (t < Date.UTC(2000, 0, 1) || t > now + DAY_MS) return { error: 'Папка с такой датой недоступна' }
+  return m[0]
+}
 // Что должно совпасть у повтора с тем же operation_id.
 const FINGERPRINT = ['owner_type', 'owner_id', 'file_name', 'mime_type', 'size_bytes', 'sha256']
 // Ошибки PostgREST «функции нет»: osp_can появляется с миграцией Р2a.
@@ -256,6 +272,8 @@ function readFile(body) {
   if (sha256 !== null && !SHA256_RE.test(sha256)) return { error: 'Invalid sha256' }
   const category = optional(body.category)
   if (category !== null && !CATEGORY_RE.test(category)) return { error: 'Invalid category' }
+  const folderDate = readFolderDate(body.folder_date)
+  if (folderDate?.error) return { error: folderDate.error }
   return {
     file: {
       operation_id: operationId,
@@ -268,6 +286,7 @@ function readFile(body) {
     },
     category,
     notes: optional(body.notes),
+    folderDate,
   }
 }
 
@@ -291,6 +310,7 @@ export const PRESIGN_BODY = z.object({
   category: any,
   mime_type: any,
   notes: any,
+  folder_date: any,
   s3_key: any,
   download: any,
   document_id: any,
@@ -504,7 +524,7 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
         case 'confirm': {
           const req = readFile(body)
           if (req.error) return reply.code(400).send({ error: req.error })
-          const { file, category, notes } = req
+          const { file, category, notes, folderDate } = req
           if (file.size_bytes > maxBytesFor(category, limits)) return reply.code(413).send({ error: 'Файл слишком большой', code: 'OSP_FILE_TOO_LARGE' })
           const denied = await uploadDenied(file, category)
           if (denied) return reply.code(denied[0]).send(denied[1])
@@ -542,6 +562,7 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
             uploaded_by_name: roleRow.full_name || null,
             ...(category ? { doc_category: category } : {}),
             ...(etag ? { content_etag: etag } : {}),
+            ...(folderDate ? { folder_date: folderDate } : {}),
           }
           const insert = (values) => supabase.from('s3_documents').insert(values).select('*').single()
           let { data, error } = await insert(row)
@@ -550,6 +571,10 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
             const plain = { ...row }
             delete plain.content_etag
             ;({ data, error } = await insert(plain))
+          }
+          // База без колонки папки (раньше 20270220): файл не кладётся молча в папку сегодняшнего дня — отказ с причиной.
+          if (error && folderDate && MISSING_COLUMN.has(error.code) && /folder_date/.test(error.message || '')) {
+            return reply.code(409).send({ error: 'Папки с датой появятся после обновления базы — загрузите файл кнопкой «Загрузить»', code: 'OSP_NO_FOLDER_DATE' })
           }
           if (error) {
             // Параллельный повтор успел первым — та же строка; другой файл с этим ключом — отказ.

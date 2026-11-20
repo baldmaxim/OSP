@@ -11,7 +11,10 @@ import {
   validateRow,
   normInn,
   normMatchName,
+  importCreatedEvent,
+  pairInserted,
 } from '../utils/contractsImport'
+import { useRole } from '../contexts/RoleContext'
 import { DOC_TYPES, buildDocIndex } from '../utils/contractAmendments'
 import { LARIX_LINK_FIELD, LARIX_LINK_LABEL } from '../utils/contractLarix'
 import { isSchemeNumberTaken, parseContractNumber } from '../utils/contractNumbering'
@@ -106,6 +109,7 @@ function skipReasons(row) {
 }
 
 function ContractsImportModal({ counterparties = [], objects = [], contacts = [], refsReady = true, onClose, onImported }) {
+  const { userProfile } = useRole()
   const [step, setStep] = useState('select')     // select | preview | result
   const [fileName, setFileName] = useState('')
   const [parseError, setParseError] = useState('')
@@ -301,17 +305,31 @@ function ContractsImportModal({ counterparties = [], objects = [], contacts = []
       let created = 0
       const junction = []
       const failed = []
+      // «История» каждого созданного документа: «Создание» с файлом и строкой (как у формы «Добавить»).
+      const history = []
+      let author = { name: userProfile?.full_name || null, role: null }
+      try { author = { ...author, role: localStorage.getItem('userRole') || null } } catch { /* хранилище недоступно */ }
+      const createdEvent = (rec, row) => importCreatedEvent({
+        contractId: rec.id,
+        payload: row ? row.result.payload : rec,
+        parentDisplayId: docs?.index?.byId.get((row ? row.result.payload : rec).parent_contract_id)?.display_id ?? null,
+        fileName,
+        excelRow: row ? row.excelRow : null,
+        author,
+      })
+      const INSERTED = 'id, counterparty_id, record_type, contract_number, object_id, parent_contract_id'
 
       for (const chunk of chunks(toCreate, CHUNK)) {
         const payloads = chunk.map((x) => x.result.payload)
-        const { data, error } = await db.from('contracts').insert(payloads).select('id, counterparty_id')
+        const { data, error } = await db.from('contracts').insert(payloads).select(INSERTED)
         if (!error) {
           created += (data || []).length
           ;(data || []).forEach((d) => { if (d.counterparty_id) junction.push({ contract_id: d.id, counterparty_id: d.counterparty_id, sort_order: 0 }) })
+          pairInserted(chunk, data).forEach(({ rec, row }) => history.push(createdEvent(rec, row)))
         } else {
           // Изолируем сбойную строку — вставляем по одной, остальные из чанка сохраняются.
           for (const x of chunk) {
-            const { data: d, error: e } = await db.from('contracts').insert(x.result.payload).select('id, counterparty_id').single()
+            const { data: d, error: e } = await db.from('contracts').insert(x.result.payload).select(INSERTED).single()
             if (e) {
               // Номер по схеме КОД-ДП-ГГ-NNN не повторяется (миграция 20270110) — понятная причина вместо имени индекса.
               x.saveError = x.result.payload.record_type === 'dp' && parseContractNumber(x.result.payload.contract_number) && isSchemeNumberTaken(e)
@@ -319,7 +337,11 @@ function ContractsImportModal({ counterparties = [], objects = [], contacts = []
                 : e.message
               failed.push(x)
             }
-            else { created++; if (d.counterparty_id) junction.push({ contract_id: d.id, counterparty_id: d.counterparty_id, sort_order: 0 }) }
+            else {
+              created++
+              if (d.counterparty_id) junction.push({ contract_id: d.id, counterparty_id: d.counterparty_id, sort_order: 0 })
+              history.push(createdEvent(d, x))
+            }
           }
         }
       }
@@ -330,13 +352,23 @@ function ContractsImportModal({ counterparties = [], objects = [], contacts = []
         if (error) console.error('Ошибка записи сторон договора:', error.message)
       }
 
+      // Документы уже созданы; если «История» не записалась — сказать об этом, а не промолчать.
+      let historyFailed = 0
+      for (const hchunk of chunks(history, CHUNK)) {
+        const { error } = await db.from('contract_audit_log').insert(hchunk)
+        if (error) {
+          historyFailed += hchunk.length
+          console.error('Ошибка записи истории договоров:', error.message)
+        }
+      }
+
       const notLoaded = [
         ...parsed.filter((r) => r.result.kind === 'error'),
         ...warnRows.filter((r) => !checked.has(r.excelRow)),
         ...failed,
       ].sort((a, b) => a.excelRow - b.excelRow)
 
-      setResultInfo({ created, notLoaded })
+      setResultInfo({ created, notLoaded, historyFailed })
       setStep('result')
     } catch (err) {
       console.error('Ошибка импорта:', err)
@@ -503,6 +535,9 @@ function ContractsImportModal({ counterparties = [], objects = [], contacts = []
           {step === 'result' && resultInfo && (
             <div className="cim-result">
               <div className="cim-result-big">Создано договоров: <strong>{resultInfo.created}</strong></div>
+              {resultInfo.historyFailed > 0 && (
+                <p className="cim-note">Документы созданы, но у {resultInfo.historyFailed} из них в «Историю» не записалось событие создания — сообщите администратору.</p>
+              )}
               {resultInfo.notLoaded.length > 0 ? (
                 <>
                   {/* Причины показываем здесь: в файле ошибок их быть не должно —

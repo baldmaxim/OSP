@@ -225,6 +225,60 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
+  it('выгрузка — по ВОРам, цена собранной позиции стоит во всех её ВОР; зелёный значок — только нерасценённые', async () => {
+    // Труба — в ОВ (1 500 м) и ВК (200 м) одной строкой таблицы, цена 400 — только в ОВ.
+    const { page, context, errors } = await openPage('&pipeRates=partial')
+    const book = async (button) => {
+      const [download] = await Promise.all([page.waitForEvent('download'), button.click()])
+      const wb = XLSX.read(fs.readFileSync(await download.path()), { type: 'buffer' })
+      const sheet = (vor) => {
+        const name = wb.SheetNames.find((n) => n.includes(vor))
+        return name ? XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1 }) : null
+      }
+      return { file: download.suggestedFilename(), names: wb.SheetNames, sheet }
+    }
+    const col = (rows, title) => rows[0].indexOf(title)
+    const named = (rows, re) => rows.filter((r) => re.test(String(r[1] || '')))
+    try {
+      await page.getByRole('button', { name: 'Не расценены (4)', exact: true }).waitFor()
+      // Как показана таблица — файлу всё равно: и «По ВОРам», где строка ВК без цены, труба в листе ВК — с ценой ОВ.
+      await page.getByRole('button', { name: 'По ВОРам' }).click()
+      await page.getByRole('button', { name: 'Все (6)', exact: true }).waitFor()
+      const full = await book(page.getByRole('button', { name: 'Скачать Excel' }))
+      assert.match(full.file, /^Расценка снабжения_/)
+      assert.equal(full.names.length, 2, 'лист на ВОР')
+      const [ov, vk] = [full.sheet('ОВ'), full.sheet('ВК')]
+      const [cPrice, cTotal] = [col(vk, 'Цена за ед. с доставкой и НДС, ₽'), col(vk, 'Итого с НДС, ₽')]
+      assert.equal(ov.length, 1 + 4 + 1, 'ОВ: шапка, 4 позиции, итог')
+      assert.equal(vk.length, 1 + 2 + 1, 'ВК: шапка, 2 позиции, итог')
+      const [vkPipe] = named(vk, /труба/i)
+      assert.deepEqual([vkPipe[cPrice], vkPipe[cTotal]], [400, 80000], 'цена ОВ, сумма — по объёму ВК')
+      const [ovPipe] = named(ov, /труба/i)
+      assert.deepEqual([ovPipe[cPrice], ovPipe[cTotal]], [400, 600000])
+      // Итог листа — сумма его строк, вместе с проставленной ценой.
+      const sumOf = (rows) => rows.slice(1, -1).reduce((s, r) => s + (Number(r[cTotal]) || 0), 0)
+      assert.equal(vk.at(-1)[cTotal], 80000)
+      assert.equal(ov.at(-1)[cTotal], sumOf(ov))
+      assert.ok(named(vk, /кран/i)[0][cPrice] == null || named(vk, /кран/i)[0][cPrice] === '', 'у другой позиции цены нет')
+      // В базу выгрузка ничего не пишет: цену в ВК ставит человек («поставить во все ВОР»).
+      assert.equal(await rateOf(page, TRUBA, 'ВК'), null)
+
+      // Нерасценённые: трубы нет ни в одном листе (в ВК цена проставлена), номера позиций — как в ВОР, итога нет.
+      const rest = await book(page.getByRole('button', { name: 'Нерасценённые позиции в Excel' }))
+      assert.match(rest.file, /^Не расценено_/)
+      const [ovRest, vkRest] = [rest.sheet('ОВ'), rest.sheet('ВК')]
+      assert.equal(named(ovRest, /труба|изоляция/i).length + named(vkRest, /труба/i).length, 0)
+      assert.deepEqual(ovRest.slice(1).map((r) => r[1]).sort(), ov.slice(1, -1).filter((r) => r[cPrice] == null || r[cPrice] === '').map((r) => r[1]).sort())
+      assert.equal(ovRest.length, 1 + 2)
+      assert.equal(vkRest.length, 1 + 1)
+      assert.equal(vkRest[1][0], named(vk, /кран/i)[0][0], 'номер позиции — её место в ВОР')
+      assert.ok(ovRest.concat(vkRest).every((r) => r[1] !== 'Итого'))
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
   it('файлов ВОР нет — позиции сами берутся из вкладки «ВОР» карточки', async () => {
     const { page, context, errors } = await open('', '/tenders/materials/mat-q/pricing')
     try {
@@ -1768,6 +1822,205 @@ describe('Расценка снабжением: таблица', { skip: !launc
       await again.getByRole('button', { name: 'вернуть' }).click()
       await rowAgain('Изоляция K-Flex').waitFor()
       assert.equal((await offerDoc(page, 'Счёт 15 ТеплоСнаб.xlsx')).offer.xh, undefined)
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  // 19.11.2026 (просьба пользователя: «когда убираю счёт, как снять цены, которые из него проставлялись … и после удаления»).
+  // Счёт применён: труба (два ВОР) и кран получили цены из него; цену крана потом исправили руками — она уже не «из файла».
+  const removedDocs = (page) => page.evaluate(() => window.__fakeDb.tender_supply_removed_docs.map((t) => ({ rate: t.rate_id, doc: t.doc_name, price: t.price })))
+  const supplyDocCount = (page) => page.evaluate(() => window.__fakeDb.s3_documents.filter((d) => d.doc_category === 'supply_doc').length)
+  const tenderRates = (page) => page.evaluate(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.tender_id === 'tender-p')
+    .map((r) => `${r.estimate_name}: ${r.material_name} = ${r.supply_price}`).sort())
+  const applyInvoice = async (page) => {
+    const docs = await openTenderDocs(page)
+    await docs.locator('input[type=file]').setInputFiles({ name: 'Счёт 15 ТеплоСнаб.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx() })
+    await pickRow(docs, 'Труба медная 12,7 мм (бухта 15 м)').waitFor({ timeout: 60000 })
+    await docs.getByRole('button', { name: 'Применить цены: 2' }).click()
+    await docs.waitFor({ state: 'detached', timeout: 30000 })
+    await page.waitForFunction(() => window.__fakeDb.tender_supply_links.length === 3)
+    await page.getByText('Цен записано: 3', { exact: false }).waitFor()
+  }
+  const deleteDialog = (page) => page.getByRole('alertdialog', { name: 'Удалить файл?' })
+  const goneChip = (docs) => fileChips(docs).locator('li.is-gone')
+
+  it('удаление счёта: окно с ценами из него; «только файл» — цены остаются и снимаются позже строкой удалённого файла; исправленная руками цена не трогается', async () => {
+    const { page, context, errors } = await openPage()
+    try {
+      await applyInvoice(page)
+      await enter(page.getByLabel(price('Кран шаровой Ду15', 'ОВ')), '555')
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Кран шаровой Ду15' && r.supply_price === 555))
+      const before = await tenderRates(page)
+      assert.equal(before.length, 4)
+
+      const docs = await openTenderDocs(page)
+      await docs.getByRole('button', { name: 'Удалить файл «Счёт 15 ТеплоСнаб.xlsx»' }).click()
+      const ask = deleteDialog(page)
+      await ask.waitFor()
+      const text = plain(await ask.innerText())
+      assert.match(text, /Счёт15ТеплоСнаб\.xlsx/)
+      assert.match(text, /Ондокументупозицийэтоготендера:3/)
+      assert.match(text, /Изнегопоставленыцены:2\./)
+      assert.match(text, /сейчасилипозже—вокне«СчетаиКП»/)
+      // В списке — только труба в двух ВОР: цену крана правили руками, изоляцию вводили сами.
+      const listed = await ask.getByRole('list', { name: 'Цены, поставленные из файла' }).locator('li').allInnerTexts()
+      assert.equal(listed.length, 2, JSON.stringify(listed))
+      assert.ok(listed.every((t) => /труба медная/i.test(t) && /981,83/.test(t)), JSON.stringify(listed))
+      assert.deepEqual(listed.map((t) => (/· ВК/.test(t) ? 'ВК' : /· ОВ/.test(t) ? 'ОВ' : '?')).sort(), ['ВК', 'ОВ'])
+      // Escape закрывает только окно удаления; ничего не удалено.
+      await page.keyboard.press('Escape')
+      await ask.waitFor({ state: 'detached' })
+      await docs.waitFor()
+      assert.equal(await supplyDocCount(page), 1)
+      assert.deepEqual(await removedDocs(page), [])
+
+      await docs.getByRole('button', { name: 'Удалить файл «Счёт 15 ТеплоСнаб.xlsx»' }).click()
+      await deleteDialog(page).getByRole('button', { name: 'Удалить только файл' }).click()
+      await deleteDialog(page).waitFor({ state: 'detached' })
+      await page.waitForFunction(() => !window.__fakeDb.s3_documents.some((d) => d.doc_category === 'supply_doc'))
+      assert.equal(await page.evaluate(() => window.__fakeDb.tender_supply_links.length), 0, 'документа у позиций больше нет')
+      assert.deepEqual(await tenderRates(page), before, 'цены на месте')
+      const traces = await removedDocs(page)
+      assert.deepEqual(traces.map((t) => [t.doc, t.price]), [['Счёт 15 ТеплоСнаб.xlsx', 981.83], ['Счёт 15 ТеплоСнаб.xlsx', 981.83]])
+      // В окне: файла нет, вместо него — строка удалённого файла.
+      assert.equal(await fileChips(docs).locator('.sp-td-file', { hasText: 'Счёт 15 ТеплоСнаб.xlsx' }).count(), 0)
+      await goneChip(docs).waitFor()
+      assert.match(plain(await goneChip(docs).innerText()), /Счёт15ТеплоСнаб\.xlsxудалён[\d.]+·егоценыстоятупозиций:2снятьценыоставить/)
+      await docs.getByText('Его цены остались у позиций: 2', { exact: false }).waitFor()
+
+      // Окно открыли заново — строка на месте (следы в базе). Снять цены: с подтверждением, только нетронутые.
+      await closeTenderDocs(page)
+      const again = await openTenderDocs(page)
+      await goneChip(again).waitFor()
+      let asked = ''
+      page.once('dialog', (d) => { asked = d.message(); d.accept() })
+      await goneChip(again).getByRole('button', { name: 'снять цены' }).click()
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.tender_id === 'tender-p').length === 2)
+      assert.match(asked, /Снять цены, поставленные из удалённого файла «Счёт 15 ТеплоСнаб\.xlsx»: 2\?/)
+      assert.deepEqual(await tenderRates(page), ['ОВ: Изоляция K-Flex 13×15 = 96', 'ОВ: Кран шаровой Ду15 = 555'])
+      await again.getByText('цен снято: 2', { exact: false }).waitFor()
+      await goneChip(again).waitFor({ state: 'detached' })
+      assert.deepEqual(await removedDocs(page), [])
+      // Снятие — в журнале цен: цену можно вернуть из истории.
+      const log = await page.evaluate(() => window.__fakeDb.tender_supply_rate_log.filter((l) => l.op === 'delete').map((l) => l.old_price))
+      assert.deepEqual(log, [981.83, 981.83])
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('удаление счёта вместе с ценами; цену поправили после удаления файла — строка удалённого файла её не считает; «оставить» — цены обычные', async () => {
+    let { page, context, errors } = await openPage()
+    let docs
+    try {
+      await applyInvoice(page)
+      docs = await openTenderDocs(page)
+      await docs.getByRole('button', { name: 'Удалить файл «Счёт 15 ТеплоСнаб.xlsx»' }).click()
+      await deleteDialog(page).getByRole('button', { name: 'Удалить файл и снять цены: 3' }).click()
+      await deleteDialog(page).waitFor({ state: 'detached' })
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.tender_id === 'tender-p').length === 1)
+      assert.deepEqual(await tenderRates(page), ['ОВ: Изоляция K-Flex 13×15 = 96'], 'ручная цена изоляции осталась')
+      assert.equal(await supplyDocCount(page), 0)
+      await docs.getByText('удалён, цен снято: 3', { exact: false }).waitFor()
+      assert.equal(await goneChip(docs).count(), 0, 'снимать больше нечего')
+      assert.deepEqual(await removedDocs(page), [], 'след ушёл вместе с ценами')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+
+    ;({ page, context, errors } = await openPage())
+    try {
+      await applyInvoice(page)
+      docs = await openTenderDocs(page)
+      await docs.getByRole('button', { name: 'Удалить файл «Счёт 15 ТеплоСнаб.xlsx»' }).click()
+      await deleteDialog(page).getByRole('button', { name: 'Удалить только файл' }).click()
+      await goneChip(docs).waitFor()
+      assert.match(plain(await goneChip(docs).innerText()), /егоценыстоятупозиций:3/)
+      await closeTenderDocs(page)
+      // Трубу поправили руками (оба ВОР строки) — это уже не цена файла.
+      await enter(page.getByLabel(price(TRUBA, TWO)), '1000')
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.supply_price === 1000).length === 2)
+      docs = await openTenderDocs(page)
+      await goneChip(docs).waitFor()
+      assert.match(plain(await goneChip(docs).innerText()), /егоценыстоятупозиций:1/)
+      const before = await tenderRates(page)
+      await goneChip(docs).getByRole('button', { name: 'оставить' }).click()
+      await goneChip(docs).waitFor({ state: 'detached' })
+      await docs.getByText('оставлены как обычные цены', { exact: false }).waitFor()
+      assert.deepEqual(await removedDocs(page), [])
+      assert.deepEqual(await tenderRates(page), before, 'цены не тронуты')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('удаление счёта, отказы: след цен не записался — файл не удаляется; файл не удалился — следа и строки удалённого файла нет; повтор — заново', async () => {
+    const { page, context, errors } = await openPage()
+    try {
+      await applyInvoice(page)
+      const docs = await openTenderDocs(page)
+      const state = () => page.evaluate(() => [
+        window.__fakeDb.s3_documents.filter((d) => d.doc_category === 'supply_doc').length,
+        window.__fakeDb.tender_supply_links.length,
+        window.__fakeDb.tender_supply_removed_docs.length,
+        window.__fakeDb.tender_vor_supply_rates.filter((r) => r.tender_id === 'tender-p').length,
+      ])
+      // 1. Запись следа отвечает ошибкой: файл, документы позиций и цены на месте, окно говорит почему.
+      await page.evaluate(() => {
+        window.__fakeHold = ({ table, op }) => (table === 'tender_supply_removed_docs' && op === 'upsert' ? { error: { code: 'XX000', message: 'сбой записи' } } : {})
+      })
+      await docs.getByRole('button', { name: 'Удалить файл «Счёт 15 ТеплоСнаб.xlsx»' }).click()
+      const ask = deleteDialog(page)
+      await ask.getByRole('button', { name: 'Удалить файл и снять цены: 3' }).click()
+      await ask.getByRole('alert').filter({ hasText: 'Файл не удалён: не записалось, какие цены поставлены из него' }).waitFor()
+      assert.deepEqual(await state(), [1, 3, 0, 4])
+      // 2. След записался, а файл не удалился: след убран, цены не тронуты, строки «удалён» нет.
+      await page.evaluate(() => {
+        window.__fakeHold = ({ table, op }) => (table === 's3_documents' && op === 'delete' ? { error: { code: '42501', message: 'permission denied for table s3_documents' } } : {})
+      })
+      await ask.getByRole('button', { name: 'Удалить файл и снять цены: 3' }).click()
+      await ask.getByRole('alert').filter({ hasText: 'Файл не удалился' }).waitFor()
+      await page.waitForFunction(() => window.__fakeDb.tender_supply_removed_docs.length === 0)
+      assert.deepEqual(await state(), [1, 3, 0, 4])
+      await ask.getByRole('button', { name: 'Отмена' }).click()
+      await ask.waitFor({ state: 'detached' })
+      assert.equal(await goneChip(docs).count(), 0)
+      await fileChips(docs).locator('.sp-td-file', { hasText: 'Счёт 15 ТеплоСнаб.xlsx' }).waitFor()
+      // 3. Сбой прошёл — удаление с ценами проходит целиком.
+      await page.evaluate(() => { window.__fakeHold = null })
+      await docs.getByRole('button', { name: 'Удалить файл «Счёт 15 ТеплоСнаб.xlsx»' }).click()
+      await deleteDialog(page).getByRole('button', { name: 'Удалить файл и снять цены: 3' }).click()
+      await deleteDialog(page).waitFor({ state: 'detached' })
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.tender_id === 'tender-p').length === 1)
+      assert.deepEqual(await state(), [0, 0, 0, 1])
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('таблицы следов нет (миграция 20270223 не применена): цены файла снимаются только при удалении, об этом сказано; строки удалённого файла нет', async () => {
+    const { page, context, errors } = await openPage('&noRemovedDocs=1')
+    try {
+      await applyInvoice(page)
+      const docs = await openTenderDocs(page)
+      await docs.getByRole('button', { name: 'Удалить файл «Счёт 15 ТеплоСнаб.xlsx»' }).click()
+      const ask = deleteDialog(page)
+      await ask.waitFor()
+      assert.match(plain(await ask.innerText()), /Снятьихможнотолькосейчас/)
+      await ask.getByRole('button', { name: 'Удалить только файл' }).click()
+      await ask.waitFor({ state: 'detached' })
+      await page.waitForFunction(() => !window.__fakeDb.s3_documents.some((d) => d.doc_category === 'supply_doc'))
+      assert.equal((await tenderRates(page)).length, 4, 'цены на месте')
+      assert.equal(await goneChip(docs).count(), 0)
+      await docs.getByText('Его цены остались у позиций: 3.', { exact: false }).waitFor()
+      const writes = await page.evaluate(() => window.__supabaseStats.requests.filter((r) => r.table === 'tender_supply_removed_docs' && r.op !== 'select').length)
+      assert.equal(writes, 0, 'в таблицу, которой нет, ничего не пишем')
       assert.deepEqual(errors, [])
     } finally {
       await context.close()

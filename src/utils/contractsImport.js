@@ -5,11 +5,56 @@
 import * as XLSX from 'xlsx'
 import {
   DOC_TYPE,
+  DOC_TYPE_LABEL,
   OVERRIDABLE_FIELDS,
   effectiveValues,
   planAmendment,
 } from './contractAmendments'
 import { LARIX_LINK_FIELD, LARIX_LINK_LABEL } from './contractLarix'
+
+// --- «История» загруженного документа ---
+// Событие «Создание»: то же начало, что пишет ручная форма (ContractsPage: «Создан договор № …» /
+// «Создано <вид ДС> № … к документу ID …»), и откуда документ взялся — файл и строка Excel. На базе Яндекса
+// автора, роль и время ставит сервер (audit_log_stamp); имя и роль из браузера — для прежнего портала.
+// До 19.11.2026 импорт событие не писал — у загруженных документов «История» была пустой (миграция 20270222).
+export function importCreatedEvent({ contractId, payload, parentDisplayId = null, fileName = '', excelRow = null, author = {} }) {
+  const number = payload?.contract_number ? ` № ${payload.contract_number}` : ' (без номера)'
+  const isDs = Boolean(payload?.record_type) && payload.record_type !== DOC_TYPE.CONTRACT
+  const head = isDs
+    ? `Создано ${DOC_TYPE_LABEL[payload.record_type] || 'ДС'}${number}${parentDisplayId != null ? ` к документу ID ${parentDisplayId}` : ''}`
+    : `Создан договор${number}`
+  const file = String(fileName || '').trim()
+  const where = [file ? `«${file}»` : '', excelRow != null ? `строка ${excelRow}` : ''].filter(Boolean).join(', ')
+  return {
+    contract_id: contractId,
+    event_type: 'created',
+    description: `${head}. Документ загружен импортом из Excel${where ? `: ${where}` : ''}.`,
+    new_value: { source: 'import', file: file || null, row: excelRow ?? null },
+    changed_by_role: author.role || null,
+    changed_by_name: author.name || null,
+  }
+}
+
+// Какая вставленная запись — из какой строки файла. Пакетная вставка возвращает записи в порядке строк: если весь
+// ответ совпал со строками по порядку (вид, номер, сторона, объект) — пары по порядку. Иначе — только однозначные
+// совпадения по тем же признакам; строка не нашлась однозначно — она не указывается (null), запись всё равно
+// получает событие.
+export function pairInserted(rows, inserted) {
+  const key = (p) => [p?.record_type || '', p?.contract_number || '', p?.counterparty_id || '', p?.object_id || ''].join('|')
+  const list = inserted || []
+  if (list.length === rows.length && list.every((rec, i) => key(rows[i].result.payload) === key(rec))) {
+    return list.map((rec, i) => ({ rec, row: rows[i] }))
+  }
+  const byKey = new Map()
+  rows.forEach((r) => {
+    const k = key(r.result.payload)
+    byKey.set(k, [...(byKey.get(k) || []), r])
+  })
+  return list.map((rec) => {
+    const found = byKey.get(key(rec)) || []
+    return { rec, row: found.length === 1 ? found[0] : null }
+  })
+}
 
 // --- Канонические колонки шаблона ---
 // key — внутреннее имя, header — заголовок в Excel-шаблоне, aliases — прежние и

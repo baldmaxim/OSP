@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import { callOspFunction, OSP_API_BASE } from '../../src/api/ospApi.js'
 import { nextFeatures, parseFeatures, resolveFeature } from '../../src/config/features.js'
 import { createOspFiles, HASH_MAX_BYTES, sha256Hex } from '../../src/api/ospFiles.js'
+import { afterSentMs, createStoragePut, StorageStalledError } from '../../src/api/storagePut.js'
 import { functionPath, filesPath, coversPath, coverThumbUrl, coverUrl, DATA_BOUND_FUNCTIONS, OSP_API_FLAG, OSP_FILES_FLAG } from '../../src/api/serverPath.js'
 import { createOspCovers } from '../../src/api/ospCovers.js'
 import { uuidv7 } from '../../src/utils/uuid.js'
@@ -154,6 +155,29 @@ describe('src/api/ospApi.js — вызов osp-api как functions.invoke', () 
     assert.equal(data, null)
     assert.equal(error.name, 'FunctionsHttpError')
   })
+
+  // 19.11.2026: загрузка в «Должную осмотрительность» «зависала» — шаги загрузки ждут ответа не дольше timeoutMs.
+  it('timeoutMs: сервер молчит — запрос обрывается сбоем сети (загрузка его повторит); без него — сигнала нет', async () => {
+    let seen = null
+    const hang = async (_url, init) => {
+      seen = init.signal
+      return new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))
+    }
+    const { data, error } = await callOspFunction('s3-presign', { body: {}, timeoutMs: 30 }, { getToken: async () => 't', fetchImpl: hang })
+    assert.equal(data, null)
+    assert.equal(error.name, 'FunctionsFetchError')
+    assert.equal(error.message, 'Сервер не ответил за 0 с')
+    assert.equal(error.context, undefined, 'как сбой сети — ospFiles повторяет')
+    assert.equal(seen.aborted, true)
+    const f = fakeFetch(() => json(200, { ok: true }))
+    assert.deepEqual(await callOspFunction('ai-assist', { body: {} }, { getToken: async () => 't', fetchImpl: f.impl }), { data: { ok: true }, error: null })
+    assert.equal(f.calls[0].init.signal, undefined)
+    // Повисло и получение токена (продление сессии) — тоже в пределе; запрос не уходит.
+    const g = fakeFetch(() => json(200, { ok: true }))
+    const stuck = await callOspFunction('s3-presign', { body: {}, timeoutMs: 30 }, { getToken: () => new Promise(() => {}), fetchImpl: g.impl })
+    assert.equal(stuck.error.message, 'Сервер не ответил за 0 с')
+    assert.equal(g.calls.length, 0)
+  })
 })
 
 describe('src/api/ospFiles.js — загрузка с ключом операции (заход Б)', () => {
@@ -300,9 +324,133 @@ describe('src/api/ospFiles.js — загрузка с ключом операц�
     assert.equal(hashed, false)
   })
 
+  it('ход загрузки: подготовка → отправка (через putImpl) → подтверждение; папка с датой — в confirm', async () => {
+    const calls = []
+    const stages = []
+    const files = createOspFiles({
+      call: async (body) => {
+        calls.push(body)
+        return body.action === 'upload' ? presigned : { data: { document: DOC }, error: null }
+      },
+      fetchImpl: async () => { throw new Error('fetch не должен вызываться — есть putImpl') },
+      putImpl: async (url, { body, contentType, onProgress }) => {
+        assert.equal(url, 'https://s3.test/put')
+        assert.equal(contentType, 'application/pdf')
+        onProgress(2)
+        onProgress(body.size)
+        return { ok: true, status: 200, statusText: 'OK' }
+      },
+      digest: async () => 'f'.repeat(64),
+      newId: () => 'op-1',
+      sleep: async () => {},
+    })
+    await files.upload({ file, ownerType: 'counterparty', ownerId: 'c', category: 'other', folderDate: '2025-03-14', onProgress: (p) => stages.push([p.stage, p.loaded, p.total]) })
+    assert.deepEqual(stages, [['prepare', 0, 5], ['send', 0, 5], ['send', 2, 5], ['send', 5, 5], ['save', 5, 5]])
+    assert.equal(calls[1].folder_date, '2025-03-14')
+    assert.equal('folder_date' in calls[0], false, 'ссылка на загрузку — без папки')
+    await files.upload({ file, ownerType: 'counterparty', ownerId: 'c' })
+    assert.equal('folder_date' in calls[3], false, 'без папки поле не отправляется (прежний сервер)')
+  })
+
+  it('отправка встала (сторож) — новая ссылка и повтор; после попыток — «Хранилище не отвечает»', async () => {
+    const calls = []
+    let puts = 0
+    const stalled = () => Object.assign(new Error('Хранилище не отвечает: отправка стоит больше 60 с'), { name: 'StorageStalledError', network: true })
+    const make = (okAt) => createOspFiles({
+      call: async (body) => { calls.push(body.action); return body.action === 'upload' ? presigned : { data: { document: DOC }, error: null } },
+      fetchImpl: async () => { throw new Error('не вызывается') },
+      putImpl: async () => { puts++; if (puts < okAt) throw stalled(); return { ok: true, status: 200, statusText: 'OK' } },
+      digest: async () => 'f'.repeat(64),
+      newId: () => 'op-1',
+      sleep: async () => {},
+    })
+    const sends = []
+    assert.deepEqual(await make(2).upload({ file, ownerType: 'tender', ownerId: 't', onProgress: (p) => { if (p.stage === 'send') sends.push(`${p.attempt}/${p.attempts}`) } }), DOC)
+    assert.deepEqual(calls, ['upload', 'upload', 'confirm'])
+    assert.deepEqual(sends, ['1/3', '2/3'], 'номер попытки — на кнопку («попытка 2 из 3»)')
+    puts = 0
+    calls.length = 0
+    await assert.rejects(make(99).upload({ file, ownerType: 'tender', ownerId: 't' }), /Хранилище не отвечает: отправка стоит больше 60 с/)
+    assert.equal(puts, 3)
+    assert.deepEqual(calls, ['upload', 'upload', 'upload'], 'подтверждения нет')
+  })
+
   it('sha256Hex — как у node:crypto', async () => {
     const blob = new Blob(['Акт сверки'])
     assert.equal(await sha256Hex(blob), crypto.createHash('sha256').update('Акт сверки').digest('hex'))
+  })
+})
+
+describe('src/api/storagePut.js — отправка в хранилище с ходом и сторожем', () => {
+  // Поддельный XMLHttpRequest: тест сам решает, когда прийти ходу и ответу. Таймеры — ручные.
+  function setup() {
+    const timers = new Map()
+    let nextTimer = 0
+    const xhrs = []
+    class FakeXHR {
+      constructor() { this.upload = {}; this.headers = {}; this.aborted = false; xhrs.push(this) }
+      open(method, url) { this.method = method; this.url = url }
+      setRequestHeader(k, v) { this.headers[k] = v }
+      send(body) { this.body = body }
+      abort() { this.aborted = true; this.onabort?.() }
+    }
+    const put = createStoragePut({
+      XHR: FakeXHR,
+      setTimer: (fn, ms) => { const id = ++nextTimer; timers.set(id, { fn, ms }); return id },
+      clearTimer: (id) => timers.delete(id),
+    })
+    const fire = () => { const [id, t] = [...timers.entries()].at(-1); timers.delete(id); t.fn() }
+    return { put, xhrs, timers, fire }
+  }
+  const body = new Blob(['hello world'])
+
+  it('PUT с типом файла; ход — от 0 до размера; ответ — { ok, status, statusText }', async () => {
+    const { put, xhrs, timers } = setup()
+    const seen = []
+    const p = put('https://s3.test/put', { body, contentType: 'application/pdf', onProgress: (l, t) => seen.push([l, t]) })
+    const x = xhrs[0]
+    assert.equal(x.method, 'PUT')
+    assert.equal(x.headers['Content-Type'], 'application/pdf')
+    assert.equal(x.body, body)
+    x.upload.onprogress({ loaded: 6, total: 11, lengthComputable: true })
+    Object.assign(x, { status: 200, statusText: 'OK' })
+    x.onload()
+    assert.deepEqual(await p, { ok: true, status: 200, statusText: 'OK' })
+    assert.deepEqual(seen, [[0, 11], [6, 11]])
+    assert.equal(timers.size, 0, 'сторож снят')
+  })
+
+  it('нет движения stallMs — обрыв: StorageStalledError с network (повторяется), запрос прерван', async () => {
+    const { put, xhrs, timers, fire } = setup()
+    const p = put('https://s3.test/put', { body, stallMs: 90000 })
+    assert.equal([...timers.values()].at(-1).ms, 90000)
+    xhrs[0].upload.onprogress({ loaded: 3, total: 11, lengthComputable: true })
+    assert.equal(timers.size, 1, 'ход переставляет сторожа, а не копит')
+    fire()
+    await assert.rejects(p, (e) => e instanceof StorageStalledError && e.network === true && /больше 90 с/.test(e.message))
+    assert.equal(xhrs[0].aborted, true)
+  })
+
+  it('файл отправлен целиком — ответа ждём дольше: не меньше stallMs и секунда на 256 КБ (прокси может держать файл)', async () => {
+    const { put, xhrs, timers } = setup()
+    const big = { size: 100 * 1024 * 1024 }
+    put('https://s3.test/put', { body: big, stallMs: 60000 })
+    xhrs[0].upload.onprogress({ loaded: 50 * 1024 * 1024, total: big.size, lengthComputable: true })
+    assert.equal([...timers.values()].at(-1).ms, 60000, 'пока идёт — обычный сторож')
+    xhrs[0].upload.onprogress({ loaded: big.size, total: big.size, lengthComputable: true })
+    assert.equal([...timers.values()].at(-1).ms, 400000, '100 МБ — 400 с')
+    assert.equal(afterSentMs(1024, 60000), 60000, 'маленький файл — не меньше stallMs')
+  })
+
+  it('сбой сети и ответ 403 — как у fetch: ошибка с network и { ok: false }', async () => {
+    const { put, xhrs } = setup()
+    const failed = put('https://s3.test/put', { body })
+    xhrs[0].onerror()
+    await assert.rejects(failed, (e) => e.network === true)
+    const denied = put('https://s3.test/put', { body })
+    Object.assign(xhrs[1], { status: 403, statusText: 'Forbidden' })
+    xhrs[1].onload()
+    assert.deepEqual(await denied, { ok: false, status: 403, statusText: 'Forbidden' })
   })
 })
 

@@ -62,6 +62,41 @@ window.fetch = async (url, init = {}) => {
   return new Response(null, { status: 404 })
 }
 
+// Отправка файла в хранилище идёт через XMLHttpRequest (src/api/storagePut.js — ход и сторож): запрос на хранилище стенда
+// отдаётся тому же window.fetch выше (и подмене теста поверх него — отказ «битому» файлу). window.__fakeUploadSteps = N — ход
+// приходит N шагами по window.__fakeUploadStepMs (по умолчанию 150 мс): виден на кнопке «Файл 1 из 3 · 50 %».
+{
+  const xhrOpen = XMLHttpRequest.prototype.open
+  const xhrHeader = XMLHttpRequest.prototype.setRequestHeader
+  const xhrSend = XMLHttpRequest.prototype.send
+  XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+    this.__fakeS3 = String(url).startsWith(FAKE_S3) ? { method, url: String(url), headers: {} } : null
+    if (!this.__fakeS3) return xhrOpen.call(this, method, url, ...rest)
+  }
+  XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
+    if (!this.__fakeS3) return xhrHeader.call(this, name, value)
+    this.__fakeS3.headers[name] = value
+  }
+  XMLHttpRequest.prototype.send = function (body) {
+    const fake = this.__fakeS3
+    if (!fake) return xhrSend.call(this, body)
+    const size = Number(body?.size) || 0
+    const steps = Number(window.__fakeUploadSteps) || 0
+    const stepMs = Number(window.__fakeUploadStepMs) || 150
+    ;(async () => {
+      for (let i = 1; i < steps; i++) {
+        await new Promise((r) => setTimeout(r, stepMs))
+        this.upload.onprogress?.({ loaded: Math.round((size * i) / steps), total: size, lengthComputable: true })
+      }
+      const res = await window.fetch(fake.url, { method: fake.method, headers: fake.headers, body })
+      this.upload.onprogress?.({ loaded: size, total: size, lengthComputable: true })
+      Object.defineProperty(this, 'status', { value: res.status, configurable: true })
+      Object.defineProperty(this, 'statusText', { value: res.statusText, configurable: true })
+      this.onload?.()
+    })().catch(() => this.onerror?.())
+  }
+}
+
 const db = window.__fakeDb
 const stats = window.__supabaseStats = { requests: [], active: 0, maxActive: 0 }
 

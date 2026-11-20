@@ -21,7 +21,7 @@ import { fetchPickerCounterparties } from '../services/counterpartyPicker'
 import { chunkList } from '../utils/inChunks'
 import { employeeName, employeesById, fetchEmployees } from '../services/employees'
 import { fetchCardCounts as readCardCounts, fetchDeletions, fetchTalkReads, prefetchCard, saveTalkRead } from '../services/docCheckCard'
-import { createDocCheckRequest, failedFilesText } from '../services/docCheckRequests'
+import { createDocCheckRequest, failedFilesText, loadPickerTenders } from '../services/docCheckRequests'
 import useBodyClass from '../hooks/useBodyClass'
 import { useIsPhone } from '../hooks/useMediaQuery'
 import {
@@ -143,6 +143,11 @@ export default function DocCheckRequestsPage() {
   const [hasBoardFields, setHasBoardFields] = useState(true)
   const [hasCardFields, setHasCardFields] = useState(false)
   const [hasChatFields, setHasChatFields] = useState(false)
+  // Тендер «Заключения ДП» (20270221). Список тендеров — для выбора в форме и подписи в окне: только когда колонка есть; нет права
+  // читать тендеры (бухгалтерия) — подпись без номера, выбор не загрузится.
+  const [hasTenderField, setHasTenderField] = useState(false)
+  const [tenders, setTenders] = useState(null)
+  const [tendersFailed, setTendersFailed] = useState(false)
   // Какая база — известно после первого чтения заявок: до него «прочитано» не берётся ни из браузера, ни из базы.
   const [schemaKnown, setSchemaKnown] = useState(false)
   // Историю пишет база (20270216) — страница её не пишет: иначе запись страницы отбросила бы сама база, а лишний запрос не нужен.
@@ -207,6 +212,7 @@ export default function DocCheckRequestsPage() {
       setHasBoardFields(DOC_CHECK_SELECTS[selectAt.current].board)
       setHasCardFields(DOC_CHECK_SELECTS[selectAt.current].card)
       setHasChatFields(DOC_CHECK_SELECTS[selectAt.current].chat)
+      setHasTenderField(DOC_CHECK_SELECTS[selectAt.current].tender)
       historyByDb.current = DOC_CHECK_SELECTS[selectAt.current].chat
       setSchemaKnown(true)
       setRequests(rows.map(normalizeRequest))
@@ -348,6 +354,20 @@ export default function DocCheckRequestsPage() {
       .then(list => setEmployees(employeesById(list)))
       .catch(err => console.warn('Не удалось загрузить сотрудников:', err.message))
   }, [fetchRequests, fetchDocCounts, scopeIds])
+
+  useEffect(() => {
+    if (!hasTenderField) return undefined
+    let alive = true
+    loadPickerTenders()
+      .then(rows => { if (alive) { setTenders(rows); setTendersFailed(false) } })
+      .catch(err => {
+        if (!alive) return
+        console.warn('Не удалось загрузить тендеры:', err.message)
+        setTendersFailed(true)
+      })
+    return () => { alive = false }
+  }, [hasTenderField])
+  const tendersById = useMemo(() => new Map((tenders || []).map(t => [t.id, t])), [tenders])
 
   // Правки коллег — при возврате на вкладку браузера, не чаще раза в 30 с.
   useEffect(() => {
@@ -1008,6 +1028,9 @@ export default function DocCheckRequestsPage() {
           creatorOnly={createOnly}
           ownObjects={scopeIds.length ? (objectsState === 'loading' ? null : objects) : undefined}
           ownObjectsFailed={objectsState === 'failed'}
+          hasTenderField={hasTenderField}
+          tenders={tenders}
+          tendersFailed={tendersFailed}
           onSave={handleSave}
           onClose={() => setFormFor(null)}
         />
@@ -1027,6 +1050,8 @@ export default function DocCheckRequestsPage() {
           hasBoardFields={hasBoardFields}
           hasCardFields={hasCardFields}
           hasChatFields={hasChatFields}
+          hasTenderField={hasTenderField}
+          tendersById={tendersById}
           currentUserId={myId}
           deletion={deletions?.get(detail.id) || null}
           refreshKey={detailRefresh}

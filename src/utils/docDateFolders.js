@@ -1,7 +1,8 @@
 // Папки по дню загрузки в списке файлов (S3DocumentList с пропом dateFolders; «Должная осмотрительность» карточки
 // контрагента, решение пользователя 19.11.2026: файлы проверки обычно грузят одним днём). Папка — календарный день
 // created_at по часам браузера, тот же, что в колонке «Когда»: строка «19.11.2026 00:30» не попадает в папку 18.11.
-// Отдельного поля в базе нет: каждый файл, и прежний, и новый, лежит в папке дня своей загрузки.
+// Файл можно положить и в прежнюю папку — кнопкой у папки или перетаскиванием (19.11.2026): день папки пишется в
+// s3_documents.folder_date (миграция 20270220). Нет его — папка по дню загрузки, как у всех прежних файлов.
 
 const pad = (n) => String(n).padStart(2, '0')
 
@@ -12,6 +13,26 @@ export function localDayKey(iso) {
   if (Number.isNaN(d.getTime())) return ''
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
+
+// Сегодняшний день по местным часам: в его папку файл ложится и без folder_date (как при обычной загрузке).
+export const todayKey = (now = new Date()) => localDayKey(now.toISOString())
+
+// Колонка folder_date есть (миграция 20270220 применена): список читается через «*», поэтому достаточно ключа в строке.
+export const hasFolderDate = (docs) => (docs || []).some((d) => d && 'folder_date' in d)
+
+// Папка файла: день, куда его положили явно, иначе — день загрузки.
+export function folderKeyOf(doc) {
+  const set = String(doc?.folder_date || '').slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(set) ? set : localDayKey(doc?.created_at)
+}
+
+// Что передать при загрузке в папку key: прежний день — его (folder_date), сегодняшний — ничего (папка по дню загрузки).
+export function folderDateForUpload(key, now = new Date()) {
+  return key && key !== todayKey(now) ? key : null
+}
+
+// Файл положен в прежнюю папку — в строке не только время, но и день загрузки (в папке 14.03 «10:00» читалось бы как 14.03).
+export const uploadedOtherDay = (doc) => !!doc?.folder_date && folderKeyOf(doc) !== localDayKey(doc.created_at)
 
 // 'YYYY-MM-DD' → 'ДД.ММ.ГГГГ'; '' → «Без даты».
 export function dayLabel(key) {
@@ -33,7 +54,7 @@ export function localTime(iso) {
 export function groupDocsByDay(docs) {
   const byKey = new Map()
   for (const doc of docs || []) {
-    const key = localDayKey(doc.created_at)
+    const key = folderKeyOf(doc)
     if (!byKey.has(key)) byKey.set(key, [])
     byKey.get(key).push(doc)
   }

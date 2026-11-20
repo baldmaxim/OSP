@@ -2,7 +2,9 @@
 // один на выбранный файл: повтор любого шага возвращает тот же документ, второй строки s3_documents и
 // второго объекта в бакете не бывает (server/osp-api/src/routes/s3Presign.js).
 //   загрузка — upload → PUT в хранилище (до 3 попыток, каждая с новой ссылкой на тот же ключ) →
-//              confirm (до 3 попыток) → строка s3_documents;
+//              confirm (до 3 попыток) → строка s3_documents; onProgress({ stage, loaded, total }) — ход для кнопки:
+//              'prepare' (отпечаток файла и ссылка), 'send' (отправлено loaded из total байт), 'save' (подтверждение);
+//              putImpl (необязательно) — отправка с ходом и сторожем (storagePut.js), без него — fetchImpl;
 //   удаление — delete: сервер удаляет сначала строку, затем объект; повтор безопасен (до 3 попыток);
 //   переименование — rename: новое имя в строке, объект не меняется; повтор безопасен (до 3 попыток).
 // Модуль чистый: вызов сервера, fetch, хэш, ключ и паузы передаются извне (tests/osp-api/client.test.mjs).
@@ -38,7 +40,7 @@ async function failure(error) {
 // Повторяем сбой сети, перегрузку и ошибку сервера. Отказ по правам, 404, 409 — нет: повтор их не исправит.
 const retryable = (err) => Boolean(err.network) || err.status === 429 || err.status >= 500
 
-export function createOspFiles({ call, fetchImpl, digest, newId, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+export function createOspFiles({ call, fetchImpl, putImpl = null, digest, newId, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   const invoke = async (body) => {
     const { data, error } = await call(body)
     if (error) throw await failure(error)
@@ -49,7 +51,7 @@ export function createOspFiles({ call, fetchImpl, digest, newId, sleep = (ms) =>
   const withRetries = async (attempts, step, canRetry) => {
     for (let attempt = 1; ; attempt++) {
       try {
-        return await step()
+        return await step(attempt)
       } catch (err) {
         if (attempt >= attempts || !canRetry(err)) throw err
         await sleep(1000 * attempt)
@@ -57,7 +59,10 @@ export function createOspFiles({ call, fetchImpl, digest, newId, sleep = (ms) =>
     }
   }
 
-  async function upload({ file, ownerType, ownerId, notes = null, category = null }) {
+  async function upload({ file, ownerType, ownerId, notes = null, category = null, folderDate = null, onProgress = null }) {
+    // attempt — какая попытка отправки (на кнопке «попытка 2 из 3», чтобы повтор не выглядел зависанием).
+    const progress = (stage, loaded = 0, attempt = 1) => onProgress?.({ stage, loaded, total: file.size, attempt, attempts: PUT_ATTEMPTS })
+    progress('prepare')
     const fileFields = {
       operation_id: newId(),
       owner_type: ownerType,
@@ -68,14 +73,18 @@ export function createOspFiles({ call, fetchImpl, digest, newId, sleep = (ms) =>
       sha256: file.size <= HASH_MAX_BYTES ? await digest(file).catch(() => null) : null,
     }
 
-    const already = await withRetries(PUT_ATTEMPTS, async () => {
+    const already = await withRetries(PUT_ATTEMPTS, async (attempt) => {
       // Категория — и при запросе ссылки: у некоторых категорий своё право вместо права раздела владельца.
       const up = await invoke({ action: 'upload', ...fileFields, ...(category ? { category } : {}) })
       if (up.already) return up.document
+      progress('send', 0, attempt)
       let res
       try {
-        res = await fetchImpl(up.presigned_url, { method: 'PUT', headers: { 'Content-Type': fileFields.mime_type }, body: file })
+        res = putImpl
+          ? await putImpl(up.presigned_url, { body: file, contentType: fileFields.mime_type, onProgress: (loaded) => progress('send', loaded, attempt) })
+          : await fetchImpl(up.presigned_url, { method: 'PUT', headers: { 'Content-Type': fileFields.mime_type }, body: file })
       } catch (e) {
+        if (e?.name === 'StorageStalledError') throw e
         throw Object.assign(new Error(`Хранилище недоступно: ${e?.message || e}`), { network: true })
       }
       if (!res.ok) {
@@ -86,8 +95,10 @@ export function createOspFiles({ call, fetchImpl, digest, newId, sleep = (ms) =>
     }, (err) => retryable(err) || Boolean(err.put))
     if (already) return already
 
+    progress('save', file.size)
+    // Папка с датой (S3DocumentList с dateFolders): только если выбрана — прежний сервер поля не знает.
     const confirmed = await withRetries(CONFIRM_ATTEMPTS,
-      () => invoke({ action: 'confirm', ...fileFields, category, notes }),
+      () => invoke({ action: 'confirm', ...fileFields, category, notes, ...(folderDate ? { folder_date: folderDate } : {}) }),
       (err) => retryable(err) || err.code === 'OSP_NOT_UPLOADED')
     return confirmed.document
   }

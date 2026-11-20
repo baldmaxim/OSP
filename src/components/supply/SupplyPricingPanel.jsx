@@ -7,6 +7,7 @@ import SupplyConflictDialog from './SupplyConflictDialog'
 import SupplyRateHistory from './SupplyRateHistory'
 import SupplyLinkDialog from './SupplyLinkDialog'
 import SupplySuggestMenu from './SupplySuggestMenu'
+import SupplyDocDeleteDialog from './SupplyDocDeleteDialog'
 import { IconAlert, IconAlertCircle, IconCheck, IconClock, IconHistory, IconLink, IconPencil, IconRefresh, IconTrash } from '../icons/ActionIcons'
 import { IconFileSpreadsheet, IconUpload } from '../icons/BsmIcons'
 import { IconSearch } from '../icons/ToolbarIcons'
@@ -21,6 +22,7 @@ import {
   loadRatesByIds, loadRevisions, loadRevisionsMarker, loadSources, loadSuggestionCounts, loadVorFiles, markSeparate, removeLinks,
   fetchSupplyDocBytes, loadOtherTenderRates, loadSupplyOffers, readSupplyDocBytes, renameEstimate, reviewRevisions, saveLinks, saveRate, saveSource, saveSupplyDocNotes,
   sourcesSignature, SUGGEST_BATCH, uploadSupplyDoc, loadCommentsMarker, loadComments, saveComment, SUPPLY_COMMENT_MAX,
+  dropRemovedDocs, loadRemovedDocs, saveRemovedDocs,
 } from '../../services/supplyPricing'
 import { fmtPriceDate, isFreshPriceDate, normName, rateUnitPrice } from '../../utils/supplyRateHelpers'
 import { canonUnit } from '../../utils/supplySimilarity'
@@ -33,9 +35,10 @@ import {
 } from '../../utils/supplyAutoImport'
 import { mergeSamePositions, offerMatches, offerPrice, positionGroups } from '../../utils/supplyDocMatch'
 import { autoPickRows, isSure, offersByGroup, otherUnitIndex, otherUnitPrices, suspectPrice, uniqueOfferDocs, windowOffers } from '../../utils/supplyAutoPick'
+import { pricesOfDoc, removedDocPrices, tracePriceSame } from '../../utils/supplyDocPrices'
 import { lineForGroup, lineNotForGroup, offerInRoubles, offerNotes, offerVatMode, offerWithVat, readOffer, scanProgressText } from '../../utils/supplyOffers'
 import {
-  carrySuggestions, carryTargets, composeChanges, revisionTitle, unitMismatch, versionQuestions,
+  carrySuggestions, carryTargets, composeChanges, revisionTitle, unitMismatch, versionQuestions, vorTitle,
 } from '../../utils/supplyVorVersions'
 import './SupplyPricing.css'
 // Рабочий стиль (docs/UI_GUIDELINES.md): корень панели — .ui-work, и в карточке тендера тоже.
@@ -341,6 +344,42 @@ function composeRow(base, targets) {
   }
 }
 
+// Выгрузка в Excel идёт по ВОРам, а цену собранной позиции (одна строка таблицы на несколько ВОР) человек ставит один раз.
+// Цена есть не во всех ВОР строки — в файле она проставляется и остальным: «ВОР∣ключ» позиции без своей цены → расценка той же
+// позиции в другом ВОР. Чья цена — как в строке таблицы (composeRow): своя важнее скопированной, новая важнее старой. Своя цена
+// ВОР не заменяется; разделённые человеком позиции (tenderGroups их не собирает) цену друг у друга не берут. В базу не пишется.
+function borrowedRates(tenderGroups, ratesByKey) {
+  const out = new Map()
+  for (const g of tenderGroups) {
+    if (g.targets.length < 2) continue
+    const targets = g.targets.map((t) => {
+      const key = posKey(t.doc, t.position.k)
+      return { key, rate: ratesByKey.get(key)?.[0] || null }
+    })
+    const rated = targets.filter((t) => t.rate)
+    if (!rated.length || rated.length === targets.length) continue
+    const donor = (newestRated(rated.filter((t) => !t.rate.source_kind)) || newestRated(rated)).rate
+    for (const t of targets) if (!t.rate) out.set(t.key, donor)
+  }
+  return out
+}
+
+// Цена позиции, взятая у той же позиции другого ВОР, — как её записало бы «поставить во все ВОР» (unifyRow): цена за единицу до
+// копейки, доставка — за единицу (сумма доставки чужого ВОР делится на его объём, а не на этот), итог — по объёму этого ВОР.
+function borrowedView(position, rate) {
+  const volume = position.units || position.volume == null ? null : Number(position.volume)
+  const d = rateDelivery(rate)
+  const dUnit = d ? composePrice({ mode: 'unit', value: 0, delivery: d, volume: Number(rate.volume_at_input) || null }).deliveryUnit : null
+  const delivery = dUnit > 0 ? { mode: 'unit', value: roundMoney(dUnit) } : null
+  const c = composePrice({ mode: 'unit', value: roundMoney(rateBasePrice(rate)), delivery, volume })
+  const vols = (position.units || []).filter((u) => u.volume != null)
+  return {
+    fullPrice: c.full,
+    deliveryUnit: c.deliveryUnit,
+    total: vols.length ? roundMoney(vols.reduce((s, u) => s + c.full * Number(u.volume), 0)) : c.total,
+  }
+}
+
 // Расценка позиции по ключу «ВОР∣ключ наименования»: самая свежая (дубли из Excel — ниже).
 function rateIn(list, key) {
   const [estimateName, k] = key.split('∣')
@@ -442,6 +481,12 @@ export default function SupplyPricingPanel({
   const [offerDocs, setOfferDocs] = useState(null)
   // Файлы тендера без цен: [{ doc, failed }] — не прочитались, фото и прочее; failed null — читается.
   const [otherDocs, setOtherDocs] = useState([])
+  // Следы удалённых файлов счетов и КП (миграция 20270223): какие цены поставлены из них; null — таблицы ещё нет в базе.
+  const [removedDocs, setRemovedDocs] = useState(null)
+  // Окно удаления файла: { ask, resolve } (ask — что показать, см. SupplyDocDeleteDialog), ход работы и отказ.
+  const [docDelete, setDocDelete] = useState(null)
+  const [docDeleteBusy, setDocDeleteBusy] = useState(null)
+  const [docDeleteError, setDocDeleteError] = useState('')
   const localFiles = useRef(new Map()) // файлы без сохранения на сервере (нет миграции файлов-документов): id → File
   // Цены из других тендеров: reuseOff — функций в базе ещё нет; origins — откуда скопированы цены (id цены →
   // тендер, объект, документ); similar — сколько похожих у позиции («ВОР∣ключ» → n); suggest — открытое меню.
@@ -513,6 +558,7 @@ export default function SupplyPricingPanel({
     linksMarkerRef.current = d.links ? linksMarker(d.links) : null
     setComments(d.comments ?? null)
     commentsMarkerRef.current = d.comments ? commentsMarker(d.comments) : null
+    setRemovedDocs(d.removedDocs ?? null)
     setImportState(d.importState ?? null)
     setRevisions(d.revisions ?? null)
     revisionsMarkerRef.current = d.revisions ? d.revisions.map((r) => r.id).join(',') : null
@@ -840,8 +886,14 @@ export default function SupplyPricingPanel({
   }, [editable, estimate, pricedDocs, sources])
 
   // Позиции — только от списков (не пересобираются при каждой цене: строки таблицы не перерисовываются зря).
+  // name — ключ цен и связь с вкладкой «ВОР» карточки; title — что видит человек: имя файла, который скачивается (после «новой
+  // версии» ключ остаётся прежним, «… V1», а файл — «… v2»; utils/supplyVorVersions.vorTitle).
   const sourceViews = useMemo(() => [...sources, ...tabFallback]
-    .map((s) => ({ source: s, name: s.estimate_name, positions: mergePositions(s.positions) })), [sources, tabFallback])
+    .map((s) => ({ source: s, name: s.estimate_name, title: vorTitle(s), positions: mergePositions(s.positions) })), [sources, tabFallback])
+  const titleOf = useMemo(() => {
+    const m = new Map(sourceViews.map((d) => [d.name, d.title]))
+    return (name) => m.get(name) || name
+  }, [sourceViews])
 
   // Позиции таблицы: одинаковые позиции всех ВОР — одной строкой (utils/supplyDocMatch.mergeSamePositions), что человек разделил —
   // помнит браузер. От них же — цены поставщиков и окно счетов. Пересчёт — только при смене позиций, не при каждой цене.
@@ -896,6 +948,22 @@ export default function SupplyPricingPanel({
 
   // Автовыбор: цены всех документов тендера по позициям (utils/supplyAutoPick); сколько позиций можно заполнить — на кнопке окна.
   const pickByGroup = useMemo(() => offersByGroup(shownOfferDocs, tenderGroups), [shownOfferDocs, tenderGroups])
+  // Удалённые файлы, чьи цены ещё стоят (utils/supplyDocPrices): цена та же, что при удалении, своя, и у позиции нет нового документа.
+  // Файлы тендера ещё не загружены — не показываем: след файла, который не удалился, приняли бы за удалённый.
+  const removedView = useMemo(() => {
+    if (!editable || !removedDocs?.length || offerDocs === null) return []
+    const alive = new Set([...offerDocs.map((x) => x.doc.id), ...otherDocs.map((x) => x.doc.id)])
+    return removedDocPrices(removedDocs, new Map(rates.map((r) => [r.id, r])), {
+      alive, hasDoc: (r) => !!linksByKey?.get(posKey(r.estimate_name, r.material_key)),
+    })
+  }, [editable, removedDocs, offerDocs, otherDocs, rates, linksByKey])
+  // Окно «Счета и КП» открыли — следы заново: файл мог удалить коллега.
+  const docsWindowOpen = !!tenderDocs
+  useEffect(() => {
+    if (!docsWindowOpen || !mainId || removedDocs === null) return
+    loadRemovedDocs(mainId).then((rows) => { if (rows) setRemovedDocs(rows) }).catch(() => { /* останутся прежние */ })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- только при открытии окна
+  }, [docsWindowOpen, mainId])
   // Цены других тендеров в другой ед. изм.: сами не подставляются, в меню похожих — с пометкой. Считаются только для показанных
   // строк (otherUnitFor), результат — в памяти, пока те же цены и позиции.
   const [otherIndex, setOtherIndex] = useState(null)
@@ -1013,7 +1081,7 @@ export default function SupplyPricingPanel({
   // каждого ВОР своими строками, по порядку ВОР и позиций в нём: цена строки пишется только в её ВОР (решение пользователя 10.11.2026).
   // Основа строки — только от списков: не пересобирается при каждой цене, строки не перерисовываются зря.
   const vorGroups = useMemo(() => sourceViews.flatMap((d) => d.positions.filter((p) => p.k).map((p) => ({
-    key: posKey(d.name, p.k), k: p.k, name: p.name, vorTag: d.name, targets: [{ doc: d.name, position: p }],
+    key: posKey(d.name, p.k), k: p.k, name: p.name, vorTag: d.title, targets: [{ doc: d.name, position: p }],
   }))), [sourceViews])
   const byVor = viewMode === 'byVor' && sourceViews.length > 1
   const rowBases = useMemo(() => (byVor ? vorGroups : tenderGroups)
@@ -1300,7 +1368,7 @@ export default function SupplyPricingPanel({
     const own = ratesRef.current.filter((r) => r.estimate_name === d.name)
     if (!own.length) return
     const fromSite = own.filter((r) => r.price_input === 'unit' || r.price_input === 'total').length
-    if (!window.confirm(`Удалить все цены снабжения ВОР «${d.name}» (${own.length})?${fromSite ? ` Из них введено на сайте: ${fromSite}.` : ''}\n\nУдаление записывается в журнал — цену можно вернуть из истории.`)) return
+    if (!window.confirm(`Удалить все цены снабжения ВОР «${d.title || d.name}» (${own.length})?${fromSite ? ` Из них введено на сайте: ${fromSite}.` : ''}\n\nУдаление записывается в журнал — цену можно вернуть из истории.`)) return
     for (const r of own) {
       try { const res = await clearRate(r); if (res.status === 'ok') applyRow(r, null) } catch (e) { setNotice(e.message); break }
     }
@@ -1748,7 +1816,24 @@ export default function SupplyPricingPanel({
   }, [])
 
   // ── Выгрузка в Excel: по листу на ВОР, как лист «Материалы» ВОР ─────────────────────────────────────
-  const exportExcel = async () => {
+  // Всегда по ВОРам, как бы ни была показана таблица («Собранные» / «По ВОРам»). Цена собранной позиции, которая стоит не во всех
+  // её ВОР, в файле проставлена всем (borrowedRates; в базу не пишется — там её ставит «поставить во все ВОР»). onlyUnpriced —
+  // только позиции, у которых цены нет и после этого: вместе с полной выгрузкой они дают все позиции. Номер позиции — её место в ВОР.
+  const exportExcel = async ({ onlyUnpriced = false } = {}) => {
+    const borrowed = borrowedRates(tenderGroups, ratesByKey)
+    const sheets = docViews.map((d) => ({
+      d,
+      rows: d.positions.map((p, i) => {
+        const key = posKey(d.name, p.k)
+        const own = ratesByKey.get(key)?.[0] || null
+        const donor = own ? null : borrowed.get(key) || null
+        return { n: i + 1, p, key, rate: own || donor, donorKey: donor ? posKey(donor.estimate_name, donor.material_key) : null, v: donor ? borrowedView(p, donor) : rowView(p, own, null) }
+      }).filter((r) => !onlyUnpriced || !r.rate),
+    })).filter((s) => !onlyUnpriced || s.rows.length > 0)
+    if (onlyUnpriced && !sheets.length) {
+      setNotice('Нерасценённых позиций нет — цена стоит у всех.')
+      return
+    }
     let XLSX
     try {
       XLSX = await import('xlsx')
@@ -1758,32 +1843,33 @@ export default function SupplyPricingPanel({
     }
     const wb = XLSX.utils.book_new()
     const used = new Set()
-    for (const d of docViews) {
+    for (const { d, rows: list } of sheets) {
       const aoa = [['№', 'Наименование', 'Ед. изм.', 'Объём', 'Цена за ед. с доставкой и НДС, ₽', ...(deliveryOn ? ['В т. ч. доставка за ед., ₽'] : []), 'Итого с НДС, ₽',
         ...(datesOn ? ['Дата цены'] : []), ...(datesOn && showAuthor ? ['Цену поставил'] : []), ...(linksOn ? ['Документ'] : []), ...(commentsOn ? ['Комментарий'] : [])]]
-      d.positions.forEach((p, i) => {
-        const rate = ratesByKey.get(posKey(d.name, p.k))?.[0] || null
-        const v = rowView(p, rate, null)
-        aoa.push([i + 1, p.name, p.units ? p.units.map((u) => u.unit).filter(Boolean).join(', ') : (p.unit || ''),
+      let sheetTotal = 0
+      for (const { n, p, key, rate, donorKey, v } of list) {
+        sheetTotal += v.total || 0
+        aoa.push([n, p.name, p.units ? p.units.map((u) => u.unit).filter(Boolean).join(', ') : (p.unit || ''),
           p.units ? p.units.map((u) => `${fmtVolume(u.volume)} ${u.unit || ''}`).join('; ') : (p.volume ?? ''),
           v.fullPrice != null ? roundMoney(v.fullPrice) : '', ...(deliveryOn ? [v.deliveryUnit != null ? roundMoney(v.deliveryUnit) : ''] : []), v.total ?? '',
           ...(datesOn ? [fmtPriceDate(rate?.price_date)] : []),
           ...(datesOn && showAuthor ? [rate ? authorText(rate, origins.get(rate.id), nameOf) : ''] : []),
-          ...(linksOn ? [linkLabel(linksByKey.get(posKey(d.name, p.k)), linkDocs)] : []),
+          // Документ взятой цены — тот, что у позиции, откуда она взята (у этого ВОР своего может не быть).
+          ...(linksOn ? [linkLabel(linksByKey.get(key) || (donorKey ? linksByKey.get(donorKey) : null), linkDocs)] : []),
           ...(commentsOn ? [commentsByKey.get(p.k)?.comment || ''] : [])])
-      })
-      aoa.push(['', 'Итого', '', '', '', ...(deliveryOn ? [''] : []), d.total])
+      }
+      if (!onlyUnpriced) aoa.push(['', 'Итого', '', '', '', ...(deliveryOn ? [''] : []), roundMoney(sheetTotal)])
       const ws = XLSX.utils.aoa_to_sheet(aoa)
       ws['!cols'] = [{ wch: 6 }, { wch: 60 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, ...(deliveryOn ? [{ wch: 14 }] : []), { wch: 18 },
         ...(datesOn ? [{ wch: 12 }] : []), ...(datesOn && showAuthor ? [{ wch: 28 }] : []), ...(linksOn ? [{ wch: 40 }] : []), ...(commentsOn ? [{ wch: 50 }] : [])]
-      let name = (docViews.length === 1 ? 'Материалы' : `Материалы ${d.name}`).replace(/[\\/:*?[\]]/g, ' ').slice(0, 31)
+      let name = (docViews.length === 1 ? 'Материалы' : `Материалы ${d.title}`).replace(/[\\/:*?[\]]/g, ' ').slice(0, 31)
       for (let i = 2; used.has(name); i++) name = `${name.slice(0, 27)} (${i})`
       used.add(name)
       XLSX.utils.book_append_sheet(wb, ws, name)
     }
     const num = ctx?.main?.public_tender_number ?? ''
     const desc = String(ctx?.main?.work_description || '').slice(0, 40).replace(/[\\/:*?"<>|]/g, '')
-    XLSX.writeFile(wb, `Расценка снабжения_№${num}_${desc}.xlsx`)
+    XLSX.writeFile(wb, `${onlyUnpriced ? 'Не расценено' : 'Расценка снабжения'}_№${num}_${desc}.xlsx`)
   }
 
   const downloadFile = async (fileId) => {
@@ -1860,24 +1946,177 @@ export default function SupplyPricingPanel({
       setLinkBusy(false)
     }
   }
-  // Удалить файл документа (из окна «Документ»): пропадает у всех позиций, где он документ, — и в других тендерах,
-  // куда цену брали вместе с ним.
+  // Удалить файл документа (окна «Счета и КП» и «Документ»): пропадает у всех позиций, где он документ, — и в других тендерах,
+  // куда цену брали вместе с ним. Цены, поставленные из файла (utils/supplyDocPrices.pricesOfDoc), остаются или снимаются — решает
+  // человек в окне удаления (19.11.2026, просьба пользователя). Связь цены с файлом пропадает вместе с ним, поэтому перед удалением
+  // его цены записываются следом (миграция 20270223): по следу окно «Счета и КП» предлагает снять их и позже.
+  const forgetDoc = (doc) => {
+    setLinks((prev) => (prev || []).filter((l) => l.s3_document_id !== doc.id))
+    setOfferDocs((prev) => (prev ? prev.filter((x) => x.doc.id !== doc.id) : prev))
+    setOtherDocs((prev) => prev.filter((x) => x.doc.id !== doc.id))
+  }
+  // Цены из файла; null — файл не прочитан (строк нет), какие цены из него — неизвестно. Повтор документа — цен нет: те же строки
+  // остаются у оставленного файла, снимать нечего.
+  const docPricesOf = (doc) => {
+    if (dupOf.has(doc.id)) return []
+    if (!linksByKey || !offerDocsRef.current?.find((x) => x.doc.id === doc.id)?.offer.lines.length) return null
+    return pricesOfDoc(doc.id, tenderGroups, pickByGroup, (t) => {
+      const key = posKey(t.doc, t.position.k)
+      return { key, rate: rateIn(ratesRef.current, key), docId: linksByKey.get(key)?.s3_document_id || null }
+    })
+  }
+  // Ответ — файл удалён: false или { note } (что сказать в окне, откуда удаляли).
   const deleteFile = async (doc) => {
     const used = (links || []).filter((l) => l.s3_document_id === doc.id).length
     const offered = offerDocs?.find((x) => x.doc.id === doc.id)?.offer.lines.length || 0
+    if (editable) {
+      setDocDeleteError('')
+      return new Promise((resolve) => {
+        setDocDelete({
+          ask: {
+            doc, used, offered, prices: used ? docPricesOf(doc) : [], later: removedDocs !== null && filesOn && !localFiles.current.has(doc.id),
+            dupeOf: offerView.dupes.find((x) => x.doc.id === doc.id)?.of.file_name || null,
+          },
+          resolve,
+        })
+      })
+    }
     if (!window.confirm(`Удалить файл «${doc.file_name}»?${used ? `\n\nОн документ у позиций этого тендера: ${used} — у них документа не станет.` : ''}`
       + `${offered ? `\nЕго цены (строк: ${offered}) больше не будут предлагаться; уже поставленные останутся.` : ''}`
       + '\nЕсли цену брали в другие тендеры вместе с этим файлом, там документ тоже пропадёт.')) return false
     try {
       await deleteSupplyDoc(doc)
-      setLinks((prev) => (prev || []).filter((l) => l.s3_document_id !== doc.id))
-      setOfferDocs((prev) => (prev ? prev.filter((x) => x.doc.id !== doc.id) : prev))
-      setOtherDocs((prev) => prev.filter((x) => x.doc.id !== doc.id))
+      forgetDoc(doc)
       return true
     } catch (e) {
       setLinkError(`Файл не удалился: ${e.message}`)
       return false
     }
+  }
+  const closeDocDelete = useCallback(() => {
+    setDocDelete((cur) => {
+      cur?.resolve(false)
+      return null
+    })
+  }, [])
+  // Снять цены (items — [{ id, price }]): только те, что с тех пор не трогали — цена за единицу та же и своя, версия строки та же
+  // (clearRate сверяет row_version: изменил другой — цена остаётся). Ответ: { cleared, kept, failed, error }.
+  const clearDocPrices = async (items, onProgress) => {
+    const res = { cleared: 0, kept: 0, failed: 0, error: '' }
+    const gone = new Set()
+    let next = 0
+    let done = 0
+    const worker = async () => {
+      while (next < items.length) {
+        const it = items[next++]
+        const rate = ratesRef.current.find((r) => r.id === it.id)
+        try {
+          if (!rate) gone.add(it.id)
+          else if (!tracePriceSame(it, rate)) res.kept += 1
+          else {
+            const r = await clearRate(rate)
+            if (r.status === 'ok') {
+              applyRow(rate, null)
+              gone.add(it.id)
+              res.cleared += 1
+            } else if (r.current) {
+              applyRow(null, r.current)
+              res.kept += 1
+            } else {
+              applyRow(rate, null)
+              gone.add(it.id)
+            }
+          }
+        } catch (e) {
+          res.failed += 1
+          res.error = e.message
+        }
+        done += 1
+        onProgress?.(done)
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(DOC_APPLY_PARALLEL, items.length) }, worker))
+    if (gone.size) setRemovedDocs((prev) => (prev ? prev.filter((t) => !gone.has(t.rate_id)) : prev))
+    return res
+  }
+  const clearedText = (res) => `цен снято: ${res.cleared}`
+    + `${res.kept ? `; оставлено: ${res.kept} — их успели изменить` : ''}`
+    + `${res.failed ? `; не снято: ${res.failed} (${res.error})` : ''}`
+  const confirmDocDelete = async (withPrices) => {
+    if (!docDelete) return
+    const { ask, resolve } = docDelete
+    const { doc } = ask
+    const prices = ask.prices || []
+    setDocDeleteError('')
+    setDocDeleteBusy({ text: 'Удаляем файл…' })
+    try {
+      // След — до удаления: после него связь цены с файлом пропадает. Не записался — файл не удаляем.
+      let traced = false
+      if (prices.length && ask.later) {
+        let rows
+        try {
+          rows = await saveRemovedDocs(mainId, doc, prices.map((x) => ({ rateId: x.rate.id, price: x.price })))
+        } catch (e) {
+          setDocDelete({ ask: { ...ask, prices: docPricesOf(doc) }, resolve })
+          setDocDeleteError(`Файл не удалён: не записалось, какие цены поставлены из него (${e.message}). Повторите.`)
+          return
+        }
+        if (rows === null) {
+          // Таблицы следов нет (миграцию откатили): снять цены можно только сейчас — человек выбирает заново.
+          setRemovedDocs(null)
+          setDocDelete({ ask: { ...ask, later: false }, resolve })
+          setDocDeleteError('Запомнить цены этого файла не удалось: на сервере не применено обновление базы. Снять их можно только сейчас.')
+          return
+        }
+        traced = true
+        setRemovedDocs((prev) => [...(prev || []).filter((t) => !rows.some((r) => r.rate_id === t.rate_id)), ...rows])
+      }
+      try {
+        await deleteSupplyDoc(doc)
+      } catch (e) {
+        if (traced) {
+          dropRemovedDocs(mainId, doc.id).catch(() => { /* файл на месте — его след не показывается */ })
+          setRemovedDocs((prev) => (prev || []).filter((t) => t.doc_id !== doc.id))
+        }
+        setDocDeleteError(`Файл не удалился: ${e.message}`)
+        return
+      }
+      forgetDoc(doc)
+      let note = `Файл «${doc.file_name}» удалён.`
+      if (withPrices && prices.length) {
+        const res = await clearDocPrices(prices.map((x) => ({ id: x.rate.id, price: x.price })),
+          (done) => setDocDeleteBusy({ text: `Снимаем цены: ${done} из ${prices.length}…` }))
+        note = `Файл «${doc.file_name}» удалён, ${clearedText(res)}.`
+        if (res.failed) setNotice(`${note}${traced ? ' Оставшиеся можно снять в окне «Счета и КП», в строке удалённого файла.' : ''}`)
+      } else if (prices.length) {
+        note += traced
+          ? ` Его цены остались у позиций: ${prices.length} — снять их можно в окне «Счета и КП», в строке удалённого файла.`
+          : ` Его цены остались у позиций: ${prices.length}.`
+      }
+      setDocDelete(null)
+      linkDone(note)
+      resolve({ note })
+    } finally {
+      setDocDeleteBusy(null)
+    }
+  }
+  // Удалённые файлы, чьи цены ещё стоят (строки «удалён …» окна «Счета и КП»): снять цены или оставить — они становятся обычными.
+  const clearRemovedDoc = async (entry) => {
+    const n = entry.rows.length
+    if (!window.confirm(`Снять цены, поставленные из удалённого файла «${entry.name}»: ${n}?\n\nСнимаются только цены, которые после удаления файла не меняли. `
+      + 'Снятие записывается в журнал — цену можно вернуть из истории.')) return null
+    const res = await clearDocPrices(entry.rows.map((x) => ({ id: x.rate.id, price: Number(x.trace.price) })))
+    // Остатки следа (цены, которые правили) больше не нужны; при сбое сети след остаётся — можно повторить.
+    if (!res.failed) {
+      setRemovedDocs((prev) => (prev ? prev.filter((t) => t.doc_id !== entry.docId) : prev))
+      dropRemovedDocs(mainId, entry.docId).catch(() => { /* строки без цен и с изменёнными ценами не показываются */ })
+    }
+    return `Удалённый файл «${entry.name}»: ${clearedText(res)}.`
+  }
+  const keepRemovedDoc = async (entry) => {
+    await dropRemovedDocs(mainId, entry.docId)
+    setRemovedDocs((prev) => (prev ? prev.filter((t) => t.doc_id !== entry.docId) : prev))
+    return `Цены удалённого файла «${entry.name}» оставлены как обычные цены.`
   }
   // Новое имя файла (окно просмотра) — везде, где файл показан. Привязка к ВОР и цены идут по id файла и не меняются.
   const fileRenamed = (doc) => {
@@ -1991,6 +2230,8 @@ export default function SupplyPricingPanel({
     const newOwn = rates.filter((r) => r.estimate_name === newName && r.source_kind !== 'auto')
     return {
       fileName: n.file_name, oldFile: o.file_name, oldSource: o.source, before: ok.size, after: nk.size,
+      // Как ВОР будет называться на странице после ответа (ключ прежний, файл — новый; vorTitle).
+      titleAfter: vorTitle({ source: 'vor_file', estimate_name: oldName, file_name: n.file_name }),
       keep: [...oldPriced].filter((k) => nk.has(k)).length,
       orphaned: [...oldPriced].filter((k) => !nk.has(k)).length,
       newOwn: newOwn.length,
@@ -2003,7 +2244,7 @@ export default function SupplyPricingPanel({
       const res = await adoptVersion(mainId, q.name, candidate.name)
       setAdoptAsk(null)
       await reloadData(mainId)
-      linkDone(`ВОР «${candidate.name}» — новая версия из файла «${q.fileName || q.name}». Цены одинаковых позиций на месте`
+      linkDone(`ВОР «${candidate.title || candidate.name}» — новая версия из файла «${q.fileName || q.name}». Цены одинаковых позиций на месте`
         + `${res.moved ? `, из нового ВОР перешло цен: ${res.moved}` : ''}. Изменения подсвечены.`)
     } catch (e) {
       setNotice(`Не получилось: ${e.message}`)
@@ -2119,7 +2360,7 @@ export default function SupplyPricingPanel({
     return (
       <details className="sp-vors" open={urgent || undefined}>
         <summary>
-          {docViews.length > 1 ? `ВОРы тендера: ${docViews.length}` : `ВОР «${docViews[0].name}»`}
+          {docViews.length > 1 ? `ВОРы тендера: ${docViews.length}` : `ВОР «${docViews[0].title}»`}
           {urgent && <IconAlert size={14} />}
         </summary>
         <ul>
@@ -2133,10 +2374,12 @@ export default function SupplyPricingPanel({
               : 'вкладка «ВОР» карточки тендера'
             const loaded = s.displayOnly ? 'в расценку не загружался — позиции показаны по вкладке'
               : `загружено ${fmtTime(s.parsed_at)}${s.parsed_by ? (nameOf(s.parsed_by) ? `, ${nameOf(s.parsed_by)}` : '') : ' автоматически'}`
+            // Имя привязки другое, чем у файла (новая версия ВОР или ручная привязка) — коротко, под каким именем ВОР в карточке.
+            const bound = normName(d.title) !== normName(d.name)
             return (
               <li key={d.name}>
-                <div className="sp-vor-line" title={`${sourceText} · ${loaded}`}>
-                  <span className="sp-vor-name">ВОР «{d.name}»</span>
+                <div className="sp-vor-line" title={`${sourceText} · ${loaded}${bound ? ` · во вкладке «ВОР» карточки и «Сравнении КП» — «${d.name}»` : ''}`}>
+                  <span className="sp-vor-name">ВОР «{d.title}»{bound && <span className="sp-muted"> · в карточке «{d.name}»</span>}</span>
                   <span className="sp-vor-count ui-num">расценено {d.priced} из {d.positions.length}</span>
                   <span className="sp-vor-sum ui-num">{formatAmount(d.total)} ₽</span>
                   <span className="sp-vor-actions">
@@ -2256,7 +2499,7 @@ export default function SupplyPricingPanel({
           <div key={`q-${q.name}`} className="sp-banner is-warn sp-version-q" role="alert">
             <IconAlert size={16} />
             <span>
-              Новый файл ВОР «{q.fileName || q.name}» — это новая версия ВОР «{candidate.name}»?
+              Новый файл ВОР «{q.fileName || q.name}» — это новая версия ВОР «{candidate.title}»?
               {' '}Совпадает материалов: <span className="ui-num">{candidate.common}</span> из <span className="ui-num">{candidate.oldCount}</span>
               {candidate.stale ? (candidate.source === 'vor_tab' ? ' · прежние позиции — из вкладки «ВОР»' : ' · файл прежнего ВОР удалён') : ''}.
               {' '}Цены прежнего ВОР новый файл сам не получит, пока вы не ответите.
@@ -2264,7 +2507,7 @@ export default function SupplyPricingPanel({
             {q.candidates.length > 1 && (
               <select className="sp-version-pick" value={candidate.name} aria-label={`Прежний ВОР для файла «${q.fileName || q.name}»`}
                 onChange={(e) => setQuestionPick((prev) => ({ ...prev, [q.name]: e.target.value }))}>
-                {q.candidates.map((c) => <option key={c.name} value={c.name}>ВОР «{c.name}» — совпадает {c.common} из {c.oldCount}</option>)}
+                {q.candidates.map((c) => <option key={c.name} value={c.name}>ВОР «{c.title}» — совпадает {c.common} из {c.oldCount}</option>)}
               </select>
             )}
             {editable ? (
@@ -2281,7 +2524,7 @@ export default function SupplyPricingPanel({
       {(revisions || []).length > 0 && (
         <div className="sp-banner is-info sp-rev-banner" role="status">
           <IconRefresh size={16} />
-          <span>Сметный отдел обновил ВОР: {[...revByDoc.keys()].map((n) => `«${n}»`).join(', ')}. Изменения подсвечены в таблице, цена осталась только у позиций с тем же наименованием.</span>
+          <span>Сметный отдел обновил ВОР: {[...revByDoc.keys()].map((n) => `«${titleOf(n)}»`).join(', ')}. Изменения подсвечены в таблице, цена осталась только у позиций с тем же наименованием.</span>
           {counts.changed > 0 && filter !== 'changed' && (
             <button type="button" className="sp-link-btn" onClick={() => setFilter('changed')}>только изменения ({counts.changed})</button>
           )}
@@ -2348,7 +2591,14 @@ export default function SupplyPricingPanel({
                   <IconUpload size={16} /> Счета и КП{tenderDocCount > 0 ? ` (${tenderDocCount})` : ''}{autoPickReady > 0 ? ` · новых цен: ${autoPickReady}` : ''}
                 </button>
               )}
-              <button type="button" className="btn-secondary" onClick={exportExcel}><IconFileSpreadsheet size={16} /> Скачать Excel</button>
+              <button type="button" className="btn-secondary" onClick={() => exportExcel()}
+                title="Все позиции по ВОРам, лист на ВОР; цена собранной позиции проставлена во все её ВОР">
+                <IconFileSpreadsheet size={16} /> Скачать Excel
+              </button>
+              <button type="button" className="ui-btn is-icon-only sp-export-unpriced" onClick={() => exportExcel({ onlyUnpriced: true })}
+                aria-label="Нерасценённые позиции в Excel" title="Excel только с позициями без цены, по ВОРам">
+                <IconFileSpreadsheet size={16} />
+              </button>
               {showAuthor && revisions !== null && (
                 <button type="button" className="btn-secondary" onClick={() => setVersionsOpen(true)} title="Что менялось в ВОР и цены каждой прежней версии">
                   <IconHistory size={16} /> Версии ВОР
@@ -2461,7 +2711,7 @@ export default function SupplyPricingPanel({
             {orphans.map((r) => (
               <li key={r.id}>
                 <span>
-                  {r.material_name} <span className="sp-muted">· ВОР «{r.estimate_name}»</span>
+                  {r.material_name} <span className="sp-muted">· ВОР «{titleOf(r.estimate_name)}»</span>
                   {removedByKey.has(posKey(r.estimate_name, r.material_key)) && (
                     <span className="sp-hint is-warn">убрана из ВОР при обновлении {fmtTime(removedByKey.get(posKey(r.estimate_name, r.material_key)).at)}</span>
                   )}
@@ -2518,13 +2768,16 @@ export default function SupplyPricingPanel({
           <SupplyTenderDocsDialog docs={shownOfferDocs} dupes={offerView.dupes} others={otherDocs} byGroup={pickByGroup} groups={tenderGroups} rates={rates} filesOn={filesOn} currentOf={currentOf}
             initialFiles={tenderDocs.files} attachTo={tenderDocs.attachTo || null} onAddFile={addTenderFile} onAttachDoc={attachDoc} onDeleteDoc={deleteFile} onOpenFile={setPreview}
             onApply={applyAutoPick} onPickLine={pickLine} onRejectLine={rejectLine} onPack={setLinePack} onSetRate={setOfferRate} onSetVat={setOfferVat}
-            onHide={hideInWindow} onUnhide={unhideInWindow}
+            onHide={hideInWindow} onUnhide={unhideInWindow} removed={removedView} onClearRemoved={clearRemovedDoc} onKeepRemoved={keepRemovedDoc}
             onClose={() => setTenderDocs(null)} />
         </Suspense>
       )}
       {linkDialog && (
         <SupplyLinkDialog mainId={mainId} targets={linkDialog.targets} rowCount={linkDialog.rowCount} title={linkDialog.title} busy={linkBusy} error={linkError} filesOn={filesOn}
           onSave={saveLink} onRemove={removeLink} onDeleteFile={deleteFile} onClose={() => { if (!linkBusy) setLinkDialog(null) }} />
+      )}
+      {docDelete && (
+        <SupplyDocDeleteDialog ask={docDelete.ask} busy={docDeleteBusy} error={docDeleteError} onConfirm={confirmDocDelete} onClose={closeDocDelete} />
       )}
       {originOf && (
         <Suspense fallback={null}>
@@ -3080,7 +3333,7 @@ function CarryPicker({ rate, suggestion, docView, ownRateAt, onCarry }) {
       {!open ? (
         <button type="button" className="sp-link-btn" onClick={() => setOpen(true)}>{suggestion ? 'на другую позицию…' : 'перенести на позицию ВОР…'}</button>
       ) : options.length === 0 ? (
-        <span> — в ВОР «{docView.name}» нет позиций без своей цены</span>
+        <span> — в ВОР «{docView.title || docView.name}» нет позиций без своей цены</span>
       ) : (
         <span className="sp-carry-pick">
           <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label={`Позиция ВОР для цены «${rate.material_name}»`}>
@@ -3116,15 +3369,20 @@ function AdoptDialog({ ask, preview, busy, onConfirm, onClose }) {
   return (
     <div className="sp-modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="sp-modal sp-modal-wide" role="dialog" aria-modal="true" aria-labelledby="sp-adopt-title">
-        <h3 id="sp-adopt-title">Новая версия ВОР «{candidate.name}»</h3>
+        <h3 id="sp-adopt-title">Новая версия ВОР «{candidate.title || candidate.name}»</h3>
         <div className="sp-modal-body">
           {preview ? (
             <>
               <p>
-                ВОР «{candidate.name}» получит позиции файла «{preview.fileName || q.name}»
+                ВОР «{candidate.title || candidate.name}» получит позиции файла «{preview.fileName || q.name}»
                 {preview.oldSource === 'vor_tab' ? ' вместо позиций вкладки «ВОР»' : preview.oldFile ? ` вместо «${preview.oldFile}»` : ''}:
                 позиций было <b className="ui-num">{preview.before}</b>, станет <b className="ui-num">{preview.after}</b>.
-                Имя ВОР не меняется — «Сравнение КП» и реестр СУ-10 видят цены как раньше.
+                {preview.titleAfter !== candidate.name ? (
+                  <>
+                    На странице ВОР будет называться «{preview.titleAfter}»; во вкладке «ВОР» карточки, «Сравнении КП» и реестре
+                    СУ-10 — прежнее имя «{candidate.name}», цены там видны как раньше.
+                  </>
+                ) : <>Имя ВОР не меняется — «Сравнение КП» и реестр СУ-10 видят цены как раньше.</>}
               </p>
               <ul className="sp-adopt-list">
                 <li>Цена останется сама у позиций с тем же наименованием: <b className="ui-num">{preview.keep}</b>.</li>
@@ -3134,7 +3392,7 @@ function AdoptDialog({ ask, preview, busy, onConfirm, onClose }) {
                     перенести их на похожие позиции предложим в таблице.</li>
                 )}
                 {preview.newOwn > 0 && (
-                  <li>Цены, уже введённые в новом ВОР: <b className="ui-num">{preview.newOwn}</b> — перейдут в «{candidate.name}»
+                  <li>Цены, уже введённые в новом ВОР: <b className="ui-num">{preview.newOwn}</b> — перейдут в прежний ВОР
                     {preview.replaces > 0 ? <>, у <b className="ui-num">{preview.replaces}</b> из них заменят прежние</> : ''}.</li>
                 )}
                 <li>Что изменилось, подсветим в таблице; прежние позиции и цены сохранятся в истории версий ВОР.</li>

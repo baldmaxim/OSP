@@ -244,7 +244,7 @@ const pricesOf = (o) => [o.price, ...(o.alts || [])]
 // совпала с его строкой — как есть или с другим НДС. Совпала с ценой другого файла — всё равно ручная: человек мог ввести ту же
 // цену (тендер № 860, 13.11: ручные правки совпадали с ценами «ВОР для заполнения» и снова отметились бы сами). Та же цена,
 // оставленная у другого документа (dedupeOffers), — тоже этот файл.
-function offerOfPrice(t, all) {
+export function offerOfPrice(t, all) {
   if (t.docId == null) return null
   const isFile = (o) => o.doc.id === t.docId || (o.twins || []).some((d) => d.id === t.docId)
   return all.find((o) => isFile(o) && pricesOf(o).some((p) => near(p, t.price))) || null

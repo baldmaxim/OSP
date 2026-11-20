@@ -1,7 +1,8 @@
 // «Перезапуск» тендера и тендер, который его заменил (решение пользователя 18.11.2026; миграция 20270217, обе базы).
 // Ссылка — у прежнего тендера: tenders.restarted_by_tender_id. Один новый тендер может заменить несколько прежних
 // (у № 733 — № 73 и № 81), у прежнего — один заменивший. Ссылка необязательна и действует, пока прежний — в «Перезапуске»:
-// сменили статус — страница её снимает, а до того она просто не показывается.
+// сменили статус — страница её снимает, а до того она просто не показывается. Указывают её у номера НОВОГО тендера
+// («+ перезапуск», 19.11.2026) или в форме «Добавить новый тендер»; у прежнего — только показ «заменён № N».
 import { RESTART_STATUS } from './tenderStatuses.js'
 
 export const RESTART_LINK_FIELD = 'restarted_by_tender_id'
@@ -61,19 +62,37 @@ function matchesQuery(t, query) {
   return q.split(/\s+/).every((w) => hay.includes(w))
 }
 
-// Кого предложить в окне «Перезапуск»: основные тендеры списка, кроме самого тендера и удалённых. Сверху — те, что называют
-// его номер («перезапуск № 40»), затем того же объекта, затем остальные; внутри — новые (больший номер) выше.
-export function restartCandidates(tender, tenders, query = '') {
-  if (!tender) return []
-  const rank = (t) => (mentionsRestartOf(t, tender.public_tender_number) ? 0 : sameObject(tender, t) ? 1 : 2)
+// Прежние тендеры, которые новый тендер уже перезапустил (ссылка действует; удалённые не в счёт), — по номеру.
+export function restartedSources(tender, tenders) {
+  if (!tender?.id) return []
   return (tenders || [])
-    .filter((t) => t?.id && t.id !== tender.id && !t.deleted_at && (t.tender_type || 'main') === 'main')
-    // Тот, кого этот тендер сам заменил, его заменой быть не может (иначе — круг: 40 → 984 → 40).
-    .filter((t) => restartTargetId(t) !== tender.id)
+    .filter((t) => t?.id && !t.deleted_at && restartTargetId(t) === tender.id)
+    .sort(byNumber)
+}
+
+// Окно «Перезапуск» у номера нового тендера (решение пользователя 19.11.2026: «указывать в № тот тендер, который
+// перезапускается, а не наоборот»): какие прежние он перезапускает. Основные тендеры списка, кроме самого, удалённых, уже
+// заменённых другим (у прежнего — один заменивший) и того, кем заменён он сам (иначе — круг: 40 → 984 → 40); уже отмеченные этим —
+// в списке. Сверху — отмеченные, затем те, чей номер новый называет в описании или примечании («перезапуск № 40»), затем того же
+// объекта, затем остальные; внутри — новые (больший номер) выше.
+export function restartSourceOptions(tender, tenders, query = '') {
+  if (!tender?.id) return []
+  const replacedBy = restartTargetId(tender)
+  const rank = (t) => (restartTargetId(t) === tender.id ? 0
+    : mentionsRestartOf(tender, t.public_tender_number) ? 1
+      : sameObject(tender, t) ? 2 : 3)
+  return (tenders || [])
+    .filter((t) => t?.id && t.id !== tender.id && t.id !== replacedBy && !t.deleted_at && (t.tender_type || 'main') === 'main')
+    .filter((t) => !restartTargetId(t) || restartTargetId(t) === tender.id)
     .filter((t) => matchesQuery(t, query))
     .map((t) => ({ tender: t, rank: rank(t) }))
     .sort((a, b) => a.rank - b.rank
       || (b.tender.public_tender_number ?? -Infinity) - (a.tender.public_tender_number ?? -Infinity))
+}
+
+// Можно ли у номера тендера указать, какие прежние он перезапускает: основной, не удалённый, колонка ссылки есть (20270217).
+export function canPickRestartSources(tender) {
+  return !!tender && hasRestartLink(tender) && !tender.deleted_at && (tender.tender_type || 'main') === 'main'
 }
 
 // Обратный выбор — в форме «Добавить новый тендер» (решение пользователя 19.11.2026: «при добавлении тендера указать перезапуск и

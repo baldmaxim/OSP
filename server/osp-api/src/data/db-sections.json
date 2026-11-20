@@ -1110,7 +1110,8 @@
             "email_link",
             "status",
             "sort_order",
-            "created_by_name"
+            "created_by_name",
+            "tender_id"
           ]
         }
       ],
@@ -1125,7 +1126,7 @@
         }
       ],
       "delete": "none",
-      "why": "DocCheckRequestsPage (canEditSection; createOnly — «Новые заявки», работу отдела снимает триггер doc_check_requests_write_guard), счётчики хаба. Удаление — мягкое (update), прямого delete нет."
+      "why": "DocCheckRequestsPage (canEditSection; createOnly — «Новые заявки», работу отдела снимает триггер doc_check_requests_write_guard), счётчики хаба. Удаление — мягкое (update), прямого delete нет. tender_id (20270221) — тендер «Заключения ДП»: подающий указывает при создании (кнопка «+ Заявка на заключение ДП», форма доски), меняет только отдел."
     },
     "document_check_requests": {
       "read": "sensitive",
@@ -2843,6 +2844,66 @@
         }
       ],
       "why": "Опрос чужих правок и история цены (SupplyRateHistory). Пишет триггер."
+    },
+    "tender_supply_removed_docs": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ],
+            [
+              "tenders_materials",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "update": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ],
+            [
+              "tenders_materials",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "След удалённого файла счёта / КП: какие цены поставлены из него (upsert = insert+update по цене; удаление — «оставить цены»). Права как у документа позиции."
     },
     "tender_supply_revisions": {
       "read": "sensitive",

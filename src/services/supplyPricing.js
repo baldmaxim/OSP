@@ -141,13 +141,14 @@ export async function loadPricingContext(id) {
 }
 
 // Всё для таблицы расценки по основному тендеру — одновременно: файлы ВОР, списки позиций, цены, последний
-// номер журнала, непросмотренные версии ВОР, комментарии к расценкам и (если карточка их не дала) строки вкладки «ВОР».
+// номер журнала, непросмотренные версии ВОР, комментарии к расценкам, следы удалённых файлов счетов и КП и (если карточка
+// их не дала) строки вкладки «ВОР».
 export async function loadPricingData(mainId, { withItems = false } = {}) {
-  const [files, sources, rates, logId, links, importState, revisions, items, comments] = await Promise.all([
+  const [files, sources, rates, logId, links, importState, revisions, items, comments, removedDocs] = await Promise.all([
     loadVorFiles(mainId), loadSources(mainId), loadRates(mainId), loadLogMarker(mainId), loadLinks(mainId), loadImportState(mainId),
-    loadRevisions(mainId), withItems ? loadEstimateItems(mainId) : null, loadComments(mainId),
+    loadRevisions(mainId), withItems ? loadEstimateItems(mainId) : null, loadComments(mainId), loadRemovedDocs(mainId),
   ])
-  return { files, sources, rates, logId, links, importState, revisions, items, comments }
+  return { files, sources, rates, logId, links, importState, revisions, items, comments, removedDocs }
 }
 
 // Открытие таблицы за два шага к серверу вместо цепочки: тендер, затем всё остальное разом. ctx уже есть
@@ -540,6 +541,51 @@ export async function loadOtherTenderRates(mainId) {
 // Удалить файл: пропадает у всех позиций, где он документ (ON DELETE CASCADE).
 export async function deleteSupplyDoc(doc) {
   await deleteDocument(doc)
+}
+
+// ── Следы удалённых файлов (миграция 20270223) ───────────────────────────────────────────────────────
+// Цена связана с файлом счёта / КП только через документ позиции, а он пропадает вместе с файлом. Перед удалением файла
+// страница записывает цены, поставленные из него (utils/supplyDocPrices.pricesOfDoc): строка на цену — id и имя файла, цена
+// за единицу на тот момент. Окно «Счета и КП» по ним предлагает снять цены удалённого файла. Цену очистили — строка уходит
+// сама (ON DELETE CASCADE по rate_id).
+export const REMOVED_DOC_COLUMNS = 'id, tender_id, rate_id, doc_id, doc_name, price, removed_by, removed_at'
+export const REMOVED_DOC_NAME_MAX = 500 // ограничение в базе
+const noRemovedDocs = (e) => ['missing', 'forbidden'].includes(classifyError(e)?.kind || e?.kind)
+
+// Следы тендера. Таблицы ещё нет (миграция не применена, шлюз её не знает) или на неё нет прав (откат) — null: цены файла
+// можно снять только в момент его удаления.
+export async function loadRemovedDocs(mainId) {
+  try {
+    return await fetchAllRows((from, to) => db.from('tender_supply_removed_docs').select(REMOVED_DOC_COLUMNS)
+      .eq('tender_id', mainId).order('id', { ascending: true }).range(from, to))
+  } catch (e) {
+    if (noRemovedDocs(e)) return null
+    fail(e)
+  }
+}
+
+// Записать след файла doc — до его удаления. prices — [{ rateId, price }]: цены, поставленные из него (у цены один след —
+// прежний заменяется). Ответ — записанные строки; null — таблицы нет (см. loadRemovedDocs).
+export async function saveRemovedDocs(mainId, doc, prices) {
+  const name = String(doc.file_name || '').trim().slice(0, REMOVED_DOC_NAME_MAX) || 'Файл без имени'
+  const out = []
+  for (const chunk of chunkList(prices, 200)) {
+    const { data, error } = await db.from('tender_supply_removed_docs')
+      .upsert(chunk.map((p) => ({ tender_id: mainId, rate_id: p.rateId, doc_id: doc.id, doc_name: name, price: p.price })), { onConflict: 'rate_id' })
+      .select(REMOVED_DOC_COLUMNS)
+    if (error) {
+      if (noRemovedDocs(error)) return null
+      fail(error)
+    }
+    out.push(...(data || []))
+  }
+  return out
+}
+
+// Убрать следы файла docId: «оставить цены» — они становятся обычными ценами; и если файл не удалился.
+export async function dropRemovedDocs(mainId, docId) {
+  const { error } = await db.from('tender_supply_removed_docs').delete().eq('tender_id', mainId).eq('doc_id', docId)
+  if (error) fail(error)
 }
 
 export async function removeLinks(ids) {

@@ -8,23 +8,60 @@
 //  • у позиции другая ед. изм. — цена за прежнюю единицу верна или нет (unitMismatch).
 // Что изменилось с последнего просмотра — composeChanges (по непросмотренным версиям из базы).
 import { nameParts, scoreParts, normUnit, unitsCompatible, MATCH_MIN, MATCH_WORDS_MIN } from './supplySimilarity.js'
+import { normName } from './supplyRateHelpers.js'
 
 const keysOf = (s) => new Set((s.positions || []).map((p) => p.k).filter(Boolean))
+const fileBase = (fileName) => String(fileName || '').replace(/\.[^.]+$/, '').trim()
+
+// Имя ВОР для человека. estimate_name — ключ цен и связь с вкладкой «ВОР» карточки (по нему «Сравнение КП» сопоставляет цены);
+// после «новой версии» (supply_vor_adopt) он остаётся прежним — «… ЭОМ-6 V1», а скачивается уже «… ЭОМ-6 v2.xlsx» (тендер № 704,
+// 18.11.2026: «скачивается v2, написано v1»). Имя файла показываем, когда прежнее имя устарело: в нём есть отметка редакции или
+// дата («V1», «от 03.11.2026») либо файл — то же имя с новой отметкой («ВОР ОВ» → «ВОР ОВ изм.1»). Имя, которое тендерный отдел
+// привязал к ВОР карточки («ОВ» у файла «ВОР_ОВ.xlsx», «Секция 1.3»), и то же имя в другом написании — без изменений.
+export function vorTitle(source) {
+  if (!source) return ''
+  const key = source.estimate_name
+  const file = source.source === 'vor_file' ? fileBase(source.file_name) : ''
+  if (!file || file === key) return key
+  const keyMarked = versionlessName(key) !== normName(key)
+  const newEdition = versionlessName(file) === versionlessName(key) && normName(file) !== normName(key)
+  return keyMarked || newEdition ? file : key
+}
+
+// Имя без отметок редакции: «ВОР ОВ изм.1», «ВОР ОВ v2», «ВОР ОВ от 03.11.2026 версия 2», «ВОР ОВ (1)», «ВОР_ОВ» — одно «ВОР ОВ»
+// (в виде ключа normName: без регистра, пробелов и знаков). Номер раздела («ЭОМ-3», «14.6») — не отметка: остаётся.
+const VERSION_MARKS = [
+  /(^|[\s([,;.-])(?:v|ver|версия|вер|ред|редакция|изм|изменение|rev)\s*\.?\s*№?\s*\d+(?:\.\d+)?(?=$|[\s)\],;.-])/gu,
+  /(^|\s)от\s+\d{1,2}[./-]\d{1,2}[./-]\d{2,4}(?=$|[\s),;])/gu,
+  /(^|[\s(])\d{1,2}\.\d{1,2}\.\d{4}(?=$|[\s),;])/gu,
+  /(^|[\s(])\d{4}-\d{2}-\d{2}(?=$|[\s),;])/gu,
+  /(\s*)\(\d{1,2}\)\s*$/u,
+]
+export function versionlessName(name) {
+  let s = String(name ?? '').normalize('NFC').toLowerCase().replace(/_+/g, ' ')
+  for (const re of VERSION_MARKS) s = s.replace(re, '$1 ')
+  return normName(s)
+}
+const namesOf = (s) => [s.estimate_name, fileBase(s.file_name)].map(versionlessName).filter(Boolean)
+const sameVorName = (n, o) => { const on = namesOf(o); return namesOf(n).some((x) => on.includes(x)) }
 
 // Файл ВОР, который мог прийти новой версией прежнего ВОР (а завёлся отдельным: имя файла другое). Спрашиваем про
 // список из живого файла, на который ещё не ответили «отдельный ВОР», если есть прежний ВОР постарше с ценами или
 // документами (valuable — имена таких ВОР), и:
-//  • прежний устарел — его файл удалён из «ВОРов и РД» (или позиции из вкладки «ВОР», а файлы уже есть), и хоть один
-//    материал совпадает;
-//  • или оба файла на месте, но материалы совпадают не меньше чем наполовину с обеих сторон (так похожи версии одного
-//    ВОР, а соседние ВОР — корпуса, системы — обычно нет; если всё же да — человек ответит «отдельный ВОР» один раз).
-// Ответ: [{ name, fileName, docId, candidates: [{ name, common, oldCount, newCount, stale, fileName, source }] }],
+//  • имена те же, кроме отметки редакции («ВОР ОВ» → «ВОР ОВ изм.1», «… V1» → «… v2») — и хоть один материал совпадает;
+//  • позиции прежнего — из вкладки «ВОР», а файлы уже есть (первые файлы вместо вкладки) — и хоть один материал совпадает;
+//  • иначе (имя другое) — материалы совпадают не меньше чем наполовину с обеих сторон, удалён файл прежнего или нет: так похожи
+//    версии одного ВОР, а соседние ВОР — корпуса, системы — обычно нет (если всё же да — человек ответит «отдельный ВОР» один раз).
+//    Прежде при удалённом файле хватало одного общего материала: в тендере № 704 (18.11.2026) после замены «ЭОМ-6 V1» на «ЭОМ-6 v2»
+//    страница спросила про ВСЕ ВОР ЭОМ, загруженные позже (кабель у них общий), — «Да» у «ЭОМ-3» слило бы его с «ЭОМ-6».
+// Имя совпало — других кандидатов у файла нет, и этот прежний ВОР про другие файлы не спрашивается: его новая версия нашлась.
+// Ответ: [{ name, fileName, docId, candidates: [{ name, title, common, oldCount, newCount, stale, named, fileName, source }] }],
 // кандидаты — сначала устаревшие, затем по числу совпавших материалов.
 export function versionQuestions(sources, files, valuable) {
   const fileIds = new Set(files.map((f) => f.id))
   const live = (s) => s.source === 'vor_file' && !!s.s3_document_id && fileIds.has(s.s3_document_id)
   const anyFile = sources.some(live)
-  const out = []
+  const found = []
   for (const n of sources) {
     if (!live(n) || n.separate_at) continue
     const nk = keysOf(n)
@@ -39,13 +76,22 @@ export function versionQuestions(sources, files, valuable) {
       let common = 0
       for (const k of nk) if (ok.has(k)) common += 1
       const stale = o.source === 'vor_file' ? !live(o) : anyFile
-      if (stale ? common > 0 : common * 2 >= ok.size && common * 2 >= nk.size) {
-        candidates.push({ name: o.estimate_name, common, oldCount: ok.size, newCount: nk.size, stale, fileName: o.file_name || null, source: o.source })
+      const named = sameVorName(n, o)
+      const loose = named || (stale && o.source === 'vor_tab')
+      if (loose ? common > 0 : common * 2 >= ok.size && common * 2 >= nk.size) {
+        candidates.push({ name: o.estimate_name, title: vorTitle(o), common, oldCount: ok.size, newCount: nk.size, stale, named, fileName: o.file_name || null, source: o.source })
       }
     }
-    if (!candidates.length) continue
-    candidates.sort((a, b) => Number(b.stale) - Number(a.stale) || b.common - a.common || a.name.localeCompare(b.name, 'ru'))
-    out.push({ name: n.estimate_name, fileName: n.file_name || null, docId: n.s3_document_id, candidates })
+    if (candidates.length) found.push({ n, candidates })
+  }
+  const claimed = new Set(found.flatMap((q) => q.candidates.filter((c) => c.named).map((c) => c.name)))
+  const out = []
+  for (const { n, candidates } of found) {
+    const named = candidates.filter((c) => c.named)
+    const list = named.length ? named : candidates.filter((c) => !claimed.has(c.name))
+    if (!list.length) continue
+    list.sort((a, b) => Number(b.stale) - Number(a.stale) || b.common - a.common || a.name.localeCompare(b.name, 'ru'))
+    out.push({ name: n.estimate_name, fileName: n.file_name || null, docId: n.s3_document_id, candidates: list })
   }
   return out
 }

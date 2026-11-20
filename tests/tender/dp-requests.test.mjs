@@ -185,6 +185,7 @@ describe('Заключение ДП: страницы', { skip: !launch && 'Не
       assert.equal(row.status, 'new')
       assert.equal(row.object_id, 'obj-1')
       assert.equal(row.notes, 'Новый подрядчик по кровле')
+      assert.equal(row.tender_id, null, 'тендер необязателен')
       const files = await page.evaluate((id) => window.__fakeDb.s3_documents.filter((d) => d.owner_id === id)
         .map((d) => [d.owner_type, d.file_name, d.doc_category ?? null]).sort((a, b) => a[1].localeCompare(b[1])), row.id)
       assert.deepEqual(files, [
@@ -195,6 +196,87 @@ describe('Заключение ДП: страницы', { skip: !launch && 'Не
       assert.match(await note.innerText(), /Заявка на заключение ДП подана: «Заявки на проверку ДП\/ДС», колонка «Новые заявки»/)
       assert.equal(await note.getByRole('link', { name: 'Открыть заявку' }).getAttribute('href'), `/doc-check-requests?request=${row.id}`)
       assert.equal(await page.locator('.dpa-dialog').count(), 0, 'не получатель — окна нет')
+      assert.deepEqual(dialogs, [])
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  // 19.11.2026: «в Заявке на заключение ДП привязка к тендеру должна быть … не обязательна» (миграция 20270221).
+  const tenderField = (page) => form(page).locator('[data-testid="dc-tender"]')
+  const tenderReady = (page) => page.waitForFunction(() => {
+    const el = document.querySelector('[data-testid="dc-tender"] .fdrop')
+    return el && !el.classList.contains('is-disabled')
+  })
+
+  it('тендер в заявке реестра: тендеры своего объекта без тендеров на материалы, выбранный — в заявке', async () => {
+    const { page, errors, dialogs, close } = await open('/stand/dp-create', `${CREATOR}&dpRecipient=0`, { ready: '.cr-dp-add' })
+    try {
+      await page.locator('.cr-dp-add').click()
+      await form(page).waitFor()
+      assert.match(await tenderField(page).innerText(), /Тендер \(необязательно\)/)
+      await tenderReady(page)
+      await tenderField(page).locator('.fdrop-trigger').click()
+      const options = await page.locator('.fdrop-panel .fdrop-option').allInnerTexts()
+      const expected = await page.evaluate(() => window.__fakeDb.tenders
+        .filter((t) => t.object_id === 'obj-1' && !t.parent_tender_id && !t.deleted_at).map((t) => t.public_tender_number))
+      assert.ok(expected.length > 1)
+      assert.deepEqual(options.map((t) => Number(/№ (\d+)/.exec(t)?.[1])).sort(), expected.sort(), 'только тендеры объекта obj-1, основные')
+      await page.locator('.fdrop-panel .fdrop-option', { hasText: '№ 200 ·' }).click()
+      assert.match(await tenderField(page).locator('.fdrop-value').innerText(), /№ 200/)
+
+      await page.locator('[data-testid="dc-concept-files"] input[type=file]').setInputFiles(PDF('Понятийка.pdf'))
+      await form(page).getByRole('button', { name: 'Создать заявку' }).click()
+      await form(page).waitFor({ state: 'detached' })
+      const [row] = await fresh(page)
+      assert.equal(row.doc_type, DP_CONCLUSION)
+      assert.equal(row.tender_id, 'tender-1')
+      assert.deepEqual(dialogs, [])
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('до миграции 20270221 (колонки тендера нет): поля нет, заявка подаётся без него', async () => {
+    const { page, errors, dialogs, close } = await open('/stand/dp-create', `${CREATOR}&dpRecipient=0&dcNoTender=1`, { ready: '.cr-dp-add' })
+    try {
+      await page.locator('.cr-dp-add').click()
+      await form(page).waitFor()
+      await page.locator('[data-testid="dc-concept-files"] input[type=file]').setInputFiles(PDF('Понятийка.pdf'))
+      assert.equal(await tenderField(page).count(), 0)
+      await form(page).getByRole('button', { name: 'Создать заявку' }).click()
+      await form(page).waitFor({ state: 'detached' })
+      const [row] = await fresh(page)
+      assert.equal(row.doc_type, DP_CONCLUSION)
+      assert.equal('tender_id' in row, false, 'неизвестную колонку не шлём')
+      assert.deepEqual(dialogs, [])
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('доска: тендер «Заключения ДП» в окне — ссылкой на карточку тендера; отдел меняет и снимает его в правке', async () => {
+    const { page, errors, dialogs, close } = await open('/doc-check-requests', '&dcDpcTender=1', { ready: '.dc-board' })
+    try {
+      await page.locator('.dc-card[data-id="dcr-dpc-2"]').click()
+      const modal = page.locator('.dc-detail-modal')
+      const tender = modal.locator('.dc-row-kv', { has: page.locator('dt', { hasText: /^Тендер$/ }) })
+      await tender.waitFor()
+      const link = tender.getByRole('link')
+      await link.filter({ hasText: /№ 199/ }).waitFor()
+      assert.equal(await link.getAttribute('href'), '/tenders/tender-2')
+      // У обычной заявки строки тендера нет.
+      await modal.getByRole('button', { name: 'Изменить' }).click()
+      await form(page).waitFor()
+      await tenderReady(page)
+      assert.match(await tenderField(page).locator('.fdrop-value').innerText(), /№ 199/)
+      await tenderField(page).locator('.fdrop-trigger').click()
+      await page.locator('.fdrop-panel .fdrop-option', { hasText: '— Без тендера —' }).click()
+      await form(page).getByRole('button', { name: 'Сохранить' }).click()
+      await form(page).waitFor({ state: 'detached' })
+      const saved = await page.evaluate(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-dpc-2').tender_id)
+      assert.equal(saved, null)
+
+      await page.locator('.dc-card[data-id="dcr-1"]').click()
+      await page.locator('.dc-detail-modal').waitFor()
+      assert.equal(await page.locator('.dc-detail-modal dt', { hasText: /^Тендер$/ }).count(), 0, 'у ДС тендера нет')
       assert.deepEqual(dialogs, [])
       assert.deepEqual(errors, [])
     } finally { await close() }

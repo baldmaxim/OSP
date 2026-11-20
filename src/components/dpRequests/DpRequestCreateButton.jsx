@@ -5,7 +5,9 @@ import { useRole } from '../../contexts/RoleContext'
 import DocCheckFormModal from '../doccheck/DocCheckFormModal'
 import { IconClose } from '../icons/ToolbarIcons'
 import { fetchPickerCounterparties } from '../../services/counterpartyPicker'
-import { createDocCheckRequest, failedFilesText, loadPickerObjects, topSortOrder } from '../../services/docCheckRequests'
+import {
+  createDocCheckRequest, failedFilesText, hasTenderColumn, loadPickerObjects, loadPickerTenders, topSortOrder,
+} from '../../services/docCheckRequests'
 import { counterpartyNumbers } from '../../utils/counterpartyFilters'
 import { counterpartyPickerOptions, isPickableCounterparty } from '../../utils/counterpartyPicker'
 import { DP_CONCLUSION } from '../../utils/docCheckHelpers'
@@ -21,6 +23,8 @@ import './DpRequestCreateButton.css'
 // Кнопка — у права создания заявок доски (doc_check_requests_create: руководитель строительства и экономист объекта; администратор
 // всегда) — у тех же ролей, что раньше было право «Заявка на заключение ДП: создание». Запреты — в базе (20270102, 20270219).
 // После подачи — плашка со ссылкой на заявку на доске; окно о новой заявке у получателей заводит база.
+// Тендер (необязательно, 19.11.2026) — когда у заявок есть колонка (миграция 20270221): проверка колонки и список тендеров — при
+// открытии окна.
 const NOTE_MS = 15000
 
 export default function DpRequestCreateButton() {
@@ -34,6 +38,9 @@ export default function DpRequestCreateButton() {
   const [counterparties, setCounterparties] = useState([])
   const [loadError, setLoadError] = useState('')
   const [created, setCreated] = useState(null) // { id }
+  const [hasTender, setHasTender] = useState(false)
+  const [tenders, setTenders] = useState(null)
+  const [tendersFailed, setTendersFailed] = useState(false)
 
   // Справочники — при открытии окна, а не с реестром договоров: кнопку нажимают редко.
   useEffect(() => {
@@ -49,6 +56,18 @@ export default function DpRequestCreateButton() {
     })
     fetchPickerCounterparties().then((rows) => { if (alive) setCounterparties(rows || []) })
       .catch((err) => { if (alive) setLoadError(`Контрагенты не загрузились: ${err?.message || err}`) })
+    setHasTender(false)
+    setTenders(null)
+    setTendersFailed(false)
+    hasTenderColumn().then((ok) => {
+      if (!alive || !ok) return
+      setHasTender(true)
+      loadPickerTenders().then((rows) => { if (alive) setTenders(rows) }).catch((err) => {
+        if (!alive) return
+        console.warn('Тендеры не загрузились:', err?.message || err)
+        setTendersFailed(true)
+      })
+    })
     return () => { alive = false }
   }, [open, scopeKey])
 
@@ -114,6 +133,9 @@ export default function DpRequestCreateButton() {
               ownObjects={scopeKey ? objects : undefined}
               ownObjectsFailed={objectsFailed}
               fixedType={DP_CONCLUSION}
+              hasTenderField={hasTender}
+              tenders={tenders}
+              tendersFailed={tendersFailed}
               onSave={onSave}
               onClose={() => setOpen(false)}
             />
