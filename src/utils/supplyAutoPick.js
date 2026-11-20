@@ -67,9 +67,10 @@ const entry = (doc, date, line, c, info) => {
 
 // Документы тендера → по позициям. docs — [{ doc, offer }] (строки в notes файла; цены в валюте ждут курса и сюда не идут).
 // Ответ — Map ключ группы → цены документов [{ id, doc, date, line, group, exact, picked, article, score, pack, unitOk, price }].
-// Дата документа — из него самого, иначе день загрузки файла.
-export function offersByGroup(docs, groups) {
-  const index = matchIndex(groups)
+// Дата документа — из него самого, иначе день загрузки файла. index — готовый указатель групп (supplyDocMatch.sharedMatchIndex:
+// строки, уже сопоставленные таблицей, второй раз не ищутся).
+export function offersByGroup(docs, groups, given = null) {
+  const index = given || matchIndex(groups)
   const out = new Map()
   const put = (e) => {
     const list = out.get(e.group.key)
@@ -142,6 +143,51 @@ export function uniqueOfferDocs(docs, weightOf = () => 0) {
     for (const x of list) if (x !== best) { drop.add(x); dupes.push({ doc: x.doc, of: best.doc }) }
   }
   return { docs: drop.size ? (docs || []).filter((x) => !drop.has(x)) : (docs || []), dupes }
+}
+
+// Сопоставление строк документов с позициями — секунды на больших тендерах (№ 704, 20.11.2026: 2 тыс. строк, 2 тыс. позиций — 2,3 с на
+// быстром компьютере), поэтому страница расценки не пересчитывает его, пока документы по сути те же (SupplyPricingPanel).
+const sameList = (a, b) => a === b || (!!a && !!b && a.length === b.length && a.every((x, i) => x === b[i]))
+// Повторы документов (uniqueOfferDocs) те же: те же оставленные документы, те же пары «повтор — оставленный». Вес документа (сколько
+// позиций с ним) меняется при каждом «Взять» и «Применить», но решает только, какой из повторов оставить.
+export const sameOfferView = (a, b) => sameList(a.docs, b.docs) && a.dupes.length === b.dupes.length
+  && a.dupes.every((x, i) => x.doc === b.dupes[i].doc && x.of === b.dupes[i].of)
+// Документы, перечитанные из базы ([{ doc, offer, notes }], возврат на вкладку браузера): тот же файл с теми же строками (notes —
+// строкой, как в базе) — прежняя запись; ничего не изменилось — прежний список. Запись без notes (не из базы) заменяется.
+export function keepSameOffers(prev, next) {
+  if (!prev) return next
+  const byId = new Map(prev.map((x) => [x.doc.id, x]))
+  const out = next.map((x) => {
+    const was = byId.get(x.doc.id)
+    if (!was) return x
+    if (was.notes != null && was.notes === x.notes && JSON.stringify(was.doc) === JSON.stringify(x.doc)) return was
+    // Файл правили (выбор в окне у коллеги): неизменённые строки — прежние объекты.
+    const offer = keepSameLines(x.offer, was.offer)
+    return offer === x.offer ? x : { ...x, offer }
+  })
+  return sameList(prev, out) ? prev : out
+}
+
+// Строки документа после правки (выбор строки в окне, НДС документа, правка коллеги): строка, которая не изменилась, — прежний
+// объект. Позиции для строки запоминаются по объекту (supplyDocMatch.sharedMatchIndex) — иначе каждый выбор в окне заново искал бы
+// позиции для всех строк файла (у прайса — сотни). Одинаковые строки остаются разными объектами, как были.
+export function keepSameLines(next, prev) {
+  if (!next?.lines?.length || !prev?.lines?.length || next === prev) return next
+  const pool = new Map()
+  for (const l of prev.lines) {
+    const sign = JSON.stringify(l)
+    const list = pool.get(sign)
+    if (list) list.push(l)
+    else pool.set(sign, [l])
+  }
+  let kept = 0
+  const lines = next.lines.map((l) => {
+    const old = pool.get(JSON.stringify(l))?.shift()
+    if (!old) return l
+    kept += 1
+    return old
+  })
+  return kept ? { ...next, lines } : next
 }
 
 // Позиция, убранная из окна у документа (13.11.2026, просьба пользователя: «разом убрать позиции, которые я не захотел

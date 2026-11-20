@@ -123,6 +123,76 @@ if (params.get('larixMissing') === '1') {
   window.__fakeErrors = { ...(window.__fakeErrors || {}), larix_rates_registry: { code: '42P01', message: 'relation "larix_rates_registry" does not exist' } }
 }
 
+// Вкладка «Расценки от снабжения СУ-10» и «Загрузить из Excel» (миграция 20270224): «представление» supply_rates_registry —
+// цены снабжения из тендеров + загруженные строки (живое объединение, как в базе); supply_registry_import — запись порцией с
+// пропуском такой же расценки (ключ — как уникальный индекс базы). Объекты — для распознавания названий из файла.
+//   ?supplyImportMissing=1 — таблиц загрузки ещё нет (база раньше миграции): кнопки нет.
+const SUPPLY_OBJECTS = [
+  { id: 'sr-zil33', name: 'ЖК  ЗИЛ 33' }, { id: 'sr-zil31', name: 'ЖК ЗИЛ 31' }, { id: 'sr-zil18', name: 'ЖК ЗИЛ 18; 19; 27' },
+  { id: 'sr-prim1', name: 'ЖК PRIMAVERA (1-й ЭТАП)' }, { id: 'sr-prim13', name: 'ЖК Primavera к13' }, { id: 'sr-prim14', name: 'ЖК Primavera к14' },
+  { id: 'sr-dom56', name: 'ЖК Дом 56' }, { id: 'sr-renov', name: 'ЖК Реновация' },
+]
+fdb.objects.push(...SUPPLY_OBJECTS)
+const SUPPLY_TENDER = { id: 'sr-t1', work_description: 'Отделка МОП', object_id: 'sr-zil33', public_tender_number: 640, tender_type: 'main', deleted_at: null }
+fdb.tenders.push(SUPPLY_TENDER, { ...SUPPLY_TENDER, id: 'sr-t1m', public_tender_number: 641, tender_type: 'materials' })
+const siteRows = [
+  { id: 'sr-1', source_type: 'supply_su10', source_name: 'СУ-10', item_name: 'Плитка керамогранит 600х600', unit: 'м2', price: 1850, tender_id: SUPPLY_TENDER.id,
+    object_id: 'sr-zil33', tender_desc: SUPPLY_TENDER.work_description, object_name: 'ЖК  ЗИЛ 33', rate_date: '2026-10-04T21:00:00.000Z', import_id: null },
+  { id: 'sr-2', source_type: 'supply_su10', source_name: 'СУ-10', item_name: 'Клей плиточный', unit: 'кг', price: 32, tender_id: SUPPLY_TENDER.id,
+    object_id: 'sr-zil33', tender_desc: SUPPLY_TENDER.work_description, object_name: 'ЖК  ЗИЛ 33', rate_date: '2026-10-04T21:00:00.000Z', import_id: null },
+]
+fdb.supply_registry_imports = []
+fdb.supply_registry_rates = []
+const supplyNorm = (s) => String(s ?? '').toLowerCase().replace(/ё/g, 'е').replace(/[«»"'`()]/g, '').replace(/[\s.]+/g, ' ').trim()
+const supplyViewRow = (m) => {
+  const t = fdb.tenders.find((x) => x.id === m.tender_id)
+  return {
+    id: `import-${m.id}`, source_type: 'supply_import', source_name: m.source_name, item_name: m.item_name, unit: m.unit, price: m.price,
+    tender_id: m.tender_id, object_id: m.object_id, tender_desc: t?.work_description || m.tender_label,
+    object_name: fdb.objects.find((o) => o.id === m.object_id)?.name || m.object_label,
+    rate_date: new Date(`${m.rate_date}T00:00:00+03:00`).toISOString(), import_id: m.import_id,
+  }
+}
+const syncSupply = () => {
+  const imported = fdb.supply_registry_rates.filter((m) => fdb.supply_registry_imports.some((i) => i.id === m.import_id))
+  fdb.supply_registry_rates = imported
+  fdb.supply_rates_registry = [...siteRows, ...imported.map(supplyViewRow)]
+  const objs = new Map(fdb.supply_rates_registry.filter((r) => r.object_id).map((r) => [r.object_id, r.object_name]))
+  fdb.supply_rates_registry_filter_objects = [...objs].map(([object_id, object_name]) => ({ object_id, object_name }))
+  fdb.supply_rates_registry_filter_tenders = [{ tender_id: SUPPLY_TENDER.id, tender_desc: SUPPLY_TENDER.work_description, object_id: 'sr-zil33' }]
+  for (const t of ['supply_rates_registry', 'supply_rates_registry_filter_objects', 'supply_registry_rates']) window.__fakeTouch(t)
+}
+syncSupply()
+window.__fakeAfter = { ...window.__fakeAfter, supply_registry_imports: () => syncSupply() }
+window.__supplyImportCalls = []
+let supplySeq = 0
+window.__fakeRpc.supply_registry_import = ({ p_import, p_file_name, p_options, p_rows }) => {
+  window.__supplyImportCalls.push({ p_import, p_file_name, p_options, rows: p_rows.length })
+  let importId = p_import
+  if (!importId) {
+    importId = `sr-imp-${++supplySeq}`
+    fdb.supply_registry_imports.push({ id: importId, file_name: p_file_name, options: p_options, created_by_name: 'Инженер Стендов',
+      created_at: new Date().toISOString() })
+    window.__fakeTouch('supply_registry_imports')
+  }
+  const key = (r) => [supplyNorm(r.item_name), supplyNorm(r.unit), Number(r.price).toFixed(2), r.rate_date, r.object_id || supplyNorm(r.object_label),
+    supplyNorm(r.source_name)].join('|')
+  const have = new Set(fdb.supply_registry_rates.map(key))
+  let added = 0
+  for (const r of p_rows) {
+    if (have.has(key(r))) continue
+    have.add(key(r))
+    fdb.supply_registry_rates.push({ ...r, id: `sr-row-${++supplySeq}`, import_id: importId })
+    added++
+  }
+  syncSupply()
+  return { data: [{ import_id: importId, added, skipped: p_rows.length - added }], error: null }
+}
+if (params.get('supplyImportMissing') === '1') {
+  window.__fakeErrors = { ...(window.__fakeErrors || {}),
+    supply_registry_imports: { code: '42P01', message: 'relation "supply_registry_imports" does not exist' } }
+}
+
 if (params.get('kpRegistryLegacy') === '1') {
   window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}),
     kp_rates_registry: ['source_kind', 'estimate_name', 'source_doc_id', 'source_doc_name', 'source_url', 'manual_id', 'note'] }

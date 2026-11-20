@@ -33,8 +33,10 @@ import { VOR_PARSER_VERSION } from '../../utils/vorFiles'
 import {
   estimateVersion, fileVersion, planCleanup, planFileImports, planTabImports,
 } from '../../utils/supplyAutoImport'
-import { mergeSamePositions, offerMatches, offerPrice, positionGroups } from '../../utils/supplyDocMatch'
-import { autoPickRows, isSure, offersByGroup, otherUnitIndex, otherUnitPrices, suspectPrice, uniqueOfferDocs, windowOffers } from '../../utils/supplyAutoPick'
+import { mergeSamePositions, offerMatches, offerPrice, positionGroups, primeOfferLine, sharedMatchIndex } from '../../utils/supplyDocMatch'
+import {
+  autoPickRows, isSure, keepSameLines, keepSameOffers, offersByGroup, otherUnitIndex, otherUnitPrices, sameOfferView, suspectPrice, uniqueOfferDocs, windowOffers,
+} from '../../utils/supplyAutoPick'
 import { pricesOfDoc, removedDocPrices, tracePriceSame } from '../../utils/supplyDocPrices'
 import { lineForGroup, lineNotForGroup, offerInRoubles, offerNotes, offerVatMode, offerWithVat, readOffer, scanProgressText } from '../../utils/supplyOffers'
 import {
@@ -380,11 +382,23 @@ function borrowedView(position, rate) {
   }
 }
 
-// Расценка позиции по ключу «ВОР∣ключ наименования»: самая свежая (дубли из Excel — ниже).
+// Расценка позиции по ключу «ВОР∣ключ наименования»: самая свежая (дубли из Excel — ниже; при равной дате — первая в списке).
+// Указатель — один на массив цен (массив не меняется на месте: каждая правка — новый массив). Прежде каждый вызов перебирал все
+// цены, а счётчик «новых цен» окна «Счета и КП» зовёт его на каждую позицию после каждого сохранения цены: тендер № 704
+// (20.11.2026) — 2 тыс. позиций × 2 тыс. цен, ~0,1 с на быстром компьютере и ~0,5 с на медленном при каждом вводе.
+const RATE_INDEX = new WeakMap()
 function rateIn(list, key) {
-  const [estimateName, k] = key.split('∣')
-  const own = list.filter((r) => r.estimate_name === estimateName && r.material_key === k)
-  return own.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')))[0] || null
+  let ix = RATE_INDEX.get(list)
+  if (!ix) {
+    ix = new Map()
+    for (const r of list) {
+      const k = posKey(r.estimate_name, r.material_key)
+      const was = ix.get(k)
+      if (!was || String(r.updated_at || '').localeCompare(String(was.updated_at || '')) > 0) ix.set(k, r)
+    }
+    RATE_INDEX.set(list, ix)
+  }
+  return ix.get(key) || null
 }
 
 // В базе уже то, что хотели записать (например, первая попытка прошла, а ответ потерялся) — это не конфликт.
@@ -419,6 +433,31 @@ function useSyncedState(initial) {
   }, [])
   return [value, set, ref]
 }
+
+// Прежнее значение, пока новое равно ему по same: зависящие от него расчёты не повторяются. Сопоставление строк счетов и КП с
+// позициями — секунды на больших тендерах (№ 704, 20.11.2026: 2,3 с на быстром компьютере), и его запускала каждая смена
+// документов позиций — «Взять», «Применить», правка коллеги, пришедшая с опросом, — хотя повторы документов от неё не менялись.
+function useStable(next, same) {
+  const ref = useRef(next)
+  if (ref.current !== next && !same(ref.current, next)) ref.current = next
+  return ref.current
+}
+const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x))
+// Нет списков по вкладке «ВОР» — один и тот же пустой список: позиции не пересобираются, когда строки вкладки приходят фоном.
+const NO_SOURCES = []
+// Цен документов по позициям ещё нет: идёт первый поиск (matchReady).
+const NO_OFFERS = new Map()
+// Порция фонового поиска позиций для строк документов, мс: страница успевает ответить на ввод между порциями.
+const MATCH_SLICE_MS = 40
+// Отдать ход браузеру (ввод, отрисовка) без задержки таймера (setTimeout в цепочке — не меньше 4 мс).
+const yieldToPage = () => new Promise((resolve) => {
+  const ch = new MessageChannel()
+  ch.port1.onmessage = () => {
+    ch.port1.close()
+    resolve()
+  }
+  ch.port2.postMessage(null)
+})
 
 // ctx — готовый контекст или tenderId — загрузим сами (вместе с данными, за два шага к серверу). onContext —
 // странице для шапки. estimateItems — строки вкладки «ВОР», если они уже есть у карточки. onRatesChange —
@@ -838,7 +877,7 @@ export default function SupplyPricingPanel({
           notes = offerNotes(offerWithVat(fresh, offerVatMode(before)))
         }
         const offer = notes ? readOffer(notes) : null
-        if (offer?.lines.length) setOfferDocs((prev) => [{ doc, offer }, ...(prev || []).filter((x) => x.doc.id !== doc.id)])
+        if (offer?.lines.length) setOfferDocs((prev) => [{ doc, offer, notes }, ...(prev || []).filter((x) => x.doc.id !== doc.id)])
         setOtherDocs((prev) => [...prev.filter((x) => x.doc.id !== doc.id), ...(offer?.lines.length ? [] : [{ doc, failed: reason || 'broken' }])])
         if (notes) await saveSupplyDocNotes(doc.id, notes, { onlyIf: was })
       } catch {
@@ -856,7 +895,7 @@ export default function SupplyPricingPanel({
     offersAt.current = Date.now()
     try {
       const { offers, unread, others, refresh = [] } = await loadSupplyOffers(mainId)
-      setOfferDocs(offers)
+      setOfferDocs((prev) => keepSameOffers(prev, offers))
       for (const { doc } of offers) rememberDoc(doc)
       const reading = editableRef.current ? unread : []
       setOtherDocs([...others, ...reading.map((doc) => ({ doc, failed: null }))])
@@ -875,14 +914,15 @@ export default function SupplyPricingPanel({
   // Ключ позиции k в базе ставит триггер (supply_norm_name), здесь — его порт normName.
   const pricedDocs = useMemo(() => [...new Set(rates.map((r) => r.estimate_name))].sort().join('\n'), [rates])
   const tabFallback = useMemo(() => {
-    if (editable || !estimate || !pricedDocs) return []
+    if (editable || !estimate || !pricedDocs) return NO_SOURCES
     const priced = new Set(pricedDocs.split('\n'))
-    return planTabImports(sources, estimate.docs, estimate.signatures)
+    const list = planTabImports(sources, estimate.docs, estimate.signatures)
       .filter((j) => !j.existing && j.positions.length && priced.has(j.name))
       .map((j) => ({
         id: null, estimate_name: j.name, source: 'vor_tab', source_version: j.version, displayOnly: true,
         positions: j.positions.map((p) => ({ ...p, k: normName(p.name) })),
       }))
+    return list.length ? list : NO_SOURCES
   }, [editable, estimate, pricedDocs, sources])
 
   // Позиции — только от списков (не пересобираются при каждой цене: строки таблицы не перерисовываются зря).
@@ -900,7 +940,10 @@ export default function SupplyPricingPanel({
   const [splitKeys, setSplitKeys] = useState(() => new Set())
   useEffect(() => {
     if (!mainId) return
-    try { setSplitKeys(new Set(JSON.parse(localStorage.getItem(splitKeyOf(mainId)) || '[]'))) } catch { setSplitKeys(new Set()) }
+    // Тот же набор — прежний Set: позиции таблицы (mergeSamePositions) не пересобираются при открытии.
+    let next
+    try { next = new Set(JSON.parse(localStorage.getItem(splitKeyOf(mainId)) || '[]')) } catch { next = new Set() }
+    setSplitKeys((prev) => (sameSet(prev, next) ? prev : next))
   }, [mainId])
   const splitRow = (row) => setSplitKeys((prev) => {
     const next = new Set([...prev, row.group.key, ...(row.group.sameAs || []).map((s) => s.key)])
@@ -919,14 +962,56 @@ export default function SupplyPricingPanel({
     for (const l of links || []) if (l.s3_document_id) m.set(l.s3_document_id, (m.get(l.s3_document_id) || 0) + 1)
     return m
   }, [links])
-  const offerView = useMemo(() => uniqueOfferDocs(offerDocs || [], (doc) => docWeight.get(doc.id) || 0), [offerDocs, docWeight])
+  // Вес документа решает только, какой из повторов оставить: сменились документы позиций, а оставленные те же — прежний вид,
+  // и цены поставщиков не пересчитываются (useStable).
+  const offerView = useStable(useMemo(() => uniqueOfferDocs(offerDocs || [], (doc) => docWeight.get(doc.id) || 0), [offerDocs, docWeight]), sameOfferView)
   const shownOfferDocs = offerView.docs
   // Файл документа позиции — повтор: цены его — у оставленного документа.
   const dupOf = useMemo(() => new Map(offerView.dupes.map((x) => [x.doc.id, x.of.id])), [offerView])
+  // Первый поиск позиций для строк документов — порциями в фоне (MATCH_SLICE_MS), в память общего указателя (sharedMatchIndex): на
+  // тендере № 704 (20.11.2026) он одним куском останавливал страницу на 1–1,5 с на быстром компьютере и на 5–8 с на медленном сразу
+  // после появления таблицы. Пока он идёт, цен поставщиков у позиций нет (matchReady, на кнопке «Счета и КП» — подсказка); потом
+  // расчёт берёт найденное из памяти. Дальше — сразу, как прежде: добавленный документ — это только его строки, а сменившиеся
+  // позиции («разделить», новая версия ВОР) не должны прятать цены на время поиска. Открыто окно «Счета и КП» — тоже сразу: без
+  // цен окно показало бы все строки несопоставленными.
+  const [matchPrimed, setMatchPrimed] = useState(false)
+  // Позиций нет (ещё грузятся или у тендера их нет) — искать не в чем, расчёт мгновенный.
+  const matchReady = matchPrimed || !shownOfferDocs.length || !tenderGroups.length || !!tenderDocs
+  useEffect(() => {
+    // Позиции ещё грузятся (во вкладке карточки документы приходят раньше них) — ждём: поиск по пустым позициям «прошёл» бы
+    // мгновенно, и настоящий пошёл бы потом одним куском.
+    if (matchPrimed || loading || !tenderGroups.length || !shownOfferDocs.length) return undefined
+    // Окно открыто — расчёт уже сделан сразу.
+    if (tenderDocs) {
+      setMatchPrimed(true)
+      return undefined
+    }
+    let alive = true
+    const groups = tenderGroups
+    ;(async () => {
+      const ix = sharedMatchIndex(groups)
+      let at = performance.now()
+      for (const { offer } of shownOfferDocs) {
+        if (offer.currency) continue
+        for (const line of offer.lines) {
+          if (!alive) return
+          primeOfferLine(line, groups, ix)
+          // Скрытая вкладка (открыли в фоне) — без пауз: смотреть некому, а таймеры там редки.
+          if (performance.now() - at > MATCH_SLICE_MS && document.visibilityState === 'visible') {
+            await yieldToPage()
+            at = performance.now()
+          }
+        }
+      }
+      if (alive) setMatchPrimed(true)
+    })()
+    return () => { alive = false }
+  }, [matchPrimed, loading, shownOfferDocs, tenderGroups, tenderDocs])
   const offersByKey = useMemo(() => {
     const out = new Map()
-    if (!shownOfferDocs.length) return out
+    if (!shownOfferDocs.length || !matchReady) return out
     const lines = []
+    const docOf = new Map()
     // Та же строка с той же ценой в двух документах — одна цена поставщика (из более свежего: документы идут новыми вперёд).
     const seen = new Set()
     for (const { doc, offer } of shownOfferDocs) {
@@ -935,19 +1020,24 @@ export default function SupplyPricingPanel({
         const sign = `${normName(line.name)}|${canonUnit(line.unit)}|${line.price}`
         if (seen.has(sign)) continue
         seen.add(sign)
-        lines.push({ ...line, doc })
+        lines.push(line)
+        docOf.set(line, doc)
       }
     }
     const rank = (o) => (o.picked || o.exact ? 2 : o.score)
-    for (const list of offerMatches(lines, tenderGroups).values()) {
+    // Строки — те же объекты, что у окна «Счета и КП» (pickByGroup), и указатель общий: кандидаты строки ищутся один раз
+    // (sharedMatchIndex). Файл строки — к цене уже после сопоставления.
+    for (const found of offerMatches(lines, tenderGroups, sharedMatchIndex(tenderGroups)).values()) {
+      const list = found.map((o) => ({ ...o, line: { ...o.line, doc: docOf.get(o.line) } }))
       const sorted = list.sort((a, b) => rank(b) - rank(a) || offerPrice(a) - offerPrice(b))
       for (const t of sorted[0].group.targets) out.set(posKey(t.doc, t.position.k), sorted)
     }
     return out
-  }, [shownOfferDocs, tenderGroups])
+  }, [shownOfferDocs, tenderGroups, matchReady])
 
   // Автовыбор: цены всех документов тендера по позициям (utils/supplyAutoPick); сколько позиций можно заполнить — на кнопке окна.
-  const pickByGroup = useMemo(() => offersByGroup(shownOfferDocs, tenderGroups), [shownOfferDocs, tenderGroups])
+  const pickByGroup = useMemo(() => (matchReady ? offersByGroup(shownOfferDocs, tenderGroups, sharedMatchIndex(tenderGroups)) : NO_OFFERS),
+    [shownOfferDocs, tenderGroups, matchReady])
   // Удалённые файлы, чьи цены ещё стоят (utils/supplyDocPrices): цена та же, что при удалении, своя, и у позиции нет нового документа.
   // Файлы тендера ещё не загружены — не показываем: след файла, который не удалился, приняли бы за удалённый.
   const removedView = useMemo(() => {
@@ -1631,7 +1721,7 @@ export default function SupplyPricingPanel({
   const offerLoaded = useCallback((doc, notes) => {
     const offer = readOffer(notes)
     rememberDoc(doc)
-    if (offer?.lines.length) setOfferDocs((prev) => [{ doc, offer }, ...(prev || []).filter((x) => x.doc.id !== doc.id)])
+    if (offer?.lines.length) setOfferDocs((prev) => [{ doc, offer, notes }, ...(prev || []).filter((x) => x.doc.id !== doc.id)])
   }, [rememberDoc])
   // Файл у тендера: со строками — ценами, без них — со своей причиной в окне файлов.
   const registerDoc = (doc, offer) => {
@@ -1643,9 +1733,10 @@ export default function SupplyPricingPanel({
   offerDocsRef.current = offerDocs
   const rewriteOffer = async (doc, next) => {
     const notes = offerNotes(next)
-    const offer = readOffer(notes)
+    // Неизменённые строки — прежние объекты: позиции ищутся заново только для изменённой (sharedMatchIndex).
+    const offer = keepSameLines(readOffer(notes), offerOf(doc))
     // Ссылка — сразу: вторая правка того же файла в этом же такте (другая строка взамен этой) опирается на первую.
-    const list = (offerDocsRef.current || []).map((x) => (x.doc.id === doc.id ? { doc: x.doc, offer } : x))
+    const list = (offerDocsRef.current || []).map((x) => (x.doc.id === doc.id ? { doc: x.doc, offer, notes } : x))
     offerDocsRef.current = list
     setOfferDocs(list)
     if (filesOn && !localFiles.current.has(doc.id)) await saveSupplyDocNotes(doc.id, notes)
@@ -1956,11 +2047,12 @@ export default function SupplyPricingPanel({
     setOtherDocs((prev) => prev.filter((x) => x.doc.id !== doc.id))
   }
   // Цены из файла; null — файл не прочитан (строк нет), какие цены из него — неизвестно. Повтор документа — цен нет: те же строки
-  // остаются у оставленного файла, снимать нечего.
+  // остаются у оставленного файла, снимать нечего. Позиции для строк документов ещё ищутся в фоне (matchReady) — досчитываем сразу.
   const docPricesOf = (doc) => {
     if (dupOf.has(doc.id)) return []
     if (!linksByKey || !offerDocsRef.current?.find((x) => x.doc.id === doc.id)?.offer.lines.length) return null
-    return pricesOfDoc(doc.id, tenderGroups, pickByGroup, (t) => {
+    const byGroup = matchReady ? pickByGroup : offersByGroup(shownOfferDocs, tenderGroups, sharedMatchIndex(tenderGroups))
+    return pricesOfDoc(doc.id, tenderGroups, byGroup, (t) => {
       const key = posKey(t.doc, t.position.k)
       return { key, rate: rateIn(ratesRef.current, key), docId: linksByKey.get(key)?.s3_document_id || null }
     })
@@ -2588,7 +2680,7 @@ export default function SupplyPricingPanel({
               {editable && (
                 <button type="button" className={autoPickReady > 0 ? 'btn-primary' : 'btn-secondary'} onClick={() => setTenderDocs({ files: null })}
                   title="Счета и КП поставщиков (Excel, PDF): цены подберутся к позициям ВОР сами">
-                  <IconUpload size={16} /> Счета и КП{tenderDocCount > 0 ? ` (${tenderDocCount})` : ''}{autoPickReady > 0 ? ` · новых цен: ${autoPickReady}` : ''}
+                  <IconUpload size={16} /> Счета и КП{tenderDocCount > 0 ? ` (${tenderDocCount})` : ''}{!matchReady ? ' · подбираем цены…' : autoPickReady > 0 ? ` · новых цен: ${autoPickReady}` : ''}
                 </button>
               )}
               <button type="button" className="btn-secondary" onClick={() => exportExcel()}

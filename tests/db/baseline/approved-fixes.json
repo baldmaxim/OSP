@@ -5568,5 +5568,225 @@
     "to": "empty",
     "why": "новая таблица: следы удалённых файлов счетов и КП расценки снабжением — какие цены поставлены из файла (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
     "candidate": "20270223_supply_removed_docs.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "admin",
+    "table": "supply_registry_imports",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: загрузка расценок из Excel в реестр «Расценки от снабжения СУ-10» (файл, кто, когда; на копии пусто); читает читатель реестра, загружает и удаляет загрузку право правки «Реестра расценок»",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "employee_full",
+    "table": "supply_registry_imports",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: загрузка расценок из Excel в реестр «Расценки от снабжения СУ-10» (файл, кто, когда; на копии пусто); читает читатель реестра, загружает и удаляет загрузку право правки «Реестра расценок»",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "employee_none",
+    "table": "supply_registry_imports",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: загрузка расценок из Excel в реестр «Расценки от снабжения СУ-10» (файл, кто, когда; на копии пусто); читает читатель реестра, загружает и удаляет загрузку право правки «Реестра расценок»",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "vors_only",
+    "table": "supply_registry_imports",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: загрузка расценок из Excel в реестр «Расценки от снабжения СУ-10» (файл, кто, когда; на копии пусто); читает читатель реестра, загружает и удаляет загрузку право правки «Реестра расценок»",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "contractor_own",
+    "table": "supply_registry_imports",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: загрузка расценок из Excel в реестр «Расценки от снабжения СУ-10» (файл, кто, когда; на копии пусто); читает читатель реестра, загружает и удаляет загрузку право правки «Реестра расценок»",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "contractor_noorg",
+    "table": "supply_registry_imports",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: загрузка расценок из Excel в реестр «Расценки от снабжения СУ-10» (файл, кто, когда; на копии пусто); читает читатель реестра, загружает и удаляет загрузку право правки «Реестра расценок»",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "unapproved",
+    "table": "supply_registry_imports",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: загрузка расценок из Excel в реестр «Расценки от снабжения СУ-10» (файл, кто, когда; на копии пусто); читает читатель реестра, загружает и удаляет загрузку право правки «Реестра расценок»",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "blocked",
+    "table": "supply_registry_imports",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: загрузка расценок из Excel в реестр «Расценки от снабжения СУ-10» (файл, кто, когда; на копии пусто); читает читатель реестра, загружает и удаляет загрузку право правки «Реестра расценок»",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "no_user_roles",
+    "table": "supply_registry_imports",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: загрузка расценок из Excel в реестр «Расценки от снабжения СУ-10» (файл, кто, когда; на копии пусто); читает читатель реестра, загружает и удаляет загрузку право правки «Реестра расценок»",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "anon",
+    "table": "supply_registry_imports",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: загрузка расценок из Excel в реестр «Расценки от снабжения СУ-10» (файл, кто, когда; на копии пусто); читает читатель реестра, загружает и удаляет загрузку право правки «Реестра расценок»",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "service_role",
+    "table": "supply_registry_imports",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: загрузка расценок из Excel в реестр «Расценки от снабжения СУ-10» (файл, кто, когда; на копии пусто); читает читатель реестра, загружает и удаляет загрузку право правки «Реестра расценок»",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "admin",
+    "table": "supply_registry_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: строки загрузки расценок из Excel в реестр «Расценки от снабжения СУ-10» (на копии пусто); читает читатель реестра, пишет только функция supply_registry_import по праву правки «Реестра расценок», удаляются с загрузкой",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "employee_full",
+    "table": "supply_registry_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: строки загрузки расценок из Excel в реестр «Расценки от снабжения СУ-10» (на копии пусто); читает читатель реестра, пишет только функция supply_registry_import по праву правки «Реестра расценок», удаляются с загрузкой",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "employee_none",
+    "table": "supply_registry_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: строки загрузки расценок из Excel в реестр «Расценки от снабжения СУ-10» (на копии пусто); читает читатель реестра, пишет только функция supply_registry_import по праву правки «Реестра расценок», удаляются с загрузкой",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "vors_only",
+    "table": "supply_registry_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: строки загрузки расценок из Excel в реестр «Расценки от снабжения СУ-10» (на копии пусто); читает читатель реестра, пишет только функция supply_registry_import по праву правки «Реестра расценок», удаляются с загрузкой",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "contractor_own",
+    "table": "supply_registry_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: строки загрузки расценок из Excel в реестр «Расценки от снабжения СУ-10» (на копии пусто); читает читатель реестра, пишет только функция supply_registry_import по праву правки «Реестра расценок», удаляются с загрузкой",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "contractor_noorg",
+    "table": "supply_registry_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: строки загрузки расценок из Excel в реестр «Расценки от снабжения СУ-10» (на копии пусто); читает читатель реестра, пишет только функция supply_registry_import по праву правки «Реестра расценок», удаляются с загрузкой",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "unapproved",
+    "table": "supply_registry_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: строки загрузки расценок из Excel в реестр «Расценки от снабжения СУ-10» (на копии пусто); читает читатель реестра, пишет только функция supply_registry_import по праву правки «Реестра расценок», удаляются с загрузкой",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "blocked",
+    "table": "supply_registry_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: строки загрузки расценок из Excel в реестр «Расценки от снабжения СУ-10» (на копии пусто); читает читатель реестра, пишет только функция supply_registry_import по праву правки «Реестра расценок», удаляются с загрузкой",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "no_user_roles",
+    "table": "supply_registry_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: строки загрузки расценок из Excel в реестр «Расценки от снабжения СУ-10» (на копии пусто); читает читатель реестра, пишет только функция supply_registry_import по праву правки «Реестра расценок», удаляются с загрузкой",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "anon",
+    "table": "supply_registry_rates",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: строки загрузки расценок из Excel в реестр «Расценки от снабжения СУ-10» (на копии пусто); читает читатель реестра, пишет только функция supply_registry_import по праву правки «Реестра расценок», удаляются с загрузкой",
+    "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270224",
+    "class": "service_role",
+    "table": "supply_registry_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: строки загрузки расценок из Excel в реестр «Расценки от снабжения СУ-10» (на копии пусто); читает читатель реестра, пишет только функция supply_registry_import по праву правки «Реестра расценок», удаляются с загрузкой",
+    "candidate": "20270224_supply_registry_import.sql"
   }
 ]

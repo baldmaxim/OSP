@@ -56,3 +56,4 @@
 20270220_s3_documents_folder_date.sql
 20270221_doc_check_tender_link.sql
 20270223_supply_removed_docs.sql
+20270224_supply_registry_import.sql

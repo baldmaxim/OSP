@@ -347,6 +347,8 @@
 }
 .rr-table thead th:last-child { border-right: 0; }
 .rr-table .rr-th-num          { width: 64px;  text-align: center; }
+.rr-table .rr-th-source       { min-width: 110px; }
+.rr-table .rr-td-source       { max-width: 180px; }
 .rr-table .rr-th-object       { min-width: 160px; }
 .rr-table .rr-th-counterparty { min-width: 200px; }
 .rr-table .rr-th-name         { min-width: 260px; }

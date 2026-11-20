@@ -11,6 +11,7 @@ import {
 } from '../utils/ratesRegistry'
 import { SOURCE_FILTER_OPTIONS, SOURCE_KINDS } from '../utils/kpRegistrySources'
 import { deleteManualRate, loadDocument } from '../services/kpManualRates'
+import { importAvailable } from '../services/supplyRegistryImport'
 import './RatesRegistryPage.css'
 
 // Цены подрядчиков из кабинета по идущим тендерам (миграция 20261102) — только администратору.
@@ -19,6 +20,8 @@ const ContractorBidsSection = lazy(() => import('../components/contractor/Contra
 const KpManualRateDialog = lazy(() => import('../components/rates/KpManualRateDialog'))
 const KpRateCheckDialog = lazy(() => import('../components/rates/KpRateCheckDialog'))
 const S3DocumentPreview = lazy(() => import('../components/S3DocumentPreview'))
+// Реестр СУ-10 (миграция 20270224): загрузка расценок из Excel.
+const SupplyRegistryImportDialog = lazy(() => import('../components/rates/SupplyRegistryImportDialog'))
 
 // task 356/354/411: «Реестр расценок» — общий список расценок из разных источников.
 //   1) От подрядчиков (КП) — представление kp_rates_registry (дедуп на стороне БД).
@@ -54,13 +57,17 @@ const isMissingColumn = (err) => err?.code === '42703' || /column .* does not ex
 // task 412: вкладка «Расценки от снабжения СУ-10» — серверная пагинация/поиск/сортировка
 // над представлением supply_rates_registry (источник tender_vor_supply_rates).
 // СУ-10 — источник (source_name), не подрядчик; price — единичная цена материала.
+// Миграция 20270224: ещё и расценки, загруженные из Excel («Загрузить из Excel», право правки реестра) — у них свой
+// источник из файла, а тендер и объект могут быть текстом из файла (без ссылки и без id).
 const SUPPLY_SELECT_COLS =
   'id,source_name,item_name,unit,price,tender_id,object_id,tender_desc,object_name,rate_date'
 const SUPPLY_SORT_COLUMN = {
   name: 'item_name', price: 'price', date: 'rate_date', tender: 'tender_desc',
 }
+// Есть ли в базе загрузка из Excel (миграция 20270224) — один раз на модуль: null — не проверяли.
+let supplyImportKnown = null
 
-function SupplyRegistrySection() {
+function SupplyRegistrySection({ canEdit = false }) {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounced(search, 400)
   // Объект/Тендер — множественный выбор (пустой массив = фильтр не применён).
@@ -82,10 +89,32 @@ function SupplyRegistrySection() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [exporting, setExporting] = useState(false)
+  // Загрузка из Excel: кнопка — праву правки и только если миграция применена; после загрузки — перечитать страницу.
+  const [importReady, setImportReady] = useState(supplyImportKnown === true)
+  const [importOpen, setImportOpen] = useState(false)
+  const [notice, setNotice] = useState(null)
+  const [reloadToken, setReloadToken] = useState(0)
 
   // Только объекты/тендеры, по которым есть расценки снабжения (distinct из реестра).
   const [objects, setObjects] = useState([])
   const [tenders, setTenders] = useState([])
+
+  useEffect(() => {
+    if (!canEdit || supplyImportKnown !== null) return
+    let cancelled = false
+    importAvailable()
+      .then((ok) => { supplyImportKnown = ok; if (!cancelled) setImportReady(ok) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [canEdit])
+
+  const afterImportChange = (text) => {
+    setReloadToken((t) => t + 1)
+    if (text) {
+      setNotice(text)
+      setTimeout(() => setNotice((n) => (n === text ? null : n)), 10000)
+    }
+  }
 
   // См. комментарий в KP-секции: длины справочников держим в ref, иначе их
   // асинхронная загрузка перезапускает эффекты и данные грузятся дважды.
@@ -127,7 +156,7 @@ function SupplyRegistrySection() {
     }
     run()
     return () => { cancelled = true }
-  }, [applyFilters])
+  }, [applyFilters, reloadToken])
 
   useEffect(() => {
     let cancelled = false
@@ -153,7 +182,7 @@ function SupplyRegistrySection() {
     }
     loadRefs()
     return () => { cancelled = true }
-  }, [])
+  }, [reloadToken])
 
   useEffect(() => {
     setPage(0)
@@ -195,7 +224,7 @@ function SupplyRegistrySection() {
     }
     run()
     return () => { cancelled = true }
-  }, [page, pageSize, sortBy, sortDir, applyFilters, countFailed])
+  }, [page, pageSize, sortBy, sortDir, applyFilters, countFailed, reloadToken])
 
   const resetFilters = () => {
     setSearch(''); setObjectIds([]); setTenderIds([])
@@ -316,7 +345,19 @@ function SupplyRegistrySection() {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           {exporting ? 'Выгрузка…' : 'Excel'}
         </button>
+        {canEdit && importReady && (
+          <button
+            type="button"
+            className="rr-filter-export"
+            onClick={() => setImportOpen(true)}
+            title="Загрузить расценки из Excel — в том же виде, что выгрузка кнопкой «Excel»"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Загрузить из Excel
+          </button>
+        )}
       </div>
+      {notice && <div className="kpr-notice" role="status">{notice}</div>}
 
       {error ? (
         <div className="rr-empty rr-error">
@@ -334,7 +375,7 @@ function SupplyRegistrySection() {
         <div className="rr-empty">
           {hasActiveFilters
             ? 'По заданным фильтрам ничего не найдено.'
-            : 'Расценок от снабжения ещё нет. Загрузите их во вкладке «Расценки снабжения» в тендерах — данные подтянутся сюда автоматически.'}
+            : `Расценок от снабжения ещё нет. Загрузите их во вкладке «Расценки снабжения» в тендерах — данные подтянутся сюда автоматически${canEdit && importReady ? ', — или загрузите файл кнопкой «Загрузить из Excel»' : ''}.`}
         </div>
       ) : (
         <>
@@ -343,6 +384,7 @@ function SupplyRegistrySection() {
               <thead>
                 <tr>
                   <th className="rr-th-num">№ п/п</th>
+                  <th className="rr-th-source">Источник</th>
                   <th className="rr-th-object">Объект</th>
                   <th className="rr-th-name rr-th-sortable" onClick={() => toggleSort('name')}>
                     Наименование материала{sortIndicator('name')}
@@ -363,6 +405,9 @@ function SupplyRegistrySection() {
                 {rows.map((r, idx) => (
                   <tr key={r.id}>
                     <td className="rr-td-num">{page * pageSize + idx + 1}</td>
+                    <td className="rr-td-source">
+                      <span className="rr-chip rr-chip-supply" title={r.source_name || 'СУ-10'}>{r.source_name || 'СУ-10'}</span>
+                    </td>
                     <td className="rr-td-object">
                       <span className="rr-chip rr-chip-object" title={r.object_name || '—'}>{r.object_name || '—'}</span>
                     </td>
@@ -375,7 +420,9 @@ function SupplyRegistrySection() {
                             <span className="rr-tender-text">{r.tender_desc}</span>
                           </Link>
                         )
-                        : <span className="rr-tender-empty">—</span>}
+                        : r.tender_desc
+                          ? <span className="rr-tender-text">{r.tender_desc}</span>
+                          : <span className="rr-tender-empty">—</span>}
                     </td>
                     <td className="rr-td-unit">{r.unit || '—'}</td>
                     <td className="rr-td-price">{fmtMoney(r.price)}</td>
@@ -403,6 +450,18 @@ function SupplyRegistrySection() {
             </div>
           </div>
         </>
+      )}
+
+      {importOpen && (
+        <Suspense fallback={null}>
+          <SupplyRegistryImportDialog
+            onClose={() => setImportOpen(false)}
+            onChanged={() => afterImportChange('Загрузка удалена из реестра')}
+            onImported={({ added, skipped, fileName }) => {
+              setImportOpen(false)
+              afterImportChange(`«${fileName}»: в реестр добавлено ${fmtCount(added)}${skipped ? `, пропущено ${fmtCount(skipped)} (такие уже были)` : ''}`)
+            }} />
+        </Suspense>
       )}
     </>
   )
@@ -807,7 +866,7 @@ function RatesRegistryPage() {
       </div>
 
       {topTab === 'supply' ? (
-        <SupplyRegistrySection />
+        <SupplyRegistrySection canEdit={canEditRegistry} />
       ) : topTab === 'larix' ? (
         <LarixRegistrySection />
       ) : topTab === 'bids' ? (

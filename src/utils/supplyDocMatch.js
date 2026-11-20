@@ -505,6 +505,28 @@ export function matchIndex(groups) {
   return { byKey, heads, tri, codes, articles }
 }
 
+// Указатель с памятью кандидатов (memo) — один на набор групп (тот же массив). Расценка снабжения сопоставляет одни и те же строки
+// счетов и КП дважды — для таблицы (offerMatches) и для окна «Счета и КП» (offersByGroup), а после смены одного документа — заново
+// все: на тендере № 704 (20.11.2026: 21 ВОР, 2 тыс. позиций, 2 тыс. строк документов) это 2,3 с на каждый пересчёт. С памятью
+// строка (тот же объект) при тех же группах ищется один раз, после смены документа — только его строки. Строки документа на месте
+// не меняются (изменённый документ — новый разбор notes, новые объекты), иначе память отдала бы прежних кандидатов. Только по
+// выбору вызывающего: matchIndex — без памяти, как прежде (проверка КП, кабинет подрядчика).
+const SHARED_INDEX = new WeakMap()
+export function sharedMatchIndex(groups) {
+  let ix = SHARED_INDEX.get(groups)
+  if (!ix) {
+    ix = { ...matchIndex(groups), memo: new WeakMap() }
+    SHARED_INDEX.set(groups, ix)
+  }
+  return ix
+}
+// Найти кандидатов строки документа заранее — в память указателя sharedMatchIndex, с теми же условиями, что у offerMatches и
+// offersByGroup (порциями в фоне, чтобы первый расчёт не останавливал страницу). Строки, выбранные человеком (k), и
+// «не сопоставлять» (skip) не ищутся.
+export function primeOfferLine(line, groups, index) {
+  if (!line.skip && !line.k) itemCandidates(line, groups, index, MATCH_CANDIDATES, { packs: true })
+}
+
 // Группы по артикулу из колонки документа: тот же или он же, обрезанный поставщиком (у ЭТМ — до 30 знаков).
 function articleGroups(ix, token) {
   const same = ix.articles.get(token)
@@ -525,9 +547,26 @@ const byRank = (a, b) => rankOf(b) - rankOf(a)
 // Кандидаты одной строки документа: [{ group, score, exact, unitOk, pack, code, article, qty, sameNums }] — лучшие
 // первыми, не ниже LIST_MIN. packs — вызывающий пересчитывает цену на единицу позиции: тогда pack — сколько единиц
 // позиции в единице документа (docPack), и такая ед. изм. подходит. Без него (проверка реестра КП, кабинет подрядчика:
-// цена берётся как есть) упаковка штук остаётся другой ед. изм.
+// цена берётся как есть) упаковка штук остаётся другой ед. изм. Указатель с памятью (sharedMatchIndex) — строка ищется один раз;
+// список — копия: вызывающий может его сортировать.
 export function itemCandidates(item, groups, index = null, limit = MATCH_CANDIDATES, { packs = false } = {}) {
   const ix = index || matchIndex(groups)
+  if (!ix.memo) return findCandidates(item, groups, ix, limit, packs)
+  let byOpts = ix.memo.get(item)
+  if (!byOpts) {
+    byOpts = new Map()
+    ix.memo.set(item, byOpts)
+  }
+  const key = `${limit}|${packs ? 1 : 0}`
+  let list = byOpts.get(key)
+  if (!list) {
+    list = findCandidates(item, groups, ix, limit, packs)
+    byOpts.set(key, list)
+  }
+  return list.slice()
+}
+
+function findCandidates(item, groups, ix, limit, packs) {
   // Два наименования у строки («по запросу» и «предлагаемое») — ищем по обоим, лучшая оценка на позицию.
   if (item.name2) {
     const best = new Map()

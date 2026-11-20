@@ -2150,6 +2150,44 @@
       "select": "admin",
       "why": "Интерфейс не читает. Строго — none; admin — для диагностики."
     },
+    "supply_registry_imports": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "delete": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "SupplyRegistryImportDialog: список загрузок и «Удалить загрузку» (canEditRegistry); загрузка — функцией supply_registry_import; в базе osp_can(rates_registry, edit)."
+    },
+    "supply_registry_rates": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "SupplyRegistryImportDialog: число строк загрузки; в реестре строки — через supply_rates_registry."
+    },
     "task_audit_log": {
       "read": "sensitive",
       "select": "employee",
@@ -4704,6 +4742,21 @@
         }
       ],
       "why": "Смета КП / ПЗ: черновик → действующая версия с переносом отметок (ObjectDetailPage → KpEstimateImportDialog)."
+    },
+    "supply_registry_import": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "Реестр расценок → «Расценки от снабжения СУ-10» → «Загрузить из Excel» (SupplyRegistryImportDialog, canEditRegistry); в базе osp_can(rates_registry, edit)."
     }
   }
 }

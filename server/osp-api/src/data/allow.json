@@ -565,6 +565,17 @@
         "select"
       ]
     },
+    "supply_registry_imports": {
+      "authenticated": [
+        "delete",
+        "select"
+      ]
+    },
+    "supply_registry_rates": {
+      "authenticated": [
+        "select"
+      ]
+    },
     "task_audit_log": {
       "authenticated": [
         "delete",
@@ -1131,6 +1142,9 @@
       "authenticated"
     ],
     "supply_rates_locked": [
+      "authenticated"
+    ],
+    "supply_registry_import": [
       "authenticated"
     ],
     "supply_revisions_review": [

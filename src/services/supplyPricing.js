@@ -451,7 +451,7 @@ export async function readSupplyDocBytes(bytes, fileName, { onProgress = null } 
 export const fetchSupplyDocBytes = (doc) => fetchFileBytes(doc.s3_key)
 
 // Документы поставщиков тендера (utils/supplyOffers). Ответ: { offers, unread, others }: offers — файлы с распознанными
-// строками [{ doc, offer }], новые первыми; unread — файлы счетов и таблиц, которые ещё не читали (прикреплены колонкой
+// строками [{ doc, offer, notes }], новые первыми (notes — как в базе: по ним страница узнаёт, что файл не менялся); unread — файлы счетов и таблиц, которые ещё не читали (прикреплены колонкой
 // «Документ» до 02.11.2026) или которые отвергла прежняя версия чтения (offerNeedsReread): их расценка прочтёт сама, старые notes
 // — doc.notes; others — [{ doc, failed }]: не прочитались, Word и прочее (failed — причина для окна файлов тендера). refresh — файлы
 // со строками, которые стоит перечитать новой версией чтения (offerNeedsRefresh: итог не сошёлся, выбора человека нет): их строки
@@ -475,9 +475,9 @@ export async function loadSupplyOffers(mainId) {
   for (const { notes, ...doc } of rows) {
     const offer = readOffer(notes)
     if (offer?.lines.length && offerNeedsRefresh(offer) && UNREAD_FILE_RE.test(doc.file_name || '') && !(doc.size_bytes > UNREAD_MAX_BYTES)) {
-      offers.push({ doc, offer })
+      offers.push({ doc, offer, notes })
       refresh.push({ ...doc, notes })
-    } else if (offer?.lines.length) offers.push({ doc, offer })
+    } else if (offer?.lines.length) offers.push({ doc, offer, notes })
     else if ((!notes || offerNeedsReread(offer)) && UNREAD_FILE_RE.test(doc.file_name || '') && !(doc.size_bytes > UNREAD_MAX_BYTES)) unread.push({ ...doc, notes: notes ?? null })
     else others.push({ doc, failed: offer?.failed || (doc.size_bytes > UNREAD_MAX_BYTES ? 'big' : 'unsupported') })
   }
