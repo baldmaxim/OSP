@@ -37,6 +37,8 @@ import { contractParties, counterpartyFilterOptions, hasCounterparty, matchCount
 import { docTender, tenderChoices, tenderOptionLabel, tenderTitle } from '../utils/contractTender'
 import { VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION } from '../utils/vorDivisions'
 import { contractDivisionEnabled, contractDivisionOf, contractDivisionSaveError } from '../utils/contractDivision'
+import { LAWYER_FIELD, LAWYER_LABEL, contractLawyerName, contractLawyerSaveError, lawyerNameById, lawyerOptions, shownLawyerId } from '../utils/contractLawyer'
+import { fetchOspLawyers, employeesById } from '../services/employees'
 import {
   DOC_TYPE,
   DOC_TYPES,
@@ -271,7 +273,8 @@ const EMPTY_FORM = {
   status: 'new_request',
   tender_id: '',
   work_name: '',
-  responsible_contact_id: '',
+  // Ответственный юрист — учётка юриста ОСП (contracts.responsible_user_id, 20270226); прежнее responsible_contact_id форма не пишет.
+  responsible_user_id: '',
   notes: '',
   gen_director_name: '',
   phone: '',
@@ -435,6 +438,8 @@ function ContractRegistry() {
   const [objects, setObjects] = useState([])
   const [counterparties, setCounterparties] = useState([])
   const [contacts, setContacts] = useState([])
+  // Действующие юристы ОСП (list_osp_lawyers, 20270226): «Ответственный юрист» — только они (utils/contractLawyer.js).
+  const [employees, setEmployees] = useState(() => new Map())
   const [tenders, setTenders] = useState([])
   const [loading, setLoading] = useState(false)
   const [showModal, setShowModal] = useState(false)
@@ -554,10 +559,13 @@ function ContractRegistry() {
 
   useEffect(() => {
     // Сразу — только то, без чего не нарисовать сам реестр: договоры, объекты
-    // (фильтр) и сотрудники (инлайн-выбор юриста в строке).
+    // (фильтр), юристы ОСП (юрист в строке) и «Сотрудники» (ответственный у приложений).
     fetchContracts()
     fetchObjects()
     fetchContacts()
+    fetchOspLawyers()
+      .then(list => setEmployees(employeesById(list)))
+      .catch(err => console.error('Ошибка загрузки юристов ОСП:', err.message))
     // Контрагенты и тендеры нужны ТОЛЬКО в форме договора и в импорте, но
     // грузились вместе с реестром и конкурировали с ним за соединения:
     // контрагентов больше тысячи, то есть это несколько последовательных
@@ -581,7 +589,7 @@ function ContractRegistry() {
       const data = await fetchAllRows((from, to) => {
         let q = db
           .from('contracts')
-          .select('*, objects(name, status), counterparties(id, name, inn), contract_counterparties(counterparty_id, sort_order, counterparties(id, name, inn)), tenders(work_description, public_tender_number), responsible:contacts!responsible_contact_id(id, full_name, position)')
+          .select('*, objects(name, status), counterparties(id, name, inn), contract_counterparties(counterparty_id, sort_order, counterparties(id, name, inn)), tenders(work_description, public_tender_number)')
         if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
         return q
           .order('contract_date', { ascending: true, nullsFirst: false })
@@ -1212,9 +1220,6 @@ function ContractRegistry() {
     ...availableTenders.map(t => ({ value: t.id, label: tenderOptionLabel(t) })),
   ], [availableTenders, formData.tender_id])
 
-  // Задача 391: «Ответственный юрист» — список всех сотрудников (без фильтра по объекту).
-  const availableContacts = contacts
-
   const filteredCounterparties = useMemo(() => {
     // Контрагентов из «Удалённых» к договору не привязываем.
     const live = counterparties.filter(cp => !cp.deleted_at)
@@ -1242,20 +1247,7 @@ function ContractRegistry() {
     return String(c.signed_date).slice(0, 10) < todayStr
   }, [todayStr])
 
-  const contactNameById = useMemo(() => {
-    const m = {}
-    contacts.forEach(c => { m[c.id] = c.full_name })
-    return m
-  }, [contacts])
-
-  // Нормализованное (lowercase) ФИО по id сотрудника — для дедупа и фильтрации по имени.
-  const normNameById = useMemo(() => {
-    const m = {}
-    contacts.forEach(c => { m[c.id] = normalizeName(c.full_name).toLowerCase() })
-    return m
-  }, [contacts])
-
-  // Дедуплицированный список сотрудников (одно ФИО = одна запись, представитель — первый id).
+  // Дедуплицированный список «Сотрудников» (одно ФИО = одна запись) — для «Ответственного» у приложений.
   const dedupContacts = useMemo(() => {
     const byName = new Map()
     contacts.forEach(c => {
@@ -1266,18 +1258,6 @@ function ContractRegistry() {
     })
     return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
   }, [contacts])
-
-  // Любой id сотрудника → id представителя того же ФИО (чтобы выбранное значение
-  // совпадало с опцией даже при дублях с разными id).
-  const lawyerRepByContactId = useMemo(() => {
-    const nameToRep = new Map(dedupContacts.map(c => [c.name.toLowerCase(), c.id]))
-    const m = {}
-    contacts.forEach(c => {
-      const key = normalizeName(c.full_name).toLowerCase()
-      m[c.id] = nameToRep.get(key) || c.id
-    })
-    return m
-  }, [contacts, dedupContacts])
 
   // Опции фильтра «Объект» — объекты выбранного отдела, по алфавиту; при «Все договоры» отдел виден по бейджу в списке.
   // Сотруднику объекта — только его объекты (чужие дали бы пустой реестр и показали бы, какие ещё объекты есть).
@@ -1294,29 +1274,24 @@ function ContractRegistry() {
     }
   }
 
-  // Опции фильтра «Ответственный юрист» — реально назначенные в договорах, без дублей ФИО.
+  // Опции фильтра «Ответственный юрист» — действующие юристы ОСП, реально назначенные в договорах.
   const lawyerFilterOptions = useMemo(() => {
     const seen = new Map()
     contracts.forEach(c => {
-      const id = c.responsible_contact_id
-      if (!id) return
-      const name = normalizeName(contactNameById[id] || c.responsible?.full_name || '')
-      if (!name) return
-      const key = name.toLowerCase()
-      if (!seen.has(key)) seen.set(key, { id, name })
+      const id = shownLawyerId(c, employees)
+      if (id && !seen.has(id)) seen.set(id, { id, name: lawyerNameById(employees, id) })
     })
     return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
-  }, [contracts, contactNameById])
+  }, [contracts, employees])
 
   // Опции для кастомных FilterDropdown (первая — «Все …»).
   const lawyerDropdownOptions = useMemo(
     () => [{ value: '', label: 'Все юристы' }, ...lawyerFilterOptions.map(l => ({ value: l.id, label: l.name }))],
     [lawyerFilterOptions])
 
-  // Опции для inline-выбора ответственного в строке таблицы (все сотрудники, без дублей ФИО).
-  const contactDropdownOptions = useMemo(
-    () => [{ value: '', label: '—' }, ...dedupContacts.map(c => ({ value: c.id, label: c.name }))],
-    [dedupContacts])
+  // Выбор юриста (строка, раскрытый блок, форма): только действующие юристы ОСП (решение пользователя 23.11.2026).
+  const lawyerChoices = useMemo(() => lawyerOptions(employees), [employees])
+  const lawyerDropdownChoices = useMemo(() => [{ value: '', label: '—' }, ...lawyerChoices], [lawyerChoices])
 
   // Ответственный в «Приложениях к Договору»: поле хранит ФИО (TEXT), поэтому опции
   // ключуются по имени сотрудника из реестра «Сотрудники» (contacts).
@@ -1415,12 +1390,7 @@ function ContractRegistry() {
     return tabContracts.filter(c => {
       if (filterObjectIds.length > 0 && !filterObjectIds.includes(c.object_id)) return false
       if (filterDsType && c.record_type !== filterDsType) return false
-      if (filterLawyerId) {
-        // Сопоставляем по нормализованному ФИО — чтобы фильтр по одному «представителю»
-        // ловил все договоры с этим же юристом, даже если у него дублирующиеся id.
-        const selName = normNameById[filterLawyerId]
-        if (!selName || normNameById[c.responsible_contact_id] !== selName) return false
-      }
+      if (filterLawyerId && shownLawyerId(c, employees) !== filterLawyerId) return false
       if (onlyOverdue && !isOverdue(c)) return false
       // «Не в Larix» — только заключённые (не «Новая заявка») и ещё не внесённые.
       if (onlyNoLarix && (isInLarix(c) || (c.status || 'new_request') === 'new_request')) return false
@@ -1445,7 +1415,7 @@ function ContractRegistry() {
       }
       return true
     })
-  }, [tabContracts, filterObjectIds, filterDsType, filterLawyerId, onlyOverdue, onlyNoLarix, onlyNoTender, searchText, isOverdue, normNameById, docIndex, dsSearchHits])
+  }, [tabContracts, filterObjectIds, filterDsType, filterLawyerId, onlyOverdue, onlyNoLarix, onlyNoTender, searchText, isOverdue, employees, docIndex, dsSearchHits])
 
   const filteredBeforeDivision = useMemo(() => {
     if (filterCounterpartyIds.length === 0) return filteredBeforeCounterparty
@@ -1653,7 +1623,8 @@ function ContractRegistry() {
       // Пусто = тендер договора (docTender): смена тендера в договоре сразу видна у его ДС.
       tender_id: '',
       handled_by_us: !!root.handled_by_us,
-      responsible_contact_id: root.responsible_contact_id || '',
+      // Юрист договора — если он действующий юрист ОСП (заблокированного база назначить не даст).
+      responsible_user_id: shownLawyerId(root, employees),
       status: 'new_request',
     })
     setFormCounterpartyIds(contractParties(root).map(p => p.id))
@@ -1716,15 +1687,18 @@ function ContractRegistry() {
     try {
       // Подразделение — только у договора и только если колонка уже есть (миграция 20261112): без неё
       // PostgREST отказал бы во всей записи. У ДС колонку не трогаем — они берут подразделение договора.
-      const { division, ...formFields } = formData
+      // Юрист — только если выбран или изменён: колонки до миграции 20270226 нет, а скрытого (заблокированного) юриста форма не
+      // показывала и стирать его не должна.
+      const { division, [LAWYER_FIELD]: lawyerId, ...formFields } = formData
+      const lawyerBefore = editingContract ? shownLawyerId(editingContract, employees) : ''
       const payload = {
         ...formFields,
         ...(divisionEnabled && !isDsForm ? { division: division || null } : {}),
+        ...((lawyerId || '') !== lawyerBefore ? { [LAWYER_FIELD]: lawyerId || null } : {}),
         // Основной контрагент = первая сторона; остальные — в contract_counterparties.
         counterparty_id: formCounterpartyIds[0] || null,
         object_id: formData.object_id || null,
         tender_id: formData.tender_id || null,
-        responsible_contact_id: formData.responsible_contact_id || null,
         // Изменяемый документ: у договора всегда пусто, у ДС обязателен.
         parent_contract_id: isDsForm ? formData.parent_contract_id : null,
         // Что именно ДС меняет — сравнением с унаследованным снимком (та же
@@ -1847,7 +1821,7 @@ function ContractRegistry() {
         return
       }
       console.error('Ошибка сохранения договора:', error.message)
-      alert('Ошибка: ' + error.message)
+      alert(contractLawyerSaveError(error))
     }
   }
 
@@ -1887,7 +1861,7 @@ function ContractRegistry() {
       status: contract.status || 'new_request',
       tender_id: contract.tender_id || '',
       work_name: contract.work_name || '',
-      responsible_contact_id: contract.responsible_contact_id || '',
+      responsible_user_id: shownLawyerId(contract, employees),
       notes: contract.notes || '',
       gen_director_name: contract.gen_director_name || '',
       phone: contract.phone || '',
@@ -2020,7 +1994,7 @@ function ContractRegistry() {
 
   // Задача 391: инлайн-правка поля договора прямо в таблице (юрист, даты, примечание).
   const INLINE_FIELD_LABEL = {
-    responsible_contact_id: 'Ответственный юрист',
+    [LAWYER_FIELD]: LAWYER_LABEL,
     accepted_date: 'Дата принятия в работу ДП',
     signed_date: 'Дата подписания',
     notes: 'Примечание',
@@ -2055,19 +2029,25 @@ function ContractRegistry() {
       const { error } = await db.from('contracts').update({ [field]: value }).eq('id', contractId)
       if (error) throw error
       setContracts(prev => prev.map(c => c.id === contractId ? { ...c, [field]: value } : c))
-      // Подразделение — подписями, а не кодами: история читается людьми.
-      const shown = (v) => (field === 'division' ? (VOR_DIVISION_LABEL[v] || null) : v)
+      // Подразделение и юрист — подписями, а не кодами: история читается людьми.
+      const shown = (v) => (field === 'division' ? (VOR_DIVISION_LABEL[v] || null)
+        : field === LAWYER_FIELD ? (lawyerNameById(employees, v) || null) : v)
+      const before = shown(contract[field] ?? null)
+      const after = shown(value)
       await logContractEvent(contractId, 'field_updated', {
         fieldName: field,
-        oldValue: shown(contract[field] ?? null),
-        newValue: shown(value),
-        description: `Изменено: ${INLINE_FIELD_LABEL[field] || field}`,
+        oldValue: before,
+        newValue: after,
+        description: field === LAWYER_FIELD
+          ? `${LAWYER_LABEL}: ${before || '—'} → ${after || '—'}`
+          : `Изменено: ${INLINE_FIELD_LABEL[field] || field}`,
       })
       return true
     } catch (error) {
       console.error('Ошибка сохранения:', error.message)
       // Колонки ещё нет в базе — называем миграцию, а не сырой текст PostgREST.
       if (field === 'division') alert(contractDivisionSaveError(error))
+      else if (field === LAWYER_FIELD) alert(contractLawyerSaveError(error))
       else alert(field === 'signal_link' && (error.code === 'PGRST204' || /signal_link/.test(error.message || ''))
         ? 'Не удалось сохранить путь к Signal: в базе не применена миграция 20260919_contract_signal_link.'
         : 'Ошибка: ' + error.message)
@@ -2482,11 +2462,11 @@ function ContractRegistry() {
               <span className="ce2-label">Юрист</span>
               <FilterDropdown
                 label=""
-                value={lawyerRepByContactId[doc.responsible_contact_id] || doc.responsible_contact_id || ''}
-                onChange={(v) => handleInlineField(doc.id, 'responsible_contact_id', v)}
-                options={contactDropdownOptions}
+                value={shownLawyerId(doc, employees)}
+                onChange={(v) => handleInlineField(doc.id, LAWYER_FIELD, v)}
+                options={lawyerDropdownChoices}
                 searchable
-                searchPlaceholder="Поиск сотрудника…"
+                searchPlaceholder="Поиск юриста…"
                 allLabel="—"
                 formatTrigger={formatPersonShortName}
                 disabled={ro}
@@ -2977,7 +2957,7 @@ function ContractRegistry() {
               const opt = STATUS_OPTIONS.find(o => o.value === (contract.status || 'new_request'))
               const cardParties = contractParties(contract)
               const partiesText = cardParties.map(p => p.name).join(', ') || '—'
-              const lawyerName = contactNameById[contract.responsible_contact_id] || contract.responsible?.full_name || '—'
+              const lawyerName = contractLawyerName(contract, employees) || '—'
               const shown = liveChildren(contract, docIndex).length > 0 ? currentTerms(contract, docIndex).view : contract
               const workName = shown.work_name || contract.tenders?.work_description || ''
               return (
@@ -3290,11 +3270,11 @@ function ContractRegistry() {
                   <td className="cell-lawyer" onClick={(e) => e.stopPropagation()}>
                     <FilterDropdown
                       label=""
-                      value={lawyerRepByContactId[contract.responsible_contact_id] || contract.responsible_contact_id || ''}
-                      onChange={(v) => handleInlineField(contract.id, 'responsible_contact_id', v)}
-                      options={contactDropdownOptions}
+                      value={shownLawyerId(contract, employees)}
+                      onChange={(v) => handleInlineField(contract.id, LAWYER_FIELD, v)}
+                      options={lawyerDropdownChoices}
                       searchable
-                      searchPlaceholder="Поиск сотрудника…"
+                      searchPlaceholder="Поиск юриста…"
                       allLabel="—"
                       formatTrigger={formatPersonShortName}
                       disabled={!canEditContracts || docDeleted}
@@ -3385,7 +3365,7 @@ function ContractRegistry() {
           <ContractsImportModal
             counterparties={counterparties}
             objects={objects}
-            contacts={contacts}
+            employees={employees}
             refsReady={formRefsReady}
             onClose={() => setShowImportModal(false)}
             onImported={() => { setShowImportModal(false); fetchContracts() }}
@@ -3662,14 +3642,11 @@ function ContractRegistry() {
                 )}
 
                 <div className="form-group full-width">
-                  <label>Ответственный юрист</label>
-                  <select name="responsible_contact_id" value={formData.responsible_contact_id} onChange={handleInputChange}>
+                  <label htmlFor="contract-form-lawyer">Ответственный юрист</label>
+                  {/* Только действующие юристы ОСП (решение пользователя 23.11.2026); база другого не примет. */}
+                  <select id="contract-form-lawyer" name="responsible_user_id" value={formData.responsible_user_id} onChange={handleInputChange}>
                     <option value="">— Не назначен —</option>
-                    {availableContacts.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.full_name}{c.position ? ` (${c.position})` : ''}
-                      </option>
-                    ))}
+                    {lawyerChoices.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
 

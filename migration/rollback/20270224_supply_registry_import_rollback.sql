@@ -6,6 +6,9 @@
 --   select i.file_name, i.created_at, i.created_by_name, r.* from public.supply_registry_rates r
 --   join public.supply_registry_imports i on i.id = r.import_id order by i.created_at, r.row_no;
 -- Вместе с откатом в шлюзе можно оставить строки allow.json / db-sections.json. Одной транзакцией, повтор безопасен.
+-- Если применена 20270227 (подробности расценки): сначала её откат — 20270227_supply_registry_rate_details_yandex_rollback.sql
+-- (база Яндекса: строки загрузок возвращаются из osp_private.supply_registry_rates в public.supply_registry_rates) или
+-- 20270227_supply_registry_rate_details_rollback.sql (Supabase), затем этот.
 BEGIN;
 SET LOCAL lock_timeout = '10s';
 

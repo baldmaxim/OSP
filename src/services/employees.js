@@ -16,6 +16,18 @@ export async function fetchEmployees() {
     .range(from, to))
 }
 
+// Действующие юристы ОСП (функция list_osp_lawyers, миграция 20270226): юрист договора в реестре, карточке договора, импорте и
+// отчёте по юристам. Справочник выше шлюз отдаёт не всем, кто видит договоры, — поэтому узкая функция: только id и ФИО юристов.
+// До миграции функции нет — пусто (юриста в реестре тогда и так нет). → [{ user_id, display_name, full_name, role: 'lawyer' }]
+export async function fetchOspLawyers() {
+  const { data, error } = await db.rpc('list_osp_lawyers')
+  if (error) {
+    if (error.code === 'PGRST202' || error.code === '42883' || /list_osp_lawyers/.test(error.message || '')) return []
+    throw error
+  }
+  return data || []
+}
+
 // Мапа user_id → сотрудник, чтобы резолвить ФИО в списках без join'ов
 // (в БД имена исполнителей намеренно не денормализованы).
 export function employeesById(list) {

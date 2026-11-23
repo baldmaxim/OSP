@@ -58,3 +58,5 @@
 20270223_supply_removed_docs.sql
 20270224_supply_registry_import.sql
 20270225_dp_conclusion_registry_contract.sql
+20270226_registry_osp_lawyers.sql
+20270227_supply_registry_rate_details.sql

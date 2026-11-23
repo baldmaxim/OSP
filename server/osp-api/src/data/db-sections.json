@@ -417,6 +417,7 @@
             "currency",
             "counterparty_id",
             "responsible_contact_id",
+            "responsible_user_id",
             "deleted_at",
             "record_type",
             "parent_contract_id",
@@ -2172,21 +2173,7 @@
           ]
         }
       ],
-      "why": "SupplyRegistryImportDialog: список загрузок и «Удалить загрузку» (canEditRegistry); загрузка — функцией supply_registry_import; в базе osp_can(rates_registry, edit)."
-    },
-    "supply_registry_rates": {
-      "read": "sensitive",
-      "select": [
-        {
-          "any": [
-            [
-              "rates_registry",
-              "view"
-            ]
-          ]
-        }
-      ],
-      "why": "SupplyRegistryImportDialog: число строк загрузки; в реестре строки — через supply_rates_registry."
+      "why": "SupplyRegistryImportDialog: список загрузок и «Удалить загрузку» (canEditRegistry); загрузка — функцией supply_registry_import; в базе osp_can(rates_registry, edit). Строки загрузок с 20270227 — в закрытой схеме (osp_private.supply_registry_rates), число строк загрузки и подробности — через supply_rates_registry."
     },
     "task_audit_log": {
       "read": "sensitive",
@@ -4051,6 +4038,25 @@
         }
       ],
       "why": "«Проверить по файлу» реестра КП (KpRateCheckDialog), любой зритель реестра."
+    },
+    "list_osp_lawyers": {
+      "kind": "read",
+      "read": "reference",
+      "call": [
+        {
+          "any": [
+            [
+              "contracts",
+              "view"
+            ],
+            [
+              "reports",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Юрист договора — действующий юрист ОСП (20270226): реестр, карточка договора и импорт (ContractsPage, ContractDetailPage), отчёт «Договоры по юристам» (ReportsPage). Только id и ФИО юристов; справочник сотрудников отдаётся не всем, кто видит договоры."
     },
     "list_sto_employees": {
       "kind": "read",

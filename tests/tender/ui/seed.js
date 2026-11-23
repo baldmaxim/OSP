@@ -1271,6 +1271,23 @@ if (CONTRACTS > 0) {
     Object.assign(contracts[1], { folder_path: '\\\\su10-fs\\Договоры\\ЖК Северный\\2-26' })
     Object.assign(contracts[3], { signal_link: 'https://signal.su10.ru/folder/4-26', document_link: 'https://cpm.su10.larix.ru/projects/77/docs/ДП-4' })
   }
+  // &contractsLawyers=1 — юрист договора — учётка юриста ОСП (contracts.responsible_user_id, миграция 20270226): функция
+  // list_osp_lawyers отдаёт двух юристов ОСП (как в базе — только действующих юристов); экономист-администратор есть лишь в справочнике
+  // сотрудников. У ctr-1 — юрист, у ctr-2 — экономист (не юрист ОСП), у ctr-4 — заблокированный юрист, у остальных — пусто.
+  if (params.get('contractsLawyers') === '1') {
+    const lawyers = [
+      { user_id: 'law-1', display_name: 'Юристова Юлия Юрьевна', full_name: 'Юристова Юлия Юрьевна', role: 'lawyer' },
+      { user_id: 'law-2', display_name: 'Правова Анна Сергеевна', full_name: 'Правова Анна Сергеевна', role: 'lawyer' },
+    ]
+    window.__fakeRpc = { ...(window.__fakeRpc || {}), list_osp_lawyers: () => ({ data: lawyers.map((l) => ({ ...l })), error: null }) }
+    window.__fakeDb.employee_directory.push(
+      { user_id: 'eco-1', display_name: 'Экономистова Эльвира Эдуардовна', full_name: 'Экономистова Эльвира Эдуардовна', email: 'e1@example.invalid', role: 'admin' },
+    )
+    for (const c of contracts) c.responsible_user_id = null
+    contracts[0].responsible_user_id = 'law-1'
+    contracts[1].responsible_user_id = 'eco-1'
+    contracts[3].responsible_user_id = 'law-blocked'
+  }
   window.__fakeDb.contracts = contracts
   window.__fakeDb.contract_appendices = []
   window.__fakeDb.s3_documents.push(...contracts.filter((_, i) => i % 7 === 0).map((c) => ({

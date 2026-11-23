@@ -3,6 +3,9 @@
 // объекты файла (распознан / несколько — выбрать / разово «Primavera = к14»), строки с итогом (уже в реестре, повтор, ошибка);
 // запись только по кнопке, порцией в базу; новые строки — в таблице сразу, тендер без ссылки — текстом; разовое правило после
 // загрузки не предлагается; удаление загрузки; без права правки и без миграции — кнопки нет.
+// Миграция 20270227: файл из папок счетов (подрядчик по папке, № документа, № заявки / заказа, файл-источник, ссылка на счёт)
+// → колонка «Документ» (значок счёта: зелёный — ссылка есть, красный — нет) и окно «Расценка» по нажатию на строку (мышью и с
+// клавиатуры); без колонок подробностей в базе — колонки «Документ» нет, окно открывается.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { Buffer } from 'node:buffer'
@@ -14,9 +17,12 @@ const launch = browserLaunchOptions()
 const skip = launch ? false : 'нет Chromium (Playwright, Chrome или PSDC_BROWSER)'
 
 const HEADERS = ['№ п/п', 'Источник', 'Объект', 'Наименование', 'Ед. изм.', 'Цена, ₽', 'Тендер', 'Дата расценки']
-function registryXlsx(rows) {
+// Шапка файла пользователя 23.11.2026 и колонка выгрузки «Ссылка на счёт».
+const FOLDER_HEADERS = ['Источник', 'Объект', 'Наименование', 'Ед. изм.', 'Цена, ₽', 'Тендер', 'Дата расценки',
+  'Подрядчик по папке', '№ документа из\nимени файла', '№ заявки / заказа', 'Файл-источник', 'Ссылка на счёт']
+function registryXlsx(rows, headers = HEADERS) {
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HEADERS, ...rows]), 'Расценки СУ-10')
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, ...rows]), 'Расценки СУ-10')
   return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }))
 }
 const FILE_ROWS = [
@@ -53,11 +59,11 @@ describe('Реестр СУ-10: загрузка расценок из Excel —
     await page.locator('.rr-table tbody tr').first().waitFor({ timeout: 120000 })
     return { page, errors, dialogs, close: () => context.close().catch(() => {}) }
   }
-  const upload = async (page, rows) => {
+  const upload = async (page, rows, { headers = HEADERS, name = 'Расценки снабжения.xlsx' } = {}) => {
     await page.getByRole('button', { name: 'Загрузить из Excel' }).click()
     const dialog = page.getByRole('dialog', { name: 'Загрузка расценок СУ-10 из Excel' })
     await dialog.getByRole('button', { name: 'Выбрать файл' }).waitFor()
-    await dialog.locator('input[type=file]').setInputFiles({ name: 'Расценки снабжения.xlsx', mimeType: XLSX_MIME, buffer: registryXlsx(rows) })
+    await dialog.locator('input[type=file]').setInputFiles({ name, mimeType: XLSX_MIME, buffer: registryXlsx(rows, headers) })
     await dialog.locator('.sri-objects').waitFor()
     return dialog
   }
@@ -159,6 +165,85 @@ describe('Реестр СУ-10: загрузка расценок из Excel —
       assert.ok(box.width >= 388 && box.height >= 840, JSON.stringify(box))
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
       assert.ok(overflow <= 1, `страница шире экрана на ${overflow}px`)
+    } finally {
+      await close()
+    }
+  })
+
+  it('файл из папок счетов: «Документ» — зелёный со ссылкой, красный без; строка открывает окно «Расценка» (мышь, клавиатура)', async () => {
+    const { page, errors, close } = await open()
+    try {
+      const heads = await page.locator('.rr-table thead th').allTextContents()
+      assert.equal(heads.at(-1), 'Документ')
+      const dialog = await upload(page, [
+        ['Счета', 'Зил33', 'Кабель ВВГнг(А)-LS 3х2,5', 'м', '95,50', '№ 640', '05.10.2026', 'ООО «Электро»', 4512, 'З-118/2',
+          '\\\\fs\\Счета\\Электро\\Счёт 4512.pdf', 'https://disk.example/s/4512'],
+        ['Счета', 'Зил33', 'Гофра ПВХ 20', 'м', 18, '', '05.10.2026', 'ООО «Электро»', 4513, '', 'Счёт 4513.pdf', ''],
+      ], { headers: FOLDER_HEADERS, name: 'Счета.xlsx' })
+      assert.match(await dialog.locator('.sri-details-note').innerText(),
+        /Подрядчик по папке, № документа, № заявки \/ заказа, Файл-источник, Ссылка на счёт/)
+      await dialog.getByRole('button', { name: 'Загрузить в реестр: 2' }).click()
+      await page.locator('.kpr-notice', { hasText: 'в реестр добавлено 2' }).waitFor()
+
+      const cable = page.locator('.rr-table tbody tr', { hasText: 'Кабель ВВГнг(А)-LS 3х2,5' })
+      const link = cable.locator('.rr-td-invoice a.rr-invoice.is-linked')
+      assert.equal(await link.getAttribute('href'), 'https://disk.example/s/4512')
+      assert.equal(await link.getAttribute('target'), '_blank')
+      assert.equal(await link.getAttribute('aria-label'), 'Открыть счёт (в новой вкладке)')
+      const color = (loc) => loc.evaluate((el) => getComputedStyle(el).color)
+      assert.equal(await color(link), 'rgb(21, 128, 61)', 'есть ссылка — зелёный')
+      const missing = page.locator('.rr-table tbody tr', { hasText: 'Гофра ПВХ 20' }).locator('.rr-td-invoice .rr-invoice.is-missing')
+      assert.equal(await missing.getAttribute('aria-label'), 'Ссылки на счёт нет')
+      assert.equal(await color(missing), 'rgb(185, 28, 28)', 'нет ссылки — красный')
+      assert.equal(await page.locator('.rr-table tbody tr', { hasText: 'Клей плиточный' }).locator('.rr-invoice.is-missing').count(), 1,
+        'у цены из тендера ссылки на счёт нет')
+
+      // Мышь: нажатие на строку (не на ссылку) — окно со всеми подробностями; Esc закрывает.
+      await cable.locator('.rr-td-unit').click()
+      const card = page.getByRole('dialog', { name: 'Расценка' })
+      await card.waitFor()
+      const text = await card.innerText()
+      for (const part of ['Кабель ВВГнг(А)-LS 3х2,5', '95,5 ₽', 'ЗИЛ 33', 'в файле: «Зил33»', 'Отделка МОП', 'ООО «Электро»', '4512',
+        'З-118/2', '\\\\fs\\Счета\\Электро\\Счёт 4512.pdf', 'Открыть счёт', '«Счета.xlsx»', 'Инженер Стендов', 'строка файла 2']) {
+        assert.ok(text.includes(part), `в окне нет «${part}»: ${text}`)
+      }
+      assert.equal(await card.getByRole('link', { name: 'Открыть счёт' }).getAttribute('href'), 'https://disk.example/s/4512')
+      await page.keyboard.press('Escape')
+      await card.waitFor({ state: 'detached' })
+
+      // Клавиатура: наименование — кнопка; Enter открывает окно; у строки без ссылки — «Ссылки на счёт нет», пустое — «Не указан».
+      await page.locator('.rr-table tbody tr', { hasText: 'Гофра ПВХ 20' }).getByRole('button', { name: 'Гофра ПВХ 20' }).focus()
+      await page.keyboard.press('Enter')
+      await card.waitFor()
+      assert.match(await card.innerText(), /Ссылки на счёт нет/)
+      assert.match(await card.innerText(), /№ заявки \/ заказа\s+Не указан/)
+      await card.getByRole('button', { name: 'Закрыть' }).last().click()
+      await card.waitFor({ state: 'detached' })
+
+      // Цена из тендера — без полей файла, с пояснением, где её документы.
+      await page.locator('.rr-table tbody tr', { hasText: 'Плитка керамогранит 600х600' }).locator('.rr-td-price').click()
+      await card.waitFor()
+      assert.match(await card.innerText(), /Цена снабжения из тендера/)
+      assert.doesNotMatch(await card.innerText(), /Подрядчик по папке/)
+      await page.keyboard.press('Escape')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('база без колонок подробностей (20270227 не применена): колонки «Документ» нет, окно открывается; телефон — во весь экран', async () => {
+    const { page, errors, close } = await open('&supplyDetailsMissing=1', { width: 390, height: 844 })
+    try {
+      const heads = await page.locator('.rr-table thead th').allTextContents()
+      assert.ok(!heads.includes('Документ'), heads.join(' | '))
+      await page.locator('.rr-table tbody tr').first().locator('.rr-td-num').click()
+      const card = page.getByRole('dialog', { name: 'Расценка' })
+      await card.waitFor()
+      assert.doesNotMatch(await card.innerText(), /Счёт/)
+      const box = await card.boundingBox()
+      assert.ok(box.width >= 388 && box.height >= 840, JSON.stringify(box))
+      assert.deepEqual(errors, [])
     } finally {
       await close()
     }

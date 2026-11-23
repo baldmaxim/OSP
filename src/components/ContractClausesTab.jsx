@@ -206,7 +206,8 @@ function AiSuggestModal({ dispute, cpName, contract, comments, canInsertFinal, o
 // (наша / контрагент / итоговая редакция) + обсуждение.
 // side='employee' — СУ-10 (грузит шаблон, правит итоговую редакцию/статус).
 // side='contractor' — кабинет подрядчика (читает договор, вносит свою редакцию + комментарии).
-function ContractClausesTab({ contractId, parties = [], contract = null, canEdit, side = 'employee', counterpartyId = null }) {
+// lawyerName — ФИО ответственного юриста (действующий юрист ОСП, считает карточка договора; utils/contractLawyer.js).
+function ContractClausesTab({ contractId, parties = [], contract = null, lawyerName = '', canEdit, side = 'employee', counterpartyId = null }) {
   const { userProfile, contractorInfo } = useRole()
   const isEmployee = side === 'employee'
   const authorName = isEmployee ? (userProfile?.full_name || 'Сотрудник') : (contractorInfo?.name || userProfile?.full_name || 'Контрагент')
@@ -633,7 +634,7 @@ function ContractClausesTab({ contractId, parties = [], contract = null, canEdit
             <div className="cct-rr"><span className="cct-rr-l">Контрагент</span><span className="cct-rr-v">{parties[0]?.name || contract.counterparties?.name || '—'}</span></div>
             {contract.contract_amount != null && <div className="cct-rr"><span className="cct-rr-l">Сумма</span><span className="cct-rr-v">{formatMoney(contract.contract_amount, contract.currency) || '—'}</span></div>}
             {contract.vat_rate != null && <div className="cct-rr"><span className="cct-rr-l">НДС</span><span className="cct-rr-v">{contract.vat_rate}%{contract.amount_includes_vat === false ? ' (без НДС)' : ''}</span></div>}
-            {contract.responsible?.full_name && <div className="cct-rr"><span className="cct-rr-l">Юрист</span><span className="cct-rr-v">{contract.responsible.full_name}</span></div>}
+            {lawyerName && <div className="cct-rr"><span className="cct-rr-l">Юрист</span><span className="cct-rr-v">{lawyerName}</span></div>}
             {contract.work_name && <div className="cct-rr"><span className="cct-rr-l">Работы</span><span className="cct-rr-v">{contract.work_name}</span></div>}
           </div>
         )}

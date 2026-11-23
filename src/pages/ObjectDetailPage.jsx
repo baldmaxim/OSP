@@ -46,6 +46,10 @@ const EMPTY_AREA_FORM = {
 // Ячейка одного файла в строке документа: имя + просмотр + скачать.
 // Вкладки карточки: ?tab= открывает нужную сразу.
 const OBJECT_TABS = ['info', 'documents', 'warranty', 'retentions', 'estimate', 'areas']
+// Столбец «Действия» таблиц документов: у приложения три кнопки (＋ ✏️ 🗑️ — 3 × 28 px с отступами ячейки). При 80 px
+// (table-layout: fixed) корзина уходила за край таблицы под прокрутку рамки, и приложение к ДС нельзя было удалить
+// отдельно — только всю ДС (23.11.2026).
+const DOC_ACTIONS_WIDTH = '7.5rem'
 
 function DocFileCell({ s3doc, accent, onPreview, onDownload, compact = false }) {
   if (!s3doc) return <span className="muted">—</span>
@@ -954,8 +958,26 @@ function ObjectDetailPage() {
     return result
   }
 
+  // Окно подтверждения называет, что именно удаляется: приложение (с вложенными) или ДС/договор вместе с приложениями.
+  const deleteConfirmText = (docId) => {
+    const doc = documents.find(d => d.id === docId)
+    let nested = 0
+    const stack = [docId]
+    while (stack.length) {
+      const id = stack.pop()
+      for (const d of documents) if (d.parent_document_id === id) { nested += 1; stack.push(d.id) }
+    }
+    if (!doc) return 'Удалить документ и все его приложения?'
+    if (doc.parent_document_id) {
+      const label = [doc.document_number, doc.name].filter(Boolean).join(' — ') || 'без названия'
+      return `Удалить приложение «${label}»${nested ? ` и его вложенные приложения (${nested})` : ''}? Документ, к которому оно относится, останется.`
+    }
+    const kind = doc.document_type === 'additional_agreement' ? 'ДС' : 'договор генподряда'
+    return `Удалить ${kind} «${doc.name || 'без названия'}»${nested ? ` вместе с приложениями (${nested})` : ''}?`
+  }
+
   const handleDeleteDocument = async (docId) => {
-    if (!window.confirm('Удалить документ и все его приложения?')) return
+    if (!window.confirm(deleteConfirmText(docId))) return
     try {
       const s3Docs = collectS3DocsToDelete(docId, documents)
       // Сначала S3-файлы (best-effort: ошибки логируем, но не блокируем удаление документа).
@@ -2091,7 +2113,7 @@ function ObjectDetailPage() {
                               </th>
                             )}
                             <th style={{ width: '130px' }}>Редактируемый</th>
-                            <th style={{ width: '80px' }}>Действия</th>
+                            <th style={{ width: DOC_ACTIONS_WIDTH }}>Действия</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2148,7 +2170,7 @@ function ObjectDetailPage() {
                               </th>
                             )}
                             <th style={{ width: '130px' }}>Редактируемый</th>
-                            <th style={{ width: '80px' }}>Действия</th>
+                            <th style={{ width: DOC_ACTIONS_WIDTH }}>Действия</th>
                           </tr>
                         </thead>
                         <tbody>

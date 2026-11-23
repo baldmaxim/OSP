@@ -7,6 +7,7 @@
 // загрузкой удаляется целиком (загрузка с каскадом), чтобы файл не остался наполовину.
 import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
+import { moscowDayEnd, moscowDayStart } from '../utils/ratesRegistry'
 import { importPayload, registryRowKey } from '../utils/supplyRegistryImport'
 
 const IMPORT_CHUNK = 500
@@ -33,25 +34,43 @@ export async function importAvailable() {
 export async function listImports() {
   const rows = await fetchAllRows((from, to) => db.from('supply_registry_imports').select(IMPORT_FIELDS)
     .order('created_at', { ascending: false }).order('id').range(from, to))
-  // Число строк — у последних загрузок (их немного; окно показывает список целиком, но считать сотни незачем).
+  // Число строк — у последних загрузок (их немного; окно показывает список целиком, но считать сотни незачем). Через
+  // представление реестра: в базе Яндекса строки загрузок с 20270227 — в закрытой схеме, напрямую их не прочитать.
   const counted = await Promise.all(rows.slice(0, 30).map(async (r) => {
-    const { count, error } = await db.from('supply_registry_rates').select('id', { count: 'exact', head: true }).eq('import_id', r.id)
+    const { count, error } = await db.from('supply_rates_registry').select('id', { count: 'exact', head: true }).eq('import_id', r.id)
     return { ...r, rows: error ? null : count ?? null }
   }))
   return [...counted, ...rows.slice(30).map((r) => ({ ...r, rows: null }))]
 }
 
-// Справочники распознавания: объекты, тендеры (без удалённых), ключи расценок реестра (показать «уже в реестре»), загрузки.
+// Справочники распознавания: объекты, тендеры (без удалённых), загрузки. Весь реестр сюда не читается: «уже в реестре»
+// проверяется после разбора файла и только за его дни (loadExistingKeys).
 export async function loadImportContext() {
-  const [objects, tenders, registry, imports] = await Promise.all([
+  const [objects, tenders, imports] = await Promise.all([
     fetchAllRows((from, to) => db.from('objects').select('id, name').order('name').order('id').range(from, to)),
     fetchAllRows((from, to) => db.from('tenders').select('id, work_description, object_id, public_tender_number, tender_type')
       .is('deleted_at', null).order('created_at', { ascending: false }).order('id').range(from, to)),
-    fetchAllRows((from, to) => db.from('supply_rates_registry').select('id, item_name, unit, price, object_id, rate_date')
-      .order('id').range(from, to)),
     listImports(),
   ])
-  return { objects, tenders, existing: new Set(registry.map(registryRowKey)), imports }
+  return { objects, tenders, imports }
+}
+
+// Ключи расценок реестра (utils/supplyRegistryImport → registryRowKey) за дни с fromDay по toDay ('ГГГГ-ММ-ДД', день по
+// Москве): день входит в ключ, поэтому расценки других дней совпасть со строками файла не могут. Раньше окно читало весь
+// реестр — десятки тысяч строк на каждое открытие.
+export async function loadExistingKeys(fromDay, toDay) {
+  if (!fromDay || !toDay) return new Set()
+  const rows = await fetchAllRows((from, to) => db.from('supply_rates_registry').select('id, item_name, unit, price, object_id, rate_date')
+    .gte('rate_date', moscowDayStart(fromDay)).lte('rate_date', moscowDayEnd(toDay))
+    .order('id').range(from, to))
+  return new Set(rows.map(registryRowKey))
+}
+
+// Загрузка, из которой расценка (окно подробностей): файл, кто и когда. Нет (удалили) — null.
+export async function loadImportInfo(id) {
+  const { data, error } = await db.from('supply_registry_imports').select(IMPORT_FIELDS).eq('id', id).limit(1)
+  if (error) throw new Error(`Загрузка не прочитана: ${error.message || error}`)
+  return data?.[0] || null
 }
 
 // lines — строки окна со status 'ok'. Ответ: { importId, added, skipped }. onProgress(записано строк, всего).
