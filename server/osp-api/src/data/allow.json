@@ -934,6 +934,12 @@
     "current_counterparty_id": [
       "authenticated"
     ],
+    "doc_check_assign_alerts_ack": [
+      "authenticated"
+    ],
+    "doc_check_assign_my_alerts": [
+      "authenticated"
+    ],
     "doc_check_scope": [
       "authenticated"
     ],

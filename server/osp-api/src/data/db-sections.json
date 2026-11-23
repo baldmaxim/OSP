@@ -3965,6 +3965,18 @@
       "call": "employee",
       "why": "DpRequestAlert в EmployeeLayout (GET)."
     },
+    "doc_check_assign_my_alerts": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "employee",
+      "why": "DpRequestAlert в EmployeeLayout (GET): окно «Вас назначили исполнителем» по «Заключению ДП» (20270225) — функция отдаёт только свои непрочитанные и только пока вошедший — исполнитель; опрашивает только юрист ОСП."
+    },
+    "doc_check_assign_alerts_ack": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "employee",
+      "why": "DpRequestAlert «Понятно»/«Открыть заявку» — гасит свои уведомления о назначении (20270225)."
+    },
     "dp_request_scope": {
       "kind": "read",
       "read": "sensitive",

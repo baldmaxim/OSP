@@ -1718,6 +1718,49 @@ if (params.get('docCheck') === '1') {
     if (params.get('dpFailUpload') === '1') {
       window.__fakeHold = ({ table, op }) => (table === 's3_documents' && op === 'insert' ? { error: { message: 'Хранилище не ответило' } } : {})
     }
+    // Окно исполнителю (20270225). dpAssigned=N — вошедший (asRole=lawyer) назначен исполнителем N заявок «Заключение ДП»: первая —
+    // dcr-dpc-2 «В работе», договор реестра уже создан (ID 4321), вторая — dcr-dpc-1 в «Новых», договора ещё нет.
+    // dpAssignMissing=1 — функций окна ещё нет (база раньше 20270225). Вход «Заключения ДП» в «В работе» «база» отвечает договором
+    // реестра и записью в истории заявки (как триггер doc_check_dp_conclusion_contract).
+    const assignAlerts = new Map()
+    const cpName = (r) => r.counterparties?.name ?? fdb.counterparties?.find((c) => c.id === r.counterparty_id)?.name ?? null
+    const addAssigned = (r, extra) => assignAlerts.set(r.id, {
+      request_id: r.id, request_number: r.request_number ?? null, status: r.status, object_name: r.objects?.name ?? obj(r.object_id)?.name ?? null,
+      counterparty_name: cpName(r), notes: r.notes ?? null, created_by_name: r.created_by_name ?? null, assigned_by_name: 'Начальникова Нина',
+      contract_id: null, contract_display_id: null, alerted_at: '2026-11-23T09:00:00Z', ...extra,
+    })
+    const assignedN = Number(params.get('dpAssigned') || 0)
+    if (assignedN >= 1) addAssigned(dpc[1], { status: 'in_progress', contract_id: 'ctr-dpc-2', contract_display_id: 4321 })
+    if (assignedN >= 2) addAssigned(dpc[0], {})
+    window.__assignAcks = []
+    window.__assignCalls = 0
+    window.__fakeRpc = { ...window.__fakeRpc,
+      doc_check_assign_my_alerts: () => {
+        window.__assignCalls++
+        if (params.get('dpAssignMissing') === '1') {
+          return { data: null, error: { code: 'PGRST202', message: 'Could not find the function public.doc_check_assign_my_alerts without parameters in the schema cache' } }
+        }
+        return { data: [...assignAlerts.values()], error: null }
+      },
+      doc_check_assign_alerts_ack: ({ p_requests: ids }) => {
+        window.__assignAcks.push(ids)
+        for (const id of ids) assignAlerts.delete(id)
+        return { data: ids.length, error: null }
+      },
+    }
+    let contractSeq = 9000
+    const withContract = new Set()
+    const afterDpc = window.__fakeAfter.doc_check_requests
+    window.__fakeAfter.doc_check_requests = (op, row, old) => {
+      afterDpc(op, row, old)
+      if (op === 'delete' || row.doc_type !== 'dp_conclusion' || row.deleted_at || row.status !== 'in_progress') return
+      if (op === 'update' && old.status === 'in_progress') return
+      if (withContract.has(row.id)) return
+      withContract.add(row.id)
+      ++contractSeq
+      history(row.id, 'contract_created', null, null, { contract_id: `ctr-${contractSeq}`, display_id: contractSeq },
+        `Договор создан в «Реестре по договорам»: ID ${contractSeq}`)
+    }
   }
   // dcBadLink=1 — в базе не адрес (правка мимо страницы): ссылкой стать не должно.
   if (params.get('dcBadLink') === '1') fdb.doc_check_requests.find((r) => r.id === 'dcr-3').email_link = 'javascript:alert(1)'

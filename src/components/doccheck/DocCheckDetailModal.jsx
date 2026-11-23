@@ -80,6 +80,8 @@ const EVENT_LABEL = {
   file_renamed: 'Файл переименован',
   file_moved: 'Файл перенесён',
   file_replaced: 'Файл заменён',
+  // «Заключение ДП» взято в работу — база создала договор в «Реестре по договорам» (20270225); текст с ID договора пишет она же.
+  contract_created: 'Договор в реестре',
 }
 const FILE_EVENTS = new Set(['file_attached', 'file_removed', 'file_renamed', 'file_moved', 'file_replaced'])
 

@@ -1,4 +1,4 @@
-/* Большое окно о новой заявке на ДП. Свои стили: окно живёт на всех страницах и не должно зависеть от стилей разделов,
+/* Большое окно по заявкам на заключение ДП: новая заявка (получателям) и назначение исполнителем (юристу ОСП). Свои стили: окно живёт на всех страницах и не должно зависеть от стилей разделов,
    которые могли ещё не загрузиться. Выше всех окон и полосы меню на телефоне (z-index 1250). */
 .dpa-overlay {
   position: fixed;
@@ -74,6 +74,16 @@
   border-radius: 0.5rem;
   background: var(--bg-primary);
 }
+/* Назначение исполнителем — с полосой слева: в общем окне его не спутать с новой заявкой. */
+.dpa-card--assigned { border-left: 0.25rem solid var(--primary-color); }
+
+/* Подзаголовки — только когда в окне оба повода. */
+.dpa-section {
+  margin: 0.25rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
 
 .dpa-card-title {
   display: flex;
@@ -107,6 +117,12 @@
   cursor: pointer;
 }
 .dpa-open:hover { background: var(--primary-light); }
+.dpa-actions {
+  display: inline-flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
 
 .dpa-facts {
   display: grid;
@@ -154,4 +170,6 @@
   .dpa-facts dd { margin-bottom: 0.5rem; }
   .dpa-foot { padding: 0.75rem 1rem; }
   .dpa-close { width: 100%; }
+  .dpa-actions { width: 100%; }
+  .dpa-actions .dpa-open { flex: 1 1 auto; }
 }

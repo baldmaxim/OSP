@@ -191,6 +191,22 @@ export function newRequestsLabel(n) {
   return `${n} новых заявок`
 }
 
+// Подпись количества заявок, где вошедший — исполнитель: «1 заявка», «2 заявки», «5 заявок».
+export function requestsLabel(n) {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return `${n} заявка`
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} заявки`
+  return `${n} заявок`
+}
+
+// Функций окна исполнителю ещё нет (база раньше 20270225): окно назначений молчит до перезагрузки страницы.
+export function isAssignAlertsMissing(err) {
+  const msg = String(err?.message || '')
+  return err?.code === 'PGRST202' || err?.code === '42883' || err?.status === 404
+    || (/doc_check_assign/.test(msg) && (/does not exist/.test(msg) || /schema cache/.test(msg) || /not allowed|не разрешен/i.test(msg)))
+}
+
 // Страница создала заявку → окно получателя проверяет сразу (создавший сам может быть в списке получателей).
 export const DP_CREATED_EVENT = 'osp:dp-request-created'
 // Окно получило новые уведомления → реестр перечитывается.

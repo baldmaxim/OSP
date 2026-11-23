@@ -50,7 +50,7 @@
 import './seed.js'
 import { lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom'
+import { MemoryRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import '../../../src/index.css'
 import '../../../src/App.css'
 import '../../../src/mobile.css'
@@ -71,8 +71,6 @@ const KpEstimateStand = lazy(() => import('./kp-estimate-stand.jsx'))
 const ObjectsPage = lazy(() => import('../../../src/pages/ObjectsPage'))
 const ContractsPage = lazy(() => import('../../../src/pages/ContractsPage'))
 const ContractsHubPage = lazy(() => import('../../../src/pages/ContractsHubPage'))
-// «Дерево договоров» (эксперимент): пример — в самой странице, реальные данные — договоры и заявки стенда.
-const ContractTreePage = lazy(() => import('../../../src/pages/ContractTreePage'))
 // «Проверка КП» — так же: стили страницы и рабочего слоя (workUi.css) не должны задеть другие стенды.
 const KpReviewPage = lazy(() => import('../../../src/pages/KpReviewPage'))
 // Реестр заявок на ДС — так же (DcRequestsPage.css, рабочий слой).
@@ -116,6 +114,12 @@ function NavBridge() {
   return null
 }
 
+// Карточки договора на стенде нет: адрес, куда увела ссылка (окно исполнителю «Открыть договор»), — текстом.
+function StandLocation() {
+  const { pathname } = useLocation()
+  return <div data-testid="stand-location">{pathname}</div>
+}
+
 const routes = (
   <Routes>
     <Route path="/vors" element={<VorsPage />} />
@@ -139,7 +143,7 @@ const routes = (
     <Route path="/general/objects/:objectId" element={<Suspense fallback={null}><ObjectDetailPage /></Suspense>} />
     <Route path="/contracts" element={<Suspense fallback={null}><ContractsHubPage /></Suspense>} />
     <Route path="/contracts/registry" element={<Suspense fallback={null}><ContractsPage /></Suspense>} />
-    <Route path="/contracts/tree" element={<Suspense fallback={null}><ContractTreePage /></Suspense>} />
+    <Route path="/contracts/:contractId" element={<StandLocation />} />
     <Route path="/kp-review" element={<Suspense fallback={null}><KpReviewPage /></Suspense>} />
     <Route path="/dc-requests" element={<Suspense fallback={null}><DcRequestsPage /></Suspense>} />
     <Route path="/stand/dp-create" element={<Suspense fallback={null}><DpStand button /></Suspense>} />

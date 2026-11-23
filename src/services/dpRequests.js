@@ -25,6 +25,12 @@ export async function isDpAlertRecipient(userId) {
 export const fetchDpAlerts = async () => unwrap(await db.rpc('dp_request_my_alerts', {}, { get: true })) || []
 export const ackDpAlerts = async (requestIds) => unwrap(await db.rpc('dp_request_alerts_ack', { p_requests: requestIds }))
 
+// ── Большое окно исполнителю (20270225) ─────────────────────────────────────────────────────────────────
+// Юриста ОСП добавили в исполнители «Заключения ДП» — уведомление заводит база. Функция отдаёт только свои непрочитанные и только
+// пока вошедший остаётся исполнителем; договор реестра — если он уже создан (заявка в работе).
+export const fetchAssignAlerts = async () => unwrap(await db.rpc('doc_check_assign_my_alerts', {}, { get: true })) || []
+export const ackAssignAlerts = async (requestIds) => unwrap(await db.rpc('doc_check_assign_alerts_ack', { p_requests: requestIds }))
+
 // Список получателей — администратор, окно на странице заявок.
 export const loadDpRecipients = () => fetchAllRows((from, to) => db
   .from('dp_request_alert_recipients')

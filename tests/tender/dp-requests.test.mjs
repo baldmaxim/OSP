@@ -345,6 +345,112 @@ describe('Заключение ДП: страницы', { skip: !launch && 'Не
     } finally { await close() }
   })
 
+  // Окно исполнителю (решение пользователя 23.11.2026; миграция 20270225 — tests/tender/dp-conclusion-registry-db.test.mjs).
+  const LAWYER = '&asRole=lawyer&asUser=lawyer-1&asName=Юристова%20Мария'
+
+  it('окно исполнителю: юристу — «Вас назначили исполнителем», договор реестра с ID и кнопкой; «Понятно» гасит только назначение', async () => {
+    const { page, errors, close } = await open('/stand/dp-alert', `&dpRecipient=0&dpAssigned=1${LAWYER}`, { ready: '.dpa-dialog' })
+    try {
+      const alert = page.locator('.dpa-dialog')
+      const text = await alert.innerText()
+      assert.match(text, /Вас назначили исполнителем/)
+      assert.match(text, /ID \d+/)
+      assert.match(text, /Статус\s*В работе/)
+      assert.match(text, /в «Реестре по договорам», ID 4321/)
+      assert.match(text, /Назначил\(а\)\s*Начальникова Нина/)
+      assert.equal(await alert.locator('h3.dpa-section').count(), 0, 'один повод — без подзаголовков')
+      assert.equal(await alert.getByRole('button', { name: 'Открыть договор' }).count(), 1)
+      assert.equal(await alert.getByRole('button', { name: 'Открыть заявку' }).count(), 1)
+      await page.keyboard.press('Escape')
+      assert.equal(await alert.isVisible(), true, 'Escape не закрывает')
+      await alert.getByRole('button', { name: 'Понятно' }).click()
+      await alert.waitFor({ state: 'detached' })
+      await page.waitForFunction(() => window.__assignAcks.length === 1)
+      assert.deepEqual(await page.evaluate(() => window.__assignAcks), [['dcr-dpc-2']])
+      assert.deepEqual(await page.evaluate(() => window.__dpAcks), [], 'уведомлений о новой заявке не трогает')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('оба повода — одно окно двумя частями; у заявки в «Новых» договора ещё нет; «Понятно» гасит оба', async () => {
+    const { page, errors, close } = await open('/stand/dp-alert', `&dpAlerts=1&dpAssigned=2${LAWYER}`, { ready: '.dpa-dialog' })
+    try {
+      await page.locator('.dpa-card[data-kind="assigned"]').nth(1).waitFor()
+      assert.equal(await page.locator('.dpa-dialog').count(), 1)
+      const alert = page.locator('.dpa-dialog')
+      assert.equal(await alert.locator('#dpa-title').innerText(), 'Заявки на заключение ДП')
+      assert.deepEqual(await alert.locator('h3.dpa-section').allTextContents(), ['Вы — исполнитель', 'Новые заявки'])
+      const fresh = alert.locator('.dpa-card[data-kind="assigned"]').nth(1)
+      assert.match(await fresh.innerText(), /появится в «Реестре по договорам», когда заявку возьмут в работу/)
+      assert.equal(await fresh.getByRole('button', { name: 'Открыть договор' }).count(), 0)
+      await alert.getByRole('button', { name: 'Понятно' }).click()
+      await alert.waitFor({ state: 'detached' })
+      await page.waitForFunction(() => window.__assignAcks.length === 1 && window.__dpAcks.length === 1)
+      assert.deepEqual(await page.evaluate(() => window.__assignAcks), [['dcr-dpc-2', 'dcr-dpc-1']])
+      assert.deepEqual(await page.evaluate(() => window.__dpAcks), [['dcr-dpc-1']])
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('окно исполнителю на телефоне: без прокрутки вбок, кнопки карточки — во всю ширину, «Понятно» видна', async () => {
+    const { page, errors, close } = await open('/stand/dp-alert', `&dpAlerts=1&dpAssigned=2${LAWYER}`,
+      { ready: '.dpa-dialog', viewport: { width: 390, height: 844 } })
+    try {
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0)
+      const card = page.locator('.dpa-card[data-kind="assigned"]').first()
+      const [actions, body] = await Promise.all([card.locator('.dpa-actions').boundingBox(), card.boundingBox()])
+      assert.ok(actions.width > body.width * 0.8, `кнопки ${actions.width} из ${body.width}`)
+      assert.equal(await page.getByRole('button', { name: 'Понятно' }).isVisible(), true)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('окно исполнителю: «Открыть договор» ведёт в карточку договора и гасит уведомление', async () => {
+    const { page, close } = await open('/stand/dp-alert', `&dpRecipient=0&dpAssigned=1${LAWYER}`, { ready: '.dpa-dialog' })
+    try {
+      await page.locator('.dpa-dialog').getByRole('button', { name: 'Открыть договор' }).click()
+      await page.waitForFunction(() => window.__assignAcks.length === 1)
+      assert.equal(await page.getByTestId('stand-location').innerText(), '/contracts/ctr-dpc-2')
+      assert.equal(await page.locator('.dpa-dialog').count(), 0)
+    } finally { await close() }
+  })
+
+  it('не юрист функцию окна исполнителю не спрашивает; функции ещё нет (до 20270225) — окно молчит, повторно не спрашивает', async () => {
+    const other = await open('/stand/dp-alert', '&dpRecipient=0&dpAssigned=1', { ready: '[data-testid="other-page"]' })
+    try {
+      await other.page.waitForTimeout(400)
+      assert.equal(await other.page.evaluate(() => window.__assignCalls), 0)
+      assert.equal(await other.page.locator('.dpa-dialog').count(), 0)
+      assert.deepEqual(other.errors, [])
+    } finally { await other.close() }
+    const missing = await open('/stand/dp-alert', `&dpRecipient=0&dpAssigned=1&dpAssignMissing=1${LAWYER}`, { ready: '[data-testid="other-page"]' })
+    try {
+      await missing.page.waitForFunction(() => window.__assignCalls === 1)
+      await missing.page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+      await missing.page.waitForTimeout(400)
+      assert.equal(await missing.page.evaluate(() => window.__assignCalls), 1)
+      assert.equal(await missing.page.locator('.dpa-dialog').count(), 0)
+      assert.deepEqual(missing.errors, [])
+    } finally { await missing.close() }
+  })
+
+  it('доска: «Заключение ДП» взяли в работу — в истории заявки «Договор в реестре» с его ID', async () => {
+    const { page, errors, close } = await open('/doc-check-requests', '&dpRecipient=0', { ready: '.dc-board' })
+    try {
+      await page.locator('.dc-column .dc-card[data-id="dcr-dpc-2"]').first().click()
+      const modal = page.locator('.dc-detail-modal')
+      await modal.waitFor()
+      await modal.locator('.dc-status-opt', { hasText: 'В работе' }).click()
+      await page.waitForFunction(() => window.__fakeDb.doc_check_requests.find((r) => r.id === 'dcr-dpc-2').status === 'in_progress')
+      await modal.getByRole('tab', { name: /^История/ }).click()
+      await modal.locator('.dc-history li').first().waitFor()
+      const first = modal.locator('.dc-history li').first()
+      assert.equal(await first.locator('.dc-history-event').innerText(), 'Договор в реестре')
+      assert.match(await first.locator('.dc-history-text').innerText(), /Договор создан в «Реестре по договорам»: ID 9001/)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
   it('получатели окна — у администратора на доске: добавить и убрать; у остальных кнопки нет', async () => {
     const { page, errors, close } = await open('/doc-check-requests', '', { ready: '.dc-board' })
     try {
