@@ -1,8 +1,10 @@
 import { useRef, useState } from 'react'
 import AnchoredPopover from './AnchoredPopover'
+import SignalReviewDialog from './SignalReviewDialog'
 import { openFolder } from './FolderOpen'
 import { copyWithToast } from './CopyToast'
 import { LARIX_LINK_FIELD, LARIX_NAME, larixCode, larixLink } from '../utils/contractLarix'
+import { markLook, markTitle } from '../utils/signalReview'
 import './DocLinkMarks.css'
 
 // Пути договора или ДС в «Реестре по договорам» — значками (11.11.2026, решение пользователя: «Signal — просто зелёной
@@ -15,6 +17,11 @@ import './DocLinkMarks.css'
 // без права пустой значок — только отметка.
 //
 // onSave(поле, значение) — промис; false — не сохранилось (сообщение показал вызывающий), окно остаётся открытым.
+//
+// «Signal» (23.11.2026, сверка с папками SIGNAL): если сервер сверки включён, у значка Signal есть метка (signalMark) — красный
+// с синей точкой («предложена папка») или жёлтый с «!» (противоречие, папка не видна, файл удалён); подпись — в title и
+// aria-label (цвет — не единственный носитель смысла). Нажатие с правом сверки (signalReview) на такой значок открывает окно
+// сверки (SignalReviewDialog) у значка; иначе — как раньше (переход, копирование, окно путей). Без метки значок прежний.
 
 const FIELDS = [
   { key: 'folder_path', label: 'Путь к папке', placeholder: '\\\\su10-fs\\Договоры\\ЖК Алия\\СУ-2-АЛ' },
@@ -36,9 +43,14 @@ const IconCloud = () => <Svg><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0
 const IconPencil = () => <Svg width={1.8}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></Svg>
 
 // Значок одного пути: заполнен — ссылка или кнопка перехода, пуст — кнопка «указать» (с правом правки) или отметка.
-function Mark({ kind, on, title, href, onActivate, onAdd, children }) {
-  const cls = `dlm dlm-${kind} ${on ? 'is-on' : 'is-off'}`
+function Mark({ kind, on, extra = '', title, href, onActivate, onAdd, onReview, children }) {
+  const cls = `dlm dlm-${kind} ${on ? 'is-on' : 'is-off'}${extra ? ` ${extra}` : ''}`
   const stop = (e) => e.stopPropagation()
+  if (onReview) {
+    return (
+      <button type="button" className={cls} title={title} aria-label={title} aria-haspopup="dialog" onClick={(e) => { stop(e); onReview(e.currentTarget) }}>{children}</button>
+    )
+  }
   if (on && href) {
     return <a className={cls} href={href} target="_blank" rel="noopener noreferrer" title={title} aria-label={title} onClick={stop}>{children}</a>
   }
@@ -51,9 +63,10 @@ function Mark({ kind, on, title, href, onActivate, onAdd, children }) {
   return <span className={cls} role="img" title={title} aria-label={title}>{children}</span>
 }
 
-export default function DocLinkMarks({ doc, canEdit = false, onSave, label = 'документа' }) {
+export default function DocLinkMarks({ doc, canEdit = false, onSave, label = 'документа', signalMark = null, signalReview = false, onSignalChanged }) {
   const groupRef = useRef(null)
   const [editor, setEditor] = useState(null) // { anchor, focus }
+  const [review, setReview] = useState(null) // { anchor } — окно сверки Signal
   const [draft, setDraft] = useState({})
   const [saving, setSaving] = useState(false)
 
@@ -89,6 +102,15 @@ export default function DocLinkMarks({ doc, canEdit = false, onSave, label = 'д
 
   const copy = (value, what) => copyWithToast(value, `${what} скопирован`)
 
+  // Значок Signal: метка сервера (если сверка включена) меняет вид и подпись; без метки — как раньше. Метка, которая не
+  // сходится со ссылкой договора (ссылку только что сменили, а сверка ещё не ответила), не показывается: она устарела.
+  const mark = signalMark && (signal ? signalMark.state !== 'none' && signalMark.state !== 'suggested' : ['none', 'suggested'].includes(signalMark.state)) ? signalMark : null
+  const look = markLook(mark)
+  const canReview = !!signalReview && look !== 'plain'
+  const signalTitle = mark
+    ? markTitle(mark, { link: signal, canReview, canAdd: canEdit })
+    : (signal ? `Signal: ${signal}` : `Ссылки на Signal нет${canEdit ? ' — нажмите, чтобы указать' : ''}`)
+
   return (
     <span className="dlm-group" ref={groupRef}>
       <Mark
@@ -101,11 +123,16 @@ export default function DocLinkMarks({ doc, canEdit = false, onSave, label = 'д
       <Mark
         kind="signal"
         on={!!signal}
+        extra={look === 'suggest' ? 'is-suggest' : look === 'warn' ? 'is-warn' : ''}
         href={isWebUrl(signal) ? signal : null}
-        title={signal ? `Signal: ${signal}` : `Ссылки на Signal нет${canEdit ? ' — нажмите, чтобы указать' : ''}`}
+        title={signalTitle}
         onActivate={() => copy(signal, 'Путь к Signal')}
         onAdd={add('signal_link')}
-      ><IconCloud /></Mark>
+        onReview={canReview ? (anchor) => setReview({ anchor }) : null}
+      >
+        <IconCloud />
+        {look === 'warn' && <span className="dlm-bang" aria-hidden="true">!</span>}
+      </Mark>
       <Mark
         kind="larix"
         on={!!larix}
@@ -126,6 +153,15 @@ export default function DocLinkMarks({ doc, canEdit = false, onSave, label = 'д
           aria-expanded={!!editor}
           onClick={(e) => { e.stopPropagation(); if (editor) close(); else openEditor(null) }}
         ><IconPencil /></button>
+      )}
+      {review && (
+        <SignalReviewDialog
+          contractId={doc.id}
+          contract={doc}
+          anchor={review.anchor}
+          onClose={() => setReview(null)}
+          onChanged={onSignalChanged}
+        />
       )}
       {editor && (
         <AnchoredPopover anchor={editor.anchor} onClose={close} canClose={() => !dirty && !saving} label={`Пути ${label}`} className="dlm-pop">

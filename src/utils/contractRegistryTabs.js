@@ -4,6 +4,9 @@
 // «Договоры и ДС» = договоры + ДС; раньше они считали одни договоры.
 import { DOC_TYPE } from './contractAmendments.js'
 
+// Набор id для фильтра «Сверка Signal» (registryRows → only): документы с предложением, противоречием, пропавшей папкой.
+export { signalReviewIds } from './signalReview.js'
+
 export const TAB_KEYS = ['all', 'in_work', 'paused', 'completed', 'deleted']
 
 // Отдел — по объекту документа (objects.status): основное строительство или гарантийное обслуживание.
@@ -84,10 +87,13 @@ export function kindCounts(docs, { scope, dept = 'all', tab = 'all' }) {
 // ДС этой вкладки — под ним (nested: id договора → его ДС по порядку). Договор, который сам во вкладку
 // не попадает, но у него есть ДС на ней, — тоже строка (context): иначе ДС «В работе» к завершённому
 // договору или удалённое ДС живого договора видно только в виде «ДС». ДС без договора — своей строкой.
-export function registryRows(docs, { docKind, scope, tab, dept = 'all' }) {
+// only — необязательный набор id (фильтр «Сверка Signal», 23.11.2026): документ вне набора на вкладку не попадает, как будто
+// он в другом статусе. Применяется ДО построения дерева и не по массиву docs: так ДС с замечанием остаётся под своим
+// договором, а договор без замечаний показан строкой ради него (context) один раз.
+export function registryRows(docs, { docKind, scope, tab, dept = 'all', only = null }) {
   const nested = new Map()
   const context = new Set()
-  const shown = (d) => inScope(d, scope) && inDept(d, dept) && inTab(d, tab)
+  const shown = (d) => inScope(d, scope) && inDept(d, dept) && inTab(d, tab) && (!only || only.has(d.id))
   if (docKind !== 'all') {
     return { rows: docs.filter(d => ofKind(d, docKind) && shown(d)), nested, context }
   }
@@ -114,4 +120,15 @@ export function registryRows(docs, { docKind, scope, tab, dept = 'all' }) {
     if (docKindOf(r) === 'contracts' && !shown(r)) context.add(r.id)
   }
   return { rows, nested, context }
+}
+
+// Сколько документов вкладки в наборе only (число на «Сверке Signal»): сами документы — договоры и ДС, без договоров,
+// показанных только ради ДС (context). Вид документа, отдел, «Наши договоры» и статус — как у строк.
+export function signalReviewCount(docs, only, { docKind, scope, tab, dept = 'all' }) {
+  if (!only || only.size === 0) return 0
+  let n = 0
+  for (const d of docs) {
+    if (only.has(d.id) && ofKind(d, docKind) && inScope(d, scope) && inDept(d, dept) && inTab(d, tab)) n++
+  }
+  return n
 }

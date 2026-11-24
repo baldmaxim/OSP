@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { db } from '../api'
+import { db, signal } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { CURRENCY_OPTIONS, formatMoney } from '../utils/estimateImport'
 import FilterDropdown from '../components/FilterDropdown'
@@ -8,6 +8,7 @@ import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
 import ConceptAgreementCell from '../components/ConceptAgreementCell'
 import DocLinkMarks from '../components/DocLinkMarks'
+import SignalReviewDialog from '../components/SignalReviewDialog'
 import EstimatToggle from '../components/EstimatToggle'
 import { estimatEvent, estimatPatch, estimatState } from '../utils/contractEstimat'
 import RootFolderPathButton from '../components/RootFolderPathButton'
@@ -32,7 +33,8 @@ import { fetchCounterpartyDocSummary, deleteDocument } from '../services/s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { chunkList } from '../utils/inChunks'
 import { LARIX_LINK_FIELD, LARIX_LINK_LABEL, isInLarix } from '../utils/contractLarix'
-import { kindCounts, registryCounts, registryRows } from '../utils/contractRegistryTabs'
+import { kindCounts, registryCounts, registryRows, signalReviewCount, signalReviewIds } from '../utils/contractRegistryTabs'
+import { STATE_LABEL, isReviewState, markFromMatch, markLook, matchNotice } from '../utils/signalReview'
 import { contractParties, counterpartyFilterOptions, hasCounterparty, matchCounterpartyOption } from '../utils/contractCounterpartyFilter'
 import { docTender, tenderChoices, tenderOptionLabel, tenderTitle } from '../utils/contractTender'
 import { VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION } from '../utils/vorDivisions'
@@ -520,6 +522,16 @@ function ContractRegistry() {
   const [onlyOverdue, setOnlyOverdue] = useState(false)
   // Быстрый фильтр: заключённые договоры, ещё не внесённые в Larix.
   const [onlyNoLarix, setOnlyNoLarix] = useState(false)
+  // «Сверка Signal» (23.11.2026): сервер сверки может быть выключен или не настроен — тогда ни метки, ни переключателя, ни
+  // окна нет и реестр работает как раньше. signalStatus — ответ /api/signal/status, signalMarks — Map id → метка.
+  const [signalStatus, setSignalStatus] = useState(null)
+  const [signalMarks, setSignalMarks] = useState(null)
+  const [onlySignalReview, setOnlySignalReview] = useState(false)
+  const [signalDialog, setSignalDialog] = useState(null) // { contractId } — окно сверки по id, без строки в таблице
+  const [signalNotice, setSignalNotice] = useState(null) // сообщение после сохранения (Р8)
+  const signalNoticeRef = useRef(null)
+  const signalSeq = useRef(0)
+  const signalMarksSeq = useRef(0) // номер последней перезагрузки меток: устаревший ответ игнорируется
   const [onlyNoTender, setOnlyNoTender] = useState(false)
   // Подразделение договора (коды подразделений ВОР, NO_VOR_DIVISION — «Не указано»); пусто — все.
   const [filterDivisions, setFilterDivisions] = useState([])
@@ -1322,9 +1334,73 @@ function ContractRegistry() {
   // Реестр загружается целиком; по вкладкам фильтруем в памяти (мгновенно).
   // В «Договорах и ДС» под договором — его ДС этой вкладки (nested); договор в
   // другом статусе, у которого есть ДС на вкладке, — строкой ради них (context).
+  // «Сверка Signal» — фильтр документов ДО построения дерева (registryRows ... only): ДС с замечанием остаётся под своим
+  // договором, договор без замечаний показан ради него один раз (context), число — по документам, без таких договоров.
+  const signalOn = !!signalStatus?.enabled
+  const signalCanEdit = signalOn && !!signalStatus.canEdit && canEditContracts
+  const signalReviewSet = useMemo(
+    () => (signalCanEdit && signalMarks ? signalReviewIds(signalMarks) : null),
+    [signalCanEdit, signalMarks])
+  const signalReviewOnly = onlySignalReview && signalReviewSet ? signalReviewSet : null
+  const signalCount = useMemo(
+    () => signalReviewCount(contracts, signalReviewSet, { docKind, scope, tab: activeTab, dept }),
+    [contracts, signalReviewSet, docKind, scope, activeTab, dept])
+  // Метки Signal: один раз при открытии реестра. Сервер выключен, не настроен или недоступен — { enabled: false }, остальное
+  // остаётся прежним. Метки — удобство: сбой их загрузки реестр не ломает.
+  // Перезагрузки идут после каждого сохранения, решения и импорта (решение сначала сливает свою метку — mergeSignalMark — и только
+  // потом запускает перезагрузку). Медленная, начатая раньше, не должна затереть более новую и слитую метку: результат
+  // применяет только последний запущенный вызов, ответы прежних игнорируются.
+  const refreshSignalMarks = useCallback(async () => {
+    const mine = ++signalMarksSeq.current
+    try {
+      const marks = await signal.allMarks()
+      if (mine === signalMarksSeq.current) setSignalMarks(marks)
+    } catch { /* метки не обновились — значки прежние */ }
+  }, [])
+  useEffect(() => {
+    let off = false
+    signal.status().then((st) => {
+      if (off) return
+      setSignalStatus(st)
+      if (st.enabled && (st.canView || st.canEdit)) refreshSignalMarks()
+    })
+    return () => { off = true }
+  }, [refreshSignalMarks])
+  const mergeSignalMark = useCallback((mark) => {
+    setSignalMarks((prev) => {
+      if (!prev) return prev
+      const next = new Map(prev)
+      next.set(mark.id, mark)
+      next.dataAt = prev.dataAt
+      return next
+    })
+  }, [])
+  // Решение человека в окне сверки сохранено сервером: ссылка договора (если сменилась) и значок обновляются сразу.
+  const handleSignalChanged = useCallback((r) => {
+    if (!r?.contractId) return
+    if ('signalLink' in r) setContracts(prev => prev.map(c => (c.id === r.contractId ? { ...c, signal_link: r.signalLink || null } : c)))
+    mergeSignalMark({ id: r.contractId, state: r.state, reason: null, pending: false, tip: '', hasCandidate: false })
+    setSignalNotice((n) => (n && n.contractId === r.contractId ? null : n))
+    refreshSignalMarks()
+  }, [mergeSignalMark, refreshSignalMarks])
+  // Сверка после сохранения (Р8): по снимку, без SIGNAL; ждём не дольше 3 с и сохранение не задерживаем (вызов не ждут).
+  // Нашлась папка или противоречие — сообщение с «Сверить» / «Позже»; ничего — без сообщения.
+  const checkSignalAfterSave = useCallback(async (contractId, headline) => {
+    if (!signalCanEdit || !contractId) return
+    const mine = ++signalSeq.current
+    const res = await signal.match([contractId], { timeoutMs: 3000 })
+    if (mine !== signalSeq.current) return
+    const item = res.items.find((i) => i.id === contractId)
+    if (!item) return
+    mergeSignalMark(markFromMatch(item))
+    const notice = matchNotice(item)
+    setSignalNotice((n) => (notice ? { contractId, headline, ...notice } : (n && n.contractId === contractId ? null : n)))
+    refreshSignalMarks()
+  }, [signalCanEdit, mergeSignalMark, refreshSignalMarks])
+
   const tabView = useMemo(
-    () => registryRows(contracts, { docKind, scope, tab: activeTab, dept }),
-    [contracts, docKind, scope, activeTab, dept])
+    () => registryRows(contracts, { docKind, scope, tab: activeTab, dept, only: signalReviewOnly }),
+    [contracts, docKind, scope, activeTab, dept, signalReviewOnly])
   const tabContracts = tabView.rows
   const nestedDsOf = (contractId) => tabView.nested.get(contractId) || []
 
@@ -1475,7 +1551,7 @@ function ContractRegistry() {
     })
   }, [filteredBeforeDivision, passesDivision, sortKey, sortDir])
 
-  const hasActiveFilters = !!(filterObjectIds.length || filterCounterpartyIds.length || filterDsType || filterLawyerId || searchText || onlyOverdue || onlyNoLarix || onlyNoTender || onlyOurs || divisionFilterOn)
+  const hasActiveFilters = !!(filterObjectIds.length || filterCounterpartyIds.length || filterDsType || filterLawyerId || searchText || onlyOverdue || onlyNoLarix || onlyNoTender || onlySignalReview || onlyOurs || divisionFilterOn)
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -1484,7 +1560,7 @@ function ContractRegistry() {
 
   const resetFilters = () => {
     setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterDsType(''); setFilterLawyerId(''); setSearchText('')
-    setOnlyOverdue(false); setOnlyNoLarix(false); setOnlyNoTender(false); setOnlyOurs(false); setFilterDivisions([])
+    setOnlyOverdue(false); setOnlyNoLarix(false); setOnlyNoTender(false); setOnlySignalReview(false); setOnlyOurs(false); setFilterDivisions([])
   }
 
   // Сохранение примечания юриста из раскрытого блока (по blur), с индикатором «Сохранение…».
@@ -1549,7 +1625,7 @@ function ContractRegistry() {
   useEffect(() => {
     setPage(1)
     setRowToggled(new Set())
-  }, [activeTab, scope, dept, docKind, filterObjectIds, filterCounterpartyIds, filterDsType, filterLawyerId, filterDivisions, searchText, onlyOverdue, onlyNoLarix, onlyNoTender, sortKey, sortDir, pageSize])
+  }, [activeTab, scope, dept, docKind, filterObjectIds, filterCounterpartyIds, filterDsType, filterLawyerId, filterDivisions, searchText, onlyOverdue, onlyNoLarix, onlyNoTender, onlySignalReview, sortKey, sortDir, pageSize])
 
   // Закрываем раскрытие при перелистывании страниц.
   useEffect(() => {
@@ -1729,6 +1805,7 @@ function ContractRegistry() {
 
       const docWord = isDsForm ? DOC_TYPE_LABEL[formData.record_type] : 'договор'
       let contractId = editingContract?.id
+      let savedDisplayId = editingContract?.display_id ?? null
       if (editingContract) {
         const { error } = await db.from('contracts').update(payload).eq('id', editingContract.id)
         if (error) throw error
@@ -1750,6 +1827,7 @@ function ContractRegistry() {
         if (error) throw error
         if (reassigned) alert(`Номер ${reassigned.from} успел получить другой договор — этому договору присвоен ${reassigned.to}.`)
         contractId = data?.id
+        savedDisplayId = data?.display_id ?? null
         const numberPart = payload.contract_number ? ` № ${payload.contract_number}` : ' (без номера)'
         await logContractEvent(contractId, 'created', {
           description: isDsForm
@@ -1809,6 +1887,8 @@ function ContractRegistry() {
       setCounterpartySearch('')
       setFormAttachments(new Set())
       fetchContracts()
+      // Сверка с Signal по снимку — после сохранения, не дожидаясь ответа и не задерживая форму (Р8).
+      checkSignalAfterSave(contractId, `Документ сохранён${savedDisplayId != null ? ` (ID ${savedDisplayId})` : ''}`)
     } catch (error) {
       if (!isDsForm && isSchemeNumberTaken(error) && parseContractNumber(formData.contract_number)) {
         // Номер по схеме не повторяется (уникальность в базе) — называем, у какого договора он уже есть.
@@ -2042,6 +2122,8 @@ function ContractRegistry() {
           ? `${LAWYER_LABEL}: ${before || '—'} → ${after || '—'}`
           : `Изменено: ${INLINE_FIELD_LABEL[field] || field}`,
       })
+      // Новую ссылку на Signal сервер сверяет сразу (Р8): сохранение не ждёт.
+      if (field === 'signal_link') checkSignalAfterSave(contractId, 'Ссылка на Signal сохранена')
       return true
     } catch (error) {
       console.error('Ошибка сохранения:', error.message)
@@ -2197,6 +2279,9 @@ function ContractRegistry() {
           canEdit={canEditContracts}
           onSave={(field, value) => handleInlineField(doc.id, field, value)}
           label={docLabel}
+          signalMark={signalMarks?.get(doc.id) || null}
+          signalReview={signalCanEdit}
+          onSignalChanged={handleSignalChanged}
         />
         {estimat && <EstimatToggle doc={doc} canEdit={canEditContracts} onChange={handleEstimatChange} />}
         <ConceptAgreementCell
@@ -2917,6 +3002,15 @@ function ContractRegistry() {
           onClick={() => setOnlyNoLarix(v => !v)}
           title="Заключённые договоры, ещё не внесённые в Larix"
         >Не в Larix</button>
+        {signalCanEdit && signalReviewSet && (
+          <button
+            type="button"
+            className={`qfilter${onlySignalReview ? ' active' : ''}`}
+            aria-pressed={onlySignalReview}
+            onClick={() => setOnlySignalReview(v => !v)}
+            title="Документы, у которых Signal предложил папку, нашёл противоречие или не видит папку: сверить"
+          >Сверка Signal<span className="qfilter-count">{signalCount}</span></button>
+        )}
         <button
           type="button"
           className={`qfilter${onlyNoTender ? ' active' : ''}`}
@@ -2933,6 +3027,19 @@ function ContractRegistry() {
           >Сбросить</button>
         )}
       </div>
+
+      {signalNotice && (
+        <div ref={signalNoticeRef} className={`srd-notice is-${signalNotice.kind}`} role="status" aria-live="polite" tabIndex={-1}>
+          <div className="srd-notice-text">
+            <strong>{signalNotice.headline}</strong>
+            <span>{signalNotice.text}</span>
+          </div>
+          <div className="srd-notice-actions">
+            <button type="button" className="srd-btn is-primary" onClick={(e) => setSignalDialog({ contractId: signalNotice.contractId, opener: e.currentTarget })}>Сверить</button>
+            <button type="button" className="srd-btn" onClick={() => setSignalNotice(null)}>Позже</button>
+          </div>
+        </div>
+      )}
 
       {!loading && totalCount > 0 && renderPagination('top')}
 
@@ -2982,6 +3089,16 @@ function ContractRegistry() {
                   {workName && <div className="mcard-desc">{workName}</div>}
                   {!docDeleted && (
                     <EstimatToggle doc={contract} canEdit={canEditContracts} onChange={handleEstimatChange} className="is-mcard" />
+                  )}
+                  {!docDeleted && signalCanEdit && isReviewState(signalMarks?.get(contract.id)?.state) && (
+                    <button
+                      type="button"
+                      className={`dlm-card is-${markLook(signalMarks.get(contract.id))}`}
+                      aria-haspopup="dialog"
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSignalDialog({ contractId: contract.id, opener: e.currentTarget }) }}
+                    >
+                      {signalMarks.get(contract.id).tip || STATE_LABEL[signalMarks.get(contract.id).state]} — сверить
+                    </button>
                   )}
                   <div className="mcard-rows">
                     {docTender(contract, docIndex.byId) && (
@@ -3367,10 +3484,21 @@ function ContractRegistry() {
             objects={objects}
             employees={employees}
             refsReady={formRefsReady}
+            signalReview={signalCanEdit}
             onClose={() => setShowImportModal(false)}
-            onImported={() => { setShowImportModal(false); fetchContracts() }}
+            onImported={() => { setShowImportModal(false); fetchContracts(); if (signalCanEdit) refreshSignalMarks() }}
           />
         </Suspense>
+      )}
+
+      {signalDialog && (
+        <SignalReviewDialog
+          contractId={signalDialog.contractId}
+          contract={contracts.find(c => c.id === signalDialog.contractId) || null}
+          returnFocus={() => (signalDialog.opener?.isConnected ? signalDialog.opener : (signalNoticeRef.current?.querySelector('button') || document.querySelector('.cr-toolbar input, .cr-toolbar button')))}
+          onClose={() => setSignalDialog(null)}
+          onChanged={handleSignalChanged}
+        />
       )}
 
       {showModal && (

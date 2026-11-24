@@ -133,6 +133,40 @@ describe('Договоры и ДС: пути значками', { skip: !launch 
     } finally { await close() }
   })
 
+  // 23.11.2026, сверка с SIGNAL (подробно — contracts-signal.test.mjs): сервер сверки включён (стенд signal=1). Значки папки и Larix, окно
+  // путей и карандаш — прежние; Signal без метки сервера — как раньше (зелёный по ссылке, красный без неё), с меткой — её подпись.
+  it('сервер сверки включён: папка, Larix и окно путей — как раньше; Signal — по метке сервера, без метки — по заполненности ссылки', async () => {
+    const { page, errors, close } = await open('&signal=1')
+    try {
+      await page.waitForFunction(() => document.querySelector('.cmarks .dlm-signal.is-suggest'))
+      const full = await marksOf(rowOf(page, '1/26'))
+      assert.deepEqual([full.folder.color, full.larix.color, full.larix.text], [GREEN, GREEN, 'Larix4521'])
+      assert.equal(full.signal.tag, 'a')
+      assert.equal(full.signal.href, 'https://signal.su10.ru/folder/1-26')
+      assert.match(full.signal.title, /^Signal: сверено /)
+      const none = await marksOf(rowOf(page, '13/26'))
+      assert.deepEqual([none.signal.on, none.signal.color, none.signal.title], [false, RED, 'Ссылки на Signal нет — нажмите, чтобы указать'], 'метки нет — как раньше')
+      assert.deepEqual([none.folder.color, none.larix.text], [RED, 'Larixнет'])
+
+      // Предложена папка (метка сервера): красный, нажатие — окно сверки, а не окно путей; карандаш — окно путей, как раньше.
+      const row = rowOf(page, '2/26')
+      assert.match(await row.locator('.dlm-signal').getAttribute('class'), /is-off.*is-suggest/)
+      await row.locator('.dlm-signal').click()
+      await page.locator('.apop.srd-pop').waitFor()
+      assert.equal(await page.locator('.apop.dlm-pop').count(), 0)
+      await page.keyboard.press('Escape')
+      await page.locator('.apop.srd-pop').waitFor({ state: 'detached' })
+      await row.locator('.dlm-edit').click()
+      const pop = page.locator('.apop.dlm-pop')
+      await pop.waitFor()
+      assert.deepEqual(await pop.locator('.dlm-pop-input').evaluateAll((els) => els.map((e) => e.value)),
+        ['\\\\su10-fs\\Договоры\\ЖК Северный\\2-26', '', ''])
+      await page.keyboard.press('Escape')
+      await pop.waitFor({ state: 'detached' })
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
   it('без права правки — только отметки: ни карандаша, ни окна, ни «+ ПС»; «ПС» с файлом — список во всплывающем окне', async () => {
     const { page, errors, close } = await open('&noEdit=contracts')
     try {

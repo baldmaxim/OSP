@@ -1,6 +1,8 @@
 // Данные крупного тендера для стенда (выполняется до импорта страницы).
 import { normName } from '../../../src/utils/supplyRateHelpers.js'
 import { codeKey, numberKey, parseContractNumber } from '../../../src/utils/contractNumbering.js'
+// Сервер сверки с SIGNAL (/api/signal/*): подменяет fetch только при ?signal=… (см. signal-fake.js).
+import './signal-fake.js'
 const params = new URLSearchParams(window.location.search)
 const ITEMS = Number(params.get('items') || 5000)
 const CPS = Number(params.get('cps') || 10)
@@ -1287,6 +1289,12 @@ if (CONTRACTS > 0) {
     contracts[0].responsible_user_id = 'law-1'
     contracts[1].responsible_user_id = 'eco-1'
     contracts[3].responsible_user_id = 'law-blocked'
+  }
+  // &signal=… — сверка с SIGNAL (signal-fake.js): ссылки Signal, которым нужна запись состояния: у ctr-1 и ctr-4 — как в
+  // contractsPaths; ctr-5 (сверено), ctr-7 (файл удалён), ctr-11 (не сверялась) — свои.
+  if (params.get('signal')) {
+    const links = { 'ctr-1': 1, 'ctr-4': 4, 'ctr-5': 5, 'ctr-7': 7, 'ctr-11': 11 }
+    for (const c of contracts) if (links[c.id] && !c.signal_link) c.signal_link = `https://signal.su10.ru/folder/${links[c.id]}-26`
   }
   window.__fakeDb.contracts = contracts
   window.__fakeDb.contract_appendices = []

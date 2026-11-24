@@ -1,0 +1,76 @@
+/* «Путь к Signal» в карточке договора при включённой сверке (SignalPathRow.jsx). Префикс spr-. Стили живут только внутри .spr:
+   соседние строки карточки (путь к папке, Larix.CPM) не задеты. Цвет — не единственный признак: у каждого состояния есть подпись. */
+.contract-section .info-value:has(> .spr) { flex: 1; min-width: 0; font-weight: 400; }
+
+.spr { display: flex; flex-direction: column; gap: 0.375rem; min-width: 0; font-size: 0.8125rem; line-height: 1.4; }
+.spr-empty { color: var(--text-tertiary); }
+
+.spr-main { display: flex; align-items: flex-start; gap: 0.375rem; min-width: 0; }
+.spr-icon { flex: 0 0 auto; display: inline-flex; margin-top: 0.1875rem; color: var(--text-tertiary); }
+.spr-path { min-width: 0; font-weight: 500; color: var(--text-primary); overflow-wrap: anywhere; text-decoration: none; }
+a.spr-path { color: var(--ui-link, var(--primary-color)); }
+a.spr-path:hover { text-decoration: underline; }
+
+.spr-state { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem 0.5rem; min-width: 0; }
+.spr-badge { display: inline-block; max-width: 100%; padding: 0.0625rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; background: rgba(100, 116, 139, 0.14); color: var(--text-secondary); }
+.spr-badge.is-ok { background: rgba(22, 163, 74, 0.13); color: #15803d; }
+.spr-badge.is-warn { background: rgba(245, 158, 11, 0.18); color: #92400e; }
+.spr-badge.is-info { background: rgba(37, 99, 235, 0.11); color: #1d4ed8; }
+.spr-why { font-size: 0.75rem; color: var(--text-tertiary); overflow-wrap: anywhere; }
+.spr-actions { display: inline-flex; flex-wrap: wrap; gap: 0.375rem; }
+
+.spr-btn { padding: 0.1875rem 0.625rem; font: inherit; font-size: 0.75rem; font-weight: 500; line-height: 1.4; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; }
+.spr-btn:hover:not(:disabled) { color: var(--text-primary); border-color: var(--primary-color); }
+.spr-btn:disabled { opacity: 0.55; cursor: default; }
+.spr-btn.is-danger { color: #b91c1c; }
+.spr-btn:focus-visible, .spr-link:focus-visible, .spr-files-toggle:focus-visible, .spr-folder-btn:focus-visible, .spr-out:focus-visible, a.spr-path:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.spr-link { padding: 0; font: inherit; color: var(--ui-link, var(--primary-color)); background: none; border: none; text-decoration: underline; cursor: pointer; }
+
+.spr-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem 0.75rem; padding: 0.4375rem 0.625rem; font-size: 0.75rem; color: var(--text-primary); background: rgba(220, 38, 38, 0.07); border: 1px solid rgba(220, 38, 38, 0.3); border-radius: 8px; }
+.spr-msg { margin: 0; font-size: 0.75rem; }
+.spr-msg.is-error { color: #b91c1c; }
+.spr-msg.is-stale { color: #92400e; }
+.spr-muted { margin: 0; font-size: 0.75rem; color: var(--text-tertiary); }
+
+/* Список файлов папки — свёрнут, пока не откроют. */
+.spr-files { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.spr-files-toggle { display: inline-flex; align-items: flex-start; gap: 0.3125rem; align-self: flex-start; max-width: 100%; padding: 0.125rem 0; font: inherit; font-size: 0.75rem; font-weight: 500; text-align: left; color: var(--text-secondary); background: none; border: none; cursor: pointer; }
+.spr-files-toggle > svg { flex: 0 0 auto; margin-top: 0.25rem; }
+.spr-files-toggle > span { min-width: 0; overflow-wrap: anywhere; }
+.spr-files-toggle:hover { color: var(--text-primary); }
+
+.spr-list { list-style: none; margin: 0.125rem 0 0; padding: 0; display: flex; flex-direction: column; min-width: 0; border-left: 2px solid var(--border-color); }
+.spr-list .spr-list { margin-left: 0.5rem; }
+.spr-file, .spr-folder-line { display: grid; grid-template-columns: minmax(0, 1fr) auto 1.5rem; align-items: baseline; gap: 0.125rem 0.75rem; padding: 0.1875rem 0 0.1875rem 0.625rem; border-bottom: 1px solid rgba(148, 163, 184, 0.16); }
+.spr-folder-line { grid-template-columns: minmax(0, 1fr) 1.5rem; }
+.spr-file-name { min-width: 0; overflow-wrap: anywhere; color: var(--text-primary); font-weight: 500; }
+.spr-file-meta { font-size: 0.75rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.spr-file.is-deleted .spr-file-name { color: var(--text-tertiary); text-decoration: line-through; font-weight: 400; }
+.spr-out, .spr-out-gap { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; }
+.spr-out { color: var(--ui-link, var(--primary-color)); border-radius: 4px; text-decoration: none; }
+.spr-out:hover { background: rgba(14, 116, 144, 0.1); }
+.spr-folder-btn { display: inline-flex; align-items: flex-start; gap: 0.3125rem; min-width: 0; padding: 0; font: inherit; text-align: left; color: var(--text-primary); background: none; border: none; cursor: pointer; }
+.spr-folder-btn > svg { flex: 0 0 auto; margin-top: 0.25rem; color: var(--text-tertiary); }
+.spr-folder-btn:hover .spr-file-name { text-decoration: underline; }
+.spr-kids { padding: 0.125rem 0 0.25rem 0.625rem; }
+.spr-more { padding: 0.25rem 0 0.125rem 0.625rem; font-size: 0.75rem; color: var(--text-tertiary); }
+
+[data-theme='dark'] .spr-badge.is-ok { color: #86efac; }
+[data-theme='dark'] .spr-badge.is-warn { color: #fcd34d; }
+[data-theme='dark'] .spr-badge.is-info { color: #93c5fd; }
+[data-theme='dark'] .spr-btn.is-danger, [data-theme='dark'] .spr-msg.is-error { color: #fca5a5; }
+[data-theme='dark'] .spr-msg.is-stale { color: #fcd34d; }
+
+/* Телефон: список — на всю ширину строки, имя переносится, версия и дата — второй строкой. */
+@media (max-width: 640px) {
+  .spr-file { grid-template-columns: minmax(0, 1fr) 2.25rem; grid-template-areas: 'name out' 'meta out'; gap: 0 0.5rem; }
+  .spr-file .spr-file-name { grid-area: name; }
+  .spr-file .spr-file-meta { grid-area: meta; white-space: normal; }
+  .spr-file .spr-out, .spr-file .spr-out-gap { grid-area: out; align-self: center; }
+  .spr-folder-line { grid-template-columns: minmax(0, 1fr) 2.25rem; }
+  .spr-out, .spr-out-gap { width: 2.25rem; height: 2.25rem; }
+  .spr-btn { padding: 0.375rem 0.75rem; font-size: 0.8125rem; }
+  .spr-files-toggle { padding: 0.375rem 0; font-size: 0.8125rem; }
+  .spr-folder-btn { padding: 0.25rem 0; }
+  .spr-confirm { font-size: 0.8125rem; }
+}

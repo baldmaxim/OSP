@@ -51,6 +51,10 @@ import { createLoadStatus, isFinalLoad } from './lib/loadStatus.js'
 import { createLarixClient } from './lib/larixClient.js'
 import { createLarixSync, dbTarget, supabaseTarget } from './lib/larixSync.js'
 import { createSupplyImport } from './lib/supplyImport.js'
+import { createSignalClient } from './lib/signalClient.js'
+import { createSignalApi } from './lib/signalApi.js'
+import { createSignalSync } from './lib/signalSync.js'
+import { createSignalJobs, createSignalCapability } from './lib/signalJobs.js'
 import { createRegistryRefresh } from './lib/registryRefresh.js'
 import { createSecretBox } from './lib/auth/secretBox.js'
 import { createPasswordVerifier } from './lib/auth/passwords.js'
@@ -75,6 +79,7 @@ import { registerIdentityAdmin } from './routes/identityAdmin.js'
 import { createOrgs } from './lib/auth/orgs.js'
 import { createOrgAdmin } from './lib/auth/orgAdmin.js'
 import { registerOrgAdmin } from './routes/orgAdmin.js'
+import { registerSignal } from './routes/signal.js'
 
 // Список разрешённого шлюзу данных — выдача прав прода как есть (scripts/build-db-allow.mjs).
 const ALLOW = JSON.parse(fs.readFileSync(new URL('./data/allow.json', import.meta.url), 'utf8'))
@@ -532,6 +537,42 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     app.decorate('larixSync', larixSync)
   }
 
+  // Сверка договоров с папками Signal (src/lib/signalJobs.js, signalSync.js, routes/signal.js): очередь пересчёта и обход Signal.
+  // Возможность включена, когда SIGNAL_SYNC=1, есть своя база и в ней схема нужной версии (проверка при запуске и раз в 5 минут);
+  // иначе маршруты отвечают «выключено», таймеры не стартуют, портал работает как раньше. Ошибка проверки схемы запуск не роняет.
+  // Обход (signalSync) стартует, только если задано подключение к Signal; очередь работает и без него — она читает свой снимок.
+  let signalCtx = null
+  if (config.signal?.sync && !db) throw new Error('SIGNAL_SYNC=1: нужен OSP_DB_URL')
+  if (db && config.signal?.sync) {
+    // deps.signalClient — только для тестов (allowLoopback: http и порт только к 127.0.0.1, не из окружения).
+    const client = createSignalClient({ ...config.signal, ...deps.signalClient, log: app.log })
+    const api = createSignalApi({ client })
+    // Такты очереди и обхода стартуют один раз, когда возможность впервые включена (config.signal.timers === false — только в тестах).
+    let timersOn = false
+    const startSignalTimers = () => {
+      if (timersOn || config.signal.timers === false) return
+      timersOn = true
+      jobs.start()
+      if (api.configured) syncRunner.start()
+    }
+    const capability = createSignalCapability({ db, log: app.log, onChange: (active) => { if (active) startSignalTimers() }, ...deps.signalCapability })
+    const jobs = createSignalJobs({ db, log: app.log, isReadOnly, isActive: capability.active, config: config.signal, now: deps.now, ...deps.signalJobs })
+    // Обход не работает, пока возможность выключена (схему убрали откатом): такт пропускается как при барьере записи.
+    const syncReadOnly = () => isReadOnly() || !capability.active()
+    const syncRunner = createSignalSync({ db, api, isReadOnly: syncReadOnly, log: app.log, config: config.signal, now: deps.now, ...deps.signalSync })
+    app.addHook('onReady', async () => {
+      await capability.refresh()
+      capability.start()
+    })
+    app.addHook('onClose', async () => {
+      capability.stop()
+      await jobs.stop()
+      await syncRunner.stop()
+    })
+    signalCtx = { config: config.signal, api, capability, jobs, sync: syncRunner, timers: () => timersOn }
+    app.decorate('signal', signalCtx)
+  }
+
   // Ключи API для смежных систем: выпуск в «Администрировании», проверка на /api/rates/*, журнал вызовов
   // (src/lib/apiKeys.js). Ключи из RATES_API_KEYS заносятся в список при запуске; таблиц ещё нет — повтор по такту.
   const apiKeys = createApiKeyStore({ db, envEntries: parseRatesKeys(config.ratesApiKeys || [], app.log), log: app.log, isReadOnly, source: security.apiKeysSource })
@@ -591,6 +632,10 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     presignRate: createRateLimit(limits.presignPerUser),
     ratesRate: createRateLimit(limits.ratesPerKey),
     ratesKey: createConcurrency(limits.ratesConcurrentPerKey),
+    // Сверка с Signal: сверка по снимку — 60 в минуту на пользователя, решения и правки администратора — 30, ручной обход — 1.
+    signalMatch: createRateLimit(limits.signalMatchPerUser || { max: 60, windowMs: 60_000 }),
+    signalWrite: createRateLimit(limits.signalWritePerUser || { max: 30, windowMs: 60_000 }),
+    signalSync: createRateLimit(limits.signalSyncPerUser || { max: 1, windowMs: 60_000 }),
   }
 
   app.setErrorHandler((err, request, reply) => {
@@ -641,7 +686,12 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     method: 'GET',
     url: '/api/health',
     config: { access: access.open(openReason('GET', '/api/health')) },
-    handler: async () => ({ ok: true, service: 'osp-api', configured: configuredParts(config) }),
+    handler: async () => {
+      const configured = configuredParts(config)
+      // Сверка Signal «настроена», только если она ещё и включена: схема в базе есть (проверка возможности).
+      if (configured.signal) configured.signal = Boolean(signalCtx?.capability.active())
+      return { ok: true, service: 'osp-api', configured }
+    },
   })
 
   // Готовность: зависимости действительно отвечают с текущими ключами. 200 — только если каждая
@@ -770,11 +820,13 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   const ctx = { signup, signupAdmin, pow, config, getS3, getAnthropic, getServiceClient, limiters, db,
     verifyUserToken, allow: deps.allow || ALLOW, mint, beforeGateway, gatewayOn, isReadOnly, loadStatus,
     principal, authService, sessions, isSuperadmin, apiKeys, coverThumbs: deps.coverThumbs, coverThumbWaitMs: deps.coverThumbWaitMs,
-    oidc, identity, accessSync, orgs, orgAdmin, sectionRights, security, sectionMap: deps.sectionMap, contractorAllow: deps.contractorAllow }
+    oidc, identity, accessSync, orgs, orgAdmin, sectionRights, security, sectionMap: deps.sectionMap, contractorAllow: deps.contractorAllow,
+    signal: signalCtx }
   registerAuth(app, ctx)
   registerOidc(app, ctx)
   registerIdentityAdmin(app, ctx)
   registerOrgAdmin(app, ctx)
+  registerSignal(app, ctx)
   registerSignup(app, ctx)
   registerDbGateway(app, ctx)
   registerS3Presign(app, ctx)

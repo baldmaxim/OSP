@@ -3,7 +3,7 @@
 // завершённому договору на вкладке «В работе» не было видно вовсе.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { TAB_KEYS, kindCounts, registryCounts, registryRows } from '../../src/utils/contractRegistryTabs.js'
+import { TAB_KEYS, kindCounts, registryCounts, registryRows, signalReviewCount, signalReviewIds } from '../../src/utils/contractRegistryTabs.js'
 import { docTender, tenderChoices, tenderOptionLabel, tenderTitle } from '../../src/utils/contractTender.js'
 
 const doc = (id, over = {}) => ({
@@ -108,6 +108,65 @@ describe('строки вкладки', () => {
     assert.deepEqual(ids(v.nested.get('k2')), ['d22'])
     assert.ok(v.context.has('k2'))
     assert.ok(!v.context.has('k1'))
+  })
+})
+
+// «Сверка Signal» (23.11.2026): набор id (only) применяется ДО построения дерева. ДС с замечанием остаётся под своим договором,
+// договор без замечаний показан один раз строкой «ради ДС» (context); число — по документам, без таких договоров.
+describe('«Сверка Signal»: фильтр до дерева и число', () => {
+  const marks = new Map([
+    ['k1', { id: 'k1', state: 'verified' }],
+    ['d12', { id: 'd12', state: 'conflict' }],
+    ['d11', { id: 'd11', state: 'suggested' }],
+    ['k2', { id: 'k2', state: 'attention' }],
+    ['d21', { id: 'd21', state: 'unverified', pending: true }],
+    ['d22', { id: 'd22', state: 'missing' }],
+    ['d31', { id: 'd31', state: 'suggested', pending: true }],
+    ['k3', { id: 'k3', state: 'none' }],
+  ])
+
+  it('набор: предложение, противоречие, папка не видна, файл удалён; сверено, не сверено, нет ссылки и «ожидает» — нет', () => {
+    assert.deepEqual([...signalReviewIds(marks)].sort(), ['d11', 'd12', 'd22', 'k2'])
+    assert.deepEqual([...signalReviewIds([{ id: 'a', state: 'suggested' }, { id: 'b', state: 'verified' }, null])], ['a'])
+    assert.equal(signalReviewIds(null).size, 0)
+  })
+
+  it('ДС с замечанием — под своим договором; договор без замечаний — один раз «ради ДС»; ДС без замечаний не показан', () => {
+    const only = signalReviewIds(marks)
+    const v = registryRows(DOCS, { docKind: 'all', scope: 'all', tab: 'all', only })
+    // k1 — сверен (без замечаний), но у него ДС d11 и d12 с замечаниями; k2 — с замечанием, его d22 тоже; d21 — «ожидает».
+    assert.deepEqual(ids(v.rows), ['k1', 'k2'])
+    assert.deepEqual(v.nested.get('k1').map(d => d.id), ['d11', 'd12'])
+    assert.deepEqual(v.nested.get('k2').map(d => d.id), ['d22'])
+    assert.deepEqual([...v.context], ['k1'], 'k1 показан ради ДС, k2 — сам по себе')
+    assert.equal(v.rows.filter(r => r.id === 'k1').length, 1)
+    // Фильтр по массиву до вызова потерял бы договор ДС: d22 стал бы строкой без родителя.
+    const naive = registryRows(DOCS.filter(d => only.has(d.id)), { docKind: 'all', scope: 'all', tab: 'all' })
+    assert.ok(naive.rows.some(r => r.id === 'd12'), 'так нельзя: ДС потерял договор')
+  })
+
+  it('число — по документам вкладки (договор ради ДС не считается), вид документа, статус и «Наши» — как у строк', () => {
+    const only = signalReviewIds(marks)
+    const count = (o) => signalReviewCount(DOCS, only, { scope: 'all', tab: 'all', docKind: 'all', ...o })
+    assert.equal(count(), 4)
+    assert.equal(count({ docKind: 'contracts' }), 1, 'k2')
+    assert.equal(count({ docKind: 'amendments' }), 3)
+    // Вкладка «В работе»: k2 и d12; d22 — приостановлен, d11 — завершён.
+    assert.equal(count({ tab: 'in_work' }), 2)
+    assert.equal(count({ scope: 'ours' }), 3, 'k2 — не наш договор')
+    assert.equal(signalReviewCount(DOCS, null, { scope: 'all', tab: 'all', docKind: 'all' }), 0)
+    assert.equal(signalReviewCount(DOCS, new Set(), { scope: 'all', tab: 'all', docKind: 'all' }), 0)
+    // Число совпадает со строками: договоры и ДС набора на вкладке минус договоры «ради ДС».
+    const v = registryRows(DOCS, { docKind: 'all', scope: 'all', tab: 'all', only })
+    const docs = v.rows.length - v.context.size + [...v.nested.values()].reduce((n, l) => n + l.length, 0)
+    assert.equal(docs, count())
+  })
+
+  it('без набора (only не задан) строки прежние', () => {
+    const base = registryRows(DOCS, { docKind: 'all', scope: 'all', tab: 'all' })
+    const same = registryRows(DOCS, { docKind: 'all', scope: 'all', tab: 'all', only: null })
+    assert.deepEqual(ids(same.rows), ids(base.rows))
+    assert.deepEqual([...same.context], [...base.context])
   })
 })
 
