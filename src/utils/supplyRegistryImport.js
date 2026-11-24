@@ -9,6 +9,8 @@
 // Файл из папок счетов (23.11.2026, миграция 20270227) несёт ещё «Подрядчик по папке», «№ документа из имени файла»,
 // «№ заявки / заказа», «Файл-источник», выгрузка реестра — и «Ссылку на счёт»: это подробности расценки, они видны по
 // нажатию на строку реестра (components/rates/SupplyRateDetailsDialog) и в распознавание не входят.
+// Ссылка на счёт чаще «зашита» в ячейку: видно «Открыть счёт», адрес — в гиперссылке ячейки или в формуле ГИПЕРССЫЛКА
+// (23.11.2026: такие ссылки не читались — бралась подпись). Адрес достаётся из ячейки листа (cellLink).
 //
 // Объект пишут как придётся: «18 19 27», «injoy», «king&sons», «Алия», «дом56(не реновация)», «Зил33» (просьба пользователя
 // 20.11.2026). Распознаём по словам и числам названия объекта портала (resolveObject): только однозначно — у «ЗИЛ 33»,
@@ -146,6 +148,35 @@ export function registryGridRows(grid, header, sheet = '') {
   return out
 }
 
+// ── Ссылка, зашитая в ячейку ─────────────────────────────────────────────────────────────────────────
+// Книгу для загрузки читают с формулами (readWorkbookBytes(…, REGISTRY_READ_OPTIONS)): без них формула ГИПЕРССЫЛКА пропала бы.
+export const REGISTRY_READ_OPTIONS = { cellFormula: true }
+// =ГИПЕРССЫЛКА("адрес";"Открыть счёт") — в файле HYPERLINK("адрес","…"); в CSV формула приходит текстом, как набрана.
+const HYPERLINK_RE = /^=?\s*(?:HYPERLINK|ГИПЕРССЫЛКА)\s*\(\s*"((?:[^"]|"")*)"/i
+const formulaLink = (text) => {
+  const m = HYPERLINK_RE.exec(String(text ?? ''))
+  return m ? m[1].replace(/""/g, '"') : ''
+}
+// Адрес ссылки ячейки (строка и колонка листа — с нуля) или ''. Гиперссылка ячейки (Ctrl+K, «умная» таблица) — cell.l.Target,
+// формула — cell.f, CSV — текст ячейки. Пробелы в адресе сайта — как %20 (тот же адрес; с пробелом база ссылку не примет).
+export function cellLink(XLSX, ws, r, c) {
+  if (!ws || r == null || c == null) return ''
+  const cell = ws['!data'] ? ws['!data'][r]?.[c] : ws[XLSX.utils.encode_cell({ r, c })]
+  if (!cell) return ''
+  const link = utf8Fixed(cellText(cell.l?.Target)) || formulaLink(cell.f) || formulaLink(cell.v)
+  return /^https?:\/\//i.test(link) ? link.replace(/ /g, '%20') : link
+}
+// Адрес гиперссылки .xlsx библиотека отдаёт байтами UTF-8, не собрав их в буквы: «Счета» приходит как «Ð¡Ñ‡ÐµÑ‚Ð°»
+// (в файле адрес записан верно). Собираем сами; строка, которая не UTF-8 (или уже буквами), остаётся как есть.
+function utf8Fixed(s) {
+  if (!/[\u0080-ÿ]/.test(s) || /[Ā-￿]/.test(s)) return s
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(s, (ch) => ch.charCodeAt(0)))
+  } catch {
+    return s
+  }
+}
+
 // Книга → строки всех видимых листов с шапкой. Ответ: { rows, sheetName, columns } | { error: 'no_table' | 'empty' | 'too_many' }.
 export function parseRegistryWorkbook(XLSX, wb) {
   const names = wb.SheetNames || []
@@ -162,6 +193,13 @@ export function parseRegistryWorkbook(XLSX, wb) {
     anyHeader = true
     const part = registryGridRows(grid, header, name)
     if (!part.length) continue
+    // В колонке ссылки подпись («Открыть счёт»), адрес — в самой ячейке. Адрес сайта, набранный текстом, остаётся как есть.
+    if (header.columns.invoiceUrl != null) {
+      for (const row of part) {
+        const link = cellLink(XLSX, wb.Sheets[name], row.rowNo - 1, header.columns.invoiceUrl)
+        if (link && (invoiceLink(link) || !invoiceLink(row.invoiceUrl))) row.invoiceUrl = link
+      }
+    }
     used.push(name)
     columns = { ...header.columns, ...(columns || {}) }
     rows.push(...part)
@@ -358,6 +396,18 @@ const WEB_LINK_RE = /^https?:\/\/\S+$/i
 export const invoiceLink = (v) => {
   const s = cellText(v)
   return WEB_LINK_RE.test(s) && s.length <= 2000 ? s : null
+}
+// Ссылки на счёт у строк к загрузке (окно, шаг проверки): linked — запишутся; dropped — в ячейке что-то есть, но это не
+// адрес сайта (сетевой путь, файл на диске, подпись без ссылки) — строка запишется без ссылки.
+export function invoiceLinkCounts(lines) {
+  let linked = 0
+  let dropped = 0
+  for (const l of lines || []) {
+    if (l.status !== 'ok' || !cellText(l.invoiceUrl)) continue
+    if (invoiceLink(l.invoiceUrl)) linked++
+    else dropped++
+  }
+  return { linked, dropped }
 }
 
 // Строка для записи (supply_registry_import): только то, что идёт в базу.

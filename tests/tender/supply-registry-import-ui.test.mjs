@@ -20,9 +20,13 @@ const HEADERS = ['№ п/п', 'Источник', 'Объект', 'Наимен�
 // Шапка файла пользователя 23.11.2026 и колонка выгрузки «Ссылка на счёт».
 const FOLDER_HEADERS = ['Источник', 'Объект', 'Наименование', 'Ед. изм.', 'Цена, ₽', 'Тендер', 'Дата расценки',
   'Подрядчик по папке', '№ документа из\nимени файла', '№ заявки / заказа', 'Файл-источник', 'Ссылка на счёт']
-function registryXlsx(rows, headers = HEADERS) {
+// links — адреса, зашитые в ячейки: { 'L2': 'https://…' } (гиперссылка ячейки), formulas — { 'L3': 'HYPERLINK("…","…")' }.
+function registryXlsx(rows, headers = HEADERS, { links = {}, formulas = {} } = {}) {
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, ...rows]), 'Расценки СУ-10')
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+  for (const [addr, Target] of Object.entries(links)) ws[addr].l = { Target }
+  for (const [addr, f] of Object.entries(formulas)) ws[addr].f = f
+  XLSX.utils.book_append_sheet(wb, ws, 'Расценки СУ-10')
   return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }))
 }
 const FILE_ROWS = [
@@ -59,11 +63,11 @@ describe('Реестр СУ-10: загрузка расценок из Excel —
     await page.locator('.rr-table tbody tr').first().waitFor({ timeout: 120000 })
     return { page, errors, dialogs, close: () => context.close().catch(() => {}) }
   }
-  const upload = async (page, rows, { headers = HEADERS, name = 'Расценки снабжения.xlsx' } = {}) => {
+  const upload = async (page, rows, { headers = HEADERS, name = 'Расценки снабжения.xlsx', cells } = {}) => {
     await page.getByRole('button', { name: 'Загрузить из Excel' }).click()
     const dialog = page.getByRole('dialog', { name: 'Загрузка расценок СУ-10 из Excel' })
     await dialog.getByRole('button', { name: 'Выбрать файл' }).waitFor()
-    await dialog.locator('input[type=file]').setInputFiles({ name, mimeType: XLSX_MIME, buffer: registryXlsx(rows, headers) })
+    await dialog.locator('input[type=file]').setInputFiles({ name, mimeType: XLSX_MIME, buffer: registryXlsx(rows, headers, cells) })
     await dialog.locator('.sri-objects').waitFor()
     return dialog
   }
@@ -226,6 +230,36 @@ describe('Реестр СУ-10: загрузка расценок из Excel —
       assert.match(await card.innerText(), /Цена снабжения из тендера/)
       assert.doesNotMatch(await card.innerText(), /Подрядчик по папке/)
       await page.keyboard.press('Escape')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  // Просьба пользователя 23.11.2026: в колонке видно «Открыть счёт», адрес зашит в ячейку — такая ссылка не читалась.
+  it('ссылка на счёт зашита в ячейку («Открыть счёт»): гиперссылка и формула — в реестре зелёная ссылка; сетевой путь — без ссылки', async () => {
+    const { page, errors, close } = await open()
+    try {
+      const dialog = await upload(page, [
+        ['Счета', 'Зил33', 'Кабель КГ 3х4', 'м', 140, '', '05.10.2026', 'ООО «Электро»', 4601, '', 'Счёт 4601.pdf', 'Открыть счёт'],
+        ['Счета', 'Зил33', 'Лоток 100х50', 'м', 310, '', '05.10.2026', 'ООО «Электро»', 4602, '', 'Счёт 4602.pdf', 'Открыть счёт'],
+        ['Счета', 'Зил33', 'Короб 40х25', 'м', 75, '', '05.10.2026', 'ООО «Электро»', 4603, '', 'Счёт 4603.pdf', 'Открыть счёт'],
+      ], {
+        headers: FOLDER_HEADERS, name: 'Счета со ссылками.xlsx',
+        cells: {
+          links: { L2: 'https://disk.example/i/Счёт 4601', L4: '\\\\fs\\Счета\\4603.pdf' },
+          formulas: { L3: 'HYPERLINK("https://disk.example/s/4602","Открыть счёт")' },
+        },
+      })
+      assert.match((await dialog.locator('.sri-links-note').innerText()).replace(/\s+/g, ' '),
+        /Ссылки на счёт у строк к загрузке: 2 · без ссылки останутся 1: в ячейке не адрес сайта/)
+      await dialog.getByRole('button', { name: 'Загрузить в реестр: 3' }).click()
+      await page.locator('.kpr-notice', { hasText: 'в реестр добавлено 3' }).waitFor()
+      const href = (name) => page.locator('.rr-table tbody tr', { hasText: name }).locator('.rr-td-invoice a.rr-invoice.is-linked').getAttribute('href')
+      assert.equal(await href('Кабель КГ 3х4'), 'https://disk.example/i/Счёт%204601', 'гиперссылка ячейки: кириллица цела, пробел — %20')
+      assert.equal(await href('Лоток 100х50'), 'https://disk.example/s/4602', 'формула ГИПЕРССЫЛКА')
+      assert.equal(await page.locator('.rr-table tbody tr', { hasText: 'Короб 40х25' }).locator('.rr-invoice.is-missing').count(), 1,
+        'сетевой путь — не адрес сайта')
       assert.deepEqual(errors, [])
     } finally {
       await close()

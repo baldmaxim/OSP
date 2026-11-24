@@ -5,7 +5,8 @@
 // место отдаёт сосед справа, остальные столбцы стоят.
 // Расчёт — utils/columnWidths.js; реестр — в Chromium, стенд tests/tender/ui (route=/dc-requests&dcStats=1&shell=1).
 // Длинный реестр (30.10: «автомасштабирование столбцов очень сильно лагает»): пока тянут границу, строки вне экрана
-// скрыты, верхняя видимая строка не сдвигается; отпустили — строки показываются фоном (dcMany=N).
+// скрыты, верхняя видимая строка не сдвигается; отпустили — строки показываются фоном (dcMany=N). С 24.11.2026 в DOM
+// длинного реестра и так только окно строк (VirtualTableBody), скрывается остаток окна.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
@@ -339,9 +340,11 @@ describe('Реестр заявок на ДС: ширины столбцов', {
       const anchor = () => page.evaluate(() => {
         const box = document.querySelector('.dcr-table').closest('.table-container')
         const top = box.getBoundingClientRect().top + 60
-        const rows = [...document.querySelectorAll('.dcr-table tbody tr')]
-        const i = rows.findIndex(r => r.getBoundingClientRect().bottom > top)
-        return { i, top: rows[i].getBoundingClientRect().top, no: rows[i].querySelector('.ui-rownum').textContent }
+        // Строки заявок: распорки окна строк (VirtualTableBody) — не строки; i — сколько строк выше (с распоркой).
+        const rows = [...document.querySelectorAll('.dcr-table tbody tr:not(.dcr-note-row)')]
+        const i = rows.findIndex(r => !r.classList.contains('vt-spacer') && r.getBoundingClientRect().bottom > top)
+        const above = rows.slice(0, i).reduce((h, r) => h + r.getBoundingClientRect().height, 0)
+        return { i, above, top: rows[i].getBoundingClientRect().top, no: rows[i].querySelector('.ui-rownum').textContent }
       })
       const state = () => page.evaluate(() => {
         const rows = [...document.querySelectorAll('.dcr-table tbody tr')]
@@ -357,7 +360,7 @@ describe('Реестр заявок на ДС: ширины столбцов', {
       await page.evaluate(() => { document.querySelector('.dcr-table').closest('.table-container').scrollTop = 6000 })
       await frames(page)
       const a0 = await anchor()
-      assert.ok(a0.i > 20, `прокручено: ${JSON.stringify(a0)}`)
+      assert.ok(a0.above > 2000, `прокручено: ${JSON.stringify(a0)}`)
       const before = await widths(page)
 
       const handle = page.locator('.dcr-table thead th').nth(4).locator('.col-resize') // «Описание ДС»
@@ -369,12 +372,13 @@ describe('Реестр заявок на ДС: ширины столбцов', {
       await frames(page)
       // Скрытие — самая дорогая часть, поэтому при нажатии, пока граница стоит, а не рывком на первом движении.
       const pressed = await state()
-      assert.ok(pressed.hidden > 100, `скрыты уже при нажатии: ${JSON.stringify(pressed)}`)
+      // В DOM — окно строк (VirtualTableBody, 24.11.2026), из него вне экрана скрыто остальное.
+      assert.ok(pressed.rows < 80 && pressed.hidden > 10, `скрыты уже при нажатии: ${JSON.stringify(pressed)}`)
       const a00 = await anchor()
       assert.ok(a00.no === a0.no && Math.abs(a00.top - a0.top) <= 1, 'на экране при нажатии ничего не сдвинулось')
       for (let s = 1; s <= 6; s++) { await page.mouse.move(x + s * 30, y); await frames(page) }
       const during = await state()
-      assert.ok(during.hidden > 100, `во время перетаскивания скрыты строки вне экрана: ${JSON.stringify(during)}`)
+      assert.ok(during.hidden > 10, `во время перетаскивания скрыты строки вне экрана: ${JSON.stringify(during)}`)
       assert.equal(during.veils, 1)
       const a1 = await anchor()
       assert.equal(a1.no, a0.no, 'верхняя строка на экране — та же')
@@ -386,7 +390,9 @@ describe('Реестр заявок на ДС: ширины столбцов', {
       await page.waitForFunction(() => !document.querySelector('.dcr-table [data-col-frozen]'), null, { timeout: 30000 })
       await frames(page)
       const after = await state()
-      assert.deepEqual(after, { rows: during.rows, hidden: 0, marked: 0, inlineHeights: 0, veils: 0, selected: '' })
+      // Окно строк после «разморозки» пересчитано по новым высотам — строк в DOM может стать на пару меньше / больше.
+      assert.ok(after.rows < 80, `в DOM окно строк: ${after.rows}`)
+      assert.deepEqual({ ...after, rows: 0 }, { rows: 0, hidden: 0, marked: 0, inlineHeights: 0, veils: 0, selected: '' })
       const a2 = await anchor()
       assert.equal(a2.no, a0.no, 'после — та же строка вверху')
       assert.ok(Math.abs(a2.top - a0.top) <= 1, `на том же месте: ${a0.top} → ${a2.top}`)

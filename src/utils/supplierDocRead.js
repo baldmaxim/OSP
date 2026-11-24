@@ -53,7 +53,9 @@ export function gridFromSheet(XLSX, ws) {
 
 // Байты файла → книга. CSV — текстом (UTF-8, а не он — Windows-1251, как сохраняет русский Excel) и без разбора
 // чисел библиотекой: «250,00» она прочла бы как 25000 (запятая — разряды); числа разбирает parseNum.
-export function readWorkbookBytes(XLSX, bytes, fileName) {
+// options — добавка к чтению Excel для одного вызова (загрузка в реестр СУ-10 читает формулы: ссылка на счёт бывает
+// формулой ГИПЕРССЫЛКА); остальным формулы не нужны.
+export function readWorkbookBytes(XLSX, bytes, fileName, options) {
   if (/\.csv$/i.test(String(fileName || ''))) {
     let text
     try {
@@ -63,7 +65,7 @@ export function readWorkbookBytes(XLSX, bytes, fileName) {
     }
     return XLSX.read(text.replace(/^\uFEFF/, ''), { type: 'string', raw: true })
   }
-  return XLSX.read(bytes, { type: 'array', cellFormula: false, cellHTML: false, cellStyles: false, bookVBA: false })
+  return XLSX.read(bytes, { type: 'array', cellFormula: false, cellHTML: false, cellStyles: false, bookVBA: false, ...options })
 }
 
 // Книга Excel → строки всех видимых листов с таблицей (кабель на одном листе, лотки на другом): лист-копия и сводная —

@@ -137,7 +137,7 @@ describe('Реестр заявок на ДС: примечание', { skip: !l
   it('свёрнуто: под каждой заявкой во всю ширину, текст одной строкой; раскрыто: поле с текстом', async () => {
     const { page, errors, close } = await open()
     try {
-      const rows = await page.locator('.dcr-table tbody tr:not(.dcr-note-row)').count()
+      const rows = await page.locator('.dcr-table tbody tr:not(.dcr-note-row):not(.vt-spacer)').count()
       assert.equal(await page.locator('.dcr-note-row').count(), rows)
 
       const empty = noteOf(page, 'd1')
@@ -380,7 +380,7 @@ describe('Реестр заявок на ДС: примечание', { skip: !l
       await page.mouse.up()
       await page.waitForFunction(() => !document.querySelector('.dcr-table tbody[data-col-frozen]'), null, { timeout: 15000 })
       assert.equal(await page.locator('.dcr-table tbody tr[data-col-frozen]').count(), 0)
-      const rows = await page.locator('.dcr-table tbody tr:not(.dcr-note-row)').count()
+      const rows = await page.locator('.dcr-table tbody tr:not(.dcr-note-row):not(.vt-spacer)').count()
       assert.equal(await page.locator('.dcr-note-row').count(), rows)
       assert.deepEqual(errors, [])
     } finally { await close() }

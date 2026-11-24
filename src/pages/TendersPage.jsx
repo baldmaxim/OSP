@@ -103,6 +103,8 @@ import '../styles/workUi.css'
 const COUNTS_LIVE_DELAY_MS = 1500
 // Реестр тендеров на материалы длиннее — только видимые строки (renderMaterialsRow).
 const VIRTUAL_MATERIALS_FROM = 120
+// Реестр основного строительства (и других направлений) — так же, с того же числа строк (renderMainRow).
+const VIRTUAL_MAIN_FROM = 120
 const isPhoneWidth = () => typeof window !== 'undefined' && !!window.matchMedia?.('(max-width: 640px)').matches
 
 const TENDER_RESPONSIBLES = TENDER_DUTY_NAMES
@@ -622,7 +624,9 @@ ${ATTACHMENT_BLOCK}
 
   const fetchTenders = async () => {
     try {
-      setLoading(true)
+      // «Загрузка...» — только при первом открытии (loading изначально true). Перечитывание после сохранения или правки
+      // коллеги (онлайн-событие) раньше снова ставило заглушку: страница разбиралась и строилась заново — подвисание,
+      // сброс прокрутки и раскрытых строк. Теперь таблица остаётся на месте, пока не придут новые данные.
       // Направление и объекты руководителя фильтрует база, а не браузер: раньше
       // грузились тендеры всех направлений (со всеми встроенными связями), и
       // лишнее отбрасывалось уже после скачивания. Страницы — параллельно, с
@@ -3362,6 +3366,891 @@ ${ATTACHMENT_BLOCK}
     </tr>
   )
 
+  // Строка реестра основного строительства (и раскрытые участники под ней — строка vt-part, одна запись окна строк).
+  // Больше VIRTUAL_MAIN_FROM тендеров — в таблице только видимые строки (VirtualTableBody по положению на экране), как у
+  // тендеров на материалы: 700 тендеров рисовались целиком — 68 тыс. элементов, открытие 4 с, «Сбросить все» и сортировка —
+  // по 1,6 с подвисания (замер на стенде 24.11.2026). Телефон — свой список (tp-mlist).
+  const virtualMain = sortedTenders.length > VIRTUAL_MAIN_FROM
+  const mainRowCache = new Map()
+  const cachedMainRow = (tender) => {
+    let row = mainRowCache.get(tender.id)
+    if (!row) {
+      row = renderMainRow(tender)
+      mainRowCache.set(tender.id, row)
+    }
+    return row
+  }
+  const renderMainRow = (tender) => (
+            <React.Fragment key={tender.id}>
+              <tr className={isOverdue(tender) ? 'overdue-row' : ''}>
+                {/* Плотный реестр: № и кнопка раскрытия — сверху, счётчик
+                    участников и КП — под ними, в одной узкой колонке. Иначе —
+                    как было, двумя колонками. Номер не переносится (nowrap). */}
+                {denseRegistry ? (
+                  <td className="tp-num tp-num-merged">
+                    <div className="tp-num-top">
+                      <span className="tp-num-value">{tender.public_tender_number ?? '—'}</span>
+                      {renderExpandToggle(tender)}
+                    </div>
+                    {renderRestartMark(tender)}
+                    {renderKpCounter(tender)}
+                  </td>
+                ) : (
+                  <>
+                    <td className="tp-num">
+                      {tender.public_tender_number ?? '—'}
+                      {renderRestartMark(tender)}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
+                        {renderExpandToggle(tender)}
+                        {renderKpCounter(tender)}
+                      </div>
+                    </td>
+                  </>
+                )}
+                <td>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
+                    {tender.object_id ? (
+                      <Link
+                        to={`/general/objects/${tender.object_id}`}
+                        className="row-link primary"
+                        title="Открыть карточку объекта (Ctrl+клик или средняя кнопка — в новой вкладке)"
+                      >
+                        {tender.objects?.name || '-'}
+                      </Link>
+                    ) : (
+                      /* Без привязки к реестру: показываем вписанное вручную
+                         наименование («прочее»), карточки объекта у него нет. */
+                      <span className="row-link primary" style={{ cursor: 'default' }}>{tenderObjectName(tender, '-')}</span>
+                    )}
+                    {denseRegistry ? (
+                      /* Плотный реестр: адрес свёрнут под кнопкой «Показать адрес»
+                         (состояние — по id тендера, до перезагрузки страницы).
+                         Кнопка — отдельно от ссылки на объект; свёрнутый блок —
+                         hidden: не занимает места и не попадает в обход Tab. */
+                      tender.objects?.address ? (
+                        <>
+                          <button
+                            type="button"
+                            className={`tp-addr-toggle${openAddressIds.has(tender.id) ? ' is-open' : ''}`}
+                            aria-expanded={openAddressIds.has(tender.id)}
+                            aria-controls={`tp-addr-${tender.id}`}
+                            onClick={() => toggleAddress(tender.id)}
+                          >
+                            <IconChevronDown size={12} />
+                            {openAddressIds.has(tender.id) ? 'Скрыть адрес' : 'Показать адрес'}
+                          </button>
+                          <div id={`tp-addr-${tender.id}`} className="tp-addr-block" hidden={!openAddressIds.has(tender.id)}>
+                            <div className="tp-obj-address">{tender.objects.address}</div>
+                            {renderMapLink(tender)}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {tender.object_id && <span className="tp-addr-none">Адрес не указан</span>}
+                          {renderMapLink(tender)}
+                        </>
+                      )
+                    ) : (
+                      <>
+                        {tender.objects?.address && (
+                          <div className="tp-obj-address">
+                            {tender.objects.address}
+                          </div>
+                        )}
+                        {renderMapLink(tender)}
+                      </>
+                    )}
+                  </div>
+                </td>
+                <td className="tender-desc-cell">
+                  {/* До трёх строк; длиннее — «Показать полностью» под текстом.
+                      Переход в тендер — по самому тексту, раскрытие — отдельной
+                      кнопкой, полный текст в DOM (поиск, выгрузка не затронуты). */}
+                  <ClampText
+                    text={tender.work_description}
+                    empty=""
+                    wrap={canOpenTenderCard ? (body) => (
+                      <Link
+                        to={`/tenders/${tender.id}`}
+                        className={`row-link primary tender-desc-link${uiWork ? ' ui-title-link' : ''}`}
+                        title={`${tender.work_description || ''}\n\nОткрыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)`}
+                      >
+                        {body}
+                      </Link>
+                    ) : (body) => <span className="tender-desc-link">{body}</span>}
+                  />
+                  {/* Путь к папке — сразу под наименованием: с него начинают
+                      поиск документов, отметки ниже относятся к ходу тендера.
+                      Открыть проводник кликом браузер не даёт, поэтому путь
+                      копируется. */}
+                  <FolderPathCell
+                    value={tender.folder_path}
+                    canEdit={canEditTenders}
+                    onSave={(v) => handleSaveFolderPath(tender.id, v)}
+                  />
+                  {/* Отметки хода тендера — в одну строку, а не столбиком:
+                      три плашки друг под другом делали строку в 240px. */}
+                  <div className="tender-flags">
+                    {/* Подразделение ВОР — только у тендеров, которые есть в
+                        «ВОРах и РД» (isConstructionTender); колонки ещё нет
+                        (миграция 20260927) — плашки нет. */}
+                    {divisionUi && isConstructionTender(tender) && 'vor_division' in tender && (
+                      <VorDivisionChip
+                        value={tender.vor_division}
+                        canEdit={canEditVorDivision}
+                        onChange={(v) => handleChangeVorDivision(tender.id, v)}
+                      />
+                    )}
+                    <TgPublishToggle
+                      tender={tender}
+                      canEdit={canToggleTgPublished}
+                      onToggle={handleToggleTgPublished}
+                      short
+                    />
+                    {/* Появляется только на подведении итогов и после него —
+                        компонент решает это сам по статусу тендера. */}
+                    <CompletionLetterToggle
+                      tender={tender}
+                      canEdit={canEditTenders}
+                      onToggle={handleToggleCompletionLetter}
+                      short
+                    />
+                  </div>
+                </td>
+                {!isCompletedTab && (
+                  <td>
+                    {canEditTenders ? (
+                      <StatusDropdown
+                        value={tender.status}
+                        options={statusOptions}
+                        onChange={(next) => handleStatusChange(tender.id, next)}
+                        getBadgeClass={getStatusBadgeClass}
+                        getDisplay={(s) =>
+                          s === 'Идет тендерная процедура'
+                            ? <>Идет тендерная<br />процедура</>
+                            : s
+                        }
+                        ariaLabel="Статус тендера"
+                      />
+                    ) : (
+                      <span className={`status-badge tp-status-badge ${getStatusBadgeClass(tender.status)}`}>
+                        {tender.status}
+                      </span>
+                    )}
+                    {renderRestartMark(tender, 'target')}
+                  </td>
+                )}
+                {isCompletedTab && (
+                  <td>
+                    {(() => {
+                      const winners = tenderWinnersOf(tender)
+                      // Перезапущенный — «заменён № 984» вместо «Не выбран»: победителя у него и не будет.
+                      const replaced = restartTargetId(tender) ? renderRestartMark(tender, 'target') : null
+                      if (winners.length === 0) {
+                        return replaced || <span className="responsible-empty">Не выбран</span>
+                      }
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                          {winners.map(w => (
+                            <span key={w.id} className="winner-cell" title="Победитель">
+                              <span className="winner-icon" aria-hidden><IconTrophy size={14} /></span>
+                              <span className="winner-name">
+                                {w.name}
+                                <BlacklistMark status={w.status} />
+                                {w.scope && (
+                                  <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>
+                                    {' '}— {w.scope}
+                                  </span>
+                                )}
+                              </span>
+                            </span>
+                          ))}
+                          {replaced}
+                        </div>
+                      )
+                    })()}
+                  </td>
+                )}
+                {/* Цвет просрочки — классом, а не инлайн-стилем: инлайн не знает про тему,
+                    и ярко-красный #dc2626 на тёмном фоне резал глаз. */}
+                <td className={`tender-period-cell ui-num ${isOverdue(tender) ? 'is-overdue' : ''}`}>
+                  {breakAfterDash(formatDateRange(tender.tender_start_date, tender.tender_end_date))}
+                  {isOverdue(tender) && <span className="tender-period-warn" title="Срок истёк">!</span>}
+                </td>
+                <td>
+                  {editingResponsibleTenderId === tender.id ? (
+                    <select
+                      autoFocus
+                      className="inline-responsible-select"
+                      value={tender.responsible_contact_id || ''}
+                      onChange={(e) => {
+                        handleUpdateTenderResponsible(tender.id, e.target.value)
+                        setEditingResponsibleTenderId(null)
+                      }}
+                      onBlur={() => setEditingResponsibleTenderId(null)}
+                    >
+                      <option value="">{uiWork ? 'Не назначен' : '— не назначен —'}</option>
+                      {getResponsibleOptions(tender.responsible_contact_id).map((contact) => (
+                        <option key={contact.id} value={contact.id}>
+                          {contact.full_name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    canEditTenders ? (
+                      <button
+                        type="button"
+                        className="responsible-display"
+                        onClick={() => setEditingResponsibleTenderId(tender.id)}
+                        title="Назначить ответственного"
+                      >
+                        {responsibleLabel(getResponsibleName(tender))}
+                      </button>
+                    ) : (
+                      <span className="responsible-display" style={{ cursor: 'default' }}>
+                        {responsibleLabel(getResponsibleName(tender))}
+                      </span>
+                    )
+                  )}
+                </td>
+                {/* ВОРы и РД */}
+                {showVorColumn && (
+                  <td>
+                    <div className="phase-cell">
+                      {(() => {
+                        const s = tender.vor_status || 'not_started'
+                        const hasDocs = (vorDocCounts[tender.id] || 0) > 0
+                        if (s === 'not_required') {
+                          return <span className="phase-done" title="ВОР не требуется">{notRequiredLabel}</span>
+                        }
+                        if (s === 'completed') {
+                          return (tender.vor_link || hasDocs)
+                            ? <span className="phase-done" title="ВОР готов">✓ Готово</span>
+                            : <span className="phase-warn" title="Статус «Завершён», но нет ни ссылки, ни документа">⚠ Нет файла</span>
+                        }
+                        if (s === 'in_progress') {
+                          return <span className="phase-progress" title="В работе">В работе</span>
+                        }
+                        return <span className="phase-pending" title="Не начат">Не начат</span>
+                      })()}
+                      {/* «Открыть» и документы — одной строкой в плотном реестре
+                          (без него обёртка display: contents — вид прежний). */}
+                      <span className="phase-actions">
+                        {tender.vor_link && (
+                          <a
+                            href={tender.vor_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="link"
+                          >
+                            Открыть
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          className="tp-docs-btn"
+                          onClick={() => setVorDocsModalTenderId(tender.id)}
+                          title="Документы ВОР и РД"
+                          aria-label={`Документы ВОР и РД${vorDocCounts[tender.id] ? `: ${vorDocCounts[tender.id]}` : ''}`}
+                        >
+                          <span className="tp-docs-btn-inner">
+                            <PaperclipIcon size={12} />
+                            {vorDocCounts[tender.id] ? vorDocCounts[tender.id] : ''}
+                          </span>
+                        </button>
+                      </span>
+                    </div>
+                    {/* Срок подготовки ВОР; просроченный (ВОР не закрыт) — красным. */}
+                    {tender.vor_end_date && (() => {
+                      const closed = ['completed', 'not_required'].includes(tender.vor_status)
+                      const overdue = !closed && !!tender.vor_end_date
+                        && tender.vor_end_date < new Date().toISOString().slice(0, 10)
+                      return (
+                        <div
+                          className={`vor-phase-dates${overdue ? ' is-overdue' : ''}`}
+                          title={overdue ? 'Срок подготовки ВОР истёк' : 'Срок подготовки ВОР'}
+                        >
+                          {breakAfterDash(formatShortDateRange(vorStartDate(tender), tender.vor_end_date))}
+                        </div>
+                      )
+                    })()}
+                    {vorResponsibleName(tender) && (
+                      <div className="tp-sub-line">
+                        <PersonName full={vorResponsibleName(tender)} />
+                      </div>
+                    )}
+                  </td>
+                )}
+                {/* Тендерный пакет */}
+                <td>
+                    <div className="phase-cell phase-cell--actions">
+                    {tender.tender_package_link ? (
+                      <div className="link-with-edit">
+                        <a
+                          href={tender.tender_package_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="link"
+                        >
+                          Открыть
+                        </a>
+                        {canEditTenders && (
+                          <button
+                            type="button"
+                            className="btn-icon btn-edit"
+                            onClick={() => handleUpdateTenderLink(tender.id, 'tender_package_link', tender.tender_package_link)}
+                            title="Изменить ссылку"
+                            aria-label="Изменить ссылку на тендерный пакет"
+                          ><IconPencil size={14} /></button>
+                        )}
+                      </div>
+                    ) : (
+                      canEditTenders ? (
+                        <button
+                          type="button"
+                          className="tp-add-link"
+                          onClick={() => handleUpdateTenderLink(tender.id, 'tender_package_link', '')}
+                          title="Добавить ссылку на тендерный пакет"
+                        >+ ссылка</button>
+                      ) : (
+                        !((packageDocCounts[tender.id] || 0) > 0) && (
+                          <span className="tp-dash">—</span>
+                        )
+                      )
+                    )}
+                    {(canEditTenders || (packageDocCounts[tender.id] || 0) > 0) && (
+                      <button
+                        type="button"
+                        className="tp-docs-btn"
+                        onClick={() => setPackageDocsModalTenderId(tender.id)}
+                        title="Документы тендерного пакета"
+                        aria-label={`Документы тендерного пакета${packageDocCounts[tender.id] ? `: ${packageDocCounts[tender.id]}` : ''}`}
+                      >
+                        <span className="tp-docs-btn-inner">
+                          <PaperclipIcon size={12} />
+                          {packageDocCounts[tender.id] ? packageDocCounts[tender.id] : ''}
+                        </span>
+                      </button>
+                    )}
+                    </div>
+                    {/* Проверка РД — только основное строительство. */}
+                    {department === 'construction' && (
+                      <div className="tender-rd-check">
+                        <RdCheckToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleRdChecked} />
+                      </div>
+                    )}
+                  </td>
+                {/* План затрат */}
+                {!compactView && department === 'construction' && !isCompletedTab && (
+                  <td>
+                    <div className="phase-cell">
+                      {(() => {
+                        const s = tender.cost_plan_status || 'not_started'
+                        if (s === 'not_required') {
+                          return <span className="phase-done" title="План затрат не требуется">{notRequiredLabel}</span>
+                        }
+                        if (s === 'completed') {
+                          return tender.cost_plan_link
+                            ? <span className="phase-done" title="План затрат готов">✓ Готово</span>
+                            : <span className="phase-warn" title="Статус «Завершён», но ссылка не указана">⚠ Нет ссылки</span>
+                        }
+                        if (s === 'awaiting_kp') {
+                          return <span className="phase-awaiting" title="План затрат ждёт КП подрядчиков">Ожидание КП</span>
+                        }
+                        if (s === 'in_progress') {
+                          return <span className="phase-progress" title="В работе">В работе</span>
+                        }
+                        return <span className="phase-pending" title="Не начат">Не начат</span>
+                      })()}
+                      {tender.cost_plan_link && (
+                        <a
+                          href={tender.cost_plan_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="link"
+                        >
+                          Открыть
+                        </a>
+                      )}
+                    </div>
+                    {tender.cost_plan_responsible?.full_name && (
+                      <div className="tp-sub-line">
+                        {uiWork
+                          ? <PersonName full={tender.cost_plan_responsible.full_name} />
+                          : tender.cost_plan_responsible.full_name}
+                      </div>
+                    )}
+                  </td>
+                )}
+                {/* Тендер на материалы (дочерний) — только в основном строительстве */}
+                {!compactView && !isMaterialsView && department === 'construction' && (
+                  <td>
+                    {tender.materials_tender ? (
+                      <div className="phase-cell">
+                        {(() => {
+                          const s = tender.materials_tender.status
+                          if (s === 'Завершён' || s === 'Завершен') {
+                            return <span className="phase-done" title="Тендер на материалы завершён">✓ Завершён</span>
+                          }
+                          if (s === 'В работе') {
+                            return <span className="phase-progress" title="В работе">В работе</span>
+                          }
+                          if (s === 'Не требуется' || s === 'Не нужно') {
+                            return <span className="phase-done" title="Тендер на материалы не требуется">{notRequiredLabel}</span>
+                          }
+                          return <span className="phase-pending" title={s || 'Не начат'}>{s || 'Не начат'}</span>
+                        })()}
+                        {tender.materials_tender.materials_proposal_link && (
+                          <a
+                            href={tender.materials_tender.materials_proposal_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="link"
+                            title="Открыть КП на материалы"
+                          >
+                            Открыть
+                          </a>
+                        )}
+                      </div>
+                    ) : (
+                      // Task 289: ручное создание тендера на материалы запрещено —
+                      // материал создаётся автоматически при создании основного тендера.
+                      // Если у тендера нет материала (исторические данные или ошибка) —
+                      // показываем прочерк, а не предлагаем создать вручную.
+                      <span className="tp-dash" title="Тендер на материалы не создан">—</span>
+                    )}
+                  </td>
+                )}
+                {/* Сводная КП */}
+                {!compactView && (
+                  <td>
+                    {tender.summary_proposal_link ? (
+                      <div className="link-with-edit">
+                        <a
+                          href={tender.summary_proposal_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="link"
+                        >
+                          Открыть
+                        </a>
+                        {canEditTenders && (
+                          <button
+                            type="button"
+                            className="btn-icon btn-edit"
+                            onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', tender.summary_proposal_link)}
+                            title="Изменить ссылку"
+                            aria-label="Изменить ссылку на сводную КП"
+                          ><IconPencil size={14} /></button>
+                        )}
+                      </div>
+                    ) : (
+                      canEditTenders ? (
+                        <button
+                          type="button"
+                          className="tp-add-link"
+                          onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', '')}
+                          title="Добавить ссылку на сводную КП"
+                        >+ ссылка</button>
+                      ) : (
+                        <span className="tp-dash">—</span>
+                      )
+                    )}
+                  </td>
+                )}
+                <td className="actions-cell">
+                  {activeTab === 'deleted' ? (
+                    <>
+                      {canEditTenders && (
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          onClick={() => handleRestoreTender(tender.id, tenderObjectName(tender, 'тендер'))}
+                          title="Восстановить"
+                          aria-label="Восстановить тендер"
+                        >
+                          <IconRestore />
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          className="btn-icon btn-delete"
+                          onClick={() => handleHardDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))}
+                          title="Удалить безвозвратно (только для администратора)"
+                          aria-label="Удалить тендер безвозвратно"
+                        >
+                          <IconTrash />
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-icon"
+                        onClick={() => handleShowLetterForTender(tender)}
+                        title="Шаблон письма подрядчикам"
+                        aria-label="Шаблон письма подрядчикам"
+                      >
+                        <IconLetter />
+                      </button>
+                      {canEditTenders && (
+                        <button
+                          type="button"
+                          className="btn-icon btn-edit"
+                          onClick={() => handleEditTender(tender)}
+                          title="Редактировать"
+                          aria-label="Редактировать тендер"
+                        >
+                          <IconPencil />
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          className="btn-icon btn-delete"
+                          onClick={() =>
+                            handleDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))
+                          }
+                          title="В корзину (только для администратора)"
+                          aria-label="Переместить тендер в корзину"
+                        >
+                          <IconTrash />
+                        </button>
+                      )}
+                    </>
+                  )}
+                </td>
+              </tr>
+              {expandedTenderId === tender.id && (
+                <tr className="vt-part">
+                  <td colSpan={mainTableColSpan} className="expanded-cp-row">
+                    {/* Примечание по тендеру — первым, до списка участников:
+                        это общий контекст, с которым читают всю таблицу. */}
+                    {!hideNotes && (
+                      <div className="tender-notes-block">
+                        <div className="tender-notes-head">
+                          <span className="tender-notes-title">Примечание по тендеру</span>
+                          <div className="tc-notes-tools">
+                            {canEditTenders && tenderNotesEdit?.tenderId !== tender.id && (
+                              <button
+                                type="button"
+                                className="tc-notes-icon"
+                                onClick={() => setTenderNotesEdit({ tenderId: tender.id, draft: tender.notes || '' })}
+                                title="Редактировать примечание"
+                                aria-label="Редактировать примечание"
+                              >
+                                <PencilIcon />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="tc-notes-icon"
+                              onClick={() => openTenderNotesHistory(tender)}
+                              title="История изменений примечания"
+                              aria-label="История изменений примечания"
+                            >
+                              <HistoryIcon />
+                            </button>
+                          </div>
+                        </div>
+                        {tenderNotesEdit?.tenderId === tender.id ? (
+                          <div className="tc-notes-edit">
+                            <textarea
+                              className="tc-notes-textarea"
+                              autoFocus
+                              ref={(el) => {
+                                if (el) {
+                                  el.style.height = 'auto'
+                                  el.style.height = Math.max(el.scrollHeight, 72) + 'px'
+                                }
+                              }}
+                              value={tenderNotesEdit.draft}
+                              onChange={(e) => {
+                                const value = e.target.value
+                                e.target.style.height = 'auto'
+                                e.target.style.height = Math.max(e.target.scrollHeight, 72) + 'px'
+                                setTenderNotesEdit(prev => (prev && prev.tenderId === tender.id ? { ...prev, draft: value } : prev))
+                              }}
+                              placeholder="Примечание по тендеру…"
+                              rows={3}
+                            />
+                            <div className="tc-notes-actions">
+                              <button
+                                type="button"
+                                className="tc-notes-btn tc-notes-btn-save"
+                                onClick={() => handleSaveTenderNotes(tender)}
+                                disabled={savingNotes}
+                              >
+                                {savingNotes ? 'Сохранение…' : 'Сохранить'}
+                              </button>
+                              <button
+                                type="button"
+                                className="tc-notes-btn tc-notes-btn-cancel"
+                                onClick={() => setTenderNotesEdit(null)}
+                                disabled={savingNotes}
+                              >
+                                Отмена
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className={`tender-notes-text${tender.notes ? '' : ' is-empty'}`}>
+                            {tender.notes || 'Примечание не заполнено'}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="expanded-cp-toolbar">
+                      {canEditTenders && (
+                        <button
+                          className="btn-primary"
+                          onClick={() => {
+                            setSelectedTenderForCounterparty(tender.id)
+                            // Сбрасываем поиск/фильтр ПРИ ОТКРЫТИИ, а не только при
+                            // закрытии: иначе оставшийся с прошлого раза фильтр молча
+                            // прячет часть контрагентов, и кажется, что компании нет.
+                            setCounterpartySearchQuery('')
+                            setCounterpartyWorkTypeFilter('')
+                            setSelectedCounterpartyIds([])
+                            setShowAddCounterpartyModal(true)
+                          }}
+                        >
+                          + Добавить контрагента
+                        </button>
+                      )}
+                      {!isScopedManager && tenderCounterparties[tender.id] && tenderCounterparties[tender.id].length > 0 && (
+                        <button
+                          className="btn-secondary"
+                          onClick={() => handleCopyEmailsForTender(tender.id)}
+                          title="Скопировать все email-адреса контрагентов в буфер обмена"
+                        >
+                          {copiedEmailsTenderId === tender.id ? '✓ Скопировано' : <><IconLetter size={14} /> Копировать email</>}
+                        </button>
+                      )}
+                      {tenderCounterparties[tender.id]?.length > 0 && (
+                        <ParticipantsCollapseToggle collapsed={cpCollapsed} onChange={setCpCollapsed} />
+                      )}
+                    </div>
+                    {!isMaterialsView && (
+                      <BidRequestsBlock
+                        tenderId={tender.id}
+                        canEdit={canEdit('tenders')}
+                        onDecided={({ request, accepted }) => {
+                          fetchBidRequestCounts([tender.id], { partial: true })
+                          if (!accepted) return
+                          fetchTenderCounterparties(tender.id)
+                          fetchTenderProposalCounts([tender.id])
+                          logTenderEvent(tender.id, 'participant_added', {
+                            fieldName: 'participants',
+                            newValue: { id: request.counterparty_id, name: request.counterparties?.name || null },
+                            description: `Добавлен участник по заявке с сайта: ${request.counterparties?.name || '—'}`,
+                          })
+                        }}
+                      />
+                    )}
+                    {tenderCounterparties[tender.id] && tenderCounterparties[tender.id].length > 0 ? (
+                      <div className="expanded-cp-table-wrap">
+                        <table className={`data-table tc-table${cpCollapsed ? ' is-compact' : ''}`} style={{ margin: 0 }}>
+                          <thead>
+                            <tr>
+                              {canEditTenders && <th style={{ width: '26px' }}></th>}
+                              <th style={{ width: '40px' }}>№</th>
+                              {/* 29.10.2026, по просьбе пользователя: статус — под названием компании,
+                                  контакты — сразу за ней, затем КП и документы, примечание — справа. */}
+                              <th className="tc-col-company">Наименование компании</th>
+                              <th className="tc-col-contacts">Контакты</th>
+                              <th className="tc-col-files">КП / Документы</th>
+                              {!hideNotes && <th className="tc-col-notes">Примечание</th>}
+                              {/* Удалить участника — только с правом правки: без него колонка
+                                  стояла пустой справа (экономист, инженер, 30.10.2026). */}
+                              {canEditTenders && <th style={{ width: '48px' }}></th>}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {tenderCounterparties[tender.id].map((tc, index) => (
+                              <tr
+                                key={tc.id}
+                                className={`${draggedTc?.id === tc.id ? 'tc-dragging' : ''}${tcDragOver?.id === tc.id ? ` tc-drop-${tcDragOver.position}` : ''}`}
+                                onDragOver={!canEditTenders ? undefined : (e) => {
+                                  e.preventDefault()
+                                  e.dataTransfer.dropEffect = 'move'
+                                  const rect = e.currentTarget.getBoundingClientRect()
+                                  const position = (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after'
+                                  if (tc.id === draggedTc?.id) { setTcDragOver(null); return }
+                                  setTcDragOver(prev => (prev?.id === tc.id && prev?.position === position) ? prev : { id: tc.id, position })
+                                }}
+                                onDragLeave={!canEditTenders ? undefined : () => setTcDragOver(prev => prev?.id === tc.id ? null : prev)}
+                                onDrop={!canEditTenders ? undefined : (e) => {
+                                  e.preventDefault()
+                                  const draggedId = e.dataTransfer.getData('text/plain')
+                                  handleReorderTc(tender.id, draggedId, tc.id)
+                                }}
+                              >
+                                {canEditTenders && (
+                                  <td className="tc-drag-cell">
+                                    <span
+                                      className="tc-drag-handle"
+                                      draggable
+                                      title="Перетащите, чтобы изменить порядок"
+                                      onDragStart={(e) => {
+                                        e.dataTransfer.effectAllowed = 'move'
+                                        e.dataTransfer.setData('text/plain', tc.id)
+                                        setDraggedTc({ tenderId: tender.id, id: tc.id })
+                                      }}
+                                      onDragEnd={() => { setDraggedTc(null); setTcDragOver(null) }}
+                                    >⋮⋮</span>
+                                  </td>
+                                )}
+                                <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>
+                                  {index + 1}
+                                </td>
+                                <td className="tc-company-cell">
+                                  {/* ИНН — в подсказке названия: в строке он почти не нужен, а место занимал. */}
+                                  <div className="tc-company-name" title={tc.counterparties?.inn ? `ИНН ${tc.counterparties.inn}` : undefined}>
+                                    {tc.counterparties?.name}
+                                    <BlacklistMark status={tc.counterparties?.status} />
+                                  </div>
+                                  {tc.counterparties?.work_type && (
+                                    <div className="tc-company-sub" title={tc.counterparties.work_type}>
+                                      {tc.counterparties.work_type}
+                                    </div>
+                                  )}
+                                  <div className="tc-company-status">
+                                    <ParticipantStatusSelect
+                                      value={tc.status}
+                                      onChange={(v) => handleUpdateCounterpartyStatus(tender.id, tc.id, v)}
+                                      disabled={!canEditTenders}
+                                    />
+                                  </div>
+                                </td>
+                                <td>
+                                  <ParticipantContacts contacts={tc.counterparties?.counterparty_contacts} compact={cpCollapsed} />
+                                </td>
+                                <td>
+                                  <TenderCounterpartyFiles
+                                    tenderId={tender.id}
+                                    counterpartyId={tc.counterparty_id}
+                                    canEdit={canEditTenders}
+                                    tender={tender}
+                                    counterpartyName={tc.counterparties?.name}
+                                    collapsed={cpCollapsed}
+                                  />
+                                </td>
+                                {!hideNotes && (
+                                <td className="tc-notes-cell">
+                                  {notesEdit?.tcId === tc.id ? (
+                                    <div className="tc-notes-edit">
+                                      <textarea
+                                        className="tc-notes-textarea"
+                                        autoFocus
+                                        ref={(el) => {
+                                          if (el) {
+                                            el.style.height = 'auto'
+                                            el.style.height = Math.max(el.scrollHeight, 56) + 'px'
+                                          }
+                                        }}
+                                        value={notesEdit.draft}
+                                        onChange={(e) => {
+                                          const value = e.target.value
+                                          e.target.style.height = 'auto'
+                                          e.target.style.height = Math.max(e.target.scrollHeight, 56) + 'px'
+                                          setNotesEdit(prev => (prev && prev.tcId === tc.id ? { ...prev, draft: value } : prev))
+                                        }}
+                                        placeholder="Примечание…"
+                                        rows={2}
+                                      />
+                                      <div className="tc-notes-actions">
+                                        <button
+                                          type="button"
+                                          className="tc-notes-btn tc-notes-btn-save"
+                                          onClick={() => handleSaveCounterpartyNotes(tender.id, tc)}
+                                          disabled={savingNotes}
+                                        >
+                                          {savingNotes ? 'Сохранение…' : 'Сохранить'}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="tc-notes-btn tc-notes-btn-cancel"
+                                          onClick={() => setNotesEdit(null)}
+                                          disabled={savingNotes}
+                                        >
+                                          Отмена
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="tc-notes-view">
+                                      <div
+                                        className={`tc-notes-text${tc.notes ? '' : ' is-empty'}`}
+                                        title={cpCollapsed && tc.notes ? tc.notes : undefined}
+                                      >
+                                        {tc.notes || 'Примечание не заполнено'}
+                                      </div>
+                                      <div className="tc-notes-tools">
+                                        {canEditTenders && (
+                                          <button
+                                            type="button"
+                                            className="tc-notes-icon"
+                                            onClick={() => setNotesEdit({ tcId: tc.id, draft: tc.notes || '' })}
+                                            title="Редактировать примечание"
+                                            aria-label="Редактировать примечание"
+                                          >
+                                            <PencilIcon />
+                                          </button>
+                                        )}
+                                        {/* История только для чтения — доступна всем, кто видит колонку */}
+                                        <button
+                                          type="button"
+                                          className="tc-notes-icon"
+                                          onClick={() => openNotesHistory(tender.id, tc)}
+                                          title="История изменений примечания"
+                                          aria-label="История изменений примечания"
+                                        >
+                                          <HistoryIcon />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </td>
+                                )}
+                                {canEditTenders && (
+                                  <td style={{ textAlign: 'center' }}>
+                                    <button
+                                      type="button"
+                                      className="btn-icon btn-delete"
+                                      onClick={() => handleRemoveCounterpartyFromTender(tender.id, tc.id)}
+                                      title="Удалить из тендера"
+                                      aria-label="Удалить контрагента из тендера"
+                                    >
+                                      <IconTrash />
+                                    </button>
+                                  </td>
+                                )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : loadingCounterparties.has(tender.id) ? (
+                      <div className="expanded-cp-loading">
+                        <span className="expanded-cp-spinner" aria-hidden />
+                        <span>Загрузка подрядчиков…</span>
+                      </div>
+                    ) : (
+                      <p className="expanded-cp-empty">
+                        Контрагенты еще не добавлены к этому тендеру
+                      </p>
+                    )}
+                  </td>
+                </tr>
+              )}
+            </React.Fragment>
+  )
+
   return (
     <div className={`tenders-page${uiWork ? ' ui-work' : ''}${denseRegistry ? ' tp-dense' : ''}${denseRegistry && department === 'other' ? ' tp-dept-other' : ''}${isMaterialsView ? ' tp-dense-mat' : ''}`}>
       {/* Акцент шапки — тон направления: разделы отличаются с одного взгляда. */}
@@ -3982,890 +4871,24 @@ ${ATTACHMENT_BLOCK}
               <th className="actions-column" style={{ width: '72px' }}>Действия</th>
             </tr>
           </thead>
-          <tbody>
-            {sortedTenders.length === 0 ? (
-              <tr>
-                <td colSpan={mainTableColSpan} className="no-data">
-                  {activeTab === 'deleted'
-                    ? 'В корзине нет тендеров'
-                    : activeTab === 'all'
-                      ? 'Нет тендеров. Добавьте первый тендер.'
-                      : `Нет тендеров со статусом «${activeTab}»`}
-                </td>
-              </tr>
-            ) : (
-              sortedTenders.map((tender) => (
-                <React.Fragment key={tender.id}>
-                  <tr className={isOverdue(tender) ? 'overdue-row' : ''}>
-                    {/* Плотный реестр: № и кнопка раскрытия — сверху, счётчик
-                        участников и КП — под ними, в одной узкой колонке. Иначе —
-                        как было, двумя колонками. Номер не переносится (nowrap). */}
-                    {denseRegistry ? (
-                      <td className="tp-num tp-num-merged">
-                        <div className="tp-num-top">
-                          <span className="tp-num-value">{tender.public_tender_number ?? '—'}</span>
-                          {renderExpandToggle(tender)}
-                        </div>
-                        {renderRestartMark(tender)}
-                        {renderKpCounter(tender)}
-                      </td>
-                    ) : (
-                      <>
-                        <td className="tp-num">
-                          {tender.public_tender_number ?? '—'}
-                          {renderRestartMark(tender)}
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
-                            {renderExpandToggle(tender)}
-                            {renderKpCounter(tender)}
-                          </div>
-                        </td>
-                      </>
-                    )}
-                    <td>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
-                        {tender.object_id ? (
-                          <Link
-                            to={`/general/objects/${tender.object_id}`}
-                            className="row-link primary"
-                            title="Открыть карточку объекта (Ctrl+клик или средняя кнопка — в новой вкладке)"
-                          >
-                            {tender.objects?.name || '-'}
-                          </Link>
-                        ) : (
-                          /* Без привязки к реестру: показываем вписанное вручную
-                             наименование («прочее»), карточки объекта у него нет. */
-                          <span className="row-link primary" style={{ cursor: 'default' }}>{tenderObjectName(tender, '-')}</span>
-                        )}
-                        {denseRegistry ? (
-                          /* Плотный реестр: адрес свёрнут под кнопкой «Показать адрес»
-                             (состояние — по id тендера, до перезагрузки страницы).
-                             Кнопка — отдельно от ссылки на объект; свёрнутый блок —
-                             hidden: не занимает места и не попадает в обход Tab. */
-                          tender.objects?.address ? (
-                            <>
-                              <button
-                                type="button"
-                                className={`tp-addr-toggle${openAddressIds.has(tender.id) ? ' is-open' : ''}`}
-                                aria-expanded={openAddressIds.has(tender.id)}
-                                aria-controls={`tp-addr-${tender.id}`}
-                                onClick={() => toggleAddress(tender.id)}
-                              >
-                                <IconChevronDown size={12} />
-                                {openAddressIds.has(tender.id) ? 'Скрыть адрес' : 'Показать адрес'}
-                              </button>
-                              <div id={`tp-addr-${tender.id}`} className="tp-addr-block" hidden={!openAddressIds.has(tender.id)}>
-                                <div className="tp-obj-address">{tender.objects.address}</div>
-                                {renderMapLink(tender)}
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              {tender.object_id && <span className="tp-addr-none">Адрес не указан</span>}
-                              {renderMapLink(tender)}
-                            </>
-                          )
-                        ) : (
-                          <>
-                            {tender.objects?.address && (
-                              <div className="tp-obj-address">
-                                {tender.objects.address}
-                              </div>
-                            )}
-                            {renderMapLink(tender)}
-                          </>
-                        )}
-                      </div>
-                    </td>
-                    <td className="tender-desc-cell">
-                      {/* До трёх строк; длиннее — «Показать полностью» под текстом.
-                          Переход в тендер — по самому тексту, раскрытие — отдельной
-                          кнопкой, полный текст в DOM (поиск, выгрузка не затронуты). */}
-                      <ClampText
-                        text={tender.work_description}
-                        empty=""
-                        wrap={canOpenTenderCard ? (body) => (
-                          <Link
-                            to={`/tenders/${tender.id}`}
-                            className={`row-link primary tender-desc-link${uiWork ? ' ui-title-link' : ''}`}
-                            title={`${tender.work_description || ''}\n\nОткрыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)`}
-                          >
-                            {body}
-                          </Link>
-                        ) : (body) => <span className="tender-desc-link">{body}</span>}
-                      />
-                      {/* Путь к папке — сразу под наименованием: с него начинают
-                          поиск документов, отметки ниже относятся к ходу тендера.
-                          Открыть проводник кликом браузер не даёт, поэтому путь
-                          копируется. */}
-                      <FolderPathCell
-                        value={tender.folder_path}
-                        canEdit={canEditTenders}
-                        onSave={(v) => handleSaveFolderPath(tender.id, v)}
-                      />
-                      {/* Отметки хода тендера — в одну строку, а не столбиком:
-                          три плашки друг под другом делали строку в 240px. */}
-                      <div className="tender-flags">
-                        {/* Подразделение ВОР — только у тендеров, которые есть в
-                            «ВОРах и РД» (isConstructionTender); колонки ещё нет
-                            (миграция 20260927) — плашки нет. */}
-                        {divisionUi && isConstructionTender(tender) && 'vor_division' in tender && (
-                          <VorDivisionChip
-                            value={tender.vor_division}
-                            canEdit={canEditVorDivision}
-                            onChange={(v) => handleChangeVorDivision(tender.id, v)}
-                          />
-                        )}
-                        <TgPublishToggle
-                          tender={tender}
-                          canEdit={canToggleTgPublished}
-                          onToggle={handleToggleTgPublished}
-                          short
-                        />
-                        {/* Появляется только на подведении итогов и после него —
-                            компонент решает это сам по статусу тендера. */}
-                        <CompletionLetterToggle
-                          tender={tender}
-                          canEdit={canEditTenders}
-                          onToggle={handleToggleCompletionLetter}
-                          short
-                        />
-                      </div>
-                    </td>
-                    {!isCompletedTab && (
-                      <td>
-                        {canEditTenders ? (
-                          <StatusDropdown
-                            value={tender.status}
-                            options={statusOptions}
-                            onChange={(next) => handleStatusChange(tender.id, next)}
-                            getBadgeClass={getStatusBadgeClass}
-                            getDisplay={(s) =>
-                              s === 'Идет тендерная процедура'
-                                ? <>Идет тендерная<br />процедура</>
-                                : s
-                            }
-                            ariaLabel="Статус тендера"
-                          />
-                        ) : (
-                          <span className={`status-badge tp-status-badge ${getStatusBadgeClass(tender.status)}`}>
-                            {tender.status}
-                          </span>
-                        )}
-                        {renderRestartMark(tender, 'target')}
-                      </td>
-                    )}
-                    {isCompletedTab && (
-                      <td>
-                        {(() => {
-                          const winners = tenderWinnersOf(tender)
-                          // Перезапущенный — «заменён № 984» вместо «Не выбран»: победителя у него и не будет.
-                          const replaced = restartTargetId(tender) ? renderRestartMark(tender, 'target') : null
-                          if (winners.length === 0) {
-                            return replaced || <span className="responsible-empty">Не выбран</span>
-                          }
-                          return (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                              {winners.map(w => (
-                                <span key={w.id} className="winner-cell" title="Победитель">
-                                  <span className="winner-icon" aria-hidden><IconTrophy size={14} /></span>
-                                  <span className="winner-name">
-                                    {w.name}
-                                    <BlacklistMark status={w.status} />
-                                    {w.scope && (
-                                      <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>
-                                        {' '}— {w.scope}
-                                      </span>
-                                    )}
-                                  </span>
-                                </span>
-                              ))}
-                              {replaced}
-                            </div>
-                          )
-                        })()}
-                      </td>
-                    )}
-                    {/* Цвет просрочки — классом, а не инлайн-стилем: инлайн не знает про тему,
-                        и ярко-красный #dc2626 на тёмном фоне резал глаз. */}
-                    <td className={`tender-period-cell ui-num ${isOverdue(tender) ? 'is-overdue' : ''}`}>
-                      {breakAfterDash(formatDateRange(tender.tender_start_date, tender.tender_end_date))}
-                      {isOverdue(tender) && <span className="tender-period-warn" title="Срок истёк">!</span>}
-                    </td>
-                    <td>
-                      {editingResponsibleTenderId === tender.id ? (
-                        <select
-                          autoFocus
-                          className="inline-responsible-select"
-                          value={tender.responsible_contact_id || ''}
-                          onChange={(e) => {
-                            handleUpdateTenderResponsible(tender.id, e.target.value)
-                            setEditingResponsibleTenderId(null)
-                          }}
-                          onBlur={() => setEditingResponsibleTenderId(null)}
-                        >
-                          <option value="">{uiWork ? 'Не назначен' : '— не назначен —'}</option>
-                          {getResponsibleOptions(tender.responsible_contact_id).map((contact) => (
-                            <option key={contact.id} value={contact.id}>
-                              {contact.full_name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        canEditTenders ? (
-                          <button
-                            type="button"
-                            className="responsible-display"
-                            onClick={() => setEditingResponsibleTenderId(tender.id)}
-                            title="Назначить ответственного"
-                          >
-                            {responsibleLabel(getResponsibleName(tender))}
-                          </button>
-                        ) : (
-                          <span className="responsible-display" style={{ cursor: 'default' }}>
-                            {responsibleLabel(getResponsibleName(tender))}
-                          </span>
-                        )
-                      )}
-                    </td>
-                    {/* ВОРы и РД */}
-                    {showVorColumn && (
-                      <td>
-                        <div className="phase-cell">
-                          {(() => {
-                            const s = tender.vor_status || 'not_started'
-                            const hasDocs = (vorDocCounts[tender.id] || 0) > 0
-                            if (s === 'not_required') {
-                              return <span className="phase-done" title="ВОР не требуется">{notRequiredLabel}</span>
-                            }
-                            if (s === 'completed') {
-                              return (tender.vor_link || hasDocs)
-                                ? <span className="phase-done" title="ВОР готов">✓ Готово</span>
-                                : <span className="phase-warn" title="Статус «Завершён», но нет ни ссылки, ни документа">⚠ Нет файла</span>
-                            }
-                            if (s === 'in_progress') {
-                              return <span className="phase-progress" title="В работе">В работе</span>
-                            }
-                            return <span className="phase-pending" title="Не начат">Не начат</span>
-                          })()}
-                          {/* «Открыть» и документы — одной строкой в плотном реестре
-                              (без него обёртка display: contents — вид прежний). */}
-                          <span className="phase-actions">
-                            {tender.vor_link && (
-                              <a
-                                href={tender.vor_link}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="link"
-                              >
-                                Открыть
-                              </a>
-                            )}
-                            <button
-                              type="button"
-                              className="tp-docs-btn"
-                              onClick={() => setVorDocsModalTenderId(tender.id)}
-                              title="Документы ВОР и РД"
-                              aria-label={`Документы ВОР и РД${vorDocCounts[tender.id] ? `: ${vorDocCounts[tender.id]}` : ''}`}
-                            >
-                              <span className="tp-docs-btn-inner">
-                                <PaperclipIcon size={12} />
-                                {vorDocCounts[tender.id] ? vorDocCounts[tender.id] : ''}
-                              </span>
-                            </button>
-                          </span>
-                        </div>
-                        {/* Срок подготовки ВОР; просроченный (ВОР не закрыт) — красным. */}
-                        {tender.vor_end_date && (() => {
-                          const closed = ['completed', 'not_required'].includes(tender.vor_status)
-                          const overdue = !closed && !!tender.vor_end_date
-                            && tender.vor_end_date < new Date().toISOString().slice(0, 10)
-                          return (
-                            <div
-                              className={`vor-phase-dates${overdue ? ' is-overdue' : ''}`}
-                              title={overdue ? 'Срок подготовки ВОР истёк' : 'Срок подготовки ВОР'}
-                            >
-                              {breakAfterDash(formatShortDateRange(vorStartDate(tender), tender.vor_end_date))}
-                            </div>
-                          )
-                        })()}
-                        {vorResponsibleName(tender) && (
-                          <div className="tp-sub-line">
-                            <PersonName full={vorResponsibleName(tender)} />
-                          </div>
-                        )}
-                      </td>
-                    )}
-                    {/* Тендерный пакет */}
-                    <td>
-                        <div className="phase-cell phase-cell--actions">
-                        {tender.tender_package_link ? (
-                          <div className="link-with-edit">
-                            <a
-                              href={tender.tender_package_link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="link"
-                            >
-                              Открыть
-                            </a>
-                            {canEditTenders && (
-                              <button
-                                type="button"
-                                className="btn-icon btn-edit"
-                                onClick={() => handleUpdateTenderLink(tender.id, 'tender_package_link', tender.tender_package_link)}
-                                title="Изменить ссылку"
-                                aria-label="Изменить ссылку на тендерный пакет"
-                              ><IconPencil size={14} /></button>
-                            )}
-                          </div>
-                        ) : (
-                          canEditTenders ? (
-                            <button
-                              type="button"
-                              className="tp-add-link"
-                              onClick={() => handleUpdateTenderLink(tender.id, 'tender_package_link', '')}
-                              title="Добавить ссылку на тендерный пакет"
-                            >+ ссылка</button>
-                          ) : (
-                            !((packageDocCounts[tender.id] || 0) > 0) && (
-                              <span className="tp-dash">—</span>
-                            )
-                          )
-                        )}
-                        {(canEditTenders || (packageDocCounts[tender.id] || 0) > 0) && (
-                          <button
-                            type="button"
-                            className="tp-docs-btn"
-                            onClick={() => setPackageDocsModalTenderId(tender.id)}
-                            title="Документы тендерного пакета"
-                            aria-label={`Документы тендерного пакета${packageDocCounts[tender.id] ? `: ${packageDocCounts[tender.id]}` : ''}`}
-                          >
-                            <span className="tp-docs-btn-inner">
-                              <PaperclipIcon size={12} />
-                              {packageDocCounts[tender.id] ? packageDocCounts[tender.id] : ''}
-                            </span>
-                          </button>
-                        )}
-                        </div>
-                        {/* Проверка РД — только основное строительство. */}
-                        {department === 'construction' && (
-                          <div className="tender-rd-check">
-                            <RdCheckToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleRdChecked} />
-                          </div>
-                        )}
-                      </td>
-                    {/* План затрат */}
-                    {!compactView && department === 'construction' && !isCompletedTab && (
-                      <td>
-                        <div className="phase-cell">
-                          {(() => {
-                            const s = tender.cost_plan_status || 'not_started'
-                            if (s === 'not_required') {
-                              return <span className="phase-done" title="План затрат не требуется">{notRequiredLabel}</span>
-                            }
-                            if (s === 'completed') {
-                              return tender.cost_plan_link
-                                ? <span className="phase-done" title="План затрат готов">✓ Готово</span>
-                                : <span className="phase-warn" title="Статус «Завершён», но ссылка не указана">⚠ Нет ссылки</span>
-                            }
-                            if (s === 'awaiting_kp') {
-                              return <span className="phase-awaiting" title="План затрат ждёт КП подрядчиков">Ожидание КП</span>
-                            }
-                            if (s === 'in_progress') {
-                              return <span className="phase-progress" title="В работе">В работе</span>
-                            }
-                            return <span className="phase-pending" title="Не начат">Не начат</span>
-                          })()}
-                          {tender.cost_plan_link && (
-                            <a
-                              href={tender.cost_plan_link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="link"
-                            >
-                              Открыть
-                            </a>
-                          )}
-                        </div>
-                        {tender.cost_plan_responsible?.full_name && (
-                          <div className="tp-sub-line">
-                            {uiWork
-                              ? <PersonName full={tender.cost_plan_responsible.full_name} />
-                              : tender.cost_plan_responsible.full_name}
-                          </div>
-                        )}
-                      </td>
-                    )}
-                    {/* Тендер на материалы (дочерний) — только в основном строительстве */}
-                    {!compactView && !isMaterialsView && department === 'construction' && (
-                      <td>
-                        {tender.materials_tender ? (
-                          <div className="phase-cell">
-                            {(() => {
-                              const s = tender.materials_tender.status
-                              if (s === 'Завершён' || s === 'Завершен') {
-                                return <span className="phase-done" title="Тендер на материалы завершён">✓ Завершён</span>
-                              }
-                              if (s === 'В работе') {
-                                return <span className="phase-progress" title="В работе">В работе</span>
-                              }
-                              if (s === 'Не требуется' || s === 'Не нужно') {
-                                return <span className="phase-done" title="Тендер на материалы не требуется">{notRequiredLabel}</span>
-                              }
-                              return <span className="phase-pending" title={s || 'Не начат'}>{s || 'Не начат'}</span>
-                            })()}
-                            {tender.materials_tender.materials_proposal_link && (
-                              <a
-                                href={tender.materials_tender.materials_proposal_link}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="link"
-                                title="Открыть КП на материалы"
-                              >
-                                Открыть
-                              </a>
-                            )}
-                          </div>
-                        ) : (
-                          // Task 289: ручное создание тендера на материалы запрещено —
-                          // материал создаётся автоматически при создании основного тендера.
-                          // Если у тендера нет материала (исторические данные или ошибка) —
-                          // показываем прочерк, а не предлагаем создать вручную.
-                          <span className="tp-dash" title="Тендер на материалы не создан">—</span>
-                        )}
-                      </td>
-                    )}
-                    {/* Сводная КП */}
-                    {!compactView && (
-                      <td>
-                        {tender.summary_proposal_link ? (
-                          <div className="link-with-edit">
-                            <a
-                              href={tender.summary_proposal_link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="link"
-                            >
-                              Открыть
-                            </a>
-                            {canEditTenders && (
-                              <button
-                                type="button"
-                                className="btn-icon btn-edit"
-                                onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', tender.summary_proposal_link)}
-                                title="Изменить ссылку"
-                                aria-label="Изменить ссылку на сводную КП"
-                              ><IconPencil size={14} /></button>
-                            )}
-                          </div>
-                        ) : (
-                          canEditTenders ? (
-                            <button
-                              type="button"
-                              className="tp-add-link"
-                              onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', '')}
-                              title="Добавить ссылку на сводную КП"
-                            >+ ссылка</button>
-                          ) : (
-                            <span className="tp-dash">—</span>
-                          )
-                        )}
-                      </td>
-                    )}
-                    <td className="actions-cell">
-                      {activeTab === 'deleted' ? (
-                        <>
-                          {canEditTenders && (
-                            <button
-                              type="button"
-                              className="btn-icon"
-                              onClick={() => handleRestoreTender(tender.id, tenderObjectName(tender, 'тендер'))}
-                              title="Восстановить"
-                              aria-label="Восстановить тендер"
-                            >
-                              <IconRestore />
-                            </button>
-                          )}
-                          {isAdmin && (
-                            <button
-                              type="button"
-                              className="btn-icon btn-delete"
-                              onClick={() => handleHardDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))}
-                              title="Удалить безвозвратно (только для администратора)"
-                              aria-label="Удалить тендер безвозвратно"
-                            >
-                              <IconTrash />
-                            </button>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className="btn-icon"
-                            onClick={() => handleShowLetterForTender(tender)}
-                            title="Шаблон письма подрядчикам"
-                            aria-label="Шаблон письма подрядчикам"
-                          >
-                            <IconLetter />
-                          </button>
-                          {canEditTenders && (
-                            <button
-                              type="button"
-                              className="btn-icon btn-edit"
-                              onClick={() => handleEditTender(tender)}
-                              title="Редактировать"
-                              aria-label="Редактировать тендер"
-                            >
-                              <IconPencil />
-                            </button>
-                          )}
-                          {isAdmin && (
-                            <button
-                              type="button"
-                              className="btn-icon btn-delete"
-                              onClick={() =>
-                                handleDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))
-                              }
-                              title="В корзину (только для администратора)"
-                              aria-label="Переместить тендер в корзину"
-                            >
-                              <IconTrash />
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                  {expandedTenderId === tender.id && (
-                    <tr>
-                      <td colSpan={mainTableColSpan} className="expanded-cp-row">
-                        {/* Примечание по тендеру — первым, до списка участников:
-                            это общий контекст, с которым читают всю таблицу. */}
-                        {!hideNotes && (
-                          <div className="tender-notes-block">
-                            <div className="tender-notes-head">
-                              <span className="tender-notes-title">Примечание по тендеру</span>
-                              <div className="tc-notes-tools">
-                                {canEditTenders && tenderNotesEdit?.tenderId !== tender.id && (
-                                  <button
-                                    type="button"
-                                    className="tc-notes-icon"
-                                    onClick={() => setTenderNotesEdit({ tenderId: tender.id, draft: tender.notes || '' })}
-                                    title="Редактировать примечание"
-                                    aria-label="Редактировать примечание"
-                                  >
-                                    <PencilIcon />
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  className="tc-notes-icon"
-                                  onClick={() => openTenderNotesHistory(tender)}
-                                  title="История изменений примечания"
-                                  aria-label="История изменений примечания"
-                                >
-                                  <HistoryIcon />
-                                </button>
-                              </div>
-                            </div>
-                            {tenderNotesEdit?.tenderId === tender.id ? (
-                              <div className="tc-notes-edit">
-                                <textarea
-                                  className="tc-notes-textarea"
-                                  autoFocus
-                                  ref={(el) => {
-                                    if (el) {
-                                      el.style.height = 'auto'
-                                      el.style.height = Math.max(el.scrollHeight, 72) + 'px'
-                                    }
-                                  }}
-                                  value={tenderNotesEdit.draft}
-                                  onChange={(e) => {
-                                    const value = e.target.value
-                                    e.target.style.height = 'auto'
-                                    e.target.style.height = Math.max(e.target.scrollHeight, 72) + 'px'
-                                    setTenderNotesEdit(prev => (prev && prev.tenderId === tender.id ? { ...prev, draft: value } : prev))
-                                  }}
-                                  placeholder="Примечание по тендеру…"
-                                  rows={3}
-                                />
-                                <div className="tc-notes-actions">
-                                  <button
-                                    type="button"
-                                    className="tc-notes-btn tc-notes-btn-save"
-                                    onClick={() => handleSaveTenderNotes(tender)}
-                                    disabled={savingNotes}
-                                  >
-                                    {savingNotes ? 'Сохранение…' : 'Сохранить'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="tc-notes-btn tc-notes-btn-cancel"
-                                    onClick={() => setTenderNotesEdit(null)}
-                                    disabled={savingNotes}
-                                  >
-                                    Отмена
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className={`tender-notes-text${tender.notes ? '' : ' is-empty'}`}>
-                                {tender.notes || 'Примечание не заполнено'}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        <div className="expanded-cp-toolbar">
-                          {canEditTenders && (
-                            <button
-                              className="btn-primary"
-                              onClick={() => {
-                                setSelectedTenderForCounterparty(tender.id)
-                                // Сбрасываем поиск/фильтр ПРИ ОТКРЫТИИ, а не только при
-                                // закрытии: иначе оставшийся с прошлого раза фильтр молча
-                                // прячет часть контрагентов, и кажется, что компании нет.
-                                setCounterpartySearchQuery('')
-                                setCounterpartyWorkTypeFilter('')
-                                setSelectedCounterpartyIds([])
-                                setShowAddCounterpartyModal(true)
-                              }}
-                            >
-                              + Добавить контрагента
-                            </button>
-                          )}
-                          {!isScopedManager && tenderCounterparties[tender.id] && tenderCounterparties[tender.id].length > 0 && (
-                            <button
-                              className="btn-secondary"
-                              onClick={() => handleCopyEmailsForTender(tender.id)}
-                              title="Скопировать все email-адреса контрагентов в буфер обмена"
-                            >
-                              {copiedEmailsTenderId === tender.id ? '✓ Скопировано' : <><IconLetter size={14} /> Копировать email</>}
-                            </button>
-                          )}
-                          {tenderCounterparties[tender.id]?.length > 0 && (
-                            <ParticipantsCollapseToggle collapsed={cpCollapsed} onChange={setCpCollapsed} />
-                          )}
-                        </div>
-                        {!isMaterialsView && (
-                          <BidRequestsBlock
-                            tenderId={tender.id}
-                            canEdit={canEdit('tenders')}
-                            onDecided={({ request, accepted }) => {
-                              fetchBidRequestCounts([tender.id], { partial: true })
-                              if (!accepted) return
-                              fetchTenderCounterparties(tender.id)
-                              fetchTenderProposalCounts([tender.id])
-                              logTenderEvent(tender.id, 'participant_added', {
-                                fieldName: 'participants',
-                                newValue: { id: request.counterparty_id, name: request.counterparties?.name || null },
-                                description: `Добавлен участник по заявке с сайта: ${request.counterparties?.name || '—'}`,
-                              })
-                            }}
-                          />
-                        )}
-                        {tenderCounterparties[tender.id] && tenderCounterparties[tender.id].length > 0 ? (
-                          <div className="expanded-cp-table-wrap">
-                            <table className={`data-table tc-table${cpCollapsed ? ' is-compact' : ''}`} style={{ margin: 0 }}>
-                              <thead>
-                                <tr>
-                                  {canEditTenders && <th style={{ width: '26px' }}></th>}
-                                  <th style={{ width: '40px' }}>№</th>
-                                  {/* 29.10.2026, по просьбе пользователя: статус — под названием компании,
-                                      контакты — сразу за ней, затем КП и документы, примечание — справа. */}
-                                  <th className="tc-col-company">Наименование компании</th>
-                                  <th className="tc-col-contacts">Контакты</th>
-                                  <th className="tc-col-files">КП / Документы</th>
-                                  {!hideNotes && <th className="tc-col-notes">Примечание</th>}
-                                  {/* Удалить участника — только с правом правки: без него колонка
-                                      стояла пустой справа (экономист, инженер, 30.10.2026). */}
-                                  {canEditTenders && <th style={{ width: '48px' }}></th>}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {tenderCounterparties[tender.id].map((tc, index) => (
-                                  <tr
-                                    key={tc.id}
-                                    className={`${draggedTc?.id === tc.id ? 'tc-dragging' : ''}${tcDragOver?.id === tc.id ? ` tc-drop-${tcDragOver.position}` : ''}`}
-                                    onDragOver={!canEditTenders ? undefined : (e) => {
-                                      e.preventDefault()
-                                      e.dataTransfer.dropEffect = 'move'
-                                      const rect = e.currentTarget.getBoundingClientRect()
-                                      const position = (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after'
-                                      if (tc.id === draggedTc?.id) { setTcDragOver(null); return }
-                                      setTcDragOver(prev => (prev?.id === tc.id && prev?.position === position) ? prev : { id: tc.id, position })
-                                    }}
-                                    onDragLeave={!canEditTenders ? undefined : () => setTcDragOver(prev => prev?.id === tc.id ? null : prev)}
-                                    onDrop={!canEditTenders ? undefined : (e) => {
-                                      e.preventDefault()
-                                      const draggedId = e.dataTransfer.getData('text/plain')
-                                      handleReorderTc(tender.id, draggedId, tc.id)
-                                    }}
-                                  >
-                                    {canEditTenders && (
-                                      <td className="tc-drag-cell">
-                                        <span
-                                          className="tc-drag-handle"
-                                          draggable
-                                          title="Перетащите, чтобы изменить порядок"
-                                          onDragStart={(e) => {
-                                            e.dataTransfer.effectAllowed = 'move'
-                                            e.dataTransfer.setData('text/plain', tc.id)
-                                            setDraggedTc({ tenderId: tender.id, id: tc.id })
-                                          }}
-                                          onDragEnd={() => { setDraggedTc(null); setTcDragOver(null) }}
-                                        >⋮⋮</span>
-                                      </td>
-                                    )}
-                                    <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>
-                                      {index + 1}
-                                    </td>
-                                    <td className="tc-company-cell">
-                                      {/* ИНН — в подсказке названия: в строке он почти не нужен, а место занимал. */}
-                                      <div className="tc-company-name" title={tc.counterparties?.inn ? `ИНН ${tc.counterparties.inn}` : undefined}>
-                                        {tc.counterparties?.name}
-                                        <BlacklistMark status={tc.counterparties?.status} />
-                                      </div>
-                                      {tc.counterparties?.work_type && (
-                                        <div className="tc-company-sub" title={tc.counterparties.work_type}>
-                                          {tc.counterparties.work_type}
-                                        </div>
-                                      )}
-                                      <div className="tc-company-status">
-                                        <ParticipantStatusSelect
-                                          value={tc.status}
-                                          onChange={(v) => handleUpdateCounterpartyStatus(tender.id, tc.id, v)}
-                                          disabled={!canEditTenders}
-                                        />
-                                      </div>
-                                    </td>
-                                    <td>
-                                      <ParticipantContacts contacts={tc.counterparties?.counterparty_contacts} compact={cpCollapsed} />
-                                    </td>
-                                    <td>
-                                      <TenderCounterpartyFiles
-                                        tenderId={tender.id}
-                                        counterpartyId={tc.counterparty_id}
-                                        canEdit={canEditTenders}
-                                        tender={tender}
-                                        counterpartyName={tc.counterparties?.name}
-                                        collapsed={cpCollapsed}
-                                      />
-                                    </td>
-                                    {!hideNotes && (
-                                    <td className="tc-notes-cell">
-                                      {notesEdit?.tcId === tc.id ? (
-                                        <div className="tc-notes-edit">
-                                          <textarea
-                                            className="tc-notes-textarea"
-                                            autoFocus
-                                            ref={(el) => {
-                                              if (el) {
-                                                el.style.height = 'auto'
-                                                el.style.height = Math.max(el.scrollHeight, 56) + 'px'
-                                              }
-                                            }}
-                                            value={notesEdit.draft}
-                                            onChange={(e) => {
-                                              const value = e.target.value
-                                              e.target.style.height = 'auto'
-                                              e.target.style.height = Math.max(e.target.scrollHeight, 56) + 'px'
-                                              setNotesEdit(prev => (prev && prev.tcId === tc.id ? { ...prev, draft: value } : prev))
-                                            }}
-                                            placeholder="Примечание…"
-                                            rows={2}
-                                          />
-                                          <div className="tc-notes-actions">
-                                            <button
-                                              type="button"
-                                              className="tc-notes-btn tc-notes-btn-save"
-                                              onClick={() => handleSaveCounterpartyNotes(tender.id, tc)}
-                                              disabled={savingNotes}
-                                            >
-                                              {savingNotes ? 'Сохранение…' : 'Сохранить'}
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="tc-notes-btn tc-notes-btn-cancel"
-                                              onClick={() => setNotesEdit(null)}
-                                              disabled={savingNotes}
-                                            >
-                                              Отмена
-                                            </button>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div className="tc-notes-view">
-                                          <div
-                                            className={`tc-notes-text${tc.notes ? '' : ' is-empty'}`}
-                                            title={cpCollapsed && tc.notes ? tc.notes : undefined}
-                                          >
-                                            {tc.notes || 'Примечание не заполнено'}
-                                          </div>
-                                          <div className="tc-notes-tools">
-                                            {canEditTenders && (
-                                              <button
-                                                type="button"
-                                                className="tc-notes-icon"
-                                                onClick={() => setNotesEdit({ tcId: tc.id, draft: tc.notes || '' })}
-                                                title="Редактировать примечание"
-                                                aria-label="Редактировать примечание"
-                                              >
-                                                <PencilIcon />
-                                              </button>
-                                            )}
-                                            {/* История только для чтения — доступна всем, кто видит колонку */}
-                                            <button
-                                              type="button"
-                                              className="tc-notes-icon"
-                                              onClick={() => openNotesHistory(tender.id, tc)}
-                                              title="История изменений примечания"
-                                              aria-label="История изменений примечания"
-                                            >
-                                              <HistoryIcon />
-                                            </button>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </td>
-                                    )}
-                                    {canEditTenders && (
-                                      <td style={{ textAlign: 'center' }}>
-                                        <button
-                                          type="button"
-                                          className="btn-icon btn-delete"
-                                          onClick={() => handleRemoveCounterpartyFromTender(tender.id, tc.id)}
-                                          title="Удалить из тендера"
-                                          aria-label="Удалить контрагента из тендера"
-                                        >
-                                          <IconTrash />
-                                        </button>
-                                      </td>
-                                    )}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        ) : loadingCounterparties.has(tender.id) ? (
-                          <div className="expanded-cp-loading">
-                            <span className="expanded-cp-spinner" aria-hidden />
-                            <span>Загрузка подрядчиков…</span>
-                          </div>
-                        ) : (
-                          <p className="expanded-cp-empty">
-                            Контрагенты еще не добавлены к этому тендеру
-                          </p>
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
-              ))
-            )}
-          </tbody>
+          {sortedTenders.length === 0 ? (
+            <tbody>
+                <tr>
+                  <td colSpan={mainTableColSpan} className="no-data">
+                    {activeTab === 'deleted'
+                      ? 'В корзине нет тендеров'
+                      : activeTab === 'all'
+                        ? 'Нет тендеров. Добавьте первый тендер.'
+                        : `Нет тендеров со статусом «${activeTab}»`}
+                  </td>
+                </tr>
+            </tbody>
+          ) : virtualMain ? (
+            <VirtualTableBody viewport rowCount={sortedTenders.length} renderRow={(i) => cachedMainRow(sortedTenders[i])}
+              colSpan={mainTableColSpan} rowHeight={84} />
+          ) : (
+            <tbody>{sortedTenders.map(renderMainRow)}</tbody>
+          )}
           </>
           )}
         </table>

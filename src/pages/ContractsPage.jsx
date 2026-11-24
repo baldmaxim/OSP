@@ -3155,10 +3155,11 @@ function ContractRegistry() {
                     {/* Бейдж только у ГО: объектов ОС большинство, метка на каждом — визуальный шум. */}
                     {isWarrantyObject(contract.objects?.status) && <ObjectDeptBadge status={contract.objects?.status} />}
                   </td>
-                  {/* Красная полоса — только у договора без номера: без даты договоров много, полоса у них мешала
-                      (13.11.2026, просьба пользователя); «дата не указана» в строке осталась. */}
+                  {/* Красной полосы у ячейки нет: 13.11.2026 её убрали у договоров без даты, 24.11.2026 — совсем (у договора
+                      без номера дата обычно тоже пустая, и полоса снова была «у договоров без даты»). Незаполненное видно
+                      надписями «№ не присвоен» и «дата не указана». */}
                   <td
-                    className={`cell-contract-num ${!dsNum && !docDeleted ? 'is-incomplete' : ''}`}
+                    className="cell-contract-num"
                     onClick={(e) => e.stopPropagation()}
                     title={missingLabel ? `Не заполнено: ${missingLabel}` : undefined}
                   >

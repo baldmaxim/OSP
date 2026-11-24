@@ -314,14 +314,6 @@
 }
 [data-theme='dark'] .contracts-table-compact .overdue-note { color: #fca5a5; }
 
-/* ── Незаполненный договор ──────────────────────────────────────────────────
-   Тонкая метка у левого края вместо розовой заливки ячейки. */
-.contracts-table-compact td.cell-contract-num.is-incomplete,
-[data-theme='dark'] .contracts-table-compact td.cell-contract-num.is-incomplete {
-  background: transparent;
-  box-shadow: inset 2px 0 0 rgba(185, 28, 28, 0.4);
-}
-
 /* ── Действия ───────────────────────────────────────────────────────────────
    В покое приглушены, при наведении на строку — обычной яркости. */
 .contracts-table-compact .actions-cell { padding-top: 0.6rem; }
