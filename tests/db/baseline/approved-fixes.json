@@ -5788,5 +5788,115 @@
     "to": "empty",
     "why": "новая таблица: строки загрузки расценок из Excel в реестр «Расценки от снабжения СУ-10» (на копии пусто); читает читатель реестра, пишет только функция supply_registry_import по праву правки «Реестра расценок», удаляются с загрузкой",
     "candidate": "20270224_supply_registry_import.sql"
+  },
+  {
+    "release": "20270225",
+    "class": "admin",
+    "table": "doc_check_assign_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица (20270225): уведомление исполнителю «Заключения ДП» о назначении (большое окно); вошедшим закрыта целиком — читают и гасят своё только функции doc_check_assign_my_alerts / doc_check_assign_alerts_ack; на копии пусто",
+    "candidate": "20270225_dp_conclusion_registry_contract.sql"
+  },
+  {
+    "release": "20270225",
+    "class": "employee_full",
+    "table": "doc_check_assign_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица (20270225): уведомление исполнителю «Заключения ДП» о назначении (большое окно); вошедшим закрыта целиком — читают и гасят своё только функции doc_check_assign_my_alerts / doc_check_assign_alerts_ack; на копии пусто",
+    "candidate": "20270225_dp_conclusion_registry_contract.sql"
+  },
+  {
+    "release": "20270225",
+    "class": "employee_none",
+    "table": "doc_check_assign_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица (20270225): уведомление исполнителю «Заключения ДП» о назначении (большое окно); вошедшим закрыта целиком — читают и гасят своё только функции doc_check_assign_my_alerts / doc_check_assign_alerts_ack; на копии пусто",
+    "candidate": "20270225_dp_conclusion_registry_contract.sql"
+  },
+  {
+    "release": "20270225",
+    "class": "vors_only",
+    "table": "doc_check_assign_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица (20270225): уведомление исполнителю «Заключения ДП» о назначении (большое окно); вошедшим закрыта целиком — читают и гасят своё только функции doc_check_assign_my_alerts / doc_check_assign_alerts_ack; на копии пусто",
+    "candidate": "20270225_dp_conclusion_registry_contract.sql"
+  },
+  {
+    "release": "20270225",
+    "class": "contractor_own",
+    "table": "doc_check_assign_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица (20270225): уведомление исполнителю «Заключения ДП» о назначении (большое окно); вошедшим закрыта целиком — читают и гасят своё только функции doc_check_assign_my_alerts / doc_check_assign_alerts_ack; на копии пусто",
+    "candidate": "20270225_dp_conclusion_registry_contract.sql"
+  },
+  {
+    "release": "20270225",
+    "class": "contractor_noorg",
+    "table": "doc_check_assign_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица (20270225): уведомление исполнителю «Заключения ДП» о назначении (большое окно); вошедшим закрыта целиком — читают и гасят своё только функции doc_check_assign_my_alerts / doc_check_assign_alerts_ack; на копии пусто",
+    "candidate": "20270225_dp_conclusion_registry_contract.sql"
+  },
+  {
+    "release": "20270225",
+    "class": "unapproved",
+    "table": "doc_check_assign_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица (20270225): уведомление исполнителю «Заключения ДП» о назначении (большое окно); вошедшим закрыта целиком — читают и гасят своё только функции doc_check_assign_my_alerts / doc_check_assign_alerts_ack; на копии пусто",
+    "candidate": "20270225_dp_conclusion_registry_contract.sql"
+  },
+  {
+    "release": "20270225",
+    "class": "blocked",
+    "table": "doc_check_assign_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица (20270225): уведомление исполнителю «Заключения ДП» о назначении (большое окно); вошедшим закрыта целиком — читают и гасят своё только функции doc_check_assign_my_alerts / doc_check_assign_alerts_ack; на копии пусто",
+    "candidate": "20270225_dp_conclusion_registry_contract.sql"
+  },
+  {
+    "release": "20270225",
+    "class": "no_user_roles",
+    "table": "doc_check_assign_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица (20270225): уведомление исполнителю «Заключения ДП» о назначении (большое окно); вошедшим закрыта целиком — читают и гасят своё только функции doc_check_assign_my_alerts / doc_check_assign_alerts_ack; на копии пусто",
+    "candidate": "20270225_dp_conclusion_registry_contract.sql"
+  },
+  {
+    "release": "20270225",
+    "class": "anon",
+    "table": "doc_check_assign_alerts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица (20270225): уведомление исполнителю «Заключения ДП» о назначении (большое окно); вошедшим закрыта целиком — читают и гасят своё только функции doc_check_assign_my_alerts / doc_check_assign_alerts_ack; на копии пусто",
+    "candidate": "20270225_dp_conclusion_registry_contract.sql"
+  },
+  {
+    "release": "20270225",
+    "class": "service_role",
+    "table": "doc_check_assign_alerts",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица (20270225): уведомление исполнителю «Заключения ДП» о назначении (большое окно); вошедшим закрыта целиком — читают и гасят своё только функции doc_check_assign_my_alerts / doc_check_assign_alerts_ack; на копии пусто",
+    "candidate": "20270225_dp_conclusion_registry_contract.sql"
   }
 ]

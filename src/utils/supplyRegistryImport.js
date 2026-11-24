@@ -6,6 +6,9 @@
 // расценки. Как в «Счетах и КП» расценки снабжения (utils/supplierDoc, supplierDocRead): лист → сетка ячеек, шапку ищем сами
 // (не обязательно в первой строке, колонки — по словам, в любом порядке), числа — parseNum («18 450,00», «95 руб.»).
 // Обязательны наименование и цена; источника, объекта, тендера и даты может не быть — тогда их задают в окне для всех строк.
+// Файл из папок счетов (23.11.2026, миграция 20270227) несёт ещё «Подрядчик по папке», «№ документа из имени файла»,
+// «№ заявки / заказа», «Файл-источник», выгрузка реестра — и «Ссылку на счёт»: это подробности расценки, они видны по
+// нажатию на строку реестра (components/rates/SupplyRateDetailsDialog) и в распознавание не входят.
 //
 // Объект пишут как придётся: «18 19 27», «injoy», «king&sons», «Алия», «дом56(не реновация)», «Зил33» (просьба пользователя
 // 20.11.2026). Распознаём по словам и числам названия объекта портала (resolveObject): только однозначно — у «ЗИЛ 33»,
@@ -28,9 +31,17 @@ const low = (v) => cellText(v).toLowerCase().replace(/ё/g, 'е').replace(SPACES
 
 // ── Шапка ────────────────────────────────────────────────────────────────────────────────────────────
 // Порядок важен: «Цена за материал, ₽» — цена, а не наименование; «Описание работ (тендер)» — тендер; «Дата расценки» — дата.
+// Колонки файла из папок счетов (23.11.2026): «Подрядчик по папке», «№ документа из имени файла», «№ заявки / заказа»,
+// «Файл-источник» — до «№ п/п» и «Источника»: «№ документа…» иначе стал бы номером строки, «Файл-источник» — источником.
+// «Ссылка на счёт» — колонка выгрузки реестра (счёт, привязанный к расценке).
 const HEADER_RULES = [
-  ['num', /^(№|n|no|номер)(\s|$|\.)|п\s*\/\s*п/],
   ['date', /дата/],
+  ['invoiceUrl', /ссылк/],
+  ['docNumber', /документ/],
+  ['orderNumber', /заявк|заказ(?!чик)/],
+  ['sourceFile', /файл/],
+  ['contractor', /подрядчик|поставщик|контрагент/],
+  ['num', /^(№|n|no|номер)(\s|$|\.)|п\s*\/\s*п/],
   ['price', /цена|стоимост|^руб|₽/],
   ['source', /источник|откуда/],
   ['object', /объект|^жк$/],
@@ -102,7 +113,9 @@ export const moscowDay = (iso) => {
 // ── Строки файла ─────────────────────────────────────────────────────────────────────────────────────
 const TOTAL_RE = /^(итого|итог|всего)(\s|$|:)/
 // Сетка листа → строки: { sheet, rowNo (строка листа, с 1), source, object, name, unit, price (число | null), priceText,
-// tender, date ('ГГГГ-ММ-ДД' | '' | null), dateText }.
+// tender, date ('ГГГГ-ММ-ДД' | '' | null), dateText, contractor, docNumber, orderNumber, sourceFile, invoiceUrl }. Последние
+// пять — подробности расценки (видны по нажатию на строку реестра); нет колонки — пусто.
+export const DETAIL_FIELDS = ['contractor', 'docNumber', 'orderNumber', 'sourceFile', 'invoiceUrl']
 export function registryGridRows(grid, header, sheet = '') {
   const { row, columns: c } = header
   const out = []
@@ -111,7 +124,7 @@ export function registryGridRows(grid, header, sheet = '') {
     const cells = grid[r] || []
     const name = cellText(at(cells, 'name'))
     const priceCell = at(cells, 'price')
-    const rest = ['source', 'object', 'unit', 'tender', 'date'].some((f) => cellText(at(cells, f)))
+    const rest = ['source', 'object', 'unit', 'tender', 'date', ...DETAIL_FIELDS].some((f) => cellText(at(cells, f)))
     if (!name && (priceCell === '' || priceCell == null) && !rest) continue
     if (TOTAL_RE.test(low(name)) || (!name && TOTAL_RE.test(low(cells.find((v) => cellText(v)) ?? '')))) continue
     const dateCell = at(cells, 'date')
@@ -127,6 +140,7 @@ export function registryGridRows(grid, header, sheet = '') {
       tender: cellText(at(cells, 'tender')),
       date: parseRateDate(dateCell),
       dateText: cellText(dateCell),
+      ...Object.fromEntries(DETAIL_FIELDS.map((f) => [f, cellText(at(cells, f))])),
     })
   }
   return out
@@ -339,6 +353,13 @@ export function prepareRegistryImport(rows, ctx) {
   return { lines, labels: [...labels.values()], counts }
 }
 
+// Ссылка на счёт — только адрес http/https (как ограничение базы); иное (сетевой путь, текст) не пишется.
+const WEB_LINK_RE = /^https?:\/\/\S+$/i
+export const invoiceLink = (v) => {
+  const s = cellText(v)
+  return WEB_LINK_RE.test(s) && s.length <= 2000 ? s : null
+}
+
 // Строка для записи (supply_registry_import): только то, что идёт в базу.
 export const importPayload = (l) => ({
   source_name: l.sourceName,
@@ -351,4 +372,9 @@ export const importPayload = (l) => ({
   tender_label: l.tender || null,
   rate_date: l.day,
   row_no: l.rowNo,
+  contractor_label: l.contractor || null,
+  doc_number: l.docNumber || null,
+  order_number: l.orderNumber || null,
+  source_file: l.sourceFile || null,
+  invoice_url: invoiceLink(l.invoiceUrl),
 })

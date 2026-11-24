@@ -7,6 +7,8 @@ import { isConstructionTender } from '../utils/tenderDepartments'
 import { isMissingVorRequestsTable } from '../services/vorRequests'
 import { RATE_NOTE, currencyEntries, fmtCur, fmtInt, toRub, totalRub } from '../utils/reportCurrency'
 import { reportAmounts } from '../utils/contractAmendments'
+import { LAWYER_FIELD, lawyerNameById, shownLawyerId } from '../utils/contractLawyer'
+import { fetchOspLawyers, employeesById } from '../services/employees'
 import EngineersActivity from '../components/reports/EngineersActivity'
 import KpStats from '../components/reports/KpStats'
 import DcRequestStats from '../components/reports/DcRequestStats'
@@ -273,16 +275,29 @@ function ReportsPage() {
         if (!isMissingVorRequestsTable(reqError)) console.error('Заявки на ВОР для отчёта:', reqError.message)
       }
 
-      const contractsQuery = (from, to) => {
+      // Юрист договора — учётка действующего юриста ОСП (contracts.responsible_user_id, миграция 20270226; utils/contractLawyer.js),
+      // как в реестре. Колонки ещё нет — отчёт строится без неё (все «Не назначен»), а не падает целиком.
+      const contractsQuery = (lawyerCol) => (from, to) => {
         let q = db
           .from('contracts')
           // record_type … psdc_total — для сумм по дереву договора (reportAmounts): ДС не складываются с договором ещё раз.
-          .select('id, object_id, status, contract_amount, psdc_total, currency, counterparty_id, responsible_contact_id, deleted_at, record_type, parent_contract_id, display_id, changed_fields, objects(id, name, status), responsible:contacts!responsible_contact_id(id, full_name)')
+          .select(`id, object_id, status, contract_amount, psdc_total, currency, counterparty_id${lawyerCol}, deleted_at, record_type, parent_contract_id, display_id, changed_fields, objects(id, name, status)`)
           .is('deleted_at', null)   // удалённые (soft-delete) в отчёт не входят
         if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
         return q.order('id', { ascending: true }).range(from, to)
       }
-      const contracts = await fetchAllRows(contractsQuery)
+      const [contracts, employees] = await Promise.all([
+        fetchAllRows(contractsQuery(`, ${LAWYER_FIELD}`)).catch((err) => {
+          const missing = (err?.code === '42703' || err?.code === 'PGRST204' || err?.code === 'PGRST100')
+            || new RegExp(LAWYER_FIELD).test(String(err?.message || ''))
+          if (!missing) throw err
+          return fetchAllRows(contractsQuery(''))
+        }),
+        fetchOspLawyers().then(employeesById).catch((err) => {
+          console.error('Юристы ОСП для отчёта:', err.message)
+          return new Map()
+        }),
+      ])
 
       // Отчёт по тендерам считаем только по основным тендерам, не по дочерним на материалы.
       // Если миграция tender_type не применена, x.tender_type === undefined — учитываем как main.
@@ -373,11 +388,11 @@ function ReportsPage() {
       const contractsByLawyer = (rows) => {
         const map = new Map()
         for (const x of rows) {
-          const id = x.responsible_contact_id || '_unassigned'
+          const id = shownLawyerId(x, employees) || '_unassigned'
           if (!map.has(id)) {
             map.set(id, {
               id,
-              name: x.responsible?.full_name || 'Не назначен',
+              name: lawyerNameById(employees, id) || 'Не назначен',
               total: 0, cNew: 0, inWork: 0, paused: 0, completed: 0,
             })
           }

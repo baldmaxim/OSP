@@ -28,6 +28,8 @@ import LarixLinkCell from '../components/LarixLinkCell'
 import { LARIX_LINK_LABEL, LARIX_NAME, isInLarix, larixLink } from '../utils/contractLarix'
 import { docTender, tenderTitle } from '../utils/contractTender'
 import { CONTRACTS_REGISTRY_PATH } from '../utils/contractsHub'
+import { contractLawyerName } from '../utils/contractLawyer'
+import { fetchOspLawyers, employeesById } from '../services/employees'
 import '../components/ContractRegistry.css'
 
 // Держать в согласии со STATUS_OPTIONS в ContractsPage.jsx.
@@ -95,6 +97,15 @@ function ContractDetailPage() {
   const [savingNotes, setSavingNotes] = useState(false)
   // Всё дерево документа: сам договор и его ДС. Нужно и для сумм, и для навигации.
   const [family, setFamily] = useState([])
+  // Юрист — учётка действующего юриста ОСП (utils/contractLawyer.js, 20270226): ФИО — из list_osp_lawyers.
+  const [employees, setEmployees] = useState(() => new Map())
+  useEffect(() => {
+    let alive = true
+    fetchOspLawyers()
+      .then(list => { if (alive) setEmployees(employeesById(list)) })
+      .catch(err => console.error('Ошибка загрузки юристов ОСП:', err.message))
+    return () => { alive = false }
+  }, [])
 
   // Авансирование
   const [advForm, setAdvForm] = useState({ planned_date: '', amount: '', description: '', paid_date: '' })
@@ -122,7 +133,7 @@ function ContractDetailPage() {
     try {
       const { data, error } = await db
         .from('contracts')
-        .select('*, objects(name), counterparties(id, name, inn, kpp, legal_address, actual_address, website, work_type), contract_counterparties(sort_order, counterparties(id, name, inn, kpp, legal_address, actual_address, website, work_type)), tenders(work_description, public_tender_number), responsible:contacts!responsible_contact_id(id, full_name, position)')
+        .select('*, objects(name), counterparties(id, name, inn, kpp, legal_address, actual_address, website, work_type), contract_counterparties(sort_order, counterparties(id, name, inn, kpp, legal_address, actual_address, website, work_type)), tenders(work_description, public_tender_number)')
         .eq('id', contractId)
         .single()
       if (error) throw error
@@ -336,6 +347,7 @@ function ContractDetailPage() {
     ? [...partyRows].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map(r => r.counterparties).filter(Boolean)
     : (contract.counterparties ? [contract.counterparties] : [])
   const statusLabel = STATUS_LABEL[contract.status] || contract.status
+  const lawyerName = contractLawyerName(contract, employees)
   const isDeleted = !!contract.deleted_at
   const vatLabel = shown.vat_rate != null
     ? `${shown.vat_rate}% (${shown.amount_includes_vat ? 'с НДС' : 'без НДС'})`
@@ -367,7 +379,7 @@ function ContractDetailPage() {
             {branchCurrentAmount != null
               ? <span className="cd-chip" title="С учётом завершённых ДС на изменение ВОР"><span className="cd-chip-l">Действующая сумма</span> {money(branchCurrentAmount)}</span>
               : money(documentAmount) !== '—' && <span className="cd-chip"><span className="cd-chip-l">{psdcApplied ? 'Сумма по ПСДЦ' : 'Сумма'}</span> {money(documentAmount)}</span>}
-            {contract.responsible?.full_name && <span className="cd-chip"><span className="cd-chip-l">Юрист</span> {contract.responsible.full_name}</span>}
+            {lawyerName && <span className="cd-chip"><span className="cd-chip-l">Юрист</span> {lawyerName}</span>}
             {contract.signed_date && <span className="cd-chip"><span className="cd-chip-l">План. подписания</span> {formatDate(contract.signed_date)}</span>}
           </div>
         </div>
@@ -460,7 +472,7 @@ function ContractDetailPage() {
                 ? withSource(terms.sources.vat_rate ? 'vat_rate' : 'amount_includes_vat', vatLabel)
                 : vatLabel} />
               <InfoRow label="Статус" value={statusLabel} />
-              <InfoRow label="Ответственный" value={contract.responsible?.full_name} />
+              <InfoRow label="Ответственный юрист" value={lawyerName} />
               {/* Три пути документа — только для сведения: вносят и меняют их в
                   реестре, под номером договора. Значения те же, второго места
                   ввода нет. */}
@@ -699,7 +711,7 @@ function ContractDetailPage() {
 
       {/* ВКЛАДКА: Документы (S3) */}
       {activeTab === 'clauses' && (
-        <ContractClausesTab contractId={contractId} parties={parties} contract={contract} canEdit={canEditContracts && !isDeleted} />
+        <ContractClausesTab contractId={contractId} parties={parties} contract={contract} lawyerName={lawyerName} canEdit={canEditContracts && !isDeleted} />
       )}
 
       {activeTab === 'documents' && (

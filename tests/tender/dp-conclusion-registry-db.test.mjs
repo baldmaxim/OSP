@@ -117,8 +117,10 @@ describe('Договор из «Заключения ДП» и окно испо
   before(() => {
     db = startSnapshot()
     for (const m of appliedAfter()) psqlAt(db.port, null, { file: file('supabase', 'migrations', m) })
+    // Только миграции до этой: 20270226 меняет поведение (договор — сразу при подаче) и проверяется своим тестом
+    // (tests/tender/registry-osp-lawyers-db.test.mjs).
     for (const m of candidateMigrations()) {
-      if (m.startsWith(NAME)) continue
+      if (path.basename(m) >= `${NAME}.sql`) continue
       psqlAt(db.port, null, { file: path.join(ROOT, m.includes('/') ? m : path.join('supabase', 'migrations', m)) })
     }
     sql(ROLES)
@@ -303,8 +305,11 @@ describe('Договор из «Заключения ДП» — база Янд�
     as(U.lawyer, `update public.doc_check_requests set status = 'in_progress', assignee_ids = array['${U.lawyer2}']::uuid[] where id = '${id}'`)
     assert.equal(internal(contractsOf(id)), '1')
     assert.equal(internal(`select status from public.contracts where doc_check_request_id = '${id}'`), 'in_work')
+    // migrate.sh применяет и 20270226: договор появляется при подаче (автор), в работу его переводит отдел.
     assert.equal(internal(`select changed_by_name from public.contract_audit_log l join public.contracts c on c.id = l.contract_id
-      where c.doc_check_request_id = '${id}' and l.event_type = 'created'`), 'Юристова Ю. Ю.')
+      where c.doc_check_request_id = '${id}' and l.event_type = 'created'`), 'Авторов А. А.')
+    assert.equal(internal(`select changed_by_name from public.contract_audit_log l join public.contracts c on c.id = l.contract_id
+      where c.doc_check_request_id = '${id}' and l.event_type = 'status_changed'`), 'Юристова Ю. Ю.')
     const display = internal(`select display_id from public.contracts where doc_check_request_id = '${id}'`)
     assert.equal(as(U.lawyer2, `select contract_display_id from public.doc_check_assign_my_alerts()`), display)
     assert.equal(as(U.lawyer2, `select public.doc_check_assign_alerts_ack(array['${id}']::uuid[])`), '1')

@@ -5,7 +5,8 @@
 // строки удаляются вместе с загрузкой; нормализация наименования в браузере — как kp_norm_name; проверка для прода до
 // миграции — FAIL, а не ошибка; откат не трогает загруженное. Нужны Docker и psql.
 // Второй блок — то же на копии прода, загруженной как база Яндекса (одна учётка, migration/yandex через migrate.sh — с
-// проверкой прав и .check.sql в транзакции); нужна проверенная копия прода.
+// проверкой прав и .check.sql в транзакции); нужна проверенная копия прода. migrate.sh накатывает и 20270227: строки
+// загрузок там — в закрытой схеме (osp_private.supply_registry_rates), её подробности — registry-rate-details-db.test.mjs.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -63,7 +64,8 @@ describe('Реестр СУ-10: загрузка из Excel — база', { ski
     db = startSnapshot()
     for (const m of appliedAfter()) psqlAt(db.port, null, { file: path.join(MIGRATIONS, m) })
     for (const m of candidateMigrations()) {
-      if (m.startsWith(NAME)) continue
+      // 20270227 (подробности расценки) требует эту миграцию — registry-rate-details-db.test.mjs.
+      if (m.startsWith(NAME) || m.startsWith('20270227_')) continue
       psqlAt(db.port, null, { file: path.join(ROOT, m.includes('/') ? m : path.join('supabase', 'migrations', m)) })
     }
     checkBefore = psqlAt(db.port, null, { file: CHECK })
@@ -238,7 +240,7 @@ describe('Реестр СУ-10: загрузка из Excel — база Янд�
   it('просмотр и подрядчик не загружают; подрядчику и без входа строк нет', () => {
     assert.throws(() => load(U.viewer, ROWS), /Нет права правки реестра расценок/)
     assert.throws(() => load(U.contractor, ROWS), /Нет права правки реестра расценок/)
-    assert.equal(as(U.contractor, 'select count(*) from public.supply_registry_rates'), '0')
+    assert.equal(as(U.contractor, 'select count(*) from public.supply_registry_imports'), '0')
     assert.equal(as(U.contractor, `select count(*) from public.supply_rates_registry where source_type = 'supply_import'`), '0')
     assert.equal(as(null, 'select count(*) from public.supply_rates_registry'), '0')
     assert.equal(as(null, 'select count(*) from public.supply_registry_imports'), '0')
@@ -254,7 +256,7 @@ describe('Реестр СУ-10: загрузка из Excel — база Янд�
 
   it('аварийный откат и здесь: реестр — только цены из тендеров (закрытая схема), загруженное остаётся; повтор безопасен', () => {
     load(U.editor, [{ ...ROWS[1], item_name: 'Останется после отката', row_no: 11 }])
-    const loaded = internal('select count(*) from public.supply_registry_rates')
+    const loaded = internal('select count(*) from osp_private.supply_registry_rates')
     const before = Number(as(U.viewer, `select count(*) from public.supply_rates_registry where source_type <> 'supply_import'`))
     db.sql(null, { file: ROLLBACK, appName: 'osp:internal' })
     db.sql(null, { file: ROLLBACK, appName: 'osp:internal' })
@@ -262,7 +264,7 @@ describe('Реестр СУ-10: загрузка из Excel — база Янд�
     assert.match(internal(`select pg_get_viewdef('public.supply_rates_registry'::regclass)`), /osp_private\.supply_rates_registry_mv/)
     assert.equal(Number(as(U.viewer, 'select count(*) from public.supply_rates_registry')), before)
     assert.equal(as(null, 'select count(*) from public.supply_rates_registry'), '0', 'без входа — по-прежнему ничего')
-    assert.equal(internal('select count(*) from public.supply_registry_rates'), loaded, 'загруженное не удалено')
+    assert.equal(internal('select count(*) from osp_private.supply_registry_rates'), loaded, 'загруженное не удалено')
   })
 })
 

@@ -11,6 +11,7 @@ import {
   planAmendment,
 } from './contractAmendments'
 import { LARIX_LINK_FIELD, LARIX_LINK_LABEL } from './contractLarix'
+import { LAWYER_FIELD, matchLawyerByName } from './contractLawyer.js'
 
 // --- «История» загруженного документа ---
 // Событие «Создание»: то же начало, что пишет ручная форма (ContractsPage: «Создан договор № …» /
@@ -456,14 +457,14 @@ export function validateRow(raw, ctx) {
     dates[key] = r.value || null
   }
 
-  // 4б) Ответственный юрист — сотрудник из справочника по ФИО.
+  // 4б) Ответственный юрист — действующий юрист ОСП по ФИО (полностью или началом: «Фамилия Имя» ↔ «Фамилия Имя Отчество»);
+  // другой сотрудник или заблокированная учётка — ошибка строки (решение пользователя 23.11.2026, миграция 20270226).
   const lawyerName = String(raw.lawyer == null ? '' : raw.lawyer).trim()
   let lawyerId = null
   if (lawyerName) {
-    const byLawyer = ctx.contactByName?.get(normMatchName(lawyerName)) || []
-    if (byLawyer.length === 1) lawyerId = byLawyer[0]
-    else if (byLawyer.length > 1) errors.push({ key: 'lawyer', message: 'Найдено несколько сотрудников с таким ФИО' })
-    else errors.push({ key: 'lawyer', message: 'Ответственный юрист не найден в сотрудниках' })
+    const found = matchLawyerByName(lawyerName, ctx.lawyers)
+    if (found.error) errors.push({ key: 'lawyer', message: `Ответственный юрист: ${found.error.charAt(0).toLowerCase()}${found.error.slice(1)}` })
+    else lawyerId = found.id
   }
 
   // 4в) «Ведёт наш отдел»
@@ -534,7 +535,8 @@ export function validateRow(raw, ctx) {
       counterparty_id: isDs ? (rootDoc?.counterparty_id ?? null) : counterpartyId,
       object_id: isDs ? (rootDoc?.object_id ?? null) : objectId,
       tender_id: null,                 // при импорте не привязываем
-      responsible_contact_id: lawyerId,
+      // Колонки юриста до миграции 20270226 нет: без юриста поле не отправляем.
+      ...(lawyerId ? { [LAWYER_FIELD]: lawyerId } : {}),
       work_name: textOrNull(raw.work_name),
       contract_amount: parseAmount(raw.contract_amount),
       currency: normalizeCurrency(raw.currency),

@@ -1,13 +1,14 @@
 // Реестр расценок → «Расценки от снабжения СУ-10» → «Загрузить из Excel» (utils/supplyRegistryImport): разбор файла в виде
 // выгрузки вкладки (и с переставленными колонками, шапкой не в первой строке, датами-ячейками Excel, CSV русского Excel),
 // распознавание объекта по неочевидному названию (примеры пользователя 20.11.2026), разовое правило «Primavera = к14»,
-// тендер по номеру и описанию, повторы (уже в реестре, повтор в файле) и ошибки строк. Без базы и браузера.
+// тендер по номеру и описанию, повторы (уже в реестре, повтор в файле) и ошибки строк. Файл из папок счетов (23.11.2026,
+// миграция 20270227): подрядчик по папке, № документа, № заявки / заказа, файл-источник, ссылка на счёт. Без базы и браузера.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import * as XLSX from 'xlsx'
 import { readWorkbookBytes } from '../../src/utils/supplierDocRead.js'
 import {
-  detectRegistryHeader, importPayload, isBarePrimavera, kpNormName, moscowDay, objectIndex, parseRateDate,
+  classifyRegistryHeader, detectRegistryHeader, importPayload, invoiceLink, isBarePrimavera, kpNormName, moscowDay, objectIndex, parseRateDate,
   parseRegistryWorkbook, prepareRegistryImport, primaveraK14, primaveraOnceUsed, registryRowKey, resolveObject, resolveTender,
 } from '../../src/utils/supplyRegistryImport.js'
 
@@ -44,7 +45,8 @@ describe('Загрузка в реестр СУ-10: разбор файла', ()
     assert.deepEqual(
       { ...res.rows[0], sheet: undefined },
       { sheet: undefined, rowNo: 2, source: 'СУ-10', object: 'Зил33', name: 'Кабель ВВГнг(А)-LS 3х2,5', unit: 'м', price: 95.5, priceText: '95.5',
-        tender: 'Электромонтаж корпуса 1', date: '2026-10-05', dateText: '05.10.2026' },
+        tender: 'Электромонтаж корпуса 1', date: '2026-10-05', dateText: '05.10.2026',
+        contractor: '', docNumber: '', orderNumber: '', sourceFile: '', invoiceUrl: '' },
     )
     assert.equal(res.rows[1].price, 1234.5)
     assert.equal(res.rows[1].date, '2026-11-20')
@@ -89,6 +91,35 @@ describe('Загрузка в реестр СУ-10: разбор файла', ()
     assert.equal(res.rows[0].name, 'Гипсокартон 12,5 мм')
     assert.equal(res.rows[0].price, 350.4)
     assert.equal(res.rows[0].date, '2026-10-05')
+  })
+
+  // Шапка файла пользователя 23.11.2026 (с автофильтром, «№ документа из имени файла» — в две строки ячейки).
+  const FOLDER_HEADERS = ['Источник', 'Объект', 'Наименование', 'Ед. изм.', 'Цена, ₽', 'Тендер', 'Дата расценки',
+    'Подрядчик по папке', '№ документа из\nимени файла', '№ заявки / заказа', 'Файл-источник']
+
+  it('файл из папок счетов: «№ документа…» — не номер строки, «Файл-источник» — не источник; подробности строки', () => {
+    assert.deepEqual(detectRegistryHeader([FOLDER_HEADERS]), { row: 0, columns: {
+      source: 0, object: 1, name: 2, unit: 3, price: 4, tender: 5, date: 6, contractor: 7, docNumber: 8, orderNumber: 9, sourceFile: 10 } })
+    // Те же колонки в обратном порядке — то же распознавание.
+    const back = detectRegistryHeader([[...FOLDER_HEADERS].reverse()]).columns
+    assert.deepEqual([back.source, back.sourceFile, back.docNumber, back.orderNumber, back.contractor, back.name], [10, 0, 2, 1, 3, 8])
+    const res = parseBytes(bookBytes([
+      FOLDER_HEADERS,
+      ['Счета', 'Зил33', 'Кабель ВВГнг(А)-LS 3х2,5', 'м', '95,50', '№ 1157', '05.10.2026', 'ООО «Электро»', 4512, 'З-118/2',
+        '\\\\fs\\Счета\\Электро\\Счёт 4512.pdf'],
+    ]))
+    assert.equal(res.rows.length, 1)
+    assert.deepEqual(
+      [res.rows[0].source, res.rows[0].price, res.rows[0].contractor, res.rows[0].docNumber, res.rows[0].orderNumber, res.rows[0].sourceFile],
+      ['Счета', 95.5, 'ООО «Электро»', '4512', 'З-118/2', '\\\\fs\\Счета\\Электро\\Счёт 4512.pdf'])
+  })
+
+  it('шапка: «Ссылка на счёт» — ссылка; «Заказчик» — не заказ; «№ п/п» — номер строки', () => {
+    assert.equal(classifyRegistryHeader('Ссылка на счёт'), 'invoiceUrl')
+    assert.equal(classifyRegistryHeader('Заказчик'), null)
+    assert.equal(classifyRegistryHeader('№ заказа'), 'orderNumber')
+    assert.equal(classifyRegistryHeader('№ п/п'), 'num')
+    assert.equal(classifyRegistryHeader('Поставщик'), 'contractor')
   })
 
   it('без наименования или цены в шапке — не таблица реестра', () => {
@@ -236,7 +267,20 @@ describe('Загрузка в реестр СУ-10: итог строк', () => 
     assert.deepEqual(importPayload(eight), {
       source_name: 'Снабжение', item_name: 'Кабель ВВГ 3х2,5', unit: 'м', price: 95.5, object_id: 'o-zil33', object_label: 'Зил33',
       tender_id: null, tender_label: null, rate_date: '2026-11-19', row_no: 8,
+      contractor_label: null, doc_number: null, order_number: null, source_file: null, invoice_url: null,
     })
+  })
+
+  it('подробности строки — в запись; ссылка на счёт — только http/https', () => {
+    const res = prepareRegistryImport([row({ contractor: 'ООО «Электро»', docNumber: '4512', orderNumber: 'З-118/2',
+      sourceFile: 'Счета/Электро/Счёт 4512.pdf', invoiceUrl: ' https://disk.example/s/4512 ' })], { index: INDEX, today: '2026-11-20' })
+    const payload = importPayload(res.lines[0])
+    assert.deepEqual([payload.contractor_label, payload.doc_number, payload.order_number, payload.source_file, payload.invoice_url],
+      ['ООО «Электро»', '4512', 'З-118/2', 'Счета/Электро/Счёт 4512.pdf', 'https://disk.example/s/4512'])
+    assert.equal(invoiceLink('\\\\fs\\Счета\\4512.pdf'), null, 'сетевой путь — не ссылка')
+    assert.equal(invoiceLink('javascript:alert(1)'), null)
+    assert.equal(invoiceLink('http://x.ru/a b'), null, 'с пробелом внутри — не адрес')
+    assert.equal(invoiceLink('HTTPS://X.RU/4512'), 'HTTPS://X.RU/4512')
   })
 
   it('нормализация наименования — как kp_norm_name базы (ключ уникального индекса)', () => {

@@ -52,8 +52,9 @@ describe('Расценка снабжением на сайте: база', { sk
       // похожесть), 20261029 (версии ВОР) и 20261120 (доставка) требуют её и проверяются в links-db.test.mjs,
       // reuse-db.test.mjs, docs-similarity-db.test.mjs, versions-db.test.mjs и delivery-db.test.mjs; 20270105 (комментарии) —
       // в comments-db.test.mjs; 20270223 (следы удалённых файлов) — в removed-docs-db.test.mjs; 20270224 (загрузка в реестр СУ-10
-      // из Excel; после неё 20261023 не пересоздаёт представление реестра) — в registry-import-db.test.mjs.
-      if (/^(2026(102[02359]|1120)|20270105|20270223|20270224)_/.test(m)) continue
+      // из Excel; после неё 20261023 не пересоздаёт представление реестра) — в registry-import-db.test.mjs, 20270227 (подробности
+      // расценки, нужна 20270224) — в registry-rate-details-db.test.mjs.
+      if (/^(2026(102[02359]|1120)|20270105|20270223|2027022[47])_/.test(m)) continue
       psqlAt(db.port, null, { file: path.join(ROOT, 'supabase', 'migrations', m) })
     }
     psqlAt(db.port, null, { file: MIGRATION })

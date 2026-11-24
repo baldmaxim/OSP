@@ -108,7 +108,8 @@ function skipReasons(row) {
   })
 }
 
-function ContractsImportModal({ counterparties = [], objects = [], contacts = [], refsReady = true, onClose, onImported }) {
+// employees — справочник учёток (Map user_id → сотрудник): «Ответственный юрист» — только действующий юрист ОСП (utils/contractLawyer.js).
+function ContractsImportModal({ counterparties = [], objects = [], employees = null, refsReady = true, onClose, onImported }) {
   const { userProfile } = useRole()
   const [step, setStep] = useState('select')     // select | preview | result
   const [fileName, setFileName] = useState('')
@@ -130,7 +131,6 @@ function ContractsImportModal({ counterparties = [], objects = [], contacts = []
     const cpDeletedByInn = new Set()
     const cpDeletedByName = new Set()
     const objByName = new Map()
-    const contactByName = new Map()
     const pushMap = (m, k, id) => { if (!k) return; const a = m.get(k) || []; if (!a.includes(id)) a.push(id); m.set(k, a) }
     counterparties.forEach((cp) => {
       if (cp.deleted_at) {
@@ -142,9 +142,8 @@ function ContractsImportModal({ counterparties = [], objects = [], contacts = []
       pushMap(cpByName, normMatchName(cp.name), cp.id)
     })
     objects.forEach((o) => pushMap(objByName, normMatchName(o.name), o.id))
-    contacts.forEach((c) => pushMap(contactByName, normMatchName(c.full_name), c.id))
-    return { cpByInn, cpByName, cpDeletedByInn, cpDeletedByName, objByName, contactByName }
-  }, [counterparties, objects, contacts])
+    return { cpByInn, cpByName, cpDeletedByInn, cpDeletedByName, objByName, lawyers: employees }
+  }, [counterparties, objects, employees])
 
   // Существующие документы: нужны и для предупреждения «номер уже существует», и
   // для ДС — найти изменяемый документ по ID, проверить правила ветки и

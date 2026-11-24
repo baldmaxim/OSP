@@ -127,6 +127,8 @@ if (params.get('larixMissing') === '1') {
 // цены снабжения из тендеров + загруженные строки (живое объединение, как в базе); supply_registry_import — запись порцией с
 // пропуском такой же расценки (ключ — как уникальный индекс базы). Объекты — для распознавания названий из файла.
 //   ?supplyImportMissing=1 — таблиц загрузки ещё нет (база раньше миграции): кнопки нет.
+// Миграция 20270227: у строки реестра — подробности из файла и ссылка на счёт (окно «Расценка», колонка «Документ»).
+//   ?supplyDetailsMissing=1 — колонок подробностей ещё нет: выборка с ними отвечает 42703, колонки «Документ» нет.
 const SUPPLY_OBJECTS = [
   { id: 'sr-zil33', name: 'ЖК  ЗИЛ 33' }, { id: 'sr-zil31', name: 'ЖК ЗИЛ 31' }, { id: 'sr-zil18', name: 'ЖК ЗИЛ 18; 19; 27' },
   { id: 'sr-prim1', name: 'ЖК PRIMAVERA (1-й ЭТАП)' }, { id: 'sr-prim13', name: 'ЖК Primavera к13' }, { id: 'sr-prim14', name: 'ЖК Primavera к14' },
@@ -137,9 +139,11 @@ const SUPPLY_TENDER = { id: 'sr-t1', work_description: 'Отделка МОП', 
 fdb.tenders.push(SUPPLY_TENDER, { ...SUPPLY_TENDER, id: 'sr-t1m', public_tender_number: 641, tender_type: 'materials' })
 const siteRows = [
   { id: 'sr-1', source_type: 'supply_su10', source_name: 'СУ-10', item_name: 'Плитка керамогранит 600х600', unit: 'м2', price: 1850, tender_id: SUPPLY_TENDER.id,
-    object_id: 'sr-zil33', tender_desc: SUPPLY_TENDER.work_description, object_name: 'ЖК  ЗИЛ 33', rate_date: '2026-10-04T21:00:00.000Z', import_id: null },
+    object_id: 'sr-zil33', tender_desc: SUPPLY_TENDER.work_description, object_name: 'ЖК  ЗИЛ 33', rate_date: '2026-10-04T21:00:00.000Z', import_id: null,
+    contractor_label: null, doc_number: null, order_number: null, source_file: null, invoice_url: null, object_label: null, tender_label: null, row_no: null },
   { id: 'sr-2', source_type: 'supply_su10', source_name: 'СУ-10', item_name: 'Клей плиточный', unit: 'кг', price: 32, tender_id: SUPPLY_TENDER.id,
-    object_id: 'sr-zil33', tender_desc: SUPPLY_TENDER.work_description, object_name: 'ЖК  ЗИЛ 33', rate_date: '2026-10-04T21:00:00.000Z', import_id: null },
+    object_id: 'sr-zil33', tender_desc: SUPPLY_TENDER.work_description, object_name: 'ЖК  ЗИЛ 33', rate_date: '2026-10-04T21:00:00.000Z', import_id: null,
+    contractor_label: null, doc_number: null, order_number: null, source_file: null, invoice_url: null, object_label: null, tender_label: null, row_no: null },
 ]
 fdb.supply_registry_imports = []
 fdb.supply_registry_rates = []
@@ -151,6 +155,9 @@ const supplyViewRow = (m) => {
     tender_id: m.tender_id, object_id: m.object_id, tender_desc: t?.work_description || m.tender_label,
     object_name: fdb.objects.find((o) => o.id === m.object_id)?.name || m.object_label,
     rate_date: new Date(`${m.rate_date}T00:00:00+03:00`).toISOString(), import_id: m.import_id,
+    contractor_label: m.contractor_label || null, doc_number: m.doc_number || null, order_number: m.order_number || null,
+    source_file: m.source_file || null, invoice_url: m.invoice_url || null, object_label: m.object_label || null,
+    tender_label: m.tender_label || null, row_no: m.row_no ?? null,
   }
 }
 const syncSupply = () => {
@@ -187,6 +194,10 @@ window.__fakeRpc.supply_registry_import = ({ p_import, p_file_name, p_options, p
   }
   syncSupply()
   return { data: [{ import_id: importId, added, skipped: p_rows.length - added }], error: null }
+}
+if (params.get('supplyDetailsMissing') === '1') {
+  window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}),
+    supply_rates_registry: ['contractor_label', 'doc_number', 'order_number', 'source_file', 'invoice_url', 'object_label', 'tender_label', 'row_no'] }
 }
 if (params.get('supplyImportMissing') === '1') {
   window.__fakeErrors = { ...(window.__fakeErrors || {}),

@@ -571,11 +571,6 @@
         "select"
       ]
     },
-    "supply_registry_rates": {
-      "authenticated": [
-        "select"
-      ]
-    },
     "task_audit_log": {
       "authenticated": [
         "delete",
@@ -986,6 +981,9 @@
       "authenticated"
     ],
     "kp_rates_lookup": [
+      "authenticated"
+    ],
+    "list_osp_lawyers": [
       "authenticated"
     ],
     "list_sto_employees": [

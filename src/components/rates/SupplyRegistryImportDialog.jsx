@@ -9,7 +9,7 @@ import {
   isBarePrimavera, moscowDay, objectIndex, parseRegistryWorkbook, prepareRegistryImport, primaveraK14, primaveraOnceUsed,
 } from '../../utils/supplyRegistryImport'
 import { fmtMoney, fmtCount } from '../../utils/ratesRegistry'
-import { deleteImport, importRegistryRates, listImports, loadImportContext } from '../../services/supplyRegistryImport'
+import { deleteImport, importRegistryRates, listImports, loadExistingKeys, loadImportContext } from '../../services/supplyRegistryImport'
 import './KpRates.css'
 import './SupplyRegistryImport.css'
 
@@ -21,6 +21,10 @@ const LINES_SHOWN = 300
 const STATUS_TEXT = { ok: 'к загрузке', exists: 'уже в реестре', dup: 'повтор в файле', error: 'ошибка' }
 const FILTERS = [['all', 'Все'], ['ok', 'К загрузке'], ['exists', 'Уже в реестре'], ['dup', 'Повтор в файле'], ['error', 'С ошибкой']]
 const fmtDay = (d) => (d ? d.split('-').reverse().join('.') : '—')
+// Подробности расценки из файла (видны по нажатию на строку реестра): колонка → подпись.
+const DETAIL_COLUMNS = [['contractor', 'Подрядчик по папке'], ['docNumber', '№ документа'], ['orderNumber', '№ заявки / заказа'],
+  ['sourceFile', 'Файл-источник'], ['invoiceUrl', 'Ссылка на счёт']]
+const NO_KEYS = new Set()
 const fmtStamp = (iso) => {
   const d = new Date(iso)
   return isNaN(d.getTime()) ? '—' : d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -32,7 +36,10 @@ const fmtStamp = (iso) => {
 // по кнопке; такие же расценки (уже в реестре, повтор в файле) не пишутся. Внизу — прежние загрузки с удалением.
 // onImported({ added, skipped, fileName }), onChanged() — удалили загрузку.
 export default function SupplyRegistryImportDialog({ onClose, onImported, onChanged }) {
-  const [ctx, setCtx] = useState(null) // { objects, tenders, existing, imports }
+  const [ctx, setCtx] = useState(null) // { objects, tenders, imports }
+  // Ключи расценок реестра за дни файла («уже в реестре»): { range: 'с|по', keys: Set | null, error }.
+  const [existing, setExisting] = useState({ range: '', keys: null, error: '' })
+  const [existingToken, setExistingToken] = useState(0)
   const [ctxError, setCtxError] = useState('')
   const [phase, setPhase] = useState('pick') // pick | reading | review | saving
   const [file, setFile] = useState(null)
@@ -71,12 +78,34 @@ export default function SupplyRegistryImportDialog({ onClose, onImported, onChan
   const onceAvailable = !!ctx && !primaveraOnceUsed(ctx.imports) && !!primaveraK14(index)
   const onceInFile = onceAvailable && !!parsed?.rows.some((r) => isBarePrimavera(r.object))
 
+  // Дни файла (и день «где в файле пусто», если такие строки есть) — только за них читаем, что уже есть в реестре.
+  const dayRange = useMemo(() => {
+    if (!parsed) return ''
+    const days = parsed.rows.map((r) => (r.date === '' ? defaults.date : r.date)).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d || ''))
+    if (!days.length) return ''
+    days.sort()
+    return `${days[0]}|${days[days.length - 1]}`
+  }, [parsed, defaults.date])
+  useEffect(() => {
+    if (!dayRange) return undefined
+    let cancelled = false
+    setExisting({ range: dayRange, keys: null, error: '' })
+    const [from, to] = dayRange.split('|')
+    loadExistingKeys(from, to)
+      .then((keys) => { if (!cancelled) setExisting({ range: dayRange, keys, error: '' }) })
+      .catch((err) => { if (!cancelled) setExisting({ range: dayRange, keys: null, error: err.message || String(err) }) })
+    return () => { cancelled = true }
+  }, [dayRange, existingToken])
+  // Не проверилось — загрузить всё равно можно: такие же расценки база пропустит сама (уникальный индекс).
+  const existingReady = !dayRange || (existing.range === dayRange && (!!existing.keys || !!existing.error))
+
   const prepared = useMemo(() => {
     if (!parsed || !ctx) return null
     return prepareRegistryImport(parsed.rows, {
-      index, tenders: ctx.tenders, existing: ctx.existing, choices, primaveraOnce: onceInFile && primaveraOnce, defaults, today,
+      index, tenders: ctx.tenders, existing: existing.keys || NO_KEYS, choices, primaveraOnce: onceInFile && primaveraOnce, defaults, today,
     })
-  }, [parsed, ctx, index, choices, onceInFile, primaveraOnce, defaults, today])
+  }, [parsed, ctx, index, existing.keys, choices, onceInFile, primaveraOnce, defaults, today])
+  const detailColumns = DETAIL_COLUMNS.filter(([field]) => parsed?.columns?.[field] != null).map(([, label]) => label)
 
   const readFile = useCallback(async (f) => {
     if (!f) return
@@ -152,6 +181,7 @@ export default function SupplyRegistryImportDialog({ onClose, onImported, onChan
       await deleteImport(imp.id)
       // Ключи «уже в реестре» после удаления — заново: иначе тот же файл показал бы свои строки загруженными.
       setCtx(await loadImportContext())
+      setExistingToken((t) => t + 1)
       onChanged?.()
     } catch (err) {
       alert(err.message || String(err))
@@ -179,9 +209,11 @@ export default function SupplyRegistryImportDialog({ onClose, onImported, onChan
             <>
               <p className="kpr-muted">
                 Файл — как выгрузка этой вкладки кнопкой «Excel»: <b>№ п/п, Источник, Объект, Наименование, Ед. изм., Цена, Тендер,
-                Дата расценки</b>. Колонки могут идти в другом порядке, обязательны наименование и цена. Объект узнаётся и по
-                короткому названию («Зил33», «injoy», «18 19 27»), неузнанный выберете перед загрузкой. Ничего не запишется,
-                пока не нажмёте «Загрузить»; такие же расценки, как уже есть в реестре, второй раз не попадут.
+                Дата расценки</b>; можно и с колонками <b>Подрядчик по папке, № документа из имени файла, № заявки / заказа,
+                Файл-источник</b> — они видны по нажатию на строку реестра. Колонки могут идти в другом порядке, обязательны
+                наименование и цена. Объект узнаётся и по короткому названию («Зил33», «injoy», «18 19 27»), неузнанный выберете
+                перед загрузкой. Ничего не запишется, пока не нажмёте «Загрузить»; такие же расценки, как уже есть в реестре,
+                второй раз не попадут.
               </p>
               <div className={`kpr-drop${over ? ' is-over' : ''}`}>
                 <input ref={fileRef} type="file" accept={REGISTRY_IMPORT_ACCEPT} hidden onChange={(e) => { pickFiles(e.target.files); e.target.value = '' }} />
@@ -226,6 +258,18 @@ export default function SupplyRegistryImportDialog({ onClose, onImported, onChan
                 <span className="kpr-muted">лист «{parsed.sheetName}» · строк: <b className="kpr-num">{fmtCount(prepared.counts.total)}</b></span>
                 <button type="button" className="kpr-link-btn" onClick={() => { setPhase('pick'); setParsed(null) }} disabled={busy}>другой файл</button>
               </div>
+              {detailColumns.length > 0 && (
+                <p className="kpr-muted sri-details-note">
+                  Подробности расценки из файла: {detailColumns.join(', ')} — будут видны по нажатию на строку реестра.
+                </p>
+              )}
+              {!existingReady && !existing.error && <p className="kpr-progress" role="status">Проверяем, что из файла уже есть в реестре…</p>}
+              {existing.error && (
+                <p className="kpr-error" role="alert">
+                  <IconAlert size={14} /> Не удалось проверить, что уже есть в реестре: {existing.error}.{' '}
+                  <button type="button" className="kpr-link-btn" onClick={() => setExistingToken((t) => t + 1)}>Повторить</button>
+                </p>
+              )}
 
               <div className="sri-block">
                 <p className="sri-block-title">Объекты в файле</p>
@@ -328,7 +372,7 @@ export default function SupplyRegistryImportDialog({ onClose, onImported, onChan
           {phase === 'saving' && progress && <span className="kpr-progress" role="status">Загружаем: {fmtCount(progress.done)} из {fmtCount(progress.total)}…</span>}
           <button type="button" className="kpr-btn" onClick={onClose} disabled={phase === 'saving'}>Закрыть</button>
           {inReview && (
-            <button type="button" className="kpr-btn kpr-btn-primary" onClick={save} disabled={busy || !toImport.length}>
+            <button type="button" className="kpr-btn kpr-btn-primary" onClick={save} disabled={busy || !toImport.length || !existingReady}>
               {phase === 'saving' ? 'Загружаем…' : `Загрузить в реестр: ${fmtCount(toImport.length)}`}
             </button>
           )}

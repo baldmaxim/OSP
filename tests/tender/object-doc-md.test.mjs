@@ -304,7 +304,8 @@ describe('столбец «.md» в «Документах» карточки о
     try {
       await page.locator('tr[data-doc-id="ds"] .doc-action-delete').click()
       await page.locator('tr[data-doc-id="ds"]').waitFor({ state: 'detached', timeout: 10000 })
-      assert.deepEqual(dialogs, ['Удалить документ и все его приложения?'])
+      // Окно называет, что удаляется (23.11.2026, object-doc-attachment-delete.test.mjs).
+      assert.deepEqual(dialogs, ['Удалить ДС «ДС № 1» вместе с приложениями (1)?'])
       assert.deepEqual((await fakeMd(page)).files, [])
       assert.deepEqual(errors, [])
     } finally {

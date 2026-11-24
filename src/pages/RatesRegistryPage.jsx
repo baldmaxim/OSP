@@ -4,6 +4,7 @@ import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import FilterDropdown from '../components/FilterDropdown'
 import KpRateDocCell from '../components/rates/KpRateDocCell'
+import SupplyInvoiceCell from '../components/rates/SupplyInvoiceCell'
 import LarixRegistrySection from './LarixRegistrySection'
 import {
   fmtMoney, fmtCount, fmtDate, fmtRefreshed, describeRegistryError, PAGE_SIZES, useDebounced,
@@ -20,8 +21,9 @@ const ContractorBidsSection = lazy(() => import('../components/contractor/Contra
 const KpManualRateDialog = lazy(() => import('../components/rates/KpManualRateDialog'))
 const KpRateCheckDialog = lazy(() => import('../components/rates/KpRateCheckDialog'))
 const S3DocumentPreview = lazy(() => import('../components/S3DocumentPreview'))
-// Реестр СУ-10 (миграция 20270224): загрузка расценок из Excel.
+// Реестр СУ-10 (миграция 20270224): загрузка расценок из Excel; (20270227) окно «Расценка» по нажатию на строку.
 const SupplyRegistryImportDialog = lazy(() => import('../components/rates/SupplyRegistryImportDialog'))
+const SupplyRateDetailsDialog = lazy(() => import('../components/rates/SupplyRateDetailsDialog'))
 
 // task 356/354/411: «Реестр расценок» — общий список расценок из разных источников.
 //   1) От подрядчиков (КП) — представление kp_rates_registry (дедуп на стороне БД).
@@ -60,7 +62,13 @@ const isMissingColumn = (err) => err?.code === '42703' || /column .* does not ex
 // Миграция 20270224: ещё и расценки, загруженные из Excel («Загрузить из Excel», право правки реестра) — у них свой
 // источник из файла, а тендер и объект могут быть текстом из файла (без ссылки и без id).
 const SUPPLY_SELECT_COLS =
-  'id,source_name,item_name,unit,price,tender_id,object_id,tender_desc,object_name,rate_date'
+  'id,source_type,source_name,item_name,unit,price,tender_id,object_id,tender_desc,object_name,rate_date'
+// Миграция 20270227: подробности загруженной расценки (окно «Расценка» по нажатию на строку) и ссылка на счёт (колонка
+// «Документ»). Читаются той же выборкой страницы — нажатие на строку не ждёт сервера. Колонок нет (база раньше миграции,
+// 42703) — без колонки «Документ», окно — с тем, что есть. Признак — на модуль: повторный заход базу не спрашивает.
+const SUPPLY_DETAIL_COLS =
+  ',import_id,contractor_label,doc_number,order_number,source_file,invoice_url,object_label,tender_label,row_no'
+let supplyDetailsKnown = null
 const SUPPLY_SORT_COLUMN = {
   name: 'item_name', price: 'price', date: 'rate_date', tender: 'tender_desc',
 }
@@ -94,6 +102,9 @@ function SupplyRegistrySection({ canEdit = false }) {
   const [importOpen, setImportOpen] = useState(false)
   const [notice, setNotice] = useState(null)
   const [reloadToken, setReloadToken] = useState(0)
+  // Окно «Расценка» (строка страницы) и есть ли в базе подробности строки (миграция 20270227).
+  const [detailsRow, setDetailsRow] = useState(null)
+  const [detailsEnabled, setDetailsEnabled] = useState(supplyDetailsKnown !== false)
 
   // Только объекты/тендеры, по которым есть расценки снабжения (distinct из реестра).
   const [objects, setObjects] = useState([])
@@ -196,15 +207,20 @@ function SupplyRegistrySection({ canEdit = false }) {
       try {
         const from = page * pageSize
         const to = from + pageSize - 1
-        let q = db.from('supply_rates_registry').select(SUPPLY_SELECT_COLS)
-        q = applyFilters(q)
-        q = q
+        const query = (cols) => applyFilters(db.from('supply_rates_registry').select(cols))
           .order(SUPPLY_SORT_COLUMN[sortBy] || 'item_name', { ascending: sortDir === 'asc', nullsFirst: false })
           .order('id', { ascending: true })
           .range(from, to)
-        const { data, error: qErr } = await q
+        let withDetails = supplyDetailsKnown !== false
+        let { data, error: qErr } = await query(SUPPLY_SELECT_COLS + (withDetails ? SUPPLY_DETAIL_COLS : ''))
+        if (qErr && withDetails && isMissingColumn(qErr)) {
+          withDetails = false
+          ;({ data, error: qErr } = await query(SUPPLY_SELECT_COLS))
+        }
         if (qErr) throw qErr
+        supplyDetailsKnown = withDetails
         if (cancelled) return
+        setDetailsEnabled(withDetails)
         setRows(data || [])
         // Если точный подсчёт не прошёл — оцениваем так, чтобы «Вперёд»
         // продолжало работать до реального конца данных.
@@ -239,8 +255,9 @@ function SupplyRegistrySection({ canEdit = false }) {
   const handleExport = async () => {
     setExporting(true)
     try {
+      const withDetails = supplyDetailsKnown === true
       const rowsAll = await fetchAllRows((from, to) => {
-        let q = db.from('supply_rates_registry').select(SUPPLY_SELECT_COLS)
+        let q = db.from('supply_rates_registry').select(SUPPLY_SELECT_COLS + (withDetails ? SUPPLY_DETAIL_COLS : ''))
         q = applyFilters(q)
         return q
           .order(SUPPLY_SORT_COLUMN[sortBy] || 'item_name', { ascending: sortDir === 'asc', nullsFirst: false })
@@ -248,7 +265,10 @@ function SupplyRegistrySection({ canEdit = false }) {
           .range(from, to)
       })
       if (rowsAll.length === 0) { alert('Нет строк для выгрузки под текущие фильтры.'); return }
-      const headers = ['№ п/п', 'Источник', 'Объект', 'Наименование', 'Ед. изм.', 'Цена, ₽', 'Тендер', 'Дата расценки']
+      // Подробности — теми же заголовками, что в файле загрузки: выгрузку можно загрузить обратно (такие же расценки
+      // пропустятся, utils/supplyRegistryImport).
+      const headers = ['№ п/п', 'Источник', 'Объект', 'Наименование', 'Ед. изм.', 'Цена, ₽', 'Тендер', 'Дата расценки',
+        ...(withDetails ? ['Подрядчик по папке', '№ документа из имени файла', '№ заявки / заказа', 'Файл-источник', 'Ссылка на счёт'] : [])]
       const dataRows = rowsAll.map((r, i) => [
         i + 1,
         r.source_name || 'СУ-10',
@@ -258,8 +278,10 @@ function SupplyRegistrySection({ canEdit = false }) {
         r.price != null ? Number(r.price) : '',
         r.tender_desc || '',
         r.rate_date ? fmtMoscowDate(r.rate_date) : '',
+        ...(withDetails ? [r.contractor_label || '', r.doc_number || '', r.order_number || '', r.source_file || '', r.invoice_url || ''] : []),
       ])
-      downloadXlsx(headers, dataRows, 'Расценки СУ-10', `Реестр расценок (СУ-10) ${todayStamp()}.xlsx`, [6, 10, 24, 46, 10, 14, 40, 14])
+      downloadXlsx(headers, dataRows, 'Расценки СУ-10', `Реестр расценок (СУ-10) ${todayStamp()}.xlsx`,
+        [6, 10, 24, 46, 10, 14, 40, 14, ...(withDetails ? [24, 16, 16, 40, 30] : [])])
     } catch (err) {
       alert('Ошибка выгрузки: ' + (err.message || err))
     } finally {
@@ -272,6 +294,7 @@ function SupplyRegistrySection({ canEdit = false }) {
     else { setSortBy(col); setSortDir('asc') }
   }
   const sortIndicator = (col) => (sortBy === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '')
+  const closeDetails = useCallback(() => setDetailsRow(null), [])
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
   const fromRow = totalCount === 0 ? 0 : page * pageSize + 1
@@ -399,11 +422,19 @@ function SupplyRegistrySection({ canEdit = false }) {
                   <th className="rr-th-date rr-th-sortable" onClick={() => toggleSort('date')}>
                     Дата расценки{sortIndicator('date')}
                   </th>
+                  {detailsEnabled && (
+                    <th className="rr-th-invoice" title="Ссылка на счёт: зелёный — есть, красный — нет">Документ</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r, idx) => (
-                  <tr key={r.id}>
+                  // Нажатие на строку — окно «Расценка»; ссылки и кнопки в строке работают сами, выделенный текст — не нажатие.
+                  // С клавиатуры — кнопка-наименование.
+                  <tr key={r.id} className="rr-row-open" onClick={(e) => {
+                    if (e.target.closest('a, button') || window.getSelection()?.toString()) return
+                    setDetailsRow(r)
+                  }}>
                     <td className="rr-td-num">{page * pageSize + idx + 1}</td>
                     <td className="rr-td-source">
                       <span className="rr-chip rr-chip-supply" title={r.source_name || 'СУ-10'}>{r.source_name || 'СУ-10'}</span>
@@ -411,7 +442,11 @@ function SupplyRegistrySection({ canEdit = false }) {
                     <td className="rr-td-object">
                       <span className="rr-chip rr-chip-object" title={r.object_name || '—'}>{r.object_name || '—'}</span>
                     </td>
-                    <td className="rr-td-name" title={r.item_name}>{r.item_name}</td>
+                    <td className="rr-td-name">
+                      <button type="button" className="rr-name-btn" title="Подробнее о расценке" onClick={() => setDetailsRow(r)}>
+                        {r.item_name}
+                      </button>
+                    </td>
                     <td className="rr-td-tender" title={r.tender_desc}>
                       {r.tender_id && r.tender_desc
                         ? (
@@ -427,6 +462,7 @@ function SupplyRegistrySection({ canEdit = false }) {
                     <td className="rr-td-unit">{r.unit || '—'}</td>
                     <td className="rr-td-price">{fmtMoney(r.price)}</td>
                     <td className="rr-td-date">{fmtMoscowDate(r.rate_date)}</td>
+                    {detailsEnabled && <td className="rr-td-invoice"><SupplyInvoiceCell url={r.invoice_url} /></td>}
                   </tr>
                 ))}
               </tbody>
@@ -452,6 +488,11 @@ function SupplyRegistrySection({ canEdit = false }) {
         </>
       )}
 
+      {detailsRow && (
+        <Suspense fallback={null}>
+          <SupplyRateDetailsDialog row={detailsRow} hasDetails={detailsEnabled} onClose={closeDetails} />
+        </Suspense>
+      )}
       {importOpen && (
         <Suspense fallback={null}>
           <SupplyRegistryImportDialog

@@ -741,3 +741,37 @@
   .rr-pagination-controls { flex-wrap: wrap; justify-content: flex-end; }
   .rr-page-size { margin-right: 0; }
 }
+
+/* Реестр СУ-10 (миграция 20270227): строка открывает окно «Расценка», колонка «Документ» — значок счёта без текста:
+   зелёный — ссылка на счёт есть, красный — нет (подпись — в title и aria-label). */
+.rr-table .rr-th-invoice { width: 88px; text-align: center; }
+.rr-table .rr-td-invoice { text-align: center; }
+.rr-table tbody tr.rr-row-open { cursor: pointer; }
+.rr-name-btn {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.rr-name-btn:hover { color: #0e7490; text-decoration: underline; }
+[data-theme='dark'] .rr-name-btn:hover { color: var(--primary-color); }
+.rr-name-btn:focus-visible,
+.rr-invoice:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: 4px; }
+.rr-invoice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+.rr-invoice.is-linked { color: #15803d; background: rgba(21, 128, 61, 0.1); }
+.rr-invoice.is-linked:hover { background: rgba(21, 128, 61, 0.18); }
+.rr-invoice.is-missing { color: #b91c1c; background: rgba(185, 28, 28, 0.08); }
+[data-theme='dark'] .rr-invoice.is-linked { color: #4ade80; background: rgba(74, 222, 128, 0.12); }
+[data-theme='dark'] .rr-invoice.is-missing { color: #f87171; background: rgba(248, 113, 113, 0.12); }
