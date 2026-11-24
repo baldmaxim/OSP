@@ -364,7 +364,7 @@ export default function SupplyTenderDocsDialog({
   if (!applying) ratesSeen.current = rates
   const ratesNow = ratesSeen.current
   // eslint-disable-next-line react-hooks/exhaustive-deps -- rates: currentOf читает цены из ссылки, пересчёт — при их смене
-  const { rows } = useMemo(() => autoPickRows(shownOffers.byGroup, groups, { chosen, currentOf, allByGroup: byGroup }), [shownOffers, groups, chosen, currentOf, ratesNow, byGroup])
+  const { rows, held } = useMemo(() => autoPickRows(shownOffers.byGroup, groups, { chosen, currentOf, allByGroup: byGroup }), [shownOffers, groups, chosen, currentOf, ratesNow, byGroup])
   const isChecked = (r) => r.shown.unitOk && (ticked.has(r.group.key) || (r.auto && !unticked.has(r.group.key)))
   const toApply = rows.filter(isChecked)
   // Неотмеченные — и строки блока «введённые вручную» (сами не отмечаются): убрать их — оставить ручные цены как есть.
@@ -554,8 +554,10 @@ export default function SupplyTenderDocsDialog({
               )}
             </div>
           )}
-          {!noFiles && !rows.length && !uploading && docs.length > 0 && (
-            <p className="sp-td-empty" role="status"><IconCheck size={16} /> {shownOffers.hidden > 0 || viewIds
+          {/* Строки, похожие на позиции с другой ценой не наверняка (autoPickRows.held), окно не показывает — но и не говорит, что цены стоят. */}
+          {!noFiles && !rows.length && !uploading && docs.length > 0 && (held > 0
+            ? <p className="sp-td-empty" role="status">Новых цен нет: у позиций, на которые похожи строки документа ({held}), уже стоит другая цена, а это не та же позиция наверняка — нет того же артикула или наименования. Взять такую цену можно в таблице: «цены поставщиков» у позиции.</p>
+            : <p className="sp-td-empty" role="status"><IconCheck size={16} /> {shownOffers.hidden > 0 || viewIds
               ? 'Ставить больше нечего: цены этих документов уже стоят или позиции убраны.'
               : 'Все цены из документов уже стоят в расценке.'}</p>
           )}

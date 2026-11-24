@@ -1545,6 +1545,23 @@ if (params.get('docCheck') === '1') {
   // Постоянный номер заявки (ID, миграция 20270123) — по порядку как в миграции; ?dcNoNumber=1 — колонки ещё нет.
   fdb.doc_check_requests.forEach((r, i) => { r.request_number = i + 1 })
   fdb.doc_check_request_audit_log = []
+  // dcRegistry=1 — документы «Реестра по договорам» из заявок (contracts.doc_check_request_id, 20270225/20270228): у dcr-2 (ДП) —
+  // договор ID 2080, у dcr-1 (ДС) — ДС ID 2081 в «Удалённых»; dcr-3 в реестр не внесена — причина в «Истории».
+  if (params.get('dcRegistry') === '1') {
+    const o1 = obj('obj-2')
+    const base = (over) => ({ record_type: 'dp', parent_contract_id: null, root_contract_id: null, status: 'new_request', contract_date: null,
+      contract_amount: null, currency: 'RUB', created_at: '2026-11-20T09:00:00Z', tenders: null, contract_counterparties: [],
+      counterparties: cpOf('cp-2'), counterparty_id: 'cp-2', object_id: 'obj-2', objects: { name: o1?.name, status: o1?.status }, ...over })
+    fdb.contracts.push(
+      base({ id: 'k-dcr-2', display_id: 2080, contract_number: 'СУ2-001', doc_check_request_id: 'dcr-2', deleted_at: null }),
+      base({ id: 'k-dcr-1', display_id: 2081, record_type: 'ds_extra', parent_contract_id: 'k-dcr-2', root_contract_id: 'k-dcr-2',
+        contract_number: '1', doc_check_request_id: 'dcr-1', deleted_at: '2026-11-21T09:00:00Z' }),
+    )
+    fdb.doc_check_request_audit_log.push({ id: 'dca-reg-1', request_id: 'dcr-3', event_type: 'registry_skipped', field_name: null,
+      old_value: null, new_value: { reason: 'no_contract', candidates: 0 }, changed_at: '2026-11-24T09:00:00Z', changed_by_role: null,
+      changed_by_name: 'Автоматически',
+      description: 'В «Реестр по договорам» не внесена: договора с этим контрагентом на объекте в реестре нет — ДС внесёт юрист' })
+  }
   // Файлы dcr-2: документ на проверку (без категории, как все прежние) и понятийное соглашение — своя категория (11.11.2026).
   fdb.s3_documents.push({ id: 'dcr-file-1', owner_type: 'doc_check_request', owner_id: 'dcr-2', file_name: 'ДП СУ2-001.pdf',
     s3_key: 'doc-check-requests/dcr-2/dp.pdf', size_bytes: 1024, created_at: '2026-10-21T09:00:00Z' })

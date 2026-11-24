@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { IconDocsStack, IconFileText, IconFolderTree, IconHash } from './icons/ToolbarIcons'
 import { IconFileSpreadsheet, IconUpload } from './icons/BsmIcons'
 import SectionTemplateCards from './SectionTemplateCards'
+import RootFolderPathButton from './RootFolderPathButton'
 import { CONCEPT_AGREEMENT_TEMPLATE, CONTRACTS_DP_TEMPLATE } from '../utils/sectionTemplateItems'
 import './TenderDocsModal.css'
 
@@ -16,6 +17,10 @@ import './TenderDocsModal.css'
 // загрузка ПСДЦ — только с правом правки договоров и не во вкладке «Удаленные». «Структура хранения» и «Стандартные приложения»
 // (они для заведения договоров и раскладки по общей папке) сотруднику объекта не показываются (showSetup, 10.11.2026):
 // ему остаются шаблоны — понятийное соглашение нужно для заявки на заключение ДП.
+//
+// «Путь к общей папке» договоров переехал сюда из шапки реестра (24.11.2026, решение пользователя: «путь к общей папке убери в
+// документы»): карточка раскрыта сразу (RootFolderPathButton inline), сотруднику объекта — нет, как и раньше в шапке. Путь
+// поднимается в реестр (onRootPathChange) — его показывает «Структура хранения документов».
 
 const TEMPLATES = [
   { ...CONCEPT_AGREEMENT_TEMPLATE, icon: <IconFileText size={18} /> },
@@ -31,6 +36,8 @@ export default function ContractDocsModal({
   canImport = false,
   canEditTemplates = false,
   showSetup = true,
+  canEditRootPath = false,
+  onRootPathChange,
 }) {
   useEffect(() => {
     const onKeydown = (e) => { if (e.key === 'Escape') onClose() }
@@ -58,6 +65,18 @@ export default function ContractDocsModal({
           <p className="tdm-lead">
             Всё, что относится к работе с договорами и ДС, но не к конкретному договору.
           </p>
+          {showSetup && (
+            <div className="tdm-root-folder">
+              <RootFolderPathButton
+                inline
+                settingKey="contracts_root_folder_path"
+                title="Путь к общей папке договоров"
+                canEdit={canEditRootPath}
+                placeholder="\\192.168.5.55\SharA_Tender\СУБПОДРЯДЫ ДОГОВОРА И ДС"
+                onValueChange={onRootPathChange}
+              />
+            </div>
+          )}
           <div className="tdm-cards">
             <SectionTemplateCards items={TEMPLATES} canEdit={canEditTemplates} />
 

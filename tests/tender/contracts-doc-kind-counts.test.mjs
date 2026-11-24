@@ -127,9 +127,10 @@ describe('Договоры и ДС: счётчики вида «Документ
       await waitInfo(/из 1 договор · ДС к ним: 1$/)
       await search.fill('')
 
-      // Быстрый фильтр не сбрасывает вид и считается внутри него: у всех договоров стенда нет пути Larix.
+      // Фильтр не сбрасывает вид и считается внутри него: у договоров стенда нет тендера.
       await kind('Договоры').click()
-      await page.locator('.cr-toolbar .qfilter', { hasText: 'Не в Larix' }).click()
+      await page.locator('.cr-toolbar .cr-tender-filter .fdrop-trigger').click()
+      await page.locator('.fdrop-panel .fdrop-option', { hasText: 'Без тендера' }).click()
       await waitInfo(/из 20 договоров$/)
       await page.locator('.cr-toolbar .cr-filter-clear').click()
       assert.equal(await kind('Договоры').getAttribute('aria-selected'), 'true', '«Сбросить» вид не снимает')

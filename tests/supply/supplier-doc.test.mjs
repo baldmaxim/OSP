@@ -917,6 +917,79 @@ describe('казусы документов поставщиков', () => {
   })
 })
 
+// 24.11.2026, тендер № 704 (просьба пользователя: «артикул — буквально определитель товара»): счёт «Русского Света» в PDF, артикул
+// производителя — в конце наименования («… DKC CM280530»), в колонке «Код» — внутренний код поставщика. Окно сказало «ставить больше
+// нечего»: артикул не узнался (CM280530 считался размером, а «арт.» в ВОР — только кодом), похожесть 66–90 %, а у позиций уже стояли
+// цены других счетов. Копия по виду: настоящий счёт в git не кладём.
+describe('артикул в наименовании строки — определитель товара (тендер № 704)', () => {
+  const position = (name) => ({ name, unit: 'шт', volume: 100, k: normName(name) })
+  const VOR = [
+    'Дюбель металлический универсальный 5х30 мм, арт.СМ280530, ДКС',
+    'Саморез с прессшайбой, острый, цинк 4,2х32 мм, арт.СМ275032, ДКС',
+    'Держатель оцинкованный односторонний 19 - 20мм, арт.53342R, DKC',
+    'Скоба металлическая оцинкованная, D=20мм, арт.53342, DKC',
+    'Коробка пластиковая FS с кабельными вводами и клеммниками IP55 100х100х50мм 5р 450V 10A 6мм.кв., арт.FSB11510, DKC',
+    'Коробка монтажная, LTV-BMW-JB-U6 RAL7024, LTV',
+    'Адаптер монтажный для опоры ∅40-200мм, LTV-SBMP-U-02 RAL7024, LTV',
+  ]
+  const groups = positionGroups([{ name: 'ЭОМ', positions: VOR.map(position) }])
+  const item = (name, o = {}) => ({ name, unit: 'Штука', qty: null, price: 10, code: '516774', ...o })
+  const candidates = (name) => itemCandidates(item(name), groups, null, 12, { packs: true })
+
+  it('артикул из ВОР («арт.», хоть кириллицей) где угодно в наименовании счёта — та же позиция, как бы её ни назвали', () => {
+    for (const [line, pos] of [
+      ['Дюбель для газобетона 5х30 метал. (уп.50шт) DKC CM280530', VOR[0]],
+      ['Саморез с пресс-шайбой 4.2х32 острый (уп.200шт) DKC CM275032', VOR[1]],
+      ['Скоба крепежная однолапковая d19-20мм метал. оцинк. (уп.300шт) DKC 53342R', VOR[2]],
+      ['Коробка FS IP55 5р 10А DKC FSB 11510', VOR[4]],
+    ]) {
+      const [c] = candidates(line)
+      assert.equal(c.group.name, pos, line)
+      assert.equal(c.article, true, line)
+      assert.ok(c.score >= 0.9, `${line}: ${c.score}`)
+    }
+  })
+
+  // Решение пользователя 24.11.2026: «иногда артикул разный — ничего страшного, товар может быть очень похож».
+  it('другой артикул — не запрет: похожий аналог подбирается по наименованию, но не «та же позиция наверняка»', () => {
+    const [box] = matchDocItems([item('DKC FSB11404 Коробка пластиковая FS с кабельными вводами и клеммниками, IP55, 100х100х50 мм, 4р, 450V, 6A, 4 мм2')], groups, { packs: true })
+    assert.equal(box.match?.group.name, VOR[4], 'FSB11404 — аналог «арт.FSB11510»: подобран')
+    assert.equal(box.match.article, false)
+    const doc = { doc: { id: 'd', file_name: 'd.pdf', created_at: '2026-11-23T10:00:00Z' }, offer: { date: '2026-11-23', currency: null, lines: [{ ...item(box.item.name), skip: false, k: null }] } }
+    const [offer] = offersByGroup([doc], groups).get(groups.find((g) => g.name === VOR[4]).key)
+    assert.equal(offer.article || offer.same, false, 'похоже, но не наверняка: прежнюю цену другого документа сам не заменит')
+    const [clip] = matchDocItems([item('Скоба крепежная однолапковая d19-20мм (уп.300шт) DKC 53342R')], groups, { packs: true })
+    assert.equal(clip.match.group.name, VOR[2], 'свой артикул важнее похожего чужого')
+    assert.deepEqual(clip.also, [], '«арт.53342» — не вторая позиция этой строки')
+  })
+
+  it('«35 522» — два числа, а не артикул 35522', () => {
+    const gs = positionGroups([{ name: 'ЭОМ', positions: [position('Крышка для лотка 3000х100мм, арт.35522, DKC')] }])
+    assert.ok(!itemCandidates(item('Крышка лотка 35 522 мм'), gs, null, 12, { packs: true })[0]?.article, 'соседние числа не склеиваются в артикул')
+  })
+
+  it('код без «арт.», общий у нескольких позиций (цвет RAL7024), — не артикул; внутренний код поставщика в колонке — не помеха', () => {
+    assert.ok(candidates('Кронштейн настенный для камеры, RAL7024').every((c) => !c.article))
+    assert.equal(candidates('Дюбель для газобетона 5х30 метал. DKC CM280530')[0].article, true, 'колонка «Код» 516774 не совпала — артикул в наименовании совпал')
+  })
+
+  it('окно: тот же артикул в более свежем счёте заменяет цену прежнего счёта сама; похожая строка без артикула не показана — и окно говорит о ней', () => {
+    const doc = (id, date, lines) => ({ doc: { id, file_name: `${id}.pdf`, created_at: `${date}T10:00:00Z` }, offer: { date, currency: null, lines } })
+    const line = (name, price) => ({ name, unit: 'Штука', price, skip: false, k: null })
+    const docs = [
+      doc('old', '2026-11-10', [line(VOR[1], 2.44), line(VOR[0], 9)]),
+      doc('new', '2026-11-23', [line('Саморез с пресс-шайбой 4.2х32 острый (уп.200шт) DKC CM275032', 1.22), line('Дюбель металлический 5х30 мм DKC', 7.61)]),
+    ]
+    const byGroup = offersByGroup(docs, groups)
+    const was = { [VOR[1]]: 2.44, [VOR[0]]: 9 }
+    const currentOf = (g) => ({ targets: was[g.name] ? [{ kind: 'own', price: was[g.name], input: 'unit', docId: 'old' }] : [{ kind: 'empty', price: null }] })
+    const view = windowOffers(byGroup, docs, new Set(['new']))
+    const res = autoPickRows(view.byGroup, groups, { currentOf, allByGroup: byGroup })
+    assert.deepEqual(res.rows.map((r) => [r.group.name, r.shown.price, r.block, r.sure, r.auto]), [[VOR[1], 1.22, 'doc', true, true]])
+    assert.equal(res.held, 1, 'дюбель без артикула похож не наверняка, у позиции другая цена — не показан, но учтён')
+  })
+})
+
 // Автовыбор: одна цена на позицию по всем документам тендера.
 describe('автовыбор цен по документам тендера', () => {
   const position = (name, unit, volume = 10) => ({ name, unit, volume, k: normName(name) })

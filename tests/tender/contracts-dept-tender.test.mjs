@@ -1,5 +1,7 @@
 // «Реестр по договорам» (/contracts/registry): разделение на ОС и ГО, вид документа — вкладками с числами, статус — переключателями
-// (11.11.2026: вкладки «Все» нет), «Наши договоры» и «Без тендера» — фильтры в панели, тендер у договора и ДС (03.11).
+// (11.11.2026: вкладки «Все» нет), тендер у договора и ДС (03.11). 24.11.2026 (решение пользователя): отдел — один список, по
+// умолчанию «ОС и ГО» при каждом открытии; «Наши договоры», «Просрочено», «Не в Larix» убраны; «Тендер» — список: все / есть / без;
+// «Открыть в реестре» из заявки ДП/ДС — адрес ?id=<ID документа>.
 // Правила — tests/contracts/registry-tabs.test.mjs.
 // Стенд: 24 документа, 16 договоров и 8 ДС; каждый четвёртый — по объекту ГО; у ctr-2 — тендер, ДС ctr-3 берёт его же.
 import { describe, it, before, after } from 'node:test'
@@ -9,6 +11,8 @@ import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 
 const launch = browserLaunchOptions()
 const BASE = 'route=/contracts/registry&contracts=24&contractsDept=1&latency=0'
+// Стенд — MemoryRouter: адрес приложения целиком в route, с его ?id=.
+const withId = (id) => BASE.replace('route=/contracts/registry', `route=${encodeURIComponent(`/contracts/registry?id=${id}`)}`)
 
 describe('Договоры и ДС: ОС и ГО, тендер', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
   let stand
@@ -38,20 +42,39 @@ describe('Договоры и ДС: ОС и ГО, тендер', { skip: !launch
   ])))
   const kindCount = async (page, kind) => Number(await page.locator(`.cr-kind-tab[data-kind="${kind}"] .tab-count`).innerText())
   const chip = (page, tab) => page.locator(`.cr-status-chip[data-tab="${tab}"]`)
-  const dept = (page, label) => page.locator('.registry-scope-btn', { hasText: new RegExp(`^${label}$`) })
+  const deptTrigger = (page) => page.locator('.registry-header .registry-dept .fdrop-trigger')
+  const pickDept = async (page, label) => {
+    await deptTrigger(page).click()
+    await page.locator('.fdrop-panel .fdrop-option', { hasText: new RegExp(`^${label}$`) }).click()
+  }
+  const tenderTrigger = (page) => page.locator('.cr-toolbar .cr-tender-filter .fdrop-trigger')
+  const pickTender = async (page, label) => {
+    await tenderTrigger(page).click()
+    await page.locator('.fdrop-panel .fdrop-option', { hasText: label }).click()
+  }
   const rowCount = (page) => page.locator('.contracts-table tbody tr.contract-row').count()
   // Строка договора по номеру: «2/26» не должно находить «12/26».
   const rowOf = (page, number) => page.locator('.contracts-table tbody tr.contract-row', { hasText: new RegExp(`(?<![0-9])${number}/26`) }).first()
 
-  it('шапка: «ОС и ГО» · ОС · ГО без чисел; строки, вкладки и объекты — выбранного отдела; выбор запоминается', async () => {
+  it('шапка: отдел — один список «ОС и ГО» / ОС / ГО без чисел; строки, вкладки и объекты — выбранного отдела; при открытии — «ОС и ГО»', async () => {
     const { page, errors, close } = await open()
     try {
-      assert.deepEqual(await page.locator('.registry-scope-btn').allInnerTexts(), ['ОС и ГО', 'ОС', 'ГО'])
-      assert.equal(await page.locator('.registry-scope-btn [class$="-count"]').count(), 0, 'чисел на отделе нет — они на вкладках вида')
+      // Прежний запомненный отдел реестр не открывает: по умолчанию «ОС и ГО».
+      await page.evaluate(() => localStorage.setItem('contracts-dept', 'warranty_service'))
+      await page.reload()
+      await page.locator('.contracts-table tbody tr.contract-row').first().waitFor()
+      assert.equal(await page.locator('.registry-header .registry-dept').count(), 1)
+      assert.equal(await deptTrigger(page).innerText().then((t) => t.replace('▾', '').trim()), 'ОС и ГО')
+      assert.equal(await page.evaluate(() => localStorage.getItem('contracts-dept')), null, 'прежний ключ убран')
+      await deptTrigger(page).click()
+      assert.deepEqual(await page.locator('.fdrop-panel .fdrop-option').allInnerTexts().then((l) => l.map((t) => t.replace('✓', '').trim())),
+        ['ОС и ГО', 'ОС', 'ГО'], 'выбор раскрывается по нажатию; чисел на отделе нет — они на вкладках вида')
+      await page.keyboard.press('Escape')
       assert.equal(await kindCount(page, 'all'), 24)
 
-      await dept(page, 'ГО').click()
-      assert.equal(await dept(page, 'ГО').getAttribute('aria-selected'), 'true')
+      await pickDept(page, 'ГО')
+      assert.equal(await deptTrigger(page).innerText().then((t) => t.replace('▾', '').trim()), 'ГО')
+      assert.match(await page.locator('.registry-header .registry-dept').getAttribute('class'), /\bis-active\b/)
       assert.equal(await rowCount(page) > 0, true)
       const shownObjects = await page.locator('.contracts-table tbody tr.contract-row td.cell-object').allInnerTexts()
       assert.ok(shownObjects.length > 0 && shownObjects.every((t) => /Гарантийный/.test(t)), shownObjects.join(' | '))
@@ -66,7 +89,7 @@ describe('Договоры и ДС: ОС и ГО, тендер', { skip: !launch
 
       await page.reload()
       await page.locator('.contracts-table tbody tr.contract-row').first().waitFor()
-      assert.equal(await dept(page, 'ГО').getAttribute('aria-selected'), 'true', 'отдел помнится после обновления')
+      assert.equal(await deptTrigger(page).innerText().then((t) => t.replace('▾', '').trim()), 'ОС и ГО', 'после обновления — снова «ОС и ГО»')
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
@@ -107,24 +130,24 @@ describe('Договоры и ДС: ОС и ГО, тендер', { skip: !launch
     } finally { await close() }
   })
 
-  it('«Наши договоры» — фильтр в панели: число, отбор, «Сбросить» снимает; отдел остаётся', async () => {
+  it('«Наши договоры», «Просрочено», «Не в Larix» убраны; «Сбросить» отдел не снимает', async () => {
     const { page, errors, close } = await open()
     try {
-      const ours = page.locator('.cr-toolbar .qfilter', { hasText: 'Наши договоры' })
-      assert.match(await ours.innerText(), /1$/)
-      await dept(page, 'ОС').click()
-      await ours.click()
-      assert.equal(await ours.getAttribute('aria-pressed'), 'true')
-      assert.equal(await rowCount(page), 1)
-      assert.match(await page.locator('.contracts-table tbody tr.contract-row').first().innerText(), /4\/26/)
+      assert.equal(await page.locator('.cr-toolbar .qfilter').count(), 0)
+      for (const text of ['Наши договоры', 'Просрочено', 'Не в Larix']) {
+        assert.equal(await page.locator('.cr-toolbar').getByText(text).count(), 0, text)
+      }
+      assert.match(await page.locator('.registry-pagination.is-top .rp-info').innerText(), /из 16 договоров/, '«наш» договор не сужает реестр')
+      await pickDept(page, 'ОС')
+      await pickTender(page, 'Без тендера')
       await page.locator('.cr-toolbar .cr-filter-clear').click()
-      assert.equal(await ours.getAttribute('aria-pressed'), 'false')
-      assert.equal(await dept(page, 'ОС').getAttribute('aria-selected'), 'true', 'отдел — не фильтр, «Сбросить» его не снимает')
+      assert.equal(await deptTrigger(page).innerText().then((t) => t.replace('▾', '').trim()), 'ОС', 'отдел — не фильтр, «Сбросить» его не снимает')
+      assert.equal(await tenderTrigger(page).innerText().then((t) => t.replace('▾', '').trim()), 'Тендер: все')
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
 
-  it('тендер: ссылка в строке, ДС — от договора, «Без тендера» — остальные; раскрытый документ тоже показывает', async () => {
+  it('тендер: ссылка в строке, ДС — от договора; список «Тендер»: есть — один, без — остальные; раскрытый документ тоже показывает', async () => {
     const { page, errors, close } = await open()
     try {
       const link = rowOf(page, 2).locator('a.ctender')
@@ -137,17 +160,65 @@ describe('Договоры и ДС: ОС и ГО, тендер', { skip: !launch
       assert.match(await inherited.getAttribute('title'), /^Тендер договора: /, 'ДС берёт тендер договора')
       await page.locator('.cr-kind-tab[data-kind="all"]').click()
 
-      const filter = page.locator('.cr-toolbar .qfilter', { hasText: 'Без тендера' })
-      assert.match(await filter.innerText(), /15$/, 'из 16 договоров один с тендером')
-      await filter.click()
+      await tenderTrigger(page).click()
+      assert.deepEqual(await page.locator('.fdrop-panel .fdrop-option').allInnerTexts().then((l) => l.map((t) => t.replace('✓', '').trim())),
+        ['Тендер: все', 'Есть тендер · 1', 'Без тендера · 15'], 'из 16 договоров один с тендером')
+      await page.keyboard.press('Escape')
+      await pickTender(page, 'Без тендера')
+      assert.equal(await tenderTrigger(page).innerText().then((t) => t.replace('▾', '').trim()), 'Без тендера', 'в кнопке — без числа')
       assert.equal(await page.locator('.contracts-table tbody tr.contract-row', { hasText: /(?<![0-9])2\/26/ }).count(), 0)
       assert.equal(await page.locator('.registry-pagination.is-top .rp-info').innerText().then((t) => /из 15 договоров/.test(t)), true)
+      await pickTender(page, 'Есть тендер')
+      assert.equal(await rowCount(page), 1)
+      assert.match(await page.locator('.contracts-table tbody tr.contract-row').first().innerText(), /(?<![0-9])2\/26/)
+      await page.locator('.cr-kind-tab[data-kind="amendments"]').click()
+      assert.match(await page.locator('.contracts-table tbody tr.contract-row').first().innerText(), /(?<![0-9])3\/26/, 'ДС — с тендером своего договора')
+      await page.locator('.cr-kind-tab[data-kind="all"]').click()
       await page.locator('.cr-toolbar .cr-filter-clear').click()
 
       // Раскрытый документ тендер не повторяет: он — ссылкой в строке.
       await rowOf(page, 2).locator('td.cell-work .work-text').click()
       await page.locator('.contracts-table tr.contract-expanded-row').first().waitFor()
       assert.equal(await page.locator('.contracts-table tr.contract-expanded-row a[href^="/tenders/"]').count(), 0)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('«Открыть в реестре» (?id=): договор — своей строкой, раскрыт; ДС — под договором; прежние фильтры не мешают', async () => {
+    const { page, errors, close } = await open()
+    try {
+      // Браузер помнит вид «ДС» — в нём договора нет: переход переключает на «Договоры и ДС».
+      await page.locator('.cr-kind-tab[data-kind="amendments"]').click()
+      await page.goto(`${stand.url}?${withId(10)}`)
+      const row = rowOf(page, 10)
+      await row.waitFor({ timeout: 60000 })
+      assert.equal(await page.locator('.cr-kind-tab[data-kind="all"]').getAttribute('aria-selected'), 'true')
+      assert.equal(await deptTrigger(page).innerText().then((t) => t.replace('▾', '').trim()), 'ОС и ГО')
+      assert.equal(await page.locator('.cr-toolbar .cr-search').inputValue(), '', 'не поиском: «10» нашёл бы и другие')
+      assert.equal(await page.locator('.cr-toolbar .cr-focus-chip').innerText().then((t) => t.replace('×', '').trim()), 'Договор ID 10')
+      assert.equal(await rowCount(page), 1, 'ровно этот документ')
+      assert.match(await row.getAttribute('class'), /\bis-expanded\b/, 'строка раскрыта')
+      assert.equal(await row.getAttribute('data-doc-row'), 'ctr-10')
+      // Плашка снимает отбор — снова весь реестр.
+      await page.locator('.cr-toolbar .cr-focus-chip').click()
+      assert.equal(await page.locator('.cr-toolbar .cr-focus-chip').count(), 0)
+      assert.ok(await rowCount(page) > 1)
+
+      // ДС ctr-3 (ID 3) — под договором ctr-2, его строка в правой области раскрыта.
+      await page.goto(`${stand.url}?${withId(3)}`)
+      const parent = rowOf(page, 2)
+      await parent.waitFor({ timeout: 60000 })
+      await page.locator('.contracts-table tr.contract-expanded-row').first().waitFor()
+      assert.equal(await page.locator('.cr-toolbar .cr-focus-chip').innerText().then((t) => t.replace('×', '').trim()), 'ДС ID 3')
+      assert.equal(await rowCount(page), 1, 'строка — договор этого ДС; «2» поиском нашёл бы все «N/26»')
+      assert.match(await page.locator('.contracts-table tr.contract-expanded-row').first().innerText(), /3\/26/)
+
+      // Нет такого документа — понятное сообщение.
+      const dialog = page.waitForEvent('dialog')
+      await page.goto(`${stand.url}?${withId(999)}`)
+      const d = await dialog
+      assert.match(d.message(), /Документ ID 999 в реестре не найден/)
+      await d.dismiss()
       assert.deepEqual(errors, [])
     } finally { await close() }
   })

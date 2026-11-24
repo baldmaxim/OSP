@@ -220,6 +220,50 @@ describe('Шаблоны разделов в «Документах» тенде
     } finally { await close() }
   })
 
+  it('договоры: путь к общей папке — не в шапке, а в «Документах», раскрытой карточкой; «Структура хранения» берёт его; сотруднику объекта — нет', async () => {
+    const { page, errors, close } = await openPage('route=/contracts/registry&contracts=6&latency=0', '.contracts-table tbody tr.contract-row')
+    try {
+      const header = page.locator('.registry-header')
+      assert.equal(await header.locator('.rfpath').count(), 0, 'в шапке пути нет (24.11.2026)')
+      await header.getByRole('button', { name: 'Документы' }).click()
+      const modal = page.getByRole('dialog', { name: 'Документы раздела' })
+      await modal.waitFor({ timeout: 10000 })
+      const folder = modal.locator('.tdm-root-folder .rfpath--inline')
+      await folder.waitFor({ timeout: 10000 })
+      assert.equal(await folder.locator('.rfpath-btn').count(), 0, 'карточка раскрыта сразу — без кнопки')
+      assert.equal(await folder.locator('.rfpath-pop-head').innerText().then((t) => t.toLowerCase()), 'путь к общей папке договоров')
+      await folder.getByRole('button', { name: 'Указать путь' }).click()
+      await folder.locator('.rfpath-input').fill('\\\\srv-test\\Договоры')
+      await folder.getByRole('button', { name: 'Сохранить' }).click()
+      await folder.locator('.rfpath-path').waitFor({ timeout: 10000 })
+      assert.equal(await folder.locator('.rfpath-path').innerText(), '\\\\srv-test\\Договоры')
+      assert.equal(await page.evaluate(() => window.__fakeDb.app_settings.find((r) => r.key === 'contracts_root_folder_path')?.value),
+        '\\\\srv-test\\Договоры')
+      // Карточка видна целиком: окно её не обрезает.
+      const clipped = await folder.evaluate((el) => {
+        const box = el.getBoundingClientRect()
+        const body = el.closest('.tdm-body').getBoundingClientRect()
+        return box.left < body.left || box.right > body.right
+      })
+      assert.equal(clipped, false)
+      await modal.locator('.tdm-card', { hasText: 'Структура хранения документов' }).click()
+      await modal.waitFor({ state: 'detached', timeout: 5000 })
+      await page.getByText('\\\\srv-test\\Договоры').first().waitFor({ timeout: 5000 })
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+
+    const staff = await openPage('route=/contracts/registry&contracts=6&latency=0&asRole=construction_manager&scope=obj-1',
+      '.contracts-table tbody tr.contract-row, .no-data')
+    try {
+      await staff.page.locator('.registry-header').getByRole('button', { name: 'Документы' }).click()
+      const modal = staff.page.getByRole('dialog', { name: 'Документы раздела' })
+      await modal.waitFor({ timeout: 10000 })
+      await modal.locator('.tdm-card').first().waitFor()
+      assert.equal(await modal.locator('.tdm-root-folder').count(), 0, 'сотруднику объекта общая папка не нужна')
+      assert.deepEqual(staff.errors, [])
+    } finally { await staff.close() }
+  })
+
   it('договоры: файл «Шаблона ДГП», прикреплённый раньше, виден под ссылкой «Шаблон ДП» — администратор удаляет', async () => {
     const templates = [...TEMPLATES, { id: 'tpl-dgp', code: 'contracts_dgp', title: 'Шаблон ДГП' }]
     const files = [{ id: 'f-dgp', owner_type: 'general', owner_id: 'tpl-dgp', doc_category: 'section_template',

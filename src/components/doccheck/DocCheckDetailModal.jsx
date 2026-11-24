@@ -40,6 +40,7 @@ import {
 } from '../../utils/docCheckHelpers'
 import { useRole } from '../../contexts/RoleContext'
 import { Link } from 'react-router-dom'
+import { CONTRACTS_REGISTRY_PATH } from '../../utils/contractsHub'
 
 // Карточка заявки: две вкладки — «Общая» и «История» (11.11.2026, решение пользователя: шагов нет, «Документы» и «Обсуждение» —
 // не вкладки, а части «Общей»).
@@ -80,8 +81,10 @@ const EVENT_LABEL = {
   file_renamed: 'Файл переименован',
   file_moved: 'Файл перенесён',
   file_replaced: 'Файл заменён',
-  // «Заключение ДП» взято в работу — база создала договор в «Реестре по договорам» (20270225); текст с ID договора пишет она же.
-  contract_created: 'Договор в реестре',
+  // Заявка внесена в «Реестр по договорам» (20270225, «Проверки ДП/ДС» — 20270228); текст с ID документа пишет база.
+  contract_created: 'Внесена в реестр',
+  // Не внесена: дубль, нет договора для ДС, отказ базы — причину пишет база (20270228).
+  registry_skipped: 'Не внесена в реестр',
 }
 const FILE_EVENTS = new Set(['file_attached', 'file_removed', 'file_renamed', 'file_moved', 'file_replaced'])
 
@@ -172,6 +175,27 @@ export default function DocCheckDetailModal({
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [comments, setComments] = useState([])
   const [cardState, setCardState] = useState('loading') // loading | ready | error
+
+  // Документ «Реестра по договорам» из этой заявки (contracts.doc_check_request_id: «Заключение ДП» — 20270225, «Проверка ДП/ДС» —
+  // 20270228) — для «Открыть в реестре» (решение пользователя 24.11.2026). Читает только право «Договоры» — шлюз остальным договоры
+  // не отдаёт. Документ появляется и после правки заявки (база вносит её, пока заявка в «Новых»), поэтому — заново при правке.
+  const canSeeRegistry = canView('contracts')
+  const [registryDoc, setRegistryDoc] = useState(null)
+  useEffect(() => {
+    if (!canSeeRegistry) return undefined
+    let cancelled = false
+    db.from('contracts')
+      .select('id, display_id, record_type, deleted_at')
+      .eq('doc_check_request_id', request.id)
+      .limit(1)
+      .then(({ data, error }) => {
+        if (cancelled) return
+        // Нет колонки (миграции 20270225 нет) или сбой — строки «Реестр» просто нет.
+        if (error) { console.warn('Не удалось узнать документ реестра заявки:', error.message); return }
+        setRegistryDoc(data?.[0] || null)
+      })
+    return () => { cancelled = true }
+  }, [canSeeRegistry, request.id, request.doc_type, request.object_id, request.counterparty_id, request.doc_number, request.deleted_at, refreshKey])
 
   // Сообщения — сразу: переписка стоит на «Общей». Перечитываются и при возврате на вкладку браузера (refreshKey): сообщения
   // коллег. Ответ, прочитанный до своего сообщения, отбрасывается — иначе вернул бы прежний список.
@@ -318,6 +342,17 @@ export default function DocCheckDetailModal({
                       )}
                       <Row label="Номер">{request.doc_number || '—'}</Row>
                       <Row label="Дата документа" className="ui-num">{fmtDocDate(request.doc_date) || '—'}</Row>
+                      {registryDoc?.display_id != null && (
+                        <Row label="Реестр" className="dc-detail-registry">
+                          <Link to={`${CONTRACTS_REGISTRY_PATH}?id=${registryDoc.display_id}`} className="dc-detail-mail">
+                            <IconLink size={14} />Открыть в реестре
+                          </Link>
+                          <span className="dc-detail-registry-id">
+                            {registryDoc.record_type === 'dp' ? 'договор' : 'ДС'} · ID {registryDoc.display_id}
+                            {registryDoc.deleted_at ? ' · в «Удалённых»' : ''}
+                          </span>
+                        </Row>
+                      )}
                       {/* Ссылку на письмо при создании больше не вводят (11.11.2026) — строка только у заявок, где она есть. */}
                       {hasCardFields && request.email_link && (
                         <Row label="Письмо">

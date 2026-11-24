@@ -127,13 +127,14 @@ describe('Реестр по договорам: сотрудник объект�
     } finally { await close() }
   })
 
-  it('администратор: реестр как раньше (общая папка, «+ Добавить договор», все «Документы») и та же кнопка заявки', async () => {
+  it('администратор: реестр как раньше («+ Добавить договор», все «Документы» с общей папкой) и та же кнопка заявки', async () => {
     const { page, errors, close } = await open()
     try {
       const rows = await page.locator('.contracts-page-v2 tbody').innerText()
       assert.match(rows, /Северный квартал/)
       assert.match(rows, /Нурлы/)
-      assert.equal(await page.locator('.contracts-page-v2 .rfpath').count(), 1)
+      // Путь к общей папке — в окне «Документы», а не в шапке (24.11.2026): проверка — tests/tender/section-templates.test.mjs.
+      assert.equal(await page.locator('.contracts-page-v2 .rfpath').count(), 0)
       assert.equal(await page.getByRole('button', { name: '+ Добавить договор' }).count(), 1)
       assert.deepEqual((await headerActions(page)).slice(-2), ['cr-dp-add', '+ Добавить договор'])
       const cards = await docsCards(page)

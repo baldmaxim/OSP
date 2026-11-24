@@ -434,7 +434,7 @@ describe('Заключение ДП: страницы', { skip: !launch && 'Не
     } finally { await missing.close() }
   })
 
-  it('доска: «Заключение ДП» взяли в работу — в истории заявки «Договор в реестре» с его ID', async () => {
+  it('доска: «Заключение ДП» взяли в работу — в истории заявки «Внесена в реестр» с ID договора', async () => {
     const { page, errors, close } = await open('/doc-check-requests', '&dpRecipient=0', { ready: '.dc-board' })
     try {
       await page.locator('.dc-column .dc-card[data-id="dcr-dpc-2"]').first().click()
@@ -445,7 +445,8 @@ describe('Заключение ДП: страницы', { skip: !launch && 'Не
       await modal.getByRole('tab', { name: /^История/ }).click()
       await modal.locator('.dc-history li').first().waitFor()
       const first = modal.locator('.dc-history li').first()
-      assert.equal(await first.locator('.dc-history-event').innerText(), 'Договор в реестре')
+      // Подпись общая для договора и ДС (24.11.2026: в реестр попадают и «Проверки ДП/ДС»); вид и ID — в тексте.
+      assert.equal(await first.locator('.dc-history-event').innerText(), 'Внесена в реестр')
       assert.match(await first.locator('.dc-history-text').innerText(), /Договор создан в «Реестре по договорам»: ID 9001/)
       assert.deepEqual(errors, [])
     } finally { await close() }

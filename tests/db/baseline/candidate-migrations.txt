@@ -60,3 +60,4 @@
 20270225_dp_conclusion_registry_contract.sql
 20270226_registry_osp_lawyers.sql
 20270227_supply_registry_rate_details.sql
+20270228_doc_check_registry_docs.sql

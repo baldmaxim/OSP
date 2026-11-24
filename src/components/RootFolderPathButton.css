@@ -187,3 +187,12 @@ a.rfpath-act { text-decoration: none; }
   .rfpath-pop { right: auto; left: 0; }
   .rfpath-input { height: 40px; font-size: 16px; }
 }
+
+/* Раскрытая карточка внутри окна («Документы» реестра договоров, 24.11.2026): без всплытия, тени и своей ширины. */
+.rfpath--inline { display: block; }
+.rfpath--inline .rfpath-pop {
+  position: static;
+  width: auto;
+  box-shadow: none;
+  background: var(--bg-primary);
+}
