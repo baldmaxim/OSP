@@ -886,26 +886,62 @@ s.sp-was { display: inline; }
 .sp-td-head h3 { margin-right: 0.75rem; padding: 0; }
 .sp-td-head .btn-primary { display: inline-flex; align-items: center; gap: 0.375rem; height: var(--ui-control-h); padding: 0 0.75rem; }
 .sp-td-meta { color: var(--text-secondary); font-size: var(--ui-hint); font-weight: var(--ui-regular, 400); line-height: var(--ui-hint-lh); }
-/* Файлы — плашками в свои строки со своей прокруткой, чтобы не вытесняли таблицу. */
-.sp-td-files { display: flex; flex: none; flex-wrap: wrap; gap: 0.25rem 0.375rem; max-height: 4.25rem; margin: 0; padding: 0; overflow: auto; list-style: none; }
-.sp-td-files > li {
+/* Загружаемые сейчас файлы — плашками в свои строки со своей прокруткой, чтобы не вытесняли таблицу. Все файлы тендера — в окне
+   «Документы тендера» по кнопке в шапке (24.11.2026). */
+.sp-td-uploads { display: flex; flex: none; flex-wrap: wrap; gap: 0.25rem 0.375rem; max-height: 4.25rem; margin: 0; padding: 0; overflow: auto; list-style: none; }
+.sp-td-uploads > li {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
   max-width: 100%;
   min-height: 1.625rem;
-  padding: 0 0.125rem 0 0.5rem;
+  padding: 0 0.5rem;
   border: 1px solid var(--border-color);
   border-radius: var(--ui-radius);
   background: var(--bg-primary);
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
 }
-.sp-td-files > li.is-off { border-color: var(--warning-muted); background: var(--warning-light); }
-.sp-td-files > li.is-dup { border-style: dashed; opacity: 0.8; }
-/* Удалённый файл, чьи цены ещё стоят: снять цены или оставить. */
-.sp-td-files > li.is-gone { padding-right: 0.5rem; border-style: dashed; border-color: var(--danger-color); }
+.sp-td-uploads > li.is-off { border-color: var(--warning-muted); background: var(--warning-light); }
 .sp-td-gone { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); overflow-wrap: anywhere; text-decoration: line-through; }
 .sp-td-gone > svg { flex: none; }
-.sp-td-files > li.is-gone .sp-link-btn { font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+/* Кнопка окна документов: значок, «Документы» и сколько файлов; ждёт действия (курс валюты, цены удалённого файла) — пометка. */
+.sp-td-head .sp-td-files-btn { display: inline-flex; align-items: center; gap: 0.375rem; height: var(--ui-control-h); padding: 0 0.75rem; }
+.sp-td-files-btn > .ui-num { color: var(--text-secondary); }
+.sp-td-files-attn { display: inline-flex; align-items: center; gap: 0.125rem; padding: 0 0.375rem; border-radius: 999px; background: var(--warning-light); color: var(--warning-color); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); font-weight: var(--ui-medium); }
+.sp-td-files-btn.is-warn { border-color: var(--warning-muted); }
+
+/* ── Окно «Документы тендера» поверх «Счетов и КП»: все файлы таблицей ───────────────────────────────── */
+/* Внутри окна «Счета и КП» (своя наложенная плоскость): просмотр файла и окно удаления, открытые позже, — поверх. */
+.sp-tf-backdrop { z-index: 5; }
+.sp-modal.sp-tf { width: min(64rem, 100%); max-height: calc(100vh - 2rem); }
+.sp-tf-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: 0.75rem 0.75rem 0.5rem 1.25rem; border-bottom: 1px solid var(--border-color); }
+.sp-tf-head h3 { padding: 0; }
+.sp-tf-head .sp-tf-zip { display: inline-flex; align-items: center; gap: 0.375rem; height: var(--ui-control-h); margin-left: auto; padding: 0 0.75rem; }
+.sp-tf-head .sp-tf-close { width: 2rem; height: 2rem; }
+.sp-tf-head .sp-td-meta + .sp-tf-close { margin-left: auto; }
+.sp-tf-body { padding: 0.25rem 1.25rem 1rem; }
+/* Сумма колонок: 24 + 8 + 22 + 5 = 59rem. */
+.ui-work.ui-work .sp-tf-table { width: 100%; min-width: 59rem; table-layout: fixed; }
+.sp-tf-c-name { width: 24rem; }
+.sp-tf-c-date { width: 8rem; }
+.sp-tf-c-state { width: 22rem; }
+.sp-tf-c-act { width: 5rem; }
+.sp-tf-table td { vertical-align: top; }
+.sp-tf-name > .sp-td-file { font-size: var(--ui-text); line-height: var(--ui-text-lh); }
+.sp-tf-name > .sp-td-meta { display: block; }
+.sp-tf-table > tbody > tr.is-dup .sp-td-file { color: var(--text-secondary); }
+.sp-tf-table > tbody > tr > td.sp-tf-act { white-space: nowrap; text-align: right; }
+.sp-tf-offer { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; }
+.sp-tf-warn { display: inline-flex; align-items: flex-start; gap: 0.25rem; color: var(--warning-color); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.sp-tf-warn > svg { flex: none; margin-top: 0.125rem; }
+.sp-tf-gone { margin-top: 0.75rem; }
+.sp-tf-gone h4 { margin: 0 0 0.25rem; font-size: var(--ui-th); line-height: var(--ui-th-lh); font-weight: var(--ui-medium); }
+.sp-tf-gone ul { margin: 0; padding: 0; list-style: none; border: 1px dashed var(--danger-color); border-radius: var(--ui-radius); }
+.sp-tf-gone li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.75rem; padding: 0.375rem 0.625rem; }
+.sp-tf-gone li + li { border-top: 1px solid var(--border-color); }
+.sp-tf-gone-act { display: inline-flex; gap: 0.75rem; margin-left: auto; }
+.sp-tf-gone .sp-link-btn { font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
 .sp-td-file {
   display: inline-flex;
   align-items: center;
@@ -1075,7 +1111,20 @@ b.sp-td-name { font-weight: var(--ui-semibold); }
   /* Окно на телефоне: строка — карточкой, прокручивается всё окно целиком. */
   .sp-modal-full > .sp-modal-body { overflow: auto; }
   .sp-td-wrap { flex: none; min-height: 0; overflow: visible; border: 0; }
-  .sp-td-files { max-height: none; }
+  .sp-td-uploads { max-height: none; }
+  /* Окно документов на телефоне: файл — карточкой (имя, состояние, кнопки), без шапки таблицы. */
+  .ui-work.ui-work .sp-tf-table { min-width: 0; table-layout: auto; }
+  .sp-tf-table colgroup, .sp-tf-table thead { display: none; }
+  .sp-tf-table, .sp-tf-table tbody { display: block; }
+  .ui-work.ui-work .sp-tf-table > tbody > tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.25rem 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); }
+  .ui-work.ui-work .sp-tf-table > tbody > tr > td { padding: 0; border: 0; }
+  .ui-work.ui-work .sp-tf-table > tbody > tr > td.sp-tf-date { display: none; }
+  .ui-work.ui-work .sp-tf-table > tbody > tr > td.sp-tf-state { grid-column: 1 / -1; grid-row: 2; }
+  .ui-work.ui-work .sp-tf-table > tbody > tr > td.sp-tf-act { grid-column: 2; grid-row: 1; }
+  .sp-tf-body { padding: 0.25rem 0.75rem 0.75rem; }
+  .sp-tf-head { padding-left: 0.75rem; }
+  .sp-tf-head .sp-tf-zip { margin-left: 0; }
+  .sp-tf-gone-act { margin-left: 0; }
   .ui-work.ui-work .sp-td-table { min-width: 0; table-layout: auto; }
   .sp-td-table colgroup, .sp-td-table thead { display: none; }
   .sp-td-table, .sp-td-table tbody { display: block; }

@@ -152,6 +152,14 @@ const sameList = (a, b) => a === b || (!!a && !!b && a.length === b.length && a.
 // позиций с ним) меняется при каждом «Взять» и «Применить», но решает только, какой из повторов оставить.
 export const sameOfferView = (a, b) => sameList(a.docs, b.docs) && a.dupes.length === b.dupes.length
   && a.dupes.every((x, i) => x.doc === b.dupes[i].doc && x.of === b.dupes[i].of)
+// Документы для сопоставления ([{ doc, offer }]) те же: тот же файл, те же объекты строк (keepSameLines) и то, что сопоставление
+// читает у документа (offersByGroup, docInfo, offerDate). Убранные из окна позиции (offer.hidden) цен не меняют: «Убрать
+// неотмеченные» у 24 документов (24.11.2026) пересчитывало сопоставление всех строк с позициями по разу на каждый документ.
+const sameJson = (a, b) => a === b || JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+const sameForMatch = (a, b) => a === b || (a.currency === b.currency && a.date === b.date && a.ocr === b.ocr
+  && sameJson(a.vat, b.vat) && sameJson(a.total, b.total) && sameList(a.lines, b.lines))
+export const sameMatchDocs = (a, b) => a === b || (!!a && !!b && a.length === b.length
+  && a.every((x, i) => x.doc === b[i].doc && sameForMatch(x.offer, b[i].offer)))
 // Документы, перечитанные из базы ([{ doc, offer, notes }], возврат на вкладку браузера): тот же файл с теми же строками (notes —
 // строкой, как в базе) — прежняя запись; ничего не изменилось — прежний список. Запись без notes (не из базы) заменяется.
 export function keepSameOffers(prev, next) {

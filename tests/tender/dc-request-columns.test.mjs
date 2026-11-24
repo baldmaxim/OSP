@@ -305,7 +305,8 @@ describe('Реестр заявок на ДС: ширины столбцов', {
       assert.equal(await page.locator('.fdrop-panel').count(), 0, 'перетаскивание границы фильтр не открыло')
       await th.locator('.col-resize').click()
       assert.equal(await page.locator('.fdrop-panel').count(), 0, 'щелчок по границе фильтр не открыл')
-      await th.locator('.dcr-th-fdrop .fdrop-trigger').click()
+      // Название — фильтр по ответственному; воронка рядом — по статусу (24.11.2026).
+      await th.locator('.dcr-th-fdrop:not(.dcr-th-status-fdrop) .fdrop-trigger').click()
       await page.locator('.fdrop-panel .fdrop-option', { hasText: 'Удорожаев' }).click()
       await page.keyboard.press('Escape')
       assert.equal(await page.locator('.dcr-table tbody tr').count(), 1)

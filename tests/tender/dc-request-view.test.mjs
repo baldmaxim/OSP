@@ -27,11 +27,18 @@ describe('Вид реестра заявок на ДС в хранилище в�
     const storage = memoryStorage()
     const view = {
       tab: 'in_work', search: 'ДС-12', statuses: [], objects: ['obj-1'], counterparties: ['cp-1', 'cp-2'],
-      responsibles: ['c-1'], divisions: ['monolith', 'none'], subResps: ['user-7', '__none__'], expanded: ['d2'],
-      notesOpen: ['d1'],
+      responsibles: ['c-1'], divisions: ['monolith', 'none'], subResps: ['user-7', '__none__'], subChecks: ['submitted', 'not_checked'],
+      expanded: ['d2'], notesOpen: ['d1'],
     }
     writeDcView(view, storage)
     assert.deepEqual(readDcView(storage, TABS), view)
+  })
+
+  it('вид, записанный до фильтра по статусу ОКС (24.11.2026), читается: фильтра нет — пустой список', () => {
+    const old = memoryStorage({ [DC_VIEW_KEY]: JSON.stringify({ tab: 'all', search: '', subResps: ['user-7'], expanded: [] }) })
+    const view = readDcView(old, TABS)
+    assert.deepEqual(view.subChecks, [])
+    assert.deepEqual(view.subResps, ['user-7'])
   })
 
   it('пусто, испорчено, недоступно — вид по умолчанию; вкладки, которой нет, — «Все»; мусор в списках отброшен', () => {

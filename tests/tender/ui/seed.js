@@ -295,6 +295,24 @@ if (BIG_PRICING > 0) {
     })
   }
   window.__fakeDb.s3_documents = window.__fakeDb.s3_documents.filter((d) => d.owner_id !== 'tender-p')
+  // bigOffers=N — к большому тендеру N прочитанных счетов (у каждого — строки на свои 120 позиций, через одну с другим
+  // написанием): замер окна «Счета и КП» («Убрать неотмеченные», «Применить цены») на объёме прода (24 документа).
+  const BIG_OFFERS = Number(params.get('bigOffers') || 0)
+  const sources = window.__fakeDb.tender_supply_sources
+  for (let d = 0; d < BIG_OFFERS; d++) {
+    const lines = []
+    for (let j = 0; j < 120; j++) {
+      const src = sources[(d + j) % sources.length]
+      const p = src.positions[(d * 37 + j * 7) % src.positions.length]
+      lines.push({ n: j % 2 ? `${p.name} (поставщик ${d + 1})` : p.name, p: 200 + d + j, u: p.unit, q: p.volume })
+    }
+    window.__fakeDb.s3_documents.push({
+      id: `doc-big-${d}`, owner_type: 'tender', owner_id: 'tender-p', doc_category: 'supply_doc', file_name: `Счёт ${d + 1}.xlsx`,
+      s3_key: `tenders/tender-p/big-${d}.xlsx`, created_at: `2026-11-${String(1 + (d % 20)).padStart(2, '0')}T09:00:00Z`,
+      uploaded_by_name: 'Снабженцев С. С.', size_bytes: 9000 + d,
+      notes: JSON.stringify({ kind: 'supply_offer', v: 1, rv: 3, at: '2026-11-20T09:00:00Z', source: null, vat: null, delivery: 1, lines }),
+    })
+  }
 }
 
 // Тендер без файлов ВОР: позиции берутся из вкладки «ВОР» карточки (tender_estimate_items).

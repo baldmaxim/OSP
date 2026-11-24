@@ -549,8 +549,9 @@ function SubRespPicker({ req, staff, canEdit, loadError, onChange }) {
 // Фильтр «Ответственный за статус ОКС». На компьютере (inHeader) кнопка фильтра — само название столбца «Статус ОКС»
 // (решение 30.10.2026: отдельной плашки «Ответственный» нет): нажатие открывает список ответственных; выбран — название
 // акцентом, под ним — кто выбран и крестик сброса. На телефоне шапки нет — в панели фильтров. value — id сотрудников и
-// NO_SUBMISSION_RESP; пусто — фильтр не применён.
-function SubRespFilter({ value, onChange, options, inHeader = false }) {
+// NO_SUBMISSION_RESP; пусто — фильтр не применён. С 24.11.2026 у названия значок человека: воронка рядом — фильтр по самому
+// статусу (SubStatusFilter); extra — она, ставится в строку с названием, extraChosen — её выбранное, под выбранным ответственным.
+function SubRespFilter({ value, onChange, options, inHeader = false, extra = null, extraChosen = null }) {
   const active = value.length > 0
   const names = value.map(v => options.find(o => o.value === v)?.name).filter(Boolean)
   const shown = names.length === 1 ? names[0] : `Ответственных: ${value.length}`
@@ -570,7 +571,7 @@ function SubRespFilter({ value, onChange, options, inHeader = false }) {
         ? `Статус ОКС — фильтр по ответственному: ${names.join(', ')}`
         : 'Статус ОКС — нажмите, чтобы отобрать заявки по ответственному'}
       formatTrigger={() => (inHeader
-        ? <><span className="dcr-th-sub-title">Статус ОКС</span><IconFilter size={11} /></>
+        ? <><span className="dcr-th-sub-title">Статус ОКС</span><IconUser size={11} /></>
         : active
           ? <><span className="ui-sr-only">Ответственный за статус ОКС: </span>{shown}</>
           : 'Все ответственные ОКС')}
@@ -579,7 +580,7 @@ function SubRespFilter({ value, onChange, options, inHeader = false }) {
   if (!inHeader) return dropdown
   return (
     <span className={`dcr-th-sub${active ? ' is-active' : ''}`}>
-      {dropdown}
+      <span className="dcr-th-sub-line">{dropdown}{extra}</span>
       {active && (
         <span className="dcr-th-sub-chosen">
           <span className="dcr-th-sub-who">
@@ -596,6 +597,53 @@ function SubRespFilter({ value, onChange, options, inHeader = false }) {
           </button>
         </span>
       )}
+      {extraChosen}
+    </span>
+  )
+}
+
+// Фильтр по самому «Статусу ОКС» (24.11.2026, просьба пользователя: в заголовке был только фильтр по ответственному — нужен и по
+// статусу, вторым, вместе с ним). На компьютере (inHeader) — значок воронки рядом с названием столбца, выбранное — строкой под
+// ним с крестиком сброса (chosen); на телефоне — в панели фильтров. value — значения submission_check (SUBMISSION_OPTIONS). В
+// заголовке у кнопки только значок: имя для диктора — из подсказки (title), текст заголовка остаётся «Статус ОКС».
+function SubStatusFilter({ value, onChange, options, inHeader = false }) {
+  const active = value.length > 0
+  const names = value.map(v => SUBMISSION_LABEL[v]).filter(Boolean)
+  const shown = names.length === 1 ? names[0] : `Статусов ОКС: ${value.length}`
+  return (
+    <FilterDropdown
+      className={inHeader ? 'dcr-th-fdrop dcr-th-status-fdrop' : ''}
+      label=""
+      multiple
+      allLabel="Все статусы ОКС"
+      icon={inHeader ? null : <IconFilter size={15} />}
+      value={value}
+      onChange={onChange}
+      options={options}
+      triggerTitle={active
+        ? `Статус ОКС — фильтр по статусу: ${names.join(', ')}`
+        : 'Статус ОКС — фильтр по статусу: нажмите, чтобы отобрать заявки'}
+      formatTrigger={() => (inHeader
+        ? <IconFilter size={11} />
+        : active ? <><span className="ui-sr-only">Статус ОКС: </span>{shown}</> : 'Все статусы ОКС')}
+    />
+  )
+}
+function SubStatusChosen({ value, onChange }) {
+  if (!value.length) return null
+  const names = value.map(v => SUBMISSION_LABEL[v]).filter(Boolean)
+  return (
+    <span className="dcr-th-sub-chosen dcr-th-status-chosen">
+      <span className="dcr-th-sub-who" title={names.join(', ')}>{names.length === 1 ? names[0] : `Статусов: ${value.length}`}</span>
+      <button
+        type="button"
+        className="dcr-th-sub-clear"
+        onClick={() => onChange([])}
+        aria-label="Сбросить фильтр по статусу ОКС"
+        title="Сбросить фильтр: все статусы ОКС"
+      >
+        <IconClose size={10} />
+      </button>
     </span>
   )
 }
@@ -670,6 +718,8 @@ function DcRequestsPage() {
   const [filterDivisions, setFilterDivisions] = useState(savedView.divisions)
   // Фильтр «Ответственный за статус ОКС» (id сотрудников, NO_SUBMISSION_RESP — не назначен) — в заголовке столбца.
   const [filterSubResps, setFilterSubResps] = useState(savedView.subResps)
+  // Фильтр по самому статусу ОКС (значения submission_check) — в заголовке столбца рядом с фильтром по ответственному.
+  const [filterSubChecks, setFilterSubChecks] = useState(savedView.subChecks)
   // Сотрудники для выбора ответственного за статус ОКС (справочник employee_directory; роль — на странице).
   const [employees, setEmployees] = useState([])
   const [employeesError, setEmployeesError] = useState('')
@@ -757,10 +807,10 @@ function DcRequestsPage() {
     writeDcView({
       tab: activeTab, search: searchQuery, statuses: filterStatuses, objects: filterObjectIds,
       counterparties: filterCounterpartyIds, responsibles: filterResponsibleIds, divisions: filterDivisions,
-      subResps: filterSubResps, expanded: [...expandedDocs], notesOpen: [...openNotes],
+      subResps: filterSubResps, subChecks: filterSubChecks, expanded: [...expandedDocs], notesOpen: [...openNotes],
     })
   }, [activeTab, searchQuery, filterStatuses, filterObjectIds, filterCounterpartyIds, filterResponsibleIds, filterDivisions,
-    filterSubResps, expandedDocs, openNotes])
+    filterSubResps, filterSubChecks, expandedDocs, openNotes])
 
   // Прокрутку возвращаем, когда высота строк окончательная: заявки, их файлы и договоры (подписи договоров).
   // На компьютере прокручивается таблица под закреплённой шапкой, на телефоне — страница.
@@ -1834,6 +1884,7 @@ function DcRequestsPage() {
   // Ответственный за статус ОКС и фильтр по нему — когда есть и его колонки (миграция 20261117).
   const subRespEnabled = submissionEnabled && hasSubmissionRespColumns(requests)
   const subRespFilterOn = subRespEnabled && filterSubResps.length > 0
+  const subCheckFilterOn = submissionEnabled && filterSubChecks.length > 0
   // Примечание — когда есть колонка (миграция 20261230). Сотруднику, привязанному к объектам, не показывается: это
   // внутренние заметки, как примечание юриста в реестре договоров (hideNotes в ContractsPage). Пишут те, кто правит
   // раздел, и «Отдел по удорожанию»: он рассматривает заявки, а права правки раздела у него нет.
@@ -1896,8 +1947,20 @@ function DcRequestsPage() {
       .map(([value, label]) => ({ value, label: `${label} (${counts.get(value) || 0})`, name: label }))
   })()
 
+  // Фильтр по статусу ОКС: варианты по порядку выбора в ячейке; число — заявок вкладки без этого фильтра.
+  const subCheckOptions = (() => {
+    if (!submissionEnabled) return []
+    const counts = new Map()
+    for (const r of requests) {
+      if (isDeletedTab ? r.deleted_at == null : r.deleted_at != null) continue
+      const key = submissionOf(r)
+      counts.set(key, (counts.get(key) || 0) + 1)
+    }
+    return SUBMISSION_OPTIONS.map(o => ({ value: o.value, label: `${o.label} (${counts.get(o.value) || 0})` }))
+  })()
+
   // Фильтрация: таб (soft-delete) → статусы → объект → контрагент → ответственный → подразделение → ответственный
-  // за статус ОКС → поиск.
+  // за статус ОКС → статус ОКС → поиск.
   // Выгрузка в Excel берёт этот же список, поэтому при нескольких выбранных
   // статусах в файл попадают заявки всех этих статусов.
   const filtered = requests
@@ -1910,6 +1973,7 @@ function DcRequestsPage() {
     .filter(r => filterResponsibleIds.length === 0 || filterResponsibleIds.includes(r.responsible_contact_id))
     .filter(r => !divisionFilterOn || filterDivisions.includes(r.division || NO_VOR_DIVISION))
     .filter(r => !subRespFilterOn || filterSubResps.includes(submissionRespKey(r)))
+    .filter(r => !subCheckFilterOn || filterSubChecks.includes(submissionOf(r)))
     .filter(r => {
       const q = searchQuery.trim().toLowerCase()
       if (!q) return true
@@ -2832,11 +2896,16 @@ function DcRequestsPage() {
             <SubRespFilter value={filterSubResps} onChange={setFilterSubResps} options={subRespOptions} />
           </div>
         )}
-        {(filterStatuses.length > 0 || filterObjectIds.length > 0 || filterCounterpartyIds.length > 0 || filterResponsibleIds.length > 0 || divisionFilterOn || subRespFilterOn) && (
+        {submissionEnabled && isPhone && (
+          <div className={`dcr-filter-drop${filterSubChecks.length ? ' is-active' : ''}`}>
+            <SubStatusFilter value={filterSubChecks} onChange={setFilterSubChecks} options={subCheckOptions} />
+          </div>
+        )}
+        {(filterStatuses.length > 0 || filterObjectIds.length > 0 || filterCounterpartyIds.length > 0 || filterResponsibleIds.length > 0 || divisionFilterOn || subRespFilterOn || subCheckFilterOn) && (
           <button
             type="button"
             className="dcr-filter-clear"
-            onClick={() => { setFilterStatuses([]); setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterResponsibleIds([]); setFilterDivisions([]); setFilterSubResps([]) }}
+            onClick={() => { setFilterStatuses([]); setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterResponsibleIds([]); setFilterDivisions([]); setFilterSubResps([]); setFilterSubChecks([]) }}
             title="Сбросить фильтры"
           >Сбросить</button>
         )}
@@ -3035,10 +3104,20 @@ function DcRequestsPage() {
                 {/* Статус ОКС — подаётся ли ДС заказчику; под ним пояснение (номер письма, срок…).
                     Перед последним столбцом («Действия»). Название — кнопка фильтра по ответственному. */}
                 {submissionEnabled && (
-                  <th className={subRespFilterOn ? 'dcr-th-filtered' : undefined}>
-                    {subRespEnabled
-                      ? <SubRespFilter inHeader value={filterSubResps} onChange={setFilterSubResps} options={subRespOptions} />
-                      : 'Статус ОКС'}
+                  <th className={subRespFilterOn || subCheckFilterOn ? 'dcr-th-filtered' : undefined}>
+                    {subRespEnabled ? (
+                      <SubRespFilter inHeader value={filterSubResps} onChange={setFilterSubResps} options={subRespOptions}
+                        extra={<SubStatusFilter inHeader value={filterSubChecks} onChange={setFilterSubChecks} options={subCheckOptions} />}
+                        extraChosen={<SubStatusChosen value={filterSubChecks} onChange={setFilterSubChecks} />} />
+                    ) : (
+                      <span className={`dcr-th-sub dcr-th-sub-plain${filterSubChecks.length ? ' is-status-active' : ''}`}>
+                        <span className="dcr-th-sub-line">
+                          <span className="dcr-th-sub-title">Статус ОКС</span>
+                          <SubStatusFilter inHeader value={filterSubChecks} onChange={setFilterSubChecks} options={subCheckOptions} />
+                        </span>
+                        <SubStatusChosen value={filterSubChecks} onChange={setFilterSubChecks} />
+                      </span>
+                    )}
                     {resizer('sub')}
                   </th>
                 )}

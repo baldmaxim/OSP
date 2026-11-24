@@ -20,8 +20,9 @@ const DownloadIcon = () => (
   </svg>
 )
 
-// docs — уже загруженные строки списка; ownerName — кому принадлежат (имя архива); title — название раздела.
-export default function DocListZipButton({ docs, ownerName, title }) {
+// docs — уже загруженные строки списка; ownerName — кому принадлежат (имя архива); title — название раздела; className — вид
+// кнопки там, где стилей списка документов нет (окно файлов расценки снабжения).
+export default function DocListZipButton({ docs, ownerName, title, className = 's3-doc-btn-secondary' }) {
   // null — свободна; { done, total } — идёт сборка.
   const [progress, setProgress] = useState(null)
   const busy = progress != null
@@ -62,7 +63,7 @@ export default function DocListZipButton({ docs, ownerName, title }) {
   return (
     <button
       type="button"
-      className="s3-doc-btn-secondary"
+      className={className}
       onClick={handleClick}
       disabled={busy || !count}
       aria-busy={busy}

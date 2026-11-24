@@ -3101,8 +3101,16 @@
   outline: 2px solid var(--primary-color);
   outline-offset: 1px;
 }
-.dc-requests-page .dcr-th-sub.is-active .fdrop.dcr-th-fdrop .fdrop-trigger { color: var(--ui-link, var(--primary-color)); font-weight: var(--ui-semibold, 600); }
-.dc-requests-page .dcr-th-sub.is-active .fdrop.dcr-th-fdrop .fdrop-value svg { opacity: 1; }
+.dc-requests-page .dcr-th-sub.is-active .fdrop.dcr-th-fdrop:not(.dcr-th-status-fdrop) .fdrop-trigger { color: var(--ui-link, var(--primary-color)); font-weight: var(--ui-semibold, 600); }
+.dc-requests-page .dcr-th-sub.is-active .fdrop.dcr-th-fdrop:not(.dcr-th-status-fdrop) .fdrop-value svg { opacity: 1; }
+/* Второй фильтр — по самому статусу ОКС (24.11.2026): значок воронки в строке с названием; у названия — значок человека
+   (фильтр по ответственному). Выбран — воронка акцентом, под названием — выбранный статус и крестик. */
+.dc-requests-page .dcr-th-sub-line { display: inline-flex; align-items: center; gap: 0.375rem; max-width: 100%; min-width: 0; }
+.dc-requests-page .dcr-th-sub-line > .fdrop.dcr-th-fdrop:not(.dcr-th-status-fdrop) { min-width: 0; }
+.dc-requests-page .fdrop.dcr-th-status-fdrop { flex: none; }
+.dc-requests-page .fdrop.dcr-th-status-fdrop .fdrop-trigger { padding: 0.125rem; }
+.dc-requests-page .fdrop.dcr-th-status-fdrop.is-active .fdrop-trigger { color: var(--ui-link, var(--primary-color)); }
+.dc-requests-page .fdrop.dcr-th-status-fdrop.is-active .fdrop-value svg { opacity: 1; }
 .dc-requests-page .dcr-th-sub-chosen {
   display: inline-flex;
   align-items: center;
