@@ -7,7 +7,8 @@ import { lineTotal } from '../../utils/bidPrice'
 // Список «Материалы» или «Работы» расценки подрядчика: уникальные позиции ведомостей тендера, цена за единицу с НДС и примечание.
 // Решения пользователя 24.11.2026: не расценённая позиция — жёлтым (как «Сравнение КП»); ведомость выбрана — объём и сумма по ней;
 // что изменилось в новой версии ВОР — отметкой в строке («новая», «было …»), как в расценке снабжения; разрешены цены снабжения —
-// колонка «Цена СУ-10» с кнопкой «взять». Длинный список — только видимые строки (как расценка снабжением).
+// колонка «Цена СУ-10» с кнопкой «взять»; у взятой цены снабжения — «счёт» (файл счёта / КП поставщика этой позиции, решение пользователя
+// 25.11.2026). Длинный список — только видимые строки (как расценка снабжением).
 
 const VIRTUAL_FROM = 150
 const fmtVolume = (v) => (v == null ? '—' : Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 4 }))
@@ -35,7 +36,7 @@ function ChangeMark({ c, withTitle, unit }) {
 
 export default function BidPositionsTable({
   kind, positions, rates, history, tenderNumbers, canEdit, vors, vorId = '', onVorChange, titleOf, changes = null,
-  supply = null, onTakeSupply, supplyBusy = false, vatExempt = false, onCommit,
+  supply = null, supplyDocs = null, onSupplyDoc, onTakeSupply, supplyBusy = false, vatExempt = false, onCommit,
 }) {
   const [query, setQuery] = useState('')
   const [onlyEmpty, setOnlyEmpty] = useState(false)
@@ -81,6 +82,8 @@ export default function BidPositionsTable({
     const marks = changesOf(p, changes, vorId, titleOf)
     const sp = showSupply ? supply.get(p.key) ?? null : null
     const fromSupply = price != null && r?.source === 'supply'
+    // Счёт — только у цены снабжения, которую не меняли (база отдаёт счета так же; здесь — и до перечитывания после правки).
+    const docs = fromSupply && supplyDocs && (sp == null || sp === price) ? supplyDocs.get(`${p.itemKey}|${p.unitKey}`) || null : null
     return (
       <tr key={p.key} className={price != null ? 'is-priced' : 'is-unpriced'}>
         <td className="bid-col-n">{i + 1}</td>
@@ -126,7 +129,20 @@ export default function BidPositionsTable({
               onCommit(p, { price: v == null || v < 0 ? null : Math.round(v * 100) / 100, source: 'manual' })
             }}
           />
-          {fromSupply && <span className="bid-source">цена снабжения</span>}
+          {fromSupply && (
+            <span className="bid-source">
+              цена снабжения
+              {docs?.map((d, n) => (
+                <span key={d.id}>
+                  {' · '}
+                  <button type="button" className="bid-link bid-doc-link" title={d.file_name}
+                    aria-label={`Счёт снабжения «${d.file_name}»: ${p.name}`} onClick={() => onSupplyDoc(d)}>
+                    {docs.length > 1 ? `счёт ${n + 1}` : 'счёт'}
+                  </button>
+                </span>
+              ))}
+            </span>
+          )}
         </td>
         <td className="num bid-col-sum">{price != null && volume != null ? formatAmount(lineTotal(price, volume)) : 'нет цены'}</td>
         <td className="bid-col-note">

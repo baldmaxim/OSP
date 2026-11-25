@@ -131,6 +131,7 @@ describe('osp-api: права объявлены на маршруте, закр
       'POST /api/fn/s3-presign download': { method: 'POST', url: '/api/fn/s3-presign', payload: { action: 'download' } },
       'POST /api/fn/s3-presign delete': { method: 'POST', url: '/api/fn/s3-presign', payload: { action: 'delete' } },
       'POST /api/fn/bid-vor-file': { method: 'POST', url: '/api/fn/bid-vor-file', payload: {} },
+      'POST /api/fn/bid-supply-doc': { method: 'POST', url: '/api/fn/bid-supply-doc', payload: {} },
       'POST /api/fn/bid-file': { method: 'POST', url: '/api/fn/bid-file', payload: {} },
       'POST /api/admin/bid-file': { method: 'POST', url: '/api/admin/bid-file', payload: {} },
       'POST /api/fn/cover-upload': { method: 'POST', url: '/api/fn/cover-upload', payload: {} },
@@ -253,6 +254,11 @@ describe('osp-api: права объявлены на маршруте, закр
     assert.equal(measured['POST /api/fn/bid-vor-file'].contractor, 400)
     for (const denied of ['employee', 'admin', 'contractor_noorg', 'unapproved', 'blocked', 'no_user_roles']) {
       assert.equal(measured['POST /api/fn/bid-vor-file'][denied], 403, denied)
+    }
+    // Счёт снабжения к взятой цене (20270302): как файл ВОР — только подрядчик с организацией, право на файл решает функция базы.
+    assert.equal(measured['POST /api/fn/bid-supply-doc'].contractor, 400)
+    for (const denied of ['employee', 'admin', 'contractor_noorg', 'unapproved', 'blocked', 'no_user_roles']) {
+      assert.equal(measured['POST /api/fn/bid-supply-doc'][denied], 403, denied)
     }
     // Свой ВОР с расценками (20270113): подрядчику с организацией — загрузка, скачивание, удаление; администратору — только скачивание.
     assert.equal(measured['POST /api/fn/bid-file'].contractor, 400)

@@ -6,7 +6,7 @@
 // подрядчика участником (bid_decide). Цены и анкету читает администратор (bid_admin_overview) и сама организация.
 //
 // Пока миграции нет, функции и таблицы отвечают «не найдено» — сервис возвращает null, страницы работают как раньше.
-import { db, requestBidFile, requestBidFileAdmin } from '../api'
+import { db, requestBidFile, requestBidFileAdmin, requestBidSupplyDoc } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { uuidv7 } from '../utils/uuid'
 import { fetchFileBytes, unwrapFunction } from './s3'
@@ -301,6 +301,26 @@ export async function loadMyRateHistory(excludeTenderId, limit = 20000, page = 1
   return rows
 }
 
+// Последняя своя цена по каждой позиции тендера в других тендерах (миграция 20270302): один запрос на порцию в 1000 ключей (ответ — не
+// больше строки на ключ, в пределах 1000 строк PostgREST); порции — по очереди (у учётки с регистрации предел одновременных запросов
+// шлюза, а обычно порция и так одна). Раньше — постранично все свои цены (до 20 запросов подряд на каждое открытие тендера); функции
+// нет — так и остаётся. keys — ключи позиций «вид|наименование|ед. изм.».
+const HISTORY_CHUNK = 1000
+export async function loadRateHistory(tenderId, keys) {
+  const list = [...new Set(keys || [])]
+  if (!list.length) return []
+  const rows = []
+  for (let i = 0; i < list.length; i += HISTORY_CHUNK) {
+    const { data, error } = await db.rpc('bid_rate_history', { p_tender: tenderId, p_keys: list.slice(i, i + HISTORY_CHUNK) })
+    if (error) {
+      if (isMissingBids(error)) return loadMyRateHistory(tenderId)
+      throw error
+    }
+    rows.push(...(data || []))
+  }
+  return rows
+}
+
 // Запись цен порциями (функция принимает до 2000 строк). rows — [{ kind, key, unit_key, name, unit, volume, price,
 // note, source }]; price = null и пустое примечание — цена убирается.
 export const SAVE_CHUNK = 500
@@ -342,6 +362,40 @@ export async function loadSupplyPrices(tenderId, previewCounterpartyId = null) {
   if (previewCounterpartyId) args.p_counterparty = previewCounterpartyId
   const rows = unwrap(await db.rpc('bid_supply_prices', args)) || []
   return new Map(rows.map((r) => [`${r.item_key}|${r.unit_key || ''}`, Number(r.price)]))
+}
+
+// Счета снабжения к ценам, которые организация взяла у снабжения (миграция 20270302): Map(`${item_key}|${unit_key}` →
+// [{ id, file_name, uploaded_at }]) — у позиции бывает несколько файлов (разные ВОР). Только с разрешением отдела, пока идёт приём, и
+// только у цены снабжения, которую не меняли. null — функции ещё нет (база раньше миграции): счетов просто нет.
+export async function loadSupplyDocs(tenderId, previewCounterpartyId = null) {
+  const args = { p_tender: tenderId }
+  if (previewCounterpartyId) args.p_counterparty = previewCounterpartyId
+  let rows
+  try {
+    rows = await fetchAllRows((from, to) => db.rpc('bid_supply_docs', args).range(from, to))
+  } catch (e) {
+    if (isMissingBids(e)) return null
+    throw e
+  }
+  const map = new Map()
+  for (const r of rows) {
+    const k = `${r.item_key}|${r.unit_key || ''}`
+    if (!map.has(k)) map.set(k, [])
+    if (!map.get(k).some((d) => d.id === r.document_id)) map.get(k).push({ id: r.document_id, file_name: r.file_name, uploaded_at: r.uploaded_at })
+  }
+  return map
+}
+
+// Счёт снабжения: подрядчику — ссылка от службы (строки s3_documents ему закрыты), сотруднику в просмотре от имени подрядчика — обычным
+// путём файлов по ключу из строки документа (её ему показывает правило базы).
+export async function supplyDocUrl(tenderId, documentId) {
+  return unwrapFunction(await requestBidSupplyDoc(tenderId, documentId))
+}
+export async function supplyDocKey(documentId) {
+  const { data, error } = await db.from('s3_documents').select('s3_key, file_name').eq('id', documentId).maybeSingle()
+  if (error) throw error
+  if (!data?.s3_key) throw new Error('файл не найден')
+  return data
 }
 
 // Взять цены снабжения для позиций материалов: [{ key, unit_key, name, unit, volume }]; replace — заменить и свою цену. → сколько записано.

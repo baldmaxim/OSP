@@ -27,6 +27,11 @@
 // bids/<тендер>/<организация из базы>/<ключ операции>-<имя>, база принимает ключ только в каталоге своей организации; браузер ключа
 // не получает и не задаёт. Сводку сумм считает страница (разбор файла — в браузере, как «Цены из файла»), служба оставляет в ней
 // только известные поля с числами в своих пределах.
+//
+// Тип файла (25.11.2026): с 24.11.2026 страница этот путь не вызывает (BidVorFiles удалён), но маршрут открыт подрядчику — а сотрудник
+// скачивает эти файлы из «Расценок подрядчиков», проверки антивирусом у хранилища нет. Поэтому — только книга .xlsx: имя на .xlsx и
+// тип из допустимых для неё (upload и confirm), содержимое начинается с сигнатуры ZIP (confirm, первые байты объекта). Остальное —
+// .xlsm/.xls (макросы), PDF, .exe, .html, переименованный файл — отказ OSP_NOT_WORKBOOK, загруженный объект убирается.
 import { GetObjectCommand, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { z } from 'zod'
@@ -42,6 +47,22 @@ const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const NOT_FOUND = 'Файл недоступен: приём предложений закрыт или заявка не подана'
 export const BID_FILE_MAX_BYTES = 25 * 1024 * 1024
 const RATE = { limiter: 'presignRate', deny: 'Слишком много запросов к файлам — подождите минуту' }
+
+// Свой ВОР — только .xlsx: Excel не запускает макросы из .xlsx. Тип, который браузер сообщает для .xlsx, бывает и общим (пустой →
+// octet-stream у страницы, vnd.ms-excel на части Windows); всё равно файл скачивается вложением, а не открывается на сайте.
+const XLSX_MIME = new Set([
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream', 'application/vnd.ms-excel',
+])
+const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04]
+const NOT_WORKBOOK = 'Свой ВОР — только книга Excel .xlsx до 25 МБ (без макросов: не .xlsm и не .xls)'
+export const isBidWorkbook = (fileName, mime, size) => /\.xlsx$/i.test(String(fileName || '').trim())
+  && XLSX_MIME.has(String(mime || '').toLowerCase()) && Number.isSafeInteger(size) && size >= ZIP_MAGIC.length
+// Первые байты объекта (Range): у книги .xlsx — сигнатура ZIP.
+async function startsAsZip(s3, bucket, key) {
+  const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: `bytes=0-${ZIP_MAGIC.length - 1}` }))
+  const head = await res.Body.transformToByteArray()
+  return head.length >= ZIP_MAGIC.length && ZIP_MAGIC.every((b, i) => head[i] === b)
+}
 
 // ── Сводка файла: только известные поля ─────────────────────────────────────────────────────────────
 const money = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 1e13 ? Math.round(v * 100) / 100 : null)
@@ -111,6 +132,32 @@ export function registerBidFiles(app, { config, getS3, isReadOnly = () => false,
     return { presigned_url: url, expires_in: DOWNLOAD_TTL_SEC, file_name: row.file_name }
   } })
 
+  // Счёт снабжения к цене, которую организация взяла у снабжения (миграция 20270302): решает bid_supply_doc_file под входом подрядчика —
+  // разрешение отдела, приём идёт, цена позиции взята и не изменена, файл — документ этой позиции. Строки s3_documents подрядчику
+  // закрыты (в notes счёта — все его строки), поэтому — свой маршрут, как файл ВОР.
+  app.route({ method: 'POST', url: '/api/fn/bid-supply-doc', config: {
+    access: access.user({ require: 'contractor', deny: 'Счёт снабжения — только для подрядчика', rate: RATE }),
+    body: z.object({ tender_id: z.string().regex(UUID), document_id: z.string().regex(UUID) }),
+  }, handler: async (request, reply) => {
+    const { data, error } = await request.auth.supabase.rpc('bid_supply_doc_file', {
+      p_tender: request.body.tender_id, p_doc: request.body.document_id,
+    })
+    if (error) {
+      if (error.code === '42501') return reply.code(403).send({ error: 'Счёт снабжения — только для подрядчика' })
+      if (error.code === '42883' || error.code === 'PGRST202') return reply.code(404).send({ error: 'Счета снабжения появятся после обновления базы' })
+      request.log.error({ code: error.code, msg: String(error.message || '').slice(0, 200) }, 'bid_supply_doc_file')
+      return reply.code(500).send({ error: 'Не удалось получить счёт' })
+    }
+    const row = Array.isArray(data) ? data[0] : data
+    if (!row?.s3_key) return reply.code(404).send({ error: 'Счёт недоступен: отдел не разрешил цены снабжения, приём закрыт или цена позиции уже не снабжения' })
+    const url = await getSignedUrl(getS3(), new GetObjectCommand({
+      Bucket: config.s3.bucket,
+      Key: row.s3_key,
+      ResponseContentDisposition: attachmentDisposition(row.file_name),
+    }), { expiresIn: DOWNLOAD_TTL_SEC })
+    return { presigned_url: url, expires_in: DOWNLOAD_TTL_SEC, file_name: row.file_name }
+  } })
+
   // Ссылка на скачивание своего файла (или любого — администратору): решает bid_file_get под входом вошедшего.
   const downloadUrl = async (request, reply, fileId) => {
     const { data, error } = await request.auth.supabase.rpc('bid_file_get', { p_file: fileId })
@@ -172,6 +219,8 @@ export function registerBidFiles(app, { config, getS3, isReadOnly = () => false,
       return reply.code(400).send({ error: 'Не хватает полей файла' })
     }
     if (body.size_bytes > BID_FILE_MAX_BYTES) return reply.code(400).send({ error: 'Файл больше 25 МБ' })
+    const mime = body.mime_type || 'application/octet-stream'
+    if (!isBidWorkbook(fileName, mime, body.size_bytes)) return reply.code(400).send({ error: NOT_WORKBOOK, code: 'OSP_NOT_WORKBOOK' })
     const { data: target, error: targetError } = await supabase.rpc('bid_file_target', { p_tender: tenderId, p_vor_file: vorFileId })
     if (targetError) {
       const known = refusal(targetError)
@@ -182,7 +231,6 @@ export function registerBidFiles(app, { config, getS3, isReadOnly = () => false,
     const row = Array.isArray(target) ? target[0] : target
     if (!row?.counterparty_id) return reply.code(403).send({ error: NOT_FOUND })
     const key = `bids/${tenderId.toLowerCase()}/${String(row.counterparty_id).toLowerCase()}/${operationId.toLowerCase()}-${sanitizeFileName(fileName)}`
-    const mime = body.mime_type || 'application/octet-stream'
     const s3 = getS3()
 
     if (body.action === 'upload') {
@@ -205,6 +253,12 @@ export function registerBidFiles(app, { config, getS3, isReadOnly = () => false,
     }
     if (Number(stored.ContentLength) !== body.size_bytes) {
       return reply.code(409).send({ error: 'Размер файла в хранилище не совпадает с выбранным', code: 'OSP_SIZE_MISMATCH' })
+    }
+    // По ссылке на PUT загружаются любые байты заявленного размера: содержимое — книга .xlsx, а не переименованный файл.
+    if (!(await startsAsZip(s3, config.s3.bucket, key))) {
+      await dropObject(request, key)
+      await intents.drop(key)
+      return reply.code(400).send({ error: NOT_WORKBOOK, code: 'OSP_NOT_WORKBOOK' })
     }
     const { data: prev, error: saveError } = await supabase.rpc('bid_file_save', {
       p_tender: tenderId, p_vor_file: vorFileId, p_s3_key: key, p_file_name: fileName, p_mime: mime,

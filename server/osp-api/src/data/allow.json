@@ -1215,6 +1215,12 @@
     ],
     "bid_vor_changes": [
       "authenticated"
+    ],
+    "bid_supply_docs": [
+      "authenticated"
+    ],
+    "bid_rate_history": [
+      "authenticated"
     ]
   }
 }

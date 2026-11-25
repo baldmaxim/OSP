@@ -615,6 +615,50 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
     assert.equal(read('allow-self-contractor.json').rpc.bid_vor_file, undefined)
   })
 
+  it('счёт снабжения к взятой цене (20270302): решает функция базы под входом подрядчика, ключ файла наружу не выходит, в шлюзе функции нет', async () => {
+    const TENDER = 'b0000000-0000-4000-8000-0000000000b1'
+    const DOC = 'd0000000-0000-4000-8000-0000000000d1'
+    let answer = { body: JSON.stringify([{ s3_key: DOC_KEY, file_name: 'Счёт ПСК № 072813.pdf' }]) }
+    let role = { role: 'contractor', counterparty_id: 'cp-1', is_approved: true, is_blocked: false, self_registered: false }
+    reply = (r) => {
+      if (r.url.startsWith('/user_roles')) return { body: JSON.stringify([role]) }
+      if (r.url.startsWith('/rpc/bid_supply_doc_file')) return answer
+      return {}
+    }
+    const doc = (body = { tender_id: TENDER, document_id: DOC }) => app.inject({ method: 'POST', url: '/api/fn/bid-supply-doc', payload: body,
+      headers: { authorization: `Bearer ${user()}`, 'content-type': 'application/json' } })
+
+    seen.length = 0
+    const res = await doc()
+    assert.equal(res.statusCode, 200, res.body)
+    assert.deepEqual(Object.keys(res.json()).sort(), ['expires_in', 'file_name', 'presigned_url'], 'ключа файла в ответе нет')
+    assert.equal(res.json().file_name, 'Счёт ПСК № 072813.pdf')
+    const call = seen.find((r) => r.url.startsWith('/rpc/bid_supply_doc_file'))
+    assert.deepEqual(JSON.parse(call.body.toString()), { p_tender: TENDER, p_doc: DOC })
+    assert.equal(decode(call.headers.authorization.replace(/^Bearer /, '')).sub, USER, 'функция — под входом подрядчика, не служебным')
+
+    // Функция не отдала строку (нет разрешения, приём закрыт, цена своя, файл не этой позиции) — как будто файла нет.
+    answer = { body: '[]' }
+    assert.equal((await doc()).statusCode, 404)
+    answer = { status: 403, body: JSON.stringify({ code: '42501', message: 'Счёт снабжения — только для подрядчика' }) }
+    assert.equal((await doc()).statusCode, 403)
+    assert.equal((await doc({ tender_id: TENDER, document_id: '../../etc' })).statusCode, 400, 'id — только uuid')
+    assert.equal((await doc({ document_id: DOC })).statusCode, 400, 'без тендера — нет')
+
+    // Сотрудник: функция и не вызывается (в просмотре от имени подрядчика он качает файл обычным путём).
+    seen.length = 0
+    role = { role: 'engineer', counterparty_id: null, is_approved: true, is_blocked: false }
+    assert.equal((await doc()).statusCode, 403)
+    assert.equal(seen.filter((r) => r.url.startsWith('/rpc/bid_supply_doc_file')).length, 0)
+
+    // Из браузера функция недоступна; список счетов (без ключей) — подрядчику через шлюз.
+    const read = (name) => JSON.parse(fs.readFileSync(path.join(SERVER, 'src', 'data', name), 'utf8'))
+    for (const list of ['allow.json', 'allow-contractor.json', 'allow-self-contractor.json']) {
+      assert.equal(read(list).rpc.bid_supply_doc_file, undefined, list)
+      assert.deepEqual(read(list).rpc.bid_supply_docs, ['authenticated'], list)
+    }
+  })
+
   it('свой ВОР подрядчика с расценками: решают функции базы под его входом, ключ задаёт служба, прежний файл ведомости убирается', async () => {
     const VOR = '018f2a10-7c3e-7a11-9b52-1f0e2d3c4b5a'
     const CP = 'c0000000-0000-4000-8000-0000000000aa'
@@ -641,8 +685,9 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
       headers: { authorization: `Bearer ${user()}`, 'content-type': 'application/json' } }) }
     const fileBody = (op, over = {}) => ({ tender_id: TENDER, vor_file_id: VOR, operation_id: op, file_name: 'ВОР к1 расценка.xlsx',
       mime_type: 'application/vnd.ms-excel', size_bytes: 4, ...over })
-    const put = async (url) => {
-      const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/vnd.ms-excel' }, body: 'abcd' })
+    // Тело по умолчанию — начало книги .xlsx (сигнатура ZIP), 4 байта, как size_bytes.
+    const put = async (url, body = Buffer.from([0x50, 0x4b, 0x03, 0x04])) => {
+      const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/vnd.ms-excel' }, body })
       assert.equal(res.status, 200)
     }
 
@@ -687,6 +732,31 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
     assert.equal(closed.statusCode, 403)
     assert.match(closed.json().error, /Приём предложений/)
     assert.equal([...s3.objects.keys()].some((k) => k.includes(OP3)), false)
+
+    // Только книга .xlsx (сотрудник скачивает эти файлы, антивируса у хранилища нет): другое имя, тип или пустой файл — отказ до
+    // ссылки; переименованный файл (не ZIP) — отказ при подтверждении, объект убирается, в базу строка не пишется.
+    const notBook = async (over, why) => {
+      const r = await call({ action: 'upload', ...fileBody(OP3, over) })
+      assert.equal(r.statusCode, 400, why)
+      assert.equal(r.json().code, 'OSP_NOT_WORKBOOK', why)
+    }
+    for (const name of ['расценка.exe', 'расценка.html', 'расценка.svg', 'расценка.pdf', 'расценка.xlsm', 'расценка.xls',
+      'расценка.xlsx.exe', 'расценка.js', 'расценка']) await notBook({ file_name: name }, name)
+    await notBook({ mime_type: 'text/html' }, 'тип text/html')
+    await notBook({ mime_type: 'image/svg+xml' }, 'тип svg')
+    await notBook({ mime_type: 'application/vnd.ms-excel.sheet.macroenabled.12' }, 'тип книги с макросами')
+    await notBook({ size_bytes: 0 }, 'пустой файл')
+    const OP4 = '019a0000-0000-7000-8000-000000000004'
+    const up4 = await call({ action: 'upload', ...fileBody(OP4, { file_name: 'РАСЦЕНКА.XLSX' }) })
+    assert.equal(up4.statusCode, 200, up4.body)
+    await put(up4.json().presigned_url, Buffer.from([0x4d, 0x5a, 0x90, 0x00])) // начало .exe
+    const saves = () => seen.filter((r) => r.url.startsWith('/rpc/bid_file_save')).length
+    const savesBefore = saves()
+    const renamed = await call({ action: 'confirm', ...fileBody(OP4, { file_name: 'РАСЦЕНКА.XLSX' }) })
+    assert.equal(renamed.statusCode, 400, renamed.body)
+    assert.equal(renamed.json().code, 'OSP_NOT_WORKBOOK')
+    assert.equal([...s3.objects.keys()].some((k) => k.includes(OP4)), false, 'не книга — объект убран')
+    assert.equal(saves(), savesBefore, 'строка в базу не пишется')
 
     // Чужая ведомость или закрытый тендер — отказ до ссылки.
     rpc.bid_file_target = () => ({ status: 404, body: JSON.stringify({ code: 'P0002', message: 'Такой ведомости в тендере нет' }) })

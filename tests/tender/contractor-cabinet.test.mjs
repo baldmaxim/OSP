@@ -14,6 +14,8 @@
 //   • решения пользователя 24.11.2026 (миграция 20270301): расценка на сайте — основной путь, по каждой ведомости сразу (сводка по ВОР,
 //     не расценённое — жёлтым), что изменилось в ВОР (стенд ?vorChanges=1, ?heldVor=1), цены снабжения с разрешения отдела (?supply=…),
 //     блок инженера «Подрядчики на сайте: цены снабжения»;
+//   • решение пользователя 25.11.2026 (миграция 20270302): у взятой цены снабжения — «счёт» поставщика этой позиции (скачивание маршрутом
+//     службы; своя цена — счёта нет); прошлые цены — одним запросом по ключам позиций тендера (без функции — как раньше);
 //   • решения пользователя 11.11.2026 (стенд ?bidFiles=1 — миграция 20270113): файлы ВОР — только в расценке, РД — свёрнута, шаблонов
 //     нет; свои файлы с расценками, загруженные тогда, — списком для скачивания (новых не принимаем: файл с ценами расценивает сайт).
 import { describe, it, before, after } from 'node:test'
@@ -21,6 +23,7 @@ import assert from 'node:assert/strict'
 import * as XLSX from 'xlsx'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
+import { bidItemKey, bidUnitKey } from '../../src/utils/bidPrice.js'
 
 const launch = browserLaunchOptions()
 
@@ -358,6 +361,59 @@ describe('Кабинет подрядчика: расценка на сайте'
       await close()
     }
 
+    // Решение пользователя 25.11.2026: у взятой цены снабжения — счёт поставщика; своя цена — счёта нет; скачивание — маршрутом службы.
+    ;({ page, errors, close } = await open('&supply=granted'))
+    try {
+      await openTender(page, 857)
+      await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
+      const bar = page.locator('.bid-supply.is-granted')
+      await bar.waitFor({ timeout: 60000 })
+      const concrete = page.locator('.bid-table tbody tr', { hasText: 'Бетон В25 W8' })
+      const invoice = concrete.getByRole('button', { name: 'Счёт снабжения «Счёт ПСК № 072813.pdf»: Бетон В25 W8' })
+      assert.equal(await invoice.count(), 0, 'цену не брали — счёта нет')
+      assert.doesNotMatch(await text(bar), /ссылка «счёт»/)
+
+      await bar.getByRole('button', { name: 'Взять для позиций без цены (1)' }).click()
+      await invoice.waitFor({ timeout: 10000 })
+      assert.equal(await invoice.textContent(), 'счёт')
+      assert.match(await text(concrete.locator('.bid-source')), /^цена снабжения · счёт$/)
+      assert.match(await text(bar), /У взятой цены — ссылка «счёт»/)
+      const docCalls = (await calls(page, 'bid_supply_docs'))
+      assert.ok(docCalls.length >= 2, 'счета — вместе с ценами и снова после «взять»')
+      const [saved] = await Promise.all([page.waitForEvent('download'), invoice.click()])
+      assert.equal(saved.suggestedFilename(), 'Счёт ПСК № 072813.pdf')
+      assert.deepEqual(await page.evaluate(() => window.__supplyDocCalls), [{ tender_id: 't-open', document_id: 'doc-supply-inv' }],
+        'ключа файла у подрядчика нет — ссылку выдаёт служба по id')
+
+      // Своя цена — счёта нет сразу (до перечитывания); снова цена снабжения — счёт снова.
+      await concrete.locator('.bid-money-input').fill('7000')
+      await concrete.locator('.bid-money-input').press('Enter')
+      assert.equal(await invoice.count(), 0)
+      await page.locator('.bid-save', { hasText: 'Все цены сохранены' }).waitFor({ timeout: 10000 })
+      await concrete.getByRole('button', { name: /Взять цену снабжения/ }).click()
+      await invoice.waitFor({ timeout: 10000 })
+      assert.equal(await page.locator('.bid-doc-link').count(), 1, 'у работ и у материалов без цены снабжения счетов нет')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+
+    // Просмотр от имени подрядчика: счёт виден, скачивается обычным путём файлов (сотруднику строка файла видна), служба не зовётся.
+    ;({ page, errors, close } = await open('&supply=granted&supplyTaken=1&preview=1'))
+    try {
+      await openTender(page, 857)
+      await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
+      const invoice = page.getByRole('button', { name: 'Счёт снабжения «Счёт ПСК № 072813.pdf»: Бетон В25 W8' })
+      await invoice.waitFor({ timeout: 60000 })
+      assert.deepEqual((await calls(page, 'bid_supply_docs')).map((c) => c.p_counterparty), ['cp-alpha'], 'организация просмотра')
+      const [saved] = await Promise.all([page.waitForEvent('download'), invoice.click()])
+      assert.equal(saved.suggestedFilename(), 'Счёт ПСК № 072813.pdf')
+      assert.deepEqual(await page.evaluate(() => window.__supplyDocCalls), [])
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+
     ;({ page, errors, close } = await open('&supply=granted&preview=1'))
     try {
       await openTender(page, 857)
@@ -368,6 +424,42 @@ describe('Кабинет подрядчика: расценка на сайте'
       assert.deepEqual(errors, [])
     } finally {
       await close()
+    }
+  })
+
+  it('прошлые цены: один запрос по ключам позиций тендера (последняя цена, без цен снабжения); без функции — постранично, как раньше', async () => {
+    for (const query of ['', '&historyFn=0']) {
+      const { page, errors, close } = await open(query)
+      try {
+        await page.locator('table.tenders-registry').waitFor({ timeout: 120000 })
+        // Своя цена арматуры в тендере № 905 (старая и новая) — в подсказку идёт новая; ключ позиции — как у разбора ВОР.
+        await page.evaluate(([item, unit, concrete, m3, withSupply]) => {
+          const base = { counterparty_id: 'cp-alpha', kind: 'material', item_key: item, unit_key: unit, name: 'Арматура А500С d12', unit: 'т', volume: 1, total: 1, note: null, source: 'manual' }
+          window.__fakeDb.tender_bid_rates.push({ ...base, id: 'h-1', tender_id: 't-inv', price: 61000, updated_at: '2026-09-01T00:00:00Z' },
+            { ...base, id: 'h-2', tender_id: 't-inv', price: 64000, updated_at: '2026-10-01T00:00:00Z' })
+          // Цена бетона, взятая у снабжения в другом тендере, — не своя цена: в подсказку не идёт. Только для функции: прежний путь отбирает
+          // это .neq('source', 'supply'), а подделка базы стенда .neq не разбирает.
+          if (withSupply) {
+            window.__fakeDb.tender_bid_rates.push({ ...base, id: 'h-3', tender_id: 't-inv', item_key: concrete, unit_key: m3, name: 'Бетон В25 W8', unit: 'м3',
+              price: 7500, source: 'supply', updated_at: '2026-10-02T00:00:00Z' })
+          }
+        }, [bidItemKey('Арматура А500С d12'), bidUnitKey('т'), bidItemKey('Бетон В25 W8'), bidUnitKey('м3'), !query])
+        await openTender(page, 857)
+        await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
+        const rebar = page.locator('.bid-table tbody tr', { hasText: 'Арматура А500С d12' })
+        await rebar.locator('.bid-hint', { hasText: 'ваша цена в тендере № 905' }).waitFor({ timeout: 60000 })
+        assert.match(await text(rebar.locator('.bid-hint')), /64 000,00 ₽/, 'последняя цена')
+        await page.getByRole('button', { name: 'Мои прошлые цены (1)' }).waitFor()
+        const viaFn = await calls(page, 'bid_rate_history')
+        if (query) assert.equal(viaFn.length, 0)
+        else {
+          assert.deepEqual(viaFn.map((c) => [c.p_tender, c.keys]), [['t-open', 4]], 'один запрос: 4 позиции тендера')
+          assert.equal(await page.locator('.bid-table tbody tr', { hasText: 'Бетон В25 W8' }).locator('.bid-hint').count(), 0, 'цена снабжения — не подсказка')
+        }
+        assert.deepEqual(errors, [])
+      } finally {
+        await close()
+      }
     }
   })
 

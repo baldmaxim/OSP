@@ -10,7 +10,7 @@ const dateOf = (v) => {
 const DAY = 24 * 60 * 60 * 1000
 
 export default function BidSupplyBar({
-  access, canEdit, preview, withPrice, missing, differ, busy, message, error, onRequest, onRefresh, onTakeMissing, onTakeAll,
+  access, canEdit, preview, withPrice, missing, differ, withDocs = 0, busy, message, error, onRequest, onRefresh, onTakeMissing, onTakeAll,
 }) {
   if (access === undefined) return null
   const status = access?.status || null
@@ -24,6 +24,7 @@ export default function BidSupplyBar({
         <span className="bid-supply-text">
           <b>Отдел разрешил взять цены снабжения СУ-10</b> — они есть у {withPrice} поз. материалов (с НДС и доставкой).
           {' '}Цену можно взять у каждой позиции в колонке «Цена СУ-10» или сразу у всех.
+          {withDocs > 0 && ' У взятой цены — ссылка «счёт»: счёт или КП поставщика, по которому снабжение её поставило.'}
         </span>
         {canEdit && (
           <span className="bid-supply-actions">

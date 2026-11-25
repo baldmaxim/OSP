@@ -15,7 +15,11 @@
 //   таблица bid_company_answers и bid_company_save. Без параметра колонок и таблицы нет — анкета как раньше.
 //   ?supply=none|requested|granted|denied — миграция 20270301: разрешение «ООО Альфа» взять цены снабжения тендера № 857 (none — таблица
 //   есть, строки нет), bid_supply_request / bid_supply_prices / bid_supply_take как в базе (цена снабжения бетона — 7 500, у работ цен нет).
-//   Без параметра таблицы нет (PGRST205) — блока цен снабжения нет.
+//   Без параметра таблицы нет (PGRST205) — блока цен снабжения нет. Миграция 20270302: у бетона есть счёт снабжения («Счёт ПСК № 072813.pdf»,
+//   файл supply_doc тендера) — bid_supply_docs отдаёт его, только пока цена бетона взята у снабжения и не изменена; маршрут
+//   /api/fn/bid-supply-doc подделан здесь же (подрядчику — ссылка, просмотру от имени подрядчика — 403, как служба); &supplyTaken=1 — цена
+//   бетона уже взята у снабжения.
+//   ?historyFn=0 — функции bid_rate_history нет (база раньше 20270302): прошлые цены — постраничным чтением своих цен, как раньше.
 //   ?vorChanges=1 — миграция 20270301: bid_vor_changes — у «ВОР паркинга» прежняя версия «ВОР паркинга (было)»: бетон был 100 м3, армирования
 //   не было, «Демонтаж опалубки» убран; ?heldVor=1 — ещё и «ВОР паркинга изм.1» — новая версия, отдел не подтвердил (в расценку не входит).
 import * as XLSX from 'xlsx'
@@ -299,6 +303,23 @@ window.__fakeRpc = {
   ]),
 }
 
+// Как bid_rate_history (20270302): последняя своя цена по каждой присланной позиции в других тендерах, без цен снабжения.
+if (params.get('historyFn') === '0') {
+  window.__fakeRpc.bid_rate_history = () => ({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.bid_rate_history in the schema cache' } })
+} else {
+  window.__fakeRpc.bid_rate_history = ({ p_tender, p_keys }) => {
+    window.__bidCalls.push({ fn: 'bid_rate_history', p_tender, keys: p_keys.length })
+    const want = new Set(p_keys)
+    const best = new Map()
+    for (const r of db.tender_bid_rates) {
+      if (r.tender_id === p_tender || r.counterparty_id !== CP.id || r.price == null || r.source === 'supply' || !want.has(keyOf(r))) continue
+      const cur = best.get(keyOf(r))
+      if (!cur || r.updated_at > cur.updated_at) best.set(keyOf(r), r)
+    }
+    return ok([...best.values()].map((r) => ({ kind: r.kind, item_key: r.item_key, unit_key: r.unit_key, price: r.price, tender_id: r.tender_id, updated_at: r.updated_at })))
+  }
+}
+
 // Как bid_vor_superseded (20270114): прежние версии ведомостей тендера и файл, который их заменил.
 if (VOR_VERSIONS) {
   window.__fakeRpc.bid_vor_superseded = ({ p_tender }) => {
@@ -427,6 +448,36 @@ if (SUPPLY) {
   const concrete = parsedVor().materials.find((p) => /Бетон/.test(p.name))
   const SUPPLY_PRICES = [{ item_key: concrete.itemKey, unit_key: concrete.unitKey, price: 7500 }]
   const granted = () => db.tender_bid_supply_access.some((a) => a.tender_id === 't-open' && a.counterparty_id === CP.id && a.status === 'granted')
+  // Счёт снабжения бетона (20270302): файл supply_doc тендера; подрядчику — только к цене, взятой у снабжения и не изменённой.
+  const INVOICE = { id: 'doc-supply-inv', owner_type: 'tender', owner_id: 't-open', doc_category: 'supply_doc', file_name: 'Счёт ПСК № 072813.pdf',
+    s3_key: 'tenders/t-open/supply/schet-072813.pdf', mime_type: 'application/pdf', size_bytes: 1200, created_at: '2026-11-18T09:00:00Z' }
+  db.s3_documents.push(INVOICE)
+  window.__fakeFiles[INVOICE.s3_key] = `data:application/pdf;base64,${btoa('%PDF-1.4 invoice 072813')}`
+  const takenDocs = () => (granted() ? SUPPLY_PRICES.filter((sp) => db.tender_bid_rates.some((r) => r.tender_id === 't-open' && r.counterparty_id === CP.id
+    && r.kind === 'material' && r.item_key === sp.item_key && r.unit_key === sp.unit_key && r.source === 'supply' && r.price === sp.price))
+    .map((sp) => ({ item_key: sp.item_key, unit_key: sp.unit_key, document_id: INVOICE.id, file_name: INVOICE.file_name, uploaded_at: INVOICE.created_at })) : [])
+  // ?supplyTaken=1 — цена бетона уже взята у снабжения (просмотр от имени подрядчика видит счёт сразу).
+  if (params.get('supplyTaken') === '1') {
+    db.tender_bid_rates.push({ id: 'r-supply', tender_id: 't-open', counterparty_id: CP.id, kind: 'material', item_key: concrete.itemKey, unit_key: concrete.unitKey,
+      name: concrete.name, unit: concrete.unit, volume: concrete.volume, price: 7500, total: Math.round(7500 * concrete.volume * 100) / 100, note: null,
+      source: 'supply', updated_at: '2026-11-22T10:00:00Z' })
+  }
+  window.__supplyDocCalls = []
+  {
+    const prevFetch = window.fetch.bind(window)
+    const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    window.fetch = async (url, init = {}) => {
+      const href = String(url?.url || url)
+      if (!href.endsWith('/api/fn/bid-supply-doc')) return prevFetch(url, init)
+      const body = JSON.parse(init.body || '{}')
+      window.__supplyDocCalls.push(body)
+      await new Promise((r) => setTimeout(r, 80))
+      if (PREVIEW) return json(403, { error: 'Счёт снабжения — только для подрядчика' })
+      const doc = body.tender_id === 't-open' && takenDocs().find((d) => d.document_id === body.document_id)
+      if (!doc) return json(404, { error: 'Счёт недоступен: отдел не разрешил цены снабжения, приём закрыт или цена позиции уже не снабжения' })
+      return json(200, { presigned_url: `https://fake-s3.invalid/${INVOICE.s3_key}`, expires_in: 300, file_name: INVOICE.file_name })
+    }
+  }
   Object.assign(window.__fakeRpc, {
     bid_supply_request: ({ p_tender }) => {
       window.__bidCalls.push({ fn: 'bid_supply_request', p_tender })
@@ -438,6 +489,10 @@ if (SUPPLY) {
     bid_supply_prices: ({ p_tender }) => {
       window.__bidCalls.push({ fn: 'bid_supply_prices', p_tender })
       return ok(p_tender === 't-open' && granted() ? SUPPLY_PRICES : [])
+    },
+    bid_supply_docs: ({ p_tender, p_counterparty }) => {
+      window.__bidCalls.push({ fn: 'bid_supply_docs', p_tender, p_counterparty })
+      return ok(p_tender === 't-open' ? takenDocs() : [])
     },
     bid_supply_take: ({ p_tender, p_rows, p_replace }) => {
       window.__bidCalls.push({ fn: 'bid_supply_take', p_tender, rows: p_rows, replace: p_replace })

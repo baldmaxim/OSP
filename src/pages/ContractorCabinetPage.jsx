@@ -267,14 +267,15 @@ function ContractorCabinetPage() {
     () => invitations.find(t => t.id === activeTenderId) || null,
     [invitations, activeTenderId])
 
-  // Файлы и смета — только тендера, к которому у организации есть доступ (участник или заявка).
+  // Файлы и смета — только тендера, к которому у организации есть доступ (участник или заявка). Смета вкладки «ВОР» нужна только прежнему
+  // пути (база без расценки на сайте: шаблон и загрузка КП) — при расценке на сайте её не читаем (BidWorkspace берёт позиции из ВОР).
   const activeAccess = activeTender?.access || null
   const loadTenderDetails = useCallback(async () => {
     if (selfRegistered || !activeTenderId || !cpId || !activeAccess || activeAccess === 'rejected') { setEstimateItems([]); setTenderDocs([]); return }
     setTenderBusy(true)
     try {
       const [items, docs, lastProposal] = await Promise.all([
-        fetchAllRows((from, to) => db
+        bidsEnabled ? [] : fetchAllRows((from, to) => db
           .from('tender_estimate_items')
           .select('*')
           .eq('tender_id', activeTenderId)
@@ -307,7 +308,7 @@ function ContractorCabinetPage() {
     } finally {
       setTenderBusy(false)
     }
-  }, [activeTenderId, cpId, activeAccess, selfRegistered])
+  }, [activeTenderId, cpId, activeAccess, selfRegistered, bidsEnabled])
 
   useEffect(() => { loadTenderDetails() }, [loadTenderDetails])
 

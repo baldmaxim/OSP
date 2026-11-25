@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react'
 import {
-  loadTenderFiles, downloadFileBytes, loadServerPositions, loadMyRates, loadMyRateHistory, saveRates, loadFormFields, loadMyForm, loadBidFiles,
+  loadTenderFiles, downloadFileBytes, loadServerPositions, loadMyRates, loadRateHistory, saveRates, loadFormFields, loadMyForm, loadBidFiles,
   loadVorSuperseded, saveForm, VOR_CATEGORIES, loadVorChanges, loadSupplyAccess, loadSupplyPrices, requestSupplyPrices, takeSupplyPrices,
-  bidFileUrl, bidFileUrlAdmin,
+  loadSupplyDocs, supplyDocUrl, supplyDocKey, bidFileUrl, bidFileUrlAdmin,
 } from '../../services/contractorBids'
 import { vatFromAnswers, vatField, vatIncluded, vatLabel } from '../../utils/bidForm'
 import { currentVorFiles } from '../../utils/bidFiles'
@@ -36,6 +36,8 @@ const BidImportDialog = lazy(() => import('./BidImportDialog'))
 // Что изменилось в ВОР — по прежней версии ведомости (bid_vor_changes): подрядчик изменения не принимает — их подтверждает отдел;
 // новая версия, которую отдел ещё не подтвердил, в расценку не входит (heldBackFiles). Цены снабжения — с разрешения отдела
 // (BidSupplyBar): цену берёт база (bid_supply_take). Нет функций (база раньше 20270301) — без этих блоков, расценка как была.
+// У взятой цены снабжения — счёт снабжения этой позиции (решение пользователя 25.11.2026, миграция 20270302, bid_supply_docs): подрядчик
+// скачивает его маршрутом службы, сотрудник в просмотре — обычным путём файлов.
 //
 // canEdit — тендер открыт и у организации есть доступ (участник или заявка не отклонена): иначе только просмотр.
 
@@ -119,8 +121,9 @@ export default function BidWorkspace({
   const [formError, setFormError] = useState('')
   // Свои файлы с расценками, загруженные прежним способом (20270113): только список для скачивания.
   const [myFiles, setMyFiles] = useState(null)
-  // Цены снабжения: access — undefined (нет таблицы) | null (не просили) | строка; prices — Map ключ → цена (только с разрешением).
-  const [supply, setSupply] = useState({ access: undefined, prices: null, busy: false, message: '', error: '' })
+  // Цены снабжения: access — undefined (нет таблицы) | null (не просили) | строка; prices — Map ключ → цена (только с разрешением);
+  // docs — Map ключ → [счета] у взятых цен (null — функции нет).
+  const [supply, setSupply] = useState({ access: undefined, prices: null, docs: null, busy: false, message: '', error: '' })
 
   // ── Ведомости ВОР ──────────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -292,11 +295,15 @@ export default function BidWorkspace({
     })
   }, [tenderId, previewCounterpartyId])
 
-  // Свои цены из других тендеров — только тому, кто может ставить цены.
+  // Свои цены из других тендеров — только тому, кто может ставить цены. Запрос — по ключам позиций тендера, когда ведомости прочитаны
+  // (один раз на набор позиций): база отдаёт последнюю цену по каждой, а не все свои цены постранично. Ведомость, которую служба ещё
+  // готовит (pending), не ждём: на открытой странице она сама не появится — подсказки по остальным нужны сразу.
+  const positionKeys = useMemo(() => (parsing ? null : view.positions.map((p) => p.key)), [parsing, view.positions])
   useEffect(() => {
-    if (!canEdit) return undefined
+    if (!canEdit || !positionKeys) return undefined
+    if (!positionKeys.length) { setHistory(new Map()); return undefined }
     let cancelled = false
-    loadMyRateHistory(tenderId)
+    loadRateHistory(tenderId, positionKeys)
       .then((rows) => {
         if (cancelled) return
         const map = new Map()
@@ -308,7 +315,7 @@ export default function BidWorkspace({
       })
       .catch(() => { if (!cancelled) setHistory(new Map()) })
     return () => { cancelled = true }
-  }, [tenderId, canEdit])
+  }, [tenderId, canEdit, positionKeys])
 
   // ── Запись: очередь позиций, порция раз в SAVE_DELAY_MS ────────────────────────────────────────────
   const flush = useCallback(async () => {
@@ -393,19 +400,23 @@ export default function BidWorkspace({
   }, [commit])
 
   // ── Цены снабжения ─────────────────────────────────────────────────────────────────────────────────
+  // Счета к взятым ценам — вместе с ценами (параллельно); не загрузились — цены всё равно видны.
+  const readDocs = useCallback(() => loadSupplyDocs(tenderId, previewCounterpartyId)
+    .catch((e) => { console.error('Счета снабжения:', e); return null }), [tenderId, previewCounterpartyId])
   const loadSupply = useCallback(async () => {
     setSupply((s) => ({ ...s, busy: true, error: '' }))
     try {
       const access = await loadSupplyAccess(tenderId, ownCp)
-      const prices = access?.status === 'granted' ? await loadSupplyPrices(tenderId, previewCounterpartyId) : null
-      setSupply((s) => ({ ...s, access, prices, busy: false }))
+      const granted = access?.status === 'granted'
+      const [prices, docs] = granted ? await Promise.all([loadSupplyPrices(tenderId, previewCounterpartyId), readDocs()]) : [null, null]
+      setSupply((s) => ({ ...s, access, prices, docs, busy: false }))
     } catch (e) {
       console.error('Цены снабжения:', e)
       setSupply((s) => ({ ...s, busy: false, error: `Цены снабжения не загрузились: ${e.message || e}` }))
     }
-  }, [tenderId, ownCp, previewCounterpartyId])
+  }, [tenderId, ownCp, previewCounterpartyId, readDocs])
   useEffect(() => {
-    setSupply({ access: undefined, prices: null, busy: false, message: '', error: '' })
+    setSupply({ access: undefined, prices: null, docs: null, busy: false, message: '', error: '' })
     loadSupply()
   }, [loadSupply])
 
@@ -439,8 +450,8 @@ export default function BidWorkspace({
     try {
       await settle()
       const n = await takeSupplyPrices(tenderId, positions.map((p) => ({ key: p.itemKey, unit_key: p.unitKey, name: p.name, unit: p.unit, volume: p.volume })), replace)
-      await refreshRates()
-      setSupply((s) => ({ ...s, busy: false, message: n ? `Взято цен снабжения: ${n}.` : 'Цены снабжения не изменились.' }))
+      const [docs] = await Promise.all([readDocs(), refreshRates()])
+      setSupply((s) => ({ ...s, docs, busy: false, message: n ? `Взято цен снабжения: ${n}.` : 'Цены снабжения не изменились.' }))
     } catch (e) {
       setSupply((s) => ({ ...s, busy: false, error: e.message || String(e) }))
       if (/не разрешил/.test(String(e.message || ''))) loadSupply()
@@ -504,6 +515,14 @@ export default function BidWorkspace({
     } catch (e) {
       setVorError(`«${f.file_name}» не скачался: ${e.message || e}`)
     }
+  }
+  // Счёт снабжения взятой цены: подрядчику ссылку выдаёт служба по id (ключа у него нет), сотруднику в просмотре — обычный путь файлов.
+  const downloadSupplyDoc = (doc) => {
+    setVorError('')
+    const done = preview
+      ? supplyDocKey(doc.id).then((row) => downloadS3File(row.s3_key, row.file_name || doc.file_name))
+      : downloadSignedFile(`supplydoc:${doc.id}`, doc.file_name, () => supplyDocUrl(tenderId, doc.id))
+    return done.catch((e) => setVorError(`Счёт «${doc.file_name}» не скачался: ${e.message || e}`))
   }
   const downloadMine = (f) => downloadSignedFile(`bidfile:${f.id}`, f.file_name, () => (preview ? bidFileUrlAdmin(f.id) : bidFileUrl(f.id)))
     .catch((e) => setVorError(`«${f.file_name}» не скачался: ${e.message || e}`))
@@ -590,6 +609,7 @@ export default function BidWorkspace({
         withPrice={supplyStats.withPrice}
         missing={supplyStats.missing}
         differ={supplyStats.differ}
+        withDocs={supply.docs?.size || 0}
         busy={supply.busy}
         message={supply.message}
         error={supply.error}
@@ -679,6 +699,8 @@ export default function BidWorkspace({
           titleOf={titleOf}
           changes={changes}
           supply={supply.access?.status === 'granted' && supplyMap.size ? supplyMap : null}
+          supplyDocs={supply.access?.status === 'granted' ? supply.docs : null}
+          onSupplyDoc={downloadSupplyDoc}
           supplyBusy={supply.busy}
           onTakeSupply={(p) => takeSupply([p], true)}
           vatExempt={!!vat?.exempt}

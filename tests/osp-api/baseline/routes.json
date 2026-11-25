@@ -498,6 +498,17 @@
   },
   {
     "method": "POST",
+    "url": "/api/fn/bid-supply-doc",
+    "kind": "user",
+    "require": "contractor",
+    "reason": null,
+    "body": [
+      "document_id",
+      "tender_id"
+    ]
+  },
+  {
+    "method": "POST",
     "url": "/api/fn/bid-vor-file",
     "kind": "user",
     "require": "contractor",
