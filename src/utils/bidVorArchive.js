@@ -23,7 +23,7 @@ export const vorArchiveName = (tender, priced) => `${archiveBaseName(tender, 'Т
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 // Учётке с регистрации служба отдаёт название ведомости без расширения — его подсказывают байты (старый .xls начинается с D0 CF).
 const withExtension = (name, bytes) => (/\.(xlsx|xlsm|xls)$/i.test(name) ? name : `${name}${bytes?.[0] === 0xd0 && bytes?.[1] === 0xcf ? '.xls' : '.xlsx'}`)
-const listText = (head, lines) => `﻿${[head, '', ...lines].join('\r\n')}\r\n`
+const listText = (head, lines) => `\uFEFF${[head, '', ...lines].join('\r\n')}\r\n`
 
 // Один ВОР с ценами: bytes — файл отдела, fill — { rates, fields, answers }. → { bytes, name } | { error, text }.
 export function pricedVor(file, bytes, fill, company) {
