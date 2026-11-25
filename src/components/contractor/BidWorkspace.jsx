@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } fro
 import {
   loadTenderFiles, downloadFileBytes, loadServerPositions, loadMyRates, loadRateHistory, saveRates, loadFormFields, loadMyForm, loadBidFiles,
   loadVorSuperseded, saveForm, VOR_CATEGORIES, loadVorChanges, loadSupplyAccess, loadSupplyPrices, requestSupplyPrices, takeSupplyPrices,
-  loadSupplyDocs, supplyDocUrl, supplyDocKey, bidFileUrl, bidFileUrlAdmin,
+  loadSupplyDocs, supplyDocUrl, supplyDocKey, supplyDocView, supplyDocBytes, bidFileUrl, bidFileUrlAdmin,
 } from '../../services/contractorBids'
 import { vatFromAnswers, vatField, vatIncluded, vatLabel } from '../../utils/bidForm'
 import { currentVorFiles } from '../../utils/bidFiles'
@@ -12,6 +12,9 @@ import { buildBidView, heldBackFiles, vorChanges, vorTotals, supplyByPosition, c
 import { isWorkbookFileName } from '../../utils/vorFiles'
 import { formatAmount } from '../../utils/money'
 import { downloadS3File, downloadVorFile, downloadSignedFile } from '../FileDownload'
+import { fetchVorFileBytes } from '../../services/s3'
+import { kpMailHref } from '../../utils/bidMail'
+import { saveAs } from 'file-saver'
 import BidPositionsTable from './BidPositionsTable'
 import BidStructureView from './BidStructureView'
 import BidFormPanel from './BidFormPanel'
@@ -20,16 +23,21 @@ import BidSupplyBar from './BidSupplyBar'
 import './BidWorkspace.css'
 
 const BidImportDialog = lazy(() => import('./BidImportDialog'))
+const BidSupplyDocViewer = lazy(() => import('./BidSupplyDocViewer'))
 
 // Расценка ВОР подрядчиком в кабинете (миграции 20261102, 20270301). Решение пользователя 24.11.2026: расценка на сайте — основной
 // путь; как только у организации есть доступ к тендеру (участник или заявка), сразу видны ведомости ВОР и их позиции с ценами.
-// Файл — дополнительно: «Загрузить файл с ценами» расценивает всё разом, «Скачать с моими ценами» — выгрузка; «Скачать ВОР» — файл отдела.
+// Файл — дополнительно: «Загрузить файл с ценами» расценивает всё разом. Скачать (просьба пользователя 25.11.2026): у ведомости — файл
+// отдела и он же с вашими ценами, над ведомостями — все ВОР одним ZIP, каждый своим файлом, тоже с ценами (bidVorArchive.js): цены и
+// анкета вписываются в исходную книгу отдела, оформление как на сайте (bidVorFill.js). Прежняя выгрузка «всё одной книгой» убрана.
+// КП подрядчик фиксирует письмом на почту отдела (ссылка в сводке).
 //
 // Позиции — разбор ВОР службой osp-api (bid_positions, без скачивания и разбора книги в браузере); файл, который служба ещё не
 // разобрала (или не смогла), подрядчик от администратора разбирает в браузере (у него есть доступ к файлу), учётка с регистрации ждёт
-// службу (serverOnly). Просмотр от имени подрядчика (previewCounterpartyId) — разбор в браузере: функции кабинета отказывают
-// администратору. Править в просмотре можно всё, как подрядчику (решение пользователя 25.11.2026): записи сервис кладёт в черновик
-// просмотра на странице, а не в базу (setCabinetPreview в services/contractorBids.js).
+// службу (serverOnly). Просмотр от имени подрядчика (previewCounterpartyId) — тоже разбор службы (миграция 20270304: bid_positions
+// отдаёт его администратору); база раньше неё отказывает — разбор в браузере. В браузере файлы качаются по нескольку сразу, разбираются
+// по одному (readInBrowser; просьба пользователя 25.11.2026 ускорить кабинет). Править в просмотре можно всё, как подрядчику (решение
+// пользователя 25.11.2026): записи сервис кладёт в черновик просмотра на странице, а не в базу (setCabinetPreview в services/contractorBids.js).
 //
 // Цена — одна на позицию тендера (вид + наименование + ед. изм.), пишется сама (через SAVE_DELAY_MS после ввода, порцией);
 // отдел видит цены сразу. Суммы — по каждой ведомости (объём позиции в ней) и итог.
@@ -38,7 +46,8 @@ const BidImportDialog = lazy(() => import('./BidImportDialog'))
 // новая версия, которую отдел ещё не подтвердил, в расценку не входит (heldBackFiles). Цены снабжения — с разрешения отдела
 // (BidSupplyBar): цену берёт база (bid_supply_take). Нет функций (база раньше 20270301) — без этих блоков, расценка как была.
 // У взятой цены снабжения — счёт снабжения этой позиции (решение пользователя 25.11.2026, миграция 20270302, bid_supply_docs): подрядчик
-// скачивает его маршрутом службы, сотрудник в просмотре — обычным путём файлов.
+// скачивает его маршрутом службы, сотрудник в просмотре — обычным путём файлов. Счёт — своей колонкой «Счёт» и окном просмотра
+// (BidSupplyDocViewer; просьба пользователя 25.11.2026 «не вижу столбец со счётом и возможностью его посмотреть»).
 //
 // canEdit — тендер открыт и у организации есть доступ (участник или заявка не отклонена): иначе только просмотр.
 
@@ -46,16 +55,54 @@ const SAVE_DELAY_MS = 600
 
 // Разобранные в браузере файлы — на время открытой страницы: переключение между тендерами не скачивает их заново.
 const parsedCache = new Map()
-async function parseInBrowser(f) {
-  const cacheKey = `${f.s3_key}|${f.size_bytes || ''}`
-  if (parsedCache.has(cacheKey)) return parsedCache.get(cacheKey)
-  // Библиотека Excel — только здесь: с позициями от службы кабинет её не загружает.
-  const [{ readBidFileBytes }, bytes] = await Promise.all([import('../../utils/bidVor'), downloadFileBytes(f.s3_key)])
-  // Разбор большой книги занимает время — даём странице отрисоваться перед ним.
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  const result = readBidFileBytes(bytes)
-  if (!result.error) parsedCache.set(cacheKey, result)
-  return result
+const parsedKey = (f) => `${f.s3_key}|${f.size_bytes || ''}`
+// Файлы для разбора в браузере качаются по нескольку сразу: почти всё время уходит на ожидание ссылки и хранилища, а не на работу
+// страницы (по одному 21 файл тендера № 704 читался несколько секунд). Больше 4 не нужно: ссылки на файлы выдаёт /api/ с пределом
+// запросов в секунду на адрес, а весь офис выходит с одного. Разбор — по одному: он нагружает страницу.
+const DOWNLOADS_AT_ONCE = 4
+
+// Скачать и разобрать файлы todo: onResult(файл, { status, result? , error?, message? }) — по мере готовности. → отмена.
+function readInBrowser(todo, onResult) {
+  let cancelled = false
+  const queue = todo.filter((f) => {
+    const hit = parsedCache.get(parsedKey(f))
+    if (hit) onResult(f, { status: 'ok', result: hit })
+    return !hit
+  })
+  if (!queue.length) return () => { cancelled = true }
+  // Библиотека Excel — только здесь (с позициями от службы кабинет её не загружает); грузится вместе с первыми файлами.
+  const parser = import('../../utils/bidVor')
+  let parsing = Promise.resolve()
+  const parse = (f, bytes) => {
+    parsing = parsing.then(async () => {
+      if (cancelled) return
+      try {
+        const { readBidFileBytes } = await parser
+        // Разбор большой книги занимает время — даём странице отрисоваться перед ним.
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        if (cancelled) return
+        const result = readBidFileBytes(bytes)
+        if (!result.error) parsedCache.set(parsedKey(f), result)
+        if (!cancelled) onResult(f, result.error ? { status: 'error', error: result.error } : { status: 'ok', result })
+      } catch (e) {
+        if (!cancelled) onResult(f, { status: 'error', error: 'parser', message: e.message })
+      }
+    })
+  }
+  let next = 0
+  const download = async () => {
+    while (!cancelled && next < queue.length) {
+      const f = queue[next++]
+      try {
+        const bytes = await downloadFileBytes(f.s3_key)
+        if (!cancelled) parse(f, bytes)
+      } catch (e) {
+        if (!cancelled) onResult(f, { status: 'error', error: 'download', message: e.message })
+      }
+    }
+  }
+  for (let i = 0; i < Math.min(DOWNLOADS_AT_ONCE, queue.length); i++) download()
+  return () => { cancelled = true }
 }
 
 const fileTitle = (name) => String(name || '').replace(/\.(xlsx|xlsm|xls)$/i, '')
@@ -113,8 +160,11 @@ export default function BidWorkspace({
   const [tab, setTab] = useState('material')
   const [vorId, setVorId] = useState('')
   const [importOpen, setImportOpen] = useState(false)
+  const [viewDoc, setViewDoc] = useState(null) // счёт снабжения в окне просмотра: { doc, view, load, download }
+  const closeViewDoc = useCallback(() => setViewDoc(null), [])
   const [save, setSave] = useState({ busy: false, failed: 0, error: '', stale: false, savedAt: null })
-  const [exporting, setExporting] = useState(false)
+  // Скачивание ВОР: null | { kind: 'all' | 'priced', done, total } (архив) | { kind: 'one', id } (один ВОР с ценами).
+  const [dl, setDl] = useState(null)
   // Анкета: поля администратора и ответы организации (ставка НДС нужна итогам и до открытия анкеты).
   const [formFields, setFormFields] = useState(null)
   const [answers, setAnswers] = useState({})
@@ -135,10 +185,16 @@ export default function BidWorkspace({
     // Заменённые ведомости — вместе со списком: прежняя версия не должна мелькнуть, пока читается отметка.
     const superseded = loadVorSuperseded(tenderId)
     const changes = loadVorChanges(tenderId).catch((e) => { console.error('Изменения ВОР:', e); return null })
-    const server = preview ? Promise.resolve(null)
-      : loadServerPositions(tenderId).catch((e) => { if (serverOnly) throw e; console.error('Позиции ВОР с сервера:', e); return null })
+    // Просмотр от имени подрядчика — тоже разбор службы (миграция 20270304). База раньше неё отказывает администратору (42501) — тогда
+    // файлы разбираются в браузере, как раньше.
+    const server = loadServerPositions(tenderId).catch((e) => {
+      if (serverOnly) throw e
+      if (!(preview && String(e?.code || '') === '42501')) console.error('Позиции ВОР с сервера:', e)
+      return null
+    })
+    // Список файлов — общий со страницей (тот же запрос, один ответ: loadTenderFiles с организацией).
     const tenderFiles = serverOnly ? Promise.resolve(null)
-      : loadTenderFiles(tenderId).catch((e) => { if (preview) throw e; console.error('Файлы ВОР:', e); return null })
+      : loadTenderFiles(tenderId, ownCp).catch((e) => { if (preview) throw e; console.error('Файлы ВОР:', e); return null })
     Promise.all([server, tenderFiles, superseded, changes])
       .then(([list, all, sup, ch]) => {
         if (cancelled) return
@@ -156,27 +212,14 @@ export default function BidWorkspace({
       })
       .catch((e) => { if (!cancelled) setVor({ files: [], server: new Map(), meta: null, error: e.message || String(e) }) })
     return () => { cancelled = true }
-  }, [tenderId, preview, serverOnly])
+  }, [tenderId, preview, serverOnly, ownCp])
 
-  // Файлы, которые служба ещё не разобрала, — в браузере, по одному (разбор книги нагружает страницу).
+  // Файлы, которые служба ещё не разобрала (или все — просмотр до миграции 20270304), — в браузере: скачивание по нескольку сразу,
+  // разбор по одному (readInBrowser).
   useEffect(() => {
     const todo = (vor.files || []).filter((f) => f.s3_key && vor.server.get(f.id)?.status !== 'ok')
     if (!todo.length) return undefined
-    let cancelled = false
-    ;(async () => {
-      for (const f of todo) {
-        if (cancelled) return
-        setBrowser((p) => ({ ...p, [f.id]: { status: 'loading' } }))
-        try {
-          const result = await parseInBrowser(f)
-          if (cancelled) return
-          setBrowser((p) => ({ ...p, [f.id]: result.error ? { status: 'error', error: result.error } : { status: 'ok', result } }))
-        } catch (e) {
-          if (!cancelled) setBrowser((p) => ({ ...p, [f.id]: { status: 'error', error: 'download', message: e.message } }))
-        }
-      }
-    })()
-    return () => { cancelled = true }
+    return readInBrowser(todo, (f, state) => setBrowser((p) => ({ ...p, [f.id]: state })))
   }, [vor])
 
   const parsedOf = useCallback((f) => {
@@ -430,8 +473,18 @@ export default function BidWorkspace({
       if (r?.price == null) missing += 1
       else if (!(r.source === 'supply' && r.price === price)) differ += 1
     }
-    return { withPrice: supplyMap.size, missing, differ }
-  }, [supplyMap, rates])
+    // Счета, видные в колонке «Счёт», — тем же отбором, что в таблице (взятая и не изменённая цена): в просмотре база отдаёт счета всех
+    // открытых позиций (20270305), а подсказка должна быть как у подрядчика.
+    let docs = 0
+    if (supplyMap.size && supply.docs?.size) {
+      for (const p of view.materials) {
+        const r = rates.get(p.key)
+        const sp = supplyMap.get(p.key)
+        if (r?.price != null && r.source === 'supply' && (sp == null || sp === r.price) && supply.docs.has(`${p.itemKey}|${p.unitKey}`)) docs += 1
+      }
+    }
+    return { withPrice: supplyMap.size, missing, differ, docs }
+  }, [supplyMap, rates, supply.docs, view.materials])
 
   const askSupply = async () => {
     setSupply((s) => ({ ...s, busy: true, error: '', message: '' }))
@@ -517,33 +570,89 @@ export default function BidWorkspace({
       setVorError(`«${f.file_name}» не скачался: ${e.message || e}`)
     }
   }
-  // Счёт снабжения взятой цены: подрядчику ссылку выдаёт служба по id (ключа у него нет), сотруднику в просмотре — обычный путь файлов.
-  const downloadSupplyDoc = (doc) => {
-    setVorError('')
-    const done = preview
+  // Счёт снабжения взятой цены — окном просмотра из колонки «Счёт»: подрядчику ссылку выдаёт служба по id (ключа у него нет), сотруднику
+  // в просмотре — обычный путь файлов. «Скачать» в окне — тем же путём; ошибки показывает окно.
+  const openSupplyDoc = (doc) => setViewDoc({
+    doc,
+    view: () => supplyDocView(tenderId, doc.id, preview),
+    load: () => supplyDocBytes(tenderId, doc.id, preview),
+    download: () => (preview
       ? supplyDocKey(doc.id).then((row) => downloadS3File(row.s3_key, row.file_name || doc.file_name))
-      : downloadSignedFile(`supplydoc:${doc.id}`, doc.file_name, () => supplyDocUrl(tenderId, doc.id))
-    return done.catch((e) => setVorError(`Счёт «${doc.file_name}» не скачался: ${e.message || e}`))
-  }
+      : downloadSignedFile(`supplydoc:${doc.id}`, doc.file_name, () => supplyDocUrl(tenderId, doc.id))),
+  })
   const downloadMine = (f) => downloadSignedFile(`bidfile:${f.id}`, f.file_name, () => (preview ? bidFileUrlAdmin(f.id) : bidFileUrl(f.id)))
     .catch((e) => setVorError(`«${f.file_name}» не скачался: ${e.message || e}`))
 
-  // Выгрузка в Excel с ценами (материалы, работы, лист «КП» каждой ведомости, анкета).
-  const exportExcel = async () => {
-    setExporting(true)
+  // ── Скачать ВОР (файлы отдела и они же с ценами) ──────────────────────────────────────────────────────
+  // Файл с ценами — исходная книга отдела, в которую вписаны цены (в том числе ещё не записанные — они уже в rates) и анкета, как её видит
+  // подрядчик (с «Моей компанией»). Готово, когда загружены свои цены и анкета.
+  const pricedReady = ratesState === 'ok' && formFields !== null && companyReady
+  const pricedHint = ratesState === 'error' ? 'Ваши цены не загрузились — обновите страницу' : 'Загружаем ваши цены и анкету…'
+  const vorBytes = (f) => (f.s3_key ? downloadFileBytes(f.s3_key) : fetchVorFileBytes(f.id))
+  const fillOptions = () => ({ rates, fields: formFields || [], answers: shownAnswers })
+  // Список ведомостей — заново перед скачиванием: отдел мог заменить ВОР новой версией или добавить новый, пока страница открыта; тогда
+  // скачивать прежний набор нельзя. Без организации loadTenderFiles читает список заново, а не из общего ответа страницы.
+  const vorListChanged = async () => {
     try {
-      const { downloadBidWorkbook } = await import('../../utils/bidExport')
-      const withDocs = (list) => list.map((p) => ({ ...p, docs: p.files.map((id) => titleOf.get(id)).filter(Boolean) }))
-      downloadBidWorkbook({
-        tender, counterpartyName, rates,
-        positions: { materials: withDocs(view.materials), works: withDocs(view.works) },
-        files: okFiles.filter((f) => !held.has(f.id)),
-        form: formFields?.length ? { fields: formFields, answers: shownAnswers } : null,
-      })
+      const [list, sup] = await Promise.all([
+        serverOnly
+          ? loadServerPositions(tenderId).then((rows) => rows.map(({ id, file_name: fileName }) => ({ id, file_name: fileName })))
+          : loadTenderFiles(tenderId).then((all) => all.filter((f) => VOR_CATEGORIES.includes(f.doc_category) && isWorkbookFileName(f.file_name))),
+        loadVorSuperseded(tenderId),
+      ])
+      const now = new Set(currentVorFiles(list, sup).current.map((f) => f.id))
+      return now.size !== files.length || files.some((f) => !now.has(f.id))
     } catch (e) {
-      setVorError(`Excel не собрался: ${e.message || e}`)
+      // Проверка не прошла (связь) — скачиваем то, что на странице: она показывает именно эти ведомости.
+      console.error('Проверка списка ВОР перед скачиванием:', e)
+      return false
+    }
+  }
+  const LIST_CHANGED = 'Отдел обновил ведомости ВОР, пока страница была открыта. Обновите страницу (F5) и скачайте снова — иначе попадут прежние версии.'
+
+  const downloadAll = async (priced) => {
+    if (dl) return
+    const kind = priced ? 'priced' : 'all'
+    setVorError('')
+    setDl({ kind, done: 0, total: 0 })
+    try {
+      if (await vorListChanged()) { setVorError(LIST_CHANGED); return }
+      // Новая версия ВОР, которую отдел ещё не подтвердил, не расценивается — в архив с ценами не входит.
+      const list = priced ? files.filter((f) => !held.has(f.id)) : files
+      const archive = await import('../../utils/bidVorArchive')
+      setDl({ kind, done: 0, total: list.length })
+      const res = await archive.buildVorArchive(list, vorBytes, {
+        fill: priced ? fillOptions() : null, company: counterpartyName, onProgress: (p) => setDl({ kind, ...p }),
+      })
+      if (!res.bytes) { setVorError(`Ни один ВОР не скачался: ${res.failed[0]?.error || 'нет ответа хранилища'}`); return }
+      saveAs(new Blob([res.bytes], { type: 'application/zip' }), archive.vorArchiveName(tender, priced))
+      const notes = []
+      if (res.failed.length) notes.push(`не скачалось ${res.failed.length} из ${list.length} (список — в «${archive.FAILED_LIST_NAME}» в архиве)`)
+      if (res.unfilled.length) {
+        notes.push(`цены не вписаны в ${res.unfilled.map((u) => `«${fileTitle(u.file.file_name)}» — ${u.text}`).join('; ')}`)
+      }
+      if (notes.length) setVorError(`Архив скачан, но ${notes.join('; ')}.`)
+    } catch (e) {
+      setVorError(`Архив ВОР не собрался: ${e.message || e}`)
     } finally {
-      setExporting(false)
+      setDl(null)
+    }
+  }
+
+  const downloadPriced = async (f) => {
+    if (dl) return
+    setVorError('')
+    setDl({ kind: 'one', id: f.id })
+    try {
+      if (await vorListChanged()) { setVorError(LIST_CHANGED); return }
+      const [archive, bytes] = await Promise.all([import('../../utils/bidVorArchive'), vorBytes(f)])
+      const res = archive.pricedVor(f, bytes, fillOptions(), counterpartyName)
+      if (res.error) { setVorError(`В «${fileTitle(f.file_name)}» цены не вписались: ${res.text}. Скачайте файл отдела значком «ВОР».`); return }
+      saveAs(new Blob([res.bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), res.name)
+    } catch (e) {
+      setVorError(`«${fileTitle(f.file_name)}» не скачался: ${e.message || e}`)
+    } finally {
+      setDl(null)
     }
   }
 
@@ -590,9 +699,6 @@ export default function BidWorkspace({
               Загрузить файл с ценами
             </button>
           )}
-          <button type="button" className="cab-btn" onClick={exportExcel} disabled={exporting || !view.positions.length}>
-            {exporting ? 'Собираем Excel…' : 'Скачать с моими ценами'}
-          </button>
           {editable && historyHits.length > 0 && (
             <button type="button" className="cab-btn" onClick={applyHistory} title="Те же позиции, что вы уже расценивали в других тендерах">
               Мои прошлые цены ({historyHits.length})
@@ -609,7 +715,7 @@ export default function BidWorkspace({
         withPrice={supplyStats.withPrice}
         missing={supplyStats.missing}
         differ={supplyStats.differ}
-        withDocs={supply.docs?.size || 0}
+        withDocs={supplyStats.docs}
         busy={supply.busy}
         message={supply.message}
         error={supply.error}
@@ -646,6 +752,13 @@ export default function BidWorkspace({
           held={held}
           files={files}
           onDownload={downloadVor}
+          onDownloadPriced={downloadPriced}
+          onDownloadAll={() => downloadAll(false)}
+          onDownloadAllPriced={() => downloadAll(true)}
+          busy={dl}
+          pricedReady={pricedReady}
+          pricedHint={pricedHint}
+          mailHref={kpMailHref(tender, counterpartyName)}
           vatExempt={!!vat?.exempt}
         />
       )}
@@ -700,7 +813,7 @@ export default function BidWorkspace({
           changes={changes}
           supply={supply.access?.status === 'granted' && supplyMap.size ? supplyMap : null}
           supplyDocs={supply.access?.status === 'granted' ? supply.docs : null}
-          onSupplyDoc={downloadSupplyDoc}
+          onSupplyDoc={openSupplyDoc}
           supplyBusy={supply.busy}
           onTakeSupply={(p) => takeSupply([p], true)}
           vatExempt={!!vat?.exempt}
@@ -765,6 +878,12 @@ export default function BidWorkspace({
           />
         </Suspense>
       )}
+      {viewDoc && (
+        <Suspense fallback={null}>
+          <BidSupplyDocViewer doc={viewDoc.doc} getView={viewDoc.view} loadBytes={viewDoc.load} onDownload={viewDoc.download}
+            onClose={closeViewDoc} />
+        </Suspense>
+      )}
     </div>
   )
 }
@@ -778,7 +897,8 @@ function SaveLine({ save, canEdit, preview, ratesState, onRetry, onReload }) {
     )
   }
   if (!canEdit) return <div className="bid-save">Только просмотр: приём предложений закрыт или участие отклонено.</div>
-  let text = 'Цены сохраняются сами — отправлять ничего не нужно.'
+  // КП подрядчик фиксирует письмом (сводка ВОР) — здесь только о сохранении цен на сайте.
+  let text = 'Цены сохраняются сами и сразу видны отделу.'
   let cls = ''
   // Просмотр от имени подрядчика: цены лежат в черновике просмотра на этой странице (services/contractorBids.js), в базу не уходят.
   if (preview) text = 'Просмотр от имени подрядчика: цены видны только вам, в базу не записываются.'

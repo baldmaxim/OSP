@@ -6,6 +6,9 @@
 //     по-прежнему закрыты;
 //   • прошлые цены одним запросом — последняя своя цена по присланным позициям, без цен снабжения и без этого тендера, чужих нет;
 //   • откат: функций нет, повтор безопасен.
+// Миграция 20270305_bid_supply_docs_preview (просьба пользователя 25.11.2026 «не вижу столбец со счётом»): администратору в просмотре от
+// имени подрядчика — счета всех открытых организации позиций и до «взять» («взять» там — черновик страницы); другому сотруднику и
+// подрядчику — как было; откат возвращает прежнюю функцию.
 // Страница — contractor-cabinet.test.mjs (стенд supply=granted, historyFn=0). Нужны Docker, psql и проверенная копия прода (migration/dumps).
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -16,9 +19,10 @@ import path from 'node:path'
 import { ROOT, skipReason, startSingleOwner, latestVerifiedCopy } from '../db/lib/stand.mjs'
 
 const MIG = '20270302_bid_supply_docs'
+const MIG_PREVIEW = '20270305_bid_supply_docs_preview'
 const file = (dir, name) => path.join(ROOT, 'migration', dir, name)
 const id = (n) => `00000000-0000-4000-8000-0000003${String(n).padStart(5, '0')}`
-const U = { admin: id(1), alpha: id(2), beta: id(3), self: id(5) }
+const U = { admin: id(1), alpha: id(2), beta: id(3), eng: id(4), self: id(5) }
 const CP = { alpha: id(11), beta: id(12), self: id(13) }
 const OBJ = id(21)
 const T = { open: id(31), other: id(32) }
@@ -31,11 +35,12 @@ const parsed = (doc, tender, list) => `insert into osp_private.bid_vor_files (s3
 
 const SEED = `
   insert into auth.users (id, aud, role, email) select u, 'authenticated', 'authenticated', u || '@example.invalid'
-    from unnest(array['${U.admin}', '${U.alpha}', '${U.beta}', '${U.self}']::uuid[]) u;
+    from unnest(array['${U.admin}', '${U.alpha}', '${U.beta}', '${U.eng}', '${U.self}']::uuid[]) u;
   insert into public.counterparties (id, name, inn) values ('${CP.alpha}', 'ООО Альфа Счета', '7707083893'),
     ('${CP.beta}', 'ООО Бета Счета', '7736050003'), ('${CP.self}', 'ООО Сайт Счета', '7710140679');
   insert into public.user_roles (user_id, role, is_approved, is_blocked, full_name, email, counterparty_id, self_registered) values
     ('${U.admin}', 'admin', true, false, 'Админов', 'admin@example.invalid', null, false),
+    ('${U.eng}', 'engineer', true, false, 'Инженеров', 'eng@example.invalid', null, false),
     ('${U.alpha}', 'contractor', true, false, 'Альфин А. А.', 'alpha@example.invalid', '${CP.alpha}', false),
     ('${U.beta}', 'contractor', true, false, 'Бетин Б. Б.', 'beta@example.invalid', '${CP.beta}', false),
     ('${U.self}', 'contractor', true, false, 'Сайтов С. С.', 'self@example.invalid', '${CP.self}', true);
@@ -102,6 +107,7 @@ describe('Кабинет подрядчика: счета снабжения к 
       env: { ...process.env, PROBE_REPORT_DIR: path.join(tmp, 'reports'), BACKUP_OUT_DIR: path.join(tmp, 'exports'), PROBE_CONNECT_TIMEOUT: '5' } })
     assert.equal(res.status, 0, (res.stdout + res.stderr).split('\n').filter((l) => /FAIL|ERROR/.test(l)).join('\n'))
     assert.match(res.stdout, new RegExp(`OK ${MIG}: применена`))
+    assert.match(res.stdout, new RegExp(`OK ${MIG_PREVIEW}: применена`))
     internal(SEED)
   })
   after(() => {
@@ -113,16 +119,24 @@ describe('Кабинет подрядчика: счета снабжения к 
     const out = internal(fs.readFileSync(file('yandex', `${MIG}.check.sql`), 'utf8'))
     assert.doesNotMatch(out, /^FAIL/m, out)
     assert.equal(out.split('\n').filter((l) => l.startsWith('OK ')).length, 7, out)
+    const preview = internal(fs.readFileSync(file('yandex', `${MIG_PREVIEW}.check.sql`), 'utf8'))
+    assert.doesNotMatch(preview, /^FAIL/m, preview)
+    assert.equal(preview.split('\n').filter((l) => l.startsWith('OK ')).length, 5, preview)
   })
 
   it('счета: без разрешения и до «взять» — нет; взята цена снабжения — файлы всех ВОР позиции; адресных ссылок и чужого — нет', () => {
     assert.equal(docs(U.alpha), '', 'разрешения нет')
     assert.equal(as(U.admin, `select public.bid_supply_grant('${T.open}', '${CP.alpha}', '[]'::jsonb, true) > 0`), 't')
     assert.equal(docs(U.alpha), '', 'цену ещё не брали')
+    // 20270305: администратору в просмотре — счета открытых позиций и до «взять» (взятое в черновике страница отбирает сама); у отвода
+    // документ — адресная ссылка, её нет и здесь. Другому сотруднику — как было: только к цене, взятой в базе.
+    assert.equal(docs(U.admin, `, '${CP.alpha}'`), 'КП Стандартпарк № 10067.pdf;Счёт ПСК № 072813.pdf', 'просмотр — открытые позиции')
+    assert.equal(docs(U.eng, `, '${CP.alpha}'`), '', 'не администратор — только к взятой цене')
     assert.equal(take(U.alpha, [['Труба стальная 20', 'м'], ['Кран шаровый 20', 'шт'], ['Отвод 20', 'шт']]), '2', 'у крана цены снабжения нет')
     assert.equal(docs(U.alpha), 'КП Стандартпарк № 10067.pdf;Счёт ПСК № 072813.pdf', 'труба — файлы обоих ВОР; отвод — ссылка, кран — без цены')
     assert.equal(docs(U.beta), '', 'без доступа к тендеру — ничего')
     assert.equal(docs(U.admin, `, '${CP.alpha}'`), docs(U.alpha), 'просмотр от имени подрядчика — то же')
+    assert.equal(docs(U.eng, `, '${CP.alpha}'`), docs(U.alpha), 'другой сотрудник после «взять» — то же')
     assert.equal(docs(U.admin), '', 'сотруднику без организации — ничего')
     assert.equal(as(U.alpha, `select count(*) from public.s3_documents where doc_category = 'supply_doc'`), '0', 'строки файлов счетов подрядчику закрыты')
   })
@@ -174,6 +188,13 @@ describe('Кабинет подрядчика: счета снабжения к 
     assert.equal(hist(U.alpha).split(';').length, 1)
     assert.match(hist(U.beta), /=999\.00$/, 'у другой организации — её цена')
     assert.equal(hist(U.admin), '', 'сотруднику — пусто')
+  })
+
+  it('откат 20270305: прежняя функция — администратору только к взятой цене; повтор безопасен', () => {
+    for (let i = 0; i < 2; i++) db.sql(null, { file: file('rollback', `${MIG_PREVIEW}_rollback.sql`) })
+    assert.equal(internal(`select count(*) from pg_proc where proname = 'bid_supply_open_doc_rows'`), '0')
+    assert.equal(internal(`select count(*) from pg_proc where proname = 'bid_supply_docs' and prosrc like '%is_admin()%'`), '0')
+    assert.equal(internal(`select count(*) from pg_proc where proname = 'bid_supply_docs' and prosecdef`), '1', 'функция на месте')
   })
 
   it('откат: функций нет; повтор безопасен', () => {

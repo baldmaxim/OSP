@@ -181,10 +181,15 @@ describe('Реестр СУ-10: подробности расценки — ба
   before(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'osp-supply-details-'))
     // Сначала — всё до 20270227: строки загружаются в прежнюю таблицу (как на проде до выкладки).
+    // 20270306 (строки счетов тендеров) требует 20270227 и добавляет колонки реестра — её проверяет registry-doc-lines-db.test.mjs.
+    const later = (n) => n.startsWith('20270306_')
     const before20270227 = path.join(tmp, 'yandex-before')
+    const upTo20270227 = path.join(tmp, 'yandex-upto')
     fs.mkdirSync(before20270227)
-    for (const f of fs.readdirSync(Y_DIR).filter((n) => n.endsWith('.sql') && !n.startsWith(NAME))) {
-      fs.copyFileSync(path.join(Y_DIR, f), path.join(before20270227, f))
+    fs.mkdirSync(upTo20270227)
+    for (const f of fs.readdirSync(Y_DIR).filter((n) => n.endsWith('.sql') && !later(n))) {
+      if (!f.startsWith(NAME)) fs.copyFileSync(path.join(Y_DIR, f), path.join(before20270227, f))
+      fs.copyFileSync(path.join(Y_DIR, f), path.join(upTo20270227, f))
     }
     db = startSingleOwner(latestVerifiedCopy())
     migrate(before20270227)
@@ -197,7 +202,7 @@ describe('Реестр СУ-10: подробности расценки — ба
     ], 'до переноса.xlsx').split('|')[0]
     internal(`update public.supply_registry_rates set created_at = '2026-11-01 10:00+03' where import_id = '${early}'`)
     // Теперь — 20270227 настоящим migrate.sh: перенос строк, проверка прав и .check.sql в транзакции.
-    assert.match(migrate(Y_DIR), new RegExp(`OK ${NAME}: применена`))
+    assert.match(migrate(upTo20270227), new RegExp(`OK ${NAME}: применена`))
   })
   after(() => {
     db?.stop()

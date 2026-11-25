@@ -504,7 +504,8 @@
     "reason": null,
     "body": [
       "document_id",
-      "tender_id"
+      "tender_id",
+      "view"
     ]
   },
   {

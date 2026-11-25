@@ -14,8 +14,10 @@
 //   • решения пользователя 24.11.2026 (миграция 20270301): расценка на сайте — основной путь, по каждой ведомости сразу (сводка по ВОР,
 //     не расценённое — жёлтым), что изменилось в ВОР (стенд ?vorChanges=1, ?heldVor=1), цены снабжения с разрешения отдела (?supply=…),
 //     блок инженера «Подрядчики на сайте: цены снабжения»;
-//   • решение пользователя 25.11.2026 (миграция 20270302): у взятой цены снабжения — «счёт» поставщика этой позиции (скачивание маршрутом
-//     службы; своя цена — счёта нет); прошлые цены — одним запросом по ключам позиций тендера (без функции — как раньше);
+//   • решение пользователя 25.11.2026 (миграция 20270302): у взятой цены снабжения — «счёт» поставщика этой позиции (своя цена — счёта
+//     нет); с просьбы пользователя 25.11.2026 — своя колонка «Счёт» рядом с «Ценой СУ-10» и окно просмотра (ссылка службы «показать»,
+//     в просмотре от имени подрядчика — обычный путь файлов, счёт и у цены, взятой в черновике, 20270305); прошлые цены — одним
+//     запросом по ключам позиций тендера (без функции — как раньше);
 //   • решения пользователя 11.11.2026 (стенд ?bidFiles=1 — миграция 20270113): файлы ВОР — только в расценке, РД — свёрнута, шаблонов
 //     нет; свои файлы с расценками, загруженные тогда, — списком для скачивания (новых не принимаем: файл с ценами расценивает сайт).
 import { describe, it, before, after } from 'node:test'
@@ -39,13 +41,15 @@ describe('Кабинет подрядчика: расценка на сайте'
     await stand?.server.close()
   })
 
-  async function open(query = '', viewport = { width: 1500, height: 950 }) {
+  // init — скрипт до загрузки стенда (page.addInitScript): например, свои данные поверх cabinet-seed.js.
+  async function open(query = '', viewport = { width: 1500, height: 950 }, { init = null } = {}) {
     const context = await browser.newContext({ locale: 'ru-RU', viewport })
     const page = await context.newPage()
     const errors = []
     page.on('pageerror', (e) => errors.push(e.message))
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()) })
     page.on('dialog', (d) => d.accept())
+    if (init) await page.addInitScript(init)
     await page.goto(`${stand.url.replace('index.html', 'cabinet.html')}?latency=0${query}`)
     return { page, errors, close: () => context.close().catch(() => {}) }
   }
@@ -91,7 +95,7 @@ describe('Кабинет подрядчика: расценка на сайте'
       assert.equal(row.source, 'manual')
       assert.ok(row.key && row.unit_key === 'м3', JSON.stringify(row))
       assert.match(await concrete.locator('.bid-col-sum').textContent(), /1\s017\s965,25/)
-      assert.match(await text(page.locator('table.bid-vs tfoot td').nth(1)), /1 017 965,25 1 из 2/, 'итог — один раз, строкой «ИТОГО по всем ВОР»')
+      assert.match(await text(page.locator('.bid-vs-total .bid-vs-line').nth(0)), /1 017 965,25 1 из 2/, 'итог — один раз, строкой «ИТОГО по всем ВОР»')
       assert.equal(await page.locator('.bid-sum-cell', { hasText: 'Материалы' }).count(), 0, 'над сводкой сумм не дублируем')
 
       await tab('Структура КП').click()
@@ -228,12 +232,12 @@ describe('Кабинет подрядчика: расценка на сайте'
       const before = await page.evaluate(() => window.__supabaseStats.requests.length)
       await openTender(page, 857)
       await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
-      const summary = page.locator('table.bid-vs')
+      const summary = page.locator('.bid-vs-wrap')
       await summary.waitFor({ timeout: 60000 })
-      await summary.locator('tbody tr', { hasText: 'ВОР корпус 2' }).waitFor({ timeout: 60000 })
-      assert.deepEqual(await summary.locator('tbody .bid-vs-pick').allTextContents(), ['ВОР корпус 2', 'ВОР паркинга'], 'ведомости — по имени')
-      // Ничего не расценено — всё жёлтым: строки таблицы, ячейки сводки и итог.
-      assert.equal(await summary.locator('td.is-incomplete').count(), 9)
+      await summary.locator('li.bid-vs-row', { hasText: 'ВОР корпус 2' }).waitFor({ timeout: 60000 })
+      assert.deepEqual(await summary.locator('li.bid-vs-row .bid-vs-pick').allTextContents(), ['ВОР корпус 2', 'ВОР паркинга'], 'ведомости — по имени')
+      // Ничего не расценено — всё жёлтым: строки таблицы, суммы плиток и итог.
+      assert.equal(await summary.locator('.bid-vs-line.is-incomplete').count(), 9)
       await page.locator('.bid-tab', { hasText: 'Материалы' }).locator('.bid-tab-missing', { hasText: 'без цены 2' }).waitFor()
       assert.equal(await page.locator('.bid-table tbody tr.is-unpriced').count(), 2)
       const bg = await page.locator('.bid-table tbody tr.is-unpriced .bid-col-price').first().evaluate((el) => getComputedStyle(el).backgroundColor)
@@ -245,12 +249,12 @@ describe('Кабинет подрядчика: расценка на сайте'
       await concrete.locator('.bid-money-input').fill('7800')
       await concrete.locator('.bid-money-input').press('Enter')
       await page.locator('.bid-save', { hasText: 'Все цены сохранены' }).waitFor({ timeout: 10000 })
-      const row = (name) => summary.locator('tbody tr', { hasText: name })
-      assert.match(await text(row('ВОР паркинга').locator('td').nth(1)), /1 017 900,00 1 из 2/)
-      assert.match(await text(summary.locator('tfoot td').nth(1)), /2 035 800,00 1 из 2/)
+      const row = (name) => summary.locator('li.bid-vs-row', { hasText: name })
+      assert.match(await text(row('ВОР паркинга').locator('.bid-vs-line').nth(0)), /1 017 900,00 1 из 2/)
+      assert.match(await text(summary.locator('.bid-vs-total .bid-vs-line').nth(0)), /2 035 800,00 1 из 2/)
       assert.equal(await page.locator('.bid-table tbody tr.is-priced').count(), 1)
 
-      // Строка сводки — ведомость таблицы: объём и сумма — по ней.
+      // Плитка сводки — ведомость таблицы: объём и сумма — по ней.
       await row('ВОР паркинга').locator('.bid-vs-pick').click()
       assert.equal(await row('ВОР паркинга').getAttribute('class'), 'bid-vs-row is-selected')
       assert.match(await concrete.locator('.bid-col-vol').textContent(), /130,5/)
@@ -278,11 +282,11 @@ describe('Кабинет подрядчика: расценка на сайте'
     try {
       await openTender(page, 857)
       await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
-      const summary = page.locator('table.bid-vs')
+      const summary = page.locator('.bid-vs-wrap')
       await summary.locator('.bid-vs-badge.is-changed').waitFor({ timeout: 60000 })
       assert.match(await text(summary.locator('.bid-vs-badge.is-changed')), /Отдел обновил ВОР 20\.10\.2026: новых 1 · убрано 1 · изменено 1/)
       // Новая версия, которую отдел не подтвердил: видна, но не расценивается и в итог не входит; позиций не удваивает.
-      const held = summary.locator('tbody tr.is-held')
+      const held = summary.locator('li.bid-vs-row.is-held')
       await held.waitFor({ timeout: 60000 })
       assert.match(await text(held), /ВОР паркинга изм\.1.*ждёт подтверждения отдела.*не входит в итог/)
       await page.locator('.bid-tab', { hasText: 'Материалы' }).locator('.bid-tab-count', { hasText: '2' }).waitFor()
@@ -361,7 +365,11 @@ describe('Кабинет подрядчика: расценка на сайте'
       await close()
     }
 
-    // Решение пользователя 25.11.2026: у взятой цены снабжения — счёт поставщика; своя цена — счёта нет; скачивание — маршрутом службы.
+    // Решение пользователя 25.11.2026: у взятой цены снабжения — счёт поставщика; своя цена — счёта нет. Просьба пользователя 25.11.2026
+    // «не вижу столбец со счётом и возможностью его посмотреть»: своя колонка «Счёт» рядом с «Ценой СУ-10», кнопка — окно просмотра по
+    // ссылке службы «показать»; «Скачать» в окне — ссылкой на скачивание.
+    // Скачивание ждём по имени файла: рамка с PDF в браузере без просмотрщика PDF сама может начать скачивание.
+    const invoiceDownload = (p) => p.waitForEvent('download', { predicate: (d) => d.suggestedFilename() === 'Счёт ПСК № 072813.pdf' })
     ;({ page, errors, close } = await open('&supply=granted'))
     try {
       await openTender(page, 857)
@@ -370,20 +378,35 @@ describe('Кабинет подрядчика: расценка на сайте'
       await bar.waitFor({ timeout: 60000 })
       const concrete = page.locator('.bid-table tbody tr', { hasText: 'Бетон В25 W8' })
       const invoice = concrete.getByRole('button', { name: 'Счёт снабжения «Счёт ПСК № 072813.pdf»: Бетон В25 W8' })
+      const heads = (await page.locator('.bid-table thead th').allTextContents()).map((h) => h.trim())
+      assert.equal(heads[heads.indexOf('Цена СУ-10, ₽') + 1], 'Счёт', 'колонка «Счёт» — сразу после «Цены СУ-10»')
       assert.equal(await invoice.count(), 0, 'цену не брали — счёта нет')
-      assert.doesNotMatch(await text(bar), /ссылка «счёт»/)
+      assert.equal(await text(concrete.locator('.bid-col-supdoc')), '—')
+      assert.doesNotMatch(await text(bar), /колонке «Счёт»/)
 
       await bar.getByRole('button', { name: 'Взять для позиций без цены (1)' }).click()
       await invoice.waitFor({ timeout: 10000 })
       assert.equal(await invoice.textContent(), 'счёт')
-      assert.match(await text(concrete.locator('.bid-source')), /^цена снабжения · счёт$/)
-      assert.match(await text(bar), /У взятой цены — ссылка «счёт»/)
+      assert.equal(await text(concrete.locator('.bid-source')), 'цена снабжения', 'счёт — только в колонке, под ценой его нет')
+      assert.match(await text(bar), /У взятой цены в колонке «Счёт»/)
       const docCalls = (await calls(page, 'bid_supply_docs'))
       assert.ok(docCalls.length >= 2, 'счета — вместе с ценами и снова после «взять»')
-      const [saved] = await Promise.all([page.waitForEvent('download'), invoice.click()])
+
+      await invoice.click()
+      const viewer = page.getByRole('dialog', { name: 'Счёт снабжения «Счёт ПСК № 072813.pdf»' })
+      const frame = viewer.locator('iframe.s3-doc-modal-frame')
+      await frame.waitFor({ timeout: 10000 })
+      assert.match(await frame.getAttribute('src'), /^data:application\/pdf/, 'PDF — по ссылке «показать», не из памяти страницы')
+      const [saved] = await Promise.all([invoiceDownload(page), viewer.getByRole('button', { name: 'Скачать', exact: true }).click()])
       assert.equal(saved.suggestedFilename(), 'Счёт ПСК № 072813.pdf')
-      assert.deepEqual(await page.evaluate(() => window.__supplyDocCalls), [{ tender_id: 't-open', document_id: 'doc-supply-inv' }],
-        'ключа файла у подрядчика нет — ссылку выдаёт служба по id')
+      // Ключа файла у подрядчика нет — ссылки выдаёт служба по id: окну — «показать» (в разработке StrictMode зовёт эффект окна дважды),
+      // «Скачать» — одна ссылка на скачивание.
+      const svc = await page.evaluate(() => window.__supplyDocCalls)
+      assert.ok(svc.every((c) => c.tender_id === 't-open' && c.document_id === 'doc-supply-inv'), JSON.stringify(svc))
+      assert.ok(svc.some((c) => c.view === true), 'окно — ссылкой «показать»')
+      assert.equal(svc.filter((c) => c.view !== true).length, 1, '«Скачать» — ссылкой на скачивание')
+      await page.keyboard.press('Escape')
+      assert.equal(await viewer.count(), 0, 'Escape закрывает окно')
 
       // Своя цена — счёта нет сразу (до перечитывания); снова цена снабжения — счёт снова.
       await concrete.locator('.bid-money-input').fill('7000')
@@ -398,7 +421,7 @@ describe('Кабинет подрядчика: расценка на сайте'
       await close()
     }
 
-    // Просмотр от имени подрядчика: счёт виден, скачивается обычным путём файлов (сотруднику строка файла видна), служба не зовётся.
+    // Просмотр от имени подрядчика: счёт виден, окно и скачивание — обычным путём файлов (сотруднику строка файла видна), служба не зовётся.
     ;({ page, errors, close } = await open('&supply=granted&supplyTaken=1&preview=1'))
     try {
       await openTender(page, 857)
@@ -406,7 +429,10 @@ describe('Кабинет подрядчика: расценка на сайте'
       const invoice = page.getByRole('button', { name: 'Счёт снабжения «Счёт ПСК № 072813.pdf»: Бетон В25 W8' })
       await invoice.waitFor({ timeout: 60000 })
       assert.deepEqual((await calls(page, 'bid_supply_docs')).map((c) => c.p_counterparty), ['cp-alpha'], 'организация просмотра')
-      const [saved] = await Promise.all([page.waitForEvent('download'), invoice.click()])
+      await invoice.click()
+      const viewer = page.getByRole('dialog', { name: 'Счёт снабжения «Счёт ПСК № 072813.pdf»' })
+      await viewer.locator('iframe.s3-doc-modal-frame').waitFor({ timeout: 10000 })
+      const [saved] = await Promise.all([invoiceDownload(page), viewer.getByRole('button', { name: 'Скачать', exact: true }).click()])
       assert.equal(saved.suggestedFilename(), 'Счёт ПСК № 072813.pdf')
       assert.deepEqual(await page.evaluate(() => window.__supplyDocCalls), [])
       assert.deepEqual(errors, [])
@@ -414,13 +440,26 @@ describe('Кабинет подрядчика: расценка на сайте'
       await close()
     }
 
+    // Просмотр от имени подрядчика, цена взята в черновике (20270305: база отдаёт администратору счета всех открытых позиций): счёт
+    // появляется у взятой цены, как у подрядчика, — а до «взять» его нет, и подсказка та же, что у подрядчика. «Взять» в просмотре есть
+    // (кабинет 1 в 1, 25.11.2026; прежняя проверка «в просмотре кнопок нет» была до этого), но в базу ничего не уходит.
     ;({ page, errors, close } = await open('&supply=granted&preview=1'))
     try {
       await openTender(page, 857)
       await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
-      await page.locator('.bid-supply.is-granted').waitFor({ timeout: 60000 })
-      assert.equal(await page.locator('.bid-supply button').count(), 0, 'просмотр от имени подрядчика — без записи')
-      assert.equal(await page.locator('.bid-take').count(), 0)
+      const bar = page.locator('.bid-supply.is-granted')
+      await bar.waitFor({ timeout: 60000 })
+      const invoice = page.getByRole('button', { name: 'Счёт снабжения «Счёт ПСК № 072813.pdf»: Бетон В25 W8' })
+      assert.equal(await invoice.count(), 0, 'цену в черновике не брали — счёта нет')
+      assert.doesNotMatch(await text(bar), /колонке «Счёт»/)
+      await bar.getByRole('button', { name: 'Взять для позиций без цены (1)' }).click()
+      await invoice.waitFor({ timeout: 10000 })
+      assert.match(await text(bar), /У взятой цены в колонке «Счёт»/)
+      assert.equal((await calls(page, 'bid_supply_take')).length, 0, 'черновик просмотра — в базу не пишется')
+      assert.equal((await calls(page, 'bid_supply_request')).length, 0)
+      await invoice.click()
+      await page.getByRole('dialog', { name: 'Счёт снабжения «Счёт ПСК № 072813.pdf»' }).locator('iframe.s3-doc-modal-frame').waitFor({ timeout: 10000 })
+      assert.deepEqual(await page.evaluate(() => window.__supplyDocCalls), [])
       assert.deepEqual(errors, [])
     } finally {
       await close()
@@ -588,19 +627,78 @@ describe('Кабинет подрядчика: расценка на сайте'
       await page.getByRole('button', { name: 'Скачать ВОР «ВОР паркинга.xlsx»' }).waitFor({ timeout: 60000 })
       await page.locator('.bid-tab', { hasText: 'Материалы' }).locator('.bid-tab-count', { hasText: '2' }).waitFor({ timeout: 60000 })
       await page.locator('.bid-save', { hasText: 'в базу не записываются' }).waitFor()
-      assert.match(await text(page.locator('table.bid-vs tfoot td').nth(1)), /0 из 2/, 'цена другой организации в просмотр не попала')
+      assert.match(await text(page.locator('.bid-vs-total .bid-vs-line').nth(0)), /0 из 2/, 'цена другой организации в просмотр не попала')
       await page.getByRole('button', { name: 'Загрузить файл с ценами' }).waitFor()
       // Цену можно ввести, как подрядчику: она остаётся на экране (черновик просмотра), в базу не уходит.
       const input = page.locator('.bid-table .bid-money-input:not([disabled])').first()
       await input.fill('1234')
       await input.press('Tab')
       await page.waitForTimeout(1200)
-      assert.match(await text(page.locator('table.bid-vs tfoot td').nth(1)), /1 из 2/, 'цена встала в сводку')
+      assert.match(await text(page.locator('.bid-vs-total .bid-vs-line').nth(0)), /1 из 2/, 'цена встала в сводку')
       assert.deepEqual(await calls(page, 'bid_request'), [], 'заявка не записана')
       assert.deepEqual(await calls(page, 'bid_rates_save'), [], 'цена не записана')
       assert.deepEqual(errors, [])
     } finally {
       await close()
+    }
+  })
+
+  it('скорость (25.11.2026): ВОР в браузере качаются по нескольку сразу, не больше 4; список файлов тендера — один запрос; просмотр — позиции с сервера (20270304), без неё — разбор в браузере', async () => {
+    // Пять корпусов сверх «ВОР паркинга» (копии книги под своими ключами), заявка «ООО Альфа»; хранилище отвечает через 300 мс.
+    const corpora = () => {
+      let fdb
+      Object.defineProperty(window, '__fakeDb', {
+        configurable: true,
+        get() { return fdb },
+        set(v) {
+          fdb = v
+          for (let i = 1; i <= 5; i++) {
+            const key = `tenders/t-open/korpus-${i}.xlsx`
+            window.__fakeFiles[key] = window.__fakeFiles['tenders/t-open/vor.xlsx']
+            v.s3_documents.push({ id: `doc-k${i}`, owner_type: 'tender', owner_id: 't-open', doc_category: 'vor_statement', file_name: `ВОР корпус ${i}.xlsx`,
+              s3_key: key, mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size_bytes: 9000 + i, created_at: '2026-10-22T10:00:00Z' })
+          }
+          v.tender_bid_requests.push({ id: 'req-speed', tender_id: 't-open', counterparty_id: 'cp-alpha', status: 'pending', requested_at: '2026-10-20T10:00:00Z' })
+        },
+      })
+      window.__fakeRemoteFiles = true
+      window.__fakeFileDelay = 300
+    }
+    const vorKeys = (page) => page.evaluate(() => (window.__fakeFileRequests || []).filter((k) => /^tenders\/t-open\/.*\.xlsx$/.test(k)))
+    {
+      // Просмотр, база раньше 20270304: функция отказывает администратору — шесть ведомостей разбираются в браузере.
+      const { page, errors, close } = await open('&preview=1', undefined, { init: corpora })
+      try {
+        await page.locator('table.tenders-registry').waitFor({ timeout: 120000 })
+        const before = await page.evaluate(() => window.__supabaseStats.requests.length)
+        await openTender(page, 857)
+        await page.waitForFunction(() => !document.body.innerText.includes('Читаем ведомости')
+          && document.querySelectorAll('.bid-vs-wrap li.bid-vs-row').length >= 6, null, { timeout: 60000 })
+        assert.equal((await calls(page, 'bid_positions')).length, 1, 'сначала — разбор службы')
+        assert.equal((await vorKeys(page)).length, 6, 'все шесть ведомостей скачаны')
+        const atOnce = await page.evaluate(() => window.__fakeFileMaxInFlight)
+        assert.ok(atOnce >= 2 && atOnce <= 4, `одновременно скачивалось ${atOnce}: нужно по нескольку, но не больше 4`)
+        const tables = await page.evaluate((n) => window.__supabaseStats.requests.slice(n).map((r) => r.table), before)
+        assert.equal(tables.filter((t) => t === 's3_documents').length, 1, 'документы тендера и ведомости расценки — один запрос списка файлов')
+        assert.deepEqual(errors, [])
+      } finally {
+        await close()
+      }
+    }
+    {
+      // Просмотр после 20270304: позиции — разбор службы, книги ВОР не скачиваются.
+      const { page, errors, close } = await open('&preview=1&previewPositions=1')
+      try {
+        await page.locator('table.tenders-registry').waitFor({ timeout: 120000 })
+        await openTender(page, 857)
+        await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
+        await page.locator('.bid-tab', { hasText: 'Материалы' }).locator('.bid-tab-count', { hasText: '2' }).waitFor({ timeout: 60000 })
+        assert.ok((await calls(page, 'bid_positions')).length >= 1)
+        assert.deepEqual(await vorKeys(page), [], 'книга ВОР не скачивалась')
+        assert.deepEqual(errors, [])
+      } finally {
+        await close()
+      }
     }
   })
 
@@ -819,87 +917,46 @@ describe('Кабинет подрядчика: расценка на сайте'
     }
   })
 
-  it('инженер: цены снабжения подрядчикам — в «Тендерах на материалы» (окно «Цены подрядчикам»), по позициям или все сразу; в основном реестре блока нет', async () => {
+  it('инженер: в «Тендерах на материалы» — только «просят цены: N» (ссылка в расценку, столбец раскрыт); кнопки и окна «Цены подрядчикам» нет', async () => {
     const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 1600, height: 1000 } })
+    // Просьба подрядчика основного тендера tender-13 — в «базе» стенда с самого начала: счётчик читается вместе с реестром.
+    await context.addInitScript(() => {
+      let fakeDb
+      Object.defineProperty(window, '__fakeDb', {
+        configurable: true,
+        get: () => fakeDb,
+        set: (v) => {
+          fakeDb = v
+          v.tender_bid_supply_access = [{ tender_id: 'tender-13', counterparty_id: 'cp-site', status: 'requested', requested_at: '2026-11-20T09:00:00Z' }]
+        },
+      })
+    })
     const page = await context.newPage()
     const errors = []
     page.on('pageerror', (e) => errors.push(e.message))
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()) })
-    page.on('dialog', (d) => d.accept())
-    // Как bid_supply_list / bid_supply_items / bid_supply_grant / bid_supply_decide (20270303): цен в списке подрядчиков нет.
-    const fake = () => {
-      window.__supplyCalls = []
-      const granted = new Set()
-      const items = [
-        { item_key: 'труба стальная 20', unit_key: 'м', name: 'Труба стальная 20', unit: 'м', price: 512.4, vors: 2, taken: false },
-        { item_key: 'отвод 20', unit_key: 'шт', name: 'Отвод 20', unit: 'шт', price: 75, vors: 1, taken: false },
-      ]
-      window.__fakeRpc = { ...(window.__fakeRpc || {}),
-        bid_supply_list: ({ p_tenders }) => ({ data: p_tenders.map((id) => ({ tender_id: id, counterparty_id: 'cp-site', counterparty_name: 'ООО Сайт',
-          counterparty_inn: '7700000009', access: 'invited', status: granted.size ? 'granted' : 'requested', requested_at: '2026-11-20T09:00:00Z',
-          requested_by_name: 'Сайтов С. С.', decided_at: null, decided_by_name: null, priced: 12, from_supply: 0,
-          granted_items: granted.size, supply_items: items.length })), error: null }),
-        bid_supply_items: () => ({ data: items.map((r) => ({ ...r, granted: granted.has(r.item_key) })), error: null }),
-        bid_supply_grant: (args) => {
-          window.__supplyCalls.push(['grant', args])
-          granted.clear()
-          for (const r of (args.p_all ? items.map((x) => ({ key: x.item_key })) : args.p_items)) granted.add(r.key)
-          return { data: granted.size, error: null }
-        },
-        bid_supply_decide: (args) => { window.__supplyCalls.push(['decide', args]); granted.clear(); return { data: 'denied', error: null } },
-      }
-    }
     try {
-      // Основное строительство: блока цен снабжения в раскрытой строке больше нет.
+      // Основное строительство: блока цен снабжения в раскрытой строке нет.
       await page.goto(`${stand.url}?route=/tenders/construction&tenders=5&items=20&cps=2&latency=0`)
       const rows = page.locator('table.tenders-registry > tbody > tr')
       await rows.first().waitFor({ timeout: 120000 })
-      await page.evaluate(fake)
       await rows.first().locator('.expand-toggle').click()
       await page.locator('.expanded-cp-row').first().waitFor({ timeout: 10000 })
       assert.equal(await page.locator('.bidreq.bidsup').count(), 0, 'в реестре основного строительства блока нет')
 
-      // «Тендеры на материалы»: у тендера, основной которого принимает предложения (tender-13), — «Цены подрядчикам».
+      // «Тендеры на материалы»: у тендера, чей основной (tender-13) получил просьбу, — ссылка в расценку со столбцом «Цены подрядчику».
       await page.goto(`${stand.url}?route=/tenders/materials&tenders=13&matTenders=1&latency=0`)
       await page.locator('table.tenders-registry > tbody > tr').first().waitFor({ timeout: 120000 })
-      await page.evaluate(fake)
-      const button = page.getByRole('button', { name: /Цены подрядчикам/ })
-      await button.first().waitFor({ timeout: 10000 })
-      assert.equal(await button.count(), 1, 'только у тендера с идущим основным')
-      await button.first().click()
-      const block = page.locator('.bsa-dialog .bidreq.bidsup')
-      await block.waitFor({ timeout: 10000 })
-      assert.match(await block.textContent(), /ООО Сайт · ИНН 7700000009просит цены снабжения/)
-      assert.match(await block.textContent(), /открыто позиций: 0 из 2/)
-      assert.doesNotMatch(await block.textContent(), /₽/, 'цен в блоке нет')
+      const link = page.getByRole('link', { name: 'просят цены: 1' })
+      await link.first().waitFor({ timeout: 10000 })
+      assert.match(await link.first().getAttribute('href'), /\/tenders\/materials\/.+\/pricing\?prices=contractors$/)
+      assert.equal(await page.getByRole('button', { name: /Цены подрядчикам/ }).count(), 0, 'отдельного окна больше нет')
 
-      // По позициям: окно со списком, отметить одну, сохранить — функцией базы с ключом позиции.
-      await block.getByRole('button', { name: 'Выбрать позиции…' }).click()
-      const dialog = page.locator('.bsi-dialog:not(.bsa-dialog)')
-      await dialog.locator('tbody tr', { hasText: 'Отвод 20' }).waitFor({ timeout: 10000 })
-      await dialog.getByRole('checkbox', { name: 'Открыть цену: Труба стальная 20' }).check()
-      await dialog.getByRole('button', { name: 'Сохранить (1)' }).click()
-      await page.waitForFunction(() => /открыто позиций: 1 из 2/.test(document.querySelector('.bsa-dialog .bidreq.bidsup')?.textContent || ''), null, { timeout: 10000 })
-      let calls = await page.evaluate(() => window.__supplyCalls)
-      assert.deepEqual(calls.at(-1), ['grant', { p_tender: 'tender-13', p_counterparty: 'cp-site', p_items: [{ key: 'труба стальная 20', unit_key: 'м' }], p_all: false }])
-
-      // Все сразу — список берёт база (p_all), в историю основного тендера.
-      await block.getByRole('button', { name: 'все сразу' }).click()
-      await page.waitForFunction(() => /открыто позиций: 2 из 2/.test(document.querySelector('.bsa-dialog .bidreq.bidsup')?.textContent || ''), null, { timeout: 10000 })
-      calls = await page.evaluate(() => window.__supplyCalls)
-      assert.equal(calls.at(-1)[1].p_all, true)
-      await page.waitForFunction(() => window.__fakeDb.tender_audit_log?.some((r) => r.field_name === 'supply_prices_access' && r.tender_id === 'tender-13'),
-        null, { timeout: 10000 })
-      await block.getByRole('button', { name: 'Закрыть все' }).click()
-      await page.waitForFunction(() => window.__supplyCalls.at(-1)?.[0] === 'decide', null, { timeout: 10000 })
-      assert.equal((await page.evaluate(() => window.__supplyCalls)).at(-1)[1].p_allow, false)
-      await page.keyboard.press('Escape')
-      await page.locator('.bsa-dialog').waitFor({ state: 'detached', timeout: 10000 })
-
-      // Снабжение (раздел «Тендеры на материалы» с правкой) кнопки не видит: решает только инженер ОСП или администратор.
+      // Снабжение (раздел «Тендеры на материалы» с правкой) ссылки не видит: решает только инженер ОСП или администратор.
       await page.goto(`${stand.url}?route=/tenders/materials&tenders=13&matTenders=1&latency=0&asRole=snabjenie`)
       await page.locator('table.tenders-registry > tbody > tr').first().waitFor({ timeout: 120000 })
-      assert.equal(await page.getByRole('button', { name: /Цены подрядчикам/ }).count(), 0)
+      await page.waitForTimeout(300)
+      assert.equal(await page.getByRole('link', { name: /просят цены/ }).count(), 0)
       assert.deepEqual(errors, [])
     } finally {
       await context.close().catch(() => {})

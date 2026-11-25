@@ -4,6 +4,7 @@ import { IconClose, IconFileText } from '../icons/ToolbarIcons'
 import { isWebLink } from '../../utils/kpRegistrySources'
 import { fmtMoney, fmtMoscowDate } from '../../utils/ratesRegistry'
 import { loadImportInfo } from '../../services/supplyRegistryImport'
+import { isSupplyDocRow, loadDocLineStatus, loadTenderNumber } from '../../services/supplyRegistryDocs'
 import './KpRates.css'
 import './SupplyRateDetails.css'
 
@@ -47,10 +48,33 @@ function SourceFile({ value }) {
 // Строка уже прочитана страницей (поля подробностей — в той же выборке), здесь дочитывается только загрузка (файл, кто,
 // когда) — одним запросом по id и только для загруженных из Excel. hasDetails — в базе есть колонки подробностей
 // (миграция 20270227): нет — их строк в окне нет вовсе, а не «Не указан».
-export default function SupplyRateDetailsDialog({ row, hasDetails = true, onClose }) {
+// Номер тендера — одним запросом по tender_id (у строк всех видов). Строка счёта / КП тендера (миграция 20270306): файл
+// (onOpenFile — открыть, если он есть), «файл удалён из тендера», статус «применена / не применена в тендере» — applied
+// со страницы (undefined — окно спросит само, null — неизвестно).
+export default function SupplyRateDetailsDialog({ row, hasDetails = true, onClose, applied, onOpenFile = null }) {
   const imported = row.source_type === 'supply_import'
+  const fromDoc = isSupplyDocRow(row)
   const [info, setInfo] = useState(undefined) // undefined — читаем, null — нет, объект — загрузка
   const [infoError, setInfoError] = useState('')
+  const [tenderNo, setTenderNo] = useState(null)
+  const [status, setStatus] = useState(applied)
+
+  useEffect(() => {
+    if (!row.tender_id) return undefined
+    let cancelled = false
+    loadTenderNumber(row.tender_id)
+      .then((n) => { if (!cancelled) setTenderNo(n) })
+      .catch(() => {}) // без номера окно показывает описание, как раньше
+    return () => { cancelled = true }
+  }, [row.tender_id])
+
+  useEffect(() => {
+    setStatus(applied)
+    if (!fromDoc || applied !== undefined) return undefined
+    let cancelled = false
+    loadDocLineStatus([row]).then((m) => { if (!cancelled) setStatus(m ? (m.has(row.id) ? m.get(row.id) : null) : null) })
+    return () => { cancelled = true }
+  }, [fromDoc, applied, row])
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -89,7 +113,13 @@ export default function SupplyRateDetailsDialog({ row, hasDetails = true, onClos
           </div>
 
           <dl className="srd-list">
-            <Field label="Источник">{row.source_name || 'СУ-10'}</Field>
+            <Field label="Источник">
+              {fromDoc && row.doc_deleted_at ? (
+                <span className="srd-deleted">
+                  {row.source_name} — файл удалён из тендера {fmtMoscowDate(row.doc_deleted_at)}
+                </span>
+              ) : (row.source_name || 'СУ-10')}
+            </Field>
             <Field label="Объект">
               {(row.object_name || objectFromFile) && (
                 <>
@@ -99,8 +129,9 @@ export default function SupplyRateDetailsDialog({ row, hasDetails = true, onClos
               )}
             </Field>
             <Field label="Тендер">
-              {(row.tender_desc || tenderFromFile) && (
+              {(row.tender_desc || tenderFromFile || tenderNo != null) && (
                 <>
+                  {tenderNo != null && <span className="srd-tender-no">№ {tenderNo}</span>}
                   {row.tender_id && row.tender_desc
                     ? <Link to={`/tenders/${row.tender_id}`} className="srd-link">{row.tender_desc}</Link>
                     : (row.tender_desc || tenderFromFile)}
@@ -108,6 +139,31 @@ export default function SupplyRateDetailsDialog({ row, hasDetails = true, onClos
                 </>
               )}
             </Field>
+            {fromDoc && (
+              <Field label="Статус" empty={status === undefined ? 'Проверяем…' : 'Не удалось проверить'}>
+                {status === true ? <span className="srd-status is-applied">Применена в тендере</span>
+                  : status === false ? (
+                    <span className="srd-status is-idle">
+                      Не применена в тендере
+                      <span className="srd-file">цена этой строки не стоит ни у одной позиции тендера</span>
+                    </span>
+                  ) : null}
+              </Field>
+            )}
+            {fromDoc && (
+              <Field label="Документ">
+                {row.doc_deleted_at ? (
+                  <span className="srd-invoice is-missing">
+                    <IconFileText size={16} /> «{row.source_file || 'без имени'}» — удалён из тендера {fmtMoscowDate(row.doc_deleted_at)}
+                  </span>
+                ) : (
+                  <span className="srd-path-row">
+                    <span className="srd-invoice is-linked"><IconFileText size={16} /> «{row.source_file || 'без имени'}»</span>
+                    {onOpenFile && <button type="button" className="kpr-link-btn" onClick={onOpenFile}>Открыть</button>}
+                  </span>
+                )}
+              </Field>
+            )}
             {imported && hasDetails && (
               <>
                 <Field label="Подрядчик по папке">{row.contractor_label}</Field>
@@ -116,7 +172,7 @@ export default function SupplyRateDetailsDialog({ row, hasDetails = true, onClos
                 <Field label="Файл-источник" empty="Не указан"><SourceFile value={row.source_file} /></Field>
               </>
             )}
-            {hasDetails && <Field label="Счёт">
+            {hasDetails && !fromDoc && <Field label="Счёт">
               {hasInvoice ? (
                 <a href={row.invoice_url} target="_blank" rel="noopener noreferrer" className="srd-invoice is-linked" title={row.invoice_url}>
                   <IconFileText size={16} /> Открыть счёт
@@ -137,9 +193,15 @@ export default function SupplyRateDetailsDialog({ row, hasDetails = true, onClos
             )}
           </dl>
           {infoError && <p className="kpr-error" role="alert">{infoError}</p>}
-          {!imported && (
+          {!imported && !fromDoc && (
             <p className="kpr-muted">
               Цена снабжения из тендера: документы и цены поставщиков — в карточке тендера, вкладка «Расценки снабжения».
+            </p>
+          )}
+          {fromDoc && (
+            <p className="kpr-muted">
+              Строка счёта / КП, загруженного в тендер на материалы: цена — как её прочитало окно «Счета и КП тендера», дата —
+              дата документа (не нашлась в файле — день загрузки).
             </p>
           )}
         </div>

@@ -4885,6 +4885,21 @@
         }
       ],
       "why": "Реестр расценок → «Расценки от снабжения СУ-10» → «Загрузить из Excel» (SupplyRegistryImportDialog, canEditRegistry); в базе osp_can(rates_registry, edit)."
+    },
+    "supply_doc_rates_status": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "rates_registry",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Реестр СУ-10, строки счетов и КП тендеров (20270306): «не применена в тендере» у показанных строк и в окне «Расценка» (services/supplyRegistryDocs). Только булево по id строки; в базе — osp_registry_reader."
     }
   }
 }

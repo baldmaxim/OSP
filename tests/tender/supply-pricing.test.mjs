@@ -700,6 +700,91 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
+  it('столбец «Цены подрядчику»: свёрнут, только инженеру и администратору; кто просит — выбран сам; «с документом», «все», «сбросить» — набором ключей позиций', async () => {
+    const IZO = normName('Изоляция K-Flex 13×15')
+    const PIPE = normName('Труба медная Ø12,7')
+    // Как bid_supply_list / bid_supply_items / bid_supply_grant (20270303): цена снабжения одна во всех ВОР — у изоляции (к ней
+    // приложен документ, seedLink=1) и у трубы (pipeRates=partial). Второй подрядчик — заявка ждёт решения.
+    const fake = ({ izo, pipe }) => {
+      window.__supplyCalls = []
+      const granted = new Set()
+      const items = [
+        { item_key: izo, unit_key: 'м', name: 'Изоляция K-Flex 13×15', unit: 'м', price: 96, vors: 1, taken: false },
+        { item_key: pipe, unit_key: 'м', name: 'Труба медная Ø12,7', unit: 'м', price: 400, vors: 1, taken: false },
+      ]
+      const cp = (id, name, access, status) => ({ tender_id: 'tender-p', counterparty_id: id, counterparty_name: name, counterparty_inn: null,
+        access, status, requested_at: null, requested_by_name: null, decided_at: null, decided_by_name: null, priced: 0, from_supply: 0,
+        granted_items: id === 'cp-site' ? granted.size : 0, supply_items: items.length })
+      window.__fakeRpc = { ...(window.__fakeRpc || {}),
+        bid_supply_list: () => ({ data: [cp('cp-site', 'ООО Сайт', 'invited', granted.size ? 'granted' : 'requested'), cp('cp-wait', 'ООО Ждёт', 'pending', 'requested')], error: null }),
+        bid_supply_items: () => ({ data: items.map((r) => ({ ...r, granted: granted.has(`${r.item_key}|${r.unit_key}`) })), error: null }),
+        bid_supply_grant: (args) => {
+          window.__supplyCalls.push(args)
+          granted.clear()
+          for (const r of args.p_items) granted.add(`${r.key}|${r.unit_key}`)
+          return { data: granted.size, error: null }
+        },
+      }
+    }
+    const init = { fn: fake, arg: { izo: IZO, pipe: PIPE } }
+    const { page, context, errors } = await openPage('&seedLink=1&pipeRates=partial', { init })
+    try {
+      page.on('dialog', (d) => d.accept())
+      const toggle = page.getByRole('button', { name: 'Цены подрядчику: показать столбец (просят: 2)' })
+      await toggle.waitFor()
+      assert.equal(await page.locator('.sp-cp-select').count(), 0, 'по умолчанию столбец свёрнут')
+      await toggle.click()
+      const select = page.locator('th .sp-cp-select')
+      await page.waitForFunction(() => document.querySelector('th .sp-cp-select')?.value === 'cp-site')
+      assert.equal(await select.locator('option', { hasText: 'ООО Ждёт' }).isDisabled(), true, 'заявка ждёт решения — выбрать нельзя')
+      const izo = page.getByRole('checkbox', { name: 'Открыть подрядчику цену: Изоляция K-Flex 13×15' })
+      const pipe = page.getByRole('checkbox', { name: `Открыть подрядчику цену: ${TRUBA}` })
+      await izo.waitFor()
+      assert.equal(await rowOf(page, 'Кран шаровой Ду15', 'ОВ').locator('.sp-cp-na').count(), 1, 'без цены снабжения — «—»')
+
+      // «с документом» — только изоляция; сохраняется ключ материала и ед. изм. позиции, в историю основного тендера.
+      await page.getByRole('button', { name: 'с документом', exact: true }).click()
+      assert.equal(await izo.isChecked(), true)
+      assert.equal(await pipe.isChecked(), false)
+      await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+      await page.waitForFunction(() => window.__supplyCalls.length === 1)
+      assert.deepEqual(await page.evaluate(() => window.__supplyCalls[0]),
+        { p_tender: 'tender-p', p_counterparty: 'cp-site', p_items: [{ key: IZO, unit_key: 'м' }], p_all: false })
+      await page.waitForFunction(() => window.__fakeDb.tender_audit_log.some((r) => r.field_name === 'supply_prices_access' && r.tender_id === 'tender-p'))
+
+      // «только отмеченные» — в таблице одна изоляция; «все» — обе позиции.
+      await page.locator('th.sp-cp-th').getByLabel('только отмеченные').check()
+      await pipe.waitFor({ state: 'detached' })
+      await page.locator('th.sp-cp-th').getByLabel('только отмеченные').uncheck()
+      await page.getByRole('button', { name: 'все', exact: true }).click()
+      assert.equal(await pipe.isChecked(), true)
+      await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+      await page.waitForFunction(() => window.__supplyCalls.length === 2)
+      assert.equal((await page.evaluate(() => window.__supplyCalls[1])).p_items.length, 2)
+
+      // «сбросить» и «Сохранить» — пустой набор (база закрывает цены), с вопросом.
+      await page.getByRole('button', { name: 'сбросить', exact: true }).click()
+      await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+      await page.waitForFunction(() => window.__supplyCalls.length === 3)
+      assert.deepEqual((await page.evaluate(() => window.__supplyCalls[2])).p_items, [])
+      await page.getByRole('button', { name: 'Скрыть столбец «Цены подрядчику»' }).click()
+      await page.locator('th .sp-cp-select').waitFor({ state: 'detached' })
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+
+    // Снабжение столбца не видит: решает только инженер ОСП или администратор.
+    const supply = await openPage('&seedLink=1&pipeRates=partial&asRole=supply', { init })
+    try {
+      await supply.page.waitForFunction(() => window.__supabaseStats.active === 0)
+      assert.equal(await supply.page.locator('.sp-cp-toggle, .sp-cp-open').count(), 0)
+      assert.deepEqual(supply.errors, [])
+    } finally {
+      await supply.context.close()
+    }
+  })
+
   it('цену изменил другой пользователь — значение не записано, окно выбора; «Записать моё» — по новой версии', async () => {
     const { page, context, errors } = await openPage()
     try {

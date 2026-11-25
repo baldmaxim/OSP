@@ -9,7 +9,7 @@
 import { db, requestBidFile, requestBidFileAdmin, requestBidSupplyDoc } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { uuidv7 } from '../utils/uuid'
-import { fetchFileBytes, unwrapFunction } from './s3'
+import { fetchFileBytes, requestDownloadUrl, unwrapFunction } from './s3'
 import { cabinetSandbox, setCabinetPreview } from './cabinetPreview'
 
 export const BIDS_MIGRATION_HINT = 'Расценка на сайте появится после обновления базы (миграция 20261102_contractor_bids).'
@@ -226,14 +226,27 @@ export const BID_DOC_CATEGORIES = ['tender_package', 'vor', 'rd', 'vor_statement
 export const VOR_CATEGORIES = ['vor_statement', 'vor']
 
 // Файлы тендера, видимые подрядчику (правило s3_documents: свои тендеры и тендеры с заявкой).
-export async function loadTenderFiles(tenderId) {
-  return unwrap(await db
-    .from('s3_documents')
-    .select('id, owner_id, doc_category, file_name, s3_key, mime_type, size_bytes, created_at')
-    .eq('owner_type', 'tender')
-    .eq('owner_id', tenderId)
-    .in('doc_category', BID_DOC_CATEGORIES)
-    .order('created_at', { ascending: false })) || []
+// Список читают и страница кабинета («Документы тендера»), и расценка (ведомости ВОР) — одним запросом: с организацией (counterpartyId)
+// ответ помнится TENDER_FILES_TTL_MS, второй вызов получает тот же. Правило строк — по организации, поэтому и ключ с ней. Ошибка не
+// запоминается.
+const TENDER_FILES_TTL_MS = 15_000
+const tenderFilesShared = new Map() // `${организация}|${тендер}` → { at, promise }
+const readTenderFiles = async (tenderId) => unwrap(await db
+  .from('s3_documents')
+  .select('id, owner_id, doc_category, file_name, s3_key, mime_type, size_bytes, created_at')
+  .eq('owner_type', 'tender')
+  .eq('owner_id', tenderId)
+  .in('doc_category', BID_DOC_CATEGORIES)
+  .order('created_at', { ascending: false })) || []
+export function loadTenderFiles(tenderId, counterpartyId = null) {
+  if (!counterpartyId) return readTenderFiles(tenderId)
+  const key = `${counterpartyId}|${tenderId}`
+  const hit = tenderFilesShared.get(key)
+  if (hit && Date.now() - hit.at < TENDER_FILES_TTL_MS) return hit.promise
+  const promise = readTenderFiles(tenderId)
+  tenderFilesShared.set(key, { at: Date.now(), promise })
+  promise.catch(() => { if (tenderFilesShared.get(key)?.promise === promise) tenderFilesShared.delete(key) })
+  return promise
 }
 
 // Байты файла ВОР — по подписанной ссылке (её выдаёт сервер, только если строка файла видна).
@@ -473,14 +486,34 @@ export async function loadSupplyDocs(tenderId, previewCounterpartyId = null) {
 
 // Счёт снабжения: подрядчику — ссылка от службы (строки s3_documents ему закрыты), сотруднику в просмотре от имени подрядчика — обычным
 // путём файлов по ключу из строки документа (её ему показывает правило базы).
-export async function supplyDocUrl(tenderId, documentId) {
-  return unwrapFunction(await requestBidSupplyDoc(tenderId, documentId))
+export async function supplyDocUrl(tenderId, documentId, view = false) {
+  return unwrapFunction(await requestBidSupplyDoc(tenderId, documentId, view))
 }
 export async function supplyDocKey(documentId) {
   const { data, error } = await db.from('s3_documents').select('s3_key, file_name').eq('id', documentId).maybeSingle()
   if (error) throw error
   if (!data?.s3_key) throw new Error('файл не найден')
   return data
+}
+// Окно просмотра счёта (просьба пользователя 25.11.2026 «посмотреть счёт»). PDF и картинка — по ссылке «показать», как окно просмотра
+// файлов (S3DocumentPreview): подрядчику её подписывает служба (view; inline: false — прежняя служба или не PDF/картинка: окно
+// предлагает «Скачать»), сотруднику в просмотре — обычный путь файлов по ключу. Не из памяти страницы (blob:): такой документ
+// наследует политику содержимого портала (object-src 'none'), и Chrome может не показать в нём PDF. → { url, inline }
+export async function supplyDocView(tenderId, documentId, preview = false) {
+  if (preview) {
+    const { presigned_url } = await requestDownloadUrl((await supplyDocKey(documentId)).s3_key)
+    return { url: presigned_url, inline: true }
+  }
+  const r = await supplyDocUrl(tenderId, documentId, true)
+  return { url: r.presigned_url, inline: r.inline === true }
+}
+// Байты счёта — Excel в окне просмотра читает страница (листами): подрядчику — по ссылке службы, сотруднику — по ключу.
+export async function supplyDocBytes(tenderId, documentId, preview = false) {
+  if (preview) return fetchFileBytes((await supplyDocKey(documentId)).s3_key)
+  const { presigned_url } = await supplyDocUrl(tenderId, documentId)
+  const res = await fetch(presigned_url)
+  if (!res.ok) throw new Error(res.status === 404 ? 'файла нет в хранилище' : `хранилище ответило ${res.status}`)
+  return new Uint8Array(await res.arrayBuffer())
 }
 
 // Взять цены снабжения для позиций материалов: [{ key, unit_key, name, unit, volume }]; replace — заменить и свою цену. → сколько записано.

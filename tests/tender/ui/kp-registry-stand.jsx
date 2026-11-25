@@ -145,6 +145,31 @@ const siteRows = [
     object_id: 'sr-zil33', tender_desc: SUPPLY_TENDER.work_description, object_name: 'ЖК  ЗИЛ 33', rate_date: '2026-10-04T21:00:00.000Z', import_id: null,
     contractor_label: null, doc_number: null, order_number: null, source_file: null, invoice_url: null, object_label: null, tender_label: null, row_no: null },
 ]
+// Миграция 20270306: строки счетов и КП тендеров (source_type 'supply_doc', файл — doc_id, удалён из тендера — doc_deleted_at),
+// статус — supply_doc_rates_status.
+//   ?supplyDocs=1 — в реестре три строки счетов: применённая, не применённая и из удалённого файла.
+//   ?supplyDocsMissing=1 — колонок строк счетов ещё нет (20270306 не применена): 42703, «Документ» и подробности остаются.
+const DOC_FILE = 'Счёт 101 от 20.11.2026.pdf'
+const docRow = (id, item_name, price, over = {}) => ({ ...siteRows[0], id, source_type: 'supply_doc', source_name: 'Счёт / КП', item_name,
+  unit: 'шт', price, rate_date: '2026-11-19T21:00:00.000Z', source_file: DOC_FILE, doc_id: 'sr-doc-1', doc_deleted_at: null, ...over })
+const docRows = params.get('supplyDocs') === '1' ? [
+  docRow('sr-d1', 'Автомат 1P 16A', 410),
+  docRow('sr-d2', 'Розетка двойная с заземлением', 230),
+  docRow('sr-d3', 'Щит распределительный ЩРН-12', 1900, { source_file: 'КП старое.pdf', doc_id: 'sr-doc-2', doc_deleted_at: '2026-11-24T09:00:00.000Z' }),
+] : []
+if (docRows.length) {
+  fdb.s3_documents.push({ id: 'sr-doc-1', owner_type: 'tender', owner_id: SUPPLY_TENDER.id, s3_key: 'tenders/sr-t1/schet-101.pdf', file_name: DOC_FILE,
+    mime_type: 'application/pdf', size_bytes: 2048, doc_category: 'supply_doc', created_at: '2026-11-25T07:00:00Z', uploaded_by_name: 'Снабженец' })
+  window.__fakeFiles = { ...(window.__fakeFiles || {}), 'tenders/sr-t1/schet-101.pdf': 'data:application/pdf;base64,JVBERi0xLjQK' }
+}
+window.__supplyDocStatusCalls = []
+window.__fakeRpc.supply_doc_rates_status = ({ p_ids }) => {
+  window.__supplyDocStatusCalls.push(p_ids)
+  return { data: p_ids.filter((id) => docRows.some((r) => r.id === id)).map((id) => ({ id, applied: id === 'sr-d1' })), error: null }
+}
+if (params.get('supplyDocsMissing') === '1') {
+  window.__fakeMissingColumns = { ...(window.__fakeMissingColumns || {}), supply_rates_registry: ['doc_id', 'doc_deleted_at'] }
+}
 fdb.supply_registry_imports = []
 fdb.supply_registry_rates = []
 const supplyNorm = (s) => String(s ?? '').toLowerCase().replace(/ё/g, 'е').replace(/[«»"'`()]/g, '').replace(/[\s.]+/g, ' ').trim()
@@ -163,7 +188,7 @@ const supplyViewRow = (m) => {
 const syncSupply = () => {
   const imported = fdb.supply_registry_rates.filter((m) => fdb.supply_registry_imports.some((i) => i.id === m.import_id))
   fdb.supply_registry_rates = imported
-  fdb.supply_rates_registry = [...siteRows, ...imported.map(supplyViewRow)]
+  fdb.supply_rates_registry = [...siteRows, ...docRows, ...imported.map(supplyViewRow)]
   const objs = new Map(fdb.supply_rates_registry.filter((r) => r.object_id).map((r) => [r.object_id, r.object_name]))
   fdb.supply_rates_registry_filter_objects = [...objs].map(([object_id, object_name]) => ({ object_id, object_name }))
   fdb.supply_rates_registry_filter_tenders = [{ tender_id: SUPPLY_TENDER.id, tender_desc: SUPPLY_TENDER.work_description, object_id: 'sr-zil33' }]

@@ -38,6 +38,14 @@ export async function requestVorFileUrl(fileId) {
   return unwrapFunction(await requestBidVorFile(fileId))
 }
 
+// Байты файла ВОР по id — для «Скачать все ВОР» у учётки с регистрации (ключа файла у неё нет; доступ проверяет тот же маршрут).
+export async function fetchVorFileBytes(fileId) {
+  const { presigned_url } = await requestVorFileUrl(fileId)
+  const res = await fetch(presigned_url)
+  if (!res.ok) throw new Error(res.status === 404 ? 'файла нет в хранилище' : `хранилище ответило ${res.status}`)
+  return new Uint8Array(await res.arrayBuffer())
+}
+
 export async function requestUploadUrl({ ownerType, ownerId, fileName, mimeType }) {
   return invokePresign('upload', {
     owner_type: ownerType,

@@ -636,6 +636,23 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
     const call = seen.find((r) => r.url.startsWith('/rpc/bid_supply_doc_file'))
     assert.deepEqual(JSON.parse(call.body.toString()), { p_tender: TENDER, p_doc: DOC })
     assert.equal(decode(call.headers.authorization.replace(/^Bearer /, '')).sub, USER, 'функция — под входом подрядчика, не служебным')
+    const param = (r, name) => new URL(r.json().presigned_url).searchParams.get(name) || ''
+    assert.match(param(res, 'response-content-disposition'), /^attachment;/, 'по умолчанию — скачивание')
+
+    // Окно просмотра (просьба пользователя 25.11.2026 «посмотреть счёт»): view — ссылка «показать» с типом по имени файла, только PDF и
+    // картинки; доступ решает та же функция. Excel и прочее — по-прежнему вложением, без отметки inline.
+    const shown = await doc({ tender_id: TENDER, document_id: DOC, view: true })
+    assert.equal(shown.statusCode, 200, shown.body)
+    assert.equal(shown.json().inline, true)
+    assert.match(param(shown, 'response-content-disposition'), /^inline;/)
+    assert.equal(param(shown, 'response-content-type'), 'application/pdf')
+    answer = { body: JSON.stringify([{ s3_key: DOC_KEY, file_name: 'Счёт ПСК № 072813.xlsx' }]) }
+    const sheet = await doc({ tender_id: TENDER, document_id: DOC, view: true })
+    assert.equal(sheet.json().inline, undefined)
+    assert.match(param(sheet, 'response-content-disposition'), /^attachment;/)
+    assert.equal(param(sheet, 'response-content-type'), '')
+    assert.equal((await doc({ tender_id: TENDER, document_id: DOC, view: 'yes' })).statusCode, 400, 'view — только да/нет')
+    answer = { body: JSON.stringify([{ s3_key: DOC_KEY, file_name: 'Счёт ПСК № 072813.pdf' }]) }
 
     // Функция не отдала строку (нет разрешения, приём закрыт, цена своя, файл не этой позиции) — как будто файла нет.
     answer = { body: '[]' }

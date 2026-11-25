@@ -653,6 +653,17 @@ function findCandidates(item, groups, ix, limit, packs) {
 // Сопоставляется сама: точно или не ниже AUTO_MIN.
 export const autoMatch = (c) => !!c && (c.exact || c.score >= AUTO_MIN)
 
+// Какие позиции строка документа закрывает сама (кандидаты itemCandidates, лучшие первыми): лучшая не ниже AUTO_MIN, почти так же
+// похожая вторая (до 0,05 ниже) и с подходящей ед. изм. — тот же артикул или тот же материал под другой записью. Общее у цен
+// документа в расценке снабжением (offerMatches) и проверки цен по реестру СУ-10 (utils/supplyRegistryCheck); порядок — как в списке.
+const NEAR_RANK = 0.05
+export function autoChosen(all) {
+  const first = all.find(autoMatch)
+  if (!first) return []
+  const near = first.exact ? null : all.find((c) => c !== first && autoMatch(c) && rankOf(first) - rankOf(c) <= NEAR_RANK)
+  return all.filter((c) => c === first || c === near || (c.unitOk && (c.article || sameMaterial(first.group, c.group))))
+}
+
 // Все строки документа: { item, match, also, candidates }. match — выбранная группа (или null), одна группа — одной
 // строке; also — ещё группы той же строки: тот же артикул или тот же материал под другой записью, ед. изм. подходит.
 // packs — см. itemCandidates; index — готовый указатель, если сопоставляем несколько документов с одними позициями.
@@ -708,14 +719,8 @@ export function offerMatches(lines, groups, index = null) {
       }
       continue
     }
-    const all = itemCandidates(line, groups, ix, MATCH_CANDIDATES, { packs: true })
-    const first = all.find(autoMatch)
-    if (!first) continue
-    const near = first.exact ? null : all.find((c) => c !== first && autoMatch(c) && rankOf(first) - rankOf(c) <= 0.05)
-    for (const c of all) {
-      if (c === first || c === near || (c.unitOk && (c.article || sameMaterial(first.group, c.group)))) {
-        put(c.group, { line, score: c.score, exact: c.exact, picked: false, article: !!c.article, same: c.score >= SAME_POSITION_MIN && lineSameAsGroup(line, c.group), unitOk: c.unitOk, pack: c.pack })
-      }
+    for (const c of autoChosen(itemCandidates(line, groups, ix, MATCH_CANDIDATES, { packs: true }))) {
+      put(c.group, { line, score: c.score, exact: c.exact, picked: false, article: !!c.article, same: c.score >= SAME_POSITION_MIN && lineSameAsGroup(line, c.group), unitOk: c.unitOk, pack: c.pack })
     }
   }
   return out

@@ -4,6 +4,7 @@
 //   ?page=cabinet (по умолчанию) — кабинет подрядчика «ООО Альфа»; ?page=admin — реестр расценок, вкладка
 //   «Расценки подрядчиков (актуальные тендеры)»; ?selfReg=1 — подрядчик, зарегистрировавшийся на сайте (позиции с сервера, файлов нет);
 //   ?preview=1 — администратор смотрит кабинет от имени подрядчика: функции кабинета ему отказывают, данные — из таблиц;
+//   &previewPositions=1 — миграция 20270304: bid_positions отдаёт разбор службы и ему (без проверки организации), без параметра — отказ 42501;
 //   ?legacyItems=1 — у тендера № 905 есть смета во вкладке «ВОР» (прежний путь: шаблон и загрузка КП).
 //   ?bidFiles=1 — миграция 20270113 применена: свой ВОР с расценками рядом с каждой ведомостью (расценка на сайте скрыта); у тендера
 //   № 857 две ведомости (корпуса), в базе лежит и файл чужой организации — кабинет его не показывает. Маршрут /api/fn/bid-file
@@ -17,8 +18,9 @@
 //   есть, строки нет), bid_supply_request / bid_supply_prices / bid_supply_take как в базе (цена снабжения бетона — 7 500, у работ цен нет).
 //   Без параметра таблицы нет (PGRST205) — блока цен снабжения нет. Миграция 20270302: у бетона есть счёт снабжения («Счёт ПСК № 072813.pdf»,
 //   файл supply_doc тендера) — bid_supply_docs отдаёт его, только пока цена бетона взята у снабжения и не изменена; маршрут
-//   /api/fn/bid-supply-doc подделан здесь же (подрядчику — ссылка, просмотру от имени подрядчика — 403, как служба); &supplyTaken=1 — цена
-//   бетона уже взята у снабжения.
+//   /api/fn/bid-supply-doc подделан здесь же (подрядчику — ссылка, с view — ссылка «показать» и inline; просмотру от имени подрядчика —
+//   403, как служба); &supplyTaken=1 — цена бетона уже взята у снабжения. Миграция 20270305: в просмотре bid_supply_docs отдаёт счета
+//   всех открытых позиций (взятое в черновике страница отбирает сама).
 //   ?historyFn=0 — функции bid_rate_history нет (база раньше 20270302): прошлые цены — постраничным чтением своих цен, как раньше.
 //   ?vorChanges=1 — миграция 20270301: bid_vor_changes — у «ВОР паркинга» прежняя версия «ВОР паркинга (было)»: бетон был 100 м3, армирования
 //   не было, «Демонтаж опалубки» убран; ?heldVor=1 — ещё и «ВОР паркинга изм.1» — новая версия, отдел не подтвердил (в расценку не входит).
@@ -29,6 +31,7 @@ const params = new URLSearchParams(window.location.search)
 const PAGE = params.get('page') || 'cabinet'
 const SELF_REGISTERED = params.get('selfReg') === '1'
 const PREVIEW = params.get('preview') === '1'
+const PREVIEW_POSITIONS = PREVIEW && params.get('previewPositions') === '1'
 const BID_FILES = params.get('bidFiles') === '1'
 const VOR_VERSIONS = params.get('vorVersions') === '1'
 const FORM_LINKS = params.get('formLinks') === '1'
@@ -222,9 +225,11 @@ window.__fakeRpc = {
   // Как функция базы: позиции — только при доступе к тендеру; файл, который служба ещё не разобрала, — pending.
   bid_positions: ({ p_tender }) => {
     window.__bidCalls.push({ fn: 'bid_positions', p_tender })
+    // Администратор (просмотр «как подрядчик»): база раньше 20270304 отказывает, с ней — ведомости тендера без проверки организации.
+    if (PREVIEW && !PREVIEW_POSITIONS) return { data: null, error: { code: '42501', message: 'Позиции ВОР — только для подрядчика' } }
     const t = TENDERS.find((x) => x.id === p_tender)
     const access = t?.invite ? 'invited' : db.tender_bid_requests.find((r) => r.tender_id === p_tender)?.status
-    if (!access) return { data: null, error: { code: '42501', message: 'Сначала подайте заявку на участие в этом тендере' } }
+    if (!access && !PREVIEW) return { data: null, error: { code: '42501', message: 'Сначала подайте заявку на участие в этом тендере' } }
     if (p_tender === 't-inv') return ok([{ file_id: 'doc-wait', title: 'ВОР фасада', status: 'pending', error: null, positions: [], structure: [], conditions: [] }])
     if (p_tender !== 't-open') return ok([])
     const bytes = Uint8Array.from(atob(window.__fakeFiles['tenders/t-open/vor.xlsx'].split(',')[1]), (c) => c.charCodeAt(0))
@@ -475,6 +480,8 @@ if (SUPPLY) {
       if (PREVIEW) return json(403, { error: 'Счёт снабжения — только для подрядчика' })
       const doc = body.tender_id === 't-open' && takenDocs().find((d) => d.document_id === body.document_id)
       if (!doc) return json(404, { error: 'Счёт недоступен: отдел не разрешил цены снабжения, приём закрыт или цена позиции уже не снабжения' })
+      // view (окно просмотра, PDF): ссылка «показать» — data: из хранилища стенда (подмена fetch не ловит переход рамки окна) и inline.
+      if (body.view === true) return json(200, { presigned_url: window.__fakeFiles[INVOICE.s3_key], expires_in: 300, file_name: INVOICE.file_name, inline: true })
       return json(200, { presigned_url: `https://fake-s3.invalid/${INVOICE.s3_key}`, expires_in: 300, file_name: INVOICE.file_name })
     }
   }
@@ -492,7 +499,13 @@ if (SUPPLY) {
     },
     bid_supply_docs: ({ p_tender, p_counterparty }) => {
       window.__bidCalls.push({ fn: 'bid_supply_docs', p_tender, p_counterparty })
-      return ok(p_tender === 't-open' ? takenDocs() : [])
+      if (p_tender !== 't-open') return ok([])
+      // Администратору в просмотре (20270305) — счета всех открытых позиций: «взять» там — черновик страницы, не база.
+      if (PREVIEW && p_counterparty) {
+        return ok(granted() ? SUPPLY_PRICES.map((sp) => ({ item_key: sp.item_key, unit_key: sp.unit_key, document_id: INVOICE.id,
+          file_name: INVOICE.file_name, uploaded_at: INVOICE.created_at })) : [])
+      }
+      return ok(takenDocs())
     },
     bid_supply_take: ({ p_tender, p_rows, p_replace }) => {
       window.__bidCalls.push({ fn: 'bid_supply_take', p_tender, rows: p_rows, replace: p_replace })

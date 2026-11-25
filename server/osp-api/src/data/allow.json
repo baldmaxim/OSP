@@ -1227,6 +1227,9 @@
     ],
     "bid_supply_items": [
       "authenticated"
+    ],
+    "supply_doc_rates_status": [
+      "authenticated"
     ]
   }
 }

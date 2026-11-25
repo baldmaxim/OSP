@@ -8,6 +8,7 @@ import SupplyRateHistory from './SupplyRateHistory'
 import SupplyLinkDialog from './SupplyLinkDialog'
 import SupplySuggestMenu from './SupplySuggestMenu'
 import SupplyDocDeleteDialog from './SupplyDocDeleteDialog'
+import { ContractorPriceCell, ContractorPricesHead, rowSupplyKeys, useContractorPrices } from './SupplyContractorPrices'
 import { IconAlert, IconAlertCircle, IconCheck, IconClock, IconHistory, IconLink, IconPencil, IconRefresh, IconTrash } from '../icons/ActionIcons'
 import { IconFileSpreadsheet, IconUpload } from '../icons/BsmIcons'
 import { IconSearch } from '../icons/ToolbarIcons'
@@ -114,6 +115,9 @@ const DOC_READ_MAX_BYTES = 30 * 1024 * 1024
 // строке, один комментарий на позицию тендера (строка таблицы — позиция всех ВОР), отдельно от цены. Пишет тот, кто вводит цены;
 // остальные читают. Комментарии коллег — тем же опросом раз в 20 с; написали своё, пока вы писали, — сохраняются оба текста.
 // Таблицы ещё нет в базе — колонки нет.
+//
+// Столбец «Цены подрядчику» — между «Документом» и «Комментарием» (решение пользователя 25.11.2026, SupplyContractorPrices): инженер
+// ОСП и администратор открывают подрядчику основного тендера цены снабжения отмеченных позиций. Свёрнут по умолчанию.
 //
 // «Счета и КП» (SupplyTenderDocsDialog): закинули документ — строки с ценами сами находят позиции, человек сравнивает и применяет; цены
 // пишутся как ввод руками — той же очередью записей с версией строки, файл становится документом позиций. Файл, загруженный к позиции
@@ -498,7 +502,7 @@ const yieldToPage = () => new Promise((resolve) => {
 // (Excel, удаление). active — вкладка карточки открыта (скрытая не опрашивает сервер).
 export default function SupplyPricingPanel({
   ctx: ctxProp = null, tenderId = null, estimateItems: itemsProp = null, onRatesChange, onContext, excelImport = null,
-  refreshToken = 0, variant = 'page', active = true,
+  refreshToken = 0, variant = 'page', active = true, contractorPrices = false,
 }) {
   const { canEdit, user, isAdmin, isSuperAdmin } = useRole()
   const canEditRole = canEdit('tenders') || canEdit('tenders_materials')
@@ -589,6 +593,9 @@ export default function SupplyPricingPanel({
 
   const mainId = ctx?.mainId || null
   const editable = canEditRole && !!ctx && !ctx.locked && !missing
+  // Столбец «Цены подрядчику» (SupplyContractorPrices): инженеру ОСП и администратору, свёрнут; contractorPrices — раскрыт сразу
+  // (переход «просят: N» из «Тендеров на материалы»). От права правки цен не зависит.
+  const cp = useContractorPrices({ mainId, startOpen: contractorPrices })
   const inflight = useRef(new Set())
   const queued = useRef(new Map())
   const retryTimers = useRef(new Map())
@@ -1233,9 +1240,35 @@ export default function SupplyPricingPanel({
     }
     return { all: allRows.length, priced, unpriced: allRows.length - priced, changed }
   }, [allRows])
+  // «Цены подрядчику»: ключи позиций базы у каждой строки (row.key → ключи), пока столбец раскрыт и позиции подрядчика прочитаны.
+  const cpItems = cp.open ? cp.items : null
+  const cpRowKeys = useMemo(() => {
+    if (!cpItems) return null
+    const m = new Map()
+    for (const r of allRows) m.set(r.key, rowSupplyKeys(r, cpItems))
+    return m
+  }, [allRows, cpItems])
+  const cpOnly = cpRowKeys && cp.onlyPicked ? cp.picked : null
+  // «с документом» — позиции, у которых в колонке «Документ» что-то есть (у любого ВОР строки).
+  const cpDocKeys = useMemo(() => {
+    if (!cpRowKeys || !linksByKey) return []
+    const out = new Set()
+    for (const r of allRows) {
+      if (r.targets.some((t) => linksByKey.get(t.key))) for (const k of cpRowKeys.get(r.key) || []) out.add(k)
+    }
+    return [...out]
+  }, [cpRowKeys, allRows, linksByKey])
+  const cpKeysRef = useRef(null)
+  cpKeysRef.current = cpRowKeys
+  const cpToggleKeys = cp.toggle
+  const cpToggle = useCallback((rowKey, on) => {
+    const keys = cpKeysRef.current?.get(rowKey)
+    if (keys?.length) cpToggleKeys(keys, on)
+  }, [cpToggleKeys])
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
     return allRows.filter((r) => {
+      if (cpOnly && !(cpRowKeys.get(r.key) || []).some((k) => cpOnly.has(k))) return false
       if (filter === 'changed' && !r.change && !r.carry && !r.unitOff) return false
       if (q && !r.targets.some((t) => t.p.name.toLowerCase().includes(q))) return false
       if (dateFrom || dateTo) {
@@ -1246,7 +1279,7 @@ export default function SupplyPricingPanel({
       if (filter === 'priced') return r.allPriced
       return true
     }).map((r, gi) => ({ ...r, gi }))
-  }, [allRows, search, filter, dateFrom, dateTo])
+  }, [allRows, search, filter, dateFrom, dateTo, cpOnly, cpRowKeys])
   const virtual = rows.length > VIRTUALIZE_FROM
   const tableWrapRef = useRef(null)
 
@@ -2529,9 +2562,13 @@ export default function SupplyPricingPanel({
   // «Доставка» — миграция 20261120; видна, если у какой-то цены она есть или её открыли кнопкой: у большинства позиций её нет.
   const datesOn = rates.length ? rates.some((r) => 'price_date' in r) : !reuseOff
   const deliveryShown = deliveryOn && (deliveryOpen || rates.some((r) => rateDelivery(r)))
-  const colCount = 7 + (linksOn ? 1 : 0) + (commentsOn ? 1 : 0) + (selectable ? 1 : 0) + (datesOn ? 1 : 0) + (deliveryShown ? 1 : 0)
+  // «Цены подрядчику» — между «Документом» и «Комментарием»; нет подрядчиков на сайте или функции в базе — столбца нет.
+  const cpOn = cp.available
+  const colCount = 7 + (linksOn ? 1 : 0) + (commentsOn ? 1 : 0) + (selectable ? 1 : 0) + (datesOn ? 1 : 0) + (deliveryShown ? 1 : 0) + (cpOn ? 1 : 0)
   const shownKeys = rows.map((r) => r.key)
   const shownSelected = shownKeys.filter((k) => selected.has(k)).length
+  const cpSelectedKeys = cpRowKeys && selected.size ? [...new Set([...selected].flatMap((k) => cpRowKeys.get(k) || []))] : []
+  const cpHead = cpOn ? <ContractorPricesHead cp={cp} docKeys={cpDocKeys} selectedKeys={cpSelectedKeys} /> : null
   const tenderDocCount = (offerDocs?.length || 0) + otherDocs.length
   const panelDrop = editable && filesOn ? {
     onDragOver: (e) => { if (withFiles(e) && !e.defaultPrevented) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' } },
@@ -2623,6 +2660,17 @@ export default function SupplyPricingPanel({
     if (!reuseOff) noteSimilar(row)
     const link = linksByKey ? row.targets.map((t) => linksByKey.get(t.key)).find(Boolean) || null : null
     const rowOffers = offersByKey.get(row.key)
+    // Отметка «Цены подрядчику»: все ключи строки открыты — 'on', часть — 'mixed'; у строки нет цены снабжения для подрядчика — 'na'.
+    let cpState = ''
+    let cpTaken = false
+    let cpChanged = false
+    if (cpOn && cpRowKeys) {
+      const keys = cpRowKeys.get(row.key) || []
+      const on = keys.filter((k) => cp.picked.has(k)).length
+      cpState = !keys.length ? 'na' : on === 0 ? 'off' : on === keys.length ? 'on' : 'mixed'
+      cpTaken = keys.some((k) => cp.items.get(k)?.taken)
+      cpChanged = keys.some((k) => cp.picked.has(k) !== cp.initial.has(k))
+    }
     return (
       <PriceRow key={row.key} row={row} flash={row.targets.map((t) => flash[t.key]).find(Boolean)} editable={editable} nameOf={nameOf} act={act}
         offerCount={otherOffers(rowOffers, row.rate)} fileDrop={editable && filesOn}
@@ -2631,7 +2679,8 @@ export default function SupplyPricingPanel({
         selectable={selectable} selected={selected.has(row.key)}
         origin={row.rate?.source_kind ? (origins.get(row.rate.id) || null) : null} datesOn={datesOn} showAuthor={showAuthor} deliveryOn={deliveryShown}
         similar={(!reuseOff && wantsSimilar(row) ? similarOthers(row, similar.get(row.key) || 0) : 0) + otherUnitFor(row).length}
-        suggestOpen={suggest?.row.key === row.key} />
+        suggestOpen={suggest?.row.key === row.key}
+        cpOn={cpOn} cpState={cpState} cpTaken={cpTaken} cpChanged={cpChanged} cpBusy={cp.busy} onCpToggle={cpToggle} />
     )
   }
 
@@ -2826,14 +2875,21 @@ export default function SupplyPricingPanel({
             </div>
           )}
 
+          {/* На телефоне шапки таблицы нет — «Цены подрядчику» над карточками позиций. */}
+          {cpOn && (
+            <div className="sp-cp-bar">
+              <ContractorPricesHead cp={cp} docKeys={cpDocKeys} selectedKeys={[]} bar />
+            </div>
+          )}
           <div ref={tableWrapRef} className={`table-container sp-table-wrap${virtual ? ' is-virtual' : ''}`}>
-            <table className={`data-table sp-table${linksOn ? ' has-links' : ''}${commentsOn ? ' has-comments' : ''}${datesOn ? (showAuthor ? ' has-dates has-authors' : ' has-dates') : ''}${deliveryShown ? ' has-delivery' : ''}`}>
+            <table className={`data-table sp-table${linksOn ? ' has-links' : ''}${commentsOn ? ' has-comments' : ''}${datesOn ? (showAuthor ? ' has-dates has-authors' : ' has-dates') : ''}${deliveryShown ? ' has-delivery' : ''}${cpOn ? (cp.open ? ' has-cp is-cp-open' : ' has-cp') : ''}`}>
               <colgroup>
                 {selectable && <col className="sp-c-sel" />}
                 <col className="sp-c-num" /><col className="sp-c-name" /><col className="sp-c-unit" /><col className="sp-c-vol" />
                 <col className="sp-c-price" />{deliveryShown && <col className="sp-c-delivery" />}<col className="sp-c-total" />
                 {datesOn && <col className="sp-c-date" />}
                 {linksOn && <col className="sp-c-doc" />}
+                {cpOn && <col className="sp-c-cp" />}
                 {commentsOn && <col className="sp-c-comment" />}
                 <col className="sp-c-state" />
               </colgroup>
@@ -2861,6 +2917,7 @@ export default function SupplyPricingPanel({
                     </th>
                   )}
                   {linksOn && <th title="Ссылка на чек, счёт или КП поставщика">Документ</th>}
+                  {cpOn && <th className="sp-cp-th">{cpHead}</th>}
                   {commentsOn && (
                     <th title={editable ? 'Комментарий к расценке позиции: виден всем, кто открывает расценку. Enter — сохранить, Shift+Enter — новая строка, Esc — отменить'
                       : 'Комментарий к расценке позиции'}>Комментарий</th>
@@ -2879,6 +2936,7 @@ export default function SupplyPricingPanel({
                   <td className="ui-money"><b>{formatAmount(grand.total)}</b></td>
                   {datesOn && <td />}
                   {linksOn && <td />}
+                  {cpOn && <td />}
                   {commentsOn && <td />}
                   <td />
                 </tr>
@@ -3035,10 +3093,13 @@ const samePriceRow = (a, b) => a.row.p === b.row.p && a.row.group === b.row.grou
   && a.offerCount === b.offerCount && a.fileDrop === b.fileDrop
   && a.datesOn === b.datesOn && a.showAuthor === b.showAuthor && a.deliveryOn === b.deliveryOn
   && a.suspect?.offer === b.suspect?.offer && a.suspect?.kind === b.suspect?.kind
+  && a.cpOn === b.cpOn && a.cpState === b.cpState && a.cpTaken === b.cpTaken && a.cpChanged === b.cpChanged && a.cpBusy === b.cpBusy
+  && a.onCpToggle === b.onCpToggle
 
 const PriceRow = memo(function PriceRow({
   row, flash, editable, nameOf, act, linksOn, link, linkDoc, selectable, selected, origin, similar, suggestOpen, datesOn, showAuthor,
   offerCount = 0, fileDrop = false, deliveryOn = false, suspect = null, commentsOn = false, comment = null,
+  cpOn = false, cpState = '', cpTaken = false, cpChanged = false, cpBusy = false, onCpToggle = null,
 }) {
   const { p, draft, view, index, gi, change, vorLabel } = row
   const [dropping, setDropping] = useState(false)
@@ -3205,6 +3266,12 @@ const PriceRow = memo(function PriceRow({
           title={fileDrop && !link ? 'Перетащите сюда счёт или нажмите «+ документ»' : undefined}>
           <LinkCell link={link} file={linkDoc} editable={editable} name={p.name} vorLabel={vorLabel} nameOf={nameOf}
             onEdit={() => act('editLink', row)} onOpenFile={(d) => act('openFile', d)} />
+        </td>
+      )}
+      {cpOn && (
+        <td className={`sp-cp${cpChanged ? ' is-changed' : ''}`} data-label={cpState && cpState !== 'na' ? 'Подрядчику' : ''}>
+          <ContractorPriceCell state={cpState} taken={cpTaken} changed={cpChanged} busy={cpBusy} name={p.name}
+            onToggle={(on) => onCpToggle?.(row.key, on)} />
         </td>
       )}
       {commentsOn && (

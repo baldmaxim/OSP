@@ -283,6 +283,92 @@ describe('Реестр СУ-10: загрузка расценок из Excel —
     }
   })
 
+  // Просьба пользователя 25.11.2026 (миграция 20270306): строки счетов и КП тендера — в реестре, даже без найденных позиций;
+  // файл удалён из тендера — источник красный; статус «не применена в тендере»; в окне — номер тендера.
+  it('строки счетов тендера: файл удалён — источник красный, «Не применена в тендере», окно с номером тендера, файл открывается', async () => {
+    const { page, errors, close } = await open('&supplyDocs=1')
+    try {
+      const row = (name) => page.locator('.rr-table tbody tr', { hasText: name })
+      assert.equal(await page.locator('.rr-table tbody tr').count(), 5)
+      const color = (loc) => loc.evaluate((el) => getComputedStyle(el).color)
+
+      // Файл удалён: источник красный и словами в подсказке; значок «Документ» — красный с датой удаления.
+      const gone = row('Щит распределительный ЩРН-12')
+      const goneChip = gone.locator('.rr-td-source .rr-chip')
+      assert.equal(await goneChip.innerText(), 'Счёт / КП')
+      assert.match(await goneChip.getAttribute('class'), /is-deleted/)
+      assert.equal(await color(goneChip), 'rgb(185, 28, 28)')
+      assert.match(await goneChip.getAttribute('title'), /Файл удалён из тендера 24\.11\.2026: «КП старое\.pdf»/)
+      assert.match(await gone.locator('.rr-td-invoice .rr-invoice.is-missing').getAttribute('aria-label'), /Файл удалён из тендера 24\.11\.2026/)
+      // Файл есть — источник обычный.
+      assert.doesNotMatch(await row('Автомат 1P 16A').locator('.rr-td-source .rr-chip').getAttribute('class'), /is-deleted/)
+
+      // Статус: применённая — без пометки, не применённая — «Не применена в тендере»; у цен тендеров статус не спрашивается.
+      await row('Розетка двойная с заземлением').locator('.rr-status-badge', { hasText: 'Не применена в тендере' }).waitFor()
+      assert.equal(await row('Автомат 1P 16A').locator('.rr-status-badge').count(), 0)
+      assert.equal(await row('Плитка керамогранит 600х600').locator('.rr-status-badge').count(), 0)
+      const asked = await page.evaluate(() => window.__supplyDocStatusCalls)
+      assert.deepEqual(asked.map((ids) => [...ids].sort()), [['sr-d1', 'sr-d2', 'sr-d3']])
+
+      // Окно строки из удалённого файла: номер и описание тендера, «файл удалён», статус, документ без «Открыть».
+      await gone.locator('.rr-td-unit').click()
+      const card = page.getByRole('dialog', { name: 'Расценка' })
+      await card.waitFor()
+      await card.getByText('№ 640').waitFor()
+      let text = await card.innerText()
+      for (const part of ['Счёт / КП — файл удалён из тендера 24.11.2026', 'Отделка МОП', 'Не применена в тендере',
+        '«КП старое.pdf» — удалён из тендера 24.11.2026']) {
+        assert.ok(text.includes(part), `в окне нет «${part}»: ${text}`)
+      }
+      assert.doesNotMatch(text, /Цена снабжения из тендера|Ссылки на счёт нет/)
+      assert.equal(await card.getByRole('button', { name: 'Открыть' }).count(), 0)
+      await page.keyboard.press('Escape')
+      await card.waitFor({ state: 'detached' })
+
+      // Цена из тендера — тоже с номером тендера, без статуса.
+      await row('Плитка керамогранит 600х600').locator('.rr-td-price').click()
+      await card.getByText('№ 640').waitFor()
+      assert.doesNotMatch(await card.innerText(), /Статус|Не применена/)
+      await page.keyboard.press('Escape')
+      await card.waitFor({ state: 'detached' })
+
+      // Применённая строка: «Применена в тендере», «Открыть» — просмотр файла (окно закрывается).
+      await row('Автомат 1P 16A').locator('.rr-td-price').click()
+      await card.getByText('Применена в тендере').waitFor()
+      text = await card.innerText()
+      assert.ok(text.includes(`«${'Счёт 101 от 20.11.2026.pdf'}»`), text)
+      await card.getByRole('button', { name: 'Открыть' }).click()
+      await card.waitFor({ state: 'detached' })
+      await page.locator('.s3-doc-preview').first().waitFor({ timeout: 10000 })
+      await page.keyboard.press('Escape')
+      await page.locator('.s3-doc-preview').first().waitFor({ state: 'detached' })
+
+      // Значок «Документ» в строке открывает тот же файл и строку не раскрывает.
+      await row('Автомат 1P 16A').locator('.rr-td-invoice button.rr-invoice.is-linked').click()
+      await page.locator('.s3-doc-preview').first().waitFor({ timeout: 10000 })
+      assert.equal(await page.getByRole('dialog', { name: 'Расценка' }).count(), 0)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('база без колонок строк счетов (20270306 не применена): «Документ» и подробности на месте, статус не спрашивается', async () => {
+    const { page, errors, close } = await open('&supplyDocsMissing=1')
+    try {
+      const heads = await page.locator('.rr-table thead th').allTextContents()
+      assert.ok(heads.includes('Документ'), heads.join(' | '))
+      assert.equal(await page.locator('.rr-table tbody tr').count(), 2)
+      await page.locator('.rr-table tbody tr', { hasText: 'Клей плиточный' }).locator('.rr-td-price').click()
+      const card = page.getByRole('dialog', { name: 'Расценка' })
+      await card.getByText('№ 640').waitFor()
+      assert.equal(await page.evaluate(() => window.__supplyDocStatusCalls.length), 0)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
   it('без права правки реестра и без миграции — кнопки нет, вкладка работает', async () => {
     for (const query of ['&canEdit=0', '&supplyImportMissing=1']) {
       const { page, errors, close } = await open(query)

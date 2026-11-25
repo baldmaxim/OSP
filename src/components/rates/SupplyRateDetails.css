@@ -35,6 +35,16 @@
 [data-theme='dark'] .srd-invoice.is-linked { color: #4ade80; }
 [data-theme='dark'] .srd-invoice.is-missing { color: #f87171; }
 
+/* Строка счёта / КП тендера (миграция 20270306): номер тендера, статус, «файл удалён из тендера». */
+.srd-tender-no { font-weight: 600; font-variant-numeric: tabular-nums; margin-right: 0.375rem; }
+.srd-status { font-weight: 500; }
+.srd-status.is-applied { color: #15803d; }
+.srd-status.is-idle { color: #b45309; }
+.srd-deleted { color: #b91c1c; font-weight: 500; }
+[data-theme='dark'] .srd-status.is-applied { color: #4ade80; }
+[data-theme='dark'] .srd-status.is-idle { color: #fbbf24; }
+[data-theme='dark'] .srd-deleted { color: #f87171; }
+
 @media (max-width: 640px) {
   .srd-list { grid-template-columns: 1fr; gap: 0.125rem; }
   .srd-list dd { margin-bottom: 0.5rem; }

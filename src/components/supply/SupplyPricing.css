@@ -191,6 +191,76 @@
 /* «Дата цены» (миграция 20261023): 6,5rem под «19.10.2026», у администратора — ещё ФИО того, кто поставил цену. */
 .sp-table .sp-c-date { width: 6.5rem; }
 .sp-table.has-authors .sp-c-date { width: 9.5rem; }
+/* «Цены подрядчику» (инженер ОСП и администратор, SupplyContractorPrices): свёрнут — 2,5rem под кнопку, раскрыт — 13rem под выбор
+   подрядчика и отметки. Ширина прибавляется к --sp-comment-w: на неё уже рассчитаны все min-width таблицы выше и ниже. */
+.sp-table .sp-c-cp { width: 2.5rem; }
+.sp-table.is-cp-open .sp-c-cp { width: 13rem; }
+.sp-table.has-cp { --sp-comment-w: 2.5rem; }
+.sp-table.has-cp.is-cp-open { --sp-comment-w: 13rem; }
+.sp-table.has-comments.has-cp { --sp-comment-w: 14.5rem; }
+.sp-table.has-comments.has-cp.is-cp-open { --sp-comment-w: 25rem; }
+.ui-work.ui-work .sp-table > thead > tr > th.sp-cp-th { padding: 0.25rem 0.375rem; color: var(--text-primary); font-weight: 400; }
+.ui-work.ui-work .sp-table:not(.is-cp-open) > thead > tr > th.sp-cp-th { padding: 0.25rem; text-align: center; }
+/* Свёрнут — кнопка-иконка 28px; сколько просят — рядом с иконкой внутри кнопки (над краем ячейки закреплённая шапка его обрезала бы). */
+.sp-cp-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.125rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding: 0 0.25rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.sp-cp-toggle:hover { border-color: var(--primary-color); color: var(--primary-color); }
+.sp-cp-toggle:has(.sp-cp-asks) { border-color: #d97706; }
+.sp-cp-asks { color: #b45309; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); font-weight: 600; font-variant-numeric: tabular-nums; }
+.sp-cp-head { display: grid; gap: 0.25rem; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.sp-cp-title { display: flex; align-items: baseline; justify-content: space-between; gap: 0.25rem; color: var(--text-secondary); font-weight: var(--ui-medium); }
+/* Подрядчик: плашка с переносом, нативный select — прозрачным слоем поверх (как WrapSelect в «Заявках на ДС»). */
+.sp-cp-pick { position: relative; display: block; }
+.sp-cp-pick-face {
+  display: block;
+  min-height: 1.75rem;
+  padding: 0.3125rem 1.25rem 0.3125rem 0.375rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-weight: var(--ui-medium);
+  overflow-wrap: anywhere;
+}
+.sp-cp-pick-face.is-empty { color: var(--text-secondary); font-weight: 400; }
+.sp-cp-pick-face > svg { position: absolute; top: 0.5rem; right: 0.375rem; color: var(--text-secondary); }
+.sp-cp-select { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; font: inherit; }
+.sp-cp-select:disabled { cursor: default; }
+.sp-cp-pick:hover .sp-cp-pick-face { border-color: var(--primary-color); }
+.sp-cp-pick:focus-within .sp-cp-pick-face { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.sp-cp-tools, .sp-cp-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.125rem 0.625rem; }
+.sp-cp-line { justify-content: space-between; }
+.sp-cp-link { padding: 0; border: 0; background: none; color: var(--ui-link); font: inherit; cursor: pointer; }
+.sp-cp-link:hover:not(:disabled) { text-decoration: underline; }
+.sp-cp-link:disabled { color: var(--text-secondary); opacity: 0.6; cursor: default; }
+.sp-cp-link.is-danger { color: var(--danger-color); }
+.sp-cp-only { display: inline-flex; align-items: center; gap: 0.25rem; cursor: pointer; }
+.sp-cp-only input { margin: 0; accent-color: var(--primary-color); }
+.ui-work.ui-work .sp-cp-save { height: 1.625rem; padding: 0 0.625rem; font-size: var(--ui-hint); }
+.sp-cp-hint, .sp-cp-count, .sp-cp-na { color: var(--text-secondary); }
+.sp-cp-error { color: var(--danger-color); overflow-wrap: anywhere; }
+.sp-cp-note { color: var(--success-color); }
+.sp-cp-cell { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.375rem; min-height: 1.875rem; }
+.sp-cp-taken { padding: 0 0.25rem; border-radius: 0.25rem; background: #dcfce7; color: #166534; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.sp-cp-dirty { color: #b45309; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.ui-work.ui-work .sp-table > tbody > tr > td.sp-cp.is-changed { box-shadow: inset 3px 0 0 #d97706; }
+/* Над таблицей — только на телефоне (там нет шапки таблицы). */
+.sp-cp-bar { display: none; }
+.ui-work.ui-work .sp-cp-open { display: inline-flex; align-items: center; gap: 0.375rem; }
+[data-theme='dark'] .sp-cp-taken { background: #14532d; color: #bbf7d0; }
+[data-theme='dark'] .sp-cp-dirty, [data-theme='dark'] .sp-cp-asks { color: #fcd34d; }
 @media (min-width: 641px) {
   .ui-work.ui-work .sp-table.has-dates { min-width: calc(65rem + var(--sp-comment-w, 0rem)); }
   .ui-work.ui-work .sp-table.has-dates.has-links { min-width: calc(73.25rem + var(--sp-comment-w, 0rem)); }
@@ -763,6 +833,12 @@
   .sp-table td.sp-state { grid-column: 1 / -1; }
   .sp-table td.sp-doc { grid-column: 1 / -1; }
   .sp-table td.sp-comment { grid-column: 1 / -1; }
+  /* «Цены подрядчику»: выбор подрядчика и отметки — над карточками; столбец свёрнут — в карточке пусто. */
+  .sp-cp-bar { display: block; margin: 0 0 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: var(--ui-radius); background: var(--bg-secondary); }
+  .sp-cp-bar:has(> .sp-cp-open) { padding: 0; border: 0; background: none; }
+  .sp-cp-bar .sp-cp-head { font-size: var(--ui-th); line-height: var(--ui-th-lh); }
+  .sp-table td.sp-cp:empty { display: none; }
+  .ui-work.ui-work .sp-table > tbody > tr > td.sp-cp.is-changed { box-shadow: none; }
   /* Отметка нескольких позиций — на компьютере; на телефоне ссылка прикладывается к позиции в её карточке. */
   .sp-table :is(th, td).sp-sel, .sp-sel-bar { display: none; }
   /* Значков нет (позиция не расценена) — пустой полосы под карточкой тоже нет. */

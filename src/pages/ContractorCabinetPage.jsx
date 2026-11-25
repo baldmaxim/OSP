@@ -12,7 +12,7 @@ import { IconHardHat, IconChevronDown } from '../components/icons/TenderHubIcons
 import { IconSearch } from '../components/icons/ToolbarIcons'
 import {
   loadCabinetTenders, loadCabinetTendersPreview, loadOrgCard, loadOrgCardPreview, requestParticipation, setParticipationStatus, TENDER_OPEN_STATUS,
-  VOR_CATEGORIES, loadCompanyAnswers, setCabinetPreview, loadPreviewAccount,
+  VOR_CATEGORIES, loadCompanyAnswers, setCabinetPreview, loadPreviewAccount, loadTenderFiles,
 } from '../services/contractorBids'
 import { isWorkbookFileName } from '../utils/vorFiles'
 import { phoneHref } from '../utils/siteContacts'
@@ -23,7 +23,9 @@ import '../styles/fonts.css'
 import '../styles/workUi.css'
 import './ContractorCabinetPage.css'
 
-const BidWorkspace = lazy(() => import('../components/contractor/BidWorkspace'))
+// Код расценки — заранее, пока читается список тендеров (ContractorCabinetPage, эффект ниже): открытый тендер не ждёт его отдельно.
+const loadBidWorkspace = () => import('../components/contractor/BidWorkspace')
+const BidWorkspace = lazy(loadBidWorkspace)
 const ContractorCompanyTab = lazy(() => import('../components/contractor/ContractorCompanyTab'))
 
 // Кабинет подрядчика: идущие тендеры и своя компания.
@@ -281,6 +283,9 @@ function ContractorCabinetPage() {
   }, [cpId, loadTenderList])
 
   useEffect(() => { loadAll() }, [loadAll])
+  // Код расценки — вместе со списком тендеров, а не после него: иначе открытый тендер ждал бы ещё и загрузку кода. Сбой здесь молчит:
+  // при открытии тендера код запрашивается снова (lazy выше).
+  useEffect(() => { if (tab === 'tenders' && cpId) loadBidWorkspace().catch(() => {}) }, [tab, cpId])
   // Итог загрузки КП относится к открытому тендеру.
   useEffect(() => { setUploadNote(null) }, [activeTenderId])
 
@@ -296,6 +301,7 @@ function ContractorCabinetPage() {
     if (selfView || !activeTenderId || !cpId || !activeAccess || activeAccess === 'rejected') { setEstimateItems([]); setTenderDocs([]); return }
     setTenderBusy(true)
     try {
+      // Список файлов — тот же запрос, что у расценки (BidWorkspace): сервис отдаёт обоим один ответ.
       const [items, docs, lastProposal] = await Promise.all([
         bidsEnabled ? [] : fetchAllRows((from, to) => db
           .from('tender_estimate_items')
@@ -304,13 +310,7 @@ function ContractorCabinetPage() {
           .order('row_number', { ascending: true })
           .order('id', { ascending: true })
           .range(from, to)),
-        db
-          .from('s3_documents')
-          .select('id, owner_id, doc_category, file_name, s3_key, mime_type, size_bytes, created_at')
-          .eq('owner_type', 'tender')
-          .eq('owner_id', activeTenderId)
-          .in('doc_category', ['tender_package', 'rd', 'vor_statement', 'vor'])
-          .order('created_at', { ascending: false }),
+        loadTenderFiles(activeTenderId, cpId).catch((e) => { console.error('Документы тендера:', e); return [] }),
         db
           .from('tender_counterparty_proposals')
           .select('created_at')
@@ -321,7 +321,7 @@ function ContractorCabinetPage() {
           .maybeSingle(),
       ])
       setEstimateItems(items || [])
-      setTenderDocs(docs.data || [])
+      setTenderDocs(docs || [])
       setInvitations(prev => prev.map(t => t.id === activeTenderId
         ? { ...t, uploadedAt: lastProposal?.data?.created_at || null }
         : t))

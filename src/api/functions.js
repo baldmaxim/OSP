@@ -33,7 +33,9 @@ export function invokeFunction(name, options) {
 export const requestBidVorFile = (fileId) => callOspFunction('bid-vor-file', { body: { file_id: fileId } }, { getToken: ospToken, fetchImpl: sessionFetch })
 
 // Счёт снабжения к цене, взятой подрядчиком у снабжения (миграция 20270302) — только свой API: строки s3_documents подрядчику закрыты.
-export const requestBidSupplyDoc = (tenderId, documentId) => callOspFunction('bid-supply-doc', { body: { tender_id: tenderId, document_id: documentId } },
+// view — ссылка для окна просмотра (PDF и картинки; служба отвечает inline: true, если подписала её «показать»).
+export const requestBidSupplyDoc = (tenderId, documentId, view = false) => callOspFunction('bid-supply-doc',
+  { body: { tender_id: tenderId, document_id: documentId, ...(view ? { view: true } : {}) } },
   { getToken: ospToken, fetchImpl: sessionFetch })
 
 // Свой ВОР подрядчика с расценками (миграция 20270113): загрузка, скачивание, удаление — только свой API, решают функции базы.

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
 import useBodyClass from '../hooks/useBodyClass'
 import AccessDenied from '../components/AccessDenied'
@@ -20,6 +20,8 @@ const STATUS_CLASS = { 'Не начат': 'is-new', 'В работе': 'is-work'
 
 export default function SupplyPricingPage() {
   const { tenderId } = useParams()
+  // ?prices=contractors — переход «просят цены: N» из «Тендеров на материалы»: столбец «Цены подрядчику» раскрыт сразу.
+  const [params] = useSearchParams()
   const { scopedObjectIds } = useRole()
   useBodyClass('ui-work-portal')
   // Контекст помнит, для какого тендера он загружен: перешли на другой — шапка ждёт новый.
@@ -59,7 +61,8 @@ export default function SupplyPricingPage() {
         </div>}
         {!ctx && <div className="sp-title"><h2>Расценка материалов</h2></div>}
       </header>
-      <SupplyPricingPanel key={tenderId} tenderId={tenderId} onContext={onContext} variant="page" />
+      <SupplyPricingPanel key={tenderId} tenderId={tenderId} onContext={onContext} variant="page"
+        contractorPrices={params.get('prices') === 'contractors'} />
     </div>
   )
 }

@@ -351,27 +351,81 @@ button.bid-sum-cell { font: inherit; color: inherit; text-align: left; cursor: p
 }
 [data-theme='dark'] .bid-tab-missing { background: rgba(234, 179, 8, 0.26); color: #fde047; }
 
-/* Сводка по ведомостям: строка на ВОР, итог внизу; строка выбирает ведомость для таблицы позиций. */
-.bid-vs-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border-color); border-radius: 8px; }
-.bid-vs { width: 100%; min-width: 44rem; border-collapse: collapse; table-layout: fixed; font-size: 0.8125rem; }
-.bid-vs-w { width: 10rem; }
-.bid-vs-w-act { width: 3rem; }
-.bid-vs th {
-  padding: 0.45rem 0.6rem;
-  border-bottom: 1px solid var(--border-color);
+/* Сводка по ведомостям (просьба пользователя 25.11.2026): плитка на ВОР — название, под ним три суммы строками; плитки сеткой с
+   промежутком, чтобы ведомости не сливались; итог по всем ВОР — полосой над плитками. Плитка выбирает ведомость для таблицы позиций. */
+.bid-vs-wrap { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+.bid-vs-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; }
+.bid-vs-title { margin: 0; font-size: 1rem; line-height: 1.5rem; font-weight: 600; color: var(--text-primary); }
+.bid-vs-n {
+  display: inline-block;
+  min-width: 1.5rem;
+  margin-left: 0.25rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
   background: var(--bg-secondary);
   color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
   font-weight: 500;
-  text-align: left;
+  text-align: center;
+  vertical-align: 0.1rem;
 }
-.bid-vs th.num, .bid-vs td.num { text-align: right; font-variant-numeric: tabular-nums; }
-.bid-vs td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border-color); vertical-align: top; }
-.bid-vs tbody tr:hover td { background: var(--bg-secondary); }
-.bid-vs tr.is-selected td { background: color-mix(in srgb, var(--primary-color) 8%, var(--bg-primary)); }
-.bid-vs tr.is-selected .bid-vs-name { box-shadow: inset 3px 0 0 var(--primary-color); }
-.bid-vs tr.is-held td { color: var(--text-tertiary); }
-.bid-vs tfoot td { border-bottom: 0; background: var(--bg-secondary); font-weight: 600; }
+.bid-vs-bar-acts { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.bid-vs-all { gap: 0.4rem; }
+.bid-vs-all:disabled { opacity: 0.6; cursor: default; }
+.bid-vs-mail {
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border-left: 3px solid var(--primary-color);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary-color) 7%, var(--bg-primary));
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+.bid-vs-mail a { color: var(--ui-link, #0e7490); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+[data-theme='dark'] .bid-vs-mail a { color: var(--primary-color); }
+
+/* Итог по всем ВОР: подпись и три суммы в строку; не помещаются — переносятся, в узком окне — столбиком, как в плитке. */
+.bid-vs-total {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 1fr));
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  font-size: 0.8125rem;
+}
+.bid-vs-total-name { font-weight: 600; }
+.bid-vs-total .bid-vs-line { background: var(--bg-primary); }
+.bid-vs-total .bid-vs-money { font-weight: 600; }
+
+.bid-vs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(21rem, 100%), 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bid-vs-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  font-size: 0.8125rem;
+}
+.bid-vs-row:hover { border-color: color-mix(in srgb, var(--primary-color) 45%, var(--border-color)); }
+.bid-vs-row.is-selected { border-color: var(--primary-color); box-shadow: inset 0 0 0 1px var(--primary-color); }
+.bid-vs-row.is-held { background: var(--bg-secondary); color: var(--text-tertiary); }
 .bid-vs-name { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; overflow-wrap: anywhere; }
+.bid-vs-row .bid-vs-pick { font-size: 0.875rem; line-height: 1.25rem; font-weight: 600; }
 .bid-vs-pick {
   padding: 0;
   border: 0;
@@ -384,36 +438,54 @@ button.bid-sum-cell { font: inherit; color: inherit; text-align: left; cursor: p
 }
 .bid-vs-pick:hover { color: var(--ui-link, #0e7490); text-decoration: underline; text-underline-offset: 2px; }
 [data-theme='dark'] .bid-vs-pick:hover { color: var(--primary-color); }
-.bid-vs-cell { white-space: nowrap; }
-.bid-vs-money { display: block; font-variant-numeric: tabular-nums; }
-.bid-vs-count { display: block; font-size: 0.75rem; color: var(--text-tertiary); font-weight: 400; }
-.bid-vs-cell.is-empty { color: var(--text-tertiary); }
-.bid-vs-total .bid-vs-money { font-weight: 600; }
-.bid-vs td.is-incomplete { background: rgba(234, 179, 8, 0.14); color: #a16207; }
-.bid-vs td.is-incomplete .bid-vs-count { color: #a16207; }
-[data-theme='dark'] .bid-vs td.is-incomplete { background: rgba(234, 179, 8, 0.22); color: #fde047; }
-[data-theme='dark'] .bid-vs td.is-incomplete .bid-vs-count { color: #fde047; }
+/* Сумма — строкой: подпись, сумма, «N из M»; неполная — жёлтым, как в «Сравнении КП». */
+.bid-vs-sums { display: flex; flex-direction: column; gap: 0.25rem; }
+.bid-vs-line {
+  display: grid;
+  grid-template-columns: 6.75rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  background: var(--bg-secondary);
+}
+.bid-vs-label { color: var(--text-secondary); }
+.bid-vs-money { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.bid-vs-count { min-width: 4.5rem; font-size: 0.75rem; color: var(--text-secondary); text-align: right; white-space: nowrap; }
+.bid-vs-line.is-empty .bid-vs-money { color: var(--text-tertiary); }
+.bid-vs-line-total .bid-vs-label, .bid-vs-line-total .bid-vs-money { font-weight: 600; color: var(--text-primary); }
+.bid-vs-line.is-incomplete { background: rgba(234, 179, 8, 0.16); }
+.bid-vs-line.is-incomplete .bid-vs-money, .bid-vs-line.is-incomplete .bid-vs-count { color: #a16207; }
+[data-theme='dark'] .bid-vs-line.is-incomplete { background: rgba(234, 179, 8, 0.22); }
+[data-theme='dark'] .bid-vs-line.is-incomplete .bid-vs-money, [data-theme='dark'] .bid-vs-line.is-incomplete .bid-vs-count { color: #fde047; }
+.bid-vs-row.is-held .bid-vs-line { background: transparent; }
+
+/* Скачать у плитки: файл отдела и он же с вашими ценами. */
+.bid-vs-acts { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: auto; padding-top: 0.15rem; }
+.bid-vs-dl {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 28px;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.bid-vs-dl:hover:not(:disabled) { color: var(--text-primary); border-color: var(--primary-color); }
+.bid-vs-dl:disabled { opacity: 0.55; cursor: default; }
+.bid-vs-dl:focus-visible, .bid-vs-all:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
 .bid-vs-badge { font-size: 0.75rem; line-height: 1.35; font-weight: 400; }
 .bid-vs-badge.is-changed { color: #1d4ed8; }
 .bid-vs-badge.is-wait { color: #b45309; }
 [data-theme='dark'] .bid-vs-badge.is-changed { color: #93c5fd; }
 [data-theme='dark'] .bid-vs-badge.is-wait { color: #fcd34d; }
-.bid-vs-act { text-align: right; }
-.bid-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-.bid-icon-btn:hover { color: var(--text-primary); border-color: var(--primary-color); }
-.bid-icon-btn:focus-visible, .bid-vs-pick:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.bid-vs-pick:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
 
 /* Изменения ВОР в строке позиции — как отметки расценки снабжения («новая», «было …»). */
 .bid-change { display: block; margin-top: 0.2rem; font-size: 0.75rem; color: #1d4ed8; }
@@ -465,9 +537,15 @@ button.bid-sum-cell { font: inherit; color: inherit; text-align: left; cursor: p
 @media (max-width: 640px) {
   .bid-supply-actions { width: 100%; }
   .bid-supply-actions .cab-btn { flex: 1 1 auto; }
-  .bid-vs { min-width: 34rem; }
-  .bid-vs-w { width: 7.5rem; }
+  .bid-vs-bar-acts, .bid-vs-all { width: 100%; }
+  .bid-vs { gap: 0.75rem; }
 }
-/* Счёт снабжения у взятой цены (20270302): ссылка в одной строке с «цена снабжения» — высота строки таблицы та же (виртуальный список). */
-.bid-source .bid-doc-link { font-size: inherit; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
-.bid-source .bid-doc-link:hover { color: var(--primary-color); }
+/* Счёт снабжения у взятой цены (20270302): своя колонка «Счёт» рядом с «Ценой СУ-10» (просьба пользователя 25.11.2026), кнопка — окно
+   просмотра. Таблица шире ещё на колонку: 66 rem + 6 rem. Несколько счетов (разные ВОР) — переносом в той же ячейке. */
+.bid-w-supdoc { width: 6rem; }
+.bid-table.has-supply-docs { min-width: 72rem; }
+.bid-col-supdoc .bid-doc-link {
+  display: inline-flex; align-items: center; gap: 0.25rem; margin-right: 0.5rem; font-size: 0.75rem; white-space: nowrap;
+}
+.bid-col-supdoc .bid-doc-link:last-child { margin-right: 0; }
+.bid-col-supdoc .bid-doc-link svg { flex: 0 0 auto; }

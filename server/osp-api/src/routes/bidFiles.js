@@ -48,6 +48,12 @@ const NOT_FOUND = 'Файл недоступен: приём предложен�
 export const BID_FILE_MAX_BYTES = 25 * 1024 * 1024
 const RATE = { limiter: 'presignRate', deny: 'Слишком много запросов к файлам — подождите минуту' }
 
+// Счёт снабжения в окне просмотра (просьба пользователя 25.11.2026 «посмотреть счёт»): ссылка «показать» — только PDF и картинки, тип
+// задаёт служба по имени файла (не хранилище и не браузер); остальное — по-прежнему вложением.
+const VIEW_TYPES = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' }
+export const supplyDocViewType = (name) => VIEW_TYPES[String(name || '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1]] || null
+const inlineDisposition = (name) => `inline; filename="${sanitizeFileName(name)}"; filename*=UTF-8''${encodeURIComponent(name)}`
+
 // Свой ВОР — только .xlsx: Excel не запускает макросы из .xlsx. Тип, который браузер сообщает для .xlsx, бывает и общим (пустой →
 // octet-stream у страницы, vnd.ms-excel на части Windows); всё равно файл скачивается вложением, а не открывается на сайте.
 const XLSX_MIME = new Set([
@@ -137,7 +143,7 @@ export function registerBidFiles(app, { config, getS3, isReadOnly = () => false,
   // закрыты (в notes счёта — все его строки), поэтому — свой маршрут, как файл ВОР.
   app.route({ method: 'POST', url: '/api/fn/bid-supply-doc', config: {
     access: access.user({ require: 'contractor', deny: 'Счёт снабжения — только для подрядчика', rate: RATE }),
-    body: z.object({ tender_id: z.string().regex(UUID), document_id: z.string().regex(UUID) }),
+    body: z.object({ tender_id: z.string().regex(UUID), document_id: z.string().regex(UUID), view: z.boolean().optional() }),
   }, handler: async (request, reply) => {
     const { data, error } = await request.auth.supabase.rpc('bid_supply_doc_file', {
       p_tender: request.body.tender_id, p_doc: request.body.document_id,
@@ -150,12 +156,17 @@ export function registerBidFiles(app, { config, getS3, isReadOnly = () => false,
     }
     const row = Array.isArray(data) ? data[0] : data
     if (!row?.s3_key) return reply.code(404).send({ error: 'Счёт недоступен: отдел не разрешил цены снабжения, приём закрыт или цена позиции уже не снабжения' })
+    // view — ссылка для окна просмотра: доступ решила та же функция, меняется только то, как браузер покажет файл. inline: true —
+    // только когда ссылка подписана «показать» (страница без отметки — прежняя служба или не PDF/картинка — предлагает «Скачать»).
+    const viewType = request.body.view === true ? supplyDocViewType(row.file_name) : null
     const url = await getSignedUrl(getS3(), new GetObjectCommand({
       Bucket: config.s3.bucket,
       Key: row.s3_key,
-      ResponseContentDisposition: attachmentDisposition(row.file_name),
+      ...(viewType
+        ? { ResponseContentDisposition: inlineDisposition(row.file_name), ResponseContentType: viewType }
+        : { ResponseContentDisposition: attachmentDisposition(row.file_name) }),
     }), { expiresIn: DOWNLOAD_TTL_SEC })
-    return { presigned_url: url, expires_in: DOWNLOAD_TTL_SEC, file_name: row.file_name }
+    return { presigned_url: url, expires_in: DOWNLOAD_TTL_SEC, file_name: row.file_name, ...(viewType ? { inline: true } : {}) }
   } })
 
   // Ссылка на скачивание своего файла (или любого — администратору): решает bid_file_get под входом вошедшего.
