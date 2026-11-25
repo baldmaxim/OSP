@@ -83,7 +83,7 @@ describe('Регистрация подрядчика на сайте: стра�
       await page.unroute('**/api/fn/bid-vor-file')
       await page.route('**/api/fn/bid-vor-file', (route) => route.fulfill({ status: 404, json: { error: 'Файл недоступен: приём предложений закрыт или заявка не подана' } }))
       await page.getByRole('button', { name: 'Скачать ВОР «ВОР паркинга»' }).click()
-      await page.locator('.bid-vor-files .bid-note', { hasText: 'Файл недоступен' }).waitFor()
+      await page.locator('.bid-note', { hasText: 'Файл недоступен' }).waitFor()
       assert.equal(await page.getByRole('button', { name: 'Загрузить КП' }).count(), 0)
       assert.match(await page.locator('.bid-conditions').textContent(), /ГУ в размере 5 %/, 'особые условия — с сервера')
 
@@ -124,7 +124,9 @@ describe('Регистрация подрядчика на сайте: стра�
     }
   })
 
-  it('подрядчик от администратора: файлы и расценка из файла — как раньше; прошлых тендеров и договоров нет и у него', async () => {
+  // Решение пользователя 24.11.2026: расценка на сайте — основной путь; позиции — разбор службы (bid_positions) и у подрядчика от
+  // администратора: книга ВОР в браузере не скачивается и не разбирается, если служба её уже разобрала. Файл ВОР он по-прежнему скачивает.
+  it('подрядчик от администратора: файл ВОР скачивается, позиции — с сервера, книга не разбирается; прошлых тендеров и договоров нет', async () => {
     const { page, errors, close } = await open()
     try {
       await page.locator('table.tenders-registry').waitFor({ timeout: 120000 })
@@ -136,7 +138,8 @@ describe('Регистрация подрядчика на сайте: стра�
       await page.getByRole('button', { name: 'Скачать ВОР «ВОР паркинга.xlsx»' }).waitFor({ timeout: 60000 })
       assert.equal(await page.locator('.cab-doc-name', { hasText: 'ВОР паркинга.xlsx' }).count(), 0)
       await page.locator('.bid-tab', { hasText: 'Работы' }).locator('.bid-tab-count', { hasText: '2' }).waitFor({ timeout: 60000 })
-      assert.equal((await page.evaluate(() => window.__bidCalls.filter((c) => c.fn === 'bid_positions'))).length, 0, 'позиции — из файла')
+      assert.equal((await page.evaluate(() => window.__bidCalls.filter((c) => c.fn === 'bid_positions'))).length, 1, 'позиции — с сервера')
+      assert.deepEqual(await page.evaluate(() => (window.__fakeFileRequests || []).filter((k) => k.endsWith('vor.xlsx'))), [], 'книгу ВОР не скачивали')
       assert.deepEqual(errors, [])
     } finally {
       await close()

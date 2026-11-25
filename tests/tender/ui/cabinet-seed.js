@@ -13,8 +13,13 @@
 //   «ООО Альфа» лежит своя расценка; bid_vor_superseded отдаёт пару «прежняя → новая». Без параметра функции нет — все файлы.
 //   ?formLinks=1 — миграция 20270115: поля анкеты о компании (название и НДС — из карточки, «Наличие СРО» — ответ на компанию),
 //   таблица bid_company_answers и bid_company_save. Без параметра колонок и таблицы нет — анкета как раньше.
+//   ?supply=none|requested|granted|denied — миграция 20270301: разрешение «ООО Альфа» взять цены снабжения тендера № 857 (none — таблица
+//   есть, строки нет), bid_supply_request / bid_supply_prices / bid_supply_take как в базе (цена снабжения бетона — 7 500, у работ цен нет).
+//   Без параметра таблицы нет (PGRST205) — блока цен снабжения нет.
+//   ?vorChanges=1 — миграция 20270301: bid_vor_changes — у «ВОР паркинга» прежняя версия «ВОР паркинга (было)»: бетон был 100 м3, армирования
+//   не было, «Демонтаж опалубки» убран; ?heldVor=1 — ещё и «ВОР паркинга изм.1» — новая версия, отдел не подтвердил (в расценку не входит).
 import * as XLSX from 'xlsx'
-import { readBidFileBytes } from '../../../src/utils/bidVor'
+import { readBidFileBytes, bidItemKey, bidUnitKey } from '../../../src/utils/bidVor'
 
 const params = new URLSearchParams(window.location.search)
 const PAGE = params.get('page') || 'cabinet'
@@ -23,6 +28,9 @@ const PREVIEW = params.get('preview') === '1'
 const BID_FILES = params.get('bidFiles') === '1'
 const VOR_VERSIONS = params.get('vorVersions') === '1'
 const FORM_LINKS = params.get('formLinks') === '1'
+const SUPPLY = params.get('supply')
+const VOR_CHANGES = params.get('vorChanges') === '1'
+const HELD_VOR = params.get('heldVor') === '1'
 const CP = { id: 'cp-alpha', name: 'ООО Альфа', ...(SELF_REGISTERED ? { selfRegistered: true } : {}) }
 
 window.__fakeRole = PAGE === 'admin'
@@ -74,7 +82,7 @@ function vorBook() {
   return `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${b64}`
 }
 
-window.__fakeFiles = { 'tenders/t-open/vor.xlsx': vorBook(), 'tenders/t-inv/vor.xlsx': vorBook(), 'tenders/t-open/vor2.xlsx': vorBook() }
+window.__fakeFiles = { 'tenders/t-open/vor.xlsx': vorBook(), 'tenders/t-inv/vor.xlsx': vorBook(), 'tenders/t-open/vor2.xlsx': vorBook(), 'tenders/t-open/vor-new.xlsx': vorBook() }
 
 const db = window.__fakeDb = {
   s3_documents: [
@@ -408,5 +416,73 @@ if (BID_FILES) {
     if (i >= 0) { delete window.__fakeFiles[db.tender_bid_files[i].s3_key]; db.tender_bid_files[i] = row } else db.tender_bid_files.push(row)
     window.__fakeTouch?.('tender_bid_files')
     return json(200, { ok: true, vor_name: vorName })
+  }
+}
+
+// ── Миграция 20270301: цены снабжения с разрешения отдела, что изменилось в ВОР ─────────────────────────────────────────────
+const parsedVor = () => readBidFileBytes(Uint8Array.from(atob(window.__fakeFiles['tenders/t-open/vor.xlsx'].split(',')[1]), (c) => c.charCodeAt(0)))
+if (SUPPLY) {
+  db.tender_bid_supply_access = SUPPLY === 'none' ? [] : [{ tender_id: 't-open', counterparty_id: CP.id, status: SUPPLY,
+    requested_at: '2026-11-20T09:00:00Z', decided_at: SUPPLY === 'requested' ? null : '2026-11-21T09:00:00Z' }]
+  const concrete = parsedVor().materials.find((p) => /Бетон/.test(p.name))
+  const SUPPLY_PRICES = [{ item_key: concrete.itemKey, unit_key: concrete.unitKey, price: 7500 }]
+  const granted = () => db.tender_bid_supply_access.some((a) => a.tender_id === 't-open' && a.counterparty_id === CP.id && a.status === 'granted')
+  Object.assign(window.__fakeRpc, {
+    bid_supply_request: ({ p_tender }) => {
+      window.__bidCalls.push({ fn: 'bid_supply_request', p_tender })
+      const row = db.tender_bid_supply_access.find((a) => a.tender_id === p_tender && a.counterparty_id === CP.id)
+      if (row) Object.assign(row, { status: 'requested', requested_at: new Date().toISOString() })
+      else db.tender_bid_supply_access.push({ tender_id: p_tender, counterparty_id: CP.id, status: 'requested', requested_at: new Date().toISOString(), decided_at: null })
+      return ok('requested')
+    },
+    bid_supply_prices: ({ p_tender }) => {
+      window.__bidCalls.push({ fn: 'bid_supply_prices', p_tender })
+      return ok(p_tender === 't-open' && granted() ? SUPPLY_PRICES : [])
+    },
+    bid_supply_take: ({ p_tender, p_rows, p_replace }) => {
+      window.__bidCalls.push({ fn: 'bid_supply_take', p_tender, rows: p_rows, replace: p_replace })
+      if (!granted()) return { data: null, error: { code: '42501', message: 'Отдел не разрешил брать цены снабжения в этом тендере' } }
+      let n = 0
+      for (const r of p_rows) {
+        const sp = SUPPLY_PRICES.find((x) => x.item_key === r.key && x.unit_key === r.unit_key)
+        if (!sp) continue
+        const i = db.tender_bid_rates.findIndex((x) => x.tender_id === p_tender && x.kind === 'material' && x.item_key === r.key && x.unit_key === r.unit_key)
+        if (i >= 0 && db.tender_bid_rates[i].price != null && db.tender_bid_rates[i].source !== 'supply' && !p_replace) continue
+        const row = { id: i >= 0 ? db.tender_bid_rates[i].id : crypto.randomUUID(), tender_id: p_tender, counterparty_id: CP.id, kind: 'material',
+          item_key: r.key, unit_key: r.unit_key, name: r.name, unit: r.unit, volume: r.volume, price: sp.price,
+          total: Math.round(sp.price * (r.volume || 0) * 100) / 100, note: i >= 0 ? db.tender_bid_rates[i].note : null, source: 'supply', updated_at: new Date().toISOString() }
+        if (i >= 0) db.tender_bid_rates[i] = row; else db.tender_bid_rates.push(row)
+        n += 1
+      }
+      return ok(n)
+    },
+  })
+} else {
+  window.__fakeErrors = { ...(window.__fakeErrors || {}), tender_bid_supply_access: { code: 'PGRST205', message: "Could not find the table 'public.tender_bid_supply_access' in the schema cache" } }
+}
+
+if (VOR_CHANGES) {
+  const cur = parsedVor()
+  const slim = (p) => ({ kind: p.kind, key: p.key, itemKey: p.itemKey, unitKey: p.unitKey, name: p.name, unit: p.unit, volume: p.volume })
+  const prior = [
+    ...cur.materials.map((p) => (/Бетон/.test(p.name) ? { ...slim(p), volume: 100 } : slim(p))),
+    ...cur.works.filter((p) => !/Армирование/.test(p.name)).map(slim),
+    { kind: 'work', key: 'work|демонтаж опалубки|м2', itemKey: 'демонтаж опалубки', unitKey: 'м2', name: 'Демонтаж опалубки', unit: 'м2', volume: 50 },
+  ]
+  // Своя цена позиции, которой в новой версии нет (переименовали): кабинет предлагает перенести её на похожую.
+  db.tender_bid_rates.push({ id: 'r-orphan', tender_id: 't-open', counterparty_id: CP.id, kind: 'work', item_key: bidItemKey('Армирование плиты перекрытия'),
+    unit_key: bidUnitKey('т'), name: 'Армирование плиты перекрытия', unit: 'т', volume: 3.25, price: 15000, total: 48750, note: null, source: 'manual',
+    updated_at: '2026-10-25T10:00:00Z' })
+  if (HELD_VOR) {
+    db.s3_documents.push({ id: 'doc-vor-new', owner_type: 'tender', owner_id: 't-open', doc_category: 'vor_statement', file_name: 'ВОР паркинга изм.1.xlsx',
+      s3_key: 'tenders/t-open/vor-new.xlsx', mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size_bytes: 9000, created_at: '2026-11-22T10:00:00Z' })
+  }
+  window.__fakeRpc.bid_vor_changes = ({ p_tender }) => {
+    window.__bidCalls.push({ fn: 'bid_vor_changes', p_tender })
+    if (p_tender !== 't-open') return ok([])
+    const rows = [{ file_id: 'doc-vor', created_at: '2026-10-20T10:00:00Z', tracked: true, separate: false, valuable: true,
+      prior_id: 'doc-vor-was', prior_title: 'ВОР паркинга (было)', prior_at: '2026-10-01T10:00:00Z', positions: prior }]
+    if (HELD_VOR) rows.push({ file_id: 'doc-vor-new', created_at: '2026-11-22T10:00:00Z', tracked: true, separate: false, valuable: false, prior_id: null, prior_title: null, prior_at: null, positions: null })
+    return ok(rows)
   }
 }

@@ -2295,6 +2295,20 @@
       ],
       "why": "Заявки с сайта: BidRequestsBlock и счётчик «заявки: N» в основном реестре тендеров (loadBidRequests / loadPendingRequestCounts), сводка администратора. Подрядчик — своей картой."
     },
+    "tender_bid_supply_access": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "Разрешение организации взять цены снабжения (20270301): счётчик «просят цены снабжения» в основном реестре тендеров (loadSupplyRequestCounts), просмотр «как подрядчик» (админ). Пишут только функции bid_supply_*. Подрядчик — своей картой."
+    },
     "tender_counterparties": {
       "read": "reference",
       "select": [
@@ -3820,6 +3834,60 @@
       "read": "sensitive",
       "call": "admin",
       "why": "Сотрудник вызывает только в просмотре «как подрядчик» (BidWorkspace, админ). Подрядчик — своей картой."
+    },
+    "bid_vor_changes": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "admin",
+      "why": "Ведомости и их прежние версии без цен (20270301): сотрудник вызывает только в просмотре «как подрядчик» (BidWorkspace, админ). Подрядчик — своей картой."
+    },
+    "bid_supply_prices": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": "admin",
+      "why": "Цены снабжения подрядчику с разрешением (20270301): сотрудник — только просмотр «как подрядчик» (админ, p_counterparty). Подрядчик — своей картой."
+    },
+    "bid_supply_request": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Только подрядчик (карта подрядчика): просьба взять цены снабжения; в просмотре «как подрядчик» запись закрыта."
+    },
+    "bid_supply_take": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "none",
+      "why": "Только подрядчик (карта подрядчика): взять цены снабжения, цену берёт база; в просмотре «как подрядчик» запись закрыта."
+    },
+    "bid_supply_decide": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "tenders",
+              "edit"
+            ]
+          ]
+        }
+      ],
+      "why": "BidSupplyAccessBlock в основном реестре тендеров (canEdit(tenders)), как bid_decide; функция сама проверяет правку «Тендеров»."
+    },
+    "bid_supply_list": {
+      "kind": "read",
+      "read": "sensitive",
+      "call": [
+        {
+          "any": [
+            [
+              "tenders",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "why": "BidSupplyAccessBlock в раскрытой строке основного реестра тендеров: подрядчики с учёткой кабинета и их разрешение, без цен."
     },
     "can_see_task": {
       "kind": "read",

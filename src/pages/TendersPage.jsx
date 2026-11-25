@@ -78,7 +78,8 @@ import { weekKey } from '../utils/weeks'
 import { TENDER_DUTY_NAMES, DUTY_OVERRIDE_KEY, parseDutyOverride, currentDuty } from '../utils/tenderDuty'
 import TenderCallReminder from '../components/TenderCallReminder'
 import BidRequestsBlock from '../components/contractor/BidRequestsBlock'
-import { loadPendingRequestCounts } from '../services/contractorBids'
+import BidSupplyAccessBlock from '../components/contractor/BidSupplyAccessBlock'
+import { loadPendingRequestCounts, loadSupplyRequestCounts } from '../services/contractorBids'
 import { copyToClipboard } from '../utils/clipboard'
 import { reorderSiblings } from '../utils/appendixTree'
 import { sanitizeUserText, sanitizeDeep } from '../utils/text'
@@ -283,6 +284,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [tenderProposalCounts, setTenderProposalCounts] = useState({})
   // Заявки подрядчиков с сайта, ждущие решения (миграция 20261102): { tenderId: число }.
   const [bidRequestCounts, setBidRequestCounts] = useState({})
+  // Подрядчики, которые просят цены снабжения (миграция 20270301): { tenderId: число }; решение — в раскрытой строке.
+  const [supplyRequestCounts, setSupplyRequestCounts] = useState({})
+  const [supplyBlockKey, setSupplyBlockKey] = useState(0)
   // Сколько тендеров осталось без счётчика участников из-за ошибки запроса —
   // чтобы пустое место в колонке не выглядело как «участников нет».
   const [countsFailed, setCountsFailed] = useState(0)
@@ -620,6 +624,12 @@ ${ATTACHMENT_BLOCK}
         setBidRequestCounts((prev) => (partial ? { ...prev, ...next } : next))
       })
       .catch((err) => console.error('Заявки подрядчиков с сайта:', err.message))
+    loadSupplyRequestCounts(ids)
+      .then((counts) => {
+        const next = Object.fromEntries(ids.map((id) => [id, counts?.[id] || 0]))
+        setSupplyRequestCounts((prev) => (partial ? { ...prev, ...next } : next))
+      })
+      .catch((err) => console.error('Просьбы подрядчиков о ценах снабжения:', err.message))
   }
 
   const fetchTenders = async () => {
@@ -913,14 +923,22 @@ ${ATTACHMENT_BLOCK}
 
   const renderKpCounter = (tender) => {
     const requests = bidRequestCounts[tender.id] || 0
+    const supplyAsks = supplyRequestCounts[tender.id] || 0
     const counter = renderKpCounterBase(tender)
-    if (!requests) return counter
+    if (!requests && !supplyAsks) return counter
     return (
       <>
         {counter}
-        <span className="kp-counter kp-counter-requests" title={`Заявки подрядчиков с сайта ждут решения: ${requests}. Раскройте строку тендера.`}>
-          заявки: {requests}
-        </span>
+        {requests > 0 && (
+          <span className="kp-counter kp-counter-requests" title={`Заявки подрядчиков с сайта ждут решения: ${requests}. Раскройте строку тендера.`}>
+            заявки: {requests}
+          </span>
+        )}
+        {supplyAsks > 0 && (
+          <span className="kp-counter kp-counter-supply" title={`Подрядчики просят разрешение взять цены снабжения: ${supplyAsks}. Раскройте строку тендера.`}>
+            цены СУ: {supplyAsks}
+          </span>
+        )}
       </>
     )
   }
@@ -4041,6 +4059,7 @@ ${ATTACHMENT_BLOCK}
                         canEdit={canEdit('tenders')}
                         onDecided={({ request, accepted }) => {
                           fetchBidRequestCounts([tender.id], { partial: true })
+                          setSupplyBlockKey((k) => k + 1)
                           if (!accepted) return
                           fetchTenderCounterparties(tender.id)
                           fetchTenderProposalCounts([tender.id])
@@ -4048,6 +4067,21 @@ ${ATTACHMENT_BLOCK}
                             fieldName: 'participants',
                             newValue: { id: request.counterparty_id, name: request.counterparties?.name || null },
                             description: `Добавлен участник по заявке с сайта: ${request.counterparties?.name || '—'}`,
+                          })
+                        }}
+                      />
+                    )}
+                    {!isMaterialsView && (
+                      <BidSupplyAccessBlock
+                        tenderId={tender.id}
+                        canEdit={canEdit('tenders')}
+                        reloadKey={supplyBlockKey}
+                        onDecided={({ counterpartyId, name, allow }) => {
+                          fetchBidRequestCounts([tender.id], { partial: true })
+                          logTenderEvent(tender.id, 'field_updated', {
+                            fieldName: 'supply_prices_access',
+                            newValue: { id: counterpartyId, name, text: allow ? 'разрешены' : 'запрещены' },
+                            description: `Цены снабжения подрядчику ${allow ? 'разрешены' : 'запрещены'}: ${name || '—'}`,
                           })
                         }}
                       />

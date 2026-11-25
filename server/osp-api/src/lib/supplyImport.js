@@ -55,7 +55,17 @@ const isNotFound = (e) => e?.name === 'NoSuchKey' || e?.name === 'NotFound' || e
 const CHILD = fileURLToPath(new URL('./supplyParseChild.js', import.meta.url))
 
 // Один файл — один процесс-разборщик. Ответ — как parseVorFileBytes; свои причины: timeout, memory, parser.
-export function parseInChild(bytes, saved, { timeoutMs = SUPPLY_IMPORT_DEFAULTS.parseTimeoutMs, heapMb = SUPPLY_IMPORT_DEFAULTS.parseHeapMb, childFile = CHILD } = {}) {
+// Разборщики всех служб (снабжение и кабинет подрядчика, src/lib/bidPositions.js) — строго по одному: у контейнера osp-api 384 МБ, два
+// процесса по 192 МБ сразу его бы переполнили. Ожидание в очереди в таймаут разбора не входит (таймер — с запуска процесса).
+let parseQueue = Promise.resolve()
+export function parseInChild(bytes, saved, options = {}) {
+  const run = () => parseInChildNow(bytes, saved, options)
+  const job = parseQueue.then(run, run)
+  parseQueue = job.catch(() => {})
+  return job
+}
+
+function parseInChildNow(bytes, saved, { timeoutMs = SUPPLY_IMPORT_DEFAULTS.parseTimeoutMs, heapMb = SUPPLY_IMPORT_DEFAULTS.parseHeapMb, childFile = CHILD } = {}) {
   return new Promise((resolve) => {
     const child = fork(childFile, [], {
       execArgv: [`--max-old-space-size=${heapMb}`],

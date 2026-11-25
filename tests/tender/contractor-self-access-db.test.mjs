@@ -235,8 +235,17 @@ describe('Учётка с регистрации на сайте: база (ко
     assert.equal(row.counterparty_id, CP.self, 'организацию из запроса не выбрать')
     assert.equal(save([{ kind: 'material', key: 'бетон в25', unit_key: 'м3', name: 'x', price: null, note: null }]), '1')
     assert.equal(as(U.self, `select count(*) from public.tender_bid_rates where tender_id = '${T.open}' and item_key = 'бетон в25'`), '0', 'свою цену убрать можно')
-    // Подрядчик от администратора — прежний путь, с позициями из браузера.
-    assert.equal(as(U.managed, `select public.bid_rates_save('${T.open}', '[{"kind":"work","key":"своя","unit_key":"","name":"Своя","price":5,"volume":2}]'::jsonb)`), '1')
+    // Подрядчик от администратора (20270301, аудит 24.11.2026): ведомости тендера разобраны — позиции сверяются и у него, наименование и
+    // объём — из разбора, а не из запроса.
+    const managedSave = (row) => as(U.managed, `select public.bid_rates_save('${T.open}', '${JSON.stringify([row]).replace(/'/g, "''")}'::jsonb)`)
+    assert.throws(() => managedSave({ kind: 'work', key: 'своя', unit_key: '', name: 'Своя', price: 5, volume: 2 }), /Позиции нет в ВОР/)
+    assert.equal(managedSave({ kind: 'work', key: 'устройство плиты', unit_key: 'м3', name: 'Подмена', price: 5, volume: 2 }), '1')
+    assert.equal(as(U.managed, `select name || ':' || volume from public.tender_bid_rates where tender_id = '${T.open}' and item_key = 'устройство плиты'
+      and counterparty_id = '${CP.old}'`), 'Устройство плиты:100.5000')
+    // Ведомость ещё не разобрана службой — у него прежний путь: позиции из браузера (он разбирает файл сам).
+    sql(`insert into public.s3_documents (id, owner_type, owner_id, s3_key, file_name, doc_category) values ('${DOC.vorBad}', 'tender', '${T.open}', 'tenders/open/wait.xlsx', 'Ждёт разбора.xlsx', 'vor')`)
+    assert.equal(managedSave({ kind: 'work', key: 'своя', unit_key: '', name: 'Своя', price: 5, volume: 2 }), '1')
+    sql(`delete from public.s3_documents where id = '${DOC.vorBad}'`)
     // Закрытый тендер.
     assert.throws(() => as(U.self, `select public.bid_rates_save('${T.done}', '[]'::jsonb)`), /закрыта/)
   })

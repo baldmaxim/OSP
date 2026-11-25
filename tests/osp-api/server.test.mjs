@@ -250,7 +250,9 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.equal((await get(KEY_SHARED)).statusCode, 404, 'другая категория файла тендера')
     })
 
-    it('подрядчик: только скачивание и только файлов своих договоров', async () => {
+    // Миграция 20270301 (аудит кабинета 24.11.2026): файлов договоров подрядчику нет — раздела договоров в кабинете нет с 03.11.2026, а
+    // среди файлов договора есть внутренние (понятийное соглашение). Второй замок — здесь, даже если строку покажут правила базы.
+    it('подрядчик: только скачивание и только пакета, ВОР и РД тендера — файлов договоров, даже своих, нет', async () => {
       const up = await fn('s3-presign', U.contractor, { action: 'upload', ...fileBody({ owner_type: 'contract', owner_id: CONTRACT_MINE }) })
       assert.equal(up.statusCode, 403)
       assert.deepEqual(up.json(), { error: 'Действие доступно только сотрудникам' })
@@ -258,7 +260,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
         const res = await fn('s3-presign', U.contractor, { action, ...fileBody(), s3_key: `contracts/${CONTRACT_MINE}/x.docx` })
         assert.equal(res.statusCode, 403, action)
       }
-      assert.equal((await fn('s3-presign', U.contractor, { action: 'download', s3_key: `contracts/${CONTRACT_MINE}/x.docx` })).statusCode, 200)
+      assert.equal((await fn('s3-presign', U.contractor, { action: 'download', s3_key: `contracts/${CONTRACT_MINE}/x.docx` })).statusCode, 404, 'свой договор — тоже нет')
       assert.equal((await fn('s3-presign', U.contractor, { action: 'download', s3_key: `contracts/${CONTRACT_OTHER}/y.docx` })).statusCode, 404, 'чужой договор')
       assert.equal((await fn('s3-presign', U.contractor, { action: 'download', s3_key: KEY_SHARED })).statusCode, 404, 'не договор')
       assert.equal(s3.requests.length, 0)
@@ -505,11 +507,12 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.equal((await download(U.viewer, KEY_T1)).statusCode, 200, 'файл тендера при просмотре «Тендеров»')
     })
 
-    it('подрядчик: ключ не в каталоге своего договора — нет ссылки', async () => {
+    it('подрядчик: файл договора — нет ссылки ни в каталоге своего договора, ни вне его (20270301)', async () => {
       const moved = `contracts/${CONTRACT_OTHER}/moved.docx`
       state.docs[moved] = { row: { id: 'dc', owner_type: 'contract', owner_id: CONTRACT_MINE }, visibleTo: 'all' }
       assert.equal((await download(U.contractor, moved)).statusCode, 404)
-      assert.equal((await download(U.contractor, `contracts/${CONTRACT_MINE}/x.docx`)).statusCode, 200)
+      assert.equal((await download(U.contractor, `contracts/${CONTRACT_MINE}/x.docx`)).statusCode, 404)
+      assert.equal((await download(U.contractor, KEY_VOR)).statusCode, 200, 'ВОР тендера — как раньше')
     })
 
     it('заявка на проверку ДП/ДС: файл в обсуждение — правом просмотра раздела, в «Документы» — только правкой', async () => {

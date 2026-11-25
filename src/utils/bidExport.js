@@ -1,7 +1,7 @@
 // Выгрузка расценки подрядчика в Excel (кабинет и сводка администратора, миграция 20261102). Подключается по
 // требованию: библиотека Excel тяжёлая.
 import * as XLSX from 'xlsx'
-import { priceStructure, lineTotal } from './bidVor.js'
+import { priceStructure, lineTotal } from './bidPrice.js'
 
 const safeSheet = (name, used) => {
   let base = String(name || 'Лист').replace(/[\\/?*[\]:]/g, ' ').trim().slice(0, 28) || 'Лист'

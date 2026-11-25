@@ -44,8 +44,9 @@
 // выданные, но не подтверждённые загрузки учитываются (osp_private.s3_upload_intents) и убираются (cleanupUploadIntents).
 //
 // Доступ: токен пользователя Supabase; строки читаются и пишутся ПОД ЕГО токеном — действует RLS.
-// Одобренный и не заблокированный; подрядчику — только скачивание: файлы своих договоров (is_my_contract) и
-// пакет, ВОР и РД тендера, которые ему показывает правило s3_documents. Загрузка и удаление — если владелец существует и виден пользователю и есть право
+// Одобренный и не заблокированный; подрядчику — только скачивание: пакет, ВОР и РД тендера, которые ему показывает правило
+// s3_documents. Файлов договоров подрядчику нет (миграция 20270301: раздела договоров в кабинете нет с 03.11.2026, а среди файлов
+// договора есть внутренние — понятийное соглашение). Загрузка и удаление — если владелец существует и виден пользователю и есть право
 // раздела (osp_can из Р2a, WRITE_RULES). Функции osp_can нет — 503: без проверки прав не пишем.
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
@@ -490,12 +491,7 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
         return allowed(READ_RULES[table] || UNKNOWN_OWNER_RULES)
       }
       // Подрядчик: строку файла тендера правила базы уже показали только ему; категории — вторым замком.
-      if (data.owner_type === 'tender') return CONTRACTOR_TENDER_CATEGORIES.has(data.doc_category)
-      if (data.owner_type !== 'contract') return false
-      const { data: mine, error: rpcError } = await supabase
-        .rpc('is_my_contract', { contract_uuid: data.owner_id })
-      if (rpcError) throw rpcError
-      return mine === true
+      return data.owner_type === 'tender' && CONTRACTOR_TENDER_CATEGORIES.has(data.doc_category)
     }
 
     try {

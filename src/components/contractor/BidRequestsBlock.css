@@ -41,3 +41,26 @@
   font-weight: 600;
 }
 [data-theme='dark'] .bidreq-self { color: #fca5a5; }
+
+/* Цены снабжения для подрядчиков на сайте (BidSupplyAccessBlock, 20270301): нейтральный блок, просьба — жёлтая плашка. */
+.bidreq.bidsup { border-color: var(--border-color); background: var(--bg-secondary); }
+.bidsup-chip {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0 0.4rem;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+.bidsup-chip.is-requested { background: color-mix(in srgb, #d97706 16%, transparent); color: #b45309; }
+.bidsup-chip.is-granted { background: color-mix(in srgb, #16a34a 14%, transparent); color: #15803d; }
+.bidsup-chip.is-denied { background: color-mix(in srgb, var(--text-tertiary) 16%, transparent); color: var(--text-secondary); }
+[data-theme='dark'] .bidsup-chip.is-requested { color: #fcd34d; }
+[data-theme='dark'] .bidsup-chip.is-granted { color: #6ee7b7; }
+.tenders-page .kp-counter.kp-counter-supply {
+  margin-left: 0.25rem;
+  background: color-mix(in srgb, #d97706 14%, transparent);
+  border-color: color-mix(in srgb, #d97706 40%, transparent);
+  color: #b45309;
+}
+[data-theme='dark'] .tenders-page .kp-counter.kp-counter-supply { color: #fcd34d; }

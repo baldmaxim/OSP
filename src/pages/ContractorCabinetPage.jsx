@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import * as XLSX from 'xlsx'
 import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { downloadS3File } from '../components/FileDownload'
-import { buildProposalWorkbook, matchProposalRows } from '../utils/contractorProposal'
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import ClampText from '../components/ClampText'
 import IconTile from '../components/IconTile'
@@ -53,9 +51,10 @@ const ContractorCompanyTab = lazy(() => import('../components/contractor/Contrac
 // Просмотр от имени подрядчика (previewActive): запросы идут под администратором, у него нет организации, и функции кабинета
 // отказывают. Поэтому те же сведения читаются из таблиц, а записи нет: заявка только на экране, цены и анкета — только просмотр.
 //
-// Решения пользователя 11.11.2026 (окно тендера): файлы ВОР — только в «Расценке» (рядом с каждым — свой ВОР подрядчика с расценками,
-// миграция 20270113), в «Документах тендера» их больше нет; РД — раскрывающимся списком; шаблона КП нет, расценка на сайте временно
-// скрыта (BidWorkspace). Без расценки в кабинете (база раньше 20261102) — всё как было: ВОР в документах и прежний шаблон КП.
+// Решения пользователя 11.11.2026 (окно тендера): файлы ВОР — только в «Расценке», в «Документах тендера» их больше нет; РД —
+// раскрывающимся списком; шаблона КП нет. Решение 24.11.2026: расценка на сайте — основной путь, по каждой ведомости сразу, как
+// только есть доступ к тендеру; файл с ценами — загрузить, чтобы расценить разом, и скачать (BidWorkspace). Без расценки в кабинете
+// (база раньше 20261102) — всё как было: ВОР в документах и прежний шаблон КП.
 
 const PARTICIPATION_LABEL = {
   request_sent: 'Приглашение отправлено',
@@ -315,8 +314,10 @@ function ContractorCabinetPage() {
   // ── Действия ──────────────────────────────────────────────────────────────
   const pricedItems = useMemo(() => estimateItems.filter(i => !i.is_section), [estimateItems])
 
-  const handleDownloadTemplate = () => {
+  // Шаблон КП (прежний путь, база раньше 20261102): библиотека Excel и разбор шаблона — по требованию, кабинет их не грузит.
+  const handleDownloadTemplate = async () => {
     if (!activeTender || estimateItems.length === 0) return
+    const [XLSX, { buildProposalWorkbook }] = await Promise.all([import('xlsx'), import('../utils/contractorProposal')])
     const { workbook, fileName } = buildProposalWorkbook(estimateItems, {
       tenderName: activeTender.objects?.name || `Тендер ${activeTender.public_tender_number || ''}`.trim(),
       counterpartyName: contractorInfo?.name || '',
@@ -340,7 +341,7 @@ function ContractorCabinetPage() {
     setUploading(true)
     setUploadNote(null)
     try {
-      const buffer = await file.arrayBuffer()
+      const [buffer, XLSX, { matchProposalRows }] = await Promise.all([file.arrayBuffer(), import('xlsx'), import('../utils/contractorProposal')])
       const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' })
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
       const excelData = XLSX.utils.sheet_to_json(sheet, { header: 1 })
@@ -666,7 +667,7 @@ function ContractorCabinetPage() {
                           counterpartyId={cpId}
                           tenderNumbers={tenderNumbers}
                           onSummary={handleBidSummary}
-                          serverPositions={selfRegistered}
+                          serverOnly={selfRegistered}
                           companyCard={orgCardError ? null : orgCard}
                           companyAnswers={companyAnswers}
                           onCompanyAnswers={setCompanyAnswers}

@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import VirtualTableBody from '../VirtualTableBody'
 import { formatAmount } from '../../utils/money'
-import { priceStructure } from '../../utils/bidVor'
+import { priceStructure } from '../../utils/bidPrice'
 
 // Лист «КП» файла ВОР — только просмотр: разделы, работы и материалы под ними, цены подрядчика из списков
 // «Материалы» / «Работы» и суммы — как формулы листа «КП» в Excel. Вносить в него ничего не нужно.

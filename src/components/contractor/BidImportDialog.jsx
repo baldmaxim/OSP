@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { readBidPriceDoc, BID_DOC_ACCEPT, DOC_ERROR_TEXT, bidGroups, matchBidItems, searchBidGroups } from '../../utils/bidImport'
 import { unitPriceWithVat, DEFAULT_VAT_RATE } from '../../utils/supplierDoc'
 import { formatAmount } from '../../utils/money'
-import { BID_KIND_LABEL } from '../../utils/bidVor'
+import { BID_KIND_LABEL } from '../../utils/bidPrice'
 
 // «Цены из файла»: подрядчик загружает свой прайс («базу расценок»), КП, счёт или заполненный ВОР — строки с
 // ценами сопоставляются с позициями расценки (сначала точно по наименованию, затем самые похожие), человек

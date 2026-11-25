@@ -36,33 +36,12 @@
 }
 .bid-sum-label { font-size: 0.75rem; color: var(--text-tertiary); }
 .bid-sum-value { font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.bid-sum-total { border-color: var(--primary-color); }
 .bid-summary-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 /* Ставка НДС не указана — ячейка-кнопка ведёт в анкету */
 button.bid-sum-cell { font: inherit; color: inherit; text-align: left; cursor: pointer; }
 .bid-sum-warn { border-color: #d97706; background: color-mix(in srgb, #d97706 10%, var(--bg-primary)); }
 .bid-sum-warn .bid-sum-value { color: #b45309; font-size: 0.875rem; }
 [data-theme='dark'] .bid-sum-warn .bid-sum-value { color: #fcd34d; }
-
-/* Файлы ВОР — основной путь расценки: подрядчик скачивает сам файл, заполняет и возвращает через «Цены из файла». */
-.bid-vor-files {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.7rem 0.85rem;
-  border: 1px solid color-mix(in srgb, var(--primary-color) 45%, var(--border-color));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--primary-color) 5%, var(--bg-primary));
-}
-.bid-vor-head { display: flex; flex-direction: column; gap: 0.125rem; font-size: 0.875rem; line-height: 1.25rem; }
-.bid-vor-head span { color: var(--text-secondary); font-size: 0.8125rem; }
-.bid-vor-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.375rem; }
-.bid-vor-file { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-width: 0; }
-.bid-vor-name { flex: 1; min-width: 0; font-size: 0.875rem; font-weight: 500; overflow-wrap: anywhere; }
-.bid-vor-btn { gap: 0.375rem; flex-shrink: 0; }
-@media (max-width: 640px) {
-  .bid-vor-file { flex-direction: column; align-items: stretch; gap: 0.25rem; }
-}
 
 /* Особые условия «Главного листа» ВОР */
 .bid-conditions { padding: 0.55rem 0.75rem; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); }
@@ -311,167 +290,8 @@ button.bid-sum-cell { font: inherit; color: inherit; text-align: left; cursor: p
   .bid-modal { max-height: 100dvh; border-radius: 0; }
 }
 
-/* ── Свой ВОР с расценками (20270113): ВОР отдела → ваш ВОР, сводка по ведомостям (BidVorFiles) ─────────────────────── */
-/* Решение пользователя 11.11.2026 (позже): «визуально очень понятно, всё подсвечено». Цвет состояния своего файла — полоса слева у
-   ведомости и плашка: серый — ждёт файла, зелёный — загружен и посчитан, жёлтый — не у всех позиций цена, красный — цены не распознаны
-   или отдел обновил ВОР. Цвета — те же, что у плашек участия кабинета (.cab-chip). */
-.bid-files { display: flex; flex-direction: column; gap: 0.75rem; }
-.bid-files-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; font-size: 0.9375rem; }
-.bid-progress {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.2rem 0.6rem;
-  border-radius: 999px;
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.bid-progress-bar { position: relative; width: 4.5rem; height: 0.375rem; border-radius: 999px; background: color-mix(in srgb, var(--text-tertiary) 22%, transparent); overflow: hidden; }
-.bid-progress-bar > span { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: #d97706; }
-.bid-progress.is-part { background: color-mix(in srgb, #d97706 12%, transparent); color: #b45309; }
-.bid-progress.is-done { background: color-mix(in srgb, #16a34a 14%, transparent); color: #15803d; }
-.bid-progress.is-done .bid-progress-bar > span { background: #16a34a; }
-[data-theme='dark'] .bid-progress.is-part { color: #fcd34d; }
-[data-theme='dark'] .bid-progress.is-done { color: #6ee7b7; }
-
-.bid-steps { display: flex; flex-wrap: wrap; gap: 0.4rem 1.25rem; margin: 0; padding: 0; list-style: none; font-size: 0.8125rem; line-height: 1.35; color: var(--text-secondary); }
-.bid-steps li { display: flex; align-items: flex-start; gap: 0.45rem; flex: 1 1 14rem; min-width: 0; }
-.bid-step-n {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.375rem;
-  height: 1.375rem;
-  border-radius: 999px;
-  background: var(--primary-color);
-  color: #fff;
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-.bid-steps b { color: var(--text-primary); font-weight: 600; }
-
-.bid-pairs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
-.bid-pair {
-  --pair-tone: color-mix(in srgb, var(--text-tertiary) 55%, transparent);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 2rem minmax(0, 1.35fr);
-  border: 1px solid var(--border-color);
-  border-left: 4px solid var(--pair-tone);
-  border-radius: 8px;
-  background: var(--bg-primary);
-  overflow: hidden;
-}
-.bid-pair.is-ok { --pair-tone: #16a34a; }
-.bid-pair.is-partial { --pair-tone: #d97706; }
-.bid-pair.is-bad, .bid-pair.is-nosum, .bid-pair.is-stale { --pair-tone: #dc2626; }
-.bid-pair-side { display: flex; flex-direction: column; align-items: flex-start; gap: 0.3rem; min-width: 0; padding: 0.65rem 0.85rem; }
-.bid-pair-vor { background: color-mix(in srgb, var(--primary-color) 5%, var(--bg-primary)); }
-.bid-pair-arrow { display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); background: linear-gradient(to right, color-mix(in srgb, var(--primary-color) 5%, var(--bg-primary)) 50%, transparent 50%); }
-.bid-pair-mine { position: relative; }
-.bid-pair.is-ok .bid-pair-mine { background: color-mix(in srgb, #16a34a 6%, var(--bg-primary)); }
-.bid-pair.is-partial .bid-pair-mine { background: color-mix(in srgb, #d97706 7%, var(--bg-primary)); }
-.bid-pair.is-nosum .bid-pair-mine, .bid-pair.is-stale .bid-pair-mine { background: color-mix(in srgb, #dc2626 6%, var(--bg-primary)); }
-.bid-pair-mine.is-drag { outline: 2px dashed var(--primary-color); outline-offset: -6px; background: color-mix(in srgb, var(--primary-color) 9%, var(--bg-primary)) !important; }
-.bid-pair-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.35rem 0.75rem; align-self: stretch; }
-.bid-pair-label { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-tertiary); }
-.bid-pair .bid-vor-name { flex: none; font-size: 0.9375rem; font-weight: 600; overflow-wrap: anywhere; }
-.bid-state-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.125rem 0.5rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.1rem;
-  white-space: nowrap;
-}
-.bid-state-chip.is-empty { background: color-mix(in srgb, #6b7280 14%, transparent); color: #4b5563; }
-.bid-state-chip.is-ok { background: color-mix(in srgb, #16a34a 14%, transparent); color: #15803d; }
-.bid-state-chip.is-partial { background: color-mix(in srgb, #d97706 15%, transparent); color: #b45309; }
-.bid-state-chip.is-bad { background: color-mix(in srgb, #dc2626 13%, transparent); color: #b91c1c; }
-[data-theme='dark'] .bid-state-chip.is-empty { color: #d1d5db; }
-[data-theme='dark'] .bid-state-chip.is-ok { color: #6ee7b7; }
-[data-theme='dark'] .bid-state-chip.is-partial { color: #fcd34d; }
-[data-theme='dark'] .bid-state-chip.is-bad { color: #fca5a5; }
-.bid-file-name { font-size: 0.875rem; font-weight: 600; overflow-wrap: anywhere; }
-.bid-file-meta { font-size: 0.75rem; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
-.bid-file-sum { font-size: 1.0625rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-.bid-file-sum.is-warn { font-size: 0.8125rem; font-weight: 500; color: #b91c1c; }
-[data-theme='dark'] .bid-file-sum.is-warn { color: #fca5a5; }
-.bid-file-cover { font-size: 0.8125rem; color: #b45309; }
-[data-theme='dark'] .bid-file-cover { color: #fcd34d; }
-.bid-file-stale { font-size: 0.8125rem; line-height: 1.4; color: #b91c1c; }
-[data-theme='dark'] .bid-file-stale { color: #fca5a5; }
-.bid-file-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; margin-top: 0.15rem; }
-.bid-file-actions label.cab-btn-small { display: inline-flex; align-items: center; cursor: pointer; }
-.bid-files .is-busy { opacity: 0.7; cursor: progress; }
-.bid-file-remove:hover:not(:disabled) { border-color: #ef4444 !important; color: #ef4444 !important; }
-.bid-drop {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem 0.75rem;
-  align-self: stretch;
-  margin-top: 0.15rem;
-  padding: 0.6rem 0.7rem;
-  border: 1.5px dashed color-mix(in srgb, var(--primary-color) 45%, var(--border-color));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--primary-color) 4%, transparent);
-}
-.bid-drop-hint { font-size: 0.75rem; color: var(--text-tertiary); }
-.bid-upload-btn { display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer; }
-.bid-pair .bid-note { align-self: stretch; }
 .bid-note.is-ok { background: color-mix(in srgb, #16a34a 12%, transparent); color: #15803d; }
 [data-theme='dark'] .bid-note.is-ok { color: #6ee7b7; }
-.bid-orphans { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.55rem 0.75rem; border: 1px dashed var(--border-color); border-radius: 8px; }
-.bid-orphans ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
-.bid-orphans li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
-
-/* Сводка по ведомостям — как сводная «ВОР × подрядчик» «Сравнения КП» карточки тендера (TenderProposalsCompare.css, psmt-*). */
-.bid-matrix-block { display: flex; flex-direction: column; gap: 0.375rem; }
-.bid-matrix-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); }
-.bid-matrix { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
-.bid-matrix thead th {
-  padding: 0.5rem 0.625rem;
-  background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border-color);
-  text-align: left;
-  vertical-align: bottom;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.bid-matrix .bm-th-doc { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); min-width: 12rem; }
-.bid-matrix .bm-th-cp { text-align: center; border-left: 2px solid var(--border-color); border-right: 2px solid var(--border-color); }
-.bid-matrix .bm-th-cp-name { display: block; font-size: 0.8125rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bid-matrix .bm-th-cp-sub { display: block; margin-top: 0.125rem; font-size: 0.6875rem; font-weight: 500; color: var(--text-tertiary); }
-.bid-matrix .bm-th-sub { text-align: right; font-size: 0.6875rem; font-weight: 500; color: var(--text-tertiary); white-space: nowrap; padding: 0.25rem 0.625rem 0.4375rem; }
-.bid-matrix .bm-th-sub:first-child { border-left: 2px solid var(--border-color); }
-.bid-matrix .bm-th-total { border-right: 2px solid var(--border-color); }
-.bid-matrix tbody td { padding: 0.4375rem 0.625rem; border-bottom: 1px solid var(--border-color); vertical-align: middle; font-variant-numeric: tabular-nums; }
-.bid-matrix tbody tr:last-child td { border-bottom: 0; }
-.bid-matrix .bm-td-doc { font-weight: 500; color: var(--text-primary); overflow-wrap: anywhere; }
-.bid-matrix .bm-td-num { text-align: right; white-space: nowrap; color: var(--text-secondary); }
-.bid-matrix .bm-td-mat { border-left: 2px solid var(--border-color); }
-.bid-matrix .bm-td-total { font-weight: 700; color: var(--text-primary); border-right: 2px solid var(--border-color); }
-.bid-matrix tfoot td { padding: 0.5625rem 0.625rem; background: var(--bg-tertiary); border-top: 2px solid var(--border-color); font-variant-numeric: tabular-nums; }
-.bid-matrix .bm-tf-label { font-weight: 700; color: var(--text-primary); letter-spacing: 0.02em; }
-.bid-matrix .bm-tf-num { text-align: right; white-space: nowrap; font-weight: 600; color: var(--text-primary); }
-.bid-matrix .bm-tf-total { font-weight: 800; font-size: 0.9375rem; border-right: 2px solid var(--border-color); }
-/* Цены не у всех позиций — итог неполный (жёлтым, как в «Сравнении КП»). */
-.bid-matrix .is-incomplete { background: rgba(234, 179, 8, 0.14); color: #a16207; }
-[data-theme='dark'] .bid-matrix .is-incomplete { background: rgba(234, 179, 8, 0.22); color: #fde047; }
-/* Расценка к прежней версии ведомости — видна, но в итог не входит. */
-.bid-matrix tr.is-stale td { color: var(--text-tertiary); }
-.bid-matrix .bm-td-note { display: block; font-size: 0.6875rem; font-weight: 500; color: #b91c1c; }
-[data-theme='dark'] .bid-matrix .bm-td-note { color: #fca5a5; }
-
-.bid-form-section { display: flex; flex-direction: column; gap: 0.5rem; }
-.bid-form-section > h4 { display: flex; align-items: center; gap: 0.4rem; margin: 0; font-size: 0.9375rem; }
 
 /* Анкета по группам (миграция 20270115): «О компании» — из «Моей компании», одно на все тендеры; «По этому тендеру» — своё в каждом. */
 .bid-form { counter-reset: q; }
@@ -508,17 +328,143 @@ button.bid-sum-cell { font: inherit; color: inherit; text-align: left; cursor: p
 .bid-form-from button { padding: 0; border: 0; background: none; color: var(--primary-color); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .bid-form-row.is-empty-company { border-color: color-mix(in srgb, #d97706 40%, var(--border-color)); }
 
+/* ── Расценка на сайте по ведомостям (решение пользователя 24.11.2026, BidVorSummary, BidSupplyBar) ───────────────────────── */
+/* Не расценено — жёлтым: те же тона, что «итог неполный» в «Сравнении КП» (TenderProposalsCompare.css, .is-incomplete). Стили
+   свои — таблица сравнения кабинету не нужна. */
+.bid-table tr.is-unpriced td { background: rgba(234, 179, 8, 0.05); }
+.bid-table tr.is-unpriced .bid-col-price,
+.bid-table tr.is-unpriced .bid-col-sum { background: rgba(234, 179, 8, 0.14); color: #a16207; }
+[data-theme='dark'] .bid-table tr.is-unpriced td { background: rgba(234, 179, 8, 0.09); }
+[data-theme='dark'] .bid-table tr.is-unpriced .bid-col-price,
+[data-theme='dark'] .bid-table tr.is-unpriced .bid-col-sum { background: rgba(234, 179, 8, 0.22); color: #fde047; }
+.bid-filters-total.is-incomplete { color: #a16207; }
+[data-theme='dark'] .bid-filters-total.is-incomplete { color: #fde047; }
+.bid-tab-missing {
+  margin-left: 0.35rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: rgba(234, 179, 8, 0.18);
+  color: #a16207;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+[data-theme='dark'] .bid-tab-missing { background: rgba(234, 179, 8, 0.26); color: #fde047; }
+
+/* Сводка по ведомостям: строка на ВОР, итог внизу; строка выбирает ведомость для таблицы позиций. */
+.bid-vs-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border-color); border-radius: 8px; }
+.bid-vs { width: 100%; min-width: 44rem; border-collapse: collapse; table-layout: fixed; font-size: 0.8125rem; }
+.bid-vs-w { width: 10rem; }
+.bid-vs-w-act { width: 3rem; }
+.bid-vs th {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-weight: 500;
+  text-align: left;
+}
+.bid-vs th.num, .bid-vs td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.bid-vs td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+.bid-vs tbody tr:hover td { background: var(--bg-secondary); }
+.bid-vs tr.is-selected td { background: color-mix(in srgb, var(--primary-color) 8%, var(--bg-primary)); }
+.bid-vs tr.is-selected .bid-vs-name { box-shadow: inset 3px 0 0 var(--primary-color); }
+.bid-vs tr.is-held td { color: var(--text-tertiary); }
+.bid-vs tfoot td { border-bottom: 0; background: var(--bg-secondary); font-weight: 600; }
+.bid-vs-name { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; overflow-wrap: anywhere; }
+.bid-vs-pick {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.bid-vs-pick:hover { color: var(--ui-link, #0e7490); text-decoration: underline; text-underline-offset: 2px; }
+[data-theme='dark'] .bid-vs-pick:hover { color: var(--primary-color); }
+.bid-vs-cell { white-space: nowrap; }
+.bid-vs-money { display: block; font-variant-numeric: tabular-nums; }
+.bid-vs-count { display: block; font-size: 0.75rem; color: var(--text-tertiary); font-weight: 400; }
+.bid-vs-cell.is-empty { color: var(--text-tertiary); }
+.bid-vs-total .bid-vs-money { font-weight: 600; }
+.bid-vs td.is-incomplete { background: rgba(234, 179, 8, 0.14); color: #a16207; }
+.bid-vs td.is-incomplete .bid-vs-count { color: #a16207; }
+[data-theme='dark'] .bid-vs td.is-incomplete { background: rgba(234, 179, 8, 0.22); color: #fde047; }
+[data-theme='dark'] .bid-vs td.is-incomplete .bid-vs-count { color: #fde047; }
+.bid-vs-badge { font-size: 0.75rem; line-height: 1.35; font-weight: 400; }
+.bid-vs-badge.is-changed { color: #1d4ed8; }
+.bid-vs-badge.is-wait { color: #b45309; }
+[data-theme='dark'] .bid-vs-badge.is-changed { color: #93c5fd; }
+[data-theme='dark'] .bid-vs-badge.is-wait { color: #fcd34d; }
+.bid-vs-act { text-align: right; }
+.bid-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.bid-icon-btn:hover { color: var(--text-primary); border-color: var(--primary-color); }
+.bid-icon-btn:focus-visible, .bid-vs-pick:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+
+/* Изменения ВОР в строке позиции — как отметки расценки снабжения («новая», «было …»). */
+.bid-change { display: block; margin-top: 0.2rem; font-size: 0.75rem; color: #1d4ed8; }
+.bid-change.is-added { color: #15803d; font-weight: 500; }
+[data-theme='dark'] .bid-change { color: #93c5fd; }
+[data-theme='dark'] .bid-change.is-added { color: #6ee7b7; }
+
+/* Цена снабжения СУ-10 */
+.bid-w-supply { width: 8.5rem; }
+/* Колонка «Цена СУ-10» — таблица шире: иначе фиксированные колонки (57 rem) съели бы всё место «Наименования» (на телефоне строка
+   вытягивалась на экран). 56 rem прежней таблицы + 8,5 rem колонки. */
+.bid-table.has-supply { min-width: 66rem; }
+.bid-col-supply { color: var(--text-secondary); }
+.bid-col-supply .bid-take { display: block; margin-left: auto; font-size: 0.75rem; }
+.bid-muted-cell { color: var(--text-tertiary); }
+.bid-source { display: block; margin-top: 0.15rem; font-size: 0.6875rem; color: #15803d; text-align: right; }
+[data-theme='dark'] .bid-source { color: #6ee7b7; }
+.bid-supply {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+.bid-supply.is-granted { border-color: color-mix(in srgb, #16a34a 45%, var(--border-color)); background: color-mix(in srgb, #16a34a 5%, var(--bg-primary)); }
+.bid-supply.is-wait { border-color: color-mix(in srgb, #d97706 45%, var(--border-color)); }
+.bid-supply-text { flex: 1 1 24rem; min-width: 0; }
+.bid-supply-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.bid-supply-note { flex-basis: 100%; color: #15803d; }
+.bid-supply-note.is-error { color: #b91c1c; }
+[data-theme='dark'] .bid-supply-note { color: #6ee7b7; }
+[data-theme='dark'] .bid-supply-note.is-error { color: #fca5a5; }
+
+/* Убрано из ВОР и цены без позиции; файлы прежнего способа */
+.bid-removed { padding: 0.55rem 0.75rem; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); font-size: 0.8125rem; }
+.bid-removed > summary { cursor: pointer; color: var(--text-secondary); font-weight: 500; }
+.bid-removed-list { margin: 0.5rem 0 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.bid-removed-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.75rem; }
+.bid-removed-name { overflow-wrap: anywhere; }
+.bid-removed-vor { margin-top: 0.45rem; color: var(--text-secondary); line-height: 1.45; overflow-wrap: anywhere; }
+.bid-note-act { margin-left: 0.5rem; }
+
 @media (max-width: 640px) {
-  .bid-pair { grid-template-columns: 1fr; border-left-width: 1px; border-top: 4px solid var(--pair-tone); }
-  .bid-pair-arrow { display: none; }
-  .bid-pair-vor { border-right: 0; border-bottom: 1px solid var(--border-color); }
-  .bid-pair-side { align-items: stretch; }
-  .bid-upload-btn { width: 100%; justify-content: center; }
-  .bid-drop { flex-direction: column; align-items: stretch; text-align: center; }
-  .bid-steps li { flex-basis: 100%; }
-  /* Сводка на телефоне — уже: имя ведомости переносится, суммы мельче; не влезло — прокрутка внутри таблицы. */
-  .bid-matrix { font-size: 0.75rem; }
-  .bid-matrix .bm-th-doc { min-width: 5.5rem; }
-  .bid-matrix thead th, .bid-matrix tbody td, .bid-matrix tfoot td { padding-left: 0.4rem; padding-right: 0.4rem; }
-  .bid-matrix .bm-tf-total { font-size: 0.8125rem; }
+  .bid-supply-actions { width: 100%; }
+  .bid-supply-actions .cab-btn { flex: 1 1 auto; }
+  .bid-vs { min-width: 34rem; }
+  .bid-vs-w { width: 7.5rem; }
 }

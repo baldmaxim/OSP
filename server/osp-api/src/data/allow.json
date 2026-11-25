@@ -863,6 +863,11 @@
       "authenticated": [
         "select"
       ]
+    },
+    "tender_bid_supply_access": {
+      "authenticated": [
+        "select"
+      ]
     }
   },
   "rpc": {
@@ -1191,6 +1196,24 @@
       "authenticated"
     ],
     "kp_estimate_activate": [
+      "authenticated"
+    ],
+    "bid_supply_prices": [
+      "authenticated"
+    ],
+    "bid_supply_request": [
+      "authenticated"
+    ],
+    "bid_supply_take": [
+      "authenticated"
+    ],
+    "bid_supply_decide": [
+      "authenticated"
+    ],
+    "bid_supply_list": [
+      "authenticated"
+    ],
+    "bid_vor_changes": [
       "authenticated"
     ]
   }

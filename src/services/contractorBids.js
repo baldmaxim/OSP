@@ -280,7 +280,8 @@ export async function loadMyRates(tenderId, counterpartyId = null) {
   })
 }
 
-// Свои цены из других тендеров — подсказки «ваша цена в тендере № …». Самые свежие первыми, не больше limit.
+// Свои цены из других тендеров — подсказки «ваша цена в тендере № …». Самые свежие первыми, не больше limit. Взятые у снабжения
+// (source = 'supply', миграция 20270301) — не цена подрядчика: в другой тендер не подставляются.
 export async function loadMyRateHistory(excludeTenderId, limit = 20000, page = 1000) {
   const rows = []
   for (let from = 0; from < limit; from += page) {
@@ -288,6 +289,7 @@ export async function loadMyRateHistory(excludeTenderId, limit = 20000, page = 1
       .from('tender_bid_rates')
       .select('tender_id, kind, item_key, unit_key, name, unit, price, updated_at')
       .neq('tender_id', excludeTenderId)
+      .neq('source', 'supply')
       .not('price', 'is', null)
       .order('updated_at', { ascending: false })
       .order('id', { ascending: true })
@@ -308,6 +310,90 @@ export async function saveRates(tenderId, rows) {
     saved += unwrap(await db.rpc('bid_rates_save', { p_tender: tenderId, p_rows: rows.slice(i, i + SAVE_CHUNK) })) || 0
   }
   return saved
+}
+
+// ── Расценка на сайте: цены снабжения и изменения ВОР (миграция 20270301) ─────────────────────────────
+// Подрядчик берёт цены снабжения материалов тендера только с разрешения отдела: просит (bid_supply_request), инженер с правом правки
+// «Тендеров» разрешает (bid_supply_decide). Цены отдаёт bid_supply_prices (ключ позиции и цена, без ВОР и документов), записывает
+// bid_supply_take — цену берёт база, браузер её не присылает.
+
+// Разрешение своей организации по тендеру: { status, requested_at, decided_at } | null (не просили); undefined — таблицы ещё нет.
+export async function loadSupplyAccess(tenderId, counterpartyId) {
+  if (!counterpartyId) return undefined
+  const { data, error } = await db.from('tender_bid_supply_access')
+    .select('status, requested_at, decided_at')
+    .eq('tender_id', tenderId)
+    .eq('counterparty_id', counterpartyId)
+    .limit(1)
+  if (error) {
+    if (isMissingBids(error)) return undefined
+    throw error
+  }
+  return data?.[0] || null
+}
+
+export async function requestSupplyPrices(tenderId) {
+  return unwrap(await db.rpc('bid_supply_request', { p_tender: tenderId }))
+}
+
+// Цены снабжения → Map(`${item_key}|${unit_key}` → цена). previewCounterpartyId — просмотр от имени подрядчика (администратор).
+export async function loadSupplyPrices(tenderId, previewCounterpartyId = null) {
+  const args = { p_tender: tenderId }
+  if (previewCounterpartyId) args.p_counterparty = previewCounterpartyId
+  const rows = unwrap(await db.rpc('bid_supply_prices', args)) || []
+  return new Map(rows.map((r) => [`${r.item_key}|${r.unit_key || ''}`, Number(r.price)]))
+}
+
+// Взять цены снабжения для позиций материалов: [{ key, unit_key, name, unit, volume }]; replace — заменить и свою цену. → сколько записано.
+export async function takeSupplyPrices(tenderId, rows, replace = false) {
+  let n = 0
+  for (let i = 0; i < rows.length; i += SAVE_CHUNK) {
+    n += unwrap(await db.rpc('bid_supply_take', { p_tender: tenderId, p_rows: rows.slice(i, i + SAVE_CHUNK), p_replace: replace })) || 0
+  }
+  return n
+}
+
+// Ведомости тендера: когда загружены, что о них знает снабжение и прежняя версия (позиции без цен). null — функции ещё нет.
+export async function loadVorChanges(tenderId) {
+  const { data, error } = await db.rpc('bid_vor_changes', { p_tender: tenderId })
+  if (error) {
+    if (isMissingBids(error)) return null
+    throw error
+  }
+  return data || []
+}
+
+// Инженеру: подрядчики тендеров с учёткой кабинета и их разрешение на цены снабжения (без цен). null — функции ещё нет.
+export async function loadSupplyList(tenderIds) {
+  const ids = [...new Set(tenderIds || [])].filter(Boolean)
+  if (!ids.length) return []
+  const { data, error } = await db.rpc('bid_supply_list', { p_tenders: ids })
+  if (error) {
+    if (isMissingBids(error)) return null
+    throw error
+  }
+  return data || []
+}
+
+export async function decideSupplyAccess(tenderId, counterpartyId, allow) {
+  return unwrap(await db.rpc('bid_supply_decide', { p_tender: tenderId, p_counterparty: counterpartyId, p_allow: allow }))
+}
+
+// Сколько подрядчиков просят цены снабжения — по тендерам реестра (лёгкий запрос). null — таблицы ещё нет.
+export async function loadSupplyRequestCounts(tenderIds) {
+  const ids = [...new Set(tenderIds || [])].filter(Boolean)
+  const counts = {}
+  if (!ids.length) return counts
+  for (let i = 0; i < ids.length; i += 60) {
+    const { data, error } = await db.from('tender_bid_supply_access').select('tender_id')
+      .in('tender_id', ids.slice(i, i + 60)).eq('status', 'requested')
+    if (error) {
+      if (isMissingBids(error)) return null
+      throw error
+    }
+    for (const r of data || []) counts[r.tender_id] = (counts[r.tender_id] || 0) + 1
+  }
+  return counts
 }
 
 // Поля анкеты (активные — подрядчику; все — администратору). scope / source — вид поля и связь с «Моей компанией» (миграция

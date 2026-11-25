@@ -41,6 +41,11 @@
         "select"
       ]
     },
+    "tender_bid_supply_access": {
+      "authenticated": [
+        "select"
+      ]
+    },
     "tender_counterparty_proposals": {
       "authenticated": [
         "select"
@@ -74,6 +79,18 @@
       "authenticated"
     ],
     "bid_request": [
+      "authenticated"
+    ],
+    "bid_supply_prices": [
+      "authenticated"
+    ],
+    "bid_supply_request": [
+      "authenticated"
+    ],
+    "bid_supply_take": [
+      "authenticated"
+    ],
+    "bid_vor_changes": [
       "authenticated"
     ],
     "bid_vor_superseded": [
