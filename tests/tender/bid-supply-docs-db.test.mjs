@@ -117,7 +117,7 @@ describe('Кабинет подрядчика: счета снабжения к 
 
   it('счета: без разрешения и до «взять» — нет; взята цена снабжения — файлы всех ВОР позиции; адресных ссылок и чужого — нет', () => {
     assert.equal(docs(U.alpha), '', 'разрешения нет')
-    assert.equal(as(U.admin, `select public.bid_supply_decide('${T.open}', '${CP.alpha}', true)`), 'granted')
+    assert.equal(as(U.admin, `select public.bid_supply_grant('${T.open}', '${CP.alpha}', '[]'::jsonb, true) > 0`), 't')
     assert.equal(docs(U.alpha), '', 'цену ещё не брали')
     assert.equal(take(U.alpha, [['Труба стальная 20', 'м'], ['Кран шаровый 20', 'шт'], ['Отвод 20', 'шт']]), '2', 'у крана цены снабжения нет')
     assert.equal(docs(U.alpha), 'КП Стандартпарк № 10067.pdf;Счёт ПСК № 072813.pdf', 'труба — файлы обоих ВОР; отвод — ссылка, кран — без цены')
@@ -160,7 +160,7 @@ describe('Кабинет подрядчика: счета снабжения к 
   })
 
   it('учётка с регистрации по заявке: с разрешением — счета к взятой цене, как у остальных', () => {
-    assert.equal(as(U.admin, `select public.bid_supply_decide('${T.open}', '${CP.self}', true)`), 'granted')
+    assert.equal(as(U.admin, `select public.bid_supply_grant('${T.open}', '${CP.self}', '[]'::jsonb, true) > 0`), 't')
     assert.equal(take(U.self, [['Труба стальная 20', 'м']]), '1')
     assert.equal(docs(U.self), 'КП Стандартпарк № 10067.pdf;Счёт ПСК № 072813.pdf')
     assert.equal(fileOf(U.self, DOC.inv1), 'tenders/s/inv1.pdf')

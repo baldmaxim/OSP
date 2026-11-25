@@ -1221,6 +1221,12 @@
     ],
     "bid_rate_history": [
       "authenticated"
+    ],
+    "bid_supply_grant": [
+      "authenticated"
+    ],
+    "bid_supply_items": [
+      "authenticated"
     ]
   }
 }

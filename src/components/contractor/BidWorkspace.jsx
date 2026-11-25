@@ -28,7 +28,8 @@ const BidImportDialog = lazy(() => import('./BidImportDialog'))
 // Позиции — разбор ВОР службой osp-api (bid_positions, без скачивания и разбора книги в браузере); файл, который служба ещё не
 // разобрала (или не смогла), подрядчик от администратора разбирает в браузере (у него есть доступ к файлу), учётка с регистрации ждёт
 // службу (serverOnly). Просмотр от имени подрядчика (previewCounterpartyId) — разбор в браузере: функции кабинета отказывают
-// администратору.
+// администратору. Править в просмотре можно всё, как подрядчику (решение пользователя 25.11.2026): записи сервис кладёт в черновик
+// просмотра на странице, а не в базу (setCabinetPreview в services/contractorBids.js).
 //
 // Цена — одна на позицию тендера (вид + наименование + ед. изм.), пишется сама (через SAVE_DELAY_MS после ввода, порцией);
 // отдел видит цены сразу. Суммы — по каждой ведомости (объём позиции в ней) и итог.
@@ -605,7 +606,6 @@ export default function BidWorkspace({
       <BidSupplyBar
         access={supply.access}
         canEdit={editable}
-        preview={preview}
         withPrice={supplyStats.withPrice}
         missing={supplyStats.missing}
         differ={supplyStats.differ}
@@ -777,10 +777,11 @@ function SaveLine({ save, canEdit, preview, ratesState, onRetry, onReload }) {
       </div>
     )
   }
-  if (preview) return <div className="bid-save">Просмотр от имени подрядчика: цены не записываются.</div>
   if (!canEdit) return <div className="bid-save">Только просмотр: приём предложений закрыт или участие отклонено.</div>
   let text = 'Цены сохраняются сами — отправлять ничего не нужно.'
   let cls = ''
+  // Просмотр от имени подрядчика: цены лежат в черновике просмотра на этой странице (services/contractorBids.js), в базу не уходят.
+  if (preview) text = 'Просмотр от имени подрядчика: цены видны только вам, в базу не записываются.'
   if (save.busy) text = 'Сохраняем…'
   else if (save.stale) {
     return (
@@ -791,7 +792,7 @@ function SaveLine({ save, canEdit, preview, ratesState, onRetry, onReload }) {
     )
   } else if (save.error) { text = `Не сохранено: ${save.failed} — ${save.error}`; cls = ' is-error' }
   else if (save.failed > 0) text = 'Сохраняем…'
-  else if (save.savedAt) text = `Все цены сохранены · ${save.savedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
+  else if (save.savedAt && !preview) text = `Все цены сохранены · ${save.savedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
   return (
     <div className={`bid-save${cls}`} role="status">
       {text}

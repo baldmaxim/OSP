@@ -1,6 +1,7 @@
 // Цены снабжения СУ-10 в кабинете подрядчика (решение пользователя 24.11.2026): подрядчик может взять нашу цену материала вместо
 // своей, но только после того, как отдел это разрешил. Состояние разрешения — строка tender_bid_supply_access своей организации
-// (миграция 20270301); нет таблицы — блока нет.
+// (миграция 20270301); нет таблицы — блока нет. С 25.11.2026 (миграция 20270303) инженер открывает цены по позициям: withPrice —
+// сколько позиций открыто (цены других база не отдаёт).
 
 const dateOf = (v) => {
   if (!v) return ''
@@ -10,7 +11,7 @@ const dateOf = (v) => {
 const DAY = 24 * 60 * 60 * 1000
 
 export default function BidSupplyBar({
-  access, canEdit, preview, withPrice, missing, differ, withDocs = 0, busy, message, error, onRequest, onRefresh, onTakeMissing, onTakeAll,
+  access, canEdit, withPrice, missing, differ, withDocs = 0, busy, message, error, onRequest, onRefresh, onTakeMissing, onTakeAll,
 }) {
   if (access === undefined) return null
   const status = access?.status || null
@@ -22,7 +23,7 @@ export default function BidSupplyBar({
     body = withPrice > 0 ? (
       <>
         <span className="bid-supply-text">
-          <b>Отдел разрешил взять цены снабжения СУ-10</b> — они есть у {withPrice} поз. материалов (с НДС и доставкой).
+          <b>Отдел открыл цены снабжения СУ-10</b> у {withPrice} поз. материалов (с НДС и доставкой).
           {' '}Цену можно взять у каждой позиции в колонке «Цена СУ-10» или сразу у всех.
           {withDocs > 0 && ' У взятой цены — ссылка «счёт»: счёт или КП поставщика, по которому снабжение её поставило.'}
         </span>
@@ -43,7 +44,7 @@ export default function BidSupplyBar({
       </>
     ) : (
       <span className="bid-supply-text">
-        <b>Отдел разрешил взять цены снабжения СУ-10</b>, но снабжение ещё не расценило материалы этого тендера.
+        <b>Отдел разрешил цены снабжения СУ-10</b>, но открытых позиций с ценой снабжения сейчас нет.
         {' '}<button type="button" className="bid-link" onClick={onRefresh} disabled={busy}>Проверить ещё раз</button>
       </span>
     )
@@ -67,7 +68,6 @@ export default function BidSupplyBar({
       <>
         <span className="bid-supply-text">
           <b>Цены снабжения СУ-10 на материалы.</b> Отдел может разрешить взять наши цены материалов — тогда не придётся искать свои.
-          {preview && ' Организация не просила.'}
         </span>
         {canEdit && (
           <span className="bid-supply-actions">

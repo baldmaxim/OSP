@@ -78,8 +78,8 @@ import { weekKey } from '../utils/weeks'
 import { TENDER_DUTY_NAMES, DUTY_OVERRIDE_KEY, parseDutyOverride, currentDuty } from '../utils/tenderDuty'
 import TenderCallReminder from '../components/TenderCallReminder'
 import BidRequestsBlock from '../components/contractor/BidRequestsBlock'
-import BidSupplyAccessBlock from '../components/contractor/BidSupplyAccessBlock'
-import { loadPendingRequestCounts, loadSupplyRequestCounts } from '../services/contractorBids'
+import BidSupplyAccessDialog from '../components/contractor/BidSupplyAccessDialog'
+import { loadPendingRequestCounts, loadSupplyRequestCounts, TENDER_OPEN_STATUS } from '../services/contractorBids'
 import { copyToClipboard } from '../utils/clipboard'
 import { reorderSiblings } from '../utils/appendixTree'
 import { sanitizeUserText, sanitizeDeep } from '../utils/text'
@@ -168,6 +168,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // есть только тендеры основного строительства.
   const divisionUi = denseRegistry && department === 'construction'
   const { scopedObjectIds, userProfile, isAdmin, canEdit, canView, role } = useRole()
+  // Цены снабжения подрядчикам на сайте открывает инженер ОСП или администратор — в «Тендерах на материалы», по позициям (решение
+  // пользователя 25.11.2026, миграция 20270303; база других не пускает). Снабжению и остальным кнопки нет.
+  const supplyEngineer = isMaterialsView && (isAdmin || role === 'engineer')
   // task 333: гейт add/edit/delete для раздела «tenders»
   // Тендеры на материалы — отдельный раздел прав (снабжение, миграция 20260924):
   // правка этого списка разрешается и правом tenders_materials.
@@ -284,9 +287,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [tenderProposalCounts, setTenderProposalCounts] = useState({})
   // Заявки подрядчиков с сайта, ждущие решения (миграция 20261102): { tenderId: число }.
   const [bidRequestCounts, setBidRequestCounts] = useState({})
-  // Подрядчики, которые просят цены снабжения (миграция 20270301): { tenderId: число }; решение — в раскрытой строке.
+  // Подрядчики, которые просят цены снабжения (миграции 20270301, 20270303): { id основного тендера: число } — только в «Тендерах на
+  // материалы» у инженера ОСП и администратора; решение — в окне «Цены подрядчикам» строки (supplyAccessFor — её тендер на материалы).
   const [supplyRequestCounts, setSupplyRequestCounts] = useState({})
-  const [supplyBlockKey, setSupplyBlockKey] = useState(0)
+  const [supplyAccessFor, setSupplyAccessFor] = useState(null)
   // Сколько тендеров осталось без счётчика участников из-за ошибки запроса —
   // чтобы пустое место в колонке не выглядело как «участников нет».
   const [countsFailed, setCountsFailed] = useState(0)
@@ -624,6 +628,9 @@ ${ATTACHMENT_BLOCK}
         setBidRequestCounts((prev) => (partial ? { ...prev, ...next } : next))
       })
       .catch((err) => console.error('Заявки подрядчиков с сайта:', err.message))
+  }
+  // Просьбы о ценах снабжения — по основным тендерам строк «Тендеров на материалы».
+  const fetchSupplyRequestCounts = (ids, { partial = false } = {}) => {
     loadSupplyRequestCounts(ids)
       .then((counts) => {
         const next = Object.fromEntries(ids.map((id) => [id, counts?.[id] || 0]))
@@ -631,6 +638,15 @@ ${ATTACHMENT_BLOCK}
       })
       .catch((err) => console.error('Просьбы подрядчиков о ценах снабжения:', err.message))
   }
+  const fetchSupplyRequestCountsRef = useRef(fetchSupplyRequestCounts)
+  fetchSupplyRequestCountsRef.current = fetchSupplyRequestCounts
+  // Читаются, когда известен набор основных тендеров реестра (и роль); правка строки (приоритет, ответственный) их не перечитывает.
+  // После решения в окне — только этот тендер.
+  const supplyParentKey = useMemo(() => (supplyEngineer
+    ? [...new Set(tenders.map((t) => t.parent_tender_id).filter(Boolean))].sort().join(',') : ''), [tenders, supplyEngineer])
+  useEffect(() => {
+    if (supplyParentKey) fetchSupplyRequestCountsRef.current(supplyParentKey.split(','))
+  }, [supplyParentKey])
 
   const fetchTenders = async () => {
     try {
@@ -689,7 +705,7 @@ ${ATTACHMENT_BLOCK}
         if (parentIds.length > 0) {
           const parentParts = await Promise.all(chunkList(parentIds).map(chunk => db
             .from('tenders')
-            .select('id, public_tender_number, work_description, tender_start_date, tender_end_date, objects(name), responsible_contact:contacts!responsible_contact_id(id, full_name)')
+            .select('id, public_tender_number, status, work_description, tender_start_date, tender_end_date, objects(name), responsible_contact:contacts!responsible_contact_id(id, full_name)')
             .in('id', chunk)))
           const parentsError = parentParts.find(p => p.error)?.error
           if (parentsError) {
@@ -923,23 +939,30 @@ ${ATTACHMENT_BLOCK}
 
   const renderKpCounter = (tender) => {
     const requests = bidRequestCounts[tender.id] || 0
-    const supplyAsks = supplyRequestCounts[tender.id] || 0
     const counter = renderKpCounterBase(tender)
-    if (!requests && !supplyAsks) return counter
+    if (!requests) return counter
     return (
       <>
         {counter}
-        {requests > 0 && (
-          <span className="kp-counter kp-counter-requests" title={`Заявки подрядчиков с сайта ждут решения: ${requests}. Раскройте строку тендера.`}>
-            заявки: {requests}
-          </span>
-        )}
-        {supplyAsks > 0 && (
-          <span className="kp-counter kp-counter-supply" title={`Подрядчики просят разрешение взять цены снабжения: ${supplyAsks}. Раскройте строку тендера.`}>
-            цены СУ: {supplyAsks}
-          </span>
-        )}
+        <span className="kp-counter kp-counter-requests" title={`Заявки подрядчиков с сайта ждут решения: ${requests}. Раскройте строку тендера.`}>
+          заявки: {requests}
+        </span>
       </>
+    )
+  }
+
+  // «Цены подрядчикам» под «Расценка: N из M» строки «Тендеров на материалы» — инженеру ОСП и администратору, пока основной тендер
+  // принимает предложения (или кто-то из подрядчиков ещё просит). Окно — подрядчики основного тендера и их позиции.
+  const renderSupplyAccessButton = (tender) => {
+    if (!supplyEngineer || !tender.parent_tender_id) return null
+    const asks = supplyRequestCounts[tender.parent_tender_id] || 0
+    if (!asks && tender.parent_tender?.status !== TENDER_OPEN_STATUS) return null
+    return (
+      <button type="button" className="tp-supply-access" onClick={() => setSupplyAccessFor(tender)}
+        title="Цены снабжения подрядчикам на сайте: открыть по позициям или все сразу">
+        Цены подрядчикам
+        {asks > 0 && <span className="tp-supply-access-asks" title={`Подрядчики просят цены снабжения: ${asks}`}>просят: {asks}</span>}
+      </button>
     )
   }
   const renderKpCounterBase = (tender) => {
@@ -3150,6 +3173,7 @@ ${ATTACHMENT_BLOCK}
         {/* Расценка материалов ВОР снабжением — второй строкой, без отдельной колонки:
             описанию и так остаётся ≈ 15rem на 1920. */}
         <SupplyPricingLink tender={tender} progress={supplyProgress.get(tender.parent_tender_id || tender.id)} />
+        {renderSupplyAccessButton(tender)}
       </td>
       {/* Приоритет: низкий / средний / высокий. Высокий подсвечивается
           и чипом, и полосой слева у всей строки. */}
@@ -4059,7 +4083,6 @@ ${ATTACHMENT_BLOCK}
                         canEdit={canEdit('tenders')}
                         onDecided={({ request, accepted }) => {
                           fetchBidRequestCounts([tender.id], { partial: true })
-                          setSupplyBlockKey((k) => k + 1)
                           if (!accepted) return
                           fetchTenderCounterparties(tender.id)
                           fetchTenderProposalCounts([tender.id])
@@ -4067,21 +4090,6 @@ ${ATTACHMENT_BLOCK}
                             fieldName: 'participants',
                             newValue: { id: request.counterparty_id, name: request.counterparties?.name || null },
                             description: `Добавлен участник по заявке с сайта: ${request.counterparties?.name || '—'}`,
-                          })
-                        }}
-                      />
-                    )}
-                    {!isMaterialsView && (
-                      <BidSupplyAccessBlock
-                        tenderId={tender.id}
-                        canEdit={canEdit('tenders')}
-                        reloadKey={supplyBlockKey}
-                        onDecided={({ counterpartyId, name, allow }) => {
-                          fetchBidRequestCounts([tender.id], { partial: true })
-                          logTenderEvent(tender.id, 'field_updated', {
-                            fieldName: 'supply_prices_access',
-                            newValue: { id: counterpartyId, name, text: allow ? 'разрешены' : 'запрещены' },
-                            description: `Цены снабжения подрядчику ${allow ? 'разрешены' : 'запрещены'}: ${name || '—'}`,
                           })
                         }}
                       />
@@ -4748,6 +4756,7 @@ ${ATTACHMENT_BLOCK}
                         Тендер <span aria-hidden>›</span>
                       </Link>
                     )}
+                    {isMaterialsView && renderSupplyAccessButton(tender)}
                   </div>
                 </li>
               )
@@ -5881,6 +5890,25 @@ ${ATTACHMENT_BLOCK}
           tenders={tenders}
           onSave={handleSaveRestart}
           onCancel={() => setRestartFor(null)}
+        />
+      )}
+
+      {/* Цены снабжения подрядчикам основного тендера — из строки «Тендеров на материалы» (инженер ОСП, администратор). */}
+      {supplyAccessFor && (
+        <BidSupplyAccessDialog
+          tenderId={supplyAccessFor.parent_tender_id}
+          tenderNumber={tenderNumberOf(supplyAccessFor)}
+          title={[tenderObjectName(supplyAccessFor, ''), supplyAccessFor.work_description].filter(Boolean).join(' · ')}
+          onClose={() => setSupplyAccessFor(null)}
+          onDecided={({ counterpartyId, name, text }) => {
+            const parentId = supplyAccessFor.parent_tender_id
+            fetchSupplyRequestCounts([parentId], { partial: true })
+            logTenderEvent(parentId, 'field_updated', {
+              fieldName: 'supply_prices_access',
+              newValue: { id: counterpartyId, name, text },
+              description: `Цены снабжения подрядчику ${name || '—'}: ${text}`,
+            })
+          }}
         />
       )}
 

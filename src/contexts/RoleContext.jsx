@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useMemo, u
 import { db, auth } from '../api'
 import { ROLES, ROLE_LABELS, SECTIONS } from './roleConstants'
 import { useAvailableRoles } from './useAvailableRoles'
+import { setCabinetPreview } from '../services/cabinetPreview'
 
 // Справочник ролей для useAvailableRoles: системные первыми, затем по названию.
 const loadRoles = () => db.from('roles').select('key, label, is_system')
@@ -637,6 +638,12 @@ export function RoleProvider({ children }) {
   }, [canPreviewRoles])
 
   const stopRolePreview = useCallback(() => setPreview(null), [])
+
+  // Черновик просмотра кабинета подрядчика (services/cabinetPreview.js) живёт, пока идёт просмотр от имени подрядчика: вышли — записи
+  // кабинета снова идут на сервер, а страницы сотрудника не подмешивают чужой черновик.
+  useEffect(() => {
+    if (!previewActive || preview?.role !== ROLES.CONTRACTOR) setCabinetPreview(null)
+  }, [previewActive, preview])
 
   // Проверки. Всё, что ниже, работает с ЭФФЕКТИВНОЙ ролью: в режиме
   // предпросмотра интерфейс должен вести себя ровно как у выбранной роли.

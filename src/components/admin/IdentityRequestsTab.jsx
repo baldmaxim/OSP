@@ -37,12 +37,16 @@ function OrgLine({ org, onMatch }) {
 }
 
 function CreateForm({ request, roleOptions, objectOptions, counterpartyOptions, onNeedCounterparties, onSubmit, onCancel, busy, orgsEnabled, onMatch }) {
-  const [role, setRole] = useState('')
+  const [chosenRole, setRole] = useState('')
   const [objectIds, setObjectIds] = useState([])
   const [counterpartyId, setCounterpartyId] = useState('')
   const [fullName, setFullName] = useState(request.fullName || '')
-  useEffect(() => { if (role === 'contractor' && !orgsEnabled) onNeedCounterparties?.() }, [role, onNeedCounterparties, orgsEnabled])
   const org = request.org || null
+  // Организация СУ-10 сопоставлена с контрагентом — это подрядчик, другой роли быть не может (решение пользователя 25.11.2026).
+  // Роль выводится из состояния организации, а не ставится один раз: сопоставить можно и при открытой форме.
+  const contractorOnly = orgsEnabled && org?.result === 'counterparty'
+  const role = contractorOnly ? 'contractor' : chosenRole
+  useEffect(() => { if (role === 'contractor' && !orgsEnabled) onNeedCounterparties?.() }, [role, onNeedCounterparties, orgsEnabled])
   // С организациями СУ-10 подрядчику контрагент ставит сервер из связи; без связи создать подрядчика нельзя.
   const contractorBlocked = orgsEnabled && role === 'contractor' && org?.result !== 'counterparty' && org?.result !== 'unknown_subject'
   const submit = (e) => {
@@ -57,11 +61,17 @@ function CreateForm({ request, roleOptions, objectOptions, counterpartyOptions, 
       </label>
       <label className="ir-field">
         <span>Роль</span>
-        <select value={role} onChange={(e) => setRole(e.target.value)} required>
-          <option value="">Выберите роль…</option>
-          {roleOptions.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-          <option value="contractor">Подрядчик</option>
-        </select>
+        {contractorOnly ? (
+          <select value="contractor" disabled title="Организация сопоставлена с контрагентом — только подрядчик">
+            <option value="contractor">Подрядчик</option>
+          </select>
+        ) : (
+          <select value={role} onChange={(e) => setRole(e.target.value)} required>
+            <option value="">Выберите роль…</option>
+            {roleOptions.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+            <option value="contractor">Подрядчик</option>
+          </select>
+        )}
       </label>
       {role === 'contractor' && orgsEnabled ? (
         <div className="ir-field">

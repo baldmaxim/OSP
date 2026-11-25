@@ -117,13 +117,13 @@ describe('Кабинет подрядчика: цены снабжения, из
     const prices = (uid, extra = '') => as(uid, `select coalesce(string_agg(item_key || '|' || unit_key || '=' || price, ';' order by item_key), '')
       from public.bid_supply_prices('${T.open}'${extra})`)
     assert.equal(prices(U.alpha), '', 'разрешения нет')
-    assert.throws(() => as(U.alpha, `select public.bid_supply_decide('${T.open}', '${CP.alpha}', true)`), /Нет права правки тендеров/)
+    assert.throws(() => as(U.alpha, `select public.bid_supply_decide('${T.open}', '${CP.alpha}', true)`), /решает инженер ОСП/)
     assert.equal(as(U.alpha, `select public.bid_supply_request('${T.open}')`), 'requested')
     assert.equal(as(U.alpha, `select public.bid_supply_request('${T.open}')`), 'requested', 'повтор — та же просьба')
     assert.throws(() => as(U.beta, `select public.bid_supply_request('${T.open}')`), /закрыт или заявка не подана/, 'без доступа к тендеру')
-    assert.throws(() => as(U.lawyer, `select public.bid_supply_decide('${T.open}', '${CP.alpha}', true)`), /Нет права правки тендеров/)
-    assert.throws(() => as(U.admin, `select public.bid_supply_decide('${T.open}', '${CP.beta}', true)`), /не участвует/)
-    assert.equal(as(U.admin, `select public.bid_supply_decide('${T.open}', '${CP.alpha}', true)`), 'granted')
+    assert.throws(() => as(U.lawyer, `select public.bid_supply_decide('${T.open}', '${CP.alpha}', true)`), /решает инженер ОСП/)
+    assert.throws(() => as(U.admin, `select public.bid_supply_grant('${T.open}', '${CP.beta}', '[]'::jsonb, true)`), /не участвует/)
+    assert.equal(as(U.admin, `select public.bid_supply_grant('${T.open}', '${CP.alpha}', '[]'::jsonb, true) > 0`), 't')
 
     const got = prices(U.alpha)
     assert.equal(got.split(';').length, 1, got)
@@ -132,6 +132,25 @@ describe('Кабинет подрядчика: цены снабжения, из
     assert.equal(prices(U.admin, `, '${CP.alpha}'`), got, 'просмотр от имени подрядчика — то же')
     assert.equal(prices(U.admin, `, '${CP.beta}'`), '')
     assert.equal(as(U.alpha, `select count(*) from public.tender_vor_supply_rates`), '0', 'сами цены снабжения подрядчику не видны')
+  })
+
+  it('по позициям (20270303): открыта только отмеченная позиция; пустой набор — запрет; тендер целиком не разрешить; решает инженер', () => {
+    const prices = () => as(U.alpha, `select count(*) from public.bid_supply_prices('${T.open}')`)
+    const pipe = `jsonb_build_array(jsonb_build_object('key', public.supply_norm_name('Труба стальная 20'), 'unit_key', public.kp_norm_unit('м')))`
+    assert.throws(() => as(U.admin, `select public.bid_supply_decide('${T.open}', '${CP.alpha}', true)`), /по позициям/)
+    assert.throws(() => as(U.lawyer, `select count(*) from public.bid_supply_items('${T.open}', '${CP.alpha}')`), /решает инженер ОСП/)
+    assert.throws(() => as(U.alpha, `select public.bid_supply_grant('${T.open}', '${CP.alpha}', '[]'::jsonb, true)`), /решает инженер ОСП/)
+    assert.equal(as(U.admin, `select string_agg(name || ':' || granted::text, ';') from public.bid_supply_items('${T.open}', '${CP.alpha}')`),
+      'Труба стальная 20:true', 'одна позиция с единой ценой снабжения — открыта «все сразу»')
+    assert.equal(as(U.admin, `select public.bid_supply_grant('${T.open}', '${CP.alpha}', '[{"key": "нет такой", "unit_key": "шт"}]'::jsonb)`), '0',
+      'ключ без цены снабжения ничего не открывает')
+    assert.equal(prices(), '0', 'набор пуст — цен нет')
+    assert.equal(internal(`select status from public.tender_bid_supply_access where tender_id = '${T.open}' and counterparty_id = '${CP.alpha}'`), 'denied')
+    assert.equal(as(U.admin, `select public.bid_supply_grant('${T.open}', '${CP.alpha}', ${pipe})`), '1')
+    assert.equal(prices(), '1')
+    assert.equal(as(U.alpha, `select count(*) from public.tender_bid_supply_items`), '0', 'отметки позиций подрядчику напрямую не видны')
+    const check = internal(fs.readFileSync(file('yandex', '20270303_bid_supply_items.check.sql'), 'utf8'))
+    assert.doesNotMatch(check, /^FAIL/m, check)
   })
 
   it('взять цену снабжения: цену берёт база, наименование и объём — из ВОР; своя цена — только по просьбе; сохранение отметку не ставит', () => {
@@ -161,7 +180,7 @@ describe('Кабинет подрядчика: цены снабжения, из
     const rows = as(U.admin, `select counterparty_name || ':' || access || ':' || coalesce(status, '-') || ':' || priced || ':' || from_supply
       from public.bid_supply_list(array['${T.open}']::uuid[]) order by counterparty_name`).split('\n')
     assert.deepEqual(rows, ['ООО Альфа Цены:invited:denied:1:1', 'ООО Сайт Цены:pending:-:0:0'])
-    assert.throws(() => as(U.alpha, `select * from public.bid_supply_list(array['${T.open}']::uuid[])`), /Нет права просмотра тендеров/)
+    assert.throws(() => as(U.alpha, `select * from public.bid_supply_list(array['${T.open}']::uuid[])`), /решает инженер ОСП/)
     assert.equal(as(U.alpha, `select count(*) from public.tender_bid_supply_access`), '1', 'своя строка')
     assert.equal(as(U.self, `select count(*) from public.tender_bid_supply_access`), '0', 'чужую не видно')
     assert.equal(as(U.alpha, `update public.tender_bid_supply_access set status = 'granted' returning 1`), '', 'правка не задела строк')
@@ -223,7 +242,7 @@ describe('Кабинет подрядчика: цены снабжения, из
 
   it('закрытый приём и отклонённая заявка: цен снабжения нет, взять нельзя, разрешить нельзя', () => {
     const got = () => as(U.self, `select count(*) from public.bid_supply_prices('${T.open}')`)
-    assert.equal(as(U.admin, `select public.bid_supply_decide('${T.open}', '${CP.self}', true)`), 'granted')
+    assert.equal(as(U.admin, `select public.bid_supply_grant('${T.open}', '${CP.self}', '[]'::jsonb, true) > 0`), 't')
     assert.equal(got(), '1', 'учётка с регистрации по заявке — с разрешением видит цену')
     internal(`update public.tenders set status = 'Завершен' where id = '${T.open}'`)
     assert.equal(got(), '0', 'приём закрыт')
@@ -233,7 +252,7 @@ describe('Кабинет подрядчика: цены снабжения, из
     internal(`update public.tender_bid_requests set status = 'rejected' where tender_id = '${T.open}' and counterparty_id = '${CP.self}'`)
     assert.equal(got(), '0', 'заявка отклонена')
     assert.throws(() => take(U.self, [['Труба стальная 20', 'м']]), /закрыта/)
-    assert.throws(() => as(U.admin, `select public.bid_supply_decide('${T.open}', '${CP.self}', true)`), /не участвует/)
+    assert.throws(() => as(U.admin, `select public.bid_supply_grant('${T.open}', '${CP.self}', '[]'::jsonb, true)`), /не участвует/)
   })
 
   it('откат: функций и триггера нет, разрешения, архив и цены на месте; повтор безопасен', () => {

@@ -12,7 +12,7 @@ import { IconHardHat, IconChevronDown } from '../components/icons/TenderHubIcons
 import { IconSearch } from '../components/icons/ToolbarIcons'
 import {
   loadCabinetTenders, loadCabinetTendersPreview, loadOrgCard, loadOrgCardPreview, requestParticipation, setParticipationStatus, TENDER_OPEN_STATUS,
-  VOR_CATEGORIES, loadCompanyAnswers,
+  VOR_CATEGORIES, loadCompanyAnswers, setCabinetPreview, loadPreviewAccount,
 } from '../services/contractorBids'
 import { isWorkbookFileName } from '../utils/vorFiles'
 import { phoneHref } from '../utils/siteContacts'
@@ -49,7 +49,10 @@ const ContractorCompanyTab = lazy(() => import('../components/contractor/Contrac
 // тендеры, от которых организация отказалась, в кабинете не показываются (вернуть участие можно через отдел).
 //
 // Просмотр от имени подрядчика (previewActive): запросы идут под администратором, у него нет организации, и функции кабинета
-// отказывают. Поэтому те же сведения читаются из таблиц, а записи нет: заявка только на экране, цены и анкета — только просмотр.
+// отказывают. Поэтому те же сведения читаются из таблиц. Решение пользователя 25.11.2026: кабинет в просмотре — 1 в 1 как у
+// подрядчика (раньше цены, анкета, просьба о ценах снабжения и «Отказаться» были только для чтения): всё можно нажать и заполнить,
+// но записи идут в черновик просмотра в памяти страницы, а не в базу (setCabinetPreview, services/contractorBids.js). Сведения
+// учётки («Моя компания», имя в шапке) и вид кабинета учётки с регистрации — по учётке организации (loadPreviewAccount).
 //
 // Решения пользователя 11.11.2026 (окно тендера): файлы ВОР — только в «Расценке», в «Документах тендера» их больше нет; РД —
 // раскрывающимся списком; шаблона КП нет. Решение 24.11.2026: расценка на сайте — основной путь, по каждой ведомости сразу, как
@@ -102,7 +105,8 @@ const isHttp = (url) => /^https?:\/\//i.test(String(url || '').trim())
 const isCurrentTender = (t) => t.isOpen ?? t.status === TENDER_OPEN_STATUS
 const isDeclined = (t) => t.participationStatus === 'declined'
 const STATUS_LABEL = 'Идёт тендерная процедура'
-const PREVIEW_NOTE = 'Просмотр от имени подрядчика: заявка, цены и анкета не записываются.'
+// Прежний путь (шаблон КП, база раньше 20261102): загрузку КП черновик просмотра не повторяет.
+const PREVIEW_NOTE = 'Просмотр от имени подрядчика: КП не загружается.'
 
 // Плашка участия в строке реестра и в шапке тендера.
 function participationChip(tender, bidsEnabled) {
@@ -192,6 +196,13 @@ function ContractorCabinetPage() {
   const [previewDoc, setPreviewDoc] = useState(null)
 
   const cpId = contractorInfo?.id || null
+  // Черновик просмотра: включается сразу при отрисовке (действия дочерних компонентов идут раньше эффектов страницы). Снимает его
+  // RoleContext, когда просмотр заканчивается, — не очистка страницы: прощальная запись цен BidWorkspace идёт позже неё.
+  setCabinetPreview(previewActive ? cpId : null)
+  // Учётка организации в просмотре: { contact_name, contact_phone, contact_email, selfRegistered } | null.
+  const [previewAccount, setPreviewAccount] = useState(null)
+  // Учётка с регистрации на сайте: без файлов тендера и «Отказаться». В просмотре — как у учётки организации.
+  const selfView = selfRegistered || (previewActive && previewAccount?.selfRegistered === true)
   const [bidsEnabled, setBidsEnabled] = useState(false)
   const [joining, setJoining] = useState(false)
   // Сведения о компании нужны шапке (номер на сайте) и вкладке «Моя компания». undefined — ещё читаются.
@@ -202,7 +213,18 @@ function ContractorCabinetPage() {
     let cancelled = false
     setOrgCard(undefined)
     setOrgCardError('')
-    ;(previewActive ? (cpId ? loadOrgCardPreview(cpId) : Promise.resolve(null)) : loadOrgCard())
+    setPreviewAccount(null)
+    // В просмотре сведения учётки (ФИО, телефон, почта входа) — учётки организации: как contractor_org_card у подрядчика.
+    const previewCard = async () => {
+      if (!cpId) return null
+      const [row, account] = await Promise.all([
+        loadOrgCardPreview(cpId),
+        loadPreviewAccount(cpId).catch((e) => { console.error('Учётка организации:', e); return null }),
+      ])
+      if (!cancelled) setPreviewAccount(account)
+      return row ? { ...row, contact_name: account?.contact_name ?? null, contact_phone: account?.contact_phone ?? null, contact_email: account?.contact_email ?? null } : null
+    }
+    ;(previewActive ? previewCard() : loadOrgCard())
       .then((row) => { if (!cancelled) setOrgCard(row) })
       .catch((e) => { if (!cancelled) { setOrgCard(null); setOrgCardError(e.message || String(e)) } })
     return () => { cancelled = true }
@@ -271,7 +293,7 @@ function ContractorCabinetPage() {
   // пути (база без расценки на сайте: шаблон и загрузка КП) — при расценке на сайте её не читаем (BidWorkspace берёт позиции из ВОР).
   const activeAccess = activeTender?.access || null
   const loadTenderDetails = useCallback(async () => {
-    if (selfRegistered || !activeTenderId || !cpId || !activeAccess || activeAccess === 'rejected') { setEstimateItems([]); setTenderDocs([]); return }
+    if (selfView || !activeTenderId || !cpId || !activeAccess || activeAccess === 'rejected') { setEstimateItems([]); setTenderDocs([]); return }
     setTenderBusy(true)
     try {
       const [items, docs, lastProposal] = await Promise.all([
@@ -308,7 +330,7 @@ function ContractorCabinetPage() {
     } finally {
       setTenderBusy(false)
     }
-  }, [activeTenderId, cpId, activeAccess, selfRegistered, bidsEnabled])
+  }, [activeTenderId, cpId, activeAccess, selfView, bidsEnabled])
 
   useEffect(() => { loadTenderDetails() }, [loadTenderDetails])
 
@@ -406,7 +428,7 @@ function ContractorCabinetPage() {
   }
 
   const handleDecline = async () => {
-    if (!activeTender || !cpId || previewActive) return
+    if (!activeTender || !cpId) return
     if (!window.confirm('Отказаться от участия в этом тендере? Отметку увидит отдел сопровождения подрядчиков, а тендер пропадёт из кабинета. Вернуть участие можно через отдел.')) return
     try {
       await setParticipationStatus(activeTender.id, cpId, 'declined')
@@ -420,11 +442,6 @@ function ContractorCabinetPage() {
   // Участвовать в открытом тендере: заявка с сайта (инженер решит, сделать ли участником), расценка — сразу.
   const handleJoin = async () => {
     if (!activeTender || joining) return
-    // Просмотр от имени подрядчика: заявка только на экране, чтобы увидеть, что откроется подрядчику.
-    if (previewActive) {
-      setInvitations(prev => prev.map(t => (t.id === activeTender.id ? { ...t, access: 'pending' } : t)))
-      return
-    }
     setJoining(true)
     try {
       const access = await requestParticipation(activeTender.id)
@@ -500,7 +517,9 @@ function ContractorCabinetPage() {
           </div>
         </div>
         <div className="cab-header-right">
-          {userProfile?.full_name && <span className="cab-user">{userProfile.full_name}</span>}
+          {(previewActive ? previewAccount?.contact_name : userProfile?.full_name) && (
+            <span className="cab-user">{previewActive ? previewAccount.contact_name : userProfile.full_name}</span>
+          )}
           <button type="button" className="cab-logout" onClick={handleLogout}>Выйти</button>
         </div>
       </header>
@@ -578,8 +597,6 @@ function ContractorCabinetPage() {
                     </div>
                   </div>
 
-                  {previewActive && <div className="cab-note is-warn">{PREVIEW_NOTE}</div>}
-
                   {/* Участие: открытый тендер без заявки — «Участвовать»; заявка — что дальше. */}
                   {bidsEnabled && !activeTender.access && (
                     <section className="cab-section cab-join">
@@ -607,7 +624,7 @@ function ContractorCabinetPage() {
                   )}
 
                   {/* Документы тендера: пакет и РД (свёрнута); ВОР — в «Расценке» */}
-                  {!selfRegistered && activeTender.access && activeTender.access !== 'rejected' && (tenderDocs.length === 0 || shownDocGroups.length > 0) && (
+                  {!selfView && activeTender.access && activeTender.access !== 'rejected' && (tenderDocs.length === 0 || shownDocGroups.length > 0) && (
                   <section className="cab-section">
                     <h3>Документы тендера</h3>
                     {tenderBusy && tenderDocs.length === 0 ? (
@@ -662,7 +679,7 @@ function ContractorCabinetPage() {
                         <BidWorkspace
                           key={activeTender.id}
                           tender={{ ...activeTender, object_name: activeTender.objects?.name }}
-                          canEdit={CAN_PRICE.has(activeTender.access) && !previewActive}
+                          canEdit={CAN_PRICE.has(activeTender.access)}
                           previewCounterpartyId={previewActive ? cpId : null}
                           counterpartyName={contractorInfo?.name || ''}
                           counterpartyId={cpId}
@@ -739,9 +756,9 @@ function ContractorCabinetPage() {
                     </section>
                   )}
 
-                  {!selfRegistered && activeTender.access === 'invited' && activeTender.participationStatus && (
+                  {!selfView && activeTender.access === 'invited' && activeTender.participationStatus && (
                     <div className="cab-decline">
-                      <button type="button" className="cab-btn cab-btn-ghost" disabled={previewActive} title={previewActive ? PREVIEW_NOTE : undefined} onClick={handleDecline}>
+                      <button type="button" className="cab-btn cab-btn-ghost" onClick={handleDecline}>
                         Отказаться от участия
                       </button>
                     </div>

@@ -556,7 +556,7 @@ describe('Кабинет подрядчика: расценка на сайте'
     }
   })
 
-  it('просмотр от имени подрядчика: те же тендеры, пакет, ответственный и сведения компании; ничего не записывается, чужих цен нет', async () => {
+  it('просмотр от имени подрядчика: кабинет 1 в 1 (цены, заявка, учётная запись) — правится на экране, в базу ничего не записывается, чужих цен нет', async () => {
     const { page, errors, close } = await open('&preview=1')
     try {
       await page.locator('table.tenders-registry').waitFor({ timeout: 120000 })
@@ -573,20 +573,31 @@ describe('Кабинет подрядчика: расценка на сайте'
       assert.match(await company.locator('.cab-org-row', { hasText: 'Номер на сайте' }).textContent(), /1234/)
       assert.equal(await company.locator('.cab-org-contact').count(), 2)
       assert.doesNotMatch(await company.textContent(), /служебное/)
-      assert.equal(await company.getByRole('heading', { name: 'Учётная запись' }).count(), 0, 'учётки у просмотра нет')
-      assert.equal(await company.getByRole('button', { name: 'Сменить пароль' }).count(), 0, 'пароль сменился бы у администратора')
+      assert.equal(await company.getByRole('heading', { name: 'Учётная запись' }).count(), 1, 'учётная запись — как у подрядчика (учётки организации)')
+      // Смена пароля в просмотре сменила бы пароль администратора — вместо формы пояснение.
+      if (await company.getByRole('button', { name: 'Сменить пароль' }).count()) {
+        await company.getByRole('button', { name: 'Сменить пароль' }).click()
+        await company.locator('.cab-note', { hasText: 'пароль организации здесь не меняется' }).waitFor()
+        assert.equal(await company.locator('input[type=password]').count(), 0)
+      }
 
       await page.locator('.cab-tab', { hasText: 'Тендеры' }).click()
       await openTender(page, 857)
-      await page.locator('.cab-note', { hasText: 'Просмотр от имени подрядчика' }).waitFor()
+      assert.equal(await page.locator('.cab-note', { hasText: 'Просмотр от имени подрядчика' }).count(), 0, 'пометка — в полосе просмотра, не на странице')
       await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
       await page.getByRole('button', { name: 'Скачать ВОР «ВОР паркинга.xlsx»' }).waitFor({ timeout: 60000 })
       await page.locator('.bid-tab', { hasText: 'Материалы' }).locator('.bid-tab-count', { hasText: '2' }).waitFor({ timeout: 60000 })
-      await page.locator('.bid-save', { hasText: 'цены не записываются' }).waitFor()
+      await page.locator('.bid-save', { hasText: 'в базу не записываются' }).waitFor()
       assert.match(await text(page.locator('table.bid-vs tfoot td').nth(1)), /0 из 2/, 'цена другой организации в просмотр не попала')
-      assert.equal(await page.locator('.bid-table .bid-money-input:not([disabled])').count(), 0, 'ввода цен нет')
+      await page.getByRole('button', { name: 'Загрузить файл с ценами' }).waitFor()
+      // Цену можно ввести, как подрядчику: она остаётся на экране (черновик просмотра), в базу не уходит.
+      const input = page.locator('.bid-table .bid-money-input:not([disabled])').first()
+      await input.fill('1234')
+      await input.press('Tab')
+      await page.waitForTimeout(1200)
+      assert.match(await text(page.locator('table.bid-vs tfoot td').nth(1)), /1 из 2/, 'цена встала в сводку')
       assert.deepEqual(await calls(page, 'bid_request'), [], 'заявка не записана')
-      assert.deepEqual(await calls(page, 'bid_rates_save'), [])
+      assert.deepEqual(await calls(page, 'bid_rates_save'), [], 'цена не записана')
       assert.deepEqual(errors, [])
     } finally {
       await close()
@@ -808,44 +819,87 @@ describe('Кабинет подрядчика: расценка на сайте'
     }
   })
 
-  it('инженер: подрядчики на сайте — просьба взять цены снабжения в раскрытой строке; «Разрешить» — функцией базы, в историю тендера', async () => {
+  it('инженер: цены снабжения подрядчикам — в «Тендерах на материалы» (окно «Цены подрядчикам»), по позициям или все сразу; в основном реестре блока нет', async () => {
     const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 1600, height: 1000 } })
     const page = await context.newPage()
     const errors = []
     page.on('pageerror', (e) => errors.push(e.message))
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()) })
     page.on('dialog', (d) => d.accept())
+    // Как bid_supply_list / bid_supply_items / bid_supply_grant / bid_supply_decide (20270303): цен в списке подрядчиков нет.
+    const fake = () => {
+      window.__supplyCalls = []
+      const granted = new Set()
+      const items = [
+        { item_key: 'труба стальная 20', unit_key: 'м', name: 'Труба стальная 20', unit: 'м', price: 512.4, vors: 2, taken: false },
+        { item_key: 'отвод 20', unit_key: 'шт', name: 'Отвод 20', unit: 'шт', price: 75, vors: 1, taken: false },
+      ]
+      window.__fakeRpc = { ...(window.__fakeRpc || {}),
+        bid_supply_list: ({ p_tenders }) => ({ data: p_tenders.map((id) => ({ tender_id: id, counterparty_id: 'cp-site', counterparty_name: 'ООО Сайт',
+          counterparty_inn: '7700000009', access: 'invited', status: granted.size ? 'granted' : 'requested', requested_at: '2026-11-20T09:00:00Z',
+          requested_by_name: 'Сайтов С. С.', decided_at: null, decided_by_name: null, priced: 12, from_supply: 0,
+          granted_items: granted.size, supply_items: items.length })), error: null }),
+        bid_supply_items: () => ({ data: items.map((r) => ({ ...r, granted: granted.has(r.item_key) })), error: null }),
+        bid_supply_grant: (args) => {
+          window.__supplyCalls.push(['grant', args])
+          granted.clear()
+          for (const r of (args.p_all ? items.map((x) => ({ key: x.item_key })) : args.p_items)) granted.add(r.key)
+          return { data: granted.size, error: null }
+        },
+        bid_supply_decide: (args) => { window.__supplyCalls.push(['decide', args]); granted.clear(); return { data: 'denied', error: null } },
+      }
+    }
     try {
+      // Основное строительство: блока цен снабжения в раскрытой строке больше нет.
       await page.goto(`${stand.url}?route=/tenders/construction&tenders=5&items=20&cps=2&latency=0`)
       const rows = page.locator('table.tenders-registry > tbody > tr')
       await rows.first().waitFor({ timeout: 120000 })
-      // Как bid_supply_list / bid_supply_decide (20270301): подрядчик с учёткой кабинета просит цены снабжения; цен в ответе нет.
-      await page.evaluate(() => {
-        window.__supplyDecided = []
-        const status = () => (window.__supplyDecided.length ? (window.__supplyDecided.at(-1).p_allow ? 'granted' : 'denied') : 'requested')
-        window.__fakeRpc = { ...(window.__fakeRpc || {}),
-          bid_supply_list: ({ p_tenders }) => ({ data: p_tenders.map((id) => ({ tender_id: id, counterparty_id: 'cp-site', counterparty_name: 'ООО Сайт',
-            counterparty_inn: '7700000009', access: 'invited', status: status(), requested_at: '2026-11-20T09:00:00Z', requested_by_name: 'Сайтов С. С.',
-            decided_at: window.__supplyDecided.length ? '2026-11-24T09:00:00Z' : null, decided_by_name: window.__supplyDecided.length ? 'Инженеров И. И.' : null,
-            priced: 12, from_supply: 0 })), error: null }),
-          bid_supply_decide: (args) => { window.__supplyDecided.push(args); return { data: args.p_allow ? 'granted' : 'denied', error: null } },
-        }
-      })
+      await page.evaluate(fake)
       await rows.first().locator('.expand-toggle').click()
-      const block = page.locator('.bidreq.bidsup')
+      await page.locator('.expanded-cp-row').first().waitFor({ timeout: 10000 })
+      assert.equal(await page.locator('.bidreq.bidsup').count(), 0, 'в реестре основного строительства блока нет')
+
+      // «Тендеры на материалы»: у тендера, основной которого принимает предложения (tender-13), — «Цены подрядчикам».
+      await page.goto(`${stand.url}?route=/tenders/materials&tenders=13&matTenders=1&latency=0`)
+      await page.locator('table.tenders-registry > tbody > tr').first().waitFor({ timeout: 120000 })
+      await page.evaluate(fake)
+      const button = page.getByRole('button', { name: /Цены подрядчикам/ })
+      await button.first().waitFor({ timeout: 10000 })
+      assert.equal(await button.count(), 1, 'только у тендера с идущим основным')
+      await button.first().click()
+      const block = page.locator('.bsa-dialog .bidreq.bidsup')
       await block.waitFor({ timeout: 10000 })
-      assert.match(await block.textContent(), /Подрядчики на сайте: цены снабжения1 просят разрешение/)
       assert.match(await block.textContent(), /ООО Сайт · ИНН 7700000009просит цены снабжения/)
-      assert.match(await block.textContent(), /расценено на сайте: 12/)
+      assert.match(await block.textContent(), /открыто позиций: 0 из 2/)
       assert.doesNotMatch(await block.textContent(), /₽/, 'цен в блоке нет')
-      await block.getByRole('button', { name: 'Разрешить цены снабжения' }).click()
-      await block.locator('.bidsup-chip.is-granted').waitFor({ timeout: 10000 })
-      const decided = await page.evaluate(() => window.__supplyDecided)
-      assert.equal(decided.length, 1)
-      assert.equal(decided[0].p_allow, true)
-      assert.equal(decided[0].p_counterparty, 'cp-site')
-      await block.getByRole('button', { name: 'Запретить' }).waitFor()
-      await page.waitForFunction(() => window.__fakeDb.tender_audit_log?.some((r) => r.field_name === 'supply_prices_access'), null, { timeout: 10000 })
+
+      // По позициям: окно со списком, отметить одну, сохранить — функцией базы с ключом позиции.
+      await block.getByRole('button', { name: 'Выбрать позиции…' }).click()
+      const dialog = page.locator('.bsi-dialog:not(.bsa-dialog)')
+      await dialog.locator('tbody tr', { hasText: 'Отвод 20' }).waitFor({ timeout: 10000 })
+      await dialog.getByRole('checkbox', { name: 'Открыть цену: Труба стальная 20' }).check()
+      await dialog.getByRole('button', { name: 'Сохранить (1)' }).click()
+      await page.waitForFunction(() => /открыто позиций: 1 из 2/.test(document.querySelector('.bsa-dialog .bidreq.bidsup')?.textContent || ''), null, { timeout: 10000 })
+      let calls = await page.evaluate(() => window.__supplyCalls)
+      assert.deepEqual(calls.at(-1), ['grant', { p_tender: 'tender-13', p_counterparty: 'cp-site', p_items: [{ key: 'труба стальная 20', unit_key: 'м' }], p_all: false }])
+
+      // Все сразу — список берёт база (p_all), в историю основного тендера.
+      await block.getByRole('button', { name: 'все сразу' }).click()
+      await page.waitForFunction(() => /открыто позиций: 2 из 2/.test(document.querySelector('.bsa-dialog .bidreq.bidsup')?.textContent || ''), null, { timeout: 10000 })
+      calls = await page.evaluate(() => window.__supplyCalls)
+      assert.equal(calls.at(-1)[1].p_all, true)
+      await page.waitForFunction(() => window.__fakeDb.tender_audit_log?.some((r) => r.field_name === 'supply_prices_access' && r.tender_id === 'tender-13'),
+        null, { timeout: 10000 })
+      await block.getByRole('button', { name: 'Закрыть все' }).click()
+      await page.waitForFunction(() => window.__supplyCalls.at(-1)?.[0] === 'decide', null, { timeout: 10000 })
+      assert.equal((await page.evaluate(() => window.__supplyCalls)).at(-1)[1].p_allow, false)
+      await page.keyboard.press('Escape')
+      await page.locator('.bsa-dialog').waitFor({ state: 'detached', timeout: 10000 })
+
+      // Снабжение (раздел «Тендеры на материалы» с правкой) кнопки не видит: решает только инженер ОСП или администратор.
+      await page.goto(`${stand.url}?route=/tenders/materials&tenders=13&matTenders=1&latency=0&asRole=snabjenie`)
+      await page.locator('table.tenders-registry > tbody > tr').first().waitFor({ timeout: 120000 })
+      assert.equal(await page.getByRole('button', { name: /Цены подрядчикам/ }).count(), 0)
       assert.deepEqual(errors, [])
     } finally {
       await context.close().catch(() => {})
