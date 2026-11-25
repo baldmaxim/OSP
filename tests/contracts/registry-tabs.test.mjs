@@ -3,7 +3,7 @@
 // завершённому договору на вкладке «В работе» не было видно вовсе.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { TAB_KEYS, kindCounts, registryCounts, registryRows, signalReviewCount, signalReviewIds } from '../../src/utils/contractRegistryTabs.js'
+import { TAB_KEYS, kindCounts, registryCounts, registryRows, signalReviewCount, signalReviewCountShown, signalReviewIds } from '../../src/utils/contractRegistryTabs.js'
 import { docTender, tenderChoices, tenderOptionLabel, tenderTitle } from '../../src/utils/contractTender.js'
 
 const doc = (id, over = {}) => ({
@@ -167,6 +167,66 @@ describe('«Сверка Signal»: фильтр до дерева и число'
     const same = registryRows(DOCS, { docKind: 'all', scope: 'all', tab: 'all', only: null })
     assert.deepEqual(ids(same.rows), ids(base.rows))
     assert.deepEqual([...same.context], [...base.context])
+  })
+})
+
+// С-8: число на «Сверке Signal» учитывает фильтры реестра (объект, поиск, контрагент…) — оно равно числу документов, которые
+// покажет реестр при включённом переключателе. Договоры здесь — как в базе: у ДП root_contract_id = его id (триггер 20270122, С-14).
+describe('«Сверка Signal»: число с фильтрами реестра (С-8)', () => {
+  const dp = (id, over = {}) => doc(id, { root_contract_id: id, ...over })
+  const DOCS2 = [
+    dp('k1', { object_id: 'A', cp: 'x' }), ds('d11', 'k1', { object_id: 'A', cp: 'x' }), ds('d12', 'k1', { object_id: 'A', cp: 'x' }),
+    dp('k2', { object_id: 'B', cp: 'y' }), ds('d21', 'k2', { object_id: 'B', cp: 'y' }),
+    dp('k3', { object_id: 'A', cp: 'y' }),
+    dp('k4', { object_id: 'B', cp: 'x' }),
+  ]
+  // В набор: ДС d11 и d12 (договор k1 — «ради ДС»), договор k2 и его ДС d21, договор k3. k4 — без замечаний.
+  const only = new Set(['d11', 'd12', 'k2', 'd21', 'k3'])
+  const view = registryRows(DOCS2, { docKind: 'all', scope: 'all', tab: 'all', only })
+  const byField = (field, value) => (row) => row[field] === value
+
+  it('без фильтров — как прежнее число по документам набора', () => {
+    assert.equal(signalReviewCountShown(view, only), 5)
+    assert.equal(signalReviewCountShown(view, only), signalReviewCount(DOCS2, only, { docKind: 'all', scope: 'all', tab: 'all' }))
+  })
+
+  it('объект: ДС и договор считаются, если прошла строка договора; договор «ради ДС» не считается', () => {
+    assert.equal(signalReviewCountShown(view, only, byField('object_id', 'A')), 3, 'k1 (ради ДС): d11, d12; k3')
+    assert.equal(signalReviewCountShown(view, only, byField('object_id', 'B')), 2, 'k2 и d21')
+    assert.equal(signalReviewCountShown(view, only, byField('object_id', 'C')), 0)
+  })
+
+  it('поиск и контрагент: те же правила, число сходится с числом показанных документов', () => {
+    const shownDocs = (rowOk) => {
+      const v = registryRows(DOCS2, { docKind: 'all', scope: 'all', tab: 'all', only })
+      const rows = v.rows.filter(rowOk)
+      return rows.filter((r) => !v.context.has(r.id)).length + rows.reduce((n, r) => n + (v.nested.get(r.id) || []).length, 0)
+    }
+    for (const rowOk of [byField('cp', 'x'), byField('cp', 'y'), (r) => r.id === 'k2', () => false, () => true]) {
+      assert.equal(signalReviewCountShown(view, only, rowOk), shownDocs(rowOk))
+    }
+    assert.equal(signalReviewCountShown(view, only, byField('cp', 'x')), 2, 'только d11 и d12 под k1')
+  })
+
+  it('виды «Договоры» и «ДС» — число по документам своего вида после фильтра', () => {
+    const contracts = registryRows(DOCS2, { docKind: 'contracts', scope: 'all', tab: 'all', only })
+    const amendments = registryRows(DOCS2, { docKind: 'amendments', scope: 'all', tab: 'all', only })
+    assert.equal(signalReviewCountShown(contracts, only), 2, 'k2, k3')
+    assert.equal(signalReviewCountShown(amendments, only), 3, 'd11, d12, d21')
+    assert.equal(signalReviewCountShown(contracts, only, byField('object_id', 'A')), 1)
+    assert.equal(signalReviewCountShown(amendments, only, byField('object_id', 'A')), 2)
+  })
+
+  it('нет набора или он пуст — 0', () => {
+    assert.equal(signalReviewCountShown(view, null), 0)
+    assert.equal(signalReviewCountShown(view, new Set()), 0)
+    assert.equal(signalReviewCountShown(null, only), 0)
+  })
+
+  it('ДП с root_contract_id = id остаётся договором: ДС находит его, сам он не становится ДС', () => {
+    const v = registryRows(DOCS2, { docKind: 'all', scope: 'all', tab: 'all' })
+    assert.deepEqual(v.nested.get('k1').map((d) => d.id), ['d11', 'd12'])
+    assert.ok(!v.nested.has('k3') && v.rows.some((r) => r.id === 'k3'))
   })
 })
 

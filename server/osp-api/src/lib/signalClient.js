@@ -13,8 +13,9 @@
 //   • токен живёт только в памяти, обновляется за минуту до срока; секрет клиента, токен и идентификатор клиента
 //     не попадают ни в тексты ошибок, ни в журнал;
 //   • у каждой попытки предел времени, у ответа — предел размера (до разбора, по мере чтения);
-//   • 429 — ожидание Retry-After (не более двух минут), 401 — один повтор с новым токеном, 5xx и 550 — несколько
-//     повторов с задержкой, 403 и 450 — без повтора; чужой «следующий» адрес из ответа не используется нигде.
+//   • 429 — ожидание Retry-After: не короче retryAfterMinMs (по умолчанию 1 с: «Retry-After: 0» не даёт десять повторов подряд
+//     за доли секунды) и не дольше двух минут; 401 — один повтор с новым токеном, 5xx и 550 — несколько повторов с задержкой,
+//     403 и 450 — без повтора; чужой «следующий» адрес из ответа не используется нигде.
 // Ошибка — SignalError с кодом: auth | scope | http | timeout | too_large | invalid | rate_limited | not_configured
 // (и aborted — вызвавший сам отменил запрос; это не сбой SIGNAL). У ошибки HTTP есть status.
 export const SIGNAL_TOKEN_PATH = '/public/v1/auth/token'
@@ -32,6 +33,8 @@ export const SIGNAL_CLIENT_DEFAULTS = {
   maxBytes: 16 * 1024 * 1024,
   tokenSkewMs: 60_000,
   maxRetryAfterMs: 120_000,
+  // Нижняя граница ожидания 429 (С-61): сервер пишет целые секунды, «0» — не «повторяйте сразу», а «меньше секунды».
+  retryAfterMinMs: 1_000,
   defaultRetryAfterMs: 2_000,
   maxRateRetries: 10,
   retries: 3,
@@ -90,8 +93,9 @@ export function sleepAbortable(ms, signal) {
   })
 }
 
-// Retry-After: целые секунды или дата HTTP; нет или непонятно — запасное значение; не больше предела.
-export function parseRetryAfter(value, { now = Date.now(), maxMs, defaultMs }) {
+// Retry-After: целые секунды или дата HTTP; нет или непонятно — запасное значение; не короче minMs и не дольше maxMs.
+// Ожидание клиента — минимум retryAfterMinMs (С-61); сама функция без minMs возвращает значение сервера как есть.
+export function parseRetryAfter(value, { now = Date.now(), minMs = 0, maxMs, defaultMs }) {
   const v = String(value ?? '').trim()
   let ms = null
   if (/^\d{1,9}$/.test(v)) ms = Number(v) * 1000
@@ -100,8 +104,11 @@ export function parseRetryAfter(value, { now = Date.now(), maxMs, defaultMs }) {
     if (Number.isFinite(at)) ms = at - now
   }
   if (ms === null || !Number.isFinite(ms)) ms = defaultMs
-  return Math.min(Math.max(0, ms), maxMs)
+  return Math.min(Math.max(0, ms, Math.min(minMs, maxMs)), maxMs)
 }
+
+// Настройка-интервал: конечное число не меньше нуля, иначе значение по умолчанию.
+const msOr = (v, fallback) => (v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : fallback)
 
 async function drain(res) {
   try { await res.body?.cancel() } catch { /* уже закрыт */ }
@@ -138,6 +145,7 @@ export function createSignalClient({
   fetch: fetchImpl = globalThis.fetch, log = null, allowLoopback = false, now = Date.now, sleep = sleepAbortable,
   retries = SIGNAL_CLIENT_DEFAULTS.retries, backoffMs = SIGNAL_CLIENT_DEFAULTS.backoffMs,
   maxRateRetries = SIGNAL_CLIENT_DEFAULTS.maxRateRetries, maxRetryAfterMs = SIGNAL_CLIENT_DEFAULTS.maxRetryAfterMs,
+  retryAfterMinMs = SIGNAL_CLIENT_DEFAULTS.retryAfterMinMs, retryAfterMaxMs,
 } = {}) {
   const base = signalBaseUrl(baseUrl, { hosts, allowLoopback })
   const { origin } = base
@@ -146,6 +154,9 @@ export function createSignalClient({
   const scopeList = toScopes(scopes)
   const timeout = Number(timeoutMs) > 0 ? Number(timeoutMs) : SIGNAL_CLIENT_DEFAULTS.timeoutMs
   const limit = Number(maxBytes) > 0 ? Number(maxBytes) : SIGNAL_CLIENT_DEFAULTS.maxBytes
+  // retryAfterMaxMs (SIGNAL_RETRY_AFTER_MAX_MS) — имя настройки; maxRetryAfterMs — прежнее имя параметра, действует, если новое не задано.
+  const retryMaxMs = msOr(retryAfterMaxMs, msOr(maxRetryAfterMs, SIGNAL_CLIENT_DEFAULTS.maxRetryAfterMs))
+  const retryMinMs = msOr(retryAfterMinMs, SIGNAL_CLIENT_DEFAULTS.retryAfterMinMs)
 
   // Токен — только здесь и только в памяти.
   let token = null
@@ -245,7 +256,7 @@ export function createSignalClient({
         if (rate >= maxRateRetries) throw new SignalError('rate_limited', 'SIGNAL: слишком много запросов (HTTP 429)', { status })
         rate += 1
         const wait = parseRetryAfter(res.headers.get('retry-after'), {
-          now: now(), maxMs: maxRetryAfterMs, defaultMs: SIGNAL_CLIENT_DEFAULTS.defaultRetryAfterMs,
+          now: now(), minMs: retryMinMs, maxMs: retryMaxMs, defaultMs: SIGNAL_CLIENT_DEFAULTS.defaultRetryAfterMs,
         })
         note('warn', { status, waitMs: wait, attempt: rate }, 'signal rate limit')
         await sleep(wait, signal)

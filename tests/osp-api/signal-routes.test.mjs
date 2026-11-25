@@ -8,7 +8,10 @@
 //     «Истории», две параллельные сессии — одна выигрывает, непустая ссылка без «Заменить» — отказ, жёсткое противоречие и
 //     «подтверждение недоступно» — без обращения к SQL;
 //   • администратор: корень по ссылке (проверка по дереву Signal, перекрытие), включение, границы объектов, ручной обход и журнал;
-//   • выключено (нет настройки, нет схемы), барьер записи, /api/health, секреты не попадают в журнал службы.
+//   • выключено (нет настройки, нет схемы), барьер записи, /api/health, секреты не попадают в журнал службы;
+//   • настройки SIGNAL_*: ошибка не роняет запуск (config_invalid, В-8), шаблоны адресов обязаны разбираться SIGNAL_URL_FORMATS (С-49).
+// Новые маршруты (tree, bindings, bindings/preview), «Данные устарели», оповещения и подтверждение текущей папки — в
+// signal-routes-admin.test.mjs; запуск при неверных настройках и сбои проверки схемы — в signal-routes-ops.test.mjs.
 // Нужны зависимости сервера (npm ci --prefix server/osp-api) и PostgreSQL (бинарники или Docker).
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -52,16 +55,71 @@ describe('настройки SIGNAL_*: разбор и ошибки', () => {
     assert.equal(loadConfig({ SIGNAL_SYNC: '1' }).signal.clientId, '', 'без ключа служба запускается: очередь работает по готовому снимку')
   })
 
-  it('включено с ошибкой — служба не запускается, причина названа', () => {
-    const bad = (env, re) => assert.throws(() => loadConfig({ SIGNAL_SYNC: '1', ...env }), re)
-    bad({ SIGNAL_CLIENT_ID: 'only-id' }, /SIGNAL_CLIENT_ID и SIGNAL_CLIENT_SECRET/)
-    bad({ SIGNAL_URL_FORMATS: 'https://signal.example.test/projects/{projectId}' }, /SIGNAL_URL_FORMATS/)
-    bad({ SIGNAL_UI_FOLDER_URL: I }, /SIGNAL_UI_FOLDER_URL/)
-    bad({ SIGNAL_UI_FILE_URL: F }, /SIGNAL_UI_FILE_URL/)
-    bad({ SIGNAL_DAY_MODE: 'всегда' }, /SIGNAL_DAY_MODE/)
-    bad({ SIGNAL_TICK_MS: '5' }, /SIGNAL_TICK_MS/)
-    bad({ SIGNAL_BASE_URL: 'http://api.sgnl.pro' }, /SIGNAL_BASE_URL/)
-    bad({ SIGNAL_BASE_URL: 'https://api.sgnl.pro', SIGNAL_HOSTS: 'other.example.test' }, /SIGNAL_BASE_URL/)
+  it('включено с ошибкой — служба запускается, ошибка названа по имени переменной (config_invalid, В-8); значений в тексте нет; strict бросает, как раньше', () => {
+    const SECRET_VALUE = 'значение-которое-не-должно-попасть-в-журнал'
+    const bad = (env, name, re) => {
+      const sig = loadConfig({ SIGNAL_SYNC: '1', ...env }).signal
+      assert.ok(sig.configErrors.includes(name), `${name}: ${JSON.stringify(sig.configErrors)}`)
+      assert.ok(!JSON.stringify(sig.configIssues).includes(SECRET_VALUE), 'в тексте ошибки нет значения переменной')
+      assert.throws(() => loadConfig({ SIGNAL_SYNC: '1', ...env }, { strictSignal: true }), re)
+    }
+    bad({ SIGNAL_CLIENT_ID: SECRET_VALUE }, 'SIGNAL_CLIENT_ID', /SIGNAL_CLIENT_ID и SIGNAL_CLIENT_SECRET/)
+    bad({ SIGNAL_URL_FORMATS: `https://signal.example.test/projects/{projectId}/${SECRET_VALUE}` }, 'SIGNAL_URL_FORMATS', /SIGNAL_URL_FORMATS/)
+    bad({ SIGNAL_UI_FOLDER_URL: I }, 'SIGNAL_UI_FOLDER_URL', /SIGNAL_UI_FOLDER_URL/)
+    bad({ SIGNAL_UI_FILE_URL: F }, 'SIGNAL_UI_FILE_URL', /SIGNAL_UI_FILE_URL/)
+    bad({ SIGNAL_DAY_MODE: SECRET_VALUE }, 'SIGNAL_DAY_MODE', /SIGNAL_DAY_MODE/)
+    bad({ SIGNAL_TICK_MS: '5' }, 'SIGNAL_TICK_MS', /SIGNAL_TICK_MS/)
+    bad({ SIGNAL_BASE_URL: 'http://api.sgnl.pro' }, 'SIGNAL_BASE_URL', /SIGNAL_BASE_URL/)
+    bad({ SIGNAL_BASE_URL: 'https://api.sgnl.pro', SIGNAL_HOSTS: 'other.example.test' }, 'SIGNAL_BASE_URL', /SIGNAL_BASE_URL/)
+    // Несколько ошибок сразу — все названы, по разу.
+    const many = loadConfig({ SIGNAL_SYNC: '1', SIGNAL_DAY_MODE: 'x', SIGNAL_TICK_MS: '5', SIGNAL_MAX_BYTES: 'много' }).signal
+    assert.deepEqual([...many.configErrors].sort(), ['SIGNAL_DAY_MODE', 'SIGNAL_MAX_BYTES', 'SIGNAL_TICK_MS'])
+    // Выключено — ничего не проверяется и ошибок нет.
+    assert.deepEqual(loadConfig({ SIGNAL_DAY_MODE: 'x' }).signal.configErrors, [])
+    assert.deepEqual(loadConfig({ SIGNAL_SYNC: '1' }).signal.configErrors, [])
+  })
+
+  it('С-49: SIGNAL_UI_FOLDER_URL и SIGNAL_UI_FILE_URL обязаны разбираться SIGNAL_URL_FORMATS (тот же узел и вид), иначе config_invalid', () => {
+    const errors = (env) => loadConfig({ SIGNAL_SYNC: '1', ...env }).signal.configErrors
+    assert.deepEqual(errors({ SIGNAL_URL_FORMATS: `${F}; ${I}`, SIGNAL_UI_FOLDER_URL: F, SIGNAL_UI_FILE_URL: I }), [])
+    // шаблон адреса не входит в список форматов
+    assert.deepEqual(errors({ SIGNAL_URL_FORMATS: I, SIGNAL_UI_FOLDER_URL: F }), ['SIGNAL_UI_FOLDER_URL'])
+    assert.deepEqual(errors({ SIGNAL_URL_FORMATS: F, SIGNAL_UI_FILE_URL: I }), ['SIGNAL_UI_FILE_URL'])
+    // список форматов пуст
+    assert.deepEqual(errors({ SIGNAL_UI_FOLDER_URL: F }), ['SIGNAL_UI_FOLDER_URL'])
+    // другой хост и другой путь — тоже не разбирается
+    assert.deepEqual(errors({ SIGNAL_URL_FORMATS: 'https://other.example.test/projects/{projectId}/folders/{folderId}', SIGNAL_UI_FOLDER_URL: F }), ['SIGNAL_UI_FOLDER_URL'])
+    assert.deepEqual(errors({ SIGNAL_URL_FORMATS: 'https://signal.example.test/p/{projectId}/f/{folderId}', SIGNAL_UI_FOLDER_URL: F }), ['SIGNAL_UI_FOLDER_URL'])
+    // формат шире шаблона (query в списке форматов не мешает шаблону без query): разбирается
+    assert.deepEqual(errors({ SIGNAL_URL_FORMATS: `${F}; https://signal.example.test/p/{projectId}/f/{folderId}`, SIGNAL_UI_FOLDER_URL: F }), [])
+    // не заданы шаблоны адресов — проверять нечего
+    assert.deepEqual(errors({ SIGNAL_URL_FORMATS: F }), [])
+  })
+
+  it('настройки обхода и свежести: SIGNAL_PAGE_END, SIGNAL_RETRY_AFTER_*, SIGNAL_DELETED_LOOKUP_LIMIT, SIGNAL_ROOT_BUDGET_MS, SIGNAL_STALE_*; согласованность значений', () => {
+    const sig = (env) => loadConfig({ SIGNAL_SYNC: '1', ...env }).signal
+    const dflt = sig({})
+    assert.deepEqual([dflt.pageEnd, dflt.retryAfterMinMs, dflt.retryAfterMaxMs, dflt.deletedLookupLimit, dflt.rootBudgetMs, dflt.staleWorkHours, dflt.staleOffHours],
+      ['empty', undefined, undefined, undefined, undefined, undefined, undefined], 'по умолчанию подставляют сами модули (клиент, обход, маршрут)')
+    const set = sig({
+      SIGNAL_PAGE_END: 'short', SIGNAL_RETRY_AFTER_MIN_MS: '500', SIGNAL_RETRY_AFTER_MAX_MS: '60000', SIGNAL_DELETED_LOOKUP_LIMIT: '0',
+      SIGNAL_RUN_BUDGET_MS: '1800000', SIGNAL_ROOT_BUDGET_MS: '900000', SIGNAL_STALE_WORK_HOURS: '2', SIGNAL_STALE_OFF_HOURS: '48',
+    })
+    assert.deepEqual(set.configErrors, [])
+    assert.deepEqual([set.pageEnd, set.retryAfterMinMs, set.retryAfterMaxMs, set.deletedLookupLimit, set.rootBudgetMs, set.staleWorkHours, set.staleOffHours],
+      ['short', 500, 60000, 0, 900000, 2, 48])
+    assert.equal(sig({ SIGNAL_PAGE_END: 'SHORT' }).pageEnd, 'short')
+    assert.equal(sig({ SIGNAL_PAGE_END: 'что-то' }).pageEnd, 'empty', 'прочее значение — empty, не ошибка')
+    assert.deepEqual(sig({ SIGNAL_PAGE_END: 'что-то' }).configErrors, [])
+    for (const [name, value] of [['SIGNAL_RETRY_AFTER_MIN_MS', '-1'], ['SIGNAL_RETRY_AFTER_MAX_MS', '10'], ['SIGNAL_DELETED_LOOKUP_LIMIT', '-1'],
+      ['SIGNAL_STALE_WORK_HOURS', '0'], ['SIGNAL_STALE_OFF_HOURS', 'сутки'], ['SIGNAL_ROOT_BUDGET_MS', '10']]) {
+      assert.deepEqual(sig({ [name]: value }).configErrors, [name], name)
+    }
+    // Минимум ожидания по Retry-After не больше максимума; бюджет корня не больше бюджета прогона.
+    assert.deepEqual(sig({ SIGNAL_RETRY_AFTER_MIN_MS: '30000', SIGNAL_RETRY_AFTER_MAX_MS: '20000' }).configErrors, ['SIGNAL_RETRY_AFTER_MIN_MS'])
+    assert.deepEqual(sig({ SIGNAL_RUN_BUDGET_MS: '600000', SIGNAL_ROOT_BUDGET_MS: '900000' }).configErrors, ['SIGNAL_ROOT_BUDGET_MS'])
+    const small = sig({ SIGNAL_RUN_BUDGET_MS: '600000' })
+    assert.deepEqual([small.configErrors, small.rootBudgetMs], [[], 600000], 'бюджет корня по умолчанию не превышает меньший бюджет прогона')
   })
 
   it('configuredParts.signal: только включено и с подключением (ключом и секретом)', async () => {
@@ -69,6 +127,7 @@ describe('настройки SIGNAL_*: разбор и ошибки', () => {
     const base = { s3: {}, ratesApiKeys: [] }
     assert.equal(configuredParts({ ...base, signal: { sync: true, clientId: 'a', clientSecret: 'b' } }).signal, true)
     assert.equal(configuredParts({ ...base, signal: { sync: true, clientId: 'a', clientSecret: '' } }).signal, false)
+    assert.equal(configuredParts({ ...base, signal: { sync: true, clientId: 'a', clientSecret: 'b', configErrors: ['SIGNAL_DAY_MODE'] } }).signal, false, 'config_invalid — не настроена')
     assert.equal(configuredParts({ ...base, signal: { sync: false, clientId: 'a', clientSecret: 'b' } }).signal, false)
     assert.equal(configuredParts(base).signal, false)
   })
@@ -133,7 +192,7 @@ describe('Маршруты /api/signal/* на настоящей базе', { sk
   })
 
   describe('права и охват', () => {
-    it('подрядчик: 403 на каждом из 17 маршрутов; сотрудник без права на «Договоры»: status — «выключено», остальное — 403 от базы', async () => {
+    it('подрядчик: 403 на каждом из 20 маршрутов; сотрудник без права на «Договоры»: status — «выключено», остальное — 403 от базы', async () => {
       const id = C.c1
       const node = F.f1
       const calls = [
@@ -146,8 +205,10 @@ describe('Маршруты /api/signal/* на настоящей базе', { sk
         ['POST', '/api/signal/sources', { url: 'https://signal.example.test/projects/x', objectIds: [] }], ['PATCH', '/api/signal/sources/1', { enabled: false }],
         ['POST', '/api/signal/sync', {}], ['GET', '/api/signal/runs'], ['GET', '/api/signal/unassigned?sourceId=1'],
         ['POST', '/api/signal/bindings', { sourceId: 1, nodeId: node, objectId: null }],
+        ['GET', '/api/signal/tree?sourceId=1'], ['GET', '/api/signal/bindings?sourceId=1'],
+        ['POST', '/api/signal/bindings/preview', { sourceId: 1, nodeId: node, objectId: s.A }],
       ]
-      assert.equal(calls.length, 17)
+      assert.equal(calls.length, 20)
       for (const [method, url, body] of calls) {
         const res = await h.call(U.contractor, method, url, body)
         assert.equal(res.statusCode, 403, `подрядчик ${method} ${url}`)
@@ -232,14 +293,18 @@ describe('Маршруты /api/signal/* на настоящей базе', { sk
     })
 
     it('маршруты администратора — только администратор (сотрудник и просмотр — 403), а база повторяет проверку', async () => {
-      const admin = [['GET', '/api/signal/aliases'], ['POST', '/api/signal/sources', { url: 'https://signal.example.test/projects/x', objectIds: [] }],
+      const admin = [['POST', '/api/signal/sources', { url: 'https://signal.example.test/projects/x', objectIds: [] }],
         ['PATCH', '/api/signal/sources/1', { enabled: true }], ['POST', '/api/signal/sync', {}], ['GET', '/api/signal/runs'],
-        ['GET', '/api/signal/unassigned?sourceId=1'], ['POST', '/api/signal/bindings', { sourceId: 1, nodeId: F.k1, objectId: null }]]
+        ['GET', '/api/signal/unassigned?sourceId=1'], ['POST', '/api/signal/bindings', { sourceId: 1, nodeId: F.k1, objectId: null }],
+        ['GET', `/api/signal/tree?sourceId=${s.srcA.id}`], ['GET', `/api/signal/bindings?sourceId=${s.srcA.id}`],
+        ['POST', '/api/signal/bindings/preview', { sourceId: s.srcA.id, nodeId: F.k1, objectId: s.A }]]
       for (const uid of [U.viewer, U.editor, U.editorB, U.noRight]) {
         for (const [method, url, body] of admin) assert.equal((await h.call(uid, method, url, body)).statusCode, 403, `${method} ${url}`)
       }
       // Администратор в базе — «одобренный admin или суперадминистратор» (public.is_admin()); сервер — тот же вопрос.
       assert.equal((await h.get(U.admin, '/api/signal/runs')).statusCode, 200)
+      for (const [, url] of admin.filter(([m]) => m === 'GET').slice(-2)) assert.equal((await h.get(U.admin, url)).statusCode, 200, url)
+      assert.equal((await h.post(U.admin, '/api/signal/bindings/preview', { sourceId: s.srcA.id, nodeId: F.k1, objectId: s.A })).statusCode, 200)
       const sdb = await db.serverDb()
       await assert.rejects(sdb.read({ userId: U.editor, email: '' }, (tx) => tx.query('select osp_private.signal_runs(5)')), (err) => err.code === 'SG403')
     })
@@ -285,16 +350,21 @@ describe('Маршруты /api/signal/* на настоящей базе', { sk
       const { OPEN_ROUTES } = await import(path.join(SERVER, 'src', 'open-routes.js'))
       assert.equal(OPEN_ROUTES.filter((r) => r.url.includes('/signal')).length, 0)
       const own = h.app.accessTable.filter((r) => r.url.startsWith('/api/signal/'))
-      assert.equal(own.length, 17)
+      assert.equal(own.length, 20)
       assert.ok(own.every((r) => r.kind === 'user' && (r.require === 'employeeOrSuperadmin' || r.require === 'admin')))
+      const keyOf = (r) => `${r.method} ${r.url}`
+      // Новые маршруты разметки — только администратору; список синонимов — сотруднику (своё), решение «кто что видит» — база (С-2).
+      for (const k of ['GET /api/signal/tree', 'GET /api/signal/bindings', 'POST /api/signal/bindings/preview']) assert.equal(own.find((r) => keyOf(r) === k)?.require, 'admin', k)
+      assert.equal(own.find((r) => keyOf(r) === 'GET /api/signal/aliases').require, 'employeeOrSuperadmin')
     })
   })
 
   describe('status, marks, folders', () => {
     it('status: просмотр, правка, администратор; ключей и идентификаторов Signal в ответе нет', async () => {
       const viewer = (await h.get(U.viewer, '/api/signal/status')).json()
-      assert.deepEqual(Object.keys(viewer).sort(), ['canEdit', 'canView', 'confirmAvailable', 'dataAt', 'enabled', 'fileLinks', 'generation', 'isAdmin'])
-      assert.deepEqual([viewer.enabled, viewer.canView, viewer.canEdit, viewer.isAdmin, viewer.generation], [true, true, false, false, 1])
+      assert.deepEqual(Object.keys(viewer).sort(), ['canEdit', 'canView', 'confirmAvailable', 'dataAt', 'enabled', 'fileLinks', 'generation', 'isAdmin', 'stale', 'staleHours'])
+      assert.deepEqual([viewer.enabled, viewer.canView, viewer.canEdit, viewer.isAdmin, viewer.generation, viewer.stale], [true, true, false, false, 1, false])
+      assert.ok([3, 36].includes(viewer.staleHours), 'порог — рабочий или нерабочий')
       assert.match(viewer.dataAt, /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/)
       const admin = await h.get(U.admin, '/api/signal/status')
       const body = admin.json()
@@ -302,7 +372,9 @@ describe('Маршруты /api/signal/* на настоящей базе', { sk
       assert.equal(body.connection, 'configured')
       assert.equal(body.dayMode, 'full')
       assert.deepEqual(body.sources.map((x) => x.projectName), ['Тест: проект Альфа', 'Тест: проект Бета'])
-      assert.deepEqual(Object.keys(body.sources[0]).sort(), ['enabled', 'folders', 'id', 'items', 'lastError', 'lastNightOkAt', 'lastOkAt', 'objects', 'projectName', 'ready', 'rootPath'])
+      assert.deepEqual(Object.keys(body.sources[0]).sort(), ['enabled', 'failedSince', 'folders', 'id', 'items', 'lastError', 'lastNightOkAt', 'lastOkAt', 'objects', 'problems', 'projectName', 'ready', 'rootPath', 'status'])
+      assert.deepEqual([body.sources[0].status, body.sources[0].failedSince, body.sources[0].problems], ['ok', null, 0])
+      assert.deepEqual([body.running, body.held, body.alerts], [null, null, []])
       assert.equal(typeof body.sources[0].id, 'number')
       noLeak(admin.body, CLIENT_SECRET, CLIENT_ID, s.projectA, s.srcA.folderId)
       assert.equal(admin.headers['cache-control'], 'private, no-store')
@@ -325,7 +397,8 @@ describe('Маршруты /api/signal/* на настоящей базе', { sk
       // Подсказки по состояниям (раздел 8): без чужих путей, дата — по Москве.
       const byId = Object.fromEntries(all.map((m) => [m.id, m]))
       assert.match(byId[C.c1].tip, /^Signal: предложена папка Документы Альфа \/ Корпус 1 \/ ДП АЛФ-ДП-26-001/)
-      assert.match(byId[C.c2].tip, /^Signal: сверено \d{2}\.\d{2}\.\d{4} · Документы Альфа/)
+      assert.match(byId[C.c2].tip, /^Signal: сверено · данные на \d{2}\.\d{2}\.\d{4} · Документы Альфа \/ Корпус 1 \/ ДП АЛФ-ДП-26-002/, 'дата данных по Москве, путь — от границы объекта')
+      assert.match(byId[C.c2].dataAt, /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/, 'у значка своя дата данных')
       assert.equal(byId[C.c3].tip, 'Signal: ссылки нет')
       assert.equal(byId[C.c4].tip, 'Signal: противоречие — номер в названии папки не совпал с номером договора')
     })
@@ -476,13 +549,25 @@ describe('Маршруты /api/signal/* на настоящей базе', { sk
       assert.deepEqual(res.json(), { error: 'Папка противоречит данным договора — подтвердить нельзя', code: 'hard_conflict' })
       assert.equal(linkOf(C.c3), '')
       assert.equal(db.sql(`select count(*) from public.contract_audit_log`), watch)
-      // ДС, чья папка договора неизвестна, — «семья не определена»: подтверждать нельзя.
+      // Папка, не виденная в последнем обходе (пропала или не обойдена), подтверждению не подлежит: 409 confirm_unavailable (маршрут,
+      // до базы). Пока она не наблюдается, договор не получит и ссылку.
+      const id = await fresh('АЛФ-ДП-26-004')
+      const c4 = await card(U.editor, id)
+      db.sql(`update osp_private.signal_nodes set seen_gen = seen_gen - 1 where node_id = ${lit(F.f4)}`)
+      try {
+        const na = await confirm(U.editor, id, confirmBody(c4, F.f4))
+        assert.equal(na.statusCode, 409, na.body)
+        assert.equal(na.json().code, 'confirm_unavailable')
+        assert.equal(linkOf(id), '')
+      } finally {
+        db.sql(`update osp_private.signal_nodes set seen_gen = seen_gen + 1 where node_id = ${lit(F.f4)}`)
+      }
+      // ДС без найденного ДП («семья не определена») больше не запрет (В-3): подтверждается по номерам, как «ссылка принята».
       const orphan = await fresh('ДС-9', { recordType: 'ds_vor', parent: null })
       const oc = await card(U.editor, orphan)
-      const na = await confirm(U.editor, orphan, confirmBody(oc, F.k1))
-      assert.equal(na.statusCode, 409)
-      assert.equal(na.json().code, 'confirm_unavailable')
-      assert.equal(linkOf(orphan), '')
+      const ok = await confirm(U.editor, orphan, confirmBody(oc, F.k1))
+      assert.equal(ok.statusCode, 200, ok.body)
+      assert.deepEqual([ok.json().state, ok.json().reason, ok.json().warning], ['verified', 'confirmed', null])
     })
 
     it('confirm: папка другого объекта или несуществующая — 422 node_unavailable без имён; файл вместо папки — тоже', async () => {
@@ -620,7 +705,7 @@ describe('Маршруты /api/signal/* на настоящей базе', { sk
       // Объект сменили — вне границы корня объекта.
       db.as(U.editor, `update public.contracts set object_id = ${lit(s.B)} where id = ${lit(id)}`)
       await h.tick()
-      assert.match(stateOf(id), /^unverified:outside_roots/)
+      assert.match(stateOf(id), /^unverified:unavailable/, 'вне границы корня объекта: «недоступна для сверки» (С-20), без чужих имён')
     })
 
     it('D4: смена стороны договора (добавить, заменить, удалить в contract_counterparties) у «сверено» — значок «ожидает», после такта очереди состояние пересчитано', async () => {
@@ -664,14 +749,14 @@ describe('Маршруты /api/signal/* на настоящей базе', { sk
       assert.match(stateOf(id), /^verified:existing_url/, 'исходный состав сторон вернулся — «сверено» по ссылке')
     })
 
-    it('смена ДП пересчитывает ДС: пока номер ДП совпадает с папкой — «сверено», после смены номера — «папка договора не определена»', async () => {
+    it('смена ДП пересчитывает ДС: пока номер ДП совпадает с папкой — «сверено», после смены номера — противоречие «ДС другого договора»', async () => {
       const dp = await fresh('АЛФ-ДП-26-002', { signalLink: s.urlOf(F.f2) })
       const ds = await fresh('ДС-1', { recordType: 'ds_vor', parent: dp, signalLink: s.urlOf(F.fds1) })
       assert.match(stateOf(ds), /^verified:existing_url/)
       db.as(U.editor, `update public.contracts set contract_number = 'АЛФ-ДП-26-005' where id = ${lit(dp)}`)
       assert.equal(one(db, `select count(*) from osp_private.signal_queue where contract_id in (${lit(dp)}, ${lit(ds)})`), '2', 'в очереди и ДП, и его ДС')
       await h.tick()
-      assert.match(stateOf(ds), /^unverified:family_unknown/)
+      assert.match(stateOf(ds), /^conflict:foreign_dp/, 'папка ДС лежит под папкой ДП с другим номером: ДС другого договора (В-3, family_unknown убран)')
     })
   })
 
@@ -742,7 +827,7 @@ describe('Маршруты /api/signal/* на настоящей базе', { sk
       const off = await h.call(U.admin, 'PATCH', `/api/signal/sources/${s.srcA.id}`, { enabled: false })
       assert.deepEqual(off.json(), { ok: true })
       await h.tick()
-      assert.match(stateOf(C.c2), /^unverified:root_disabled/)
+      assert.match(stateOf(C.c2), /^unverified:unavailable/, 'корень выключен: «недоступна для сверки» (С-20, прежний root_disabled)')
       const cardOff = await card(U.viewer, C.c2)
       assert.equal(cardOff.node, null, 'папка выключенного корня договору не видна')
       const shown = (await h.get(U.admin, '/api/signal/status')).json().sources.find((x) => x.id === s.srcA.id)
@@ -904,9 +989,14 @@ describe('Возможность выключена: нет настройки, 
     ['POST', '/api/signal/sources', { url: 'https://signal.example.test/projects/x', objectIds: [] }], ['PATCH', '/api/signal/sources/1', { enabled: false }],
     ['POST', '/api/signal/sync', {}], ['GET', '/api/signal/runs'], ['GET', '/api/signal/unassigned?sourceId=1'],
     ['POST', '/api/signal/bindings', { sourceId: 1, nodeId: s.folders.f1, objectId: null }],
+    ['GET', '/api/signal/tree?sourceId=1'], ['GET', '/api/signal/bindings?sourceId=1'],
+    ['POST', '/api/signal/bindings/preview', { sourceId: 1, nodeId: s.folders.f1, objectId: s.A }],
   ]
-  const allDisabled = async (h, s, who) => {
-    assert.deepEqual((await h.get(who, '/api/signal/status')).json(), { enabled: false })
+  // Выключено: сотруднику — {enabled:false}, администратору ещё причина (not_enabled | config_invalid | no_schema | db_error) и имена
+  // неверных переменных; остальные маршруты — 503 signal_disabled.
+  const allDisabled = async (h, s, who, reason, { staff = null } = {}) => {
+    assert.deepEqual((await h.get(who, '/api/signal/status')).json(), { enabled: false, disabledReason: reason, configErrors: [] })
+    if (staff) assert.deepEqual((await h.get(staff, '/api/signal/status')).json(), { enabled: false }, 'сотрудник причины не видит')
     for (const [method, url, body] of ROUTES(s)) {
       const res = await h.call(who, method, url, body)
       assert.equal(res.statusCode, 503, `${method} ${url}: ${res.body}`)
@@ -918,7 +1008,7 @@ describe('Возможность выключена: нет настройки, 
     const s = { A: key(), contracts: { c1: key() }, folders: { f1: key() } }
     const admin = dbOn.seed.admin()
     const h = await start(dbOn, { withSignal: false })
-    await allDisabled(h, s, admin)
+    await allDisabled(h, s, admin, 'not_enabled', { staff: sOn.users.editor })
     assert.equal(h.app.signal, undefined)
     assert.equal((await h.get(null, '/api/health')).json().configured.signal, false)
   })
@@ -931,7 +1021,7 @@ describe('Возможность выключена: нет настройки, 
       const h = await start(dbOff, { fake, signal: { timers: undefined } })
       assert.equal(h.app.signal.capability.active(), false)
       assert.equal(h.app.signal.timers(), false, 'очередь и обход не стартуют без схемы')
-      await allDisabled(h, s, admin)
+      await allDisabled(h, s, admin, 'no_schema', { staff: dbOff.seed.user({ contracts: 'edit' }) })
       assert.equal((await h.get(null, '/api/health')).json().configured.signal, false, 'ключ задан, но схемы нет — «не настроена»')
       assert.equal(fake.requests.length, 0)
       dbOff.applyMigration()
@@ -944,7 +1034,7 @@ describe('Возможность выключена: нет настройки, 
     }
   })
 
-  it('схема чужой версии — как нет схемы; база не отвечает при проверке — запуск не падает, состояние прежнее', async () => {
+  it('схема чужой версии — как нет схемы; база не отвечает при проверке — запуск не падает, состояние прежнее (подробно — signal-jobs.test.mjs, С-25)', async () => {
     const { createSignalCapability } = await import(path.join(SERVER, 'src', 'lib', 'signalJobs.js'))
     const changes = []
     const row = { schema_version: 2, generation: '3', published_at: null }
@@ -960,6 +1050,7 @@ describe('Возможность выключена: нет настройки, 
     assert.equal(cap.active(), true, 'состояние прежнее')
     fail = Object.assign(new Error('нет таблицы'), { code: '42P01' })
     assert.equal(await cap.refresh(), false)
+    assert.equal(cap.reason(), 'no_schema')
     assert.deepEqual(changes, [true, false])
   })
 

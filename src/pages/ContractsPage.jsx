@@ -33,8 +33,9 @@ import { fetchCounterpartyDocSummary, deleteDocument } from '../services/s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { chunkList } from '../utils/inChunks'
 import { LARIX_LINK_FIELD, LARIX_LINK_LABEL, isInLarix } from '../utils/contractLarix'
-import { kindCounts, registryCounts, registryRows, signalReviewCount, signalReviewIds } from '../utils/contractRegistryTabs'
-import { STATE_LABEL, isReviewState, markFromMatch, markLook, matchNotice } from '../utils/signalReview'
+import { kindCounts, registryCounts, registryRows, signalReviewCountShown, signalReviewIds } from '../utils/contractRegistryTabs'
+import { STATE_LABEL, isReviewState, markFromMatch, markLook, matchNotice, pendingMark, softWarningText, stateLabel, staleNotice } from '../utils/signalReview'
+import { ruDateTime } from '../utils/signalPathRow'
 import { contractParties, counterpartyFilterOptions, hasCounterparty, matchCounterpartyOption } from '../utils/contractCounterpartyFilter'
 import { docTender, tenderChoices, tenderOptionLabel, tenderTitle } from '../utils/contractTender'
 import { VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION } from '../utils/vorDivisions'
@@ -1337,14 +1338,12 @@ function ContractRegistry() {
   // «Сверка Signal» — фильтр документов ДО построения дерева (registryRows ... only): ДС с замечанием остаётся под своим
   // договором, договор без замечаний показан ради него один раз (context), число — по документам, без таких договоров.
   const signalOn = !!signalStatus?.enabled
+  const signalStaleText = signalOn ? staleNotice(signalStatus, ruDateTime) : ''
   const signalCanEdit = signalOn && !!signalStatus.canEdit && canEditContracts
   const signalReviewSet = useMemo(
     () => (signalCanEdit && signalMarks ? signalReviewIds(signalMarks) : null),
     [signalCanEdit, signalMarks])
   const signalReviewOnly = onlySignalReview && signalReviewSet ? signalReviewSet : null
-  const signalCount = useMemo(
-    () => signalReviewCount(contracts, signalReviewSet, { docKind, scope, tab: activeTab, dept }),
-    [contracts, signalReviewSet, docKind, scope, activeTab, dept])
   // Метки Signal: один раз при открытии реестра. Сервер выключен, не настроен или недоступен — { enabled: false }, остальное
   // остаётся прежним. Метки — удобство: сбой их загрузки реестр не ломает.
   // Перезагрузки идут после каждого сохранения, решения и импорта (решение сначала сливает свою метку — mergeSignalMark — и только
@@ -1375,14 +1374,28 @@ function ContractRegistry() {
       return next
     })
   }, [])
+  // Ссылку на Signal человек только что изменил (С-9): значок сразу «не сверялась», пока сервер не ответит; сбой сверки это не
+  // отменяет — прежнее «сверено» или «противоречие» над новой ссылкой было бы ложью. Перезагрузка меток, начатая раньше, результат
+  // не затрёт (её номер устарел). Сверка выключена (метки не загружены) — ничего не делает.
+  const markSignalPending = useCallback((contractId, hasLink) => {
+    signalMarksSeq.current++
+    mergeSignalMark(hasLink ? pendingMark(contractId) : { id: contractId, state: 'none', reason: 'none', pending: false, tip: stateLabel('none'), hasCandidate: false })
+  }, [mergeSignalMark])
   // Решение человека в окне сверки сохранено сервером: ссылка договора (если сменилась) и значок обновляются сразу.
   const handleSignalChanged = useCallback((r) => {
     if (!r?.contractId) return
     if ('signalLink' in r) setContracts(prev => prev.map(c => (c.id === r.contractId ? { ...c, signal_link: r.signalLink || null } : c)))
-    mergeSignalMark({ id: r.contractId, state: r.state, reason: null, pending: false, tip: '', hasCandidate: false })
-    setSignalNotice((n) => (n && n.contractId === r.contractId ? null : n))
+    mergeSignalMark({ id: r.contractId, state: r.state, reason: r.reason ?? null, pending: false, tip: '', hasCandidate: false })
+    // Папка подтверждена, но корпус, очередь или секция не совпали / это папка допсоглашения (В-11, С-41) — человек должен это
+    // увидеть, а не только значок.
+    const warned = softWarningText(r.warning)
+    setSignalNotice((n) => (warned
+      ? { contractId: r.contractId, kind: 'warn', info: true, headline: 'Папка в Signal подтверждена', text: warned }
+      : (n && n.contractId === r.contractId ? null : n)))
     refreshSignalMarks()
   }, [mergeSignalMark, refreshSignalMarks])
+  // Куда вернуть фокус, когда значок исчез вместе со строкой (после решения при включённом «Сверка Signal»): панель фильтров.
+  const focusRegistryToolbar = useCallback(() => document.querySelector('.cr-toolbar input, .cr-toolbar button'), [])
   // Сверка после сохранения (Р8): по снимку, без SIGNAL; ждём не дольше 3 с и сохранение не задерживаем (вызов не ждут).
   // Нашлась папка или противоречие — сообщение с «Сверить» / «Позже»; ничего — без сообщения.
   const checkSignalAfterSave = useCallback(async (contractId, headline) => {
@@ -1391,12 +1404,22 @@ function ContractRegistry() {
     const res = await signal.match([contractId], { timeoutMs: 3000 })
     if (mine !== signalSeq.current) return
     const item = res.items.find((i) => i.id === contractId)
-    if (!item) return
+    if (!item) {
+      // Сервер не ответил за 3 с или отказал: состояние остаётся «не сверялась», метки перечитываются — сервер пересчитает сам.
+      refreshSignalMarks()
+      return
+    }
     mergeSignalMark(markFromMatch(item))
     const notice = matchNotice(item)
     setSignalNotice((n) => (notice ? { contractId, headline, ...notice } : (n && n.contractId === contractId ? null : n)))
     refreshSignalMarks()
   }, [signalCanEdit, mergeSignalMark, refreshSignalMarks])
+
+  // Сообщение появилось под панелью фильтров, а человек мог сохранить форму на 80-й строке: страница прокручивается к нему
+  // (С-13). Фокус не забираем — он остаётся там, где его оставило закрытие формы.
+  useEffect(() => {
+    if (signalNotice) signalNoticeRef.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [signalNotice])
 
   const tabView = useMemo(
     () => registryRows(contracts, { docKind, scope, tab: activeTab, dept, only: signalReviewOnly }),
@@ -1406,11 +1429,11 @@ function ContractRegistry() {
 
   // Поиск в «Договоры и ДС» находит договор и по номеру, ID или предмету его ДС —
   // у таких договоров ДС раскрыты сразу.
-  const dsSearchHits = useMemo(() => {
+  const searchHitsOf = useCallback((view) => {
     const q = searchText.trim().toLowerCase()
     const hits = new Set()
     if (!nestDs || !q) return hits
-    for (const [rootId, list] of tabView.nested) {
+    for (const [rootId, list] of view.nested) {
       const found = list.some(ds => [
         ds.contract_number,
         ds.display_id != null ? String(ds.display_id) : '',
@@ -1419,7 +1442,8 @@ function ContractRegistry() {
       if (found) hits.add(rootId)
     }
     return hits
-  }, [nestDs, searchText, tabView])
+  }, [nestDs, searchText])
+  const dsSearchHits = useMemo(() => searchHitsOf(tabView), [searchHitsOf, tabView])
 
   // Раскрытые договоры: найденные поиском по их ДС и договоры, показанные ради своих ДС, раскрыты
   // сразу (ДС — в правой области), щелчок по строке или «ДС: N» переключает от этого состояния.
@@ -1460,38 +1484,41 @@ function ContractRegistry() {
     (c) => !divisionFilterOn || filterDivisions.includes(divisionOf(c) || NO_VOR_DIVISION),
     [divisionFilterOn, filterDivisions, divisionOf])
 
-  // Все фильтры, кроме контрагента и подразделения: контрагенты в списке и числа подразделений считаются без самих себя.
-  const filteredBeforeCounterparty = useMemo(() => {
+  // Строка проходит все фильтры, кроме контрагента и подразделения (hits — договоры, найденные поиском по их ДС): контрагенты в
+  // списке и числа подразделений считаются без самих себя. Тот же отбор считает число на «Сверке Signal» (С-8).
+  const rowPassesFilters = useCallback((c, hits) => {
     const q = searchText.trim().toLowerCase()
-    return tabContracts.filter(c => {
-      if (filterObjectIds.length > 0 && !filterObjectIds.includes(c.object_id)) return false
-      if (filterDsType && c.record_type !== filterDsType) return false
-      if (filterLawyerId && shownLawyerId(c, employees) !== filterLawyerId) return false
-      if (onlyOverdue && !isOverdue(c)) return false
-      // «Не в Larix» — только заключённые (не «Новая заявка») и ещё не внесённые.
-      if (onlyNoLarix && (isInLarix(c) || (c.status || 'new_request') === 'new_request')) return false
-      if (onlyNoTender && docTender(c, docIndex.byId)) return false
-      if (q) {
-        // У ДС ищем ещё и по основному договору: в реестре ДС его номер и ID —
-        // главный ориентир, по которому документ и разыскивают.
-        const root = c.root_contract_id ? docIndex.byId.get(c.root_contract_id) : null
-        const hay = [
-          ...contractParties(c).map(p => p.name),
-          c.work_name,
-          c.tenders?.work_description,
-          c.tenders?.public_tender_number != null ? `тендер ${c.tenders.public_tender_number}` : '',
-          c.contract_number,
-          c.display_id != null ? String(c.display_id) : '',
-          root && root.id !== c.id ? root.contract_number : '',
-          root && root.id !== c.id && root.display_id != null ? String(root.display_id) : '',
-          c.notes,
-          c.objects?.name,
-        ].filter(Boolean).join(' ').toLowerCase()
-        if (!hay.includes(q) && !dsSearchHits.has(c.id)) return false
-      }
-      return true
-    })
-  }, [tabContracts, filterObjectIds, filterDsType, filterLawyerId, onlyOverdue, onlyNoLarix, onlyNoTender, searchText, isOverdue, employees, docIndex, dsSearchHits])
+    if (filterObjectIds.length > 0 && !filterObjectIds.includes(c.object_id)) return false
+    if (filterDsType && c.record_type !== filterDsType) return false
+    if (filterLawyerId && shownLawyerId(c, employees) !== filterLawyerId) return false
+    if (onlyOverdue && !isOverdue(c)) return false
+    // «Не в Larix» — только заключённые (не «Новая заявка») и ещё не внесённые.
+    if (onlyNoLarix && (isInLarix(c) || (c.status || 'new_request') === 'new_request')) return false
+    if (onlyNoTender && docTender(c, docIndex.byId)) return false
+    if (q) {
+      // У ДС ищем ещё и по основному договору: в реестре ДС его номер и ID —
+      // главный ориентир, по которому документ и разыскивают.
+      const root = c.root_contract_id ? docIndex.byId.get(c.root_contract_id) : null
+      const hay = [
+        ...contractParties(c).map(p => p.name),
+        c.work_name,
+        c.tenders?.work_description,
+        c.tenders?.public_tender_number != null ? `тендер ${c.tenders.public_tender_number}` : '',
+        c.contract_number,
+        c.display_id != null ? String(c.display_id) : '',
+        root && root.id !== c.id ? root.contract_number : '',
+        root && root.id !== c.id && root.display_id != null ? String(root.display_id) : '',
+        c.notes,
+        c.objects?.name,
+      ].filter(Boolean).join(' ').toLowerCase()
+      if (!hay.includes(q) && !hits.has(c.id)) return false
+    }
+    return true
+  }, [filterObjectIds, filterDsType, filterLawyerId, onlyOverdue, onlyNoLarix, onlyNoTender, searchText, isOverdue, employees, docIndex])
+
+  const filteredBeforeCounterparty = useMemo(
+    () => tabContracts.filter(c => rowPassesFilters(c, dsSearchHits)),
+    [tabContracts, rowPassesFilters, dsSearchHits])
 
   const filteredBeforeDivision = useMemo(() => {
     if (filterCounterpartyIds.length === 0) return filteredBeforeCounterparty
@@ -1503,6 +1530,21 @@ function ContractRegistry() {
   const counterpartyOptions = useMemo(
     () => counterpartyFilterOptions(filteredBeforeCounterparty.filter(passesDivision), filterCounterpartyIds, contracts),
     [filteredBeforeCounterparty, passesDivision, filterCounterpartyIds, contracts])
+
+  // Число на «Сверке Signal» (С-8): документы набора, которые покажет реестр при включённом переключателе и текущих фильтрах —
+  // объект, поиск, контрагент, юрист, подразделение и прочие; сам переключатель на число не влияет.
+  const signalReviewView = useMemo(
+    () => (!signalReviewSet || signalReviewSet.size === 0 ? null
+      : signalReviewOnly ? tabView
+        : registryRows(contracts, { docKind, scope, tab: activeTab, dept, only: signalReviewSet })),
+    [signalReviewSet, signalReviewOnly, tabView, contracts, docKind, scope, activeTab, dept])
+  const signalCount = useMemo(() => {
+    if (!signalReviewView) return 0
+    const hits = signalReviewOnly ? dsSearchHits : searchHitsOf(signalReviewView)
+    const cpIds = filterCounterpartyIds.length ? new Set(filterCounterpartyIds) : null
+    return signalReviewCountShown(signalReviewView, signalReviewSet,
+      (c) => rowPassesFilters(c, hits) && (!cpIds || hasCounterparty(c, cpIds)) && passesDivision(c))
+  }, [signalReviewView, signalReviewSet, signalReviewOnly, dsSearchHits, searchHitsOf, rowPassesFilters, filterCounterpartyIds, passesDivision])
 
   // Сколько строк вкладки без тендера — на кнопке фильтра.
   const noTenderCount = useMemo(
@@ -2122,8 +2164,11 @@ function ContractRegistry() {
           ? `${LAWYER_LABEL}: ${before || '—'} → ${after || '—'}`
           : `Изменено: ${INLINE_FIELD_LABEL[field] || field}`,
       })
-      // Новую ссылку на Signal сервер сверяет сразу (Р8): сохранение не ждёт.
-      if (field === 'signal_link') checkSignalAfterSave(contractId, 'Ссылка на Signal сохранена')
+      // Новую ссылку на Signal сервер сверяет сразу (Р8): сохранение не ждёт. До ответа значок — «не сверялась» (С-9).
+      if (field === 'signal_link') {
+        markSignalPending(contractId, !!value)
+        checkSignalAfterSave(contractId, 'Ссылка на Signal сохранена')
+      }
       return true
     } catch (error) {
       console.error('Ошибка сохранения:', error.message)
@@ -2282,6 +2327,7 @@ function ContractRegistry() {
           signalMark={signalMarks?.get(doc.id) || null}
           signalReview={signalCanEdit}
           onSignalChanged={handleSignalChanged}
+          focusFallback={focusRegistryToolbar}
         />
         {estimat && <EstimatToggle doc={doc} canEdit={canEditContracts} onChange={handleEstimatChange} />}
         <ConceptAgreementCell
@@ -2861,6 +2907,11 @@ function ContractRegistry() {
         </div>
       </div>
 
+      {/* Данные Signal устарели (В-7): сверка может показывать прежнее. Видна всем, у кого есть метки; без сверки полосы нет. */}
+      {signalOn && signalStaleText && (
+        <div className="srd-stale" role="status">{signalStaleText}</div>
+      )}
+
       {/* Вкладки — вид документа с числами (11.11.2026, решение пользователя: «Все» и «Договоры и ДС» были одним и тем же,
           вкладки «Все» нет), рядом — статус переключателями: ничего не выбрано — все статусы, кроме удалённых; повторное
           нажатие на выбранный снимает его. «Удаленные» — справа, красным. */}
@@ -3035,8 +3086,14 @@ function ContractRegistry() {
             <span>{signalNotice.text}</span>
           </div>
           <div className="srd-notice-actions">
-            <button type="button" className="srd-btn is-primary" onClick={(e) => setSignalDialog({ contractId: signalNotice.contractId, opener: e.currentTarget })}>Сверить</button>
-            <button type="button" className="srd-btn" onClick={() => setSignalNotice(null)}>Позже</button>
+            {signalNotice.info ? (
+              <button type="button" className="srd-btn" onClick={() => setSignalNotice(null)}>Понятно</button>
+            ) : (
+              <>
+                <button type="button" className="srd-btn is-primary" onClick={(e) => setSignalDialog({ contractId: signalNotice.contractId, opener: e.currentTarget })}>Сверить</button>
+                <button type="button" className="srd-btn" onClick={() => setSignalNotice(null)}>Позже</button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -3495,7 +3552,7 @@ function ContractRegistry() {
         <SignalReviewDialog
           contractId={signalDialog.contractId}
           contract={contracts.find(c => c.id === signalDialog.contractId) || null}
-          returnFocus={() => (signalDialog.opener?.isConnected ? signalDialog.opener : (signalNoticeRef.current?.querySelector('button') || document.querySelector('.cr-toolbar input, .cr-toolbar button')))}
+          returnFocus={() => (signalDialog.opener?.isConnected ? signalDialog.opener : (signalNoticeRef.current?.querySelector('button') || focusRegistryToolbar()))}
           onClose={() => setSignalDialog(null)}
           onChanged={handleSignalChanged}
         />

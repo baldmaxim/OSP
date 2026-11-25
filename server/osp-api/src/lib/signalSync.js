@@ -5,22 +5,30 @@
 //   const run = await sync.runNow({ initiator: 'admin', startedBy })   // → { runId, done } | { busy } | …
 //   await sync.stop()                 // прерывает обход без публикации, ждёт не больше 10 с
 //
-// Что обещано (tests/osp-api/signal-sync.test.mjs, раздел 4 спецификации):
+// Что обещано (tests/osp-api/signal-sync*.test.mjs, раздел 4 спецификации):
 //   • в SIGNAL — только чтение через адаптер (signalApi.js); в нашей базе — только служебные функции osp_private.signal_*
 //     через db.write(null, …) / db.read(null, …); других обращений к таблицам нет;
 //   • расписание решает база (signal_sync_due, Europe/Moscow): такт лишь спрашивает; ночной обход — всегда полный,
 //     дневной — SIGNAL_DAY_MODE (полный или только известные папки), ручной — полный;
 //   • ни одной открытой транзакции во время обращения к SIGNAL и ожидания Retry-After: каждая запись — своя короткая
-//     операция; в памяти — дерево одного проекта и одна страница элементов, запись порциями не больше 500 строк;
+//     операция; в памяти — дерево одного проекта и список элементов одной папки (не больше maxNodes), запись порциями ≤ 500 строк;
 //   • владелец прогона — токен, выданный signal_sync_begin; heartbeat каждые ≤ 30 с отдельной короткой записью,
 //     в том числе пока идёт ожидание 429; потеря владения останавливает обход;
 //   • барьер записи isReadOnly() проверяется перед каждой порцией и перед публикацией: прогон отменяется без записи
 //     (отметка «отменён» в базе ставится позже, когда барьер снят, либо её поставит очистка зависших прогонов);
 //   • любой сбой, held и отмена не меняют опубликованный снимок: публикует только signal_sync_finish, одной транзакцией;
+//   • сбой одного корня (дерево проекта 403/404, корня нет в дереве, бюджет корня, предел, повтор страницы) не останавливает
+//     остальные: корень уходит в stats.roots со статусом failed и причиной, обход продолжается, прогон кончается статусом
+//     ok | partial | held | failed — его определяет база (signal_sync_finish, публикация по корням);
+//   • папка, элементы которой не прочитаны (403, 404, ошибка разбора, нестабильные страницы), не валит обход: она уходит в staging
+//     с items_listed = false и problem (forbidden | not_found | invalid | unstable), в stats.roots[].problems — её id и код;
+//   • для файлов со ссылкой, которых обход не встретил, — адресный запрос удалённых элементов их папки (В-10): нашёлся
+//     deleted = true — в staging уходит удалённый элемент (в базе — «Файл удалён в Signal»);
 //   • в журнале и результатах — только идентификаторы корней, коды и счётчики, без имён и путей.
 import { SignalError } from './signalClient.js'
 import { dbUnavailable } from './db.js'
 import { prepareNode as defaultPrepare } from './signalMatch.js'
+import { readFolderItems, findDeletedItems, SIGNAL_PAGE_ENDS } from './signalApi.js'
 
 export const SIGNAL_SYNC_FUNCTIONS = Object.freeze([
   'signal_sync_due', 'signal_sources_for_sync', 'signal_sync_begin', 'signal_sync_heartbeat', 'signal_stage_put',
@@ -39,6 +47,14 @@ export const SIGNAL_SYNC_DEFAULTS = Object.freeze({
   staleSeconds: 600,
   finishTimeoutMs: 120_000,
   stopWaitMs: 10_000,
+  // С-58, TODO(G1): 'empty' — список кончается только пустой страницей (лишний запрос на папку); 'short' — страницей короче Take.
+  pageEnd: 'empty',
+  // Бюджет одного корня: превышение — сбой этого корня (reason budget), остальные корни обходятся.
+  rootBudgetMs: 2_400_000,
+  // В-10, TODO(G1): сколько запросов удалённых элементов (deleted=true) на прогон; 0 — адресный запрос выключен.
+  deletedLookupLimit: 200,
+  // Сколько проблемных подпапок уходит в статистику прогона (база хранит её не больше 20 000 знаков).
+  problemsMax: 100,
 })
 // Причины, которыми прогон завершается со стороны службы (причины публикации — held — выдаёт база).
 export const SIGNAL_RUN_REASONS = Object.freeze([
@@ -59,6 +75,28 @@ class SyncFail extends Error {
   constructor(code) { super(code); this.name = 'SyncFail'; this.code = code }
 }
 
+// Что делать с ошибкой чтения: причина сбоя корня (код для last_error), либо null — остановить весь прогон
+// (отмена, остановка, потеря владения, авторизация, квота, база, ошибка в самой службе).
+function rootFailReason(err, { tree = false } = {}) {
+  if (err instanceof SyncFail) return err.code
+  if (err instanceof SignalError) {
+    if (['aborted', 'auth', 'rate_limited', 'not_configured'].includes(err.code)) return null
+    if (tree && err.code === 'http' && err.status === 404) return 'root_unavailable'
+    return SIGNAL_RUN_REASONS.includes(err.code) ? err.code : 'http'
+  }
+  if (err?.code === 'SG422') return 'invalid' // база не приняла строку (данные, а не связь)
+  return null
+}
+// Код проблемы папки, элементы которой не прочитаны; null — это не проблема папки (сбой корня или прогона).
+function folderProblemOf(err) {
+  if (!(err instanceof SignalError) || err.repeat) return null
+  if (err.code === 'scope') return 'forbidden'
+  if (err.code === 'http' && err.status === 404) return 'not_found'
+  if (err.code === 'invalid' || err.code === 'too_large') return 'invalid'
+  return null
+}
+const clip = (v, n) => (typeof v === 'string' && v.length > n ? v.slice(0, n).toWellFormed() : v)
+
 const short = (err) => String(err?.message || err || 'сбой').replace(/\s+/g, ' ').slice(0, 200)
 const idOf = (v) => String(v || '').toLowerCase()
 
@@ -74,9 +112,14 @@ function createStore(db, o) {
   return {
     due: (at) => call('read', 'signal_sync_due', [a(at.toISOString(), 'timestamptz')]),
     // Режим known приносит ещё knownFolderIds (папки со связью или кандидатом) и folderIds (папки опубликованного снимка).
+    // У корня может быть linkedItems: [{nodeId, folderId}] — файлы, на которые ссылаются договоры (их папки читаются всегда, а не
+    // встреченные в прогоне ищутся среди удалённых). codes — объектные коды для сопоставителя (на уровне ответа или корня).
     sources: async (mode) => {
       const r = await call('read', 'signal_sources_for_sync', [a(mode === 'known' ? 'known' : 'full', 'text')])
-      return Array.isArray(r?.sources) ? r.sources : []
+      return {
+        sources: Array.isArray(r?.sources) ? r.sources : [],
+        codes: Array.isArray(r?.codes) ? r.codes.map(String).filter(Boolean) : [],
+      }
     },
     begin: (kind, mode, initiator, slot, startedBy) => call('write', 'signal_sync_begin', [
       a(kind, 'text'), a(mode, 'text'), a(initiator, 'text'), a(slot ?? null, 'timestamptz'), a(startedBy ?? null, 'uuid'), a(o.staleSeconds, 'int'),
@@ -100,6 +143,9 @@ export function createSignalSync({ db, api, isReadOnly = () => false, log = sile
   const o = { ...SIGNAL_SYNC_DEFAULTS }
   for (const key of Object.keys(SIGNAL_SYNC_DEFAULTS)) if (config?.[key] !== undefined && config[key] !== null) o[key] = config[key]
   if (o.dayMode !== 'known') o.dayMode = 'full'
+  if (!SIGNAL_PAGE_ENDS.includes(o.pageEnd)) o.pageEnd = 'empty'
+  for (const key of ['deletedLookupLimit', 'problemsMax']) if (!Number.isInteger(o[key]) || o[key] < 0) o[key] = SIGNAL_SYNC_DEFAULTS[key]
+  if (!(Number(o.rootBudgetMs) > 0)) o.rootBudgetMs = SIGNAL_SYNC_DEFAULTS.rootBudgetMs
   const store = createStore(db, o)
 
   let current = null // { controller, promise, runId } — прогон этого процесса
@@ -122,6 +168,7 @@ export function createSignalSync({ db, api, isReadOnly = () => false, log = sile
     const { signal } = ctx.controller
     if (signal.aborted) throw signal.reason instanceof RunAbort ? signal.reason : new RunAbort('stopped')
     if (now() >= ctx.deadline) throw new RunAbort('budget')
+    if (ctx.rootDeadline && now() >= ctx.rootDeadline) throw new SyncFail('budget') // бюджет корня: сбой корня, не прогона
   }
 
   // Результат прогона по ошибке: статус, причина, нужна ли отметка в базе.
@@ -179,15 +226,16 @@ export function createSignalSync({ db, api, isReadOnly = () => false, log = sile
   }
 
   // Строка staging (camelCase, как ждёт signal_stage_put). Путь, предки и глубина — от корня обхода: у самого корня
-  // parentId = null и pathIds = [], у потомков pathIds начинается с корня.
-  function rowOf(n, { source, listed }) {
-    const prepared = prepareNode({ name: n.name, path: n.path, kind: n.kind }) || {}
+  // parentId = null и pathIds = [], у потомков pathIds начинается с корня. Пределы колонок базы (путь ≤ 8000, тип ≤ 100) соблюдаются
+  // усечением: одна длинная строка не должна останавливать публикацию. problem — у папки, элементы которой не прочитаны.
+  function rowOf(n, { source, codes, listed, problem = null }) {
+    const prepared = prepareNode({ name: n.name, path: n.path, kind: n.kind, codes }) || {}
     return {
       nodeId: n.nodeId, projectId: source.projectId, sourceId: source.id, kind: n.kind, parentId: n.parentId,
-      name: n.name, path: n.path, pathIds: n.pathIds, depth: n.depth, modifiedAt: n.modifiedAt, itemType: n.itemType,
+      name: n.name, path: clip(n.path, 8000), pathIds: n.pathIds, depth: n.depth, modifiedAt: n.modifiedAt, itemType: clip(n.itemType, 100),
       versionNumber: n.versionNumber, deleted: n.deleted,
       numberKeys: prepared.numberKeys ?? [], nameNorm: prepared.nameNorm ?? '', features: prepared.features ?? {},
-      itemsListed: listed,
+      itemsListed: listed && !problem, ...(problem ? { problem } : {}),
     }
   }
 
@@ -199,36 +247,85 @@ export function createSignalSync({ db, api, isReadOnly = () => false, log = sile
     }
   }
 
-  // Папки, элементы которых перечисляются: полный обход — все; known — со связью/кандидатом и новые (нет в снимке).
-  function listedFolders(source, mode, folders) {
+  // Папки, элементы которых перечисляются: полный обход — все; known — со связью/кандидатом, с файлами по ссылке и новые (нет в снимке).
+  function listedFolders(source, mode, folders, linked) {
     if (mode !== 'known') return null
     const known = new Set((source.knownFolderIds || []).map(idOf))
+    for (const folderId of linked.values()) known.add(folderId)
     const published = new Set((source.folderIds || []).map(idOf))
     return new Set(folders.filter((f) => known.has(f.nodeId) || !published.has(f.nodeId)).map((f) => f.nodeId))
   }
 
-  async function listFolderItems(ctx, source, folder, counters) {
-    let skip = 0
-    let previous = new Set()
-    for (;;) {
-      ensureActive(ctx)
-      // G2: запрос идёт с deleted=false (выжимка API), поэтому удалённые элементы не приходят и missing:deleted в MVP
-      // не возникает; исчезновение узла ловит правило Ф2 (две ночи подряд).
-      const page = await api.listItems(folder.nodeId, { skip, take: o.pageSize }, { signal: ctx.controller.signal })
-      if (!page.length) return
-      // Повтор страницы (курсор не сдвинулся) — ответ не тот, что ждём.
-      if (page.some((item) => previous.has(item.nodeId))) throw new SyncFail('invalid')
-      counters.total += page.length
-      if (counters.total > o.maxNodes) throw new SyncFail('limit')
-      previous = new Set(page.map((item) => item.nodeId))
-      const rows = page.map((item) => rowOf({
-        ...item, path: `${folder.path} / ${item.name}`, pathIds: [...folder.pathIds, folder.nodeId], depth: folder.depth + 1,
-      }, { source, listed: false }))
-      await stageRows(ctx, rows)
-      counters.items += page.length
-      if (page.length < o.pageSize) return
-      skip += page.length
+  // Файлы со ссылкой: nodeId → folderId (папка, где файл видели в прошлый раз). Чужие и неверные записи отбрасываются.
+  function linkedItemsOf(source) {
+    const out = new Map()
+    for (const l of Array.isArray(source.linkedItems) ? source.linkedItems : []) {
+      const nodeId = idOf(l?.nodeId)
+      const folderId = idOf(l?.folderId)
+      if (UUID.test(nodeId) && UUID.test(folderId)) out.set(nodeId, folderId)
     }
+    return out
+  }
+
+  // Элементы одной папки: читаются целиком (readFolderItems: конец списка, повторы, согласованность страниц) и только затем
+  // уходят в staging — нестабильный или нечитаемый список в снимок не попадает. → { problem } либо { count }.
+  async function listFolderItems(ctx, source, folder, counters, met) {
+    let read
+    try {
+      read = await readFolderItems(api, folder.nodeId, {
+        pageSize: o.pageSize, pageEnd: o.pageEnd, maxItems: Math.max(0, o.maxNodes - counters.total), signal: ctx.controller.signal,
+        onPage: () => ensureActive(ctx),
+      })
+    } catch (err) {
+      const problem = folderProblemOf(err)
+      if (!problem) throw err
+      return { problem }
+    }
+    if (read.unstable) return { problem: 'unstable' }
+    counters.total += read.items.length
+    if (counters.total > o.maxNodes) throw new SyncFail('limit')
+    const rows = read.items.map((item) => {
+      met.add(item.nodeId)
+      return rowOf({
+        ...item, path: `${folder.path} / ${item.name}`, pathIds: [...folder.pathIds, folder.nodeId], depth: folder.depth + 1,
+      }, { source, codes: ctx.codes, listed: false })
+    })
+    await stageRows(ctx, rows)
+    return { count: read.items.length }
+  }
+
+  // В-10: файлы со ссылкой, которых обход не встретил, — адресный запрос удалённых элементов их папки (только папки, прочитанные
+  // в этом прогоне целиком). Найденное удалённое → staging deleted = true (в базе — missing:deleted). Не найденное — как и прежде:
+  // пропавший файл ловит правило двух ночей (file_not_visible). Предел запросов на прогон — deletedLookupLimit.
+  async function lookupDeleted(ctx, source, byNode, linked, met, readFolders, entry) {
+    const pending = new Map() // folderId → Set(nodeId)
+    for (const [nodeId, folderId] of linked) {
+      if (met.has(nodeId) || !readFolders.has(folderId)) continue
+      if (!pending.has(folderId)) pending.set(folderId, new Set())
+      pending.get(folderId).add(nodeId)
+    }
+    let skipped = 0
+    for (const [folderId, wanted] of pending) {
+      ensureActive(ctx)
+      const left = o.deletedLookupLimit - ctx.deletedRequests
+      if (left <= 0) { skipped += wanted.size; continue }
+      let res
+      try {
+        res = await findDeletedItems(api, folderId, wanted, { pageSize: o.pageSize, pageEnd: o.pageEnd, maxRequests: left, signal: ctx.controller.signal })
+      } catch (err) {
+        if (folderProblemOf(err)) { skipped += wanted.size; continue }
+        throw err
+      }
+      ctx.deletedRequests += res.requests
+      const folder = byNode.get(folderId)
+      const rows = res.found.map((item) => rowOf({
+        ...item, deleted: true, path: `${folder.path} / ${item.name}`, pathIds: [...folder.pathIds, folder.nodeId], depth: folder.depth + 1,
+      }, { source, codes: ctx.codes, listed: false }))
+      await stageRows(ctx, rows)
+      if (rows.length) entry.deletedFound = (entry.deletedFound || 0) + rows.length
+      if (!res.complete) skipped += wanted.size - rows.length
+    }
+    if (skipped) entry.deletedSkipped = skipped
   }
 
   async function syncRoot(ctx, source, root, tree, stats) {
@@ -246,28 +343,48 @@ export function createSignalSync({ db, api, isReadOnly = () => false, log = sile
       })
     }
     if (deepest > o.maxDepth || subtree.length > o.maxNodes) throw new SyncFail('limit')
-    const listed = listedFolders(source, ctx.mode, subtree)
+    const linked = linkedItemsOf(source)
+    const listed = listedFolders(source, ctx.mode, subtree, linked)
     const entry = { id: source.id, status: 'ok', folders: subtree.length, items: 0, listed: 0 }
-    await stageRows(ctx, subtree.map((n) => rowOf(n, { source, listed: listed === null || listed.has(n.nodeId) })))
+    const problems = []
+    ctx.rootDeadline = now() + o.rootBudgetMs
+    await stageRows(ctx, subtree.map((n) => rowOf(n, { source, codes: ctx.codes, listed: listed === null || listed.has(n.nodeId) })))
     const counters = { total: subtree.length, items: 0 }
+    const byNode = new Map(subtree.map((n) => [n.nodeId, n]))
+    const met = new Set() // файлы со ссылкой, встреченные в прогоне
+    const readFolders = new Set()
     for (const folder of subtree) {
       if (listed !== null && !listed.has(folder.nodeId)) continue
-      await listFolderItems(ctx, source, folder, counters)
+      const res = await listFolderItems(ctx, source, folder, counters, met)
+      if (res.problem) {
+        // Элементы папки не прочитаны: строка папки заменяется (items_listed = false, problem), её файлы база перенесёт из прежнего снимка.
+        problems.push({ nodeId: folder.nodeId, code: res.problem })
+        await stageRows(ctx, [rowOf(folder, { source, codes: ctx.codes, listed: false, problem: res.problem })])
+        continue
+      }
+      readFolders.add(folder.nodeId)
       entry.listed += 1
+      counters.items += res.count
       entry.items = counters.items
     }
+    if (linked.size && o.deletedLookupLimit > 0) await lookupDeleted(ctx, source, byNode, linked, met, readFolders, entry)
+    if (problems.length) entry.problems = problems
     stats.roots.push(entry)
-    ctx.active = []
   }
 
   // Дерево проекта — один запрос на проект, даже если в проекте несколько корней. ctx.active — корни, над которыми
-  // идёт работа (при сбое именно их отметит signal_sync_fail в last_error).
+  // идёт работа (при сбое всего прогона именно их отметит signal_sync_fail в last_error). Сбой корня (rootFailReason) — запись
+  // failed в stats.roots и переход к следующему: остальные корни и проекты обходятся и публикуются.
   async function walk(ctx, stats) {
     const byProject = new Map()
     for (const source of ctx.sources) {
       const key = idOf(source.projectId)
       if (!byProject.has(key)) byProject.set(key, [])
       byProject.get(key).push({ ...source, projectId: key, folderId: idOf(source.folderId) })
+    }
+    const fail = (source, reason) => {
+      log.warn({ runId: ctx.runId, rootId: source.id, reason }, 'signal root failed')
+      stats.roots.push({ id: source.id, status: 'failed', reason })
     }
     for (const [projectId, group] of byProject) {
       ensureActive(ctx)
@@ -276,15 +393,29 @@ export function createSignalSync({ db, api, isReadOnly = () => false, log = sile
       try {
         tree = await api.getFolderTree(projectId, { signal: ctx.controller.signal })
       } catch (err) {
-        if (err instanceof SignalError && err.code === 'http' && err.status === 404) throw new SyncFail('root_unavailable')
-        throw err
+        const reason = rootFailReason(err, { tree: true })
+        if (!reason) throw err
+        for (const source of group) fail(source, reason)
+        ctx.active = []
+        continue
       }
       const byId = new Map(tree.map((n) => [n.nodeId, n]))
       for (const source of group) {
+        ensureActive(ctx)
         ctx.active = [source.id]
         const root = byId.get(source.folderId)
-        if (!root) throw new SyncFail('root_missing')
-        await syncRoot(ctx, source, root, tree, stats)
+        if (!root) {
+          fail(source, 'root_missing')
+          continue
+        }
+        try {
+          await syncRoot(ctx, source, root, tree, stats)
+        } catch (err) {
+          const reason = rootFailReason(err)
+          if (!reason) throw err
+          fail(source, reason)
+        } finally { ctx.rootDeadline = null }
+        ctx.active = []
       }
       tree = null
     }
@@ -296,8 +427,27 @@ export function createSignalSync({ db, api, isReadOnly = () => false, log = sile
     const blame = err instanceof SyncFail || (err instanceof SignalError && err.code !== 'aborted')
     const roots = [...stats.roots]
     if (blame) for (const id of ctx.active || []) roots.push({ id, status: 'failed', reason: outcome.reason })
-    return { roots }
+    return capStats({ roots })
   }
+
+  // База хранит статистику прогона не больше 20 000 знаков и при превышении отбрасывает её целиком (вместе со сбоями корней):
+  // список проблемных подпапок ограничивается problemsMax на весь прогон, полное число — в problemsTotal.
+  function capStats(stats) {
+    let left = o.problemsMax
+    return {
+      ...stats,
+      roots: stats.roots.map((r) => {
+        if (!r.problems?.length) return r
+        const { problems, ...rest } = r
+        const keep = problems.slice(0, left)
+        left -= keep.length
+        return { ...rest, problemsTotal: problems.length, ...(keep.length ? { problems: keep } : {}) }
+      }),
+    }
+  }
+
+  // Счётчики в журнал: проблемные папки — числом (идентификаторы узлов SIGNAL в журнал не идут).
+  const logRoots = (roots) => roots.map(({ problems, ...r }) => ({ ...r, ...(problems ? { problems: problems.length } : {}) }))
 
   async function execute(ctx) {
     const stats = { roots: [] }
@@ -309,14 +459,18 @@ export function createSignalSync({ db, api, isReadOnly = () => false, log = sile
       ensureActive(ctx)
       clearInterval(heartbeat)
       guardWrite()
-      const fin = await store.finish(ctx.runId, ctx.owner, stats, false)
-      const result = { status: fin?.status === 'held' ? 'held' : 'ok', reason: fin?.reason ?? null, generation: fin?.generation ?? null, runId: ctx.runId, stats }
-      log.info({ runId: ctx.runId, status: result.status, reason: result.reason, generation: result.generation, roots: stats.roots }, 'signal sync')
+      const capped = capStats(stats)
+      const fin = await store.finish(ctx.runId, ctx.owner, capped, false)
+      // Статус прогона решает база по корням: ok — опубликованы все, partial — часть, held — отложены, failed — ни один не обойдён.
+      const status = ['ok', 'partial', 'held', 'failed'].includes(fin?.status) ? fin.status : 'ok'
+      const result = { status, reason: fin?.reason ?? null, generation: fin?.generation ?? null, runId: ctx.runId, stats: capped }
+      const level = status === 'ok' ? 'info' : 'warn'
+      log[level]({ runId: ctx.runId, status, reason: result.reason, generation: result.generation, roots: logRoots(capped.roots) }, 'signal sync')
       return result
     } catch (err) {
       const outcome = outcomeOf(err, ctx)
       const failed = failedStats(stats, ctx, err, outcome)
-      log.warn({ runId: ctx.runId, status: outcome.status, reason: outcome.reason, roots: failed.roots }, 'signal sync stopped')
+      log.warn({ runId: ctx.runId, status: outcome.status, reason: outcome.reason, roots: logRoots(failed.roots) }, 'signal sync stopped')
       if (outcome.mark) await markEnd(ctx, outcome, failed)
       return { status: outcome.status, reason: outcome.reason, generation: null, runId: ctx.runId, stats: failed }
     } finally {
@@ -334,7 +488,7 @@ export function createSignalSync({ db, api, isReadOnly = () => false, log = sile
       await flushPending()
       if (!api.configured) return { notConfigured: true }
       const mode = kind === 'day' && o.dayMode === 'known' ? 'known' : 'full'
-      const sources = await store.sources(mode)
+      const { sources, codes } = await store.sources(mode)
       if (!sources.length) return { noSources: true }
       const begun = await store.begin(kind, mode, initiator, slot, UUID.test(String(startedBy || '')) ? startedBy : null)
       if (!begun?.runId || !begun?.ownerToken) return { busy: true }
@@ -344,8 +498,8 @@ export function createSignalSync({ db, api, isReadOnly = () => false, log = sile
         return { stopped: true }
       }
       const ctx = {
-        runId: begun.runId, owner: begun.ownerToken, kind, mode, sources, controller: new AbortController(),
-        deadline: now() + o.runBudgetMs,
+        runId: begun.runId, owner: begun.ownerToken, kind, mode, sources, codes, controller: new AbortController(),
+        deadline: now() + o.runBudgetMs, rootDeadline: null, deletedRequests: 0,
       }
       const promise = execute(ctx).finally(() => { current = null })
       current = { controller: ctx.controller, promise, runId: ctx.runId }

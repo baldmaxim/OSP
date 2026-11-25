@@ -1,9 +1,10 @@
 // Клиент и адаптер SIGNAL (server/osp-api/src/lib/signalClient.js, signalApi.js) против поддельного SIGNAL на этой
 // машине (tests/osp-api/lib/fake-signal.mjs). Живого SIGNAL, базы и сети не нужно. Проверяем обещанное в
 // спецификации (разделы 0 и 6): точные хосты и только https, отказ при перенаправлении, секрет и токен не попадают
-// в ошибки и журнал, 429 ждёт Retry-After, 401 — один повтор с новым токеном, 5xx/550 — ограниченные повторы,
+// в ошибки и журнал, 429 ждёт Retry-After (не короче retryAfterMinMs, С-61), 401 — один повтор с новым токеном, 5xx/550 — ограниченные повторы,
 // 403/450 — без повтора, предел времени и размера, типы полей, пагинация Skip/Take без «следующего» адреса и
-// отсутствие в коде путей и методов записи и скачивания.
+// отсутствие в коде путей и методов записи и скачивания. Чтение списков целиком (ПР-5): конец списка (С-58), повтор id и
+// нестабильные страницы (С-60), удалённые элементы (В-10, С-4), «ядовитые» названия (В2-1).
 import { describe, it, before, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -15,6 +16,7 @@ import {
 import {
   createSignalApi, normalizeTree, normalizeItem, normalizeItems, normalizeProjects, SIGNAL_OPERATIONS, SIGNAL_PAGE_MAX,
 } from '../../server/osp-api/src/lib/signalApi.js'
+import * as signalApi from '../../server/osp-api/src/lib/signalApi.js'
 import { startFakeSignal, CLIENT_ID, CLIENT_SECRET, fakeId } from './lib/fake-signal.mjs'
 
 const LIB = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'server', 'osp-api', 'src', 'lib')
@@ -67,6 +69,17 @@ describe('redact и Retry-After', () => {
     assert.equal(parseRetryAfter(null, o), 2000)
     assert.equal(parseRetryAfter('скоро', o), 2000)
     assert.equal(parseRetryAfter('-5', o), 2000)
+  })
+  it('Retry-After: нижняя граница minMs (С-61) — «0», прошедшая дата и пустое значение не короче границы; верхняя граница сильнее', () => {
+    const o = { now: Date.parse('2026-11-23T10:00:00Z'), minMs: 1000, maxMs: 120_000, defaultMs: 2000 }
+    assert.equal(parseRetryAfter('0', o), 1000)
+    assert.equal(parseRetryAfter('Mon, 23 Nov 2026 09:00:00 GMT', o), 1000)
+    assert.equal(parseRetryAfter('7', o), 7000)
+    assert.equal(parseRetryAfter('', o), 2000)
+    assert.equal(parseRetryAfter('9999', o), 120_000)
+    assert.equal(parseRetryAfter('0', { ...o, minMs: 500_000 }), 120_000, 'нижняя граница не выше верхней')
+    assert.equal(SIGNAL_CLIENT_DEFAULTS.retryAfterMinMs, 1000)
+    assert.equal(SIGNAL_CLIENT_DEFAULTS.maxRetryAfterMs, 120_000)
   })
 })
 
@@ -270,8 +283,48 @@ describe('Клиент SIGNAL против поддельного SIGNAL', () =>
     fake.fail('/projects', { status: 429, headers: { 'retry-after': 'Mon, 01 Jan 2001 00:00:00 GMT' } })
     const result = await get(mk())
     assert.equal(result.length, 1)
-    assert.deepEqual(waits, [7000, 120_000, SIGNAL_CLIENT_DEFAULTS.defaultRetryAfterMs, 0])
+    assert.deepEqual(waits, [7000, 120_000, SIGNAL_CLIENT_DEFAULTS.defaultRetryAfterMs, SIGNAL_CLIENT_DEFAULTS.retryAfterMinMs], 'прошедшая дата — не 0, а нижняя граница')
     assert.equal(fake.count('/projects', 'GET'), 5)
+  })
+
+  it('С-61: «Retry-After: 0» не даёт десять повторов подряд — каждое ожидание не короче нижней границы (1 с по умолчанию)', async () => {
+    fake.rateLimit({ match: '/projects', times: 1000, retryAfter: 0 })
+    await rejects(() => get(mk()), 'rate_limited', { status: 429 })
+    assert.equal(waits.length, SIGNAL_CLIENT_DEFAULTS.maxRateRetries)
+    assert.ok(waits.every((w) => w >= 1000), `ожидания: ${waits.join(', ')}`)
+    assert.ok(waits.reduce((a, b) => a + b, 0) >= 10_000, 'десять повторов занимают не меньше десяти секунд, а не 64 мс')
+    assert.equal(fake.count('/projects', 'GET'), 11)
+  })
+
+  it('С-61: retryAfterMinMs настраивается (в том числе 0 — старое поведение); значение сервера выше границы не меняется', async () => {
+    fake.rateLimit({ match: '/projects', times: 2, retryAfter: 0 })
+    fake.addProject({ name: 'Проект А' })
+    assert.equal((await get(mk({ retryAfterMinMs: 0 }))).length, 1)
+    assert.deepEqual(waits, [0, 0])
+    waits.length = 0
+    fake.rateLimit({ match: '/projects', times: 2, retryAfter: 0 })
+    assert.equal((await get(mk({ retryAfterMinMs: 3000 }))).length, 1)
+    assert.deepEqual(waits, [3000, 3000])
+    waits.length = 0
+    fake.fail('/projects', { status: 429, headers: { 'retry-after': '5' } })
+    assert.equal((await get(mk({ retryAfterMinMs: 3000 }))).length, 1)
+    assert.deepEqual(waits, [5000])
+    waits.length = 0
+    fake.fail('/projects', { status: 429, headers: { 'retry-after': '500' } })
+    assert.equal((await get(mk({ retryAfterMaxMs: 20_000 }))).length, 1)
+    assert.deepEqual(waits, [20_000], 'верхняя граница настраивается (retryAfterMaxMs)')
+    waits.length = 0
+    fake.fail('/projects', { status: 429, headers: { 'retry-after': '500' } })
+    assert.equal((await get(mk({ maxRetryAfterMs: 15_000 }))).length, 1)
+    assert.deepEqual(waits, [15_000], 'прежнее имя maxRetryAfterMs действует, если новое не задано')
+    waits.length = 0
+    fake.fail('/projects', { status: 429, headers: { 'retry-after': '500' } })
+    assert.equal((await get(mk({ retryAfterMaxMs: 8000, maxRetryAfterMs: 15_000 }))).length, 1)
+    assert.deepEqual(waits, [8000], 'retryAfterMaxMs сильнее')
+    waits.length = 0
+    fake.fail('/projects', { status: 429, headers: { 'retry-after': '0' } })
+    assert.equal((await get(mk({ retryAfterMinMs: 'не число' }))).length, 1)
+    assert.deepEqual(waits, [1000], 'неверное значение — по умолчанию')
   })
 
   it('429 без конца — после предела повторов rate_limited', async () => {
@@ -534,7 +587,6 @@ describe('Адаптер SIGNAL (signalApi.js)', () => {
       ['/folders/tree', 'строка'],
       ['/items', { id: fakeId('item', 1) }],
       ['/items', [{ id: 'x', name: 'a', folderId: fakeId('folder', 1) }]],
-      ['/items', [{ id: fakeId('item', 1), name: 'a'.repeat(501), folderId: ids['Объект 2'] }]],
       ['/items', [{ id: fakeId('item', 1), name: 'a', folderId: fakeId('folder', 777) }]],
       ['/items', [{ id: fakeId('item', 1), name: 'a', folderId: ids['Объект 2'], deleted: 'false' }]],
       ['/items', [{ id: fakeId('item', 1), name: 'a', folderId: ids['Объект 2'], topVersionNumber: '3' }]],
@@ -566,6 +618,185 @@ describe('Адаптер SIGNAL (signalApi.js)', () => {
     assert.equal(normalizeProjects([{ id: fakeId('project', 1), name: 'П' }])[0].code, null)
     assert.equal(normalizeItem({ id: fakeId('item', 1), name: 'a', folderId: fakeId('folder', 1), type: 'Link', modified: null }).modifiedAt, null)
     assert.deepEqual(normalizeItems([], { take: 200 }), [])
+  })
+})
+
+describe('Названия: «ядовитые» не останавливают ответ (В2-1)', () => {
+  const node = (id, name, children = []) => ({ id: fakeId('folder', id), name, children })
+  it('непарный суррогат заменяется, управляющие знаки — пробелом, длиннее 500 знаков — усечение без разрыва пары', () => {
+    const flat = normalizeTree(node(1, 'Корень', [node(2, 'Папка А \ud83d'), node(3, 'Д'.repeat(499) + '😀хвост'), node(4, 'Е'.repeat(900))]))
+    assert.equal(flat[1].name, 'Папка А �')
+    assert.ok(flat[1].name.isWellFormed())
+    assert.equal(flat[2].name.length, 499, 'пара не разорвана: лишняя половина отброшена')
+    assert.ok(flat[2].name.isWellFormed())
+    assert.equal(flat[3].name.length, 500)
+    assert.ok(flat.every((n) => n.name.isWellFormed() && n.path.isWellFormed()))
+    assert.ok(JSON.stringify(flat).length > 0)
+    const item = normalizeItem({ id: fakeId('item', 1), name: `Ж${'я'.repeat(600)}`, folderId: fakeId('folder', 1), type: 'File' })
+    assert.equal(item.name.length, 500)
+    assert.equal(normalizeItem({ id: fakeId('item', 2), name: 'x\ud800y', folderId: fakeId('folder', 1) }).name, 'x�y')
+  })
+  it('тип поля по-прежнему проверяется: не строка — invalid', () => {
+    assert.throws(() => normalizeTree(node(1, null)), (e) => e.code === 'invalid')
+    assert.throws(() => normalizeItem({ id: fakeId('item', 1), name: 5, folderId: fakeId('folder', 1) }), (e) => e.code === 'invalid')
+  })
+})
+
+describe('Чтение списка элементов целиком (signalApi.readFolderItems, findDeletedItems)', () => {
+  let fake
+  let folder
+  const mkApi = (over = {}) => createSignalApi({
+    client: createSignalClient({ baseUrl: fake.url, clientId: CLIENT_ID, clientSecret: CLIENT_SECRET, allowLoopback: true, sleep: async () => {}, ...over }),
+  })
+  const itemQueries = () => fake.requests.filter((r) => r.path === '/public/v1/items').map((r) => `${r.query.Skip}/${r.query.Take}${r.query.deleted === 'true' ? 'd' : ''}`)
+
+  before(async () => { fake = await startFakeSignal() })
+  after(async () => { await fake.close() })
+  beforeEach(() => {
+    fake.clearFaults()
+    fake.resetRequests()
+    fake.pageCap = 0
+    fake.deletedMode = 'only'
+    fake.revokeTokens()
+    fake.state.projects.length = 0
+    for (const m of [fake.state.folders, fake.state.items, fake.state.itemStatus, fake.state.itemHooks, fake.state.itemCalls]) m.clear()
+    fake.state.scrambled.clear()
+    const project = fake.addProject({ name: 'Проект А' })
+    folder = fake.build(project, { name: 'Папка' }).ids['Папка']
+  })
+
+  it('С-58: конец списка — пустая страница (по умолчанию): 450 элементов → 200 + 200 + 50 + пустая, один запрос сверки первой страницы', async () => {
+    fake.addItems(folder, 450)
+    const r = await signalApi.readFolderItems(mkApi(), folder)
+    assert.equal(r.items.length, 450)
+    assert.equal(r.unstable, false)
+    assert.deepEqual(itemQueries(), ['0/200', '200/200', '400/200', '450/200', '0/200'])
+  })
+
+  it('С-58: короткая нефинальная страница не принимается за конец; режим short (после проверки пробой) — принимает', async () => {
+    fake.addItems(folder, 450)
+    fake.pageCap = 100
+    const empty = await signalApi.readFolderItems(mkApi(), folder, { pageEnd: 'empty' })
+    assert.equal(empty.items.length, 450, 'страницы по 100 при Take=200: Skip растёт на число полученных')
+    assert.deepEqual(itemQueries().slice(0, 6), ['0/200', '100/200', '200/200', '300/200', '400/200', '450/200'])
+    fake.resetRequests()
+    const short = await signalApi.readFolderItems(mkApi(), folder, { pageEnd: 'short' })
+    assert.equal(short.items.length, 100, 'short принимает первую короткую страницу за последнюю — потеря 350 элементов')
+    assert.deepEqual(itemQueries(), ['0/200'])
+    // неизвестное значение настройки — защитный режим
+    fake.resetRequests()
+    assert.equal((await signalApi.readFolderItems(mkApi(), folder, { pageEnd: 'что-то' })).items.length, 450)
+  })
+
+  it('мелкие случаи: пустая папка — один запрос; одна страница — сверки первой страницы нет', async () => {
+    assert.deepEqual((await signalApi.readFolderItems(mkApi(), folder)).items, [])
+    assert.deepEqual(itemQueries(), ['0/200'])
+    fake.resetRequests()
+    fake.addItems(folder, 5)
+    assert.equal((await signalApi.readFolderItems(mkApi(), folder)).items.length, 5)
+    assert.deepEqual(itemQueries(), ['0/200', '5/200'])
+  })
+
+  it('С-60: повтор id между страницами — дубль пропущен, не сбой; одна перепроверка целиком даёт полный список', async () => {
+    fake.addItems(folder, 450)
+    // пока читается первая страница, вверху списка появляется новый элемент: вторая страница начнётся с повтора
+    fake.onItems(folder, (n, f) => {
+      if (n === 2) f.state.items.get(folder).unshift({ ...f.state.items.get(folder)[0], id: fakeId('item', 900001), name: 'Новый.pdf' })
+    })
+    const r = await signalApi.readFolderItems(mkApi(), folder)
+    assert.equal(r.unstable, false)
+    assert.equal(r.rechecked, true, 'расхождение — одна перепроверка')
+    assert.equal(r.items.length, 451)
+    assert.equal(new Set(r.items.map((i) => i.nodeId)).size, 451, 'без повторов')
+    assert.ok(r.items.some((i) => i.name === 'Новый.pdf'))
+  })
+
+  it('С-60: мягкое удаление в первой странице между запросами не теряет соседа (сверка первой страницы ловит сдвиг)', async () => {
+    fake.addItems(folder, 450)
+    const list = fake.state.items.get(folder)
+    const victim = list[4]
+    const neighbor = list[200]
+    fake.onItems(folder, (n, f) => { if (n === 2) f.softDelete(folder, victim.id) })
+    const r = await signalApi.readFolderItems(mkApi(), folder)
+    assert.equal(r.unstable, false)
+    assert.equal(r.rechecked, true)
+    assert.equal(r.items.length, 449)
+    assert.ok(r.items.some((i) => i.nodeId === neighbor.id), 'сосед удалённого на месте')
+    assert.ok(!r.items.some((i) => i.nodeId === victim.id), 'удалённый — не в списке живых')
+  })
+
+  it('С-60: список не успокаивается (порядок меняется от запроса к запросу) → unstable без элементов после одной перепроверки', async () => {
+    fake.addItems(folder, 450)
+    fake.scramble(folder)
+    const r = await signalApi.readFolderItems(mkApi(), folder)
+    assert.equal(r.unstable, true)
+    assert.equal(r.rechecked, true)
+    assert.deepEqual(r.items, [])
+    const calls = fake.itemCalls(folder)
+    assert.ok(calls <= 2 * (4 + 1) + 2, `запросов не больше двух проходов: ${calls}`)
+  })
+
+  it('страница целиком из уже виденных id (смещение не работает) → invalid с признаком repeat; предел maxItems → limit', async () => {
+    fake.addItems(folder, 450)
+    const first = fake.state.items.get(folder).slice(0, 200)
+    fake.fail((req) => req.path === '/public/v1/items' && req.query.Skip === '200', {
+      status: 200, times: 10, body: first.map((it) => ({ id: it.id, folderId: it.folderId, name: it.name, type: it.type, modified: it.modified, deleted: false })),
+    })
+    await assert.rejects(() => signalApi.readFolderItems(mkApi(), folder), (e) => e.code === 'invalid' && e.repeat === true)
+    fake.clearFaults()
+    await assert.rejects(() => signalApi.readFolderItems(mkApi(), folder, { maxItems: 300 }), (e) => e.code === 'limit')
+    assert.equal((await signalApi.readFolderItems(mkApi(), folder, { maxItems: 450 })).items.length, 450)
+  })
+
+  it('onPage вызывается между страницами; ошибка из него останавливает чтение', async () => {
+    fake.addItems(folder, 450)
+    const seen = []
+    await signalApi.readFolderItems(mkApi(), folder, { onPage: (n) => seen.push(n) })
+    assert.deepEqual(seen, [200, 400, 450])
+    fake.resetRequests()
+    await assert.rejects(() => signalApi.readFolderItems(mkApi(), folder, { onPage: () => { throw new Error('стоп') } }), /стоп/)
+    assert.equal(fake.count('/public/v1/items'), 1)
+  })
+
+  it('403 и 404 на элементах папки доходят до вызывающего как есть (scope / http 404)', async () => {
+    fake.addItems(folder, 3)
+    fake.denyItems(folder, 403)
+    await assert.rejects(() => signalApi.readFolderItems(mkApi(), folder), (e) => e.code === 'scope' && e.status === 403)
+    fake.denyItems(folder, 404)
+    await assert.rejects(() => signalApi.readFolderItems(mkApi(), folder), (e) => e.code === 'http' && e.status === 404)
+  })
+
+  it('В-10: listItems(deleted: true) → deleted=true в запросе; findDeletedItems находит нужные удалённые и останавливается', async () => {
+    const live = fake.addItems(folder, 3)
+    const gone = fake.addItems(folder, 3, { prefix: 'Удалён', deleted: true })
+    const api = mkApi()
+    assert.equal((await api.listItems(folder, { skip: 0, take: 200, deleted: true })).length, 3)
+    assert.equal(fake.requests.at(-1).query.deleted, 'true')
+    fake.resetRequests()
+    const r = await signalApi.findDeletedItems(api, folder, new Set([gone[1], live[0], fakeId('item', 424242)]), { maxRequests: 5 })
+    assert.deepEqual(r.found.map((i) => i.nodeId), [gone[1]], 'живой элемент и чужой id не возвращаются')
+    assert.equal(r.found[0].deleted, true)
+    assert.equal(r.complete, true, 'список кончился')
+    assert.deepEqual(itemQueries(), ['0/200d', '3/200d'])
+    fake.resetRequests()
+    const early = await signalApi.findDeletedItems(api, folder, new Set([gone[0]]), { maxRequests: 5 })
+    assert.equal(early.found.length, 1)
+    assert.deepEqual(itemQueries(), ['0/200d'], 'нашли всё нужное — дальше не читаем')
+  })
+
+  it('В-10: deleted=true отдаёт все элементы (G1: смысл не проверен) — отбор по полю deleted; предел запросов не превышается', async () => {
+    const live = fake.addItems(folder, 3)
+    const gone = fake.addItems(folder, 2, { prefix: 'Удалён', deleted: true })
+    fake.deletedMode = 'all'
+    const api = mkApi()
+    const r = await signalApi.findDeletedItems(api, folder, new Set([live[0], gone[0]]), { maxRequests: 5 })
+    assert.deepEqual(r.found.map((i) => i.nodeId), [gone[0]], 'живой элемент из ответа deleted=true отброшен')
+    fake.resetRequests()
+    fake.pageCap = 1
+    const limited = await signalApi.findDeletedItems(api, folder, new Set([fakeId('item', 424242)]), { maxRequests: 2 })
+    assert.equal(limited.complete, false)
+    assert.equal(limited.requests, 2)
+    assert.equal(fake.count('/public/v1/items'), 2)
   })
 })
 

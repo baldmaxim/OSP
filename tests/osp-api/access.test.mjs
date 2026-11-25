@@ -205,6 +205,9 @@ describe('osp-api: права объявлены на маршруте, закр
       'GET /api/signal/runs': { method: 'GET', url: '/api/signal/runs' },
       'GET /api/signal/unassigned': { method: 'GET', url: '/api/signal/unassigned?sourceId=1' },
       'POST /api/signal/bindings': { method: 'POST', url: '/api/signal/bindings', payload: { sourceId: 1, nodeId: '0f0e0d0c-0b0a-4908-8706-050403020101', objectId: null } },
+      'GET /api/signal/tree': { method: 'GET', url: '/api/signal/tree?sourceId=1' },
+      'GET /api/signal/bindings': { method: 'GET', url: '/api/signal/bindings?sourceId=1' },
+      'POST /api/signal/bindings/preview': { method: 'POST', url: '/api/signal/bindings/preview', payload: { sourceId: 1, nodeId: '0f0e0d0c-0b0a-4908-8706-050403020101', objectId: '0f0e0d0c-0b0a-4908-8706-050403020100' } },
     }
     const measured = {}
     for (const [title, req] of Object.entries(requests)) {
@@ -266,14 +269,16 @@ describe('osp-api: права объявлены на маршруте, закр
       for (const denied of ['employee', 'unapproved', 'contractor', 'contractor_noorg', 'no_user_roles', 'blocked']) assert.equal(row[denied], 403, `${title}: ${denied}`)
       assert.ok(row.admin !== 401 && row.admin !== 403, `${title}: администратор`)
     }
-    // Сверка с Signal: все 17 маршрутов — только вошедший сотрудник (ни одного открытого), подрядчик и неодобренный — отказ,
+    // Сверка с Signal: все 20 маршрутов — только вошедший сотрудник (ни одного открытого), подрядчик и неодобренный — отказ,
     // администраторские — только администратор.
     const signalTitles = Object.keys(measured).filter((t) => t.includes(' /api/signal/'))
-    assert.equal(signalTitles.length, 17)
+    assert.equal(signalTitles.length, 20)
     assert.equal(app.accessTable.filter((r) => r.url.startsWith('/api/signal/') && r.kind !== 'user').length, 0, 'открытых маршрутов Signal нет')
     assert.equal(OPEN_ROUTES.filter((r) => r.url.startsWith('/api/signal')).length, 0, 'в списке открытых маршрутов Signal нет')
-    const signalAdmin = new Set(['GET /api/signal/aliases', 'POST /api/signal/sources', 'PATCH /api/signal/sources/:id', 'POST /api/signal/sync',
-      'GET /api/signal/runs', 'GET /api/signal/unassigned', 'POST /api/signal/bindings'])
+    // Список названий (aliases) — сотруднику с правкой: свои, решает база (С-2); прочие маршруты разметки и обхода — только администратору.
+    const signalAdmin = new Set(['POST /api/signal/sources', 'PATCH /api/signal/sources/:id', 'POST /api/signal/sync',
+      'GET /api/signal/runs', 'GET /api/signal/unassigned', 'POST /api/signal/bindings', 'GET /api/signal/tree', 'GET /api/signal/bindings',
+      'POST /api/signal/bindings/preview'])
     for (const title of signalTitles) {
       const row = measured[title]
       assert.equal(row['без токена'], 401, title)

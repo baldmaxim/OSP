@@ -47,6 +47,7 @@ const SERVICE = {
   signal_accept_held: "signal_accept_held(1, 0, 'cli', 'проверка')",
   signal_sources_for_sync: 'signal_sources_for_sync()',
   signal_enqueue_all: 'signal_enqueue_all()',
+  signal_enqueue_missed: 'signal_enqueue_missed()',
   signal_queue_claim: 'signal_queue_claim(10)',
   signal_queue_release: "signal_queue_release(gen_random_uuid(), '{}'::uuid[], 1)",
   signal_match_load: "signal_match_load('{}'::uuid[])",
@@ -65,7 +66,8 @@ describe('Сверка с SIGNAL: файлы миграции, проверок,
     assert.doesNotMatch(read(MIGRATION), /^\s*--\s*osp:allow\b/m)
     // Каждая служебная функция signal_* — SECURITY DEFINER с отметкой пропуска и фиксированным search_path.
     const defs = [...read(MIGRATION).matchAll(/CREATE OR REPLACE FUNCTION osp_private\.(signal_\w+)\([\s\S]*?\n\$\$;/g)]
-    assert.ok(defs.length >= 44, `функций в файле: ${defs.length}`)
+    assert.equal([...read(MIGRATION).matchAll(/^CREATE OR REPLACE FUNCTION osp_private\.signal_/gm)].length, 54, 'функций в файле')
+    assert.ok(defs.length >= 53, `разобрано определений: ${defs.length}`)
     for (const [text, fn] of defs) {
       const definer = /\bSECURITY DEFINER\b/.test(text)
       assert.equal(/SET application_name = 'osp:internal'/.test(text), definer, `${fn}: отметка пропуска у SECURITY DEFINER и только у него`)
@@ -219,7 +221,7 @@ describe('Сверка с SIGNAL: миграция на слепке схемы 
     S.cold = seed.source({ objectIds: [O.a], enabled: true, ready: false })
     T.a = seed.snapshot(S.a.id, { name: 'Корень А', children: [
       { name: 'Корпус 1', numberKeys: ['АЛИЯ|2026|1'], items: [{ name: 'договор.pdf' }], children: [{ name: 'Приложения' }] },
-      { name: 'Корпус 2', numberKeys: ['АЛИЯ|2026|2'] }] })
+      { name: 'Корпус 2', numberKeys: ['АЛИЯ|2026|2'] }, { name: 'Корпус 3' }] })
     T.multi = seed.snapshot(S.multi.id, { name: 'Общий', children: [{ name: 'Секция А', children: [{ name: 'Альфа-архив' }] }, { name: 'Секция Б' }] })
     T.none = seed.snapshot(S.none.id, { name: 'Без объекта', children: [{ name: 'Папка Н' }] })
     T.off = seed.snapshot(S.off.id, { name: 'Выключен', children: [{ name: 'Папка В' }] })
@@ -236,11 +238,11 @@ describe('Сверка с SIGNAL: миграция на слепке схемы 
     assert.ok(checkBefore.split('\n').every((l) => /^(OK|FAIL) /.test(l)), checkBefore)
     const after = psqlAt(db.port, null, { file: BACKUP_CHECK })
     assert.doesNotMatch(after, /^FAIL/m, after)
-    assert.equal(after.split('\n').filter((l) => l.startsWith('OK ')).length, 19, after)
+    assert.equal(after.split('\n').filter((l) => l.startsWith('OK ')).length, 25, after)
     for (const searchPath of ['public', '"$user", public']) {
       const out = must(`SET search_path = ${searchPath};\nSET application_name = 'osp:internal';\n${read(CHECK)}`).join('\n')
       assert.doesNotMatch(out, /^FAIL/m, out)
-      assert.equal(out.split('\n').filter((l) => l.startsWith('OK ')).length, 19, out)
+      assert.equal(out.split('\n').filter((l) => l.startsWith('OK ')).length, 25, out)
     }
   })
 
@@ -317,6 +319,9 @@ describe('Сверка с SIGNAL: миграция на слепке схемы 
       source_update: `signal_source_update(${S.multi.id}, null, null)`,
       binding_set: `signal_binding_set(${S.multi.id}, '${T.multi.id('Общий / Секция А')}', null)`,
       unassigned: `signal_unassigned(${S.multi.id}, null, 10)`,
+      tree: `signal_tree(${S.multi.id})`,
+      bindings_list: `signal_bindings_list(${S.multi.id})`,
+      binding_preview: `signal_binding_preview(${S.multi.id}, '${T.multi.id('Общий / Секция А')}', '${O.a}')`,
     }
     for (const [who, uid] of [['подрядчик', P.contractor], ['заблокированный', P.blocked], ['неодобренный', P.pending], ['без права раздела', P.none], ['нет строки ролей', P.unknown]]) {
       assert.deepEqual(asJson(uid, fn('signal_user_flags()')), { canView: false, canEdit: false, isAdmin: false }, `${who}: флаги`)
@@ -329,19 +334,22 @@ describe('Сверка с SIGNAL: миграция на слепке схемы 
     assert.ok(asJson(P.viewA, fn('signal_marks(null, 10)')).items)
     assert.equal(asJson(P.viewA, fn(`signal_contract_view('${C.dpA}')`)).canEdit, false)
     assert.equal(asJson(P.viewA, fn(`signal_contract_view('${C.dpA}')`)).candidates, undefined, 'кандидаты — только при праве правки')
-    for (const name of ['folders', 'confirm', 'reject', 'unlink', 'alias_create', 'alias_delete', 'alias_list', 'admin_state', 'runs', 'source_add', 'source_update', 'binding_set', 'unassigned']) {
+    for (const name of ['folders', 'confirm', 'reject', 'unlink', 'alias_create', 'alias_delete', 'alias_list', 'admin_state', 'runs', 'source_add', 'source_update', 'binding_set', 'unassigned',
+      'tree', 'bindings_list', 'binding_preview']) {
       assert.equal(asErr(P.viewA, `select osp_private.${calls[name]}`).code, 'SG403', `просмотр: ${name}`)
     }
     // Правка: договорное — да (отказ не по праву), админское — нет.
     assert.deepEqual(asJson(P.editA, fn('signal_user_flags()')), { canView: true, canEdit: true, isAdmin: false })
-    for (const name of ['alias_list', 'admin_state', 'runs', 'source_add', 'source_update', 'binding_set', 'unassigned']) {
+    for (const name of ['admin_state', 'runs', 'source_add', 'source_update', 'binding_set', 'unassigned', 'tree', 'bindings_list', 'binding_preview']) {
       assert.equal(asErr(P.editA, `select osp_private.${calls[name]}`).code, 'SG403', `правка: ${name}`)
     }
+    // С-2: список синонимов сотруднику с правкой — только его собственные (здесь их ещё нет).
+    assert.deepEqual(asJson(P.editA, `select osp_private.${calls.alias_list}`), { items: [] })
     assert.notEqual(asErr(P.editA, `select osp_private.${calls.confirm}`).code, 'SG403', 'правка: подтверждение — отказ не по праву (устаревшая версия)')
     assert.equal(asErr(P.editA, `select osp_private.${calls.alias_delete}`).code, 'SG404')
     // Администратор: всё, включая админское.
     assert.deepEqual(asJson(P.admin, fn('signal_user_flags()')), { canView: true, canEdit: true, isAdmin: true })
-    for (const name of ['alias_list', 'admin_state', 'runs', 'unassigned']) assert.ok(asJson(P.admin, `select osp_private.${calls[name]}`), name)
+    for (const name of ['alias_list', 'admin_state', 'runs', 'unassigned', 'tree', 'bindings_list', 'binding_preview']) assert.ok(asJson(P.admin, `select osp_private.${calls[name]}`), name)
     assert.equal(asJson(P.admin, fn(calls.source_update.replace(/^/, ''))).ok, true)
   })
 
@@ -382,7 +390,7 @@ describe('Сверка с SIGNAL: миграция на слепке схемы 
     assert.equal(asJson(P.editA, fn(`signal_contract_view('${C.dpA2}')`)).node, null)
     const mark = asJson(P.editA, fn('signal_marks(null, 100)')).items.find((i) => i.id === C.dpA2)
     assert.equal(mark.path, undefined)
-    assert.equal(mark.state, 'verified')
+    assert.deepEqual([mark.state, mark.reason, mark.pending], ['unverified', 'pending', true], 'С-36: узел закрытого корня «сверено» не удерживает')
     // Многообъектный корень (А и Б), поддеревья не размечены: объект узла не назначен.
     const secA = T.multi.id('Общий / Секция А')
     const secB = T.multi.id('Общий / Секция Б')
@@ -401,7 +409,7 @@ describe('Сверка с SIGNAL: миграция на слепке схемы 
     assert.equal(asErr(P.editB, confirmCall(C.dpB, archive, { ver: 0 })).message, 'node_unavailable', 'размеченное под А закрыто для Б')
     assert.equal(asErr(P.editB, confirmCall(C.dpB, secB, { ver: 0 })).message, 'object_unassigned')
     assert.deepEqual(asJson(P.editA, fn(`signal_folders_search('${C.dpA2}', 'секция', null, 20)`)).items.map((i) => i.path).sort(),
-      ['Общий / Секция А', 'Общий / Секция А / Альфа-архив'].sort(), 'только размеченные под объект договора (путь содержит запрос)')
+      ['Секция А', 'Секция А / Альфа-архив'].sort(), 'только размеченные под объект договора; путь — от границы объекта (без имени корня «Общий»)')
     const top = asJson(P.admin, fn(`signal_unassigned(${S.multi.id}, null, 10)`)).items.map((i) => i.path)
     assert.deepEqual(top, ['Общий / Секция Б'])
     // Синоним доступа не даёт: имя «Альфа-архив» — синоним объекта Б, но узел размечен под А (и не виден Б); неразмеченное — никому.
@@ -428,7 +436,7 @@ describe('Сверка с SIGNAL: миграция на слепке схемы 
 
   it('CAS и идемпотентность подтверждения: устаревшие версия и ссылка — 409; повтор ключа — тот же ответ без второго события; замена — только с «Заменить»', () => {
     const node = T.a.id('Корень А / Корпус 1')
-    const other = T.a.id('Корень А / Корпус 2')
+    const other = T.a.id('Корень А / Корпус 3')
     const events = (c) => sql(`select count(*) from public.contract_audit_log where contract_id = '${c}' and event_type = 'signal_link'`)
     const v0 = asJson(P.editA, fn(`signal_contract_view('${C.dpA}')`))
     assert.equal(v0.stateVersion, 0)
@@ -549,7 +557,7 @@ describe('Сверка с SIGNAL: миграция на слепке схемы 
     assert.deepEqual(asJson(P.editA, unl(link, vA, 'uk-1')), u1)
     assert.equal(sql(`select count(*) from public.contract_audit_log where contract_id = '${C.dpA}' and description = 'Signal: связь снята'`), '1')
     assert.equal(sql(`select coalesce(signal_link, '-') from public.contracts where id = '${C.dpA}'`), '-')
-    assert.equal(sql(`select status || '|' || ctx_key from osp_private.signal_candidates where contract_id = '${C.dpA}' and node_id = '${T.a.id('Корень А / Корпус 2')}'`), 'unlinked|ctx-a')
+    assert.equal(sql(`select status || '|' || ctx_key from osp_private.signal_candidates where contract_id = '${C.dpA}' and node_id = '${T.a.id('Корень А / Корпус 3')}'`), 'unlinked|ctx-a')
     // Связи уже нет — снять нечего (окно устарело).
     assert.equal(asErr(P.editA, unl(link, vA + 1, 'uk-2')).message, 'stale_state')
   })

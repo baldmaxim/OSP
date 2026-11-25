@@ -73,7 +73,7 @@ const run = (contract, nodes, extra = {}, opts = {}) => {
 function assertInvariants(contract, nodes, res) {
   assert.ok(STATE_REASONS[res.state]?.includes(res.reason), `${res.state}:${res.reason} вне таблицы`)
   assert.ok(STATES[res.state] && REASONS[res.reason])
-  if (['unsupported_url', 'outside_roots', 'root_disabled', 'not_in_snapshot', 'no_snapshot', 'object_unassigned'].includes(res.reason)) {
+  if (['unsupported_url', 'unavailable', 'no_snapshot', 'no_object'].includes(res.reason)) {
     assert.equal(res.nodeId, null, `${res.reason}: узел не выдаётся`)
   }
   for (const c of res.candidates) {
@@ -202,7 +202,7 @@ describe('signalMatch: номера в названиях файлов и пап
       'ДП N АЛИЯ-ДП-26-001', 'AЛИЯ-ДП-26-001', 'ДП АЛИЯ-ДП-26-001, подрядчик Ромашка']) {
       assert.deepEqual(keys(name), ['АЛИЯ|2026|1'], name)
     }
-    assert.deepEqual(extractContractReferences('ДП_АЛИЯ-ДП-26-001.pdf'), [{ raw: 'АЛИЯ-ДП-26-001', key: 'АЛИЯ|2026|1', scheme: true, ds: false }])
+    assert.deepEqual(extractContractReferences('ДП_АЛИЯ-ДП-26-001.pdf'), [{ raw: 'АЛИЯ-ДП-26-001', key: 'АЛИЯ|2026|1', kind: 'scheme', explicit: true, scheme: true, ds: false, alts: [] }])
     assert.deepEqual(keys('ЗИЛ18-19-27-ДП-27-012'), ['ЗИЛ18-19-27|2027|12'])
     // целое имя файла якорной функции не подходит — токен берётся из середины
     assert.equal(numberKey('ДП_АЛИЯ-ДП-26-001.pdf'), null)
@@ -221,8 +221,9 @@ describe('signalMatch: номера в названиях файлов и пап
 
   it('номер не по схеме — безопасная нормализация только после явной приставки или как единственный токен; не по схеме не равно номеру ДП', () => {
     assert.equal(numberKey('СУ10-ВЭЙВ-СП-Э1-25'), null)
-    assert.deepEqual(extractContractReferences('ДП №СУ10-ВЭЙВ-СП-Э1-25'), [{ raw: 'СУ10-ВЭЙВ-СП-Э1-25', key: 'СУ10-ВЭЙВ-СП-Э1-25', scheme: false, ds: false }])
-    assert.deepEqual(keys('СУ10-ВЭЙВ-СП-Э1-25.pdf'), ['СУ10-ВЭЙВ-СП-Э1-25'])
+    // явная приставка — «explicit» (участвует в противоречии, TODO(В-2)); без приставки — только положительный признак
+    assert.deepEqual(extractContractReferences('ДП №СУ10-ВЭЙВ-СП-Э1-25'), [{ raw: 'СУ10-ВЭЙВ-СП-Э1-25', key: 'СУ10-ВЭЙВ-СП-Э1-25', kind: 'legacy', explicit: true, scheme: false, ds: false }])
+    assert.deepEqual(extractContractReferences('СУ10-ВЭЙВ-СП-Э1-25.pdf'), [{ raw: 'СУ10-ВЭЙВ-СП-Э1-25', key: 'СУ10-ВЭЙВ-СП-Э1-25', kind: 'legacy', explicit: false, scheme: false, ds: false }])
     assert.deepEqual(keys('Договор № 15 от 01.02.2026.pdf'), ['15'])
     // латинский двойник и разделители — в один ключ
     assert.equal(legacyKey('Cу10-вэйв сп_э1/25'), 'СУ10-ВЭЙВ-СП-Э1-25')
@@ -237,7 +238,7 @@ describe('signalMatch: номера в названиях файлов и пап
 
   it('номер ДС — отдельный вид ссылки: «ДС 3», «ДС-3», «ДС №3», «Доп. соглашение № 3»; номер ДП рядом не теряется', () => {
     for (const name of ['ДС 3', 'ДС-3', 'ДС №3', 'ДС_3.pdf', 'ДС3', 'Доп. соглашение № 3', 'Доп.соглашение 3', 'дс №3']) {
-      assert.deepEqual(extractContractReferences(name), [{ raw: '3', key: 'ДС|3', scheme: false, ds: true }], name)
+      assert.deepEqual(extractContractReferences(name), [{ raw: '3', key: 'ДС|3', kind: 'ds', explicit: true, scheme: false, ds: true }], name)
     }
     assert.deepEqual(keys('ДС 3 к ДП АЛИЯ-ДП-26-001.docx'), ['ДС|3', 'АЛИЯ|2026|1'])
     assert.deepEqual(extractContractReferences('ДС 2-1').map((r) => r.key), ['ДС|2-1'])
@@ -487,28 +488,29 @@ describe('signalMatch: граница объекта и корни', () => {
     assert.equal(run(dpContract(), [...nodes, folder()]).candidates.length, 1)
   })
 
-  it('ссылка на узел другого объекта → outside_roots, неназначенного → object_unassigned; чужой id и путь не выдаются', () => {
-    for (const [objectId, reason] of [[OBJ_B, 'outside_roots'], [null, 'object_unassigned']]) {
+  it('ссылка на узел другого объекта или неназначенного → unavailable (С-20); чужой id и путь не выдаются', () => {
+    for (const [objectId, reason] of [[OBJ_B, 'unavailable'], [null, 'unavailable']]) {
       const n = folder({ objectId })
       const r = run(dpContract({ signalLink: urlOf(n) }), [n])
       assert.deepEqual([r.state, r.reason, r.nodeId], ['unverified', reason, null])
       assert.ok(!JSON.stringify(r).includes(n.nodeId), 'id чужого узла в ответе')
       assert.ok(!JSON.stringify(r).includes('Проект'), 'путь чужого узла в ответе')
     }
-    // у договора без объекта границы нет
+    // у договора без объекта границы нет (С-57): причина названа, узел не выдаётся
     const n = folder()
-    assert.equal(run(dpContract({ objectId: null, signalLink: urlOf(n) }), [n]).reason, 'outside_roots')
+    const noObject = run(dpContract({ objectId: null, signalLink: urlOf(n) }), [n])
+    assert.deepEqual([noObject.state, noObject.reason, noObject.nodeId], ['unverified', 'no_object', null])
   })
 
-  it('корень выключен или не готов → root_disabled; ссылка чужого проекта и корня вне списка → outside_roots', () => {
+  it('корень выключен или не готов, ссылка чужого проекта и корня вне списка → unavailable', () => {
     for (const extra of [{ sourceEnabled: false }, { sourceReady: false }]) {
       const n = folder(extra)
-      assert.deepEqual(run(dpContract({ signalLink: urlOf(n) }), [n]).reason, 'root_disabled')
+      assert.deepEqual(run(dpContract({ signalLink: urlOf(n) }), [n]).reason, 'unavailable')
     }
     const n = folder()
     const wrongProject = buildSignalUrl(FOLDER_URL, { projectId: id('a', 2), nodeId: n.nodeId })
-    assert.equal(run(dpContract({ signalLink: wrongProject }), [n]).reason, 'outside_roots')
-    assert.equal(run(dpContract({ signalLink: urlOf(n) }), [n], { rootProjectIds: [id('a', 2)] }).reason, 'outside_roots')
+    assert.equal(run(dpContract({ signalLink: wrongProject }), [n]).reason, 'unavailable')
+    assert.equal(run(dpContract({ signalLink: urlOf(n) }), [n], { rootProjectIds: [id('a', 2)] }).reason, 'unavailable')
     assert.equal(run(dpContract({ signalLink: urlOf(n) }), [n], { rootProjectIds: [PROJECT.toUpperCase()] }).state, 'verified')
   })
 
@@ -516,12 +518,12 @@ describe('signalMatch: граница объекта и корни', () => {
     assert.deepEqual(run(dpContract({ signalLink: 'https://elsewhere.example.test/x' }), [folder()]).reason, 'unsupported_url')
     assert.deepEqual(run(dpContract({ signalLink: 'просто текст' }), []).reason, 'unsupported_url')
     const n = folder()
-    assert.equal(run(dpContract({ signalLink: urlOf(n) }), []).reason, 'not_in_snapshot')
+    assert.equal(run(dpContract({ signalLink: urlOf(n) }), []).reason, 'unavailable')
     assert.equal(run(dpContract({ signalLink: urlOf(n) }), [], {}, { generation: 0 }).reason, 'no_snapshot')
     // формат не настроен (пусто) — любая ссылка unsupported_url
     assert.equal(run(dpContract({ signalLink: urlOf(n) }), [n], {}, { formats: [] }).reason, 'unsupported_url')
     // ссылка на файл, а в снимке папка с тем же id
-    assert.equal(run(dpContract({ signalLink: fileUrlOf(n) }), [n]).reason, 'not_in_snapshot')
+    assert.equal(run(dpContract({ signalLink: fileUrlOf(n) }), [n]).reason, 'unavailable')
   })
 })
 
@@ -531,9 +533,10 @@ describe('signalMatch: введённая ссылка — verified, not_observe
     const other = node('ДП АЛИЯ-ДП-26-001 копия')
     const r = run(dpContract({ signalLink: urlOf(n) }), [n, other])
     assert.deepEqual([r.state, r.reason, r.nodeId, r.candidates], ['verified', 'existing_url', n.nodeId, []])
-    // папка без номера в названии тоже сходится: противоречия нет
+    // папка без номера в названии: противоречия нет, но и номер не найден — «ссылка принята» (В-1)
     const plain = node('Договор')
-    assert.equal(run(dpContract({ signalLink: urlOf(plain) }), [plain]).state, 'verified')
+    const rp = run(dpContract({ signalLink: urlOf(plain) }), [plain])
+    assert.deepEqual([rp.state, rp.reason, rp.nodeId], ['accepted', 'number_not_found', plain.nodeId])
   })
 
   it('не виден в последнем обходе: < 2 ночных — not_observed, ≥ 2 — attention:not_visible; вернулся — verified', () => {
@@ -560,9 +563,9 @@ describe('signalMatch: введённая ссылка — verified, not_observe
     assert.equal(run(dpContract({ signalLink: fileUrlOf(alive) }), [alive]).state, 'verified')
     const foreign = node('ДП_АЛИЯ-ДП-26-001.pdf', { kind: 'item', deleted: true, objectId: OBJ_B })
     const r2 = run(dpContract({ signalLink: fileUrlOf(foreign) }), [foreign])
-    assert.deepEqual([r2.state, r2.reason, r2.nodeId], ['unverified', 'outside_roots', null])
+    assert.deepEqual([r2.state, r2.reason, r2.nodeId], ['unverified', 'unavailable', null])
     // у папок deleted не бывает: флаг игнорируется (G2)
-    const folderWithFlag = node('Договор', { deleted: true })
+    const folderWithFlag = node('ДП АЛИЯ-ДП-26-001', { deleted: true })
     assert.equal(run(dpContract({ signalLink: urlOf(folderWithFlag) }), [folderWithFlag]).state, 'verified')
   })
 
@@ -605,31 +608,34 @@ describe('signalMatch: жёсткие расхождения (conflict)', () => 
     assert.deepEqual(run(dpContract(), [own, sub, deep]).candidates.map((c) => c.nodeId), [own.nodeId])
   })
 
-  it('building_mismatch: к.14 ≠ к.22 (объект «корп. 14», путь «к.22»); очередь — так же; совпадение и отсутствие признаков — нет конфликта', () => {
+  it('building_mismatch (В-11, мягкое): к.14 ≠ к.22 (объект «корп. 14», путь «к.22») — attention; очередь — так же; совпадение и отсутствие признаков — нет', () => {
     const wrong = node('ДП АЛИЯ-ДП-26-001', { parentPath: 'Проект / к.22' })
     const r = run(dpContract({ signalLink: urlOf(wrong) }), [wrong])
-    assert.deepEqual([r.state, r.reason, r.nodeId], ['conflict', 'building_mismatch', wrong.nodeId])
+    assert.deepEqual([r.state, r.reason, r.nodeId], ['attention', 'building_mismatch', wrong.nodeId])
     for (const parentPath of ['Проект / корп.22', 'Проект / Корпус 22', 'Проект / bldg 22']) {
       const n = node('Договор', { parentPath })
       assert.equal(run(dpContract({ signalLink: urlOf(n) }), [n]).reason, 'building_mismatch', parentPath)
     }
     for (const parentPath of ['Проект / к.14', 'Проект / корп.14 / к.22 (ссылка)', 'Проект', 'Проект / Приложение 22 / v14 / 2026 / ДП 22']) {
-      const n = node('Договор', { parentPath })
+      const n = node('ДП АЛИЯ-ДП-26-001', { parentPath })
       assert.equal(run(dpContract({ signalLink: urlOf(n) }), [n]).state, 'verified', parentPath)
     }
     // очередь: объект «очередь 2» против «очередь 3»
     const objects = [{ id: OBJ_A, name: 'ЖК Тестовый, очередь 2', code: 'АЛИЯ', aliases: [] }]
     const q = node('Договор', { parentPath: 'Проект / оч.3' })
     const rq = matchContract({ ...dpContract({ signalLink: urlOf(q) }), nodes: [q], objects }, { formats: FORMATS, generation: GEN })
-    assert.deepEqual([rq.state, rq.reason], ['conflict', 'building_mismatch'])
+    assert.deepEqual([rq.state, rq.reason], ['attention', 'building_mismatch'])
     // разнотипные признаки не сравниваются: корпус объекта против очереди в пути
-    const other = node('Договор', { parentPath: 'Проект / очередь 5' })
+    const other = node('ДП АЛИЯ-ДП-26-001', { parentPath: 'Проект / очередь 5' })
     assert.equal(run(dpContract({ signalLink: urlOf(other) }), [other]).state, 'verified')
+    // расхождение — только предупреждение: подтвердить можно
+    assert.equal(evaluateNode({ ...dpContract(), nodes: [wrong], objects: OBJECTS }, wrong.nodeId, { generation: GEN }).confirmable, true)
   })
 
-  it('кандидат с расхождением признаков не предлагается; при conflict рядом показываются другие кандидаты для замены', () => {
+  it('кандидат с расхождением признаков не исключается, а понижается (флаг building_mismatch); при conflict рядом показываются другие кандидаты для замены', () => {
     const wrongBuilding = node('ДП АЛИЯ-ДП-26-001', { parentPath: 'Проект / к.22' })
-    assert.equal(run(dpContract(), [wrongBuilding]).state, 'none')
+    const soft = run(dpContract(), [wrongBuilding])
+    assert.deepEqual([soft.state, soft.candidates.map((c) => c.flags)], ['suggested', [['building_mismatch']]])
     const right = node('ДП АЛИЯ-ДП-26-001')
     const wrongLink = node('ДП АЛИЯ-ДП-26-002')
     const r = run(dpContract({ signalLink: urlOf(wrongLink) }), [wrongLink, right])
@@ -689,30 +695,32 @@ describe('signalMatch: отказ и отвязка', () => {
   })
 })
 
-describe('signalMatch: ДС — только в папке своего корневого ДП', () => {
+describe('signalMatch: ДС — по своему номеру и номеру корневого ДП (В-3)', () => {
   const dp = dpContract()
   const dpFolder = node('ДП АЛИЯ-ДП-26-001')
   const dsFolder = child(dpFolder, 'ДС 3')
   const dsDeep = child(child(dpFolder, 'Приложения'), 'Допсоглашение ДС-3')
-  // Папка ДП известна только по ТЕКУЩЕЙ ссылке ДП; узел прежнего состояния (family.dp.nodeId) сопоставитель не использует.
+  // Папка ДП известна по ТЕКУЩЕЙ ссылке ДП; узел прежнего состояния (family.dp.nodeId) сопоставитель не использует.
   const withDp = (ds, node0 = dpFolder) => ({ ...ds, family: { ...ds.family, dp: { ...ds.family.dp, signalLink: urlOf(node0) } } })
   const ds = withDp(dsContract(dp))
   const family = [dpFolder, dsFolder, dsDeep]
 
-  it('ДС ищется в папке ДП и подпапках по своему номеру; номер другого ДС и чужая папка не подходят', () => {
+  it('ДС ищется по своему номеру: в папке ДП (первыми) и вне её; номер другого ДС не подходит; чужая ветка отсеивается номером ДП', () => {
     const r = run(ds, family)
     assert.equal(r.state, 'suggested')
     assert.deepEqual(r.candidates.map((c) => [c.reasons.includes('ds_number'), c.flags]), [[true, []], [true, []]])
     assert.deepEqual(new Set(r.candidates.map((c) => c.nodeId)), new Set([dsFolder.nodeId, dsDeep.nodeId]))
     // тот же ДС в папке с другим номером ДС
     assert.equal(run(ds, [dpFolder, child(dpFolder, 'ДС 4')]).state, 'none')
-    // такая же папка «ДС 3» вне папки своего ДП (у другого ДП того же объекта)
+    // такая же папка «ДС 3» у другого ДП того же объекта — номер чужого ДП в пути: не предлагается
     const otherDp = node('ДП АЛИЯ-ДП-26-002')
     const foreignDs = child(otherDp, 'ДС 3')
-    const r2 = run(ds, [dpFolder, otherDp, foreignDs])
-    assert.equal(r2.state, 'none', 'ДС чужого ДП не предлагается')
-    // и не в корне объекта
-    assert.equal(run(ds, [dpFolder, node('ДС 3')]).state, 'none')
+    assert.equal(run(ds, [dpFolder, otherDp, foreignDs]).state, 'none', 'ДС чужого ДП не предлагается')
+    // а в корне объекта без номера ДП в пути — допустима (расположение само по себе не ошибка), но после папки ДП
+    const aside = node('ДС 3')
+    const r2 = run(ds, [dpFolder, dsFolder, aside])
+    assert.deepEqual(r2.candidates.map((c) => c.nodeId), [dsFolder.nodeId, aside.nodeId])
+    assert.ok(r2.candidates[0].score > r2.candidates[1].score)
   })
 
   it('явный номер чужого ДП в подпапке: кандидат не предлагается; введённая ссылка → conflict:foreign_dp', () => {
@@ -724,25 +732,27 @@ describe('signalMatch: ДС — только в папке своего корн
     // ссылка на подпапку своего ДП — проверена
     const ok = run({ ...ds, signalLink: urlOf(dsDeep) }, family)
     assert.deepEqual([ok.state, ok.reason, ok.nodeId], ['verified', 'existing_url', dsDeep.nodeId])
-    // сама папка ДП допустима («в папке своего ДП или её подпапках»)
+    // сама папка ДП допустима: её номер — номер корневого ДП
     assert.equal(run({ ...ds, signalLink: urlOf(dpFolder) }, family).state, 'verified')
   })
 
-  it('правило «только в папке своего ДП» действует и само по себе, без ограничения выборки', () => {
+  it('кандидаты не зависят от ограничения выборки: правила действуют и само по себе', () => {
     const otherDp = node('ДП АЛИЯ-ДП-26-002')
     const foreignDs = child(otherDp, 'ДС 3')
     const outside = node('ДС 3')
     const r = run(ds, [dpFolder, dsFolder, otherDp, foreignDs, outside], {}, { scoped: false })
-    assert.deepEqual(r.candidates.map((c) => c.nodeId), [dsFolder.nodeId])
+    assert.deepEqual(r.candidates.map((c) => c.nodeId), [dsFolder.nodeId, outside.nodeId])
   })
 
-  it('ссылка ДС вне папки своего ДП → conflict:foreign_dp (даже без номера в названии)', () => {
+  it('ссылка ДС: рядом с папкой ДП — не ошибка; в ветке чужого ДП — conflict:foreign_dp; без номера в пути — «номер не найден»', () => {
     const otherDp = node('ДП АЛИЯ-ДП-26-002')
     const outside = child(otherDp, 'ДС 3')
     const r = run({ ...ds, signalLink: urlOf(outside) }, [dpFolder, otherDp, outside])
     assert.deepEqual([r.state, r.reason], ['conflict', 'foreign_dp'])
     const bare = node('Прочее')
-    assert.equal(run({ ...ds, signalLink: urlOf(bare) }, [dpFolder, bare]).reason, 'foreign_dp')
+    assert.deepEqual([run({ ...ds, signalLink: urlOf(bare) }, [dpFolder, bare]).state, run({ ...ds, signalLink: urlOf(bare) }, [dpFolder, bare]).reason], ['accepted', 'number_not_found'])
+    const aside = node('ДС 3')
+    assert.equal(run({ ...ds, signalLink: urlOf(aside) }, [dpFolder, aside]).reason, 'existing_url')
   })
 
   it('папка ДП — по текущей ссылке ДП, а не по узлу прежнего состояния: после смены ссылки ДП ДС оценивается по новой папке, порядок договоров не важен', () => {
@@ -754,12 +764,12 @@ describe('signalMatch: ДС — только в папке своего корн
     const nodes = [dpFolder, newSub, oldFolder, oldSub]
     const r = run(stale(), nodes)
     assert.equal(r.state, 'suggested')
-    assert.deepEqual(r.candidates.map((c) => [c.nodeId, c.flags]), [[newSub.nodeId, []]], 'только подпапка новой папки ДП, без флага семьи')
-    // введённая ссылка ДС: в новой папке — verified, в старой — foreign_dp
+    // обе подпапки подходят по номеру ДП (старая папка тоже названа «АЛИЯ-ДП-26-001»), но внутри папки по текущей ссылке — первой
+    assert.deepEqual(r.candidates.map((c) => c.nodeId), [newSub.nodeId, oldSub.nodeId])
+    assert.ok(r.candidates[0].score >= r.candidates[1].score + 20)
+    // введённая ссылка ДС: в новой папке и в старой — одинаково «сверено» (номер ДП тот же)
     const inNew = run(stale({ signalLink: urlOf(newSub) }), nodes)
     assert.deepEqual([inNew.state, inNew.reason, inNew.nodeId], ['verified', 'existing_url', newSub.nodeId])
-    const inOld = run(stale({ signalLink: urlOf(oldSub) }), nodes)
-    assert.deepEqual([inOld.state, inOld.reason, inOld.nodeId], ['conflict', 'foreign_dp', oldSub.nodeId])
     // узел прежнего состояния не запрашивается, запрашивается узел из текущей ссылки ДП
     const q = nodeQueryFor(stale(), { formats: FORMATS })
     assert.deepEqual(q.nodeIds, [dpFolder.nodeId])
@@ -772,12 +782,17 @@ describe('signalMatch: ДС — только в папке своего корн
     const backward = once([...batch].reverse()).reverse()
     assert.deepEqual(forward, backward)
     assert.deepEqual(run(stale(), [...nodes].reverse()), r)
-    // без ссылки ДП (узел состояния есть, ссылка пуста) или с неподдержанным форматом папки ДП нет
+    // без ссылки ДП (узел состояния есть, ссылка пуста) или с неподдержанным форматом папки ДП нет, но номер ДП в пути проверяется
     for (const signalLink of [null, '', 'https://elsewhere.example.test/x']) {
       const noLink = { ...ds, family: { ...ds.family, dp: { ...ds.family.dp, signalLink, nodeId: dpFolder.nodeId } }, signalLink: urlOf(newSub) }
       const rn = run(noLink, nodes)
-      assert.deepEqual([rn.state, rn.reason], ['unverified', 'family_unknown'], String(signalLink))
+      assert.deepEqual([rn.state, rn.reason], ['verified', 'existing_url'], String(signalLink))
       assert.deepEqual(nodeQueryFor(noLink, { formats: FORMATS }).under, [])
+      const wrongBranch = { ...noLink, signalLink: urlOf(child(node('ДП АЛИЯ-ДП-26-002'), 'ДС 3')) }
+      const wf = node('ДП АЛИЯ-ДП-26-002')
+      const ws = child(wf, 'ДС 3')
+      assert.equal(run({ ...noLink, signalLink: urlOf(ws) }, [wf, ws]).reason, 'foreign_dp', String(signalLink))
+      assert.ok(wrongBranch)
     }
   })
 
@@ -787,48 +802,50 @@ describe('signalMatch: ДС — только в папке своего корн
     const r = run(viaLink, family)
     assert.equal(r.state, 'suggested')
     assert.equal(r.candidates.length, 2)
-    // ссылка ДП ведёт в папку с чужим номером → семья неизвестна
+    // ссылка ДП ведёт в папку с чужим номером: папкой «своего ДП» она не считается (бонуса нет), а ДС в ней — foreign_dp
     const badDpFolder = node('ДП АЛИЯ-ДП-26-002')
     const badDs = child(badDpFolder, 'ДС 3')
     const badLink = { ...dsContract({ ...dp, signalLink: urlOf(badDpFolder) }), signalLink: urlOf(badDs) }
     const r2 = run(badLink, [badDpFolder, badDs])
-    assert.deepEqual([r2.state, r2.reason], ['unverified', 'family_unknown'])
+    assert.deepEqual([r2.state, r2.reason], ['conflict', 'foreign_dp'])
+    assert.deepEqual(nodeQueryFor(badLink, { formats: FORMATS }).under, [badDpFolder.nodeId])
   })
 
-  it('папка ДП неизвестна: введённая ссылка ДС — unverified:family_unknown; предложение слабое, с флагом, не для подтверждения', () => {
+  it('папка ДП неизвестна (ссылки у ДП нет): ДС предлагается по номеру ДС и номеру ДП в пути; признака family_unknown больше нет', () => {
     const unknown = dsContract(dp)
     const nodes = [dpFolder, dsFolder]
     const r = run(unknown, nodes)
     assert.equal(r.state, 'suggested')
     assert.deepEqual(r.candidates.map((c) => c.nodeId), [dsFolder.nodeId])
-    assert.deepEqual(r.candidates[0].flags, ['family_unknown'])
-    assert.ok(r.candidates[0].score < 60, 'слабее подтверждённой семьи')
+    assert.deepEqual(r.candidates[0].flags, [])
+    assert.ok(r.candidates[0].reasons.includes('ds_number') && r.candidates[0].reasons.includes('number'))
     const linked = run({ ...unknown, signalLink: urlOf(dsFolder) }, nodes)
-    assert.deepEqual([linked.state, linked.reason, linked.nodeId], ['unverified', 'family_unknown', dsFolder.nodeId])
-    // жёсткие расхождения видны и без семьи
+    assert.deepEqual([linked.state, linked.reason, linked.nodeId], ['verified', 'existing_url', dsFolder.nodeId])
+    // мягкое и жёсткое видны и без папки ДП
     const wrongBuilding = node('ДС 3', { parentPath: 'Проект / к.22' })
     assert.equal(run({ ...unknown, signalLink: urlOf(wrongBuilding) }, [wrongBuilding]).reason, 'building_mismatch')
-    // цикл и удалённый ДП — тоже «неизвестно»
-    assert.equal(run({ ...withDp(unknown), family: { dp: { ...withDp(unknown).family.dp }, cycle: true } }, nodes).candidates[0].flags[0], 'family_unknown')
+    // цикл и удалённый ДП: номера ДП нет — сверка только по номеру ДС
+    const cyc = run({ ...withDp(unknown), family: { dp: { ...withDp(unknown).family.dp }, cycle: true } }, nodes)
+    assert.deepEqual(cyc.candidates.map((c) => c.flags), [[]])
     const deletedDp = withDp(unknown)
     deletedDp.family.dp.deleted = true
-    assert.equal(run(deletedDp, nodes).candidates[0].flags[0], 'family_unknown')
-    // ДП другого объекта — семья неизвестна
-    const otherObj = withDp(unknown)
-    otherObj.family.dp.objectId = OBJ_B
-    assert.equal(run(otherObj, nodes).candidates[0].flags[0], 'family_unknown')
+    assert.equal(run(deletedDp, nodes).candidates[0].flags.length, 0)
   })
 
-  it('папка ДП по ссылке не принимается на веру: чужой объект, выключенный корень, чужой номер → семья неизвестна', () => {
+  it('папка ДП по ссылке не принимается на веру: чужой объект, выключенный корень, чужой номер — бонуса «в папке своего ДП» нет', () => {
+    const bonus = (cands) => cands.map((c) => c.score)
+    const baseline = bonus(run(dsContract(dp), [dpFolder, dsFolder]).candidates)
+    const trusted = bonus(run(withDp(dsContract(dp)), [dpFolder, dsFolder]).candidates)
+    assert.equal(trusted[0] - baseline[0], 20)
     for (const bad of [{ objectId: OBJ_B }, { sourceEnabled: false }, { observed: false }, { kind: 'item' }]) {
       const f = { ...dpFolder, ...bad }
       const sub = child(f, 'ДС 3')
       const r = run(withDp(dsContract(dp), f), [f, sub])
-      assert.equal(r.candidates[0]?.flags[0], 'family_unknown', JSON.stringify(bad))
+      assert.equal(r.candidates[0].score, baseline[0], JSON.stringify(bad))
     }
     const wrong = node('ДП АЛИЯ-ДП-26-002')
     const wsub = child(wrong, 'ДС 3')
-    assert.equal(run(withDp(dsContract(dp), wrong), [wrong, wsub]).candidates[0].flags[0], 'family_unknown')
+    assert.equal(run(withDp(dsContract(dp), wrong), [wrong, wsub]).state, 'none')
   })
 
   it('ДС: объект папки — граница тоже; не наблюдаемая папка ДС → not_observed', () => {
@@ -848,20 +865,25 @@ describe('signalMatch: ДС — только в папке своего корн
 })
 
 describe('signalMatch: проверка узла перед confirm (evaluateNode)', () => {
-  it('conflict → не подтверждается; verified → подтверждается; без семьи и не наблюдаемый — нет', () => {
+  it('conflict → не подтверждается; verified и accepted → подтверждается; недоступный и не наблюдаемый — нет', () => {
     const good = node('ДП АЛИЯ-ДП-26-001')
     const bad = node('ДП АЛИЯ-ДП-26-002')
     const input = { ...dpContract(), nodes: [good, bad], objects: OBJECTS }
     const a = evaluateNode(input, good.nodeId, { generation: GEN })
-    assert.deepEqual([a.state, a.reason, a.nodeId, a.confirmable], ['verified', 'existing_url', good.nodeId, true])
+    assert.deepEqual([a.state, a.reason, a.nodeId, a.confirmable, a.warning], ['verified', 'existing_url', good.nodeId, true, null])
     const b = evaluateNode(input, bad.nodeId, { generation: GEN })
     assert.deepEqual([b.state, b.reason, b.confirmable], ['conflict', 'number_mismatch', false])
-    assert.deepEqual(evaluateNode(input, id('c', 999), { generation: GEN }), { state: 'unverified', reason: 'not_in_snapshot', nodeId: null, confirmable: false })
+    assert.deepEqual(evaluateNode(input, id('c', 999), { generation: GEN }), { state: 'unverified', reason: 'unavailable', nodeId: null, confirmable: false, warning: null })
     assert.equal(evaluateNode(input, id('c', 999), { generation: 0 }).reason, 'no_snapshot')
     const foreign = { ...input, nodes: [{ ...good, objectId: OBJ_B }] }
-    assert.deepEqual(evaluateNode(foreign, good.nodeId, { generation: GEN }), { state: 'unverified', reason: 'outside_roots', nodeId: null, confirmable: false })
+    assert.deepEqual(evaluateNode(foreign, good.nodeId, { generation: GEN }), { state: 'unverified', reason: 'unavailable', nodeId: null, confirmable: false, warning: null })
+    // ДС без ссылки у ДП: сверка идёт по номеру ДП в пути, подтверждать можно
     const dsInput = { ...dsContract(dpContract()), nodes: [good], objects: OBJECTS }
-    assert.equal(evaluateNode(dsInput, good.nodeId, { generation: GEN }).reason, 'family_unknown')
+    assert.deepEqual([evaluateNode(dsInput, good.nodeId, { generation: GEN }).state, evaluateNode(dsInput, good.nodeId, { generation: GEN }).confirmable], ['verified', true])
+    // папка без номера — «ссылка принята», тоже подтверждается
+    const bare = node('Договор')
+    const ac = evaluateNode({ ...dpContract(), nodes: [bare], objects: OBJECTS }, bare.nodeId, { generation: GEN })
+    assert.deepEqual([ac.state, ac.reason, ac.confirmable], ['accepted', 'number_not_found', true])
     assert.equal(evaluateNode({ ...input, deleted: true }, good.nodeId, { generation: GEN }).confirmable, false)
   })
 
@@ -895,8 +917,9 @@ describe('signalMatch: запрос узлов для договора', () => {
   it('номер старого вида идёт термином; термины не содержат символов шаблона LIKE', () => {
     const q = nodeQueryFor(dpContract({ number: 'СУ10-ВЭЙВ-СП-Э1-25', numberKey: null, counterparties: [{ id: CP1, name: '100%_Ромашка\\' }] }), { formats: FORMATS })
     assert.deepEqual(q.numberKeys, [])
-    assert.ok(q.terms.includes('су10-вэйв-сп-э1-25'))
-    for (const t of q.terms) assert.doesNotMatch(t, /[%_\\]/)
+    assert.ok(q.terms.includes('су10-вэйв-сп-э1-25') && q.terms.includes('су10_вэйв_сп_э1_25'))
+    // «%» и «\\» в терминах не передаются (SQL экранирует шаблон LIKE, «_» — обычный знак)
+    for (const t of q.terms) assert.doesNotMatch(t, /[%\\]/)
     const weak = nodeQueryFor(dpContract({ number: 'Т-7', numberKey: null, counterparties: [] }), { formats: FORMATS })
     assert.deepEqual(weak.terms, [])
   })
@@ -904,7 +927,8 @@ describe('signalMatch: запрос узлов для договора', () => {
   it('ДС: папка из текущей ссылки ДП → nodeIds и under; без папки — варианты «ДС N» и объект', () => {
     const dp = dpContract()
     const withNode = { ...dsContract(dp), family: { dp: { ...dsContract(dp).family.dp, signalLink: buildSignalUrl(FOLDER_URL, { projectId: PROJECT, nodeId: dpFolderId }) }, cycle: false } }
-    assert.deepEqual(nodeQueryFor(withNode, { formats: FORMATS }), { nodeIds: [dpFolderId], numberKeys: [], objectIds: [], terms: [], under: [dpFolderId] })
+    const withNodeQuery = nodeQueryFor(withNode, { formats: FORMATS })
+    assert.deepEqual([withNodeQuery.nodeIds, withNodeQuery.numberKeys, withNodeQuery.under], [[dpFolderId], [], [dpFolderId]])
     // узел прежнего состояния ДП (family.dp.nodeId) в запрос не попадает
     const onlyState = { ...dsContract(dp), family: { dp: { ...dsContract(dp).family.dp, nodeId: dpFolderId }, cycle: false } }
     assert.deepEqual(nodeQueryFor(onlyState, { formats: FORMATS }).nodeIds, [])
@@ -913,7 +937,9 @@ describe('signalMatch: запрос узлов для договора', () => {
     const unknown = nodeQueryFor(dsContract(dp), { formats: FORMATS })
     assert.deepEqual(unknown.under, [])
     assert.deepEqual(unknown.objectIds, [OBJ_A])
-    assert.deepEqual(unknown.terms, ['дс 3', 'дс3', 'дс №3', 'дс-3'].sort())
+    for (const t of ['дс 3', 'дс3', 'дс №3', 'дс-3', 'д/с 3', 'соглашение № 3']) assert.ok(unknown.terms.includes(t), t)
+    // номер ДС ищется и при известной папке ДП (В-3): ДС вне её тоже допустим
+    assert.ok(nodeQueryFor(withNode, { formats: FORMATS }).terms.includes('дс 3'))
     // цикл — семья неизвестна, папка ДП не запрашивается
     assert.deepEqual(nodeQueryFor({ ...withNode, family: { ...withNode.family, cycle: true } }, { formats: FORMATS }).under, [])
   })
@@ -952,8 +978,10 @@ describe('signalMatch: детерминизм', () => {
     const c = dpContract({ signalLink: null })
     const own = node('ДП АЛИЯ-ДП-26-001')
     // узлы «чужих» запросов: подходили бы договору по правилам сопоставления, но его собственный запрос их не вернул бы
-    const strangers = [node('Договор_СУ10_ВЭЙВ_СП_Э1_25'), node('ДС 3'), node('ДП АЛИЯ-ДП-26-002'), node('Папка', { objectId: OBJ_B })]
+    // (латинская «C» и смесь разделителей — запрос договора такую запись не найдёт, а правила сопоставителя узнали бы)
+    const strangers = [node('Договор CУ10-ВЭЙВ_СП/Э1.25'), node('ДС 3'), node('ДП АЛИЯ-ДП-26-002'), node('Папка', { objectId: OBJ_B })]
     const legacy = dpContract({ number: 'СУ10-ВЭЙВ-СП-Э1-25', numberKey: null, counterparties: [] })
+    // «ДС 3» — подходит только ДС, а не ДП: запрос ДП его не вернёт
     assert.deepEqual(run(c, [own, ...strangers]), run(c, [own]))
     assert.deepEqual(run(legacy, strangers), run(legacy, []))
     assert.equal(run(legacy, strangers).state, 'none')
@@ -963,7 +991,8 @@ describe('signalMatch: детерминизм', () => {
     const dpFolder = node('ДП АЛИЯ-ДП-26-001')
     const sub = child(dpFolder, 'ДС 3')
     const ds = { ...dsContract(dpContract()), family: { dp: { ...dsContract(dpContract()).family.dp, signalLink: urlOf(dpFolder) }, cycle: false } }
-    assert.deepEqual(run(ds, [dpFolder, sub, ...strangers]).candidates.map((x) => x.nodeId), [sub.nodeId])
+    // папка «ДС 3» вне папки ДП тоже допустима (В-3), но идёт после папки внутри неё
+    assert.deepEqual(run(ds, [dpFolder, sub, ...strangers]).candidates.map((x) => x.nodeId), [sub.nodeId, strangers[1].nodeId])
   })
 
   it('кандидатов не больше десяти; сортировка: очки, путь, id', () => {
@@ -981,9 +1010,10 @@ describe('signalMatch: константы', () => {
       assert.ok(STATES[state], state)
       for (const r of reasons) assert.ok(REASONS[r], r)
     }
-    assert.deepEqual(Object.keys(STATES).sort(), ['attention', 'conflict', 'missing', 'none', 'suggested', 'unverified', 'verified'])
-    assert.deepEqual(STATE_REASONS.conflict, ['object_mismatch', 'number_mismatch', 'building_mismatch', 'foreign_dp', 'ambiguous'])
-    assert.deepEqual(STATE_REASONS.unverified.slice(0, 6), ['unsupported_url', 'outside_roots', 'root_disabled', 'not_in_snapshot', 'no_snapshot', 'object_unassigned'])
+    assert.deepEqual(Object.keys(STATES).sort(), ['accepted', 'attention', 'conflict', 'missing', 'none', 'suggested', 'unverified', 'verified'])
+    assert.deepEqual(STATE_REASONS.conflict, ['number_mismatch', 'object_mismatch', 'ambiguous', 'foreign_dp', 'ds_mismatch', 'foreign_party'])
+    assert.deepEqual(STATE_REASONS.unverified, ['unsupported_url', 'unavailable', 'no_snapshot', 'not_observed', 'no_object', 'pending'])
+    assert.deepEqual(STATE_REASONS.attention, ['not_visible', 'file_not_visible', 'building_mismatch', 'kind_mismatch'])
     assert.ok(Object.isFrozen(STATES) && Object.isFrozen(REASONS) && Object.isFrozen(MATCH_REASONS) && Object.isFrozen(MATCH_FLAGS))
     for (const text of [...Object.values(REASONS), ...Object.values(STATES), ...Object.values(MATCH_REASONS), ...Object.values(MATCH_FLAGS)]) {
       assert.ok(text && !/удалена/.test(text), text)

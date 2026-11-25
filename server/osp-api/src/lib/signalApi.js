@@ -5,12 +5,15 @@
 //   await api.getToken()                                  // проверка входа; сам токен наружу не отдаётся
 //   await api.listProjects({ skip, take })                // [{ id, name, code }]
 //   await api.getFolderTree(projectId)                    // плоский список папок проекта в порядке обхода
-//   await api.listItems(folderId, { skip, take })         // элементы папки (только непосредственные)
+//   await api.listItems(folderId, { skip, take, deleted }) // элементы папки (только непосредственные); deleted: true — удалённые
+//   readFolderItems(api, folderId, opts)                  // все элементы папки: конец списка, повторы, согласованность страниц
+//   findDeletedItems(api, folderId, wantedIds, opts)      // удалённые элементы папки с нужными id (адресный запрос, В-10)
 //   await api.searchItems(folderId, { modifiedFrom, skip, take })  // задел под выборку изменений; в MVP не вызывается
 //
 // Каждая операция принимает необязательный { signal } для отмены. Ответ проверяется по типам: идентификаторы —
-// uuid, строки — не длиннее 500 знаков, children — массив; иное — SignalError('invalid'). Пагинация — Skip/Take:
-// «следующий» адрес из ответа не читается и не используется. Результат — узлы раздела 5.2 спецификации
+// uuid, children — массив; иное — SignalError('invalid'). Названия не отвергают ответ: непарные суррогаты заменяются,
+// управляющие знаки — пробелом, длиннее 500 знаков — усекаются («ядовитое» название не должно останавливать публикацию).
+// Пагинация — Skip/Take: «следующий» адрес из ответа не читается и не используется. Результат — узлы раздела 5.2 спецификации
 // (.local/OSP_SIGNAL_спецификация_реализации.md); поля, которые считает сама служба (границы, номера, наблюдаемость),
 // добавляются позже, при записи.
 import { SignalError } from './signalClient.js'
@@ -18,8 +21,12 @@ import { SignalError } from './signalClient.js'
 const V1 = '/public/v1'
 export const SIGNAL_OPERATIONS = Object.freeze(['getToken', 'listProjects', 'getFolderTree', 'listItems', 'searchItems'])
 export const SIGNAL_PAGE_MAX = 200
+export const SIGNAL_PAGE_ENDS = Object.freeze(['empty', 'short'])
 export const SIGNAL_API_LIMITS = Object.freeze({ nameChars: 500, treeNodes: 500_000, treeDepth: 200, skip: 10_000_000 })
 
+// Всё, что опирается на допущения о протоколе, которых нет в выжимке спецификации, помечено TODO(G1): их проверяют пробой
+// ключом (probe). Пока G1 не закрыт, защитные значения: конец списка — только пустая страница, повтор id пропускается,
+// перед выводом «папка прочитана» многостраничный список сверяется с повторным чтением первой страницы.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 // Управляющие знаки в названии (в том числе NUL, который база не примет) заменяются пробелом.
 // eslint-disable-next-line no-control-regex
@@ -32,9 +39,18 @@ function uuidOf(v, what) {
   if (typeof v !== 'string' || !UUID.test(v)) throw invalid(what)
   return v.toLowerCase()
 }
+// Название: непарные суррогаты (обрезанное эмодзи) заменяются, управляющие знаки — пробелом, длиннее 500 знаков — усечение
+// (не отказ: одно «ядовитое» название не должно останавливать публикацию чужих корней). Тип — строка, иначе invalid.
 function textOf(v, what) {
-  if (typeof v !== 'string' || v.length > SIGNAL_API_LIMITS.nameChars) throw invalid(what)
-  return v.replace(CONTROL, ' ').trim()
+  if (typeof v !== 'string') throw invalid(what)
+  let out = v.toWellFormed().replace(CONTROL, ' ').trim()
+  if (out.length > SIGNAL_API_LIMITS.nameChars) {
+    out = out.slice(0, SIGNAL_API_LIMITS.nameChars)
+    // усечение не рвёт пару посередине
+    if (/[\ud800-\udbff]$/.test(out)) out = out.slice(0, -1)
+    out = out.trim()
+  }
+  return out
 }
 function optText(v, what) {
   if (v === undefined || v === null) return null
@@ -149,7 +165,9 @@ export function createSignalApi({ client }) {
     async listItems(folderId, page = {}, { signal } = {}) {
       const id = uuidOf(folderId, 'id папки')
       const { skip, take } = pageArgs(page)
-      const data = await get(`${V1}/items`, { folderId: id, deleted: 'false', Skip: skip, Take: take }, signal)
+      // TODO(G1): deleted=true по выжимке — «удалённые»; отдаёт ли сервер только их или все элементы, не проверено —
+      // findDeletedItems отбирает по полю deleted сама.
+      const data = await get(`${V1}/items`, { folderId: id, deleted: page.deleted === true ? 'true' : 'false', Skip: skip, Take: take }, signal)
       return normalizeItems(data, { folderId: id, take })
     },
     async searchItems(folderId, { modifiedFrom = null, ...page } = {}, { signal } = {}) {
@@ -162,4 +180,99 @@ export function createSignalApi({ client }) {
       return normalizeItems(data, { take })
     },
   }
+}
+
+// ── Чтение списков целиком ──────────────────────────────────────────────────────────────────────────────────────────
+
+const sameSequence = (a, b) => a.length === b.length && a.every((id, i) => id === b[i])
+
+// Один проход по страницам: Skip растёт на число полученных элементов (сервер может отдать меньше Take).
+// TODO(G1): конец списка. В выжимке не сказано, что страница короче Take — последняя. Сервер вправе отдать меньше Take, когда
+// элементы ещё есть, поэтому по умолчанию (pageEnd = 'empty') список кончается только пустой страницей — это один лишний запрос
+// на папку; 'short' (короткая страница — последняя) включают после проверки пробой.
+async function readPass(api, folderId, { pageSize, pageEnd, maxItems, signal, onPage }) {
+  const seen = new Set()
+  const items = []
+  let first = null
+  let pages = 0
+  let duplicates = 0
+  let skip = 0
+  for (;;) {
+    const page = await api.listItems(folderId, { skip, take: pageSize }, { signal })
+    if (!page.length) break
+    pages += 1
+    if (first === null) first = page.map((i) => i.nodeId)
+    let fresh = 0
+    for (const item of page) {
+      if (seen.has(item.nodeId)) { duplicates += 1; continue }
+      seen.add(item.nodeId)
+      items.push(item)
+      fresh += 1
+    }
+    // Ни одного нового элемента на непустой странице: смещение не работает (страница повторяется) — читать дальше нечего.
+    if (fresh === 0) {
+      const err = invalid('страница элементов повторилась')
+      err.repeat = true // сбой корня, а не проблема папки: так не читается ни одна папка
+      throw err
+    }
+    if (items.length > maxItems) throw new SignalError('limit', 'SIGNAL: в папке больше элементов, чем разрешено')
+    onPage?.(items.length)
+    skip += page.length
+    if (pageEnd === 'short' && page.length < pageSize) break
+  }
+  return { items, first: first || [], pages, duplicates }
+}
+
+// Все элементы папки (удалённые не запрашиваются). Повтор id между страницами — пропуск дубля (список менялся во время чтения).
+// Многостраничный список сверяется с повторным чтением первой страницы; расхождение или дубли — одна перепроверка целиком,
+// затем unstable: true и пустой список (читать такой список нельзя — элементы папки переносятся из прежнего снимка).
+// TODO(G1): порядок Skip/Take между запросами в выжимке не гарантирован; удаление элемента за пределами первой страницы
+// между чтением страниц этой сверкой не ловится (его поймает следующий обход).
+// → { items, pages, duplicates, rechecked: boolean, unstable: boolean, requests }
+export async function readFolderItems(api, folderId, {
+  pageSize = SIGNAL_PAGE_MAX, pageEnd = 'empty', maxItems = Infinity, signal, onPage, rechecks = 1,
+} = {}) {
+  const end = SIGNAL_PAGE_ENDS.includes(pageEnd) ? pageEnd : 'empty'
+  let rechecked = false
+  let requests = 0
+  for (let attempt = 0; ; attempt++) {
+    const pass = await readPass(api, folderId, { pageSize, pageEnd: end, maxItems, signal, onPage })
+    requests += pass.pages + (end === 'empty' ? 1 : 0)
+    let consistent = pass.duplicates === 0
+    if (pass.pages >= 2) {
+      const again = await api.listItems(folderId, { skip: 0, take: pageSize }, { signal })
+      requests += 1
+      consistent = consistent && sameSequence(pass.first, again.map((i) => i.nodeId))
+    }
+    if (consistent) return { items: pass.items, pages: pass.pages, duplicates: pass.duplicates, rechecked, unstable: false, requests }
+    if (attempt >= rechecks) return { items: [], pages: pass.pages, duplicates: pass.duplicates, rechecked, unstable: true, requests }
+    rechecked = true
+  }
+}
+
+// Удалённые элементы папки с заданными id: читает список deleted=true, пока не найдёт все нужные, не кончится список или не
+// исчерпает maxRequests. Отбор — по полю deleted у каждого элемента.
+// TODO(G1): смысл deleted=true по выжимке не проверен (только удалённые или все); адресный запрос по id элемента в API нет.
+// → { found: [элементы с deleted: true], requests, complete: boolean }
+export async function findDeletedItems(api, folderId, wanted, { pageSize = SIGNAL_PAGE_MAX, pageEnd = 'empty', maxRequests = 1, signal } = {}) {
+  const need = wanted instanceof Set ? wanted : new Set(wanted)
+  const found = new Map()
+  const seen = new Set()
+  let requests = 0
+  let skip = 0
+  while (requests < maxRequests) {
+    const page = await api.listItems(folderId, { skip, take: pageSize, deleted: true }, { signal })
+    requests += 1
+    if (!page.length) return { found: [...found.values()], requests, complete: true }
+    let fresh = 0
+    for (const item of page) {
+      if (!seen.has(item.nodeId)) { seen.add(item.nodeId); fresh += 1 }
+      if (item.deleted === true && need.has(item.nodeId)) found.set(item.nodeId, item)
+    }
+    if (found.size >= need.size) return { found: [...found.values()], requests, complete: true }
+    if (fresh === 0) return { found: [...found.values()], requests, complete: false }
+    skip += page.length
+    if (pageEnd === 'short' && page.length < pageSize) return { found: [...found.values()], requests, complete: true }
+  }
+  return { found: [...found.values()], requests, complete: false }
 }

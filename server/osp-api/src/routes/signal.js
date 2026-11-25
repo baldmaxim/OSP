@@ -1,4 +1,4 @@
-// «Сверка договоров с Signal» — 17 маршрутов /api/signal/* (раздел 7 спецификации интеграции). Данные — снимок папок Signal
+// «Сверка договоров с Signal» — 20 маршрутов /api/signal/* (раздел 7 спецификации интеграции, волна исправлений §5). Данные — снимок папок Signal
 // в нашей базе (osp_private.signal_*, migration/yandex/20270228_signal_integration.sql); в Signal ходит только обход
 // (src/lib/signalSync.js) и добавление корня (маршрут 12, чтение дерева проекта). Браузер получает метки, окно сверки и
 // результат решений человека; чужие имена, пути и идентификаторы узлов в ответы не попадают.
@@ -9,18 +9,19 @@
 //   GET    /api/signal/folders                     — поиск папки объекта договора (при правке);
 //   POST   /api/signal/match                       — сверка 1–200 договоров по готовому снимку (в Signal не ходит, ссылку не меняет);
 //   POST   /api/signal/contracts/:id/{confirm,reject,unlink} — решения человека (одна транзакция в базе, CAS и ключ повтора);
-//   GET/POST/DELETE /api/signal/aliases[/:id]      — другие названия объекта в именах папок;
-//   POST   /api/signal/sources, PATCH …/sources/:id, POST …/bindings, POST …/sync, GET …/runs, GET …/unassigned — администратор.
+//   GET/POST/DELETE /api/signal/aliases[/:id]      — другие названия объекта в именах папок (список — сотруднику с правкой: свои, админу: все);
+//   POST   /api/signal/sources, PATCH …/sources/:id, POST …/bindings (objectId: null — «Снять»), POST …/bindings/preview, POST …/sync,
+//   GET    …/runs, …/unassigned, …/tree, …/bindings — администратор.
 //
 // Права. На маршруте — config.access (сотрудник, суперадминистратор или администратор, подрядчик — 403); решает база: каждая функция osp_private.signal_*
 // сама проверяет osp_can('contracts', …), охват объектов и (для узлов) границу объекта. Договор вне охвата — 404 без деталей.
 // Выключено (SIGNAL_SYNC≠1, нет схемы) — status отвечает { enabled: false }, остальное — 503 signal_disabled. Мутации при барьере
 // записи — 503 OSP_READONLY. Ответы — Cache-Control: private, no-store.
 import { z } from 'zod'
-import { access } from '../lib/access.js'
+import { access, REQUIREMENTS } from '../lib/access.js'
 import { READONLY_CODE, READONLY_TEXT } from '../lib/writeBarrier.js'
 import { SignalError, redact } from '../lib/signalClient.js'
-import { buildSignalUrl, contractContextKey, contractFingerprint, evaluateNode, nodeQueryFor, parseSignalUrl } from '../lib/signalMatch.js'
+import { buildSignalUrl, contractContextKey, contractFingerprint, evaluateNode, nodeKeyOf, nodeQueryFor, parseSignalUrl } from '../lib/signalMatch.js'
 import { normMatchName } from '../shared/matchName.js'
 import { codeKey } from '../shared/contractNumbering.js'
 
@@ -39,6 +40,8 @@ const CONFIRM_BODY = z.object({
   rememberAlias: z.string().trim().max(120).nullable().optional(),
   expectedSignalLink: z.string().max(2000).nullable(),
   expectedStateVersion: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  // ревизия строки очереди, как её видело окно (card.revision); нет — «окно строки не видело» (0)
+  expectedRevision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   idempotencyKey: uuid,
 })
 const REJECT_BODY = z.object({
@@ -50,13 +53,15 @@ const REJECT_BODY = z.object({
 const UNLINK_BODY = z.object({
   expectedSignalLink: z.string().min(1).max(2000),
   expectedStateVersion: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  expectedRevision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   idempotencyKey: uuid,
 })
 const ALIAS_BODY = z.object({ objectId: uuid, text: z.string().trim().min(2).max(120) })
 const SOURCE_BODY = z.object({ url: z.string().trim().min(1).max(2000), objectIds: z.array(uuid).max(20) })
 const SOURCE_PATCH = z.object({ enabled: z.boolean().optional(), objectIds: z.array(uuid).max(20).optional() })
   .refine((b) => b.enabled !== undefined || b.objectIds !== undefined)
-const BINDING_BODY = z.object({ sourceId: bigId, nodeId: uuid, objectId: uuid.nullable() })
+const BINDING_BODY = z.object({ sourceId: bigId, nodeId: uuid, objectId: uuid.nullable() }) // objectId: null — «Снять»
+const PREVIEW_BODY = z.object({ sourceId: bigId, nodeId: uuid, objectId: uuid.nullable() })
 
 // Сотрудник, а также суперадминистратор без строки user_roles (решение 24.11.2026: REQUIREMENTS.employeeOrSuperadmin, access.js);
 // подрядчик и заблокированный — отказ. Что можно по существу, решает база (osp_can / is_admin и охват объектов).
@@ -109,9 +114,10 @@ function sqlProblem(err) {
 const CONFLICT_TEXT = {
   object_mismatch: 'объект папки не совпадает с объектом договора',
   number_mismatch: 'номер в названии папки не совпал с номером договора',
-  building_mismatch: 'корпус, очередь или секция не совпали',
   foreign_dp: 'ДС относится к другому договору',
   ambiguous: 'в названии папки несколько номеров договоров',
+  ds_mismatch: 'номер ДС не совпал с номером в названии папки',
+  foreign_party: 'в названии папки ИНН другой организации',
 }
 
 const MSK = new Intl.DateTimeFormat('ru-RU', {
@@ -129,6 +135,23 @@ function moscow(value, withTime) {
   return `${p.day}.${p.month}.${p.year}${withTime ? ` ${p.hour}:${p.minute}` : ''}`
 }
 
+// «Данные устарели» (В-7): порог в рабочее время (пн–пт 08:00–20:00 по Москве, UTC+3 без перехода) и вне его — разный.
+export const SIGNAL_STALE_DEFAULTS = Object.freeze({ workHours: 3, offHours: 36 })
+const MSK_OFFSET_MS = 3 * 3_600_000
+export function isWorkTime(now) {
+  const t = new Date(new Date(now).getTime() + MSK_OFFSET_MS)
+  const day = t.getUTCDay()
+  const hour = t.getUTCHours()
+  return day >= 1 && day <= 5 && hour >= 8 && hour < 20
+}
+// dataAt — дата данных (ISO); нет даты — «не устарели» (данных ещё нет, об этом говорят значки). → { stale, staleHours }
+export function staleStatus(dataAt, now, { workHours = SIGNAL_STALE_DEFAULTS.workHours, offHours = SIGNAL_STALE_DEFAULTS.offHours } = {}) {
+  const staleHours = isWorkTime(now) ? workHours : offHours
+  const at = dataAt ? new Date(dataAt).getTime() : NaN
+  const stale = Number.isFinite(at) && new Date(now).getTime() - at > staleHours * 3_600_000
+  return { stale, staleHours }
+}
+
 // Состояние, как его показывает портал: договор ждёт пересчёта (в очереди ревизия новее обработанной) — «не сверялась» при
 // непустой ссылке, иначе «ссылки нет» (раздел 3 спецификации).
 export function shownState({ state, reason, pending, hasLink }) {
@@ -136,21 +159,40 @@ export function shownState({ state, reason, pending, hasLink }) {
   return { state, reason: reason || null, pending: false }
 }
 
-// Подсказка значка (раздел 8). Путь — только видимого узла; путь предложенной папки — только при праве правки (SQL его иначе не даёт).
-export function tipFor({ state, reason, pending, path, candidatePath, checkedAt, dataAt }) {
+// Подсказка значка (раздел 8, §1 волны исправлений). Путь — только видимого узла от границы объекта; путь предложенной папки —
+// только при праве правки (SQL его иначе не даёт). «Данные на …» — дата данных корня узла (dataAt), не дата пересчёта.
+const UNVERIFIED_TIPS = {
+  unsupported_url: 'Signal: формат ссылки не поддерживается',
+  unavailable: 'Signal: папка недоступна для сверки',
+  no_snapshot: 'Signal: данных Signal ещё нет — ссылка не сверялась',
+  not_observed: 'Signal: папка не найдена в последнем обходе — ссылка не сверялась',
+  no_object: 'Signal: у договора не указан объект',
+}
+const ATTENTION_TIPS = {
+  not_visible: 'Signal: папка не видна в Signal',
+  file_not_visible: 'Signal: файл не виден в Signal',
+  building_mismatch: 'Signal: корпус, очередь или секция не совпали — проверьте',
+  kind_mismatch: 'Signal: папка относится к допсоглашению — проверьте',
+}
+export function tipFor({ state, reason, pending, path, candidatePath, dataAt }) {
+  const when = dataAt ? ` · данные на ${moscow(dataAt, false)}` : '' // ДД.ММ.ГГГГ по Москве
+  const where = path ? ` · ${path}` : ''
   switch (state) {
     case 'suggested': return candidatePath ? `Signal: предложена папка ${candidatePath}` : 'Signal: предложена папка'
-    case 'verified': return `Signal: сверено ${moscow(checkedAt || dataAt, false)}${path ? ` · ${path}` : ''}`.replace(/ $/, '')
-    case 'unverified': return pending || !dataAt ? 'Signal: ссылка не сверялась' : `Signal: ссылка не сверялась — данные на ${moscow(dataAt, true)}`
-    case 'attention': return 'Signal: папка не видна в Signal'
+    case 'verified': return `Signal: сверено${when}${where}`
+    case 'accepted': return `Signal: ссылка принята, номер в папке не найден${when}${where}`
+    case 'unverified':
+      if (pending || reason === 'pending') return 'Signal: ссылка не сверялась'
+      return UNVERIFIED_TIPS[reason] || (dataAt ? `Signal: ссылка не сверялась — данные на ${moscow(dataAt, true)}` : 'Signal: ссылка не сверялась')
+    case 'attention': return ATTENTION_TIPS[reason] || 'Signal: папка не видна в Signal'
     case 'missing': return 'Signal: файл удалён в Signal'
     case 'conflict': return `Signal: противоречие — ${CONFLICT_TEXT[reason] || 'проверьте данные договора'}`
-    default: return 'Signal: ссылки нет'
+    default: return reason === 'no_object' ? UNVERIFIED_TIPS.no_object : 'Signal: ссылки нет'
   }
 }
 
-// Причины, при которых узел договору не виден: решает база (signal_confirm → node_unavailable / object_unassigned).
-const HIDDEN_REASONS = new Set(['outside_roots', 'object_unassigned', 'root_disabled', 'not_in_snapshot', 'no_snapshot'])
+// Причины, при которых узел договору не виден: решает база (signal_confirm → node_unavailable / object_unassigned, 422 без деталей).
+const HIDDEN_REASONS = new Set(['unavailable', 'no_object', 'no_snapshot'])
 
 // Другое название объекта не должно совпадать с именем или кодом другого объекта (иначе папки чужого объекта «притянулись» бы).
 function clashesWithOtherObject(key, objects, ownId) {
@@ -164,7 +206,7 @@ function clashesWithOtherObject(key, objects, ownId) {
 }
 
 export function registerSignal(app, ctx) {
-  const { db, isReadOnly, signal } = ctx
+  const { db, isReadOnly, signal, isSuperadmin } = ctx
   const cfg = signal?.config || {}
   const jobs = signal?.jobs
   const sync = signal?.sync
@@ -219,16 +261,33 @@ export function registerSignal(app, ctx) {
   }
 
   // ── 1. status ──────────────────────────────────────────────────────────────────────────────────────────────────────
+  // Часы — подменяемые только тестом (config.signal.now); в службе — Date.now.
+  const clockNow = () => new Date(typeof cfg.now === 'function' ? cfg.now() : Date.now())
+  const staleOpts = { workHours: cfg.staleWorkHours ?? SIGNAL_STALE_DEFAULTS.workHours, offHours: cfg.staleOffHours ?? SIGNAL_STALE_DEFAULTS.offHours }
+  // Администратор для ответа «выключено»: схемы в базе может не быть, поэтому — по роли вошедшего (как REQUIREMENTS.admin на маршрутах).
+  const adminByRole = async (request) => {
+    try { return Boolean(await REQUIREMENTS.admin(request.auth.roleRow, { auth: request.auth, isSuperadmin })) } catch { return false }
+  }
+  // Почему выключено: not_enabled (SIGNAL_SYNC≠1) | config_invalid | no_schema | db_error. Только администратору.
+  const disabledStatus = async (request) => {
+    if (!(await adminByRole(request))) return { enabled: false }
+    const reason = !signal ? 'not_enabled' : capability?.reason?.() || 'db_error'
+    return { enabled: false, disabledReason: reason, configErrors: reason === 'config_invalid' ? [...(cfg.configErrors || [])] : [] }
+  }
+
   route({
     method: 'GET', url: '/api/signal/status', access: access.user(EMPLOYEE),
     handler: async (request) => {
-      if (!on()) return { enabled: false }
+      if (!on()) return disabledStatus(request)
       const who = whoOf(request)
       const flags = await readFn(who, 'signal_user_flags', [])
       if (!flags?.canView) return { enabled: false }
       const meta = await capability.meta()
+      const now = clockNow()
+      const dataAt = meta.dataAt ?? meta.publishedAt
+      const { stale, staleHours } = staleStatus(dataAt, now, staleOpts)
       const out = {
-        enabled: true, dataAt: meta.publishedAt, generation: meta.generation, canView: true, canEdit: Boolean(flags.canEdit),
+        enabled: true, dataAt, stale, staleHours, generation: meta.generation, canView: true, canEdit: Boolean(flags.canEdit),
         isAdmin: Boolean(flags.isAdmin), confirmAvailable: buildTemplateOk(cfg.uiFolderUrl, 'folder'), fileLinks: buildTemplateOk(cfg.uiFileUrl, 'item'),
       }
       if (flags.isAdmin) {
@@ -238,12 +297,29 @@ export function registerSignal(app, ctx) {
         out.sources = (st?.sources || []).map((s) => ({
           id: s.id, projectName: s.projectName, rootPath: s.rootPath, enabled: s.enabled, ready: s.ready, objects: s.objects || [],
           lastOkAt: iso(s.lastOkAt), lastNightOkAt: iso(s.lastNightOkAt), lastError: s.lastError, folders: s.folders, items: s.items,
+          status: s.status || 'ok', failedSince: iso(s.failedSince), problems: Number(s.problems || 0),
         }))
         out.lastRuns = (st?.lastRuns || []).map(runOf)
+        const run = st?.running
+        out.running = run ? { runId: Number(run.runId), startedAt: iso(run.startedAt), heartbeatAt: iso(run.heartbeatAt), stuck: Boolean(run.stuck) } : null
+        // Отложенный прогон, который ещё можно принять (accept-held): номер и поколение для команды, С-50.
+        const held = st?.lastHeld
+        out.held = held?.acceptable ? { runId: Number(held.id), generation: Number(held.generation ?? meta.generation) } : null
+        out.alerts = alertsOf({ sources: out.sources, running: out.running, held: out.held, heldSince: held ? iso(held.finishedAt ?? held.startedAt) : null, stale, dataAt })
       }
       return out
     },
   })
+
+  // Оповещения администратору (В-5): сбойный корень, отложенный прогон, не отвечающий прогон, устаревшие данные.
+  function alertsOf({ sources, running, held, heldSince, stale, dataAt }) {
+    const alerts = []
+    for (const s of sources) if (s.status === 'failed') alerts.push({ kind: 'root_failed', sourceId: s.id, since: s.failedSince })
+    if (held) alerts.push({ kind: 'run_held', runId: held.runId, since: heldSince })
+    if (running?.stuck) alerts.push({ kind: 'run_stuck', runId: running.runId, since: running.heartbeatAt })
+    if (stale) alerts.push({ kind: 'data_stale', since: iso(dataAt) })
+    return alerts
+  }
 
   const runOf = (r) => ({
     id: r.id, kind: r.kind, mode: r.mode, status: r.status, reason: r.reason, initiator: r.initiator,
@@ -261,9 +337,11 @@ export function registerSignal(app, ctx) {
       return {
         items: (r.items || []).map((m) => {
           const s = shownState({ state: m.state, reason: m.reason, pending: m.pending, hasLink: m.hasLink })
+          // Дата данных значка — корня его узла (иначе дата последней публикации): «данные на …» в подсказке и dataAt у фронта.
+          const dataAt = m.dataAt ?? r.dataAt
           return {
             id: m.id, state: s.state, reason: s.reason, pending: s.pending, hasCandidate: Number(m.candidates || 0) > 0,
-            tip: tipFor({ ...s, path: m.path, candidatePath: m.candidatePath, checkedAt: m.checkedAt, dataAt: r.dataAt }),
+            tip: tipFor({ ...s, path: m.path, candidatePath: m.candidatePath, dataAt }), dataAt: iso(dataAt),
           }
         }),
         next: r.next ?? null,
@@ -286,8 +364,10 @@ export function registerSignal(app, ctx) {
       const projectId = r.node?.projectId
       const out = {
         state: s.state, reason: s.reason, pending: s.pending, stateVersion: Number(r.stateVersion || 0), signalLink: r.signalLink ?? null,
+        // ревизия строки очереди на момент чтения (null — строки нет): окно возвращает её в confirm / unlink как expectedRevision (С-18)
+        revision: r.revision === null || r.revision === undefined ? null : Number(r.revision),
         dataAt: iso(r.dataAt),
-        node: r.node ? { nodeId: r.node.nodeId, path: r.node.path, observed: Boolean(r.node.observed), modifiedAt: iso(r.node.modifiedAt) } : null,
+        node: r.node ? { nodeId: r.node.nodeId, kind: r.node.kind ?? null, path: r.node.path, observed: Boolean(r.node.observed), modifiedAt: iso(r.node.modifiedAt) } : null,
         files: (r.files || []).map((f) => ({
           nodeId: f.nodeId, kind: f.kind, name: f.name, version: f.version ?? null, modifiedAt: iso(f.modifiedAt), deleted: Boolean(f.deleted),
           url: f.kind === 'item' && !f.deleted && cfg.uiFileUrl && projectId
@@ -298,7 +378,10 @@ export function registerSignal(app, ctx) {
         confirmAvailable: buildTemplateOk(cfg.uiFolderUrl, 'folder'),
       }
       if (r.canEdit) {
-        out.candidates = (r.candidates || []).map((c) => ({ nodeId: c.nodeId, path: c.path, score: c.score, reasons: c.reasons || [], flags: c.flags || [], status: c.status }))
+        out.candidates = (r.candidates || []).map((c) => ({
+          nodeId: c.nodeId, path: c.path, score: c.score, reasons: c.reasons || [], flags: c.flags || [], status: c.status,
+          prevStatus: c.prevStatus ?? null, prevDecidedAt: iso(c.prevDecidedAt),
+        }))
       }
       return out
     },
@@ -380,17 +463,20 @@ export function registerSignal(app, ctx) {
       const node = input.nodes.find((n) => n.nodeId === b.nodeId)
       if (!node || node.kind !== 'folder') return problem(reply, 422, 'node_unavailable', T.outside)
       const verdict = evaluateNode({ ...input.contract, nodes: input.nodes, objects: input.objects }, b.nodeId, { generation: input.generation })
+      // Жёсткое противоречие — 409 hard_conflict (то же правило повторяет база). Подтверждаемо: verified, accepted и мягкие
+      // attention:building_mismatch / kind_mismatch (ответ несёт warning).
       if (verdict.state === 'conflict') return problem(reply, 409, 'hard_conflict', T.hardConflict)
-      // Скрытые причины (чужой объект, корень выключен…) оставляем базе: её ответ — 422 без деталей. Прочее неподтверждаемое — отказ здесь.
+      // Скрытые причины (узел не виден договору, нет объекта…) оставляем базе: её ответ — 422 без деталей. Прочее неподтверждаемое — отказ здесь.
       if (!verdict.confirmable && !HIDDEN_REASONS.has(verdict.reason)) return problem(reply, 409, 'confirm_unavailable', T.confirmNo)
       const built = buildSignalUrl(cfg.uiFolderUrl, { projectId: node.projectId, nodeId: b.nodeId, kind: 'folder' })
       if (!built) return problem(reply, 409, 'confirm_unavailable', T.confirmNoUrl)
-      // База сравнивает ссылки строками. Ссылка договора в другом допустимом виде (другой шаблон из SIGNAL_URL_FORMATS, uuid в
-      // верхнем регистре, лишние query/fragment) указывает на тот же узел — это не замена: ссылку не меняем, передаём текущую.
-      // Только если клиент видел именно её (иначе база ответит stale_state); прочие ссылки — «Заменить», как раньше.
+      // База сравнивает ссылки строками. Подтверждение ТЕКУЩЕЙ папки (accepted, мягкие предупреждения — без выбора кандидата): nodeId —
+      // узел, разобранный из текущей ссылки договора (любой допустимый вид: другой шаблон из SIGNAL_URL_FORMATS, uuid в верхнем
+      // регистре, лишние query/fragment) — это не замена: передаём ссылку как есть, она не меняется и «Заменить» не нужно. Клиент, не
+      // видевший эту ссылку, получает от базы stale_state. Любая другая папка — адрес по шаблону SIGNAL_UI_FOLDER_URL (replace_required).
       const current = String(input.contract.signalLink ?? '').trim()
       let url = built
-      if (current && current === String(b.expectedSignalLink ?? '').trim()) {
+      if (current) {
         const same = parseSignalUrl(current, formats)
         if (same.ok && same.kind === 'folder' && same.projectId === String(node.projectId).toLowerCase() && same.nodeId === b.nodeId) url = current
       }
@@ -406,13 +492,14 @@ export function registerSignal(app, ctx) {
       const fingerprint = contractFingerprint({ ...input.contract, signalLink: url })
       const r = await writeFn(whoOf(request), 'signal_confirm', [
         a(p.id, 'uuid'), a(b.nodeId, 'uuid'), a(url, 'text'), a(b.replace, 'boolean'), a(aliasText, 'text'), a(aliasKey, 'text'), a(fingerprint, 'text'),
-        a(b.expectedSignalLink ?? null, 'text'), a(b.expectedStateVersion, 'bigint'), a(b.idempotencyKey, 'text'),
+        a(b.expectedSignalLink ?? null, 'text'), a(b.expectedStateVersion, 'bigint'), a(b.idempotencyKey, 'text'), a(b.expectedRevision ?? 0, 'bigint'),
       ])
-      return { state: r.state, reason: r.reason, stateVersion: Number(r.stateVersion), signalLink: r.signalLink ?? null }
+      return { state: r.state, reason: r.reason, stateVersion: Number(r.stateVersion), signalLink: r.signalLink ?? null, warning: verdict.warning ?? null }
     },
   })
 
   // ── 7. reject ──────────────────────────────────────────────────────────────────────────────────────────────────────
+  // Отказ привязан к «виду» папки (nodeKey, С-53): переименованная или заменённая по смыслу папка с тем же id предложится снова.
   route({
     method: 'POST', url: '/api/signal/contracts/:id/reject', access: access.user(withRate(EMPLOYEE, 'signalWrite')), body: REJECT_BODY,
     handler: async (request, reply) => {
@@ -420,11 +507,12 @@ export function registerSignal(app, ctx) {
       if (!p) return bad(reply)
       if (await decisionRefused(request, reply, p.id)) return reply
       const b = request.body
-      const loaded = await jobs.store.load([p.id])
-      const contract = (loaded?.contracts || [])[0]
-      if (!contract) return problem(reply, 404, 'not_found', T.notFound)
+      const input = await inputFor(p.id, [b.nodeId])
+      if (!input) return problem(reply, 404, 'not_found', T.notFound)
+      const node = input.nodes.find((n) => n.nodeId === b.nodeId)
       const r = await writeFn(whoOf(request), 'signal_reject', [
-        a(p.id, 'uuid'), a(b.nodeId, 'uuid'), a(b.note ?? null, 'text'), a(contractContextKey(contract), 'text'), a(b.expectedStateVersion, 'bigint'), a(b.idempotencyKey, 'text'),
+        a(p.id, 'uuid'), a(b.nodeId, 'uuid'), a(b.note ?? null, 'text'), a(contractContextKey(input.contract), 'text'), a(b.expectedStateVersion, 'bigint'),
+        a(b.idempotencyKey, 'text'), a(node ? nodeKeyOf(node) : null, 'text'),
       ])
       return { state: r.state, reason: r.reason ?? null, stateVersion: Number(r.stateVersion) }
     },
@@ -438,23 +526,33 @@ export function registerSignal(app, ctx) {
       if (!p) return bad(reply)
       if (await decisionRefused(request, reply, p.id)) return reply
       const b = request.body
-      const loaded = await jobs.store.load([p.id])
-      const contract = (loaded?.contracts || [])[0]
-      if (!contract) return problem(reply, 404, 'not_found', T.notFound)
+      const input = await inputFor(p.id)
+      if (!input) return problem(reply, 404, 'not_found', T.notFound)
+      // Вид отвязанной папки: пара «договор — эта папка» не предлагается снова, пока папка та же (nodeKey) и контекст договора тот же.
+      const linked = parseSignalUrl(String(input.contract.signalLink ?? ''), formats)
+      const node = linked.ok ? input.nodes.find((n) => n.nodeId === linked.nodeId) : null
       const r = await writeFn(whoOf(request), 'signal_unlink', [
-        a(p.id, 'uuid'), a(contractContextKey(contract), 'text'), a(b.expectedSignalLink, 'text'), a(b.expectedStateVersion, 'bigint'), a(b.idempotencyKey, 'text'),
+        a(p.id, 'uuid'), a(contractContextKey(input.contract), 'text'), a(b.expectedSignalLink, 'text'), a(b.expectedStateVersion, 'bigint'), a(b.idempotencyKey, 'text'),
+        a(b.expectedRevision ?? 0, 'bigint'), a(node ? nodeKeyOf(node) : null, 'text'),
       ])
       return { state: r.state, reason: r.reason ?? null, stateVersion: Number(r.stateVersion) }
     },
   })
 
   // ── 9–11. aliases ──────────────────────────────────────────────────────────────────────────────────────────────────
+  // Сотруднику с правкой — только свои названия в его охвате (С-2), администратору — все (conflict — название совпало с названием или
+  // кодом другого объекта и сверкой не используется; mine — своё). Что можно, решает база: просмотру — 403.
   route({
-    method: 'GET', url: '/api/signal/aliases', access: access.user(ADMIN),
+    method: 'GET', url: '/api/signal/aliases', access: access.user(EMPLOYEE),
     handler: async (request, reply) => {
       if (!on()) return off(reply)
       const r = await readFn(whoOf(request), 'signal_alias_list', [])
-      return { items: (r.items || []).map((x) => ({ id: x.id, text: x.text, objectId: x.objectId, objectName: x.objectName, author: x.author ?? null, createdAt: iso(x.createdAt) })) }
+      return {
+        items: (r.items || []).map((x) => ({
+          id: x.id, text: x.text, objectId: x.objectId, objectName: x.objectName, author: x.author ?? null, createdAt: iso(x.createdAt),
+          conflict: Boolean(x.conflict), mine: Boolean(x.mine),
+        })),
+      }
     },
   })
 
@@ -622,6 +720,63 @@ export function registerSignal(app, ctx) {
       const b = request.body
       await writeFn(whoOf(request), 'signal_binding_set', [a(Number(b.sourceId), 'bigint'), a(b.nodeId, 'uuid'), a(b.objectId ?? null, 'uuid')])
       return { ok: true }
+    },
+  })
+
+  // ── 18. tree ───────────────────────────────────────────────────────────────────────────────────────────────────────
+  // Дерево папок корня для разметки любой глубины (В-6): дети папки (без q) или поиск по корню (q ≤ 100 знаков). Администратор
+  // видит полные имена и пути; наблюдаемые в последнем обходе папки.
+  route({
+    method: 'GET', url: '/api/signal/tree', access: access.user(ADMIN),
+    handler: async (request, reply) => {
+      if (!on()) return off(reply)
+      const q = parse(z.object({
+        sourceId: digits.refine((n) => n > 0), parentId: uuid.optional(), q: z.string().max(100).optional(), after: z.string().max(8100).optional(),
+        limit: intParam(1, 100, 100),
+      }), request.query || {})
+      if (!q) return bad(reply)
+      const text = q.q?.trim() ? q.q.trim() : null
+      const r = await readFn(whoOf(request), 'signal_tree', [a(q.sourceId, 'bigint'), a(q.parentId ?? null, 'uuid'), a(text, 'text'), a(q.after ?? null, 'text'), a(q.limit, 'int')])
+      return {
+        items: (r.items || []).map((x) => ({
+          nodeId: x.nodeId, name: x.name, path: x.path, depth: Number(x.depth || 0), objectId: x.objectId ?? null, objectName: x.objectName ?? null,
+          bound: Boolean(x.bound), boundObjectId: x.boundObjectId ?? null, hasChildren: Boolean(x.hasChildren), items: Number(x.items || 0), problem: x.problem ?? null,
+        })),
+        next: r.next ?? null,
+      }
+    },
+  })
+
+  // ── 19. bindings (список) ──────────────────────────────────────────────────────────────────────────────────────────
+  route({
+    method: 'GET', url: '/api/signal/bindings', access: access.user(ADMIN),
+    handler: async (request, reply) => {
+      if (!on()) return off(reply)
+      const q = parse(z.object({ sourceId: digits.refine((n) => n > 0) }), request.query || {})
+      if (!q) return bad(reply)
+      const r = await readFn(whoOf(request), 'signal_bindings_list', [a(q.sourceId, 'bigint')])
+      return {
+        rootObjects: (r.rootObjects || []).map((o) => ({ objectId: o.objectId, objectName: o.objectName })),
+        items: (r.items || []).map((x) => ({
+          nodeId: x.nodeId, path: x.path, objectId: x.objectId, objectName: x.objectName, createdAt: iso(x.createdAt), observed: Boolean(x.observed),
+        })),
+      }
+    },
+  })
+
+  // ── 20. bindings/preview ───────────────────────────────────────────────────────────────────────────────────────────
+  // Что изменится от привязки поддерева к объекту (читает, не пишет): предупреждения «внутри есть номера договоров другого объекта»
+  // и число затронутых папок и файлов. Привязка — POST /api/signal/bindings (objectId: null — «Снять»).
+  route({
+    method: 'POST', url: '/api/signal/bindings/preview', access: access.user(ADMIN), body: PREVIEW_BODY,
+    handler: async (request, reply) => {
+      if (!on()) return off(reply)
+      const b = request.body
+      const r = await readFn(whoOf(request), 'signal_binding_preview', [a(Number(b.sourceId), 'bigint'), a(b.nodeId, 'uuid'), a(b.objectId ?? null, 'uuid')])
+      return {
+        warnings: (r.warnings || []).map((w) => ({ objectId: w.objectId, objectName: w.objectName, folders: Number(w.folders || 0) })),
+        affected: { folders: Number(r.affected?.folders || 0), items: Number(r.affected?.items || 0) },
+      }
     },
   })
 }

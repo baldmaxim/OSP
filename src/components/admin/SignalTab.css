@@ -9,7 +9,7 @@
 .sg-hint { margin: 0; font-size: 0.75rem; line-height: 1.45; color: var(--text-tertiary); }
 .sg-muted { color: var(--text-tertiary); font-size: 0.8125rem; }
 .sg-error { margin: 0; color: #dc2626; font-size: 0.875rem; }
-.sg-warn { margin: 0; padding: 0.5rem 0.75rem; font-size: 0.8125rem; line-height: 1.45; color: #92400e; background: rgba(245, 158, 11, 0.14); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; }
+.sg-warn, .sg-stale { margin: 0; padding: 0.5rem 0.75rem; font-size: 0.8125rem; line-height: 1.45; color: #92400e; background: rgba(245, 158, 11, 0.14); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; }
 
 .sg-chip { display: inline-block; padding: 0.0625rem 0.5rem; border-radius: 999px; font-size: 0.75rem; line-height: 1.5; background: var(--bg-tertiary, rgba(100, 116, 139, 0.12)); color: var(--text-secondary); overflow-wrap: anywhere; }
 .sg-chip.is-ok { background: rgba(22, 163, 74, 0.12); color: #15803d; }
@@ -29,9 +29,52 @@
 .sg-name { font-weight: 500; overflow-wrap: anywhere; }
 .sg-actions { display: flex; flex-wrap: wrap; gap: 0.375rem; }
 .sg-danger { color: #b91c1c; }
-.sg-bind { display: flex; flex-wrap: wrap; gap: 0.375rem; align-items: center; }
 .sg-unassigned { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
 .sg-unassigned .sg-table-wrap { align-self: stretch; }
+.sg-bindings, .sg-tree-box { display: flex; flex-direction: column; gap: 0.5rem; align-items: stretch; }
+.sg-bindings + .sg-bindings, .sg-tree-box + .sg-tree-box, .sg-unassigned + .sg-unassigned { margin-top: 0.5rem; }
+.sg-aliases tr.is-conflict td { background: rgba(245, 158, 11, 0.07); }
+
+/* Оповещения сервера и свежесть данных (В-5, В-7): баннер наверху вкладки; цвет — не единственный признак, у каждой строки есть текст. */
+.sg-alerts { padding: 0.5rem 0.75rem; border: 1px solid rgba(245, 158, 11, 0.45); border-radius: 8px; background: rgba(245, 158, 11, 0.1); }
+.sg-alerts ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.25rem; }
+.sg-alerts li { position: relative; padding-left: 1.125rem; font-size: 0.8125rem; line-height: 1.45; color: #92400e; overflow-wrap: anywhere; }
+.sg-alerts li::before { content: '!'; position: absolute; left: 0; top: 0; width: 0.875rem; font-weight: 700; text-align: center; }
+.sg-alerts li.is-bad { color: #b91c1c; }
+.sg-disabled .sg-error, .sg-disabled .sg-warn { overflow-wrap: anywhere; }
+
+/* Отложенный прогон: номер, поколение и готовая команда принятия (С-50). */
+.sg-held { display: flex; flex-direction: column; gap: 0.375rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-secondary); }
+.sg-held .sg-note { overflow-wrap: anywhere; }
+.sg-cmd { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.5rem; }
+.sg-code { flex: 1 1 18rem; min-width: 0; padding: 0.375rem 0.625rem; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8125rem; line-height: 1.45; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; overflow-wrap: anywhere; user-select: all; }
+
+/* Окно «Привязать к объекту…» */
+.sg-path { margin: 0; font-size: 0.8125rem; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.sg-warn-list { margin: 0 0 0.375rem; padding-left: 1.125rem; }
+.sg-warn-list li { margin: 0.125rem 0; font-weight: 600; }
+.sg-warn-text { margin: 0.25rem 0 0; }
+
+/* Дерево папок корня: раскрытие по клику, поиск плоским списком. */
+.sg-tree-search { max-width: 28rem; }
+.sg-tree { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.sg-tree-item { min-width: 0; border-bottom: 1px solid var(--border-color); }
+.sg-tree-item:last-child { border-bottom: none; }
+.sg-tree-box > .sg-tree, .sg-found { border: 1px solid var(--border-color); border-radius: 8px; padding: 0 0.375rem; }
+.sg-found { padding: 0.25rem 0.375rem; }
+.sg-found > .sg-tree { border: none; padding: 0; }
+.sg-tree-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; padding: 0.3125rem 0; min-width: 0; }
+.sg-tree-toggle, .sg-tree-gap { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; }
+.sg-tree-toggle { padding: 0; color: var(--text-secondary); background: none; border: none; border-radius: 4px; cursor: pointer; }
+.sg-tree-toggle:hover { color: var(--text-primary); background: var(--bg-tertiary, rgba(100, 116, 139, 0.12)); }
+.sg-tree-toggle:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.sg-tree-name { flex: 1 1 10rem; min-width: 0; font-size: 0.8125rem; font-weight: 500; color: var(--text-primary); overflow-wrap: anywhere; }
+.sg-tree-path { flex-basis: 16rem; }
+.sg-tree-count { flex: 0 0 auto; font-size: 0.75rem; font-variant-numeric: tabular-nums; color: var(--text-secondary); white-space: nowrap; }
+.sg-tree-act { flex: 0 0 auto; }
+.sg-tree-kids { margin-left: 0.75rem; padding-left: 0.5rem; border-left: 2px solid var(--border-color); }
+.sg-tree-kids .sg-tree-item:last-child { border-bottom: none; }
+.sg-tree-more { align-self: flex-start; margin: 0.25rem 0; }
 
 /* Окна «Добавить корень» и «Объекты…» */
 .sg-overlay { position: fixed; inset: 0; z-index: 1290; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgba(15, 23, 42, 0.45); }
@@ -43,7 +86,6 @@
 .sg-field { display: flex; flex-direction: column; gap: 0.25rem; }
 .sg-label { font-size: 0.75rem; color: var(--text-tertiary); }
 .sg-input { width: 100%; box-sizing: border-box; padding: 0.375rem 0.625rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: 0.875rem; }
-.sg-bind .sg-input { width: auto; min-width: 12rem; }
 .sg-dialog-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .sg-picker { display: flex; flex-direction: column; gap: 0.375rem; }
 .sg-pick-list { list-style: none; margin: 0; padding: 0.25rem 0.5rem; max-height: 15rem; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); }
@@ -52,9 +94,11 @@
 .sg-check span { min-width: 0; overflow-wrap: anywhere; }
 
 [data-theme='dark'] .sg-chip.is-ok { color: #86efac; }
-[data-theme='dark'] .sg-chip.is-warn, [data-theme='dark'] .sg-warn { color: #fcd34d; }
+[data-theme='dark'] .sg-chip.is-warn, [data-theme='dark'] .sg-warn, [data-theme='dark'] .sg-stale { color: #fcd34d; }
 [data-theme='dark'] .sg-chip.is-bad, [data-theme='dark'] .sg-danger { color: #fca5a5; }
 [data-theme='dark'] .sg-chip.is-info { color: #93c5fd; }
+[data-theme='dark'] .sg-alerts li { color: #fcd34d; }
+[data-theme='dark'] .sg-alerts li.is-bad { color: #fca5a5; }
 
 /* Телефон: таблицы — карточками, только просмотр (кнопок изменений нет). */
 @media (max-width: 640px) {
@@ -68,4 +112,5 @@
   .sg-table td[data-label]:not(:first-child)::before { content: attr(data-label) ': '; color: var(--text-tertiary); }
   .sg-dialog { padding: 1rem; }
   .sg-input, .sg-check { font-size: 1rem; }
+  .sg-code { flex-basis: 100%; }
 }

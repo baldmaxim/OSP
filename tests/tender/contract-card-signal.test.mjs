@@ -1,10 +1,15 @@
-// «Путь к Signal» в карточке договора (интеграция с SIGNAL, 23.11.2026; пакет P5b). Стенд — tests/tender/ui/signal-stand.html
-// (page=card, данные seed.js ?contracts=30, «сервер сверки» — signal-fake.js и надстройка signal-card-fake.js, всё из памяти).
-// Правила состояний и текстов — src/utils/signalPathRow.js, сервер и база — tests/osp-api, tests/db. Проверяем:
-//   • состояния текстом: «сверено 23.11.2026», «ссылка не сверялась — данные на …», «противоречие: …», «папка не видна в
-//     Signal», «файл удалён в Signal», «предложена папка …» (только при праве правки); без интеграции — прежний SignalLinkCell;
+// «Путь к Signal» в карточке договора (интеграция с SIGNAL, 23.11.2026; пакет P5b; волна исправлений 24.11.2026: С-21, В-10, С-2).
+// Стенд — tests/tender/ui/signal-stand.html (page=card, данные seed.js ?contracts=30, «сервер сверки» — signal-fake.js и надстройки
+// signal-card-fake.js и signal-admin-fake.js, всё из памяти). Правила состояний и текстов — src/utils/signalPathRow.js, сервер и
+// база — tests/osp-api, tests/db. Проверяем:
+//   • состояния текстом: «сверено 23.11.2026», «ссылка принята, номер в папке не найден» (accepted), «ссылка не сверялась — данные
+//     на …», «противоречие: …», «папка не видна в Signal», «файл не виден в Signal», «файл удалён в Signal», «корпус, очередь или
+//     секция не совпали — проверьте», «предложена папка …» (только при праве правки); без интеграции — прежний SignalLinkCell;
+//   • путь папки — ровно тот, что отдал сервер (он от границы объекта, С-21): ни имени корня или проекта, ни предков выше границы;
 //   • с правом правки — «Сверить…» (окно сверки по договору) и «Отвязать» (подтверждение, ключ идемпотентности, версия и
 //     ссылка окна; устаревшая версия — «Данные изменились — обновите»); без права правки — ни кнопок, ни предложения;
+//   • запомненные названия объекта договора (С-2): сотрудник с правкой видит и удаляет СВОИ (чужих и других объектов нет),
+//     администратор видит все с отметкой «конфликт»; без права правки — запроса и блока нет;
 //   • «В папке: N файлов · данные на …» свёрнут по умолчанию; раскрыт — имя, версия, дата, «↗» в SIGNAL (<a target=_blank>,
 //     только если сервер прислал url); подпапка — отдельным запросом; файл не скачивается через портал;
 //   • сбой сервиса — строка как без сверки; телефон 390 px — без прокрутки вбок, список на всю ширину.
@@ -12,7 +17,10 @@ import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
-import { rowState, filesSummary, fileMeta, hasReviewWork, ruDate, ruDateTime } from '../../src/utils/signalPathRow.js'
+import * as signalText from '../../src/utils/signalPathRow.js'
+
+// Через пространство имён: чего в модуле нет (старый код), то падает в своём тесте, а не рушит весь файл.
+const { rowState, filesSummary, fileMeta, hasReviewWork, ruDate, ruDateTime, aliasesForObject } = signalText
 
 const DATA_AT = '2026-11-23T11:00:00.000Z' // 14:00 по Москве
 
@@ -37,6 +45,21 @@ describe('Путь к Signal: правила подписей', () => {
     assert.equal(rowState({ ...suggested, candidates: [{ nodeId: 'n', path: 'x', status: 'rejected' }] }, { canEdit: true }), null)
     assert.equal(rowState({ signalLink: null, state: 'none', reason: 'none' }, { canEdit: true }), null)
   })
+  it('состояния волны исправлений: принята (зелёная), корпус не совпал, файл не виден, папка допсоглашения, недоступна, нет объекта; противоречия ДС и стороны', () => {
+    const accepted = rowState(data({ state: 'accepted', reason: 'number_not_found' }))
+    assert.deepEqual(accepted, { tone: 'ok', text: 'ссылка принята, номер в папке не найден', why: 'данные на 23.11.2026 14:00' })
+    assert.equal(rowState(data({ state: 'attention', reason: 'building_mismatch' })).text, 'корпус, очередь или секция не совпали — проверьте')
+    assert.equal(rowState(data({ state: 'attention', reason: 'building_mismatch' })).tone, 'warn')
+    assert.equal(rowState(data({ state: 'attention', reason: 'kind_mismatch' })).text, 'папка относится к допсоглашению — проверьте')
+    assert.equal(rowState(data({ state: 'attention', reason: 'file_not_visible' })).text, 'файл не виден в Signal', 'ссылка на файл (В-10)')
+    assert.equal(rowState(data({ state: 'attention', reason: 'not_visible' })).text, 'папка не видна в Signal', 'ссылка на папку')
+    assert.match(rowState(data({ state: 'attention', reason: 'что-то новое' })).text, /^требует внимания$/, 'неизвестная причина — без показа кода')
+    assert.equal(rowState(data({ state: 'conflict', reason: 'ds_mismatch' })).text, 'противоречие: номер ДС не совпал с номером в названии папки')
+    assert.equal(rowState(data({ state: 'conflict', reason: 'foreign_party' })).text, 'противоречие: в названии папки ИНН другой организации')
+    const unavailable = rowState(data({ state: 'unverified', reason: 'unavailable' }))
+    assert.deepEqual([unavailable.tone, unavailable.why], ['neutral', 'папка недоступна для сверки'])
+    assert.equal(rowState(data({ state: 'unverified', reason: 'no_object' })).why, 'у договора не указан объект')
+  })
   it('слова «удалена» про папку нет; файл — «удалён в Signal»', () => {
     const texts = ['attention', 'conflict', 'unverified', 'missing', 'verified'].map((state) => rowState(data({ state, reason: 'not_visible' }))?.text || '')
     assert.ok(!texts.some((t) => /папка удалена/i.test(t)))
@@ -48,6 +71,11 @@ describe('Путь к Signal: правила подписей', () => {
     assert.equal(filesSummary([{ kind: 'item' }, { kind: 'item' }, { kind: 'item' }], { more: true }), 'В папке: 3+ файла')
     assert.equal(fileMeta(files[1]), 'v3 · 12.11.2026')
     assert.equal(fileMeta({ name: 'x' }), '')
+  })
+  it('синонимы объекта договора (С-2): только свой объект', () => {
+    const items = [{ id: 'a', text: 'СК-1', objectId: 'o1' }, { id: 'b', text: 'Нурлы', objectId: 'o2' }]
+    assert.deepEqual(aliasesForObject(items, 'o1').map((a) => a.id), ['a'])
+    assert.deepEqual(aliasesForObject(items, null), [])
   })
   it('«Сверить…» нужна, когда есть ссылка или открытое предложение', () => {
     assert.equal(hasReviewWork({ signalLink: 'https://x' }), true)
@@ -78,6 +106,7 @@ describe('Путь к Signal в карточке договора', { skip: !lau
   async function open(contract, extra = '', { viewport = { width: 1280, height: 900 }, wait = true } = {}) {
     const context = await browser.newContext({ locale: 'ru-RU', timezoneId: 'Europe/Moscow', viewport })
     const page = await context.newPage()
+    page.setDefaultTimeout(15000)
     const errors = []
     page.on('pageerror', (e) => errors.push(e.message))
     page.on('console', (msg) => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) errors.push(msg.text()) })
@@ -99,7 +128,7 @@ describe('Путь к Signal в карточке договора', { skip: !lau
       await spr(page).locator('.spr-badge').waitFor()
       assert.equal(await spr(page).locator('.spr-badge').textContent(), 'сверено 23.11.2026')
       const path = spr(page).locator('a.spr-path')
-      assert.equal(await path.textContent(), 'Альфа / Северный квартал / корп.1 / ДП 16-26', 'полный путь папки вместо исходной ссылки')
+      assert.equal(await path.textContent(), 'корп.1 / ДП 16-26', 'путь папки — как отдал сервер (от границы объекта), вместо исходной ссылки')
       assert.equal(await path.getAttribute('target'), '_blank')
       assert.match(await path.getAttribute('rel'), /noopener/)
       assert.match(await path.getAttribute('href'), /^https:\/\/signal\.su10\.ru\/folder\//)
@@ -112,7 +141,7 @@ describe('Путь к Signal в карточке договора', { skip: !lau
 
   it('состояния текстом: не сверялась, противоречие, не видна, файл удалён, ждёт сверки', async () => {
     const cases = [
-      ['ctr-17', /^ссылка не сверялась — данные на 23\.11\.2026 14:00$/, 'папки ещё нет в данных Signal'],
+      ['ctr-17', /^ссылка не сверялась — данные на 23\.11\.2026 14:00$/, 'папка не видна в последнем обходе'],
       ['ctr-19', /^противоречие: номер в папке не совпадает с номером договора$/, ''],
       ['ctr-20', /^папка не видна в Signal$/, ''],
       ['ctr-22', /^файл удалён в Signal$/, ''],
@@ -135,7 +164,7 @@ describe('Путь к Signal в карточке договора', { skip: !lau
     const edit = await open('ctr-23')
     try {
       await spr(edit.page).locator('.spr-badge').waitFor()
-      assert.match(await spr(edit.page).locator('.spr-badge').textContent(), /^предложена папка Альфа \/ Северный квартал \/ корп\.6 \/ ДП 23-26$/)
+      assert.match(await spr(edit.page).locator('.spr-badge').textContent(), /^предложена папка корп\.6 \/ ДП 23-26$/)
       assert.equal(await spr(edit.page).locator('button', { hasText: 'Сверить…' }).count(), 1)
       assert.equal(await spr(edit.page).locator('button', { hasText: 'Отвязать' }).count(), 0, 'ссылки нет — отвязывать нечего')
       assert.deepEqual(edit.errors, [])
@@ -234,7 +263,7 @@ describe('Путь к Signal в карточке договора', { skip: !lau
       await dialog.waitFor({ state: 'detached' })
       // Ссылка сохранена, строка карточки показывает сверенную папку.
       await page.waitForFunction(() => document.querySelector('.spr .spr-badge')?.textContent === 'сверено 23.11.2026')
-      assert.equal(await spr(page).locator('a.spr-path').textContent(), 'Альфа / Северный квартал / корп.6 / ДП 23-26')
+      assert.equal(await spr(page).locator('a.spr-path').textContent(), 'корп.6 / ДП 23-26')
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
@@ -380,6 +409,8 @@ describe('Путь к Signal в карточке договора', { skip: !lau
         assert.equal(await rowOf(page).locator('.fpath').count(), 1, extra)
         assert.equal(await rowOf(page).locator('a').first().getAttribute('target'), '_blank', extra)
         assert.equal((await calls(page, (c) => c.path.startsWith('/api/signal/contracts'))).length, 0, `${extra}: данных договора не запрашивали`)
+        assert.equal((await calls(page, (c) => c.path === '/api/signal/aliases')).length, 0, `${extra}: синонимов не запрашивали, блока нет`)
+        assert.equal(await page.locator('.spr-aliases').count(), 0, extra)
         assert.deepEqual(errors, [], extra)
       } finally { await close() }
     }
@@ -423,6 +454,187 @@ describe('Путь к Signal в карточке договора', { skip: !lau
       await spr(page).locator('button', { hasText: 'Отвязать' }).click()
       await spr(page).locator('.spr-confirm').waitFor()
       assert.equal(await noScroll(page), true)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  // ── Волна исправлений: В-10, §1, С-21, С-2 ────────────────────────────────────────────────────────────────────────────────────
+  it('ссылка на файл и на папку (В-10): «файл удалён в Signal», «файл не виден в Signal», «папка не видна в Signal» — каждое своими словами', async () => {
+    const cases = [
+      ['ctr-22', 'файл удалён в Signal'],
+      ['ctr-18', 'файл не виден в Signal'], // ДС: ссылка на файл, который перестал быть виден
+      ['ctr-20', 'папка не видна в Signal'],
+    ]
+    for (const [id, text] of cases) {
+      const { page, errors, close } = await open(id)
+      try {
+        const badge = spr(page).locator('.spr-badge')
+        await badge.waitFor()
+        assert.equal((await badge.textContent()).trim(), text, id)
+        assert.equal(await badge.evaluate((b) => b.classList.contains('is-warn')), true, `${id}: жёлтая подпись`)
+        assert.equal(await spr(page).locator('button', { hasText: 'Сверить…' }).count(), 1, `${id}: перепроверить можно`)
+        assert.deepEqual(errors, [], id)
+      } finally { await close() }
+    }
+  })
+
+  it('состояния волны: принята (зелёная, с датой данных), корпус не совпал, папка допсоглашения, противоречие ДС, недоступна, нет объекта', async () => {
+    const cases = [
+      ['ctr-13', 'ok', /^ссылка принята, номер в папке не найден$/, 'данные на 23.11.2026 14:00'],
+      ['ctr-14', 'warn', /^корпус, очередь или секция не совпали — проверьте$/, ''],
+      ['ctr-21', 'warn', /^папка относится к допсоглашению — проверьте$/, ''],
+      ['ctr-30', 'warn', /^противоречие: номер ДС не совпал с номером в названии папки$/, ''],
+      ['ctr-24', 'neutral', /^ссылка не сверялась — данные на 23\.11\.2026 14:00$/, 'папка недоступна для сверки'],
+      ['ctr-27', 'neutral', /^ссылка не сверялась — данные на 23\.11\.2026 14:00$/, 'у договора не указан объект'],
+    ]
+    for (const [id, tone, text, why] of cases) {
+      const { page, errors, close } = await open(id)
+      try {
+        const badge = spr(page).locator('.spr-badge')
+        await badge.waitFor()
+        assert.match((await badge.textContent()).trim(), text, id)
+        assert.equal(await badge.evaluate((b, t) => b.classList.contains(`is-${t}`), tone), true, `${id}: тон ${tone}`)
+        if (why) assert.equal(await spr(page).locator('.spr-why').textContent(), why, id)
+        assert.deepEqual(errors, [], id)
+      } finally { await close() }
+    }
+    // Без права правки состояния те же, кнопок нет.
+    const view = await open('ctr-14', '&signalEdit=0')
+    try {
+      assert.equal((await spr(view.page).locator('.spr-badge').textContent()).trim(), 'корпус, очередь или секция не совпали — проверьте')
+      assert.equal(await spr(view.page).locator('button', { hasText: 'Сверить…' }).count(), 0)
+    } finally { await view.close() }
+  })
+
+  it('путь от границы объекта (С-21): карточка показывает путь ровно так, как отдал сервер — имя корня, проекта и папок выше границы не дописывается', async () => {
+    const { page, errors, close } = await open('ctr-16')
+    try {
+      await spr(page).locator('a.spr-path').waitFor()
+      const shown = (await spr(page).locator('a.spr-path').textContent()).trim()
+      assert.equal(shown, 'корп.1 / ДП 16-26')
+      // То, что пришло с сервера (stand отдаёт путь от границы), не продолжено ничем слева: ни проекта, ни корня.
+      const text = await spr(page).textContent()
+      assert.doesNotMatch(text, /Альфа|Северный квартал|Договора подряда|Бета/, 'чужих и верхних имён в строке нет')
+      assert.equal(await spr(page).locator('a.spr-path').getAttribute('title'), 'https://signal.su10.ru/folder/00000000-0000-4000-8000-000000003016', 'подсказка — ссылка договора, а не склеенный путь')
+      // Подпапки: имена как есть, без пути предков.
+      await spr(page).locator('.spr-files-toggle').click()
+      await spr(page).locator('li.spr-folder .spr-folder-btn').first().click()
+      await spr(page).locator('li.spr-folder li.spr-file').first().waitFor()
+      assert.doesNotMatch(await spr(page).locator('.spr-files').textContent(), /корп\.1 \/|ДП 16-26 \//, 'в списке файлов пути предков не склеиваются')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+    // Путь, который сервер отдал глубже границы, тоже не усекается и не продолжается: что пришло — то и видно.
+    const deep = await open('ctr-26')
+    try {
+      await spr(deep.page).locator('a.spr-path').waitFor()
+      assert.equal((await spr(deep.page).locator('a.spr-path').textContent()).trim(), 'корп.2 / ДП 26-26')
+    } finally { await deep.close() }
+  })
+
+  const aliasBlock = (page) => spr(page).locator('.spr-aliases')
+  const aliasCalls = (page) => calls(page, (c) => c.path.startsWith('/api/signal/aliases'))
+
+  it('запомненные названия объекта (С-2): сотрудник с правкой видит только свои для объекта договора, удаляет с подтверждением; после — состояние перечитывается', async () => {
+    // ctr-17 — объект 1; у сотрудника свои названия: объект 1 (СК-1) и объект 2 (Нурлы-2); чужое сервер ему не отдаёт.
+    const { page, errors, close } = await open('ctr-17', '&sigAdmin=0&sigAliasMore=1')
+    try {
+      const block = aliasBlock(page)
+      await block.waitFor()
+      assert.equal((await block.locator('.spr-files-toggle').textContent()).trim(), 'Запомненные названия объекта: 1', 'только свои и только для объекта договора')
+      assert.equal(await block.locator('.spr-files-toggle').getAttribute('aria-expanded'), 'false', 'свёрнуто')
+      assert.equal(await block.locator('.spr-alias').count(), 0)
+      await block.locator('.spr-files-toggle').click()
+      assert.deepEqual(await block.locator('.spr-alias-text').allTextContents(), ['СК-1'])
+      assert.equal((await aliasCalls(page)).length, 1, 'один запрос — GET /aliases')
+      assert.equal((await aliasCalls(page))[0].method, 'GET')
+
+      const loadsBefore = (await calls(page, (c) => c.method === 'GET' && c.path === '/api/signal/contracts/ctr-17')).length
+      await block.locator('.spr-alias', { hasText: 'СК-1' }).locator('button', { hasText: 'Удалить' }).click()
+      const confirm = block.locator('.spr-confirm')
+      assert.match(await confirm.textContent(), /Удалить название «СК-1»\? Сверка договоров этого объекта пересчитается без него\./)
+      await confirm.locator('button', { hasText: 'Отмена' }).click()
+      assert.equal(await block.locator('.spr-confirm').count(), 0)
+      assert.equal((await aliasCalls(page)).filter((c) => c.method === 'DELETE').length, 0, 'отмена — ничего не ушло')
+
+      await block.locator('.spr-alias', { hasText: 'СК-1' }).locator('button', { hasText: 'Удалить' }).click()
+      await block.locator('.spr-confirm button', { hasText: 'Да, удалить' }).click()
+      await page.waitForFunction(() => !document.querySelector('.spr .spr-aliases'))
+      const [del] = (await aliasCalls(page)).filter((c) => c.method === 'DELETE')
+      assert.equal(del.path, '/api/signal/aliases/al-2')
+      assert.ok((await calls(page, (c) => c.method === 'GET' && c.path === '/api/signal/contracts/ctr-17')).length > loadsBefore, 'состояние договора перечитано')
+      assert.equal(await spr(page).locator('.spr-badge').count(), 1, 'остальная строка на месте')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+    // Другой объект (ctr-16 — объект 2): его своё название.
+    const other = await open('ctr-16', '&sigAdmin=0&sigAliasMore=1')
+    try {
+      await aliasBlock(other.page).waitFor()
+      await aliasBlock(other.page).locator('.spr-files-toggle').click()
+      assert.deepEqual(await aliasBlock(other.page).locator('.spr-alias-text').allTextContents(), ['Нурлы-2'])
+    } finally { await other.close() }
+  })
+
+  it('запомненные названия: отказ сервера при удалении — сообщение в строке, название на месте; нет своих названий у объекта — блока нет', async () => {
+    const { page, errors, close } = await open('ctr-17', '&sigAdmin=0&sigAliasMore=1')
+    try {
+      await aliasBlock(page).waitFor()
+      await aliasBlock(page).locator('.spr-files-toggle').click()
+      // Название успели удалить в другом окне: сервер отвечает 404.
+      await page.evaluate(() => { const a = window.__signalAdmin.aliases; a.splice(a.findIndex((x) => x.id === 'al-2'), 1) })
+      await aliasBlock(page).locator('button', { hasText: 'Удалить' }).click()
+      await aliasBlock(page).locator('.spr-confirm button', { hasText: 'Да, удалить' }).click()
+      const msg = spr(page).locator('.spr-msg.is-error')
+      await msg.waitFor()
+      assert.match(await msg.textContent(), /Название не найдено/)
+      assert.equal(await aliasBlock(page).locator('.spr-alias-text').count(), 1, 'название осталось в списке')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+    // ctr-10 из сценария signal-fake.js здесь не нужен: у договора без своих названий (sigAliasMore=0 → у сотрудника их нет) блока нет.
+    const none = await open('ctr-17', '&sigAdmin=0')
+    try {
+      await none.page.waitForFunction(() => window.__signal.calls.some((c) => c.path === '/api/signal/aliases'))
+      assert.equal(await aliasBlock(none.page).count(), 0)
+      assert.equal(await spr(none.page).locator('.spr-badge').count(), 1)
+      assert.deepEqual(none.errors, [])
+    } finally { await none.close() }
+  })
+
+  it('запомненные названия: администратор видит все названия объекта с отметкой «конфликт»; без права правки — запроса и блока нет', async () => {
+    const { page, errors, close } = await open('ctr-17', '&sigAliasMore=1&sigAliasConflict=1')
+    try {
+      await aliasBlock(page).waitFor()
+      assert.equal((await aliasBlock(page).locator('.spr-files-toggle').textContent()).trim(), 'Запомненные названия объекта: 3', 'все названия объекта 1, чужие и свои')
+      await aliasBlock(page).locator('.spr-files-toggle').click()
+      assert.deepEqual(await aliasBlock(page).locator('.spr-alias-text').allTextContents(), ['Северный кв. 1', 'СК-1', 'Нурлы корп. А'])
+      const marked = aliasBlock(page).locator('.spr-alias.is-conflict')
+      assert.equal(await marked.count(), 1)
+      assert.match(await marked.textContent(), /Нурлы корп\. А.*конфликт/)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+    for (const extra of ['&signalEdit=0&sigAliasMore=1', '&canEdit=0&sigAliasMore=1']) {
+      const view = await open('ctr-17', extra)
+      try {
+        await spr(view.page).locator('.spr-badge').waitFor()
+        await view.page.waitForTimeout(300)
+        assert.equal((await aliasCalls(view.page)).length, 0, `${extra}: без права правки синонимы не запрашиваются`)
+        assert.equal(await aliasBlock(view.page).count(), 0, extra)
+        assert.deepEqual(view.errors, [], extra)
+      } finally { await view.close() }
+    }
+  })
+
+  it('телефон 390 px: запомненные названия и подтверждение удаления не раздвигают страницу, кнопки в пределах экрана', async () => {
+    const { page, errors, close } = await open('ctr-17', '&sigAdmin=0&sigAliasMore=1', { viewport: PHONE })
+    try {
+      await aliasBlock(page).waitFor()
+      await aliasBlock(page).locator('.spr-files-toggle').click()
+      await aliasBlock(page).locator('button', { hasText: 'Удалить' }).click()
+      await aliasBlock(page).locator('.spr-confirm').waitFor()
+      assert.equal(await noScroll(page), true, 'нет прокрутки вбок')
+      for (const b of await aliasBlock(page).locator('button').all()) {
+        const box = await b.boundingBox()
+        assert.ok(box.x + box.width <= PHONE.width, 'справа кнопка не выходит за экран')
+      }
       assert.deepEqual(errors, [])
     } finally { await close() }
   })

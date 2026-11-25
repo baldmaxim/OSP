@@ -17,6 +17,14 @@
 //     addItems, denyProject (403 на дерево), removeProject;
 //   • сбои: fail(совпадение, { status, headers, body, times, delayMs, hang }) — 429 с Retry-After, 401/403/5xx/550/450,
 //     перенаправление (status 307 + location), большое тело (bigBody — потоком, bigDeclared — объявленный размер);
+//   • поведение списков элементов (С-30):
+//       pageCap = n                 — страница короче Take, хотя элементы ещё есть («короткая нефинальная страница»);
+//       denyItems(папка, статус)    — 403 / 404 на элементах одной подпапки (дерево при этом отдаётся);
+//       scramble(папка)             — порядок меняется от запроса к запросу (нестабильные Skip/Take);
+//       onItems(папка, (n, fake))   — перед ответом на n-й запрос элементов папки (правка списка между страницами);
+//       rateLimit({ times, retryAfter }) — 429 на элементах с заданным Retry-After (в том числе «0»);
+//       softDelete(папка, id) / restoreItem — признак deleted у элемента; deletedMode = 'only' | 'all' — что отдаёт deleted=true
+//       (только удалённые или все элементы папки: в выжимке не сказано, G1);
 //   • requests — журнал всех запросов; violations — запросы с методом или путём вне разрешённого набора
 //     (чтение + токен): тест ждёт, что список пуст; leakNext — в ответах «следующий» адрес на чужой хост.
 import http from 'node:http'
@@ -61,6 +69,12 @@ export async function startFakeSignal({ clientId = CLIENT_ID, clientSecret = CLI
     delayMs: 0,
     itemsDelayMs: 0,
     faults: [],
+    pageCap: 0,
+    itemStatus: new Map(), // folderId → статус ответа на элементы
+    itemHooks: new Map(), // folderId → (n, fake) => void, перед ответом
+    itemCalls: new Map(), // folderId → число запросов элементов
+    scrambled: new Set(),
+    deletedMode: 'only',
     counters: { project: 0, folder: 0, item: 0 },
     clock: 0,
   }
@@ -191,9 +205,16 @@ export async function startFakeSignal({ clientId = CLIENT_ID, clientSecret = CLI
     if (req.path === '/public/v1/items') {
       if (state.itemsDelayMs) await wait(state.itemsDelayMs)
       const folderId = req.query.folderId
+      const calls = (state.itemCalls.get(folderId) || 0) + 1
+      state.itemCalls.set(folderId, calls)
+      state.itemHooks.get(folderId)?.(calls, fake)
+      if (state.itemStatus.has(folderId)) return json(res, state.itemStatus.get(folderId), { message: 'folder fault' })
       if (!folderProject(folderId)) return json(res, 404, { message: 'no folder' })
-      const all = (state.items.get(folderId) || []).filter((it) => (req.query.deleted === 'true' ? it.deleted : !it.deleted))
-      return json(res, 200, all.slice(skip, skip + take).map(itemJson))
+      const wantDeleted = req.query.deleted === 'true'
+      let all = (state.items.get(folderId) || []).filter((it) => (wantDeleted ? (state.deletedMode === 'all' || it.deleted) : !it.deleted))
+      if (state.scrambled.has(folderId) && all.length) { const k = calls % all.length; all = [...all.slice(k), ...all.slice(0, k)] }
+      const size = state.pageCap > 0 ? Math.min(take, state.pageCap) : take
+      return json(res, 200, all.slice(skip, skip + size).map(itemJson))
     }
 
     if (req.path === '/public/v1/items/search') {
@@ -236,6 +257,17 @@ export async function startFakeSignal({ clientId = CLIENT_ID, clientSecret = CLI
     set delayMs(v) { state.delayMs = Number(v) || 0 },
     set itemsDelayMs(v) { state.itemsDelayMs = Number(v) || 0 },
     set expiresIn(v) { state.expiresIn = Number(v) },
+    set pageCap(v) { state.pageCap = Number(v) || 0 },
+    set deletedMode(v) { state.deletedMode = v === 'all' ? 'all' : 'only' },
+    denyItems(folderId, status = 403) { state.itemStatus.set(folderId, status) },
+    allowItems(folderId) { state.itemStatus.delete(folderId) },
+    scramble(folderId) { state.scrambled.add(folderId) },
+    unscramble(folderId) { state.scrambled.delete(folderId) },
+    onItems(folderId, fn) { if (fn) state.itemHooks.set(folderId, fn); else state.itemHooks.delete(folderId) },
+    itemCalls: (folderId) => state.itemCalls.get(folderId) || 0,
+    rateLimit({ times = 1, retryAfter = '0', match = '/items' } = {}) { return this.fail(match, { status: 429, headers: { 'retry-after': String(retryAfter) }, times }) },
+    softDelete(folderId, itemId) { const it = (state.items.get(folderId) || []).find((x) => x.id === itemId); if (it) { it.deleted = true; it.modified = stamp() } return Boolean(it) },
+    restoreItem(folderId, itemId) { const it = (state.items.get(folderId) || []).find((x) => x.id === itemId); if (it) it.deleted = false; return Boolean(it) },
 
     addProject({ id = nextId('project'), name = 'Проект', code = null } = {}) {
       const rootId = nextId('folder')

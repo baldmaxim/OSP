@@ -32,6 +32,12 @@ a.spr-path:hover { text-decoration: underline; }
 .spr-msg.is-stale { color: #92400e; }
 .spr-muted { margin: 0; font-size: 0.75rem; color: var(--text-tertiary); }
 
+/* Запомненные названия объекта (синонимы, С-2) — компактно, свёрнуты; переключатель — как у списка файлов. */
+.spr-aliases { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.spr-alias-list { list-style: none; margin: 0.125rem 0 0; padding: 0; display: flex; flex-direction: column; min-width: 0; border-left: 2px solid var(--border-color); }
+.spr-alias { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; padding: 0.1875rem 0 0.1875rem 0.625rem; border-bottom: 1px solid rgba(148, 163, 184, 0.16); }
+.spr-alias-text { flex: 1 1 8rem; min-width: 0; overflow-wrap: anywhere; color: var(--text-primary); font-weight: 500; }
+
 /* Список файлов папки — свёрнут, пока не откроют. */
 .spr-files { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
 .spr-files-toggle { display: inline-flex; align-items: flex-start; gap: 0.3125rem; align-self: flex-start; max-width: 100%; padding: 0.125rem 0; font: inherit; font-size: 0.75rem; font-weight: 500; text-align: left; color: var(--text-secondary); background: none; border: none; cursor: pointer; }

@@ -15,17 +15,22 @@ rel as (
   left join pg_class c on c.oid = to_regclass('osp_private.' || t.t) and c.relkind = 'r'
 ),
 fn as (
-  select p.proname, p.prosecdef, coalesce(p.proconfig, '{}') as cfg, p.prosrc, p.provolatile
+  select p.oid, p.proname, p.prosecdef, coalesce(p.proconfig, '{}') as cfg, p.prosrc, p.provolatile, pg_get_function_identity_arguments(p.oid) as args
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'osp_private' and p.proname like 'signal\_%'
 ),
 service(f) as (values ('signal_sync_due'), ('signal_sync_begin'), ('signal_sync_heartbeat'), ('signal_stage_put'), ('signal_sync_fail'),
-                      ('signal_sync_finish'), ('signal_accept_held'), ('signal_sources_for_sync'), ('signal_enqueue_all'), ('signal_queue_claim'),
-                      ('signal_queue_release'), ('signal_match_load'), ('signal_match_nodes'), ('signal_state_write')),
+                      ('signal_sync_finish'), ('signal_accept_held'), ('signal_sources_for_sync'), ('signal_enqueue_all'), ('signal_enqueue_missed'),
+                      ('signal_queue_claim'), ('signal_queue_release'), ('signal_match_load'), ('signal_match_nodes'), ('signal_state_write')),
 usr(f) as (values ('signal_user_flags'), ('signal_marks'), ('signal_contract_view'), ('signal_folders_search'), ('signal_confirm'),
                   ('signal_reject'), ('signal_unlink'), ('signal_alias_create'), ('signal_alias_delete'), ('signal_alias_list'),
                   ('signal_admin_state'), ('signal_runs'), ('signal_source_add'), ('signal_source_update'), ('signal_binding_set'),
-                  ('signal_unassigned')),
+                  ('signal_unassigned'), ('signal_tree'), ('signal_bindings_list'), ('signal_binding_preview')),
+internal(f) as (values ('signal_require'), ('signal_contract_ok'), ('signal_node_visible'), ('signal_actor'), ('signal_node_json'),
+                       ('signal_enqueue_impl'), ('signal_publish'), ('signal_mark_root_errors'), ('signal_recompute_objects'),
+                       ('signal_contract_input'), ('signal_run_json'), ('signal_jsonb_texts'), ('signal_jsonb_uuids'), ('signal_like_escape'),
+                       ('signal_norm_link'), ('signal_name_key'), ('signal_alias_clash'), ('signal_tree_item'), ('signal_audit_row'),
+                       ('signal_enqueue_trg')),
 trg as (
   select t.tgname, (select n.nspname || '.' || c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace where c.oid = t.tgrelid) as rel,
          t.tgenabled, pg_get_triggerdef(t.oid) as def
@@ -61,8 +66,9 @@ checks(n, ok, what) as (
                           and column_name = 'recheck_only' and data_type = 'boolean' and is_nullable = 'NO'),
          'последовательность ревизий очереди signal_revision_seq и сама очередь (с признаком плановой пересверки recheck_only)'
   union all
-  select 7, (select count(*) from usr u join fn on fn.proname = u.f) = 16 and (select count(*) from service s join fn on fn.proname = s.f) = 14,
-         'функции: 14 служебных и 16 пользовательских на месте'
+  select 7, (select count(*) from usr u join fn on fn.proname = u.f) = 19 and (select count(*) from service s join fn on fn.proname = s.f) = 15
+            and (select count(*) from internal i join fn on fn.proname = i.f) = 20 and (select count(*) from fn) = 54,
+         'функции: 15 служебных, 19 пользовательских и 20 внутренних на месте, лишних signal_* нет'
   union all
   select 8, (select count(*) from fn where prosecdef) = (select count(*) from fn where 'application_name=osp:internal' = any (cfg))
             and (select count(*) from fn where prosecdef and not ('application_name=osp:internal' = any (cfg))) = 0
@@ -74,11 +80,11 @@ checks(n, ok, what) as (
          'у каждой служебной функции фиксированный search_path = osp_private, public, pg_temp'
   union all
   select 10, (select count(*) from service s join fn on fn.proname = s.f
-              where fn.prosecdef and fn.prosrc ~ 'BEGIN\s+IF auth\.uid\(\) IS NOT NULL THEN\s+RAISE EXCEPTION USING ERRCODE = ''SG403''') = 14,
+              where fn.prosecdef and fn.prosrc ~ 'BEGIN\s+IF auth\.uid\(\) IS NOT NULL THEN\s+RAISE EXCEPTION USING ERRCODE = ''SG403''') = 15,
          'служебные функции первой проверкой отказывают при непустом auth.uid() (SG403)'
   union all
   select 11, (select count(*) from usr u join fn on fn.proname = u.f
-              where fn.prosrc like '%signal_require(%' or fn.prosrc like '%auth.uid()%') = 16,
+              where fn.prosrc like '%signal_require(%' or fn.prosrc like '%auth.uid()%') = 19,
          'пользовательские функции проверяют вошедшего и право раздела (signal_require / auth.uid)'
   union all
   select 12, (select count(*) from trg where rel in ('public.contracts', 'public.contract_counterparties', 'public.objects') and tgenabled <> 'D') = 7
@@ -119,11 +125,45 @@ checks(n, ok, what) as (
   select 18, exists (select 1 from pg_constraint where conrelid = to_regclass('osp_private.signal_contracts') and contype = 'c'
                        and pg_get_constraintdef(oid) like '%none%' and pg_get_constraintdef(oid) like '%suggested%' and pg_get_constraintdef(oid) like '%verified%'
                        and pg_get_constraintdef(oid) like '%unverified%' and pg_get_constraintdef(oid) like '%attention%'
-                       and pg_get_constraintdef(oid) like '%missing%' and pg_get_constraintdef(oid) like '%conflict%'),
-         'состояние сверки — одно из семи: none, suggested, verified, unverified, attention, missing, conflict'
+                       and pg_get_constraintdef(oid) like '%missing%' and pg_get_constraintdef(oid) like '%conflict%'
+                       and pg_get_constraintdef(oid) like '%accepted%'),
+         'состояние сверки — одно из восьми: none, suggested, verified, accepted, unverified, attention, missing, conflict'
   union all
   select 19, not exists (select 1 from information_schema.role_table_grants g
                          where g.table_schema = 'osp_private' and g.table_name like 'signal\_%' and g.grantee = 'PUBLIC'),
          'таблицы signal_* не выданы «всем»'
+  union all
+  select 20, not exists (select 1 from fn where has_function_privilege('public', fn.oid, 'EXECUTE')),
+         'ни одна функция signal_* не выдана «всем» (REVOKE ALL FROM PUBLIC): исполняет только учётка подключения osp-api'
+  union all
+  select 21, (select count(*) from fn where proname in ('signal_node_json', 'signal_contract_input', 'signal_publish', 'signal_mark_root_errors')
+                and prosrc ~ 'BEGIN\s+IF auth\.uid\(\) IS NOT NULL THEN\s+RAISE EXCEPTION USING ERRCODE = ''SG403''') = 4
+            and (select count(*) from fn where proname in ('signal_recompute_objects', 'signal_enqueue_impl', 'signal_alias_clash')
+                   and prosrc ~ 'BEGIN\s+IF auth\.uid\(\) IS NOT NULL AND NOT') = 3
+            and exists (select 1 from fn where proname = 'signal_contract_ok' and prosrc like '%auth.uid() IS NULL%' and prosrc like '%osp_can%')
+            and exists (select 1 from fn where proname = 'signal_node_visible' and prosrc like '%signal_contract_ok(%'),
+         'внутренние помощники не отдают чужого при прямом вызове: службе — SG403, правке и админу — проверка права, охват — через договор'
+  union all
+  select 22, (select count(*) from information_schema.columns
+              where table_schema = 'osp_private'
+                and ((table_name = 'signal_nodes' and column_name in ('object_path', 'problem'))
+                  or (table_name = 'signal_stage_nodes' and column_name = 'problem')
+                  or (table_name = 'signal_sources' and column_name = 'failed_since')
+                  or (table_name = 'signal_candidates' and column_name in ('node_key', 'prev_status', 'prev_decided_by', 'prev_decided_at', 'prev_note')))) = 9,
+         'колонки границы и сбоев: signal_nodes.object_path / problem, signal_stage_nodes.problem, signal_sources.failed_since, signal_candidates.node_key и prev_*'
+  union all
+  select 23, exists (select 1 from pg_constraint where conrelid = to_regclass('osp_private.signal_runs') and contype = 'c'
+                       and pg_get_constraintdef(oid) like '%partial%' and pg_get_constraintdef(oid) like '%running%'),
+         'статус прогона: running, ok, partial (часть корней), held, failed, cancelled'
+  union all
+  select 24, (select count(*) from fn where (proname = 'signal_confirm' and args like '%p_expected_revision bigint')
+                                           or (proname = 'signal_unlink' and args like '%p_expected_revision bigint, p_node_key text')
+                                           or (proname = 'signal_reject' and args like '%p_node_key text')
+                                           or (proname = 'signal_publish' and args = 'p_run bigint, p_roots bigint[]')) = 4
+            and (select count(*) from fn where proname in ('signal_confirm', 'signal_unlink', 'signal_reject', 'signal_publish')) = 4,
+         'новые параметры confirm / unlink / reject в конце списка, прежних перегрузок нет (повтор миграции не плодит функции)'
+  union all
+  select 25, (select count(*) from pg_indexes where schemaname = 'osp_private' and tablename = 'signal_stage_nodes' and indexname = 'signal_stage_nodes_source_idx') = 1,
+         'индекс staging по корню (для состояния корня «отложен»)'
 )
 select case when ok then 'OK' else 'FAIL' end || ' ' || what from checks order by n;

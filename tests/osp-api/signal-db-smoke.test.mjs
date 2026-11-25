@@ -99,4 +99,32 @@ describe('База сверки с SIGNAL: миграция, повтор, си�
     assert.equal(again, null, 'идёт другой прогон — NULL')
     await sdb.write(null, (tx) => tx.query(`select osp_private.signal_sync_fail($1, $2, 'cancelled', 'readonly', '{}'::jsonb)`, [begun.runId, begun.ownerToken]))
   })
+
+  it('повторное применение поверх первой редакции: прежние сигнатуры confirm / reject / unlink / publish заменяются, а не плодятся; ограничения состояния и прогона расширяются; граница и путь пересчитываются', () => {
+    const o = db.seed.object({ name: 'Тест: объект апгрейда', code: 'АПГР' })
+    const src = db.seed.source({ objectIds: [o] })
+    const snap = db.seed.snapshot(src.id, { name: 'Корень', children: [{ name: 'Папка', children: [{ name: 'Вложенная' }] }] })
+    const nested = snap.ids['Корень / Папка / Вложенная']
+    // Прежняя редакция: четыре старые сигнатуры, семь состояний, прогон без partial, пути от границы нет.
+    db.sql(`CREATE FUNCTION osp_private.signal_confirm(p_contract uuid, p_node uuid, p_url text, p_replace boolean, p_alias_text text, p_alias_key text, p_fingerprint text, p_expected_link text, p_expected_version bigint, p_key text) RETURNS jsonb LANGUAGE sql AS $$ SELECT NULL::jsonb $$;
+      CREATE FUNCTION osp_private.signal_reject(p_contract uuid, p_node uuid, p_note text, p_ctx_key text, p_expected_version bigint, p_key text) RETURNS jsonb LANGUAGE sql AS $$ SELECT NULL::jsonb $$;
+      CREATE FUNCTION osp_private.signal_unlink(p_contract uuid, p_ctx_key text, p_expected_link text, p_expected_version bigint, p_key text) RETURNS jsonb LANGUAGE sql AS $$ SELECT NULL::jsonb $$;
+      CREATE FUNCTION osp_private.signal_publish(p_run bigint, p_stats jsonb, p_actor text, p_reason text) RETURNS jsonb LANGUAGE sql AS $$ SELECT NULL::jsonb $$;
+      ALTER TABLE osp_private.signal_contracts DROP CONSTRAINT signal_contracts_state_check;
+      ALTER TABLE osp_private.signal_contracts ADD CONSTRAINT signal_contracts_state_check CHECK (state IN ('none', 'suggested', 'verified', 'unverified', 'attention', 'missing', 'conflict'));
+      ALTER TABLE osp_private.signal_runs DROP CONSTRAINT signal_runs_status_check;
+      ALTER TABLE osp_private.signal_runs ADD CONSTRAINT signal_runs_status_check CHECK (status IN ('running', 'ok', 'held', 'failed', 'cancelled'));
+      UPDATE osp_private.signal_nodes SET object_path = NULL`)
+    assert.equal(db.sql(`select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'osp_private' and p.proname in ('signal_confirm', 'signal_reject', 'signal_unlink', 'signal_publish')`), '8')
+    assert.match(db.sqlError(`insert into osp_private.signal_contracts (contract_id, state) values ('${db.seed.contract({ number: 'АПГР-ДП-26-001', objectId: o })}', 'accepted')`).message, /check constraint|signal_contracts_state_check/)
+    db.applyMigration()
+    assert.equal(db.sql(`select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'osp_private' and p.proname in ('signal_confirm', 'signal_reject', 'signal_unlink', 'signal_publish')`), '4', 'прежние сигнатуры убраны')
+    assert.equal(db.sql(`select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'osp_private' and p.proname like 'signal\\_%'`), '54')
+    assert.equal(db.sql(`select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'osp_private' and p.proname like 'signal\\_%' and has_function_privilege('public', p.oid, 'EXECUTE')`), '0')
+    const c = db.seed.contract({ number: 'АПГР-ДП-26-002', objectId: o })
+    db.sql(`insert into osp_private.signal_contracts (contract_id, state, reason) values ('${c}', 'accepted', 'number_not_found')`)
+    db.sql(`insert into osp_private.signal_runs (kind, mode, status, initiator, owner_token) values ('manual', 'full', 'partial', 'cli', gen_random_uuid())`)
+    assert.equal(db.sql(`select object_path from osp_private.signal_nodes where node_id = '${nested}'`), 'Корень / Папка / Вложенная', 'путь от границы пересчитан для уже опубликованных узлов')
+    db.sql('delete from osp_private.signal_runs')
+  })
 })

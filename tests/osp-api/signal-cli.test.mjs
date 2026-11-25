@@ -102,7 +102,8 @@ describe('Команды SIGNAL (signal-cli): probe, sync, accept-held с вне
       assert.match(lines[0], /^SIGNAL: токен получен, срок 3\s600 с$/)
       assert.equal(lines[1], 'Проектов доступно: 2')
       // поддерево корня: сам корень и три папки; в проекте — ещё системная папка проекта
-      assert.match(lines[2], new RegExp(`^Корень #${s.src.id}: найден, папок в поддереве 4; папок в проекте 5$`))
+      // и первая страница элементов корня — только число (в корне — один файл)
+      assert.match(lines[2], new RegExp(`^Корень #${s.src.id}: найден, папок в поддереве 4; папок в проекте 5; элементов на первой странице корня 1 из 200$`))
       assert.match(lines[3], /^Готово за \d+\.\d с$/)
       assert.equal(lines.length, 4, res.stdout)
       noNames(res.all)
@@ -111,7 +112,21 @@ describe('Команды SIGNAL (signal-cli): probe, sync, accept-held с вне
       assert.deepEqual(snapshot(), before)
       assert.deepEqual(runs(), [], 'probe не создаёт прогонов')
       assert.equal(stageCount(), 0)
-      assert.deepEqual(fake.paths().filter((p) => !p.startsWith('GET /public/v1/projects') && !p.startsWith('POST /public/v1/auth/token')), [], 'без запросов элементов')
+      const other = fake.paths().filter((p) => !p.startsWith('GET /public/v1/projects') && !p.startsWith('POST /public/v1/auth/token'))
+      assert.deepEqual(other, ['GET /public/v1/items'], 'кроме проектов и дерева — ровно одна первая страница элементов на корень')
+      const itemsRequest = fake.requests.find((r) => r.path === '/public/v1/items')
+      assert.deepEqual([itemsRequest.query.folderId, itemsRequest.query.Skip, itemsRequest.query.Take, itemsRequest.query.deleted], [s.root, '0', '200', 'false'])
+    })
+
+    it('элементы корня не читаются (403 на первой странице) → строка «не прочитаны (scope 403)», код 4; названий и идентификаторов нет', async () => {
+      const s = scene({ folders: 1, items: 1 })
+      fake.denyItems(s.root, 403)
+      const res = await cli(['probe'])
+      assert.equal(res.code, 4, res.all)
+      assert.match(res.stdout, new RegExp(`^Корень #${s.src.id}: найден, папок в поддереве 2; папок в проекте 3; элементы корня не прочитаны \\(scope 403\\)$`, 'm'))
+      assert.match(res.stdout, /^Готово за /m)
+      noNames(res.all)
+      noIds(res.all)
     })
 
     it('корень не найден в дереве проекта → строка «НЕ НАЙДЕН», код 0; корней нет → «Включённых корней нет»', async () => {
@@ -236,16 +251,66 @@ describe('Команды SIGNAL (signal-cli): probe, sync, accept-held с вне
       fake.resetRequests()
       const res = await cli(['sync'])
       assert.equal(res.code, 4, res.all)
-      assert.match(res.stdout, new RegExp(`^Прогон \\d+: failed \\(http\\) — `))
+      assert.match(res.stdout, new RegExp(`^Прогон \\d+: failed \\(root_failed\\), поколение 1 — #${s.src.id}: сбой http$`))
       noNames(res.all)
       noIds(res.all)
       assert.ok(fake.count('/public/v1/items') >= 4, 'повторы были: первая попытка и три повтора')
       assert.deepEqual(snapshot(), before)
       assert.equal(stageCount(), 0)
-      assert.deepEqual([runs().at(-1).status, runs().at(-1).reason], ['failed', 'http'])
+      assert.deepEqual([runs().at(-1).status, runs().at(-1).reason], ['failed', 'root_failed'])
       assert.equal(sources()[0].last_error, 'http')
       assert.equal(sources()[0].ready, true, 'прежний снимок остаётся готовым')
       assert.ok(s.src.id)
+    })
+
+    it('один корень сбойный, другой опубликован → partial, код 4, в выводе причина сбойного корня; снимок исправного корня обновлён', async () => {
+      const p1 = fake.addProject({ name: PROJECT_NAME })
+      const b1 = fake.build(p1, { name: ROOT_NAME, children: [{ name: `${FOLDER_PREFIX} 1`, items: 1 }] })
+      const p2 = fake.addProject({ name: `${PROJECT_NAME} 2` })
+      const b2 = fake.build(p2, { name: `${ROOT_NAME} 2`, children: [{ name: `${FOLDER_PREFIX} 2`, items: 1 }] })
+      const obj = db.seed.object({ name: 'Тест: объект А', code: 'АЛИЯ' })
+      const s1 = db.seed.source({ projectId: p1, folderId: b1.ids[ROOT_NAME], objectIds: [obj] })
+      const s2 = db.seed.source({ projectId: p2, folderId: b2.ids[`${ROOT_NAME} 2`], objectIds: [obj] })
+      assert.equal((await cli(['sync'])).code, 0)
+      fake.addFolder(p1, { name: `${FOLDER_PREFIX} 3`, parentId: b1.ids[ROOT_NAME] })
+      fake.denyProject(p2)
+      const res = await cli(['sync'])
+      assert.equal(res.code, 4, res.all)
+      assert.match(res.stdout, new RegExp(`^Прогон \\d+: partial \\(root_failed\\), поколение 2 — #${s1.id}: папок 3, элементов 1; #${s2.id}: сбой scope$`))
+      noNames(res.all)
+      noIds(res.all)
+      assert.equal(meta().generation, 2)
+      assert.deepEqual(sources().map((r) => r.last_error), [null, 'scope'])
+    })
+
+    it('нечитаемые подпапки и найденные удалённые файлы — числом в строке корня; названий и идентификаторов нет', async () => {
+      const s = scene({ folders: 2, items: 2 })
+      assert.equal((await cli(['sync'])).code, 0)
+      fake.denyItems(s.ids[`${ROOT_NAME} / ${FOLDER_PREFIX} 1`], 403)
+      const res = await cli(['sync'])
+      assert.equal(res.code, 0, res.all)
+      assert.match(res.stdout, new RegExp(`^Прогон \\d+: ok, поколение 2 — #${s.src.id}: папок 3, элементов 3, нечитаемых папок 1$`))
+      noNames(res.all)
+      noIds(res.all)
+    })
+
+    it('часть корней отложена защитой (shrink), другой публикуется → partial, код 3, подсказка accept-held', async () => {
+      const big = fake.addProject({ name: PROJECT_NAME })
+      const bb = fake.build(big, { name: ROOT_NAME, children: Array.from({ length: 30 }, (_, i) => ({ name: `${FOLDER_PREFIX} ${i + 1}`, items: 1 })) })
+      const small = fake.addProject({ name: `${PROJECT_NAME} 2` })
+      const sb = fake.build(small, { name: `${ROOT_NAME} 2`, children: [{ name: `${FOLDER_PREFIX} Б1`, items: 1 }] })
+      const obj = db.seed.object({ name: 'Тест: объект А', code: 'АЛИЯ' })
+      db.seed.source({ projectId: big, folderId: bb.ids[ROOT_NAME], objectIds: [obj] })
+      db.seed.source({ projectId: small, folderId: sb.ids[`${ROOT_NAME} 2`], objectIds: [obj] })
+      assert.equal((await cli(['sync'])).code, 0)
+      for (const [path, id] of Object.entries(bb.ids).filter(([k]) => k !== ROOT_NAME).slice(0, 15)) { assert.ok(path); fake.removeFolder(big, id) }
+      fake.addFolder(small, { name: `${FOLDER_PREFIX} Б2`, parentId: sb.ids[`${ROOT_NAME} 2`] })
+      const res = await cli(['sync'])
+      assert.equal(res.code, 3, res.all)
+      assert.match(res.stdout, /^Прогон \d+: partial \((shrink|empty)\), поколение 2 — /m)
+      assert.match(res.stdout, /Прогон отложен защитой\. Принять: accept-held/)
+      noNames(res.all)
+      noIds(res.all)
     })
 
     it('SIGNAL не выдаёт токен (500 до исчерпания повторов) → код 4, снимок не меняется, секрета нет', async () => {
@@ -399,6 +464,29 @@ describe('Команды SIGNAL (signal-cli): probe, sync, accept-held с вне
       }
       assert.equal(fake.requests.length, 0)
       assert.equal(meta().generation, 0)
+    })
+
+    it('опечатка в настройке SIGNAL_* (строгий режим): код 4, в выводе имя переменной без значения, к SIGNAL обращений нет', async () => {
+      scene()
+      const cases = [
+        [{ SIGNAL_DAY_MODE: 'раз-в-сутки-СЕКРЕТНОЕ' }, /SIGNAL_DAY_MODE/],
+        [{ SIGNAL_UI_FOLDER_URL: 'https://signal.invalid/папка-СЕКРЕТНАЯ' }, /SIGNAL_UI_FOLDER_URL/],
+        [{ SIGNAL_URL_FORMATS: 'не-шаблон-СЕКРЕТНЫЙ' }, /SIGNAL_URL_FORMATS/],
+      ]
+      for (const [over, name] of cases) {
+        for (const cmd of ['probe', 'sync']) {
+          const res = await cli([cmd], { env: env(over) })
+          assert.equal(res.code, 4, `${cmd} ${JSON.stringify(over)}: ${res.all}`)
+          assert.match(res.stderr, name)
+          assert.match(res.stderr, /^FAIL /m)
+          assert.ok(!res.all.includes('СЕКРЕТН'), `в выводе значение настройки: ${res.all}`)
+        }
+      }
+      assert.equal(fake.requests.length, 0)
+      assert.equal(meta().generation, 0)
+      assert.deepEqual(runs(), [])
+      // допустимые значения тех же настроек команду не останавливают
+      assert.equal((await cli(['probe'], { env: env({ SIGNAL_DAY_MODE: 'known' }) })).code, 0)
     })
 
     it('deps.db не закрывается командой; разбор аргументов и вывод использования — через приёмники, код 1', async () => {

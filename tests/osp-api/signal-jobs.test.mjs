@@ -1,6 +1,8 @@
 // Очередь сверки договоров с Signal (server/osp-api/src/lib/signalJobs.js, раздел 4.4 спецификации) на настоящей базе:
 //   • такт берёт порцию (захват с лизингом), сопоставляет по снимку, записывает результат и подтверждает строку очереди;
-//   • ошибка — договоры возвращаются с нарастающей паузой, правка во время расчёта — запись отброшена, строка остаётся;
+//   • ошибка порции (С-19) — по одному договору: сбойный возвращается с нарастающей паузой (30 с … час после пяти неудач), прочие записаны;
+//     правка во время расчёта и решение человека во время расчёта (С-15/С-24: версия состояния и ссылка) — запись отброшена;
+//   • раз в 10 минут такт ставит в очередь договоры, правку которых пропустил триггер (С-16);
 //   • результат не зависит от разбивки на порции и групп запросов; усечённая выборка узлов — запрос по каждому договору;
 //   • барьер записи и выключенная возможность пропускают такт целиком; Signal модуль не знает вообще;
 //   • смена номера, объекта, сторон, ссылки и ДП сбрасывает «сверено» через очередь; подтверждение человека переживает пересчёт;
@@ -8,6 +10,7 @@
 // Нужны зависимости сервера (npm ci --prefix server/osp-api) и PostgreSQL (бинарники или Docker).
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { startSignalDb, signalDbSkip, SERVER } from './lib/signal-db.mjs'
@@ -116,13 +119,13 @@ describe('Очередь сверки с Signal (signalJobs.js)', { skip: signal
     let broken = true
     const jobs = make({}, tap({ before: (name) => { if (broken && name === 'signal_state_write') throw Object.assign(new Error('сбой записи'), { code: 'XX000' }) } }))
     const first = await jobs.tick()
-    assert.equal(first.error, 'XX000')
+    assert.deepEqual([first.portions, first.contracts, first.failed, first.error], [1, 0, 1, 'XX000'])
     assert.equal(one(db, `select attempts || '|' || (lease_token is null) || '|' || (next_at > now() + interval '20 seconds' and next_at < now() + interval '40 seconds') from osp_private.signal_queue where contract_id = ${lit(id)}`), '1|true|true')
     assert.equal(stateOf(id), '-', 'ничего не записано')
     assert.deepEqual(await jobs.tick(), { portions: 0, contracts: 0 }, 'пауза не истекла — строка не берётся')
     db.sql(`update osp_private.signal_queue set next_at = now() - interval '1 second' where contract_id = ${lit(id)}`)
     const second = await jobs.tick()
-    assert.equal(second.error, 'XX000')
+    assert.deepEqual([second.contracts, second.failed, second.error], [0, 1, 'XX000'])
     assert.equal(one(db, `select attempts || '|' || (next_at > now() + interval '100 seconds' and next_at < now() + interval '140 seconds') from osp_private.signal_queue where contract_id = ${lit(id)}`), '2|true', 'вторая неудача — пауза 120 с')
     assert.equal(warnings.filter((w) => /не обработана/.test(w.msg)).length, 2)
     assert.ok(!JSON.stringify(warnings).includes(s.urlOf(F.f2)), 'в журнале нет ссылок договора')
@@ -231,20 +234,22 @@ describe('Очередь сверки с Signal (signalJobs.js)', { skip: signal
       assert.match(stateOf(dp), expectDp, sql)
       if (expectDs) assert.match(stateOf(ds), expectDs, sql)
     }
-    await change(`update public.contracts set contract_number = 'АЛФ-ДП-26-077' where id = ${lit(dp)}`, /^conflict:number_mismatch/, /^unverified:family_unknown/)
+    await change(`update public.contracts set contract_number = 'АЛФ-ДП-26-077' where id = ${lit(dp)}`, /^conflict:number_mismatch/, /^conflict:foreign_dp/)
     await change(`update public.contracts set contract_number = 'АЛФ-ДП-26-002' where id = ${lit(dp)}`, /^verified:existing_url/, /^verified:existing_url/)
     await change(`update public.contracts set signal_link = ${lit(s.urlOf(F.f4))} where id = ${lit(dp)}`, /^conflict:number_mismatch/)
     await change(`update public.contracts set signal_link = ${lit(s.urlOf(F.f2))} where id = ${lit(dp)}`, /^verified:existing_url/)
-    await change(`update public.contracts set object_id = ${lit(s.B)} where id = ${lit(dp)}`, /^unverified:outside_roots/)
+    await change(`update public.contracts set object_id = ${lit(s.B)} where id = ${lit(dp)}`, /^unverified:unavailable/)
     await change(`update public.contracts set object_id = ${lit(s.A)} where id = ${lit(dp)}`, /^verified:existing_url/)
-    // Стороны: смена контрагента — договор пересчитан (без ссылки: предложение по названию стороны).
+    // Стороны: смена контрагента — договор пересчитан (отпечаток контекста сменился; папки с номерами других договоров ему не предлагаются).
     const bare = db.seed.contract({ number: '№555', objectId: s.A, counterparties: [cp2] })
     await make().tick()
     assert.match(stateOf(bare), /^none:none/)
+    const fingerprint = () => one(db, `select fingerprint from osp_private.signal_contracts where contract_id = ${lit(bare)}`)
+    const before = fingerprint()
     db.sql(`update public.contract_counterparties set counterparty_id = ${lit(s.cpR)} where contract_id = ${lit(bare)}`)
     assert.equal(one(db, `select count(*) from osp_private.signal_queue where contract_id = ${lit(bare)}`), '1', 'смена сторон поставила договор в очередь')
     await make().tick()
-    assert.match(stateOf(bare), /^suggested:candidates/, 'сторона договора теперь названа в папках объекта')
+    assert.notEqual(fingerprint(), before, 'договор пересчитан по новым сторонам')
     // Объект переименован — договоры объекта пересчитываются (названия объекта — в признаках предложений).
     db.sql(`update public.objects set name = 'Тест: ЖК Альфа Новый' where id = ${lit(s.A)}`)
     assert.ok(queueLen() > 0)
@@ -271,7 +276,7 @@ describe('Очередь сверки с Signal (signalJobs.js)', { skip: signal
     // Ссылка правится мимо окна сверки: другая папка — подтверждение человека больше не действует.
     db.sql(`update public.contracts set signal_link = ${lit(s.urlOf(F.k1))} where id = ${lit(id)}`)
     await make().tick()
-    assert.match(stateOf(id), /^verified:existing_url/)
+    assert.match(stateOf(id), /^accepted:number_not_found/, 'папка без номера: «ссылка принята» (В-1), подтверждение человека сброшено')
     assert.equal(one(db, `select confirmed_by is null from osp_private.signal_contracts where contract_id = ${lit(id)}`), 't')
   })
 
@@ -305,5 +310,156 @@ describe('Очередь сверки с Signal (signalJobs.js)', { skip: signal
     assert.equal(queueLen(), 1, 'после stop() очередь больше не разбирается')
     await make().tick()
   })
+  it('С-15/С-24: запись несёт версию состояния и ссылку договора, как их видел расчёт, и «вид» папки у предложений; «Отвязать» во время расчёта не перезаписывается', async () => {
+    const id = db.seed.contract({ number: 'АЛФ-ДП-26-001', objectId: s.A, counterparties: [s.cpR] })
+    const seen = []
+    const jobs = make({}, tap({ before: (name, values) => { if (name === 'signal_state_write') seen.push(...JSON.parse(values[1])) } }))
+    assert.deepEqual(await jobs.tick(), { portions: 1, contracts: 1 })
+    const item = seen.find((x) => x.contractId === id)
+    assert.equal(item.stateVersion, 0, 'состояния ещё не было — версия 0')
+    assert.ok('signalLink' in item && item.signalLink === null, 'ссылки не было — null, а не «поле не передано»')
+    assert.ok(item.candidates.length > 0 && item.candidates.every((c) => /^[0-9a-f]{8,}$/.test(c.nodeKey)), 'у каждого предложения — nodeKey (С-53)')
+
+    // Договор «сверен» по введённой ссылке; расчёт прочитал его, другой сотрудник нажал «Отвязать» — запись отброшена.
+    const linked = db.seed.contract({ number: 'АЛФ-ДП-26-002', objectId: s.A, counterparties: [s.cpR], signalLink: s.urlOf(F.f2) })
+    await make().tick()
+    assert.match(stateOf(linked), /^verified:existing_url:/)
+    const version = Number(stateOf(linked).split(':').at(-1))
+    let unlinked = false
+    const racing = make({}, tap({
+      after: (name) => {
+        if (name === 'signal_match_load' && !unlinked) {
+          unlinked = true
+          db.as(s.users.editor, `select osp_private.signal_unlink(${lit(linked)}, 'ctx-race', ${lit(s.urlOf(F.f2))}, ${version}, ${lit(crypto.randomUUID())})`)
+        }
+      },
+    }))
+    const res = await racing.processContracts([linked]) // тело POST /api/signal/match: без захвата очереди
+    assert.deepEqual([res.written, res.stale], [0, 1], 'расчёт по старой ссылке отброшен базой')
+    assert.equal(one(db, `select coalesce(signal_link, '') from public.contracts where id = ${lit(linked)}`), '')
+    assert.match(stateOf(linked), /^none:unlinked:/, 'решение человека не перезаписано «сверено»')
+    // Ссылку вернули — следующий такт пересчитывает по ней.
+    db.sql(`update public.contracts set signal_link = ${lit(s.urlOf(F.f2))} where id = ${lit(linked)}`)
+    await make().tick()
+    assert.match(stateOf(linked), /^verified:existing_url:/)
+  })
+
+  it('С-19: ошибка порции — по одному договору: сбойный возвращается с паузой 30 с, 2, 10, 30 мин и часом после пяти неудач, остальные записаны', async () => {
+    warnings = []
+    const good = [1, 2, 3].map((i) => db.seed.contract({ number: `АЛФ-ДП-26-61${i}`, objectId: s.A, counterparties: [s.cpR] }))
+    const poison = db.seed.contract({ number: 'АЛФ-ДП-26-619', objectId: s.A, counterparties: [s.cpR] })
+    const jobs = make({}, tap({
+      before: (name, values) => {
+        if (name === 'signal_state_write' && JSON.parse(values[1]).some((i) => i.contractId === poison)) throw Object.assign(new Error('сбой записи'), { code: 'XX000' })
+      },
+    }))
+    const first = await jobs.tick()
+    assert.deepEqual([first.portions, first.contracts, first.failed, first.error], [1, 3, 1, 'XX000'])
+    for (const id of good) assert.notEqual(stateOf(id), '-', 'исправные договоры порции записаны')
+    assert.equal(stateOf(poison), '-')
+    const window = (lo, hi) => one(db, `select attempts || '|' || (lease_token is null) || '|' || (next_at > now() + interval '${lo} seconds' and next_at < now() + interval '${hi} seconds') from osp_private.signal_queue where contract_id = ${lit(poison)}`)
+    assert.equal(window(20, 40), '1|true|true', 'первая неудача — 30 с')
+    assert.equal(queueLen(), 1, 'в очереди остался только сбойный')
+    for (const [attempt, lo, hi] of [[2, 100, 140], [3, 500, 700], [4, 1700, 1900], [5, 3500, 3700], [6, 3500, 3700]]) {
+      db.sql(`update osp_private.signal_queue set next_at = now() - interval '1 second' where contract_id = ${lit(poison)}`)
+      const r = await jobs.tick()
+      assert.deepEqual([r.contracts, r.failed], [0, 1], `попытка ${attempt}`)
+      assert.equal(window(lo, hi), `${attempt}|true|true`, `попытка ${attempt}: пауза ${lo}–${hi} с`)
+    }
+    assert.ok(!JSON.stringify(warnings).includes(s.urlOf(F.f2)), 'в журнале нет ссылок договоров')
+    assert.ok(warnings.some((w) => /порция очереди не обработана/.test(w.msg)) && warnings.some((w) => /договор очереди не обработан/.test(w.msg)))
+    // Починили — следующая попытка записывает договор.
+    db.sql(`update osp_private.signal_queue set next_at = now() - interval '1 second' where contract_id = ${lit(poison)}`)
+    assert.deepEqual(await make().tick(), { portions: 1, contracts: 1 })
+    assert.notEqual(stateOf(poison), '-')
+    assert.equal(queueLen(), 0)
+  })
+
+  it('С-19: общая причина (запись не проходит ни у кого) — подряд пять сбоев останавливают перебор: остальные возвращаются разом, а не по одному', async () => {
+    const ids = Array.from({ length: 20 }, (_, i) => db.seed.contract({ number: `АЛФ-ДП-26-62${String(i).padStart(2, '0')}`, objectId: s.A, counterparties: [s.cpR] }))
+    let writes = 0
+    const jobs = make({}, tap({ before: (name) => { if (name === 'signal_state_write') { writes += 1; throw Object.assign(new Error('сбой записи'), { code: 'XX000' }) } } }))
+    const r = await jobs.tick()
+    assert.deepEqual([r.portions, r.contracts, r.failed, r.error], [1, 0, 20, 'XX000'])
+    assert.equal(writes, 6, 'порция целиком и пять договоров по одному — дальше причина общая')
+    assert.equal(one(db, `select count(*) from osp_private.signal_queue where lease_token is null and attempts = 1 and next_at > now() + interval '20 seconds'`), '20')
+    assert.deepEqual(await jobs.tick(), { portions: 0, contracts: 0 }, 'пауза не истекла')
+    db.sql(`delete from public.contracts where id in (${ids.map(lit).join(', ')})`) // состояние и очередь уходят каскадом
+  })
+
+  it('С-19: недоступная база при записи — порция возвращается целиком, такт заканчивается ошибкой без перебора по одному', async () => {
+    const ids = Array.from({ length: 5 }, (_, i) => db.seed.contract({ number: `АЛФ-ДП-26-63${i}`, objectId: s.A, counterparties: [s.cpR] }))
+    let writes = 0
+    const jobs = make({}, tap({ before: (name) => { if (name === 'signal_state_write') { writes += 1; throw Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) } } }))
+    const r = await jobs.tick()
+    assert.equal(r.error, 'ECONNREFUSED')
+    assert.equal(writes, 1)
+    assert.equal(one(db, `select count(*) from osp_private.signal_queue where lease_token is null and next_at > now()`), '5', 'все пять возвращены с паузой')
+    db.sql(`delete from public.contracts where id in (${ids.map(lit).join(', ')})`) // состояние и очередь уходят каскадом
+  })
+
+  it('С-16: раз в 10 минут такт ставит в очередь договоры, правку которых пропустил триггер; чаще — не обращается к базе', async () => {
+    const id = db.seed.contract({ number: 'АЛФ-ДП-26-001', objectId: s.A, counterparties: [s.cpR] })
+    await make().tick()
+    assert.equal(queueLen(), 0)
+    // Правка есть (updated_at новее состояния), строки очереди нет — как после сбоя постановки.
+    db.sql(`update public.contracts set updated_at = now() + interval '1 minute' where id = ${lit(id)}`)
+    db.sql(`delete from osp_private.signal_queue where contract_id = ${lit(id)}`)
+    let calls = 0
+    let clock = 1_000_000
+    const jobs = make({ now: () => clock }, tap({ before: (name) => { if (name === 'signal_enqueue_missed') calls += 1 } }))
+    const first = await jobs.tick()
+    assert.deepEqual([calls, first.missed, first.contracts], [1, 1, 1], 'первый такт: договор поставлен в очередь и обработан')
+    assert.equal(queueLen(), 0)
+    db.sql(`update public.contracts set updated_at = now() + interval '2 minutes' where id = ${lit(id)}`)
+    db.sql(`delete from osp_private.signal_queue where contract_id = ${lit(id)}`)
+    clock += 5 * 60_000
+    assert.deepEqual(await jobs.tick(), { portions: 0, contracts: 0 }, 'через 5 минут — рано')
+    assert.equal(calls, 1)
+    clock += 5 * 60_000 + 1
+    const later = await jobs.tick()
+    assert.deepEqual([calls, later.missed, later.contracts], [2, 1, 1], 'через 10 минут — пропущенное поставлено в очередь')
+    // Ошибка постановки такт не роняет.
+    clock += 11 * 60_000
+    const broken = make({ now: () => clock }, tap({ before: (name) => { if (name === 'signal_enqueue_missed') throw Object.assign(new Error('сбой'), { code: 'XX000' }) } }))
+    warnings = []
+    assert.deepEqual(await broken.tick(), { portions: 0, contracts: 0 })
+    assert.ok(warnings.some((w) => /не поставлены в очередь/.test(w.msg)))
+    // Барьер записи и выключенная возможность — без обращения к базе.
+    calls = 0
+    clock += 11 * 60_000
+    assert.deepEqual(await make({ now: () => clock, isReadOnly: () => true }, tap({ before: (name) => { if (name === 'signal_enqueue_missed') calls += 1 } })).tick(), { skipped: 'read_only' })
+    assert.equal(calls, 0)
+  })
+
+  it('С-37: расчёт порции уступает циклу событий — setImmediate между договорами не реже среза (sliceMs); сквозной замер пауз на 2000 договорах — signal-routes-ops.test.mjs', async () => {
+    // 150 договоров одного подрядчика, у которого в объекте много папок: расчёт порции — десятки миллисекунд работы подряд.
+    const cp = db.seed.counterparty({ name: 'ООО Уступка-Строй', inn: '7700000009' })
+    db.sql(`insert into osp_private.signal_nodes (node_id, project_id, source_id, kind, parent_id, name, path, path_ids, depth, object_id, number_keys, name_norm, features, first_gen, seen_gen)
+      select ('00000008-0000-4000-8000-' || lpad(to_hex(g), 12, '0'))::uuid, ${lit(s.projectA)}, ${s.srcA.id}, 'folder', ${lit(s.srcA.folderId)}::uuid,
+             'ДП УСТ-ДП-26-' || lpad(g::text, 4, '0') || ' ООО Уступка-Строй', 'Документы Альфа / ДП УСТ-ДП-26-' || lpad(g::text, 4, '0') || ' ООО Уступка-Строй',
+             array[${lit(s.srcA.folderId)}::uuid], 1, ${lit(s.A)}::uuid, array['УСТ|2026|' || g], lower('ДП УСТ-ДП-26-' || lpad(g::text, 4, '0') || ' ООО Уступка-Строй'), '{}'::jsonb, 1, 1
+      from generate_series(1, 400) g`)
+    const ids = []
+    for (let i = 0; i < 150; i++) ids.push(db.seed.contract({ number: `АЛФ-ДП-26-7${String(i).padStart(3, '0')}`, objectId: s.A, counterparties: [cp] }))
+    db.sql('delete from osp_private.signal_queue')
+    // Уступка — это setImmediate между договорами: счёт вызовов (сам по себе тик таймера посреди ожидания базы ничего не доказывает).
+    const realImmediate = globalThis.setImmediate
+    let yields = 0
+    globalThis.setImmediate = (...args) => { yields += 1; return realImmediate(...args) }
+    try {
+      yields = 0
+      await make({ config: { sliceMs: 0 } }).processContracts(ids)
+      const everyContract = yields
+      assert.ok(everyContract >= ids.length, `при нулевом срезе — уступка после каждого договора: ${everyContract}`)
+      yields = 0
+      await make({ config: { sliceMs: 10_000 } }).processContracts(ids)
+      assert.ok(yields < everyContract / 10, `при срезе в 10 с цикл событий не дёргают лишний раз: ${yields}`)
+    } finally {
+      globalThis.setImmediate = realImmediate
+    }
+    db.sql('delete from osp_private.signal_queue')
+  })
+
 })
 

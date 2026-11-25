@@ -5,7 +5,9 @@
 // Ответ — данные или исключение SignalApiError { status, code, message }: message — русский текст сервера, status 0 —
 // сети нет (code 'network') или не дождались ответа (code 'timeout'). 409 stale_state — окно устарело (ссылку или состояние
 // успел изменить другой): isStale. Исключение — status(): интеграция выключена, сервер без неё, сбой — всегда
-// { enabled: false }: портал работает как раньше. Модуль чистый: fetch передаётся извне (src/api/signal.js даёт сессионный).
+// { enabled: false }: портал работает как раньше. Модуль чистый: fetch и токен передаются извне (src/api/signal.js даёт
+// сессионный fetch и getToken, как у «Ключей API»): при своём входе (cookie + отметка защиты X-OSP-CSRF, её ставит fetch) токена нет,
+// при входе Supabase он уходит заголовком Authorization (В-13) — сверка работает при любом режиме входа.
 export class SignalApiError extends Error {
   constructor(status, body, fallback) {
     super(body?.error || fallback || (status ? `Сервер ответил ${status}` : 'Сервер недоступен'))
@@ -44,8 +46,16 @@ const query = (params) => {
   return pairs.length ? `?${pairs.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}` : ''
 }
 
-export function createSignalClient({ fetchImpl, newKey = newIdempotencyKey }) {
-  // timeoutMs — сколько ждать ответ целиком (запрос и тело); 0 — без предела.
+export function createSignalClient({ fetchImpl, newKey = newIdempotencyKey, getToken = async () => null }) {
+  // Токен входа на момент запроса (продление сессии делает клиент входа) либо null: без токена запрос идёт по cookie.
+  // Предел ожидания действует и на получение токена: вышел — исключение, как у зависшего запроса.
+  function tokenOf(controller) {
+    const asked = (async () => { try { return (await getToken()) || null } catch { return null } })()
+    if (!controller) return asked
+    return Promise.race([asked, new Promise((_, reject) => controller.signal.addEventListener('abort', () => reject(new Error('aborted'))))])
+  }
+
+  // timeoutMs — сколько ждать ответ целиком (токен, запрос и тело); 0 — без предела.
   async function call(path, { method = 'GET', body, timeoutMs = 0 } = {}) {
     const controller = timeoutMs > 0 && typeof AbortController === 'function' ? new AbortController() : null
     let timedOut = false
@@ -53,10 +63,13 @@ export function createSignalClient({ fetchImpl, newKey = newIdempotencyKey }) {
     let res
     let data = null
     try {
+      const token = await tokenOf(controller)
+      const headers = body === undefined ? {} : { 'content-type': 'application/json' }
+      if (token) headers.authorization = `Bearer ${token}`
       res = await fetchImpl(path, {
         method,
         credentials: 'same-origin',
-        headers: body === undefined ? {} : { 'content-type': 'application/json' },
+        headers,
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: controller?.signal,
       })
@@ -78,12 +91,20 @@ export function createSignalClient({ fetchImpl, newKey = newIdempotencyKey }) {
   return {
     newKey,
 
-    // { enabled, dataAt, generation, canView, canEdit, isAdmin, confirmAvailable, fileLinks, … }. Выключено, нет маршрута,
+    // { enabled, dataAt, stale, generation, canView, canEdit, isAdmin, confirmAvailable, fileLinks, … }. Выключено, нет маршрута,
     // 401/403/404/503, сеть, не JSON (стенд или старый сервер отдаёт страницу) — { enabled: false }.
+    // Выключено, но администратору сервер назвал причину (В-8): { enabled: false, disabledReason, configErrors } — configErrors
+    // только имена переменных SIGNAL_* (до 20, прочее отбрасывается: значений и произвольного текста сервер не отдаёт, клиент
+    // их и не пропускает). Сотруднику этих полей нет — обычный { enabled: false }.
     async status() {
       try {
         const data = await call('/api/signal/status', { timeoutMs: 8000 })
-        return data.enabled === true ? { ...SIGNAL_DISABLED, ...data, enabled: true } : SIGNAL_DISABLED
+        if (data.enabled === true) return { ...SIGNAL_DISABLED, ...data, enabled: true }
+        if (typeof data.disabledReason === 'string' && data.disabledReason.trim()) {
+          const names = Array.isArray(data.configErrors) ? data.configErrors.filter((n) => typeof n === 'string' && /^SIGNAL_[A-Z0-9_]+$/.test(n)) : []
+          return { ...SIGNAL_DISABLED, disabledReason: data.disabledReason.trim().slice(0, 64), configErrors: names.slice(0, 20) }
+        }
+        return SIGNAL_DISABLED
       } catch {
         return SIGNAL_DISABLED
       }
@@ -142,6 +163,7 @@ export function createSignalClient({ fetchImpl, newKey = newIdempotencyKey }) {
     unlink: (id, body) => call(contractPath(id, '/unlink'), { method: 'POST', body }),
 
     aliases: {
+      // Сотрудник с правкой «Договоров» получает свои синонимы в своём охвате, администратор — все (С-2).
       list: () => call('/api/signal/aliases'),
       create: (objectId, text) => call('/api/signal/aliases', { method: 'POST', body: { objectId, text } }),
       // Сервер (authenticate в app.js) ждёт у DELETE тело-объект, как у su10OrgsClient.
@@ -156,6 +178,14 @@ export function createSignalClient({ fetchImpl, newKey = newIdempotencyKey }) {
       runs: ({ limit } = {}) => call(`/api/signal/runs${query({ limit })}`),
       unassigned: ({ sourceId, after, limit } = {}) => call(`/api/signal/unassigned${query({ sourceId, after, limit })}`),
       bind: ({ sourceId, nodeId, objectId = null }) => call('/api/signal/bindings', { method: 'POST', body: { sourceId, nodeId, objectId } }),
+      // «Снять» привязку поддерева: тот же маршрут с objectId: null (В-6).
+      unbind: ({ sourceId, nodeId }) => call('/api/signal/bindings', { method: 'POST', body: { sourceId, nodeId, objectId: null } }),
+      // Дерево папок корня любой глубины (В-6): без q — дети parentId (без него — корня), с q — поиск по корню; after — курсор.
+      tree: ({ sourceId, parentId, q, after } = {}) => call(`/api/signal/tree${query({ sourceId, parentId, q, after })}`),
+      // Привязки поддеревьев корня: { rootObjects, items }.
+      bindings: (sourceId) => call(`/api/signal/bindings${query({ sourceId })}`),
+      // Что заденет привязка папки к объекту: { warnings: [{ objectId, objectName, folders }], affected: { folders, items } }.
+      bindingPreview: ({ sourceId, nodeId, objectId }) => call('/api/signal/bindings/preview', { method: 'POST', body: { sourceId, nodeId, objectId } }),
     },
   }
 }

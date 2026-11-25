@@ -14,14 +14,19 @@
 //     короткая транзакция, между ними в памяти — одна порция (≤ 200 договоров, узлы одной выборки);
 //   • результат не зависит от того, как договоры разбиты на порции и группы запросов: сопоставитель получает только те узлы,
 //     которые вернул бы запрос именно этого договора (signalMatch.js, scoped); /match и очередь дают один ответ;
-//   • запись пропускается базой, если снимок сменился или договор правили после загрузки (revision / generation): строка
-//     очереди остаётся и обрабатывается в следующий такт; ошибка — signal_queue_release с нарастающей паузой;
+//   • запись пропускается базой, если снимок сменился или договор правили после загрузки (revision / generation) либо решение
+//     человека опередило расчёт (stateVersion / signalLink, С-15/С-24 — в том числе у /match без строки очереди): строка очереди
+//     остаётся и обрабатывается в следующий такт; ошибка порции — по одному договору (С-19), сбойный возвращается через
+//     signal_queue_release с нарастающей паузой, после 5 попыток — через час;
+//   • расчёт уступает циклу событий (setImmediate) не реже, чем каждые 20 мс работы (С-37): очередь не задерживает запросы
+//     пользователей; раз в 10 минут такт ставит в очередь договоры, правку которых пропустил триггер (С-16);
 //   • барьер записи (isReadOnly) и выключенная возможность (isActive) пропускают такт целиком — ни захвата, ни записи.
+import { performance } from 'node:perf_hooks'
 import { matchContract, nodeQueryFor } from './signalMatch.js'
 import { dbUnavailable } from './db.js'
 
 export const SIGNAL_JOBS_FUNCTIONS = Object.freeze([
-  'signal_queue_claim', 'signal_queue_release', 'signal_match_load', 'signal_match_nodes', 'signal_state_write',
+  'signal_queue_claim', 'signal_queue_release', 'signal_match_load', 'signal_match_nodes', 'signal_state_write', 'signal_enqueue_missed',
 ])
 export const SIGNAL_JOBS_DEFAULTS = Object.freeze({
   jobsTickMs: 15_000,
@@ -35,8 +40,13 @@ export const SIGNAL_JOBS_DEFAULTS = Object.freeze({
   groupTerms: 190, // предел базы — 200 терминов, 1000 ключей, объектов и «под папкой»
   groupKeys: 900,
   failureBackoffSeconds: Object.freeze([30, 120, 600, 1800]),
+  poisonAttempts: 5, // С-19: после стольких неудач подряд договор возвращается в очередь не раньше чем через poisonBackoffSeconds
+  poisonBackoffSeconds: 3600,
+  failureStreakStop: 5, // подряд сбоев договоров порции — причина общая (база, запись): остальные возвращаются, не перебираются
   staleBackoffSeconds: 5,
   stopWaitMs: 10_000,
+  sliceMs: 20, // С-37: дольше этого срока непрерывной работы расчёт уступает циклу событий
+  enqueueMissedMs: 600_000, // С-16: договоры, у которых правку пропустил триггер, ставятся в очередь раз в 10 минут
 })
 
 const silent = { info() {}, warn() {} }
@@ -70,6 +80,8 @@ export function createSignalStore(db) {
     ]),
     // → { written, acked, stale }
     write: (lease, items) => call('write', 'signal_state_write', [a(lease ?? null, 'uuid'), a(JSON.stringify(items), 'jsonb')]),
+    // С-16 → число поставленных в очередь договоров (правка новее состояния, строки очереди нет).
+    enqueueMissed: () => call('write', 'signal_enqueue_missed', []),
   })
 }
 
@@ -106,6 +118,18 @@ const selectorsOf = (g) => ({
   numberKeys: [...g.keys].sort(cmp), objectIds: [...g.objects].sort(cmp), terms: [...g.terms].sort(cmp), under: [...g.under].sort(cmp),
 })
 
+// С-37: уступка циклу событий. Часы — реальные (performance.now), а не подменяемые тестом now: срок работы измеряется на самом процессе.
+const clock = () => performance.now()
+const nextTurn = () => new Promise((resolve) => setImmediate(resolve))
+function createYielder(sliceMs) {
+  let since = clock()
+  return async () => {
+    if (clock() - since < sliceMs) return
+    await nextTurn()
+    since = clock()
+  }
+}
+
 export function createSignalJobs({ db, log = silent, isReadOnly = () => false, isActive = () => true, config = {}, now = Date.now }) {
   if (!db) throw new Error('signalJobs: нужна db')
   const o = { ...SIGNAL_JOBS_DEFAULTS }
@@ -117,14 +141,18 @@ export function createSignalJobs({ db, log = silent, isReadOnly = () => false, i
   let first = null
   let running = null // выполняющийся такт
   let stopping = false
-  let failures = 0
 
   // Один проход: загрузка → узлы → сопоставление. Без записи. → { generation, results, nodes } (results — по договорам загрузки)
   async function compute(ids) {
     const loaded = await store.load(ids)
     const contracts = Array.isArray(loaded?.contracts) ? loaded.contracts : []
     const objects = Array.isArray(loaded?.objects) ? loaded.objects : []
-    const entries = contracts.map((contract) => ({ contract, q: nodeQueryFor(contract, { formats }) }))
+    const pause = createYielder(o.sliceMs)
+    const entries = []
+    for (const contract of contracts) {
+      entries.push({ contract, q: nodeQueryFor(contract, { formats }) })
+      await pause()
+    }
     const known = new Map() // nodeId → узел (все полученные, для путей в ответе)
     const generations = []
     const remember = (res) => {
@@ -173,16 +201,17 @@ export function createSignalJobs({ db, log = silent, isReadOnly = () => false, i
         if (n && !seen.has(n.nodeId)) { seen.add(n.nodeId); nodes.push(n) }
       }
       for (const n of searched.get(e.contract.id) || []) if (!seen.has(n.nodeId)) { seen.add(n.nodeId); nodes.push(n) }
+      // «verified:confirmed» (решение человека) сохраняет сам сопоставитель: ему нужен state.confirmedBy из входа.
       const r = matchContract({ ...e.contract, nodes, objects }, { formats, generation })
-      // Подтверждение человека сохраняется, пока узел тот же и сопоставитель его не оспаривает.
-      const prev = e.contract.state
-      const reason = r.state === 'verified' && r.reason === 'existing_url' && prev?.state === 'verified' && prev.reason === 'confirmed'
-        && prev.confirmedBy && prev.nodeId && prev.nodeId === r.nodeId ? 'confirmed' : r.reason
-      const pathOf = (id) => known.get(id)?.path ?? null
+      // Пользователю — путь от границы объекта (К-1, С-21); полный путь узла в ответы не попадает.
+      const pathOf = (id) => { const n = known.get(id); return n ? (n.objectPath ?? n.path ?? null) : null }
       results.push({
-        id: e.contract.id, revision: e.contract.revision ?? null, state: r.state, reason, nodeId: r.nodeId, path: r.nodeId ? pathOf(r.nodeId) : null,
+        id: e.contract.id, revision: e.contract.revision ?? null, state: r.state, reason: r.reason, nodeId: r.nodeId, path: r.nodeId ? pathOf(r.nodeId) : null,
         candidates: r.candidates.map((c) => ({ ...c, path: pathOf(c.nodeId) })), fingerprint: r.fingerprint, ctxKey: r.ctxKey,
+        // Как их видел расчёт: база пропускает запись, если решение человека (Отвязать / Подтвердить) опередило её (С-15, С-24).
+        stateVersion: Number(e.contract.stateVersion ?? 0), signalLink: e.contract.signalLink ?? null,
       })
+      await pause()
     }
     return { generation, results }
   }
@@ -198,8 +227,8 @@ export function createSignalJobs({ db, log = silent, isReadOnly = () => false, i
     }
     const items = done.results.map((r) => ({
       contractId: r.id, revision: r.revision, generation: done.generation, state: r.state, reason: r.reason, nodeId: r.nodeId,
-      fingerprint: r.fingerprint, ctxKey: r.ctxKey,
-      candidates: r.candidates.map((c) => ({ nodeId: c.nodeId, score: c.score, reasons: c.reasons, flags: c.flags })),
+      fingerprint: r.fingerprint, ctxKey: r.ctxKey, stateVersion: r.stateVersion, signalLink: r.signalLink,
+      candidates: r.candidates.map((c) => ({ nodeId: c.nodeId, score: c.score, reasons: c.reasons, flags: c.flags, nodeKey: c.nodeKey ?? null })),
     }))
     const written = items.length ? await store.write(lease, items) : { written: 0, acked: 0, stale: 0 }
     return { generation: done.generation, results: done.results, written }
@@ -222,34 +251,104 @@ export function createSignalJobs({ db, log = silent, isReadOnly = () => false, i
     return out
   }
 
-  const backoffFor = (n) => o.failureBackoffSeconds[Math.min(Math.max(n, 1), o.failureBackoffSeconds.length) - 1]
+  // Неудачи по договорам: в памяти процесса (после перезапуска счёт начинается заново — пауза снова короткая, договор не теряется).
+  const failedBefore = new Map()
+  const backoffFor = (n) => (n >= o.poisonAttempts ? o.poisonBackoffSeconds : o.failureBackoffSeconds[Math.min(Math.max(n, 1), o.failureBackoffSeconds.length) - 1])
 
   async function releaseQuiet(lease, ids, seconds) {
     try { await store.release(lease, ids, seconds) } catch (err) { log.warn({ msg: short(err) }, 'signal: договоры очереди не возвращены') }
   }
 
-  // Одна порция очереди. → число договоров (0 — очередь пуста).
+  // Сбойные договоры возвращаются в очередь, каждый со своей паузой (30 с, 2 мин, 10 мин, 30 мин, после пяти неудач — час).
+  async function releaseFailed(lease, ids) {
+    const bySeconds = new Map()
+    for (const id of ids) {
+      const n = (failedBefore.get(id) ?? 0) + 1
+      failedBefore.delete(id)
+      failedBefore.set(id, n)
+      const seconds = backoffFor(n)
+      if (!bySeconds.has(seconds)) bySeconds.set(seconds, [])
+      bySeconds.get(seconds).push(id)
+    }
+    if (failedBefore.size > 20_000) for (const key of [...failedBefore.keys()].slice(0, failedBefore.size - 10_000)) failedBefore.delete(key)
+    for (const [seconds, list] of bySeconds) await releaseQuiet(lease, list, seconds)
+  }
+
+  // Одна порция очереди. → { n, failed, error?, systemic? } (n — договоров взято; 0 — очередь пуста).
+  // Ошибка порции (С-19) не бросает остальных договоров под один откат: порция разбирается по одному договору, сбойный
+  // возвращается с паузой. Недоступная база или общая причина (подряд failureStreakStop сбоев) — остановка такта.
   async function portion() {
     const claimed = await store.claim(o.batch, o.leaseSeconds)
     const items = Array.isArray(claimed?.items) ? claimed.items : []
-    if (!items.length) return 0
+    if (!items.length) return { n: 0, failed: 0 }
     const lease = claimed.leaseToken
     const ids = items.map((i) => i.contractId)
     try {
       const res = await processContracts(ids, { lease })
-      failures = 0
+      for (const id of ids) failedBefore.delete(id)
       // Договор правили во время расчёта: строка осталась в очереди под нашим захватом — вернуть, чтобы взяли в следующий такт.
       if (res.stale > 0) await releaseQuiet(lease, ids, o.staleBackoffSeconds)
+      return { n: items.length, failed: 0 }
     } catch (err) {
-      failures += 1
       log.warn({ code: err?.code, msg: short(err), contracts: ids.length }, 'signal: порция очереди не обработана')
-      await releaseQuiet(lease, ids, backoffFor(failures))
-      throw err
+      if (dbUnavailable(err) || dbUnavailable(err?.cause)) {
+        await releaseFailed(lease, ids)
+        throw err
+      }
+      if (ids.length === 1) {
+        await releaseFailed(lease, ids)
+        return { n: 1, failed: 1, error: err?.code || err?.name || 'error' }
+      }
+      return pieceByPiece(lease, ids, err)
     }
-    return items.length
   }
 
-  // Такт: не бросает ошибок. → { skipped } | { portions, contracts, error? }
+  async function pieceByPiece(lease, ids, firstErr) {
+    const failed = []
+    const retryLater = []
+    let lastCode = firstErr?.code || firstErr?.name || 'error'
+    let streak = 0
+    let systemic = false
+    for (let i = 0; i < ids.length; i++) {
+      if (stopping || isReadOnly() || !isActive()) { retryLater.push(...ids.slice(i)); break }
+      try {
+        const res = await processContracts([ids[i]], { lease })
+        streak = 0
+        failedBefore.delete(ids[i])
+        if (res.stale > 0) retryLater.push(ids[i])
+      } catch (err) {
+        if (dbUnavailable(err) || dbUnavailable(err?.cause)) {
+          await releaseFailed(lease, ids.slice(i))
+          throw err
+        }
+        lastCode = err?.code || err?.name || 'error'
+        log.warn({ code: err?.code, msg: short(err) }, 'signal: договор очереди не обработан')
+        failed.push(ids[i])
+        streak += 1
+        if (streak >= o.failureStreakStop) { failed.push(...ids.slice(i + 1)); systemic = true; break }
+      }
+    }
+    if (failed.length) await releaseFailed(lease, failed)
+    if (retryLater.length) await releaseQuiet(lease, retryLater, o.staleBackoffSeconds)
+    return { n: ids.length, failed: failed.length, error: failed.length ? lastCode : undefined, systemic }
+  }
+
+  // С-16: правка договора новее состояния, а строки очереди нет (триггер не отработал) — договор ставится в очередь. Не бросает.
+  let missedAt = null
+  async function enqueueMissed() {
+    const at = now()
+    if (missedAt !== null && at - missedAt < o.enqueueMissedMs) return 0
+    missedAt = at
+    try {
+      const n = Number(await store.enqueueMissed())
+      return Number.isFinite(n) ? n : 0
+    } catch (err) {
+      log.warn({ code: err?.code, msg: short(err) }, 'signal: пропущенные правки договоров не поставлены в очередь')
+      return 0
+    }
+  }
+
+  // Такт: не бросает ошибок. → { skipped } | { portions, contracts, failed?, missed?, error? }
   function tick() {
     if (stopping) return Promise.resolve({ skipped: 'stopped' })
     if (running) return Promise.resolve({ skipped: 'busy' })
@@ -259,19 +358,25 @@ export function createSignalJobs({ db, log = silent, isReadOnly = () => false, i
     running = (async () => {
       let portions = 0
       let contracts = 0
+      let failed = 0
+      let error
+      const report = (extra = {}) => ({ portions, contracts, ...(failed ? { failed } : {}), ...(error ? { error } : {}), ...extra })
       try {
+        const missed = await enqueueMissed()
         while (portions < o.maxPortions && now() - started < o.tickBudgetMs && !stopping) {
           if (isReadOnly() || !isActive()) break
-          const n = await portion()
-          if (!n) break
+          const part = await portion()
+          if (!part.n) break
           portions += 1
-          contracts += n
-          if (n < o.batch) break
+          contracts += part.n - part.failed
+          failed += part.failed
+          if (part.error) error = part.error
+          if (part.systemic || part.n < o.batch) break
         }
-        return { portions, contracts }
+        return report(missed ? { missed } : {})
       } catch (err) {
         if (dbUnavailable(err)) log.warn({ code: err?.code }, 'signal: база недоступна — очередь подождёт')
-        return { portions, contracts, error: err?.code || err?.name || 'error' }
+        return report({ error: err?.code || err?.name || 'error' })
       }
     })().finally(() => { running = null })
     return running
@@ -301,10 +406,14 @@ export function createSignalJobs({ db, log = silent, isReadOnly = () => false, i
 }
 
 // Возможность «сверка с Signal»: включена настройкой (SIGNAL_SYNC=1, проверяет config.js), и в базе есть схема нужной версии
-// (osp_private.signal_meta.schema_version = 1). Проверка — при запуске и раз в intervalMs; ошибка проверки схемы запуск не
-// роняет: нет ответа базы — остаётся прежнее состояние (до первой удачной проверки возможность выключена), повтор через retryMs.
+// (osp_private.signal_meta.schema_version = 1). Проверка — при запуске и раз в intervalMs. Выключает сверку только «нет схемы»
+// (С-25: 42P01 — нет таблицы, 42883 — нет функции, 3F000 — нет схемы, либо строки/версии схемы нет); любая другая ошибка проверки
+// (lock_timeout 55P03, 57014, 53300, обрыв связи…) — повтор через retryMs, состояние прежнее: идущий обход не отменяется, маршруты
+// не мигают. До первой удачной проверки возможность выключена (причина db_error). Причина выключения — reason(): no_schema | db_error.
 export const SIGNAL_SCHEMA_VERSION = 1
 export const SIGNAL_CAPABILITY_DEFAULTS = Object.freeze({ intervalMs: 300_000, retryMs: 30_000 })
+export const SIGNAL_NO_SCHEMA_CODES = Object.freeze(['42P01', '42883', '3F000'])
+const NO_SCHEMA = new Set(SIGNAL_NO_SCHEMA_CODES)
 
 export function createSignalCapability({ db, log = silent, onChange = () => {}, options = {} }) {
   if (!db) throw new Error('signalCapability: нужна db')
@@ -315,38 +424,46 @@ export function createSignalCapability({ db, log = silent, onChange = () => {}, 
   let checking = null
   let stopped = false
   let retry = false // последняя проверка не получила ответа базы
+  let why = 'db_error' // причина выключенного состояния: no_schema — схемы нет; db_error — проверить не удалось
 
+  // data_at — дата данных (наименьший last_ok_at включённых готовых корней); схема без таблицы корней сюда не доходит.
   const readMeta = () => db.read(null, async (tx) => (await tx.query(
-    'select schema_version, generation::text as generation, published_at from osp_private.signal_meta where id = 1')).rows[0] ?? null)
+    `select schema_version, generation::text as generation, published_at,
+            (select min(s.last_ok_at) from osp_private.signal_sources s where s.enabled and s.ready) as data_at
+       from osp_private.signal_meta where id = 1`)).rows[0] ?? null)
 
-  function set(next) {
+  function set(next, reason = null) {
     const changed = next !== active
     active = next
     checked = true
+    why = next ? null : reason
     if (changed) {
       try { onChange(active) } catch (err) { log.warn({ msg: short(err) }, 'signal: обработчик смены состояния') }
     }
   }
 
-  // → true | false | null (нет ответа базы). Не бросает.
+  const noSchema = (err) => NO_SCHEMA.has(String(err?.code || '')) || NO_SCHEMA.has(String(err?.cause?.code || ''))
+
+  // → true | false | null (нет ответа базы или ошибка проверки — состояние прежнее). Не бросает.
   function refresh() {
     checking ??= (async () => {
       try {
         const row = await readMeta()
         retry = false
-        set(Boolean(row) && Number(row.schema_version) === SIGNAL_SCHEMA_VERSION)
+        set(Boolean(row) && Number(row.schema_version) === SIGNAL_SCHEMA_VERSION, 'no_schema')
         return active
       } catch (err) {
-        if (dbUnavailable(err) || dbUnavailable(err?.cause)) {
-          log.warn({ code: err?.code }, 'signal: схему проверить не удалось — база не отвечает')
-          retry = true
-          return null
+        if (noSchema(err)) {
+          retry = false
+          if (!checked || active) log.warn({ code: err?.code }, 'signal: схемы сверки в базе нет — возможность выключена')
+          set(false, 'no_schema')
+          return false
         }
-        // Нет таблицы или схемы — миграция не применена; другой отказ базы — тоже «нет схемы», не отказ запуска.
-        retry = false
-        if (!checked || active) log.warn({ code: err?.code }, 'signal: схемы сверки в базе нет — возможность выключена')
-        set(false)
-        return false
+        // Связь, блокировка, таймаут, лимит соединений: схема не опровергнута — прежнее состояние, повтор скоро.
+        retry = true
+        if (!checked) why = 'db_error'
+        log.warn({ code: err?.code || err?.cause?.code }, 'signal: схему проверить не удалось — состояние прежнее, повтор скоро')
+        return null
       }
     })().finally(() => { checking = null })
     return checking
@@ -364,13 +481,28 @@ export function createSignalCapability({ db, log = silent, onChange = () => {}, 
   return {
     active: () => active,
     checked: () => checked,
+    reason: () => (active ? null : why),
     refresh,
-    // Поколение снимка и время публикации — для «данные на …» (служебное чтение одной строки).
+    // Поколение снимка, время публикации и дата данных — для «данные на …» (служебное чтение одной строки).
     async meta() {
       const row = await readMeta()
-      return { generation: row ? Number(row.generation) : 0, publishedAt: row?.published_at ? new Date(row.published_at).toISOString() : null }
+      const at = (v) => (v ? new Date(v).toISOString() : null)
+      return { generation: row ? Number(row.generation) : 0, publishedAt: at(row?.published_at), dataAt: at(row?.data_at) }
     },
     start() { if (!timer && !stopped) schedule(retry ? o.retryMs : o.intervalMs) },
     stop() { stopped = true; clearTimeout(timer); timer = null },
+  }
+}
+
+// Выключенная возможность без проверки базы (config_invalid, В-8): маршруты отвечают «выключено», таймеры не стартуют.
+export function createDisabledCapability(reason) {
+  return {
+    active: () => false,
+    checked: () => true,
+    reason: () => reason,
+    refresh: async () => false,
+    async meta() { return { generation: 0, publishedAt: null, dataAt: null } },
+    start() {},
+    stop() {},
   }
 }

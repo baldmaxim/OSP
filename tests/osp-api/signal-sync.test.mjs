@@ -7,6 +7,9 @@
 // пустом ответе, а сбой посреди обхода не меняют снимок; владелец прогона; барьер записи; исчезновение узла только
 // после двух ночных обходов подряд; режим known; расписание по Москве независимо от TZ процесса; accept-held;
 // отсутствие открытой транзакции во время HTTP и ожидания 429; остановка без публикации.
+// ПР-5 (В-5): сбой одного корня не останавливает остальные (статус ok | partial | held | failed решает база), нечитаемая
+// подпапка — проблема папки, а не прогона; эти сценарии, страницы списков и удалённые файлы — в signal-sync-roots.test.mjs
+// и signal-sync-pages.test.mjs.
 import { describe, it, before, after, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
@@ -184,11 +187,15 @@ describe('Синхронизация SIGNAL: база и поддельный SI
     assert.equal(stageCount(), 0)
     assert.equal(meta().generation, 2)
     assert.deepEqual(runs().map((r) => [r.status, r.generation]), [['ok', 1], ['ok', 2]])
-    // публикация ставит договоры в очередь пересчёта
+    // публикация без изменений договоры в очередь не ставит (С-38); с изменением — ставит
     const contract = db.seed.contract({ number: 'АЛИЯ-ДП-26-001', objectId: s.obj })
+    const queued = () => Number(db.sql(`select count(*) from osp_private.signal_queue where contract_id = '${contract}'`).split('\n')[0])
     db.sql(`DELETE FROM osp_private.signal_queue WHERE contract_id = '${contract}'`)
     await manual(sync)
-    assert.equal(Number(db.sql(`select count(*) from osp_private.signal_queue where contract_id = '${contract}'`).split('\n')[0]), 1)
+    assert.equal(queued(), 0, 'ничего не изменилось — очередь не нагружается')
+    fake.addFolder(s.project, { name: 'Корпус 99', parentId: s.root })
+    await manual(sync)
+    assert.equal(queued(), 1, 'новая папка — договор поставлен в очередь')
   })
 
   it('порции staging не больше stageChunk, страницы элементов — по pageSize (Skip/Take, без «следующего» адреса)', async () => {
@@ -203,7 +210,8 @@ describe('Синхронизация SIGNAL: база и поддельный SI
     assert.ok(pages.every((r) => r.query.Take === '3'))
     const sizes = new Map()
     for (const r of pages) sizes.set(r.query.folderId, [...(sizes.get(r.query.folderId) || []), r.query.Skip])
-    assert.deepEqual([...sizes.values()].filter((v) => v.length === 3).map((v) => v.join()), ['0,3,6', '0,3,6', '0,3,6'])
+    // 7 элементов по 3: 0, 3, 6, пустая страница (7) — конец списка, затем сверка первой страницы (0)
+    assert.deepEqual([...sizes.values()].filter((v) => v.length === 5).map((v) => v.join()), ['0,3,6,7,0', '0,3,6,7,0', '0,3,6,7,0'])
     assert.equal(nodes().length, 25)
     for (const r of fake.requests) assert.ok(!JSON.stringify(r).includes('evil'))
     assert.deepEqual(fake.violations, [])
@@ -221,7 +229,7 @@ describe('Синхронизация SIGNAL: база и поддельный SI
     assert.ok(['signal_sources_for_sync', 'signal_sync_begin', 'signal_stage_put', 'signal_sync_finish'].every((n) => names.has(n)))
   })
 
-  it('два корня одного проекта — одно дерево на проект; сбой одного корня не публикует ничего и отмечает именно его', async () => {
+  it('два корня одного проекта — одно дерево на проект; сбой одного корня (В-5): он отмечен и не обновлён, другой опубликован — partial', async () => {
     const project = fake.addProject({ name: 'Тест: проект' })
     const { ids } = fake.build(project, [
       { name: 'Корень 1', children: [{ name: 'Корпус 1', items: 2 }] },
@@ -240,15 +248,21 @@ describe('Синхронизация SIGNAL: база и поддельный SI
     assert.equal(p['Корень 2 / Корпус 1'].object_id, o2)
     assert.deepEqual(sources().map((s) => [s.id, s.ready, s.folders_count, s.items_count]), [[s1.id, true, 2, 2], [s2.id, true, 2, 2]])
 
-    const before = snapshot()
+    const before = nodes().filter((n) => n.path.startsWith('Корень 2'))
     fake.removeFolder(project, ids['Корень 2'])
+    fake.addFolder(project, { name: 'Корпус 2', parentId: ids['Корень 1'] })
     const bad = await manual(sync)
-    assert.equal(bad.status, 'failed')
-    assert.equal(bad.reason, 'root_missing')
-    assert.deepEqual(bad.stats.roots, [{ id: s1.id, status: 'ok', folders: 2, items: 2, listed: 2 }, { id: s2.id, status: 'failed', reason: 'root_missing' }])
-    assert.deepEqual(snapshot(), before, 'снимок не изменился, хотя первый корень обошли')
-    assert.deepEqual(sources().map((s) => [s.id, s.last_error]), [[s1.id, null], [s2.id, 'root_missing']])
+    assert.equal(bad.status, 'partial', JSON.stringify(bad))
+    assert.equal(bad.reason, 'root_failed')
+    assert.equal(bad.generation, 2, 'исправный корень опубликован — поколение растёт')
+    assert.deepEqual(bad.stats.roots, [{ id: s1.id, status: 'ok', folders: 3, items: 2, listed: 3 }, { id: s2.id, status: 'failed', reason: 'root_missing' }])
+    const after = byPath(nodes())
+    assert.ok(after['Корень 1 / Корпус 2'], 'новая папка исправного корня опубликована')
+    assert.deepEqual(nodes().filter((n) => n.path.startsWith('Корень 2')).map((n) => [n.node_id, n.absent_nights]), before.map((n) => [n.node_id, 0]),
+      'узлы сбойного корня не тронуты: ни пропаж, ни счёта ночей')
+    assert.deepEqual(sources().map((s) => [s.id, s.last_error, s.ready]), [[s1.id, null, true], [s2.id, 'root_missing', true]])
     assert.equal(stageCount(), 0)
+    assert.deepEqual(runs().at(-1).status, 'partial')
   })
 
   // ── held ────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -351,16 +365,14 @@ describe('Синхронизация SIGNAL: база и поддельный SI
   })
 
   // ── сбои ────────────────────────────────────────────────────────────────────────────────────────────────────────
-  describe('сбой посреди обхода не меняет снимок', () => {
+  describe('сбой корня не меняет его снимок и не останавливает остальные (В-5)', () => {
+    // Сбои связи на элементах — сбой корня: прогон failed (все корни сбойные), снимок, поколение и staging чисты, last_error корня.
     const cases = [
-      ['403 на элементах', 'scope', () => ({ status: 403, body: {} }), {}],
       ['500 на элементах', 'http', () => ({ status: 500, body: {} }), {}],
       ['зависший ответ', 'timeout', () => ({ hang: true }), { timeoutMs: 250 }],
-      ['неверный тип поля', 'invalid', () => ({ status: 200, body: [{ id: 'не-uuid', name: 'x' }] }), {}],
-      ['слишком большой ответ', 'too_large', () => ({ bigBody: 3_000_000 }), { maxBytes: 100_000 }],
     ]
     for (const [title, reason, spec, clientOver] of cases) {
-      it(`${title} после записанных порций → failed (${reason}); снимок, поколение и staging чисты, last_error корня`, async () => {
+      it(`${title} после записанных порций → корень failed (${reason}), прогон failed (root_failed); снимок, поколение и staging чисты`, async () => {
         const s = scene({ folders: 4, items: 3 })
         assert.equal((await manual(mkSync())).status, 'ok')
         const before = snapshot()
@@ -374,19 +386,49 @@ describe('Синхронизация SIGNAL: база и поддельный SI
         }, { ...spec(), times: 100 })
         const result = await manual(mkSync({ api: mkApi({ retries: 0, ...clientOver }) }))
         assert.equal(result.status, 'failed')
-        assert.equal(result.reason, reason)
+        assert.equal(result.reason, 'root_failed')
         assert.ok(staged > 0, `порции были записаны до сбоя (${staged})`)
         assert.deepEqual(snapshot(), before)
         assert.equal(stageCount(), 0)
         const last = runs().at(-1)
-        assert.deepEqual([last.status, last.reason], ['failed', reason])
+        assert.deepEqual([last.status, last.reason], ['failed', 'root_failed'])
         assert.equal(sources()[0].last_error, reason)
         assert.equal(sources()[0].ready, true, 'прежний снимок остаётся готовым')
         assert.deepEqual(result.stats.roots, [{ id: s.src.id, status: 'failed', reason }])
       })
     }
 
-    it('корень не найден в дереве, проект исчез (404), нет доступа (403) → failed без изменения снимка', async () => {
+    // Ошибка чтения одной подпапки (403, разбор, слишком большой ответ) — проблема папки: обход идёт, корень публикуется.
+    const folderCases = [
+      ['403 на элементах', 'forbidden', () => ({ status: 403, body: {} }), {}],
+      ['неверный тип поля', 'invalid', () => ({ status: 200, body: [{ id: 'не-uuid', name: 'x' }] }), {}],
+      ['слишком большой ответ', 'invalid', () => ({ bigBody: 3_000_000 }), { maxBytes: 100_000 }],
+    ]
+    for (const [title, code, spec, clientOver] of folderCases) {
+      it(`${title} в подпапке → проблема папки (${code}), корень опубликован, элементы папки перенесены из прежнего снимка`, async () => {
+        const s = scene({ folders: 4, items: 3 })
+        assert.equal((await manual(mkSync())).status, 'ok')
+        const bad = s.ids['Корень / Корпус 2']
+        const oldItems = nodes().filter((n) => n.parent_id === bad).map((n) => n.node_id)
+        assert.equal(oldItems.length, 3)
+        fake.fail((r) => r.path === '/public/v1/items' && r.query.folderId === bad, { ...spec(), times: 100 })
+        const result = await manual(mkSync({ api: mkApi({ retries: 0, ...clientOver }) }))
+        assert.equal(result.status, 'ok', JSON.stringify(result))
+        assert.equal(result.generation, 2)
+        assert.deepEqual(result.stats.roots, [{
+          id: s.src.id, status: 'ok', folders: 5, items: 10, listed: 4, problems: [{ nodeId: bad, code }], problemsTotal: 1,
+        }])
+        assert.equal(stageCount(), 0)
+        assert.deepEqual(sources().map((r) => [r.last_error, r.ready]), [[null, true]])
+        const after = nodes()
+        assert.deepEqual(after.filter((n) => n.parent_id === bad).map((n) => [n.node_id, n.seen_gen, n.absent_nights]), oldItems.sort().map((id) => [id, 2, 0]),
+          'файлы нечитаемой папки не считаются пропавшими')
+        assert.equal(db.sqlJson(`select to_json(t) from (select problem from osp_private.signal_nodes where node_id = '${bad}') t`).problem, code)
+        assert.equal(db.sqlJson(`select to_json(t) from (select problem from osp_private.signal_nodes where node_id = '${s.ids['Корень / Корпус 1']}') t`).problem, null)
+      })
+    }
+
+    it('корень не найден в дереве, проект исчез (404), нет доступа (403) → корень failed (root_missing / root_unavailable / scope), снимок прежний', async () => {
       const s = scene({ folders: 3, items: 2 })
       const sync = mkSync()
       assert.equal((await manual(sync)).status, 'ok')
@@ -394,39 +436,43 @@ describe('Синхронизация SIGNAL: база и поддельный SI
 
       fake.denyProject(s.project)
       let r = await manual(sync)
-      assert.deepEqual([r.status, r.reason], ['failed', 'scope'])
+      assert.deepEqual([r.status, r.reason], ['failed', 'root_failed'])
+      assert.deepEqual(r.stats.roots, [{ id: s.src.id, status: 'failed', reason: 'scope' }])
       assert.equal(sources()[0].last_error, 'scope')
       fake.allowProject(s.project)
 
       const removed = fake.state.folders.get(s.project).get(s.root)
       fake.removeFolder(s.project, s.root)
       r = await manual(sync)
-      assert.deepEqual([r.status, r.reason], ['failed', 'root_missing'])
+      assert.deepEqual([r.status, r.reason], ['failed', 'root_failed'])
       assert.equal(sources()[0].last_error, 'root_missing')
       fake.state.folders.get(s.project).set(s.root, removed)
 
       fake.removeProject(s.project)
       r = await manual(sync)
-      assert.deepEqual([r.status, r.reason], ['failed', 'root_unavailable'])
+      assert.deepEqual([r.status, r.reason], ['failed', 'root_failed'])
       assert.equal(sources()[0].last_error, 'root_unavailable')
       assert.deepEqual(snapshot(), before)
       assert.equal(stageCount(), 0)
       assert.deepEqual(fake.violations, [])
     })
 
-    it('пределы: глубина и число узлов → failed (limit); повтор страницы (курсор не сдвинулся) → failed (invalid)', async () => {
+    it('пределы: глубина и число узлов → корень failed (limit); повтор страницы (курсор не сдвинулся) → корень failed (invalid)', async () => {
       const project = fake.addProject({ name: 'Тест: проект' })
       const { ids } = fake.build(project, { name: 'Корень', children: [{ name: 'А', children: [{ name: 'Б', children: [{ name: 'В', items: 250 }] }] }] })
       const obj = db.seed.object({ name: 'Тест: объект А' })
       db.seed.source({ projectId: project, folderId: ids['Корень'], objectIds: [obj] })
       let r = await manual(mkSync({ config: { maxDepth: 2 } }))
-      assert.deepEqual([r.status, r.reason], ['failed', 'limit'])
+      assert.deepEqual([r.status, r.reason], ['failed', 'root_failed'])
+      assert.equal(sources()[0].last_error, 'limit')
       r = await manual(mkSync({ config: { maxNodes: 100 } }))
-      assert.deepEqual([r.status, r.reason], ['failed', 'limit'], 'элементы тоже считаются в узлах корня')
+      assert.deepEqual([r.status, r.reason], ['failed', 'root_failed'])
+      assert.equal(sources()[0].last_error, 'limit', 'элементы тоже считаются в узлах корня')
       const page = fake.state.items.get(ids['Корень / А / Б / В']).slice(0, 200).map((it) => ({ ...it, folderId: it.folderId }))
       fake.fail((req) => req.path === '/public/v1/items' && req.query.Skip === '200', { status: 200, body: page, times: 5 })
       r = await manual(mkSync())
-      assert.deepEqual([r.status, r.reason], ['failed', 'invalid'])
+      assert.deepEqual([r.status, r.reason], ['failed', 'root_failed'])
+      assert.equal(sources()[0].last_error, 'invalid')
       assert.equal(meta().generation, 0)
       assert.equal(nodes().length, 0)
       assert.equal(stageCount(), 0)
@@ -722,7 +768,8 @@ describe('Синхронизация SIGNAL: база и поддельный SI
       fake.denyProject(s.project)
       for (let i = 0; i < 3; i++) {
         const r = await at(sync, `2030-03-05 0${5 + i}:10`)
-        assert.deepEqual([r.status, r.reason], ['failed', 'scope'], `попытка ${i + 1}`)
+        assert.deepEqual([r.status, r.reason], ['failed', 'root_failed'], `попытка ${i + 1}`)
+        assert.equal(sources()[0].last_error, 'scope')
       }
       assert.deepEqual(await at(sync, '2030-03-05 07:50'), { skipped: 'not_due' }, 'четвёртой попытки нет')
       assert.equal(runs().filter((r) => r.kind === 'night').length, 4)

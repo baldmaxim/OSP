@@ -39,8 +39,8 @@ describe('База сверки с SIGNAL: расписание, публика�
 
   it('расписание Р7: ночной слот 05:00 по Москве с повтором через 30 минут (≤ 3 попыток до 08:00), дневные часы пн–пт 08:00–20:00, одна попытка на слот', () => {
     const due = (iso) => j(`select osp_private.signal_sync_due('${iso}')`)
-    const run = (kind, slot, status, finishedIso) => q(`insert into osp_private.signal_runs (kind, mode, status, initiator, owner_token, slot, started_at, finished_at)
-      values ('${kind}', 'full', '${status}', 'schedule', gen_random_uuid(), '${slot}', '${finishedIso}'::timestamptz - interval '1 minute', ${status === 'running' ? 'null' : `'${finishedIso}'`})`)
+    const run = (kind, slot, status, finishedIso, beatIso = finishedIso) => q(`insert into osp_private.signal_runs (kind, mode, status, initiator, owner_token, slot, started_at, finished_at, heartbeat_at)
+      values ('${kind}', 'full', '${status}', 'schedule', gen_random_uuid(), '${slot}', '${finishedIso}'::timestamptz - interval '1 minute', ${status === 'running' ? 'null' : `'${finishedIso}'`}, '${beatIso}')`)
     const NIGHT = '2026-11-23T02:00:00Z'
     assert.deepEqual(due('2026-11-23T01:59:00Z'), { due: false }, '04:59 по Москве')
     assert.deepEqual(due('2026-11-23T02:00:00Z'), { due: true, kind: 'night', slot: '2026-11-23T02:00:00+00:00' })
@@ -65,11 +65,24 @@ describe('База сверки с SIGNAL: расписание, публика�
     assert.equal(due('2026-11-23T18:00:00Z').due, false, '21:00')
     assert.deepEqual(due('2026-11-23T04:59:00Z'), { due: false }, '07:59: дневных слотов до 08:00 нет, ночной исчерпан')
     // Ночь закрывают ok и held (повтор held только вручную), идущий прогон тоже.
-    for (const [day, status] of [['24', 'ok'], ['25', 'held'], ['26', 'running']]) {
+    for (const [day, status] of [['24', 'ok'], ['25', 'held'], ['26', 'partial'], ['27', 'running']]) {
       assert.equal(due(`2026-11-${day}T02:30:00Z`).kind, 'night')
-      run('night', `2026-11-${day}T02:00:00Z`, status, `2026-11-${day}T02:20:00Z`)
+      // идущий прогон закрывает слот, пока пульс живой (последний — 5 минут назад)
+      run('night', `2026-11-${day}T02:00:00Z`, status, `2026-11-${day}T02:20:00Z`, status === 'running' ? `2026-11-${day}T03:25:00Z` : undefined)
       assert.equal(due(`2026-11-${day}T03:30:00Z`).due, false, status)
     }
+    // С-17: зависший running (пульс старше 10 минут — процесс упал) — сбой: повтор через 30 минут после последнего пульса, не вечная блокировка
+    q("update osp_private.signal_runs set status = 'failed', finished_at = now() where status = 'running'")
+    run('night', '2026-11-28T02:00:00Z', 'running', '2026-11-28T02:05:00Z', '2026-11-28T02:10:00Z')
+    assert.equal(due('2026-11-28T02:25:00Z').due, false, 'пульс 15 минут назад — сбой, но ещё нет 30 минут')
+    assert.deepEqual(due('2026-11-28T02:41:00Z'), { due: true, kind: 'night', slot: '2026-11-28T02:00:00+00:00' }, 'через 30 минут после последнего пульса — повтор')
+    // повтор: begin снимает зависший, новый прогон идёт и закрывает слот; сбойный третьей попыткой слот исчерпывает
+    q("update osp_private.signal_runs set status = 'failed', finished_at = '2026-11-28T02:12:00Z' where status = 'running'")
+    run('night', '2026-11-28T02:00:00Z', 'running', '2026-11-28T02:41:00Z', '2026-11-28T02:41:00Z')
+    assert.equal(due('2026-11-28T02:45:00Z').due, false, 'второй прогон идёт, пульс живой')
+    q("update osp_private.signal_runs set status = 'failed', finished_at = '2026-11-28T02:50:00Z' where status = 'running'")
+    run('night', '2026-11-28T02:00:00Z', 'failed', '2026-11-28T03:20:00Z')
+    assert.equal(due('2026-11-28T03:55:00Z').due, false, 'три попытки в слоте — слот закрыт')
     // Суббота и воскресенье: дневных слотов нет, ночной есть.
     assert.deepEqual(due('2026-11-21T09:00:00Z'), { due: false }, 'суббота 12:00')
     assert.deepEqual(due('2026-11-22T09:00:00Z'), { due: false }, 'воскресенье 12:00')
@@ -99,7 +112,8 @@ describe('База сверки с SIGNAL: расписание, публика�
     assert.deepEqual(na['RA / A2'], { seen: g0, absent: 1, first: g0 }, 'пропавшая папка: прежнее поколение, +1 ночь')
     assert.deepEqual(na['RA / A1 / f1.pdf'], { seen: g0 + 1, absent: 0, first: g0 })
     assert.deepEqual(na['RA / A1 / f2.pdf'], { seen: g0, absent: 1, first: g0 }, 'пропавший файл перечисленной папки — то же')
-    assert.deepEqual(nodes(b.src), bNodesBefore, 'корень без staging: узлы не тронуты, не «отсутствуют»')
+    assert.deepEqual(Object.values(nodes(b.src)).map((n) => [n.seen, n.absent, n.first]), Object.values(bNodesBefore).map((n) => [g0 + 1, 0, n.first]),
+      'корень без staging: не «отсутствует» (absent_nights прежние), прежние данные остаются виденными в новом поколении')
     assert.equal(srcB(), bBefore, 'корень без staging: готовность, отметки времени и счётчики прежние')
     assert.equal(q(`select (last_night_ok_at is not null) || '|' || (last_full_ok_at is not null) || '|' || ready || '|' || folders_count || '|' || items_count from osp_private.signal_sources where id = ${a.src.id}`), 'true|true|true|2|1')
     assert.equal(q(`select count(*) from osp_private.signal_queue where contract_id = '${dp}'`), '1', 'публикация ставит договоры в очередь')
@@ -114,7 +128,7 @@ describe('База сверки с SIGNAL: расписание, публика�
     // Вторая ночь подряд: А снова обработан, Б — нет (его absent_nights остаётся 0).
     seed.sync({ kind: 'night', roots: [{ src: a.src, tree: treeA1, ids: a.snap.ids }] })
     assert.equal(nodes(a.src)['RA / A2'].absent, 2, 'не виден в двух ночных обходах подряд')
-    assert.deepEqual(nodes(b.src), bNodesBefore, 'корень Б по-прежнему не затронут')
+    assert.deepEqual(Object.values(nodes(b.src)).map((n) => [n.seen, n.absent]), Object.values(bNodesBefore).map(() => [gen(), 0]), 'корень Б по-прежнему не затронут: не отсутствует, виден')
     // Узел вернулся: absent_nights = 0, seen_gen новый, first_gen прежний.
     const back = seed.sync({ kind: 'night', roots: [{ src: a.src, tree: treeA, ids: a.snap.ids }] })
     assert.deepEqual(nodes(a.src)['RA / A2'], { seen: back.result.generation, absent: 0, first: g0 })
@@ -123,8 +137,8 @@ describe('База сверки с SIGNAL: расписание, публика�
     // Ночь, в которую обработан только Б: у А счётчики не меняются.
     const aBefore = nodes(a.src)
     seed.sync({ kind: 'night', roots: [{ src: b.src, tree: { name: 'RB', children: [{ name: 'B1', items: [{ name: 'g1.pdf' }] }] }, ids: b.snap.ids }] })
-    assert.deepEqual(nodes(a.src)['RA / A2'], aBefore['RA / A2'])
-    assert.deepEqual(nodes(b.src)['RB / B2'], { seen: b.snap.generation, absent: 1, first: b.snap.generation })
+    assert.deepEqual(nodes(a.src)['RA / A2'], { ...aBefore['RA / A2'], seen: gen() }, 'корень А в этой ночи не обработан: счётчики прежние, прежние данные остаются виденными')
+    assert.deepEqual(nodes(b.src)['RB / B2'], { seen: gen() - 1, absent: 1, first: b.snap.generation })
     // Выключенный корень со staging не обрабатывается совсем (его строки отбрасываются).
     q(`update osp_private.signal_sources set enabled = false where id = ${b.src.id}`)
     const off = seed.sync({ kind: 'night', roots: [{ src: b.src, tree: { name: 'RB' }, ids: b.snap.ids }], stats: { roots: [] } })
@@ -248,21 +262,19 @@ describe('База сверки с SIGNAL: расписание, публика�
     q('delete from osp_private.signal_runs')
   })
 
-  it('корень не обошли (status = failed в статистике) — held root_failed, причина в корне; сбой и отмена снимок не меняют, staging удаляют', () => {
+  it('корень не обошли (status = failed в статистике) — прогон partial, исправный корень опубликован, сбойный на прежних данных с причиной; сбой и отмена снимок не меняют, staging удаляют', () => {
     const a = mkRoot({ name: 'RF', children: [{ name: 'F1' }] })
     const b = mkRoot({ name: 'RG', children: [{ name: 'G1' }] })
     const before = { a: nodes(a.src), b: nodes(b.src), g: gen() }
     const stats = { roots: [{ id: a.src.id, status: 'ok' }, { id: b.src.id, status: 'failed', reason: 'forbidden' }] }
     const r = seed.sync({ kind: 'manual', roots: [{ src: a.src, tree: { name: 'RF', children: [{ name: 'F1' }, { name: 'F2' }] }, ids: a.snap.ids }], stats })
-    assert.deepEqual({ s: r.result.status, r: r.result.reason }, { s: 'held', r: 'root_failed' })
+    assert.deepEqual({ s: r.result.status, r: r.result.reason, g: r.result.generation }, { s: 'partial', r: 'root_failed', g: before.g + 1 })
     assert.equal(q(`select last_error from osp_private.signal_sources where id = ${b.src.id}`), 'forbidden')
-    assert.deepEqual({ a: nodes(a.src), b: nodes(b.src), g: gen() }, before)
-    // Принять held: опубликуется то, что обошли (корень А), корень Б остаётся прежним.
-    const done = j(`select osp_private.signal_accept_held(${r.run.runId}, ${gen()}, 'cli', 'Б недоступен, остальное верно')`)
-    assert.equal(done.status, 'ok')
-    assert.ok(nodes(a.src)['RF / F2'])
-    assert.deepEqual(nodes(b.src), before.b)
+    assert.ok(nodes(a.src)['RF / F2'], 'исправный корень опубликован')
+    assert.deepEqual(Object.values(nodes(b.src)).map((n) => [n.seen, n.absent, n.first]), Object.values(before.b).map((n) => [before.g + 1, 0, n.first]), 'сбойный: узлы на месте и видны')
     assert.equal(q(`select last_error is null from osp_private.signal_sources where id = ${a.src.id}`), 't')
+    // Принимать нечего: отложенных корней в прогоне нет.
+    assert.equal(db.sqlError(`select osp_private.signal_accept_held(${r.run.runId}, ${gen()}, 'cli', 'Б недоступен, остальное верно')`).message, 'stale_state')
     // Сбой: причина из набора, staging удалён, прежнее на месте; чужому владельцу — тихо ничего.
     const run = seed.sync({ kind: 'manual', roots: [{ src: a.src, tree: { name: 'RF' }, ids: a.snap.ids }], finish: false }).run
     assert.ok(Number(q(`select count(*) from osp_private.signal_stage_nodes where run_id = ${run.runId}`)) > 0)
@@ -797,7 +809,10 @@ describe('База сверки с SIGNAL: правки по ревью — ви
     const mark = () => db.asJson(ed, 'select osp_private.signal_marks(null, 1000)').items.find((m) => m.id === dp)
     const view = () => db.asJson(ed, `select osp_private.signal_contract_view('${dp}')`)
     const both = () => [mark(), view()]
-    const publish = () => assert.equal(seed.sync({ kind: 'manual', mode: 'full', roots: [{ src, tree, ids: snap.ids }] }).result.status, 'ok')
+    // Публикация с изменением (С-38: без изменений в очередь никого не ставят): каждый раз новый файл в папке «A».
+    let tick = 0
+    const publish = () => assert.equal(seed.sync({ kind: 'manual', mode: 'full', roots: [{ src, ids: snap.ids,
+      tree: { name: 'R', children: [{ name: 'A', items: [{ name: `новый${++tick}.pdf` }] }, { name: 'B' }] } }] }).result.status, 'ok')
     const settle = () => assert.equal(write(dp, { candidates: [{ nodeId: snap.ids['R / A'], score: 70, reasons: ['number'], flags: [] }] }).written, 1)
 
     // Договор ни разу не обработан: «ожидает» — показывать нечего.

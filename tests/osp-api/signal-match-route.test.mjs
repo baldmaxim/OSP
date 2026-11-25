@@ -5,7 +5,9 @@
 //     «Историю» и журнал базы маршрут не трогает;
 //   • результат тот же, что у очереди: состояния, узлы и предложения после /match равны состояниям после прохода очереди по
 //     тому же снимку, и не зависят от того, как договоры разбиты на порции;
-//   • сверка сразу видна: правка договора не ждёт такта очереди, строка очереди подтверждена (значок не «ожидает»).
+//   • сверка сразу видна: правка договора не ждёт такта очереди, строка очереди подтверждена (значок не «ожидает»);
+//   • решение человека не перезаписывается (С-15, С-24, С-29): «Отвязать» и «Отклонить» другой сессии во время расчёта /match —
+//     /match их не затирает ни «сверено», ни переоткрытым предложением, хотя строки очереди у договора нет.
 // Нужны зависимости сервера (npm ci --prefix server/osp-api) и PostgreSQL (бинарники или Docker).
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -183,4 +185,82 @@ describe('POST /api/signal/match: снимок, без Signal, без запис
     await h.tick()
     assert.equal(one(db, `select count(*) from osp_private.signal_queue where contract_id = ${lit(id)}`), '0')
   })
+  describe('две сессии: /match и решение человека (С-15, С-24, С-29)', () => {
+    let sdb
+    let race // подмена: тело вызывается после загрузки договоров /match, пока расчёт ещё идёт
+    let h2
+    const wrap = (tx) => ({
+      mark: tx.mark,
+      query: async (text, values) => {
+        const res = await tx.query(text, values)
+        if (/osp_private\.signal_match_load/.test(text) && race) { const run = race; race = null; await run() }
+        return res
+      },
+    })
+    const tapDb = () => ({ read: (who, fn, o) => sdb.read(who, (tx) => fn(wrap(tx)), o), write: (who, fn, o) => sdb.write(who, (tx) => fn(wrap(tx)), o) })
+    const stateOf = (id) => one(db, `select coalesce((select state || ':' || coalesce(reason, '') || ':' || state_version from osp_private.signal_contracts where contract_id = ${lit(id)}), '-')`)
+    const linkOf = (id) => one(db, `select coalesce(signal_link, '') from public.contracts where id = ${lit(id)}`)
+    const card = async (id) => (await h2.get(U.editor, `/api/signal/contracts/${id}`)).json()
+    before(async () => {
+      sdb = await db.serverDb()
+      h2 = await startSignalApp(db, { limits: { signalMatchPerUser: { max: 1000, windowMs: 60_000 }, signalWritePerUser: { max: 1000, windowMs: 60_000 } }, deps: { signalJobs: { db: tapDb() } } })
+    })
+    after(async () => { await h2?.close() })
+
+    it('«Отвязать» другой сессии во время /match: договор остаётся без ссылки и «нет ссылки (связь снята)», «сверено» не записано', async () => {
+      const id = db.seed.contract({ number: 'АЛФ-ДП-26-002', objectId: s.A, counterparties: [s.cpR], signalLink: s.urlOf(F.f2) })
+      await h2.tick()
+      assert.match(stateOf(id), /^verified:existing_url:/)
+      const c = await card(id)
+      race = async () => { // «вторая вкладка»: отвязка проходит, пока /match считает
+        const res = await h2.post(U.editor, `/api/signal/contracts/${id}/unlink`, { expectedSignalLink: c.signalLink, expectedStateVersion: c.stateVersion, expectedRevision: c.revision ?? 0, idempotencyKey: crypto.randomUUID() })
+        assert.equal(res.statusCode, 200, res.body)
+      }
+      const res = await h2.post(U.editor, '/api/signal/match', { contractIds: [id] })
+      assert.equal(res.statusCode, 200, res.body)
+      assert.equal(linkOf(id), '', 'ссылка снята и /match её не вернул')
+      assert.match(stateOf(id), /^none:unlinked:/, 'состояние — решение человека, а не «сверено» по старой ссылке')
+      const after = await card(id)
+      assert.deepEqual([after.state, after.reason, after.pending], ['none', 'unlinked', false])
+      assert.equal(one(db, `select count(*) from osp_private.signal_queue where contract_id = ${lit(id)}`), '0')
+      // Ответ /match — расчёт по данным, которые он видел; записи не было (запись отброшена базой).
+      assert.equal(res.json().items.length, 1)
+    })
+
+    it('«Отклонить» другой сессии во время /match (match/reject): пара остаётся отклонённой, предложение не переоткрыто, состояние — «нет ссылки»', async () => {
+      const id = db.seed.contract({ number: 'АЛФ-ДП-26-001', objectId: s.A, counterparties: [s.cpR] })
+      await h2.tick()
+      assert.match(stateOf(id), /^suggested:candidates:/)
+      const c = await card(id)
+      assert.equal(c.candidates[0].nodeId, F.f1)
+      race = async () => {
+        const res = await h2.post(U.editor, `/api/signal/contracts/${id}/reject`, { nodeId: F.f1, note: 'не та', expectedStateVersion: c.stateVersion, idempotencyKey: crypto.randomUUID() })
+        assert.equal(res.statusCode, 200, res.body)
+      }
+      const res = await h2.post(U.editor, '/api/signal/match', { contractIds: [id] })
+      assert.equal(res.statusCode, 200, res.body)
+      assert.match(stateOf(id), /^none:none:/, 'решение человека не перезаписано предложением')
+      assert.equal(one(db, `select status from osp_private.signal_candidates where contract_id = ${lit(id)} and node_id = ${lit(F.f1)}`), 'rejected')
+      assert.deepEqual((await card(id)).candidates.filter((x) => x.status === 'open'), [])
+      // Следующий проход очереди тоже не предлагает отклонённую пару.
+      db.seed.enqueue(id)
+      await h2.tick()
+      assert.match(stateOf(id), /^none:none:/)
+    })
+
+    it('«Подтвердить» другой сессии во время /match: подтверждённая ссылка и «подтверждено» остаются', async () => {
+      const id = db.seed.contract({ number: 'АЛФ-ДП-26-004', objectId: s.A, counterparties: [s.cpR] })
+      await h2.tick()
+      const c = await card(id)
+      assert.equal(c.candidates[0].nodeId, F.f4)
+      race = async () => {
+        const res = await h2.post(U.editor, `/api/signal/contracts/${id}/confirm`, { nodeId: F.f4, replace: false, expectedSignalLink: null, expectedStateVersion: c.stateVersion, expectedRevision: c.revision ?? 0, idempotencyKey: crypto.randomUUID() })
+        assert.equal(res.statusCode, 200, res.body)
+      }
+      assert.equal((await h2.post(U.editor, '/api/signal/match', { contractIds: [id] })).statusCode, 200)
+      assert.equal(linkOf(id), s.urlOf(F.f4))
+      assert.match(stateOf(id), /^verified:confirmed:/)
+    })
+  })
+
 })

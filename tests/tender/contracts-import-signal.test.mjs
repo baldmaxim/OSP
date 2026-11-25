@@ -1,13 +1,14 @@
-// «Договоры и ДС» → «Документы» → «Импорт из Excel» × SIGNAL (23.11.2026, Ф5): после вставки сервер сверяет созданные документы по
-// снимку (порциями по 200, не дольше 5 с на порцию), в окне результата — строка «Signal: сверено или найдено N · требуют внимания M ·
-// ожидают сверки K» (три непересекающиеся группы), разбивка по состояниям — в title.
+// «Договоры и ДС» → «Документы» → «Импорт из Excel» × SIGNAL (23.11.2026, Ф5; В-9): после вставки сервер сверяет созданные документы по
+// снимку (порциями по 200, не дольше 5 с на порцию), в окне результата — строка «Signal: найдено N · требуют внимания M · без папки
+// или ожидают K» (три непересекающиеся группы: найдено = сверено + принята + предложена папка; внимание = противоречие + не видна +
+// удалён; прочее — нет ссылки, не сверена, ожидает), разбивка по состояниям — в title.
 //   • сумма групп = число УНИКАЛЬНЫХ успешно созданных id; повторный ответ сервера её не увеличивает; неудавшиеся вставки в сверку
 //     не уходят;
 //   • обе ветви вставки: пакетная (порция принята целиком) и построчная (порция отклонена — документы вставляются по одному);
-//   • сбой или медленный ответ сервера сверки окно итога не задерживает: «ожидают сверки», итог не выдумывается;
+//   • сбой или медленный ответ сервера сверки окно итога не задерживает: «без папки или ожидают», итог не выдумывается;
 //   • сверка выключена или нет права правки — строки нет, импорт как раньше.
 // Стенд: contracts=24&signal=1 (signal-fake.js). Состояние нового договора сервер решает по номеру: СВЕР — сверено, ПРЕД — предложена
-// папка, ПРОТ — противоречие, ВНИМ — папка не видна, ОЖИД — ждёт обработки, иначе — нет ссылки.
+// папка, ПРИН — ссылка принята без номера, ПРОТ — противоречие, ВНИМ — папка не видна, ОЖИД — ждёт обработки, иначе — нет ссылки.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -95,7 +96,7 @@ describe('Импорт договоров из Excel × SIGNAL: итог све�
     await page.locator('.cim-result-big', { hasText: resultText || 'Создано договоров' }).waitFor({ timeout: 60000 })
     return { page, errors, close: () => context.close().catch(() => {}) }
   }
-  const line = async (page, text = /Signal: сверено или найдено/) => {
+  const line = async (page, text = /Signal: найдено/) => {
     const el = page.locator('.cim-signal', { hasText: text })
     await el.waitFor({ timeout: 30000 })
     return { text: (await el.innerText()).trim(), title: await el.getAttribute('title') }
@@ -103,17 +104,17 @@ describe('Импорт договоров из Excel × SIGNAL: итог све�
   const matchBodies = (page) => page.evaluate(() => window.__signal.calls.filter((c) => c.path === '/api/signal/match').map((c) => c.body.contractIds))
   const createdIds = (page, numbers) => page.evaluate((nums) => window.__fakeDb.contracts.filter((c) => nums.includes(c.contract_number)).map((c) => c.id), numbers)
 
-  const MIX = ['СВЕР-1', 'ПРЕД-2', 'ПРОТ-3', 'ВНИМ-4', 'ОЖИД-5', 'ПРОСТО-6']
+  const MIX = ['СВЕР-1', 'ПРЕД-2', 'ПРОТ-3', 'ВНИМ-4', 'ОЖИД-5', 'ПРОСТО-6', 'ПРИН-7']
 
   it('пакетная вставка: три группы — найдено, требуют внимания, ожидают; сумма = число созданных; разбивка — в title; ошибочная строка не сверяется', async () => {
-    const { page, errors, close } = await run(BASE, [...MIX, 'ОШИБ-7'], { bad: ['ОШИБ-7'] })
+    const { page, errors, close } = await run(BASE, [...MIX, 'ОШИБ-8'], { bad: ['ОШИБ-8'] })
     try {
-      await page.locator('.cim-result-big', { hasText: 'Создано договоров: 6' }).waitFor()
+      await page.locator('.cim-result-big', { hasText: 'Создано договоров: 7' }).waitFor()
       const got = await line(page)
-      assert.equal(got.text, 'Signal: сверено или найдено 2 · требуют внимания 2 · ожидают сверки 2')
-      assert.equal(got.title, 'Всего документов: 6 · сверено: 1 · предложена папка: 1 · противоречие: 1 · папка не видна: 1 · ссылка не сверена: 1 · нет ссылки: 1')
+      assert.equal(got.text, 'Signal: найдено 3 · требуют внимания 2 · без папки или ожидают 2', 'найдено = сверено + принята + предложена; внимание = противоречие + не видна')
+      assert.equal(got.title, 'Всего документов: 7 · сверено: 1 · ссылка принята: 1 · предложена папка: 1 · противоречие: 1 · не видна: 1 · ссылка не сверена: 1 · нет ссылки: 1')
       const [only, ...rest] = await matchBodies(page)
-      assert.deepEqual(rest, [], 'шесть документов — одна порция')
+      assert.deepEqual(rest, [], 'семь документов — одна порция')
       assert.deepEqual([...only].sort(), (await createdIds(page, MIX)).sort(), 'ушли ровно созданные id')
       assert.equal(only.length, new Set(only).size)
       assert.match(await page.locator('.cim-result').innerText(), /Не загружено строк: 1/)
@@ -137,7 +138,7 @@ describe('Импорт договоров из Excel × SIGNAL: итог све�
     try {
       await page.locator('.cim-result-big', { hasText: 'Создано договоров: 3' }).waitFor()
       const got = await line(page)
-      assert.equal(got.text, 'Signal: сверено или найдено 2 · требуют внимания 1 · ожидают сверки 0')
+      assert.equal(got.text, 'Signal: найдено 2 · требуют внимания 1 · без папки или ожидают 0')
       assert.match(got.title, /^Всего документов: 3 · /)
       const [only] = await matchBodies(page)
       assert.deepEqual([...only].sort(), (await createdIds(page, numbers)).sort())
@@ -152,8 +153,8 @@ describe('Импорт договоров из Excel × SIGNAL: итог све�
     const { page, errors, close } = await run(`${BASE}&signalDupe=1`, MIX)
     try {
       const got = await line(page)
-      assert.equal(got.text, 'Signal: сверено или найдено 2 · требуют внимания 2 · ожидают сверки 2')
-      assert.match(got.title, /^Всего документов: 6 · /)
+      assert.equal(got.text, 'Signal: найдено 3 · требуют внимания 2 · без папки или ожидают 2')
+      assert.match(got.title, /^Всего документов: 7 · /)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
@@ -164,7 +165,7 @@ describe('Импорт договоров из Excel × SIGNAL: итог све�
     try {
       await page.locator('.cim-result-big', { hasText: 'Создано договоров: 450' }).waitFor()
       const got = await line(page)
-      assert.equal(got.text, 'Signal: сверено или найдено 450 · требуют внимания 0 · ожидают сверки 0')
+      assert.equal(got.text, 'Signal: найдено 450 · требуют внимания 0 · без папки или ожидают 0')
       const bodies = await matchBodies(page)
       assert.deepEqual(bodies.map((b) => b.length), [200, 200, 50])
       const all = bodies.flat()
@@ -173,24 +174,24 @@ describe('Импорт договоров из Excel × SIGNAL: итог све�
     } finally { await close() }
   })
 
-  it('сервер сверки недоступен: итог создания сразу, «ожидают сверки» — все созданные; без выдуманных чисел', async () => {
+  it('сервер сверки недоступен: итог создания сразу, «без папки или ожидают» — все созданные; без выдуманных чисел', async () => {
     const { page, errors, close } = await run(BASE.replace('signal=1', 'signal=down'), MIX)
     try {
       const got = await line(page)
-      assert.equal(got.text, 'Signal: сверено или найдено 0 · требуют внимания 0 · ожидают сверки 6')
-      assert.match(got.title, /нет ответа сервера: 6$/)
+      assert.equal(got.text, 'Signal: найдено 0 · требуют внимания 0 · без папки или ожидают 7')
+      assert.match(got.title, /нет ответа сервера: 7$/)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
 
-  it('сервер сверки медленный: окно итога не ждёт («сверяем…»), через 5 с — «ожидают сверки»', async () => {
+  it('сервер сверки медленный: окно итога не ждёт («сверяем…»), через 5 с — «без папки или ожидают»', async () => {
     const { page, errors, close } = await run(`${BASE.replace('signal=1', 'signal=slow')}&signalDelay=9000`, MIX)
     try {
       const t0 = Date.now()
       await page.locator('.cim-signal', { hasText: 'Signal: сверяем созданные документы…' }).waitFor({ timeout: 4000 })
       const got = await line(page)
       const waited = Date.now() - t0
-      assert.equal(got.text, 'Signal: сверено или найдено 0 · требуют внимания 0 · ожидают сверки 6')
+      assert.equal(got.text, 'Signal: найдено 0 · требуют внимания 0 · без папки или ожидают 7')
       assert.ok(waited >= 3000 && waited < 9000, `порция ждала ${waited} мс — бюджет 5 с`)
       assert.deepEqual(errors, [])
     } finally { await close() }

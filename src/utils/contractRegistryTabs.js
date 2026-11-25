@@ -122,13 +122,28 @@ export function registryRows(docs, { docKind, scope, tab, dept = 'all', only = n
   return { rows, nested, context }
 }
 
-// Сколько документов вкладки в наборе only (число на «Сверке Signal»): сами документы — договоры и ДС, без договоров,
-// показанных только ради ДС (context). Вид документа, отдел, «Наши договоры» и статус — как у строк.
+// Сколько документов вкладки в наборе only (число на «Сверке Signal») — без фильтров реестра: сами документы — договоры и ДС, без
+// договоров, показанных только ради ДС (context). Вид документа, отдел, «Наши договоры» и статус — как у строк.
 export function signalReviewCount(docs, only, { docKind, scope, tab, dept = 'all' }) {
   if (!only || only.size === 0) return 0
   let n = 0
   for (const d of docs) {
     if (only.has(d.id) && ofKind(d, docKind) && inScope(d, scope) && inDept(d, dept) && inTab(d, tab)) n++
+  }
+  return n
+}
+
+// То же число, но с фильтрами реестра (С-8, объект, поиск, контрагент, юрист…): по строкам view = registryRows(…, only) — тем
+// самым, что покажет реестр при включённом переключателе. rowOk(строка) — прошла ли строка остальные фильтры страницы (без самого
+// переключателя). Считаются документы: сама строка, если она в наборе (не договор «ради ДС»), и её ДС этой вкладки (nested) — а
+// ДС показан, только если прошла фильтры строка его договора.
+export function signalReviewCountShown(view, only, rowOk = () => true) {
+  if (!view || !only || only.size === 0) return 0
+  let n = 0
+  for (const row of view.rows) {
+    if (!rowOk(row)) continue
+    if (only.has(row.id) && !view.context.has(row.id)) n++
+    n += (view.nested.get(row.id) || []).length
   }
   return n
 }

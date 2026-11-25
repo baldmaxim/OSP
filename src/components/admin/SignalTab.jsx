@@ -1,50 +1,29 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { db, signal } from '../../api'
 import { fetchAllRows } from '../../utils/fetchAllRows'
 import { useIsPhone } from '../../hooks/useMediaQuery'
 import {
-  DAY_MODE_TEXT, RUN_INITIATOR_TEXT, isRunning, runCounts, runKindText, runOutcome, runReasonText, ruDateTime,
+  DAY_MODE_TEXT, RUN_INITIATOR_TEXT, acceptHeldCommand, alertView, disabledView, rootStatusChips, runCounts, runKindText, runOutcome,
+  runningOf, ruDateTime, staleText, stuckText,
 } from '../../utils/signalPathRow'
+import { BindDialog, BindingsList, FolderTree, UnassignedFolders } from './SignalTab.Folders'
+import { Chip, Modal, copyText } from './SignalTab.Parts'
 import './SignalTab.css'
 
-// «Администрирование» → «Signal» (server/osp-api/src/routes/signal.js, маршруты 1, 9, 11–17). Подключение к SIGNAL, корни обхода,
-// синхронизация, журнал прогонов, синонимы объектов и папки без объекта (23.11.2026, интеграция с SIGNAL). В SIGNAL браузер не
-// ходит и ничего туда не пишет: вкладка управляет тем, какие корни читает сервер и к каким объектам портала они относятся.
+// «Администрирование» → «Signal» (server/osp-api/src/routes/signal.js). Подключение к SIGNAL, корни обхода, синхронизация, журнал
+// прогонов, синонимы объектов и разметка папок многообъектных корней (интеграция с SIGNAL, 23.11.2026; волна исправлений 24.11.2026).
+// В SIGNAL браузер не ходит и ничего туда не пишет: вкладка управляет тем, какие корни читает сервер и к каким объектам портала
+// они относятся.
 //   • Корень без объекта закрыт: сотрудники не видят его папки и файлы. Объекты корня выбирает администратор при добавлении
 //     («Объекты корня») и позже кнопкой «Объекты…».
-//   • «Папки без объекта» — только у многообъектных корней: часть дерева связывают с одним из объектов корня вручную.
+//   • Многообъектный корень размечают по папкам любой глубины (В-6): «Папки без объекта», дерево с поиском и «Привязать к объекту…»
+//     (с проверкой до записи), «Привязки папок» со «Снять» — SignalTab.Folders.jsx.
+//   • Оповещения сервера (status.alerts: сбой корня, отложенный или зависший прогон, устаревшие данные) — баннером наверху вкладки и
+//     числом на ярлыке вкладки (AdminPage); у корня — сбой с даты и число проблемных подпапок; отложенный прогон — готовая команда
+//     accept-held (С-50); зависший прогон не блокирует «Синхронизировать» (С-48).
+//   • Сверка выключена по причине (В-8: ошибка настройки и т.п.) — вкладка показывает только причину (имена переменных, без значений).
 //   • На телефоне — только просмотр состояния (кнопок изменений нет). Права проверяет сервер, вкладку показывает AdminPage.
 const MAX_OBJECTS = 20
-
-function Chip({ tone = '', children, title }) {
-  return <span className={`sg-chip${tone ? ` is-${tone}` : ''}`} title={title}>{children}</span>
-}
-
-// Окно: поверх страницы, Escape закрывает (пока не идёт запрос), фокус — на первое поле.
-function Modal({ title, onClose, busy = false, children, wide = false }) {
-  const titleId = useId()
-  const ref = useRef(null)
-  useEffect(() => {
-    const first = ref.current?.querySelector('input:not([type=checkbox]), select, textarea')
-    ;(first || ref.current)?.focus({ preventScroll: true })
-  }, [])
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape' && !busy) { e.stopPropagation(); onClose() } }
-    document.addEventListener('keydown', onKey, true)
-    return () => document.removeEventListener('keydown', onKey, true)
-  }, [busy, onClose])
-  return (
-    <div className="sg-overlay">
-      <div className={`sg-dialog${wide ? ' is-wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId} ref={ref} tabIndex={-1}>
-        <div className="sg-dialog-head">
-          <h3 id={titleId}>{title}</h3>
-          <button type="button" className="sg-close" onClick={onClose} disabled={busy} aria-label="Закрыть">×</button>
-        </div>
-        {children}
-      </div>
-    </div>
-  )
-}
 
 // Множественный выбор объектов корня: поиск и флажки. Не больше MAX_OBJECTS (предел сервера).
 function ObjectsPicker({ objects, selected, onToggle, loading, error }) {
@@ -178,7 +157,7 @@ function RootObjectsDialog({ source, objects, objectsLoading, objectsError, onCl
   )
 }
 
-export default function SignalTab({ notify }) {
+export default function SignalTab({ notify, onStatus }) {
   const phone = useIsPhone()
   const [status, setStatus] = useState(null)
   const [runs, setRuns] = useState([])
@@ -189,32 +168,41 @@ export default function SignalTab({ notify }) {
   const [objectsState, setObjectsState] = useState({ loading: true, error: '' })
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState(null) // корень, у которого меняют объекты
+  const [binding, setBinding] = useState(null) // { source, node } — окно «Привязать к объекту…»
   const [busyKey, setBusyKey] = useState(null)
   const [syncMsg, setSyncMsg] = useState(null) // { kind: 'ok'|'error', text }
-  const [unassigned, setUnassigned] = useState({}) // sourceId → { items, next, loading, error }
-  const [bindFor, setBindFor] = useState(null) // { sourceId, nodeId, objectId }
-  const [epoch, setEpoch] = useState(0) // растёт после правок корней: папки без объекта перечитываются
+  const [copied, setCopied] = useState(false)
+  const [epoch, setEpoch] = useState(0) // растёт после правок корней и привязок: списки папок перечитываются
   const mounted = useRef(true)
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  const inflight = useRef(false)
+  const onStatusRef = useRef(onStatus)
+  const copiedTimer = useRef(null)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; clearTimeout(copiedTimer.current) } }, [])
+  useEffect(() => { onStatusRef.current = onStatus }, [onStatus])
 
-  const load = useCallback(async () => {
+  // light — опрос во время обхода: только состояние и журнал (без синонимов).
+  const load = useCallback(async ({ light = false } = {}) => {
+    if (light && inflight.current) return
+    inflight.current = true
     try {
       const st = await signal.status()
       if (!mounted.current) return
       setStatus(st)
+      onStatusRef.current?.(st)
       setError('')
       if (st.enabled && st.isAdmin) {
         const [r, a] = await Promise.all([
           signal.admin.runs({ limit: 20 }).catch(() => null),
-          signal.aliases.list().catch(() => null),
+          light ? null : signal.aliases.list().catch(() => null),
         ])
         if (!mounted.current) return
         setRuns(r?.items || st.lastRuns || [])
-        setAliases(a?.items || [])
+        if (!light) setAliases(a?.items || [])
       }
     } catch (err) {
       if (mounted.current) setError(err.message || 'Не удалось загрузить состояние Signal')
     } finally {
+      inflight.current = false
       if (mounted.current) setLoading(false)
     }
   }, [])
@@ -230,31 +218,16 @@ export default function SignalTab({ notify }) {
   }, [])
 
   const sources = useMemo(() => status?.sources || [], [status])
-  const running = isRunning(runs)
+  // Идущий прогон — по ответу сервера (status.running; у «зависшего» stuck: true, С-48), у сервера без поля — по журналу.
+  const running = useMemo(() => runningOf(status, runs), [status, runs])
+  const live = !!running && !running.stuck
 
-  // Идёт обход — журнал обновляется сам.
+  // Идёт живой обход — состояние и журнал обновляются сами. Зависший прогон не опрашиваем: сам он не закончится.
   useEffect(() => {
-    if (!running) return undefined
-    const t = setTimeout(() => load(), 5000)
-    return () => clearTimeout(t)
-  }, [running, runs, load])
-
-  // Папки без объекта — у корней с несколькими объектами.
-  const multiKey = sources.filter((s) => (s.objects || []).length > 1).map((s) => String(s.id)).join(',')
-  const loadUnassigned = useCallback(async (sourceId, after) => {
-    setUnassigned((u) => ({ ...u, [sourceId]: { items: after ? (u[sourceId]?.items || []) : [], next: null, loading: true, error: '' } }))
-    try {
-      const r = await signal.admin.unassigned({ sourceId, after, limit: 50 })
-      if (!mounted.current) return
-      setUnassigned((u) => ({ ...u, [sourceId]: { items: [...(after ? (u[sourceId]?.items || []) : []), ...(r.items || [])], next: r.next || null, loading: false, error: '' } }))
-    } catch (err) {
-      if (!mounted.current) return
-      setUnassigned((u) => ({ ...u, [sourceId]: { items: after ? (u[sourceId]?.items || []) : [], next: null, loading: false, error: err.message || 'Не удалось загрузить папки' } }))
-    }
-  }, [])
-  useEffect(() => {
-    for (const id of multiKey ? multiKey.split(',') : []) loadUnassigned(id, null)
-  }, [multiKey, epoch, loadUnassigned])
+    if (!live) return undefined
+    const t = setInterval(() => load({ light: true }), 5000)
+    return () => clearInterval(t)
+  }, [live, load])
 
   const act = async (key, fn, okText) => {
     setBusyKey(key)
@@ -302,36 +275,77 @@ export default function SignalTab({ notify }) {
     act(`alias-${a.id}`, () => signal.aliases.remove(a.id), 'Название удалено')
   }
 
-  const bind = async () => {
-    if (!bindFor?.objectId) return
-    const { sourceId, nodeId, objectId } = bindFor
-    const src = sources.find((s) => s.id === sourceId)
-    const name = (src?.objects || []).find((o) => o.id === objectId)?.name || 'объект'
-    setBusyKey(`bind-${nodeId}`)
+  // Привязка выполнена в окне «Привязать к объекту…»: списки папок перечитываются.
+  const bound = ({ objectName }) => {
+    setBinding(null)
+    notify?.('ok', `Папка привязана к объекту «${objectName}»`)
+    setEpoch((e) => e + 1)
+    load({ light: true })
+  }
+  // «Снять» привязку: папка и вложенные снова без объекта (или с объектом привязки выше).
+  const unbind = async (source, b) => {
+    const name = b.objectName || 'объект'
+    if (!window.confirm(`Снять привязку папки «${b.path}» к объекту «${name}»?\n\nПапка и вложенные снова станут «без объекта» (или получат объект привязки выше): их договоры перестанут сверяться, пока папку не привяжут заново.`)) return
+    setBusyKey(`unbind-${b.nodeId}`)
     try {
-      await signal.admin.bind({ sourceId, nodeId, objectId })
-      notify?.('ok', `Папка связана с объектом «${name}»`)
-      setBindFor(null)
-      await loadUnassigned(sourceId, null)
-      await load()
+      await signal.admin.unbind({ sourceId: source.id, nodeId: b.nodeId })
+      notify?.('ok', 'Привязка снята')
+      setEpoch((e) => e + 1)
     } catch (err) {
-      notify?.('err', err.message || 'Не удалось связать папку')
+      notify?.('err', err.message || 'Не удалось снять привязку')
     } finally {
       if (mounted.current) setBusyKey(null)
     }
   }
 
+  const heldCommand = status?.held ? acceptHeldCommand(status.held) : ''
+  const copyCommand = async () => {
+    const ok = await copyText(heldCommand)
+    if (!mounted.current) return
+    setCopied(ok)
+    clearTimeout(copiedTimer.current)
+    if (ok) copiedTimer.current = setTimeout(() => { if (mounted.current) setCopied(false) }, 2500)
+  }
+
   if (loading) return <div className="sg-tab"><p className="sg-muted">Загрузка…</p></div>
-  if (error) return <div className="sg-tab"><p className="sg-error">{error} <button type="button" className="btn-soft" onClick={load}>Повторить</button></p></div>
-  if (!status?.enabled) return <div className="sg-tab"><p className="sg-muted">Сверка Signal на этом сервере не включена.</p></div>
+  if (error) return <div className="sg-tab"><p className="sg-error">{error} <button type="button" className="btn-soft" onClick={() => load()}>Повторить</button></p></div>
+  if (!status?.enabled) {
+    // В-8: сверка выключена по причине — администратору она видна (имена переменных настройки, без значений); остального нет.
+    const why = disabledView(status)
+    if (why) {
+      return (
+        <div className="sg-tab">
+          <section className="sg-block sg-disabled" aria-label="Сверка Signal выключена">
+            <h4 className="sg-title">{why.title}</h4>
+            <p className={why.tone === 'bad' ? 'sg-error' : 'sg-warn'} role="alert">{why.text}</p>
+            <p className="sg-hint">{why.hint}</p>
+          </section>
+        </div>
+      )
+    }
+    return <div className="sg-tab"><p className="sg-muted">Сверка Signal на этом сервере не включена.</p></div>
+  }
   if (!status.isAdmin) return <div className="sg-tab"><p className="sg-muted">Вкладка доступна только администратору.</p></div>
 
   const configured = status.connection === 'configured'
   const multi = sources.filter((s) => (s.objects || []).length > 1)
+  const alertList = (status.alerts || []).filter((a) => a?.kind !== 'data_stale')
+    .map((a) => ({ key: `${a.kind}-${a.sourceId ?? ''}`, ...alertView(a, sources) })).filter((a) => a.text)
+  const showStale = status.stale === true || (status.alerts || []).some((a) => a?.kind === 'data_stale')
+  const hasConflict = aliases.some((a) => a.conflict)
 
   return (
     <div className="sg-tab">
-      {phone && <p className="sg-note">На телефоне — только просмотр состояния. Менять корни, объекты и запускать обход можно с компьютера.</p>}
+      {phone && <p className="sg-note">На телефоне — только просмотр состояния. Менять корни, объекты, привязки папок и запускать обход можно с компьютера.</p>}
+
+      {alertList.length > 0 && (
+        <section className="sg-alerts" aria-label="Оповещения Signal">
+          <ul>
+            {alertList.map((a) => <li key={a.key} className={`is-${a.tone}`}>{a.text}</li>)}
+          </ul>
+        </section>
+      )}
+      {showStale && <p className="sg-stale" role="status">{staleText(status.dataAt)}</p>}
 
       <section className="sg-block" aria-label="Подключение">
         <p className="sg-conn">
@@ -366,6 +380,7 @@ export default function SignalTab({ notify }) {
                 {sources.map((s) => {
                   const objs = s.objects || []
                   const busy = busyKey === `src-${s.id}`
+                  const chips = rootStatusChips(s)
                   return (
                     <tr key={s.id} data-source={s.id}>
                       <td data-label="Корень"><span className="sg-name">{s.projectName} → {s.rootPath}</span></td>
@@ -381,7 +396,11 @@ export default function SignalTab({ notify }) {
                       <td data-label="Последний обход">{ruDateTime(s.lastOkAt) || 'ещё не было'}</td>
                       <td data-label="Ночной обход">{ruDateTime(s.lastNightOkAt) || 'ещё не было'}</td>
                       <td className="sg-num" data-label="Папок / элементов">{s.ready ? `${s.folders ?? 0} / ${s.items ?? 0}` : '—'}</td>
-                      <td data-label="Ошибка">{s.lastError ? <Chip tone="bad" title={s.lastError}>{runReasonText(s.lastError)}</Chip> : '—'}</td>
+                      <td data-label="Ошибка">
+                        {chips.length > 0
+                          ? <span className="sg-objs">{chips.map((c) => <Chip key={c.key} tone={c.tone} title={c.title}>{c.text}</Chip>)}</span>
+                          : '—'}
+                      </td>
                       {!phone && (
                         <td>
                           <div className="sg-actions">
@@ -402,9 +421,10 @@ export default function SignalTab({ notify }) {
       <section className="sg-block" aria-label="Синхронизация">
         <div className="sg-head">
           <h4 className="sg-title">Синхронизация</h4>
-          {!phone && <button type="button" className="btn-secondary" onClick={sync} disabled={busyKey === 'sync' || running}>{running ? 'Обход идёт…' : 'Синхронизировать'}</button>}
+          {!phone && <button type="button" className="btn-secondary" onClick={sync} disabled={busyKey === 'sync' || live}>{live ? 'Обход идёт…' : 'Синхронизировать'}</button>}
         </div>
-        {running && <p className="sg-note" role="status">Идёт обход — журнал обновляется сам.</p>}
+        {live && <p className="sg-note" role="status">Идёт обход — журнал обновляется сам.</p>}
+        {running?.stuck && <p className="sg-warn sg-stuck" role="alert">{stuckText(running)}</p>}
         {syncMsg && <p className={syncMsg.kind === 'error' ? 'sg-error' : 'sg-note'} role={syncMsg.kind === 'error' ? 'alert' : 'status'}>{syncMsg.text}</p>}
         <p className="sg-hint">Обход по расписанию: ночной около 05:00, дневные — по будням с 08:00 до 20:00 раз в час. Ручной запуск — не чаще раза в минуту.</p>
       </section>
@@ -415,14 +435,16 @@ export default function SignalTab({ notify }) {
           <div className="sg-table-wrap">
             <table className="sg-table sg-runs">
               <thead>
-                <tr><th>Дата</th><th>Кто</th><th>Вид</th><th>Итог</th><th className="sg-num">Папок</th><th className="sg-num">Элементов</th></tr>
+                <tr><th className="sg-num">№</th><th>Дата</th><th>Кто</th><th>Вид</th><th>Итог</th><th className="sg-num">Папок</th><th className="sg-num">Элементов</th></tr>
               </thead>
               <tbody>
                 {runs.slice(0, 20).map((r) => {
-                  const out = runOutcome(r)
+                  const dead = running?.stuck && running.runId === r.id
+                  const out = dead ? { tone: 'warn', text: 'не отвечает' } : runOutcome(r)
                   const counts = runCounts(r)
                   return (
                     <tr key={r.id}>
+                      <td className="sg-num" data-label="№">{r.id}</td>
                       <td data-label="Дата">{ruDateTime(r.startedAt) || '—'}</td>
                       <td data-label="Кто">{RUN_INITIATOR_TEXT[r.initiator] || '—'}</td>
                       <td data-label="Вид">{runKindText(r)}</td>
@@ -436,7 +458,21 @@ export default function SignalTab({ notify }) {
             </table>
           </div>
         )}
-        {runs.some((r) => r.status === 'held') && <p className="sg-hint">«Отложен» — снимок папок не заменён, пока данные не проверят; принять их можно на сервере командой signal-cli accept-held.</p>}
+        {status.held && (
+          <div className="sg-held" role="group" aria-label="Отложенный прогон">
+            <p className="sg-note">
+              <strong>Прогон № {status.held.runId} отложен</strong> · поколение данных {status.held.generation}. Снимок папок не заменён, пока данные не проверят.
+              {heldCommand && ' Принять их можно на сервере командой:'}
+            </p>
+            {heldCommand && (
+              <div className="sg-cmd">
+                <code className="sg-code">{heldCommand}</code>
+                {!phone && <button type="button" className="btn-soft" onClick={copyCommand}>{copied ? 'Скопировано' : 'Копировать'}</button>}
+              </div>
+            )}
+            <p className="sg-hint">Вместо «…» впишите причину решения. Номер прогона и поколение берите только отсюда: у более старых отложенных прогонов принимать уже нечего.</p>
+          </div>
+        )}
       </section>
 
       <section className="sg-block" aria-label="Синонимы объектов">
@@ -449,8 +485,11 @@ export default function SignalTab({ notify }) {
               </thead>
               <tbody>
                 {aliases.map((a) => (
-                  <tr key={a.id}>
-                    <td data-label="Текст"><span className="sg-name">{a.text}</span></td>
+                  <tr key={a.id} className={a.conflict ? 'is-conflict' : undefined}>
+                    <td data-label="Текст">
+                      <span className="sg-name">{a.text}</span>
+                      {a.conflict && <> <Chip tone="warn" title="Название совпало с названием или кодом другого объекта — при сверке не используется">конфликт</Chip></>}
+                    </td>
                     <td data-label="Объект">{a.objectName || '—'}</td>
                     <td data-label="Кто">{a.author || '—'}</td>
                     <td data-label="Когда">{ruDateTime(a.createdAt) || '—'}</td>
@@ -461,59 +500,30 @@ export default function SignalTab({ notify }) {
             </table>
           </div>
         )}
+        {hasConflict && <p className="sg-hint">«Конфликт» — название совпало с названием или кодом другого объекта: при сверке оно не используется, пока его не удалят или объект не переименуют.</p>}
       </section>
 
       {multi.length > 0 && (
         <section className="sg-block" aria-label="Папки без объекта">
           <h4 className="sg-title">Папки без объекта</h4>
-          <p className="sg-hint">У корней с несколькими объектами часть папок не относится ни к одному из них, пока их не связали. Договоры таких папок не сверяются.</p>
-          {multi.map((s) => {
-            const u = unassigned[s.id]
-            return (
-              <div key={s.id} className="sg-unassigned" data-source={s.id}>
-                <h5 className="sg-subtitle">{s.projectName} → {s.rootPath}</h5>
-                {u?.error && <p className="sg-error" role="alert">{u.error} <button type="button" className="btn-soft" onClick={() => loadUnassigned(s.id, null)}>Повторить</button></p>}
-                {u && !u.loading && !u.error && u.items.length === 0 && <p className="sg-muted">Все папки корня связаны с объектами.</p>}
-                {u?.items.length > 0 && (
-                  <div className="sg-table-wrap">
-                    <table className="sg-table sg-unassigned-table">
-                      <thead><tr><th>Папка</th><th className="sg-num">Элементов</th>{!phone && <th className="sg-actions-col">Действия</th>}</tr></thead>
-                      <tbody>
-                        {u.items.map((n) => {
-                          const binding = bindFor?.nodeId === n.nodeId
-                          return (
-                            <tr key={n.nodeId}>
-                              <td data-label="Папка"><span className="sg-name">{n.path}</span></td>
-                              <td className="sg-num" data-label="Элементов">{n.items ?? 0}</td>
-                              {!phone && (
-                                <td>
-                                  {binding ? (
-                                    <div className="sg-bind">
-                                      <select className="sg-input" aria-label={`Объект для папки ${n.path}`} value={bindFor.objectId} onChange={(e) => setBindFor({ ...bindFor, objectId: e.target.value })}>
-                                        <option value="">Выберите объект…</option>
-                                        {(s.objects || []).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                                      </select>
-                                      <button type="button" className="btn-primary" disabled={!bindFor.objectId || busyKey === `bind-${n.nodeId}`} onClick={bind}>Связать</button>
-                                      <button type="button" className="btn-soft" onClick={() => setBindFor(null)}>Отмена</button>
-                                    </div>
-                                  ) : (
-                                    <button type="button" className="btn-soft" onClick={() => setBindFor({ sourceId: s.id, nodeId: n.nodeId, objectId: '' })}>Связать с объектом…</button>
-                                  )}
-                                </td>
-                              )}
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-                {u?.loading && <p className="sg-muted" role="status">Загрузка…</p>}
-                {u?.next && !u.loading && <button type="button" className="btn-soft" onClick={() => loadUnassigned(s.id, u.next)}>Показать ещё</button>}
-                {u?.items.length > 0 && <p className="sg-hint">Показано папок: {u.items.length}{u.next ? ' — это не все' : ''}</p>}
-              </div>
-            )
-          })}
+          <p className="sg-hint">У корней с несколькими объектами часть папок не относится ни к одному из них, пока их не привязали. Договоры таких папок не сверяются. Папку можно привязать целиком или найти нужную глубже — в дереве ниже.</p>
+          {multi.map((s) => <UnassignedFolders key={s.id} source={s} epoch={epoch} phone={phone} onBind={(src, node) => setBinding({ source: src, node })} />)}
+        </section>
+      )}
+
+      {multi.length > 0 && !phone && (
+        <section className="sg-block" aria-label="Дерево папок">
+          <h4 className="sg-title">Дерево папок</h4>
+          <p className="sg-hint">Папки раскрываются по клику, нужную можно найти поиском. У папки — объект: своя привязка или унаследованный от папки выше. Привязка папки действует на все вложенные, кроме тех, у которых своя.</p>
+          {multi.map((s) => <FolderTree key={s.id} source={s} epoch={epoch} phone={phone} onBind={(src, node) => setBinding({ source: src, node })} />)}
+        </section>
+      )}
+
+      {multi.length > 0 && (
+        <section className="sg-block" aria-label="Привязки папок">
+          <h4 className="sg-title">Привязки папок</h4>
+          <p className="sg-hint">Папки, которые привязаны к объекту вручную. «Снять» возвращает папку и вложенные в «Папки без объекта» (или под привязку выше).</p>
+          {multi.map((s) => <BindingsList key={s.id} source={s} epoch={epoch} phone={phone} busyKey={busyKey} onUnbind={unbind} />)}
         </section>
       )}
 
@@ -540,6 +550,7 @@ export default function SignalTab({ notify }) {
           }}
         />
       )}
+      {binding && <BindDialog source={binding.source} node={binding.node} onClose={() => setBinding(null)} onBound={bound} />}
     </div>
   )
 }

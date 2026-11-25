@@ -6,6 +6,8 @@
 //   const res = await h.call(userId, 'GET', '/api/signal/status')
 //   await h.tick()                                         // такт очереди до опустошения
 //   await h.close()
+// signal — поля config.signal поверх настроек по умолчанию (например, готовый разбор loadConfig(env).signal с ошибками, now — часы
+// маршрута status); deps — подмены зависимостей приложения (signalCapability, signalJobs, now).
 //
 // Пользователи — только синтетические (db.seed.*); токены подписаны так же, как токены Supabase Auth.
 import fs from 'node:fs'
@@ -35,7 +37,7 @@ export function signalConfig({ fake = null, uiFolderUrl = FOLDER_FORMAT, uiFileU
   }
 }
 
-export async function startSignalApp(db, { fake = null, signal = {}, withSignal = true, readOnly = false, logs = null, userStatusTtlMs = 0, limits = null } = {}) {
+export async function startSignalApp(db, { fake = null, signal = {}, withSignal = true, readOnly = false, logs = null, userStatusTtlMs = 0, limits = null, deps = {} } = {}) {
   const { buildApp, defaultDeps } = await import(path.join(SERVER, 'src', 'app.js'))
   const { DEFAULT_LIMITS } = await import(path.join(SERVER, 'src', 'lib', 'limits.js'))
   const tmp = readOnly ? fs.mkdtempSync(path.join(os.tmpdir(), 'signal-ro-')) : null
@@ -50,7 +52,8 @@ export async function startSignalApp(db, { fake = null, signal = {}, withSignal 
   }
   const app = buildApp({
     config,
-    deps: { ...defaultDeps, signalClient: { allowLoopback: true } },
+    // deps — подмены только для тестов (signalCapability: { db } — база проверки схемы, например с ошибкой; now — часы очереди и обхода).
+    deps: { ...defaultDeps, signalClient: { allowLoopback: true }, ...deps },
     logger: logs ? { level: 'info', stream: { write: (line) => logs.push(line) } } : false,
     // Ручной обход — раз в минуту на пользователя: тестам, которые запускают его много раз, предел расширяется явно.
     ...(limits ? { limits: { ...DEFAULT_LIMITS, ...limits } } : {}),

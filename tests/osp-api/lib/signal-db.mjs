@@ -18,6 +18,9 @@
 //   const dp = seed.contract({ number: 'АЛИЯ-ДП-26-001', objectId: obj, counterparties: [seed.counterparty({ name: 'ООО Тест', inn: '7700000000' })] })
 //   const src = seed.source({ objectIds: [obj] })
 //   const snap = seed.snapshot(src.id, { name: 'Корень', children: [{ name: 'Корпус 1', numberKeys: ['АЛИЯ|2026|1'] }] })
+//   // snapshot кладёт узлы напрямую (поколение — generation: по умолчанию 1: при нескольких снимках в одной базе передавайте текущее),
+//   // граница и object_path считает signal_recompute_objects. seed.sync({roots:[{src, tree, ids}], stats}) — настоящий прогон:
+//   // begin → stage_put → finish (статус ok | partial | held | failed — в result.status).
 //   await db.stop()
 //
 // Данные — только синтетика (идентификаторы вида …-4000-8000-…). Нужны зависимости сервера (npm ci --prefix server/osp-api).
@@ -280,7 +283,7 @@ export function createSeeders({ sql, nextId }) {
     },
     // Строки staging из дерева (как их шлёт обход): те же поля, что у signal_stage_put. ids — прежние id по путям (узел «возвращается»);
     // корень — node_id = folder_id корня. Узел дерева: {name, kind?, children?, items?, numberKeys?, nameNorm?, itemsListed?:false —
-    // элементы папки не перечислялись (режим known)}.
+    // элементы папки не перечислялись (режим known), problem?:'forbidden'|'not_found'|'invalid'|'unstable' — элементы прочитать не удалось}.
     stageRows(sourceId, tree, { ids = {}, modifiedAt = '2026-11-20T10:00:00Z' } = {}) {
       const [projectId, folderId] = sql(`SELECT project_id || ' ' || folder_id FROM osp_private.signal_sources WHERE id = ${sourceId}`).split('\n')[0].split(' ')
       const out = { rows: [], ids: {}, rootId: folderId }
@@ -293,7 +296,7 @@ export function createSeeders({ sql, nextId }) {
         out.rows.push({ nodeId: id, projectId, sourceId, kind, parentId, name: node.name, path: nodePath, pathIds, depth: pathIds.length,
           modifiedAt, itemType: kind === 'item' ? node.itemType || 'File' : undefined, versionNumber: kind === 'item' ? node.version ?? 1 : undefined,
           deleted: !!node.deleted, numberKeys: node.numberKeys || [], nameNorm: node.nameNorm ?? node.name.toLowerCase(), features: node.features || {},
-          itemsListed: kind === 'folder' ? node.itemsListed !== false : false })
+          itemsListed: kind === 'folder' ? node.itemsListed !== false && !node.problem : false, problem: node.problem || undefined })
         for (const ch of node.children || []) walk(ch, id, names, [...pathIds, id], false)
         for (const it of node.items || []) walk({ ...it, kind: 'item' }, id, names, [...pathIds, id], false)
       }

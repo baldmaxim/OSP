@@ -1215,7 +1215,8 @@ if (CONTRACTS > 0) {
       id: `ctr-${i + 1}`, display_id: i + 1, contract_number: `${i + 1}/26`, contract_date: '2026-09-01',
       status: CONTRACTS_MIXED && i % 6 === 1 ? 'completed' : 'in_work',
       record_type: parent ? 'ds_vor' : 'dp', parent_contract_id: parent?.id || null,
-      root_contract_id: parent?.id || null, object_id: obj.id, objects: { name: obj.name, status: obj.status },
+      // Как в базе (триггер 20270122, С-14): у ДП root_contract_id — он сам, у ДС — его договор.
+      root_contract_id: parent ? parent.id : `ctr-${i + 1}`, object_id: obj.id, objects: { name: obj.name, status: obj.status },
       counterparty_id: cp.id, counterparties: cp, contract_counterparties: [{ counterparty_id: cp.id, sort_order: 0, counterparties: cp }],
       tenders: null, responsible: null, work_name: `Работы ${i + 1}`, contract_amount: 1000000 + i, currency: 'RUB',
       created_at: new Date(Date.UTC(2026, 8, 1) + i * 60000).toISOString(), deleted_at: null, handled_by_us: true,
@@ -1294,6 +1295,8 @@ if (CONTRACTS > 0) {
   // contractsPaths; ctr-5 (сверено), ctr-7 (файл удалён), ctr-11 (не сверялась) — свои.
   if (params.get('signal')) {
     const links = { 'ctr-1': 1, 'ctr-4': 4, 'ctr-5': 5, 'ctr-7': 7, 'ctr-11': 11 }
+    // &signalExtra=1 — ещё состояния волны исправлений (signal-fake.js): ссылка есть у всех, кроме ctr-12… см. шапку фейка.
+    if (params.get('signalExtra') === '1') Object.assign(links, { 'ctr-9': 9, 'ctr-12': 12, 'ctr-14': 14, 'ctr-15': 15, 'ctr-17': 17, 'ctr-19': 19, 'ctr-20': 20, 'ctr-21': 21, 'ctr-22': 22 })
     for (const c of contracts) if (links[c.id] && !c.signal_link) c.signal_link = `https://signal.su10.ru/folder/${links[c.id]}-26`
   }
   window.__fakeDb.contracts = contracts

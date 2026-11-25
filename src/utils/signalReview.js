@@ -1,10 +1,13 @@
 // «Signal» в реестре договоров: состояния значка, подписи, причины и итоги сверки. Чистые функции — без запросов и разметки
-// (tests/contracts/signal-review.test.mjs). Состояния и причины считает сервер (раздел 3 спецификации): здесь только
-// русские подписи и разбор ответов. Чужих имён, путей и счётчиков в подписях нет — только общая причина.
+// (tests/contracts/signal-review.test.mjs). Состояния и причины считает сервер (раздел 1 спецификации волны исправлений,
+// server/osp-api/src/lib/signalMatch.js): здесь только русские подписи и разбор ответов. Чужих имён, путей и счётчиков в
+// подписях нет — только общая причина.
 
-export const SIGNAL_STATES = ['none', 'suggested', 'verified', 'unverified', 'attention', 'missing', 'conflict']
+// Те же восемь состояний, что у сервера (STATES): accepted — «ссылка принята, номер в папке не найден» (В-1).
+export const SIGNAL_STATES = ['none', 'suggested', 'verified', 'accepted', 'unverified', 'attention', 'missing', 'conflict']
 
-// «Сверка Signal» (один переключатель): предложение, противоречие, папка не видна, файл удалён. «Ожидает» (pending) — не здесь.
+// «Сверка Signal» (один переключатель): предложение, противоречие, папка или файл не виден, файл удалён. Зелёные состояния
+// (verified, accepted, unverified) и «ожидает» (pending) — не здесь.
 export const REVIEW_STATES = ['suggested', 'conflict', 'attention', 'missing']
 // Жёлтый «!»: ссылка есть, но с ней что-то не так.
 export const WARN_STATES = ['conflict', 'attention', 'missing']
@@ -16,6 +19,7 @@ export const STATE_LABEL = {
   none: 'Signal: ссылки нет',
   suggested: 'Signal: предложена папка',
   verified: 'Signal: сверено',
+  accepted: 'Signal: ссылка принята, номер в папке не найден',
   unverified: 'Signal: ссылка не сверялась',
   attention: 'Signal: папка не видна в Signal',
   missing: 'Signal: файл удалён в Signal',
@@ -25,39 +29,59 @@ export const STATE_LABEL = {
 // Короткие названия состояний — для разбивки итога импорта.
 export const STATE_SHORT = {
   verified: 'сверено',
+  accepted: 'ссылка принята',
   suggested: 'предложена папка',
   conflict: 'противоречие',
-  attention: 'папка не видна',
+  attention: 'не видна',
   missing: 'файл удалён',
   unverified: 'ссылка не сверена',
   none: 'нет ссылки',
 }
 
-// Общая причина состояния (reason) — без имён и путей.
+// Общая причина состояния (reason) — без имён и путей. Ключи — ровно REASONS сервера (сторож — signal-review.test.mjs).
 export const REASON_TEXT = {
   none: 'ссылки нет',
+  unlinked: 'связь снята',
+  no_object: 'у договора не указан объект',
   candidates: 'есть предложенные папки',
-  family_unknown: 'папка договора, к которому относится ДС, не определена',
   existing_url: 'ссылка совпала с папкой',
   confirmed: 'подтверждено человеком',
+  number_not_found: 'ссылка принята, номер в папке не найден',
   unsupported_url: 'формат ссылки не поддерживается',
-  outside_roots: 'папка вне подключённых папок Signal',
-  root_disabled: 'папка Signal отключена',
-  not_in_snapshot: 'папки ещё нет в данных Signal',
+  unavailable: 'папка недоступна для сверки',
   no_snapshot: 'данных Signal ещё нет',
-  object_unassigned: 'папке не назначен объект',
   not_observed: 'папка не видна в последнем обходе',
+  pending: 'сверка ждёт обработки',
   not_visible: 'папка не видна в Signal',
+  file_not_visible: 'файл не виден в Signal',
+  building_mismatch: 'корпус, очередь или секция не совпали',
   deleted: 'файл удалён в Signal',
   object_mismatch: 'объект папки не совпадает с объектом договора',
   number_mismatch: 'номер в папке не совпадает с номером договора',
-  building_mismatch: 'корпус или очередь в папке не совпадают с договором',
-  foreign_dp: 'папка относится к другому договору',
   ambiguous: 'в названии папки несколько номеров',
-  pending: 'сверка ждёт обработки',
-  unlinked: 'связь снята',
+  foreign_dp: 'папка относится к другому договору',
+  ds_mismatch: 'номер ДС не совпал с номером в названии папки',
+  kind_mismatch: 'папка относится к допсоглашению',
+  foreign_party: 'в названии папки ИНН другой организации',
 }
 export const reasonText = (code) => REASON_TEXT[code] || ''
+
+// Подпись значка по паре «состояние : причина», когда подсказки сервера (tip) нет (метка только что слита из ответа решения или
+// /match, перезагрузка меток ещё не пришла). Противоречие называет причину; иначе — подпись состояния.
+const REASON_LABEL = {
+  'attention:file_not_visible': 'Signal: файл не виден в Signal',
+  'attention:building_mismatch': 'Signal: корпус, очередь или секция не совпали — проверьте',
+  'attention:kind_mismatch': 'Signal: папка относится к допсоглашению — проверьте',
+  'unverified:unavailable': 'Signal: папка недоступна для сверки',
+  'unverified:no_object': 'Signal: у договора не указан объект',
+  'none:no_object': 'Signal: у договора не указан объект',
+}
+export function stateLabel(state, reason = null) {
+  const exact = REASON_LABEL[`${state}:${reason}`]
+  if (exact) return exact
+  if (state === 'conflict' && reasonText(reason)) return `Signal: противоречие — ${reasonText(reason)}`
+  return STATE_LABEL[state] || 'Signal'
+}
 
 // Признаки, по которым сервер предложил папку (candidates[].reasons), и пометки к ним (flags): ровно MATCH_REASONS и MATCH_FLAGS
 // сопоставителя (server/osp-api/src/lib/signalMatch.js; сторож — tests/contracts/signal-review.test.mjs).
@@ -73,7 +97,10 @@ export const CANDIDATE_REASON_TEXT = {
 }
 export const CANDIDATE_FLAG_TEXT = {
   similar: 'совпадение по сходству названия — проверьте',
-  family_unknown: 'папка договора, к которому относится ДС, не определена — подтвердить нельзя',
+  // В-11, С-41: мягкие предупреждения — подтвердить можно, но человек видит, что корпус, очередь или секция не те или что это папка
+  // допсоглашения, а не договора.
+  building_mismatch: 'Корпус, очередь или секция не совпали — проверьте',
+  kind_mismatch: 'Папка допсоглашения, а не договора — проверьте',
   previously_rejected: 'уже отклоняли при прежних реквизитах',
   previously_unlinked: 'уже отвязывали при прежних реквизитах',
 }
@@ -84,12 +111,29 @@ export const candidateFlagText = (code) => CANDIDATE_FLAG_TEXT[code] || 'нуж�
 // object_name) — это название стоит запомнить как синоним. Есть object_name — объект уже узнан по названию или синониму.
 export const suggestsAlias = (candidate) => !!candidate && !(candidate.reasons || []).includes('object_name')
 
-// Папку с этим признаком подтвердить нельзя (сервер ответит 409 confirm_unavailable): папка договора, к которому относится ДС,
-// не определена.
-export const isUnconfirmable = (candidate) => (candidate?.flags || []).includes('family_unknown')
+// Мягкие предупреждения (attention): подтвердить можно, но человек должен их увидеть. Ответ confirm несёт warning с тем же кодом.
+export const SOFT_REASONS = ['building_mismatch', 'kind_mismatch']
+export const isSoftReason = (reason) => SOFT_REASONS.includes(reason)
 
-// Значок Signal. look: 'plain' — как без Signal (зелёный/красный по заполненности ссылки), 'suggest' — красный с синей
-// точкой, 'warn' — жёлтый с «!». Метки нет — 'plain', значок ровно как раньше.
+// Предупреждение у кандидата: флаг building_mismatch (корпус, очередь, секция) или kind_mismatch (папка ДС вместо договора).
+export const hasSoftWarning = (candidate) => (candidate?.flags || []).some(isSoftReason)
+export const hasBuildingWarning = (candidate) => (candidate?.flags || []).includes('building_mismatch')
+
+// Плашка и сообщение для мягкого предупреждения: «Корпус, очередь или секция не совпали — проверьте», «Папка относится к
+// допсоглашению — проверьте». Другие коды предупреждений — без текста (пустая строка).
+export function softWarningText(code) {
+  const text = isSoftReason(code) ? reasonText(code) : ''
+  return text ? `${text.charAt(0).toUpperCase()}${text.slice(1)} — проверьте` : ''
+}
+
+// Текущую папку договора (ссылка уже есть) человек может подтвердить: «ссылка принята, номер не найден» и мягкие предупреждения
+// (корпус, вид документа). Остальные состояния с ссылкой (противоречие, папка не видна, файл удалён) подтвердить нельзя; сверено —
+// подтверждать нечего. Решает сервер (evaluateNode, §2.5): здесь только выбор, показывать ли кнопку.
+export const isCurrentConfirmable = (state, reason = null) =>
+  state === 'accepted' || (state === 'attention' && isSoftReason(reason))
+
+// Значок Signal. look: 'plain' — как без Signal (зелёный/красный по заполненности ссылки; сюда же accepted и unverified),
+// 'suggest' — красный с синей точкой, 'warn' — жёлтый с «!». Метки нет — 'plain', значок ровно как раньше.
 export function markLook(mark) {
   if (!mark) return 'plain'
   if (mark.state === 'suggested') return 'suggest'
@@ -99,7 +143,7 @@ export function markLook(mark) {
 
 // Подпись значка: подсказка сервера (tip) или подпись состояния; ссылка — второй строкой. review — нажатие откроет сверку.
 export function markTitle(mark, { link = '', canReview = false, canAdd = false } = {}) {
-  const base = mark.tip || STATE_LABEL[mark.state] || 'Signal'
+  const base = mark.tip || stateLabel(mark.state, mark.reason)
   const hint = canReview ? ' — нажмите, чтобы сверить' : (canAdd && !link ? ' — нажмите, чтобы указать' : '')
   return `${base}${hint}${link ? `\n${link}` : ''}`
 }
@@ -111,6 +155,11 @@ export function signalReviewIds(marks) {
   const list = marks instanceof Map ? marks.values() : marks
   for (const m of list) if (m && m.id && !m.pending && isReviewState(m.state)) out.add(m.id)
   return out
+}
+
+// Метка «ссылка не сверялась» (С-9): ставится сразу после правки ссылки человеком, до ответа сервера; сбой сверки её не сбрасывает.
+export function pendingMark(id) {
+  return { id, state: 'unverified', reason: 'pending', pending: true, tip: stateLabel('unverified', 'pending'), hasCandidate: false }
 }
 
 // Сообщение после сохранения (Р8) по ответу /match для одного документа: { kind, text, path } или null (ничего не нашлось).
@@ -132,9 +181,11 @@ export function markFromMatch(item) {
   return { id: item.id, state: item.state, reason: item.reason ?? null, pending: false, tip: '', hasCandidate: !!item.hasCandidate }
 }
 
-// Итог сверки импорта (Ф5): три непересекающиеся группы по уникальным id успешно созданных документов.
-// найдено = verified + suggested; внимание = conflict + attention + missing; ожидают = остальное (none, unverified, pending)
-// и документы, на которые сервер не ответил. Повторный ответ по тому же id не удваивает, чужие id не считаются.
+// Итог сверки импорта (Ф5, В-9): три непересекающиеся группы по уникальным id успешно созданных документов.
+// найдено = verified + accepted + suggested; внимание = conflict + attention + missing; без папки или ожидают = всё остальное
+// (none, unverified, в том числе pending) и документы, на которые сервер не ответил. Повторный ответ по тому же id не удваивает,
+// чужие id не считаются.
+const FOUND_STATES = ['verified', 'accepted', 'suggested']
 export function summarizeMatch(ids, items) {
   const wanted = [...new Set((ids || []).filter(Boolean))]
   const byId = new Map()
@@ -149,7 +200,7 @@ export function summarizeMatch(ids, items) {
     if (!it) { unanswered++; waiting++; continue }
     const state = it.state || 'none'
     byState[state] = (byState[state] || 0) + 1
-    if (state === 'verified' || state === 'suggested') found++
+    if (FOUND_STATES.includes(state)) found++
     else if (WARN_STATES.includes(state)) attention++
     else waiting++
   }
@@ -157,13 +208,23 @@ export function summarizeMatch(ids, items) {
 }
 
 export const summaryLine = (s) =>
-  `Signal: сверено или найдено ${s.found} · требуют внимания ${s.attention} · ожидают сверки ${s.waiting}`
+  `Signal: найдено ${s.found} · требуют внимания ${s.attention} · без папки или ожидают ${s.waiting}`
 
 // Разбивка по состояниям — подсказкой к строке итога.
 export function summaryTitle(s) {
   const parts = Object.keys(STATE_SHORT).filter((k) => s.byState[k]).map((k) => `${STATE_SHORT[k]}: ${s.byState[k]}`)
   if (s.unanswered) parts.push(`нет ответа сервера: ${s.unanswered}`)
   return `Всего документов: ${s.total}${parts.length ? ` · ${parts.join(' · ')}` : ''}`
+}
+
+// Полоса над реестром (В-7): данные Signal устарели. dataAt — наименьшее время данных включённых корней (status.dataAt, ISO).
+// Дата — по Москве, как подсказки сервера; formatter — ruDateTime (передаётся, чтобы модуль остался без зависимостей).
+export function staleNotice(status, formatDateTime) {
+  if (!status || status.enabled !== true || status.stale !== true) return ''
+  const at = status.dataAt ? formatDateTime(status.dataAt) : ''
+  return at
+    ? `Данные Signal обновлялись ${at} — сверка может быть устаревшей`
+    : 'Данные Signal давно не обновлялись — сверка может быть устаревшей'
 }
 
 // Ключи идемпотентности окна сверки — по одному на попытку «действие + папка»: повтор той же попытки (после потерянного ответа

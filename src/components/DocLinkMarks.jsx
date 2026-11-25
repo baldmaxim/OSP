@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AnchoredPopover from './AnchoredPopover'
 import SignalReviewDialog from './SignalReviewDialog'
 import { openFolder } from './FolderOpen'
@@ -19,9 +19,12 @@ import './DocLinkMarks.css'
 // onSave(поле, значение) — промис; false — не сохранилось (сообщение показал вызывающий), окно остаётся открытым.
 //
 // «Signal» (23.11.2026, сверка с папками SIGNAL): если сервер сверки включён, у значка Signal есть метка (signalMark) — красный
-// с синей точкой («предложена папка») или жёлтый с «!» (противоречие, папка не видна, файл удалён); подпись — в title и
-// aria-label (цвет — не единственный носитель смысла). Нажатие с правом сверки (signalReview) на такой значок открывает окно
-// сверки (SignalReviewDialog) у значка; иначе — как раньше (переход, копирование, окно путей). Без метки значок прежний.
+// с синей точкой («предложена папка») или жёлтый с «!» (противоречие, папка или файл не виден, файл удалён); «ссылка принята,
+// номер в папке не найден» и «не сверялась» — обычный зелёный; подпись — в title и aria-label (цвет — не единственный носитель
+// смысла). Нажатие с правом сверки (signalReview) на такой значок открывает окно сверки (SignalReviewDialog) у значка; иначе —
+// как раньше (переход, копирование, окно путей). Без метки значок прежний.
+// После решения в окне значок меняет вид (кнопка → ссылка), узел заменяется, и фокус терялся (С-12): после перерисовки он
+// возвращается на новый значок, а если строка исчезла из реестра (фильтр «Сверка Signal») — на focusFallback() страницы.
 
 const FIELDS = [
   { key: 'folder_path', label: 'Путь к папке', placeholder: '\\\\su10-fs\\Договоры\\ЖК Алия\\СУ-2-АЛ' },
@@ -63,12 +66,33 @@ function Mark({ kind, on, extra = '', title, href, onActivate, onAdd, onReview, 
   return <span className={cls} role="img" title={title} aria-label={title}>{children}</span>
 }
 
-export default function DocLinkMarks({ doc, canEdit = false, onSave, label = 'документа', signalMark = null, signalReview = false, onSignalChanged }) {
+export default function DocLinkMarks({ doc, canEdit = false, onSave, label = 'документа', signalMark = null, signalReview = false, onSignalChanged, focusFallback = null }) {
   const groupRef = useRef(null)
   const [editor, setEditor] = useState(null) // { anchor, focus }
   const [review, setReview] = useState(null) // { anchor } — окно сверки Signal
   const [draft, setDraft] = useState({})
   const [saving, setSaving] = useState(false)
+  const decided = useRef(false) // в окне сверки принято решение
+  const refocus = useRef(false) // окно закрыто после решения: после перерисовки вернуть фокус на значок Signal
+  const fallbackRef = useRef(focusFallback)
+  fallbackRef.current = focusFallback
+
+  // Значок Signal после решения — уже другой элемент (кнопка стала ссылкой): фокус ставим после того, как React его перерисовал.
+  useEffect(() => {
+    if (!refocus.current) return
+    refocus.current = false
+    const el = groupRef.current?.querySelector('.dlm-signal')
+    if (el) el.focus({ preventScroll: true })
+  })
+  // Строка ушла из реестра вместе с решением — фокус не должен пропасть в <body>.
+  useEffect(() => () => {
+    if (!refocus.current) return
+    refocus.current = false
+    const target = fallbackRef.current?.()
+    if (target?.isConnected) target.focus({ preventScroll: true })
+  }, [])
+  const changed = (info) => { decided.current = true; onSignalChanged?.(info) }
+  const closeReview = () => { refocus.current = decided.current; decided.current = false; setReview(null) }
 
   const folder = valueOf(doc, 'folder_path')
   const signal = valueOf(doc, 'signal_link')
@@ -159,8 +183,9 @@ export default function DocLinkMarks({ doc, canEdit = false, onSave, label = 'д
           contractId={doc.id}
           contract={doc}
           anchor={review.anchor}
-          onClose={() => setReview(null)}
-          onChanged={onSignalChanged}
+          returnFocus={() => groupRef.current?.querySelector('.dlm-signal') || fallbackRef.current?.() || null}
+          onClose={closeReview}
+          onChanged={changed}
         />
       )}
       {editor && (

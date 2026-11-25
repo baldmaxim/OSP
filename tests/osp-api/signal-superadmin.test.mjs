@@ -256,6 +256,23 @@ describe('Маршруты /api/signal/* для суперадминистрат
     assert.equal((await get(sup, '/api/signal/aliases')).statusCode, 200)
     assert.equal((await get(sup, '/api/signal/runs')).statusCode, 200)
     assert.equal((await get(sup, '/api/signal/unassigned?sourceId=1')).statusCode !== 403, true)
+    // Разметка поддеревьев (В-6) — как администратору; сотруднику с правкой — отказ.
+    assert.equal((await get(sup, `/api/signal/tree?sourceId=${s.srcA.id}`)).statusCode, 200)
+    assert.equal((await get(sup, `/api/signal/bindings?sourceId=${s.srcA.id}`)).statusCode, 200)
+    assert.equal((await post(sup, '/api/signal/bindings/preview', { sourceId: s.srcA.id, nodeId: F.k1, objectId: s.A })).statusCode, 200)
+    for (const [method, url, body] of [['GET', `/api/signal/tree?sourceId=${s.srcA.id}`], ['GET', `/api/signal/bindings?sourceId=${s.srcA.id}`],
+      ['POST', '/api/signal/bindings/preview', { sourceId: s.srcA.id, nodeId: F.k1, objectId: s.A }]]) {
+      assert.equal((await call(U.editor, method, url, body)).statusCode, 403, `${method} ${url}`)
+    }
+  })
+
+  it('синонимы (С-2): суперадминистратор видит все названия как администратор, сотрудник без строки ролей — нет', async () => {
+    const created = await post(sup, '/api/signal/aliases', { objectId: s.A, text: 'Альфа Суперсписок' })
+    assert.equal(created.statusCode, 200, created.body)
+    const list = (await get(sup, '/api/signal/aliases')).json().items
+    const mine = list.find((x) => x.id === created.json().id)
+    assert.deepEqual([mine.text, mine.mine, mine.conflict], ['Альфа Суперсписок', true, false])
+    assert.equal((await get(nobody, '/api/signal/aliases')).statusCode, 403)
   })
 
   it('заблокированный (в том числе суперадминистратор), подрядчик (в том числе суперадминистратор) и учётка без строки и без superadmins — 403 везде', async () => {

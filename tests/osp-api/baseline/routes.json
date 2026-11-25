@@ -594,7 +594,7 @@
     "method": "GET",
     "url": "/api/signal/aliases",
     "kind": "user",
-    "require": "admin",
+    "require": "employeeOrSuperadmin",
     "reason": null,
     "body": null
   },
@@ -618,8 +618,28 @@
     "body": []
   },
   {
+    "method": "GET",
+    "url": "/api/signal/bindings",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": null
+  },
+  {
     "method": "POST",
     "url": "/api/signal/bindings",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "nodeId",
+      "objectId",
+      "sourceId"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/signal/bindings/preview",
     "kind": "user",
     "require": "admin",
     "reason": null,
@@ -644,6 +664,7 @@
     "require": "employeeOrSuperadmin",
     "reason": null,
     "body": [
+      "expectedRevision",
       "expectedSignalLink",
       "expectedStateVersion",
       "idempotencyKey",
@@ -672,6 +693,7 @@
     "require": "employeeOrSuperadmin",
     "reason": null,
     "body": [
+      "expectedRevision",
       "expectedSignalLink",
       "expectedStateVersion",
       "idempotencyKey"
@@ -748,6 +770,14 @@
     "require": "admin",
     "reason": null,
     "body": []
+  },
+  {
+    "method": "GET",
+    "url": "/api/signal/tree",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": null
   },
   {
     "method": "GET",

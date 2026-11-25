@@ -1,8 +1,13 @@
 // «Реестр по договорам» × SIGNAL (23.11.2026): значок Signal после сверки, окно сверки, фильтр «Сверка Signal», сообщение после
 // сохранения (Р8). Сервер сверки — подмена в стенде (tests/tender/ui/signal-fake.js, ?signal=…), состояние — window.__signal.
-//   • значок: красный (нет ссылки) / красный + синяя точка (предложена папка) / зелёный / жёлтый «!» (противоречие, папка не
-//     видна, файл удалён); подпись — в title и aria-label; «!» читается (контраст ≥ 4,5:1 в обеих темах); без метки — как раньше;
+//   • значок: красный (нет ссылки) / красный + синяя точка (предложена папка) / зелёный / жёлтый «!» (противоречие, папка или
+//     файл не виден, файл удалён); «ссылка принята, номер не найден» и «папка недоступна» — зелёные, вне фильтра; подпись — в
+//     title и aria-label; «!» читается (контраст ≥ 4,5:1 в обеих темах); без метки — как раньше;
 //   • окно сверки у значка: подтвердить, заменить / оставить текущую, другая папка, отклонить, 409 на устаревшем окне, синоним;
+//     мягкое предупреждение корпуса (подтвердить можно, ответ несёт warning); 409 hard_conflict — понятный текст, кнопка пропадает;
+//     «ДС: N» без самого ДП (С-7); фокус после «Подтвердить» остаётся на значке (С-12);
+//   • полоса «данные Signal устарели» (В-7), число «Сверка Signal» с фильтрами реестра (С-8), «не сверялась» сразу после правки
+//     ссылки и при сбое сверки (С-9), прокрутка к сообщению Р8 (С-13);
 //   • без права правки — ни окна, ни переключателя; телефон 390 px — без прокрутки вбок, окно на весь экран;
 //   • ключ идемпотентности — на попытку «действие + папка»: повтор после потерянного ответа — тот же, другое действие или
 //     папка — новый; медленная перезагрузка меток не затирает более новую (только что подтверждённую);
@@ -40,7 +45,7 @@ const lum = ([r, g, b]) => {
 }
 const contrast = (a, b) => { const [hi, lo] = [lum(rgbOf(a)), lum(rgbOf(b))].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05) }
 
-describe('Реестр договоров × SIGNAL: значок, окно сверки, фильтр, сообщение после сохранения', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 600000 }, () => {
+describe('Реестр договоров × SIGNAL: значок, окно сверки, фильтр, сообщение после сохранения', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 1500000 }, () => {
   let stand
   let browser
 
@@ -102,7 +107,7 @@ describe('Реестр договоров × SIGNAL: значок, окно св
     try {
       const ok = await inspect(markOf(page, '1/26'))
       assert.deepEqual([ok.tag, ok.color, ok.href, ok.dot, ok.bang], ['a', GREEN, 'https://signal.su10.ru/folder/1-26', null, null])
-      assert.match(ok.title, /^Signal: сверено 23\.11\.2026 · Альфа \/ Северный квартал \/ корп\.1 \/ ДП 1-26\nhttps:\/\/signal\.su10\.ru\/folder\/1-26$/)
+      assert.match(ok.title, /^Signal: сверено · данные на 23\.11\.2026 · Альфа \/ Северный квартал \/ корп\.1 \/ ДП 1-26\nhttps:\/\/signal\.su10\.ru\/folder\/1-26$/)
       assert.equal(ok.aria, ok.title, 'подпись и для диктора')
 
       const suggest = await inspect(markOf(page, '2/26'))
@@ -126,10 +131,10 @@ describe('Реестр договоров × SIGNAL: значок, окно св
         assert.ok(contrast(warn.color, warn.background) >= 4.5, `«!» ${warn.color} на ${warn.background}: ${contrast(warn.color, warn.background).toFixed(2)}:1`)
       }
 
-      // Не сверена — зелёный, как сейчас; нет ссылки и предложений — красный; без метки — прежняя подпись.
+      // Не сверена (папка недоступна для сверки) — зелёный, как сейчас; нет ссылки и предложений — красный; без метки — прежняя подпись.
       const pending = await inspect(markOf(page, '11/26'))
-      assert.deepEqual([pending.tag, pending.color, pending.dot], ['a', GREEN, null])
-      assert.match(pending.title, /^Signal: ссылка не сверялась — данные на 23\.11\.2026 14:00\nhttps:\/\/signal\.su10\.ru\/folder\/11-26$/)
+      assert.deepEqual([pending.tag, pending.color, pending.dot, pending.bang], ['a', GREEN, null, null])
+      assert.equal(pending.title, 'Signal: папка недоступна для сверки\nhttps://signal.su10.ru/folder/11-26')
       const none = await inspect(markOf(page, '10/26'))
       assert.deepEqual([none.tag, none.color, none.dot, none.bang], ['button', RED, null, null])
       assert.equal(none.title, 'Signal: ссылки нет — нажмите, чтобы указать')
@@ -152,7 +157,7 @@ describe('Реестр договоров × SIGNAL: значок, окно св
       assert.equal(await pop.getAttribute('role'), 'dialog')
       const left = await pop.locator('.srd-col[aria-label="Договор"]').innerText()
       assert.match(left, /№ 2\/26 от 01\.09\.2026/)
-      assert.match(left, /ДП · ДС: 1/, 'у договора один ДС (ctr-3)')
+      assert.match(left, /ДП · ДС: 1(?!\d)/, 'у договора один ДС (ctr-3); сам ДП в «ДС: N» не входит (С-7)')
       const right = await pop.locator('.srd-col[aria-label="Папка в Signal"]').innerText()
       assert.match(right, /корп\.2 \/ ДП 2-26/)
       assert.deepEqual(await pop.locator('.srd-chip').allInnerTexts(), ['номер совпал', 'корпус, очередь или секция совпали'])
@@ -172,7 +177,7 @@ describe('Реестр договоров × SIGNAL: значок, окно св
       const [confirm] = await calls(page, /POST .*\/confirm$/)
       assert.equal(confirm.path, '/api/signal/contracts/ctr-2/confirm')
       assert.deepEqual({ ...confirm.body, idempotencyKey: UUID.test(confirm.body.idempotencyKey) }, {
-        nodeId: node(2), replace: false, expectedSignalLink: null, expectedStateVersion: 1, idempotencyKey: true,
+        nodeId: node(2), replace: false, expectedSignalLink: null, expectedStateVersion: 1, expectedRevision: 7, idempotencyKey: true,
       })
       const done = await inspect(markOf(page, '2/26'))
       assert.deepEqual([done.tag, done.color, done.href, done.dot], ['a', GREEN, link(2), null])
@@ -347,18 +352,49 @@ describe('Реестр договоров × SIGNAL: значок, окно св
     } finally { await session.close() }
   })
 
-  it('папка с флагом «папка договора ДС не определена» подтвердить нельзя: кнопки «Подтвердить» нет, плашка объясняет, остальное доступно', async () => {
+  it('мягкое предупреждение корпуса (В-11): плашка «Корпус, очередь или секция не совпали — проверьте», подтвердить можно, ответ несёт warning — сообщение остаётся', async () => {
     const { page, errors, close } = await open()
     try {
       await page.locator('.cr-kind-tab[data-kind="amendments"]').click()
       const pop = await openReview(page, '3/26')
-      assert.deepEqual(await pop.locator('.srd-chip').allInnerTexts(),
-        ['номер ДС совпал', 'папка договора, к которому относится ДС, не определена — подтвердить нельзя'])
-      assert.equal(await btn(pop, 'Подтвердить').count(), 0)
-      assert.equal(await pop.locator('.srd-alias').count(), 0)
+      assert.deepEqual(await pop.locator('.srd-chip').allInnerTexts(), ['номер ДС совпал', 'Корпус, очередь или секция не совпали — проверьте'])
+      assert.equal(await pop.locator('.srd-chip.is-warn').count(), 1, 'предупреждение — жёлтая плашка, не отказ')
+      assert.equal(await btn(pop, 'Подтвердить').count(), 1, 'подтвердить можно')
       for (const name of ['Другая папка…', 'Отклонить', 'Позже']) assert.equal(await btn(pop, name).count(), 1, name)
-      assert.equal((await calls(page, /POST/)).length, 0)
+      await btn(pop, 'Подтвердить').click()
+      await pop.waitFor({ state: 'detached' })
+      const [confirm] = await calls(page, /POST .*ctr-3\/confirm$/)
+      assert.equal(confirm.body.nodeId, node(3))
+      const notice = page.locator('.srd-notice.is-warn')
+      await notice.waitFor({ timeout: 5000 })
+      assert.match(await notice.innerText(), /Папка в Signal подтверждена[\s\S]*Корпус, очередь или секция не совпали — проверьте/)
+      assert.equal(await notice.getByRole('button', { name: 'Сверить' }).count(), 0, 'это уведомление, а не предложение сверить')
+      await notice.getByRole('button', { name: 'Понятно' }).click()
+      await notice.waitFor({ state: 'detached' })
       assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('409 hard_conflict: понятный текст, окно остаётся, «Заменить» для этой папки пропадает, остальное доступно; данные не перечитываются', async () => {
+    const { page, errors, close } = await open('&signalExtra=1')
+    try {
+      const pop = await openReview(page, '17/26')
+      assert.deepEqual(await pop.locator('.srd-chip').allInnerTexts(), ['номер совпал'], 'у предложенной папки — только свои признаки')
+      const before = (await calls(page, /GET \/api\/signal\/contracts\/ctr-17$/)).length
+      await btn(pop, 'Заменить на предложенную').click()
+      const msg = pop.locator('.srd-msg.is-error')
+      await msg.waitFor()
+      assert.match((await msg.innerText()).trim(), /^Папка противоречит данным договора \(номер, вид документа или организация в названии\) — подтвердить её нельзя\. Выберите другую папку\.$/)
+      assert.equal(await pop.count(), 1, 'окно осталось')
+      assert.equal(await btn(pop, 'Заменить на предложенную').count(), 0, 'заменять на эту папку больше нельзя')
+      assert.equal(await btn(pop, 'Оставить текущую').count(), 1)
+      assert.ok((await pop.locator('.srd-chip.is-bad').allInnerTexts()).some((t) => /противоречит данным договора/.test(t)))
+      for (const name of ['Другая папка…', 'Отклонить', 'Позже']) assert.equal(await btn(pop, name).count(), 1, name)
+      const [attempt] = await calls(page, /POST .*ctr-17\/confirm$/)
+      assert.deepEqual([attempt.body.nodeId, attempt.body.replace, attempt.body.expectedRevision], [node(117), true, 7])
+      assert.equal((await calls(page, /GET \/api\/signal\/contracts\/ctr-17$/)).length, before, 'это не «окно устарело» — данные не перечитываются')
+      assert.equal(await page.evaluate(() => window.__fakeDb.contracts.find((c) => c.id === 'ctr-17').signal_link), 'https://signal.su10.ru/folder/17-26', 'ссылка не тронута')
+      assert.deepEqual(errors.filter((e) => !/409/.test(e)), [])
     } finally { await close() }
   })
 
@@ -612,7 +648,7 @@ describe('Реестр договоров × SIGNAL: значок, окно св
       await page.waitForFunction(() => /^Signal: сверено/.test(document.querySelector('.cmarks .dlm-signal')?.getAttribute('title') || ''))
       const fresh = await inspect(markOf(page, 'ПРЕД-79'))
       assert.deepEqual([fresh.tag, fresh.color, fresh.dot], ['a', GREEN, null], 'после подтверждения значок зелёный')
-      assert.equal(await countOf(page), 6)
+      assert.equal(await countOf(page), 0, 'число — с поиском (С-8): подтверждённый ПРЕД-79 в «Сверке Signal» не остался')
 
       // Старая перезагрузка дошла последней — её снимок (предложение) устарел и значок не меняет.
       await page.evaluate(() => window.__signal.release())
@@ -620,7 +656,9 @@ describe('Реестр договоров × SIGNAL: значок, окно св
       await page.waitForTimeout(400)
       const after = await inspect(markOf(page, 'ПРЕД-79'))
       assert.deepEqual([after.tag, after.color, after.dot, after.href, after.title], ['a', GREEN, null, fresh.href, fresh.title], 'значок остался «сверено»')
-      assert.equal(await countOf(page), 6, 'число «Сверка Signal» не вернулось к прежнему')
+      assert.equal(await countOf(page), 0, 'число «Сверка Signal» не вернулось к прежнему (устаревший снимок дал бы 1)')
+      await page.locator('.cr-search').fill('')
+      assert.equal(await countOf(page), 6, 'без поиска — прежние шесть')
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
@@ -677,9 +715,434 @@ describe('Реестр договоров × SIGNAL: значок, окно св
         assert.deepEqual(dialogs, [], `${mode}: окон alert нет`)
         // Реестр жив: метки на месте.
         assert.match((await inspect(markOf(page, '2/26'))).cls, /is-suggest/, mode)
-        assert.equal(await countOf(page), 6, mode)
+        // down — сервер ничего не считал (6); slow — досчитал, а страница после тайм-аута перечитала метки: новый документ предложен (7).
+        assert.equal(await countOf(page), mode === 'slow' ? 7 : 6, mode)
         assert.deepEqual(errors, [], mode)
       } finally { await close() }
     }
+  })
+
+  // ── Волна исправлений: новые состояния, полоса «данные устарели», число с фильтрами, «не сверялась», фокус, прокрутка ─────────────
+  it('новые состояния (spec §1): «ссылка принята» — зелёный и вне фильтра; предупреждение корпуса и вида документа, файл не виден, ДС / сторона — жёлтые; «недоступна» — зелёный', async () => {
+    const { page, errors, close } = await open('&signalExtra=1')
+    try {
+      // Вне набора: accepted (ctr-12), unavailable (ctr-20), no_object (ctr-21); в наборе — ещё 7 (ctr-9, 14, 15, 17, 19, 22, 24) к прежним 6.
+      assert.equal(await countOf(page), 13)
+      await page.locator('.cr-kind-tab[data-kind="amendments"]').click()
+      const accepted = await inspect(markOf(page, '12/26'))
+      assert.deepEqual([accepted.tag, accepted.color, accepted.dot, accepted.bang], ['a', GREEN, null, null])
+      assert.match(accepted.title, /^Signal: ссылка принята, номер в папке не найден · данные на 23\.11\.2026 · Альфа \/ Северный квартал \/ корп\.7 \/ Договоры подряда \/ Альфа\nhttps:/)
+      const noObject = await inspect(markOf(page, '21/26'))
+      assert.deepEqual([noObject.tag, noObject.color, noObject.bang, noObject.title], ['a', GREEN, null, 'Signal: у договора не указан объект\nhttps://signal.su10.ru/folder/21-26'])
+      await page.locator('.cr-kind-tab[data-kind="contracts"]').click()
+      const unavailable = await inspect(markOf(page, '20/26'))
+      assert.deepEqual([unavailable.tag, unavailable.color, unavailable.bang, unavailable.title], ['a', GREEN, null, 'Signal: папка недоступна для сверки\nhttps://signal.su10.ru/folder/20-26'])
+      for (const [number, text] of [
+        ['14/26', 'Signal: корпус, очередь или секция не совпали — проверьте'],
+        ['22/26', 'Signal: папка относится к допсоглашению — проверьте'],
+        ['17/26', 'Signal: противоречие — номер в папке не совпадает'],
+        ['19/26', 'Signal: противоречие — в названии папки ИНН другой организации'],
+      ]) {
+        const warn = await inspect(markOf(page, number))
+        assert.deepEqual([warn.tag, warn.bang, warn.color], ['button', '!', AMBER], number)
+        assert.ok(warn.title.startsWith(`${text} — нажмите, чтобы сверить\nhttps://signal.su10.ru/folder/`), warn.title)
+        assert.equal(warn.aria, warn.title)
+        assert.ok(contrast(warn.color, warn.background) >= 4.5, number)
+      }
+      await page.locator('.cr-kind-tab[data-kind="amendments"]').click()
+      for (const [number, text] of [
+        ['9/26', 'Signal: противоречие — номер ДС не совпал с номером в названии папки'],
+        ['15/26', 'Signal: файл не виден в Signal'],
+      ]) {
+        const warn = await inspect(markOf(page, number))
+        assert.deepEqual([warn.tag, warn.bang], ['button', '!'], number)
+        assert.ok(warn.title.startsWith(`${text} — нажмите, чтобы сверить`), warn.title)
+      }
+      // Фильтр «Сверка Signal»: зелёные состояния в него не входят.
+      await page.locator('.cr-kind-tab[data-kind="all"]').click()
+      await toggleOf(page).click()
+      const shown = await page.locator('.contracts-table tbody tr.contract-row').allInnerTexts()
+      const numbers = shown.map((t) => /№ (\d+\/26)/.exec(t)[1])
+      for (const out of ['12/26', '20/26', '21/26', '1/26']) assert.ok(!numbers.includes(out), `${out} вне «Сверки Signal»`)
+      for (const inn of ['14/26', '17/26', '19/26', '22/26']) assert.ok(numbers.includes(inn), `${inn} в «Сверке Signal»`)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('окно: текущая папка с мягким предупреждением (корпус, допсоглашение) подтверждается без выбора; «файл не виден» и противоречия подтвердить нельзя (текст — по причине)', async () => {
+    const { page, errors, close } = await open('&signalExtra=1')
+    try {
+      let pop = await openReview(page, '14/26')
+      assert.deepEqual(await pop.locator('.srd-chip').allInnerTexts(), ['Корпус, очередь или секция не совпали — проверьте'])
+      assert.match(await pop.locator('.srd-col[aria-label="Папка в Signal"]').innerText(), /корп\.9 \/ ДП 14-26/)
+      await btn(pop, 'Подтвердить').click()
+      await pop.waitFor({ state: 'detached' })
+      const [confirm] = await calls(page, /POST .*ctr-14\/confirm$/)
+      assert.deepEqual({ nodeId: confirm.body.nodeId, replace: confirm.body.replace, expectedSignalLink: confirm.body.expectedSignalLink, rev: confirm.body.expectedRevision },
+        { nodeId: node(14), replace: false, expectedSignalLink: 'https://signal.su10.ru/folder/14-26', rev: 7 })
+      assert.equal((await dbContract(page, 'ctr-14')).signal_link, 'https://signal.su10.ru/folder/14-26', 'ссылка та же: подтверждена текущая папка')
+      const done = await inspect(markOf(page, '14/26'))
+      assert.deepEqual([done.tag, done.color, done.bang], ['a', GREEN, null])
+      await page.locator('.srd-notice.is-warn', { hasText: 'Корпус, очередь или секция не совпали — проверьте' }).waitFor()
+
+      // С-41: папка допсоглашения у договора — тоже мягкое предупреждение; подтвердить можно, сообщение называет причину.
+      pop = await openReview(page, '22/26')
+      assert.deepEqual(await pop.locator('.srd-chip').allInnerTexts(), ['Папка относится к допсоглашению — проверьте'])
+      assert.equal(await pop.locator('.srd-chip.is-warn').count(), 1)
+      await btn(pop, 'Подтвердить').click()
+      await pop.waitFor({ state: 'detached' })
+      await page.locator('.srd-notice.is-warn', { hasText: 'Папка относится к допсоглашению — проверьте' }).waitFor()
+      assert.deepEqual([(await inspect(markOf(page, '22/26'))).tag, (await inspect(markOf(page, '22/26'))).bang], ['a', null])
+
+      // Противоречия: у 19/26 нет предложений — причина плашкой; у 17/26 выбрана предложенная папка (её признаки), текущую не подтвердить.
+      pop = await openReview(page, '19/26')
+      assert.deepEqual(await pop.locator('.srd-chip').allInnerTexts(), ['в названии папки ИНН другой организации'])
+      assert.equal(await btn(pop, 'Подтвердить').count(), 0, 'противоречие не подтверждается')
+      await page.keyboard.press('Escape')
+      await pop.waitFor({ state: 'detached' })
+      pop = await openReview(page, '17/26')
+      assert.equal(await btn(pop, 'Подтвердить').count(), 0, 'у договора с противоречием — «Заменить», не «Подтвердить»')
+      await page.keyboard.press('Escape')
+      await pop.waitFor({ state: 'detached' })
+      await page.locator('.cr-kind-tab[data-kind="amendments"]').click()
+      pop = await openReview(page, '15/26')
+      assert.deepEqual(await pop.locator('.srd-chip').allInnerTexts(), ['файл не виден в Signal'])
+      assert.equal(await btn(pop, 'Подтвердить').count(), 0)
+      assert.deepEqual(errors.filter((e) => !/409/.test(e)), [])
+    } finally { await close() }
+  })
+
+  it('кандидат-папка допсоглашения у договора (флаг kind_mismatch): плашка «Папка допсоглашения, а не договора — проверьте», подтвердить можно, ответ несёт warning', async () => {
+    const { page, errors, close } = await open('&signalExtra=1')
+    try {
+      await page.locator('.cr-kind-tab[data-kind="amendments"]').click()
+      const pop = await openReview(page, '24/26')
+      assert.deepEqual(await pop.locator('.srd-chip').allInnerTexts(), ['номер ДС совпал', 'Папка допсоглашения, а не договора — проверьте'])
+      assert.equal(await pop.locator('.srd-chip.is-warn').count(), 1)
+      await btn(pop, 'Подтвердить').click()
+      await pop.waitFor({ state: 'detached' })
+      const notice = page.locator('.srd-notice.is-warn')
+      await notice.waitFor({ timeout: 5000 })
+      assert.match(await notice.innerText(), /Папка в Signal подтверждена[\s\S]*Папка относится к допсоглашению — проверьте/)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('полоса «Данные Signal обновлялись <дата по Москве> — сверка может быть устаревшей» (В-7): над реестром, подсказки — с датой данных, а не пересчёта', async () => {
+    const stale = await open('&signalStale=1')
+    try {
+      const { page, errors } = stale
+      const bar = page.locator('.srd-stale')
+      await bar.waitFor()
+      assert.equal((await bar.innerText()).trim(), 'Данные Signal обновлялись 21.11.2026 08:30 — сверка может быть устаревшей')
+      assert.equal(await bar.getAttribute('role'), 'status')
+      const box = await bar.boundingBox()
+      const tabs = await page.locator('.cr-tabs').boundingBox()
+      assert.ok(box.y + box.height <= tabs.y + 1, 'полоса — над вкладками реестра')
+      assert.match((await inspect(markOf(page, '1/26'))).title, /^Signal: сверено · данные на 21\.11\.2026 · /, 'дата данных метки, не дата пересчёта')
+      assert.equal(await page.evaluate(() => window.__signal.calls.find((c) => c.path === '/api/signal/marks') ? true : false), true)
+      assert.deepEqual(errors, [])
+    } finally { await stale.close() }
+
+    const fresh = await open()
+    try {
+      assert.equal(await fresh.page.locator('.srd-stale').count(), 0, 'данные свежие — полосы нет')
+      assert.deepEqual(fresh.errors, [])
+    } finally { await fresh.close() }
+
+    // Сверка выключена — полосы нет, даже если сервер по ошибке прислал stale.
+    const off = await open('', { base: BASE.replace('signal=1', 'signal=off') + '&signalStale=1', toggle: false })
+    try {
+      await off.page.waitForTimeout(400)
+      assert.equal(await off.page.locator('.srd-stale').count(), 0)
+      assert.deepEqual(off.errors, [])
+    } finally { await off.close() }
+
+    // Без права правки полосу тоже видят (метки у них есть).
+    const view = await open('&signalStale=1&signalEdit=0', { toggle: false })
+    try {
+      await view.page.locator('.srd-stale').waitFor()
+      assert.deepEqual(view.errors, [])
+    } finally { await view.close() }
+  })
+
+  it('число на «Сверке Signal» учитывает поиск, объект и контрагента (С-8) и равно числу документов, которые покажет реестр', async () => {
+    const { page, errors, close } = await open()
+    try {
+      assert.equal(await countOf(page), 6)
+      // Поиск по номеру: остаётся один документ — ctr-4.
+      await page.locator('.cr-search').fill('4/26')
+      assert.equal(await countOf(page), 1, 'поиск 4/26')
+      await toggleOf(page).click()
+      assert.equal(await page.locator('.contracts-table tbody tr.contract-row').count(), 1)
+      assert.equal(await countOf(page), 1, 'переключатель число не меняет')
+      await toggleOf(page).click()
+      // Поиск по номеру ДС: договор остаётся ради ДС — в числе один ДС.
+      await page.locator('.cr-search').fill('6/26')
+      assert.equal(await countOf(page), 1, 'ctr-6 — ДС под ctr-5')
+      await page.locator('.cr-search').fill('')
+      assert.equal(await countOf(page), 6)
+
+      // Объект: ЖК «Северный квартал» — ctr-7 и ДС ctr-6 (ради договора ctr-5); «Нурлы» — ctr-2, ctr-3 (ДС), ctr-4, ctr-8.
+      const pickObject = async (name) => {
+        await page.locator('.cr-toolbar .fdrop').first().locator('.fdrop-trigger').click()
+        await page.locator('.fdrop-panel .fdrop-option', { hasText: name }).click()
+        await page.keyboard.press('Escape')
+      }
+      await pickObject('Северный квартал')
+      assert.equal(await countOf(page), 2, 'объект 1: ctr-7 и ДС ctr-6')
+      await toggleOf(page).click()
+      const text = await page.locator('.contracts-table tbody tr.contract-row').allInnerTexts()
+      assert.deepEqual(text.map((t) => /№ (\d+\/26)/.exec(t)[1]).sort(), ['5/26', '7/26'])
+      await toggleOf(page).click()
+      await page.locator('.cr-toolbar .cr-filter-clear').click()
+      await pickObject('Нурлы')
+      assert.equal(await countOf(page), 4, 'объект 2: ctr-2, ctr-3 (ДС), ctr-4, ctr-8')
+      await page.locator('.cr-toolbar .cr-filter-clear').click()
+
+      // Контрагент: у ctr-4 — «Подрядчик 04».
+      await page.locator('.cr-toolbar .fdrop').nth(1).locator('.fdrop-trigger').click()
+      await page.locator('.fdrop-panel .fdrop-option', { hasText: 'Подрядчик 04' }).click()
+      await page.keyboard.press('Escape')
+      assert.equal(await countOf(page), 1, 'контрагент «Подрядчик 04»')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('«Сверка Signal»: число по видам «Договоры» и «ДС» после фильтра сходится с числом строк', async () => {
+    const { page, errors, close } = await open()
+    try {
+      await page.locator('.cr-search').fill('/26')
+      const rows = page.locator('.contracts-table tbody tr.contract-row')
+      for (const kind of ['contracts', 'amendments']) {
+        await page.locator(`.cr-kind-tab[data-kind="${kind}"]`).click()
+        const n = await countOf(page)
+        await toggleOf(page).click()
+        assert.equal(await rows.count(), n, kind)
+        await toggleOf(page).click()
+      }
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('окно: «ДС: N» не считает сам ДП (С-7): без ДС — просто «ДП», с тремя — «ДС: 3» (в базе у ДП root_contract_id = id)', async () => {
+    const { page, errors, close } = await open('&contractsDivision=1')
+    try {
+      assert.equal(await page.evaluate(() => window.__fakeDb.contracts.find((c) => c.id === 'ctr-4').root_contract_id), 'ctr-4', 'сид — как в базе')
+      let pop = await openReview(page, '4/26')
+      assert.match(await pop.locator('.srd-col[aria-label="Договор"]').innerText(), /ДП · ID 4(?!\d)/, 'у ДП без ДС числа нет')
+      assert.doesNotMatch(await pop.locator('.srd-col[aria-label="Договор"]').innerText(), /ДС:/)
+      await page.keyboard.press('Escape')
+      await pop.waitFor({ state: 'detached' })
+      pop = await openReview(page, '2/26')
+      await page.waitForFunction(() => /ДС: \d/.test(document.querySelector('.srd-col[aria-label="Договор"]')?.textContent || ''))
+      assert.match(await pop.locator('.srd-col[aria-label="Договор"]').innerText(), /ДП · ДС: 3 · ID 2/, 'ctr-3, ДР-1 и 2: три ДС')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  // Окно путей: Signal — вторая строка (первая — путь к папке).
+  const editSignalLink = async (page, number, value) => {
+    const row = rowOf(page, number)
+    // Карандаш есть, когда уже указан какой-нибудь путь; иначе — пустой значок Signal открывает то же окно.
+    if (await row.locator('.dlm-edit').count()) await row.locator('.dlm-edit').click()
+    else await row.locator('.dlm-signal').click()
+    const pop = page.locator('.apop.dlm-pop')
+    await pop.locator('.dlm-pop-input').nth(1).fill(value)
+    await pop.locator('.dlm-pop-save').click()
+    await pop.waitFor({ state: 'detached' })
+  }
+
+  it('правка ссылки в окне путей: значок сразу «не сверялась», до ответа сервера и при его сбое; прежнее «сверено» и «противоречие» не остаются (С-9)', async () => {
+    for (const mode of ['down', 'slow']) {
+      const { page, errors, dialogs, close } = await open('&signalPending=1', { base: BASE.replace('signal=1', `signal=${mode}`) })
+      try {
+        const before = await inspect(markOf(page, '1/26'))
+        assert.match(before.title, /^Signal: сверено/, mode)
+        await editSignalLink(page, '1/26', 'https://signal.su10.ru/folder/1-26-новая')
+        // Сразу после сохранения — «не сверялась», без ожидания сервера.
+        const pending = await inspect(markOf(page, '1/26'))
+        assert.deepEqual([pending.tag, pending.color, pending.bang], ['a', GREEN, null], mode)
+        assert.equal(pending.title, 'Signal: ссылка не сверялась\nhttps://signal.su10.ru/folder/1-26-новая', mode)
+        assert.equal((await dbContract(page, 'ctr-1')).signal_link, 'https://signal.su10.ru/folder/1-26-новая')
+        // Сверка не ответила (503 / дольше 3 с): состояние то же, метки перечитаны — и тоже «не сверялась».
+        await page.waitForFunction(() => window.__signal.calls.some((c) => c.path === '/api/signal/match'))
+        await page.waitForTimeout(mode === 'slow' ? 3800 : 700)
+        await page.waitForFunction((n) => window.__signal.calls.filter((c) => c.path === '/api/signal/marks').length > n, 1, { timeout: 8000 })
+        const after = await inspect(markOf(page, '1/26'))
+        assert.doesNotMatch(after.title, /^Signal: сверено/, `${mode}: прежнее «сверено» не возвращается`)
+        // down — сервер ничего не считал: остаётся «не сверялась». slow — сервер досчитал, пока страница не ждала: метки перечитаны.
+        if (mode === 'down') assert.equal(after.title, pending.title, 'после сбоя сверки — всё ещё «не сверялась»')
+        else assert.match(after.title, /^Signal: ссылка принята, номер в папке не найден/, 'сервер досчитал — метки показывают результат')
+        assert.equal(await page.locator('.srd-notice').count(), 0, mode)
+        assert.deepEqual(dialogs, [], mode)
+        assert.deepEqual(errors, [], mode)
+      } finally { await close() }
+    }
+  })
+
+  it('правка ссылки у договора с «файл удалён»: жёлтый «!» уходит сразу, документ выходит из «Сверки Signal»; сверка ответила — новое состояние', async () => {
+    const down = await open('&signalPending=1', { base: BASE.replace('signal=1', 'signal=down') })
+    try {
+      const { page, errors } = down
+      await page.locator('.cr-kind-tab[data-kind="contracts"]').click()
+      assert.equal(await countOf(page), 4)
+      assert.equal((await inspect(markOf(page, '7/26'))).bang, '!')
+      await editSignalLink(page, '7/26', 'https://signal.su10.ru/folder/7-26-другая')
+      const pending = await inspect(markOf(page, '7/26'))
+      assert.deepEqual([pending.bang, pending.color, pending.title], [null, GREEN, 'Signal: ссылка не сверялась\nhttps://signal.su10.ru/folder/7-26-другая'])
+      assert.equal(await countOf(page), 3, 'ожидающий документ не в «Сверке Signal»')
+      assert.deepEqual(errors, [])
+    } finally { await down.close() }
+
+    const ok = await open('&signalPending=1')
+    try {
+      const { page, errors } = ok
+      const matches = (n) => page.waitForFunction((k) => window.__signal.calls.filter((c) => c.path === '/api/signal/match').length >= k, n, { timeout: 5000 })
+      await editSignalLink(page, '5/26', 'https://signal.su10.ru/folder/5-26-conflict')
+      // Сверка ответила: «conflict» в адресе — противоречие, окно сообщает.
+      const notice = page.locator('.srd-notice.is-warn')
+      await notice.waitFor({ timeout: 5000 })
+      assert.match(await notice.innerText(), /Ссылка на Signal сохранена/)
+      assert.equal((await inspect(markOf(page, '5/26'))).bang, '!')
+      // Другая ссылка: номер в папке не найден — «ссылка принята», зелёный.
+      await editSignalLink(page, '5/26', 'https://signal.su10.ru/folder/5-26-ok')
+      await matches(2)
+      await page.waitForTimeout(400)
+      const accepted = await inspect(markOf(page, '5/26'))
+      assert.match(accepted.title, /^Signal: ссылка принята, номер в папке не найден/)
+      assert.deepEqual([accepted.bang, accepted.color], [null, GREEN])
+      assert.deepEqual(errors, [])
+    } finally { await ok.close() }
+  })
+
+  it('«ссылка принята, номер не найден» из ответа сверки: значок зелёный и подписан сразу, до перезагрузки меток (В-1)', async () => {
+    const { page, errors, close } = await open('&signalPending=1')
+    try {
+      // Перезагрузку меток держим: пока она не пришла, значок живёт на метке из ответа /match, без подсказки сервера.
+      await page.evaluate(() => window.__signal.hold('GET /api/signal/marks'))
+      await editSignalLink(page, '5/26', 'https://signal.su10.ru/folder/5-26-принята')
+      await page.waitForFunction(() => window.__signal.held.length === 1, null, { timeout: 5000 })
+      const mark = await inspect(markOf(page, '5/26'))
+      assert.deepEqual([mark.tag, mark.color, mark.bang, mark.dot], ['a', GREEN, null, null])
+      assert.equal(mark.title, 'Signal: ссылка принята, номер в папке не найден\nhttps://signal.su10.ru/folder/5-26-принята')
+      assert.equal(await page.locator('.srd-notice').count(), 0, 'принята — не повод для сообщения')
+      await page.evaluate(() => window.__signal.release())
+      await page.waitForFunction(() => window.__signal.held.every((h) => h.passed))
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('очистили ссылку: значок «ссылки нет» сразу; сбой сверки это не меняет', async () => {
+    const { page, errors, close } = await open('&signalPending=1', { base: BASE.replace('signal=1', 'signal=down') })
+    try {
+      await editSignalLink(page, '1/26', '')
+      const none = await inspect(markOf(page, '1/26'))
+      assert.deepEqual([none.tag, none.color, none.dot], ['button', RED, null])
+      assert.match(none.title, /^Signal: ссылки нет|^Ссылки на Signal нет/)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('после «Подтвердить» в окне у значка фокус остаётся на значке строки (С-12); строка ушла из фильтра — фокус на панели фильтров', async () => {
+    const { page, errors, close } = await open()
+    try {
+      // С клавиатуры: фокус на значок, Enter, к «Подтвердить», Enter.
+      await markOf(page, '2/26').focus()
+      await page.keyboard.press('Enter')
+      const pop = page.locator('.apop.srd-pop')
+      await pop.locator('.srd-grid').waitFor()
+      await btn(pop, 'Подтвердить').focus()
+      await page.keyboard.press('Enter')
+      await pop.waitFor({ state: 'detached' })
+      await page.waitForFunction(() => document.activeElement?.classList.contains('dlm-signal'), null, { timeout: 3000 })
+      const focused = await page.evaluate(() => ({ row: document.activeElement.closest('tr')?.textContent || '', tag: document.activeElement.tagName.toLowerCase(), href: document.activeElement.getAttribute('href') }))
+      assert.match(focused.row, /№ 2\/26(?![0-9])/, 'фокус — в строке договора 2/26')
+      assert.deepEqual([focused.tag, focused.href], ['a', link(2)], 'на новом значке (ссылка вместо кнопки)')
+
+      // Фильтр «Сверка Signal»: подтверждённый договор уходит из таблицы — фокус не пропадает в <body>.
+      await toggleOf(page).click()
+      await markOf(page, '8/26').focus()
+      await page.keyboard.press('Enter')
+      await pop.locator('.srd-grid').waitFor()
+      await btn(pop, 'Подтвердить').focus()
+      await page.keyboard.press('Enter')
+      await pop.waitFor({ state: 'detached' })
+      await page.waitForFunction(() => !!document.activeElement?.closest('.cr-toolbar'), null, { timeout: 3000 })
+      assert.equal(await page.locator('.contracts-table tbody tr.contract-row', { hasText: /№ 8\/26(?![0-9])/ }).count(), 0, 'строка ушла из таблицы')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('Escape без решения возвращает фокус на значок, который остался прежним (кнопка)', async () => {
+    const { page, errors, close } = await open()
+    try {
+      await markOf(page, '2/26').focus()
+      await page.keyboard.press('Enter')
+      await page.locator('.apop.srd-pop .srd-grid').waitFor()
+      await page.keyboard.press('Escape')
+      await page.locator('.apop.srd-pop').waitFor({ state: 'detached' })
+      assert.equal(await page.evaluate(() => document.activeElement?.closest('tr')?.textContent.includes('№ 2/26') && document.activeElement.classList.contains('dlm-signal')), true)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('сообщение Р8 прокручивается в видимую область, когда ссылку правят на прокрученной странице (С-13)', async () => {
+    const { page, errors, close } = await open('', { base: BASE.replace('contracts=30', 'contracts=90') })
+    try {
+      // Договор в самом низу страницы: окно путей оставляет страницу там, а сообщение появляется под панелью фильтров — выше.
+      // (Форма договора перезагружает список — «Загрузка…» сама возвращает страницу наверх, поэтому проверяем окно путей.)
+      const last = page.locator('.contracts-table tbody tr.contract-row').last()
+      await last.scrollIntoViewIfNeeded()
+      const number = /№ (\d+\/26)/.exec(await last.innerText())[1]
+      const barBottom = await page.evaluate(() => document.querySelector('.cr-toolbar').getBoundingClientRect().bottom)
+      assert.ok(barBottom < 0, `панель фильтров ушла за верхний край страницы (${barBottom})`)
+      await editSignalLink(page, number, 'https://signal.su10.ru/folder/last-conflict')
+      const notice = page.locator('.srd-notice.is-warn')
+      await notice.waitFor({ timeout: 5000 })
+      assert.match(await notice.innerText(), /Ссылка на Signal сохранена/)
+      await page.waitForFunction(() => {
+        const r = document.querySelector('.srd-notice')?.getBoundingClientRect()
+        return !!r && r.top >= 0 && r.bottom <= window.innerHeight
+      }, null, { timeout: 3000 })
+      assert.equal(await notice.getAttribute('role'), 'status')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('интеграция выключена (enabled: false): сохранение документа и правка ссылки — как до Signal, ни метки, ни полосы, ни запросов сверки', async () => {
+    for (const mode of ['off', 'missing']) {
+      const { page, errors, dialogs, close } = await open('&signalStale=1&signalPending=1', { base: BASE.replace('signal=1', `signal=${mode}`), toggle: false })
+      try {
+        await page.waitForTimeout(400)
+        assert.equal(await page.locator('.srd-stale, .srd-notice, button.qfilter:has-text("Сверка Signal")').count(), 0, mode)
+        // Правка ссылки в окне путей — просто запись поля: прежний значок «ссылка есть», подпись прежняя.
+        await editSignalLink(page, '1/26', 'https://signal.su10.ru/folder/1-26-ещё')
+        assert.equal((await dbContract(page, 'ctr-1')).signal_link, 'https://signal.su10.ru/folder/1-26-ещё')
+        const one = await inspect(markOf(page, '1/26'))
+        assert.deepEqual([one.tag, one.color, one.title, one.bang], ['a', GREEN, 'Signal: https://signal.su10.ru/folder/1-26-ещё', null], mode)
+        // Новый договор формой — сохраняется, сверку не запрашивает, сообщений нет.
+        await createViaForm(page, `ПРЕД-${mode}-1`)
+        await page.waitForTimeout(500)
+        assert.equal(await page.locator('.srd-notice').count(), 0, mode)
+        const sent = await page.evaluate(() => (window.__signal?.calls || []).map((c) => `${c.method} ${c.path}`))
+        assert.deepEqual(sent.filter((c) => c !== 'GET /api/signal/status'), [], `${mode}: кроме проверки «включено ли» запросов к Signal нет`)
+        assert.deepEqual(dialogs, [], mode)
+        assert.deepEqual(errors, [], mode)
+      } finally { await close() }
+    }
+  })
+
+  it('телефон 390 px: полоса «данные устарели» — на экране, компактна, без прокрутки вбок', async () => {
+    const { page, errors, close } = await open('&signalStale=1', { viewport: { width: 390, height: 800 }, wait: '.mcard' })
+    try {
+      const bar = page.locator('.srd-stale')
+      await bar.waitFor()
+      const box = await bar.boundingBox()
+      assert.ok(box.x >= 0 && box.x + box.width <= 390, 'полоса на экране')
+      assert.ok(box.height < 120, `полоса компактна: ${box.height}`)
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
   })
 })

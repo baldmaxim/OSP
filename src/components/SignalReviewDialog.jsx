@@ -3,10 +3,10 @@ import { createPortal } from 'react-dom'
 import { db, signal } from '../api'
 import AnchoredPopover from './AnchoredPopover'
 import { useIsPhone } from '../hooks/useMediaQuery'
-import { DOC_TYPE, DOC_TYPE_LABEL } from '../utils/contractAmendments'
+import { DOC_TYPE, DOC_TYPES, DOC_TYPE_LABEL } from '../utils/contractAmendments'
 import { contractParties } from '../utils/contractCounterpartyFilter'
 import {
-  STATE_LABEL, WARN_STATES, attemptKeys, candidateFlagText, candidateReasonText, isUnconfirmable, reasonText, suggestsAlias,
+  STATE_LABEL, WARN_STATES, attemptKeys, candidateFlagText, candidateReasonText, isCurrentConfirmable, reasonText, softWarningText, suggestsAlias,
 } from '../utils/signalReview'
 import { isWebUrl, plural, ruDate, ruDateTime } from '../utils/signalPathRow'
 import './SignalReviewDialog.css'
@@ -20,13 +20,22 @@ import './SignalReviewDialog.css'
 //
 // Действия — решения человека, пишет их сервер одной транзакцией: «Подтвердить», при другой текущей ссылке — «Заменить на
 // предложенную» / «Оставить текущую», «Другая папка…» (поиск папок объекта договора), «Отклонить» с причиной, «Позже».
-// Каждое — с версией состояния и ссылкой, какими их видело окно (expectedStateVersion, expectedSignalLink), и ключом
-// идемпотентности — один на попытку «действие + папка»: повтор той же попытки (после ошибки сети или 409) идёт с тем же
-// ключом, смена действия или папки и успех, оставивший окно открытым, — новый ключ. Отказ 409 — «Данные изменились —
-// откройте сверку заново» и перезагрузка данных окна. Права проверяет сервер; кнопки без права правки не показываются.
-// onChanged({ contractId, action: 'confirm'|'replace'|'reject', state, stateVersion, signalLink? }) — после успеха.
+// Каждое — с версией состояния и ссылкой, какими их видело окно (expectedStateVersion, expectedSignalLink), ревизией очереди
+// пересчёта (expectedRevision: сервер не сотрёт строку очереди, появившуюся после открытия окна) и ключом идемпотентности —
+// один на попытку «действие + папка»: повтор той же попытки (после ошибки сети или 409) идёт с тем же ключом, смена действия
+// или папки и успех, оставивший окно открытым, — новый ключ. Отказ 409 — «Данные изменились — откройте сверку заново» и
+// перезагрузка данных окна; 409 hard_conflict — папка противоречит договору (номер, вид документа, организация): подтвердить
+// её нельзя, кнопка пропадает, остальное доступно. Права проверяет сервер; кнопки без права правки не показываются.
+// Мягкие предупреждения (В-11, С-41): у папки флаг building_mismatch / kind_mismatch или у текущей ссылки attention с такой причиной —
+// «Корпус, очередь или секция не совпали — проверьте», «Папка относится к допсоглашению — проверьте»; подтвердить можно, ответ
+// несёт warning. Ссылку, которую сервер принял без номера в папке (accepted), можно подтвердить без выбора папки: подтверждается
+// текущая.
+// onChanged({ contractId, action: 'confirm'|'replace'|'reject', state, stateVersion, signalLink?, warning? }) — после успеха.
 
 const STALE_TEXT = 'Данные изменились — откройте сверку заново'
+const HARD_CONFLICT_TEXT = 'Папка противоречит данным договора (номер, вид документа или организация в названии) — подтвердить её нельзя. Выберите другую папку.'
+// Типы документов ДС: у ДП в root_contract_id — он сам (триггер базы), его в «ДС: N» не считаем.
+const DS_TYPES = DOC_TYPES.filter((t) => t.value !== DOC_TYPE.CONTRACT).map((t) => t.value)
 // Текст для «Запомнить как название объекта»: подсказка сервера, иначе путь папки без последнего звена (самой папки договора).
 function aliasGuess(candidate) {
   if (candidate?.aliasText) return String(candidate.aliasText).slice(0, 120)
@@ -151,6 +160,7 @@ export default function SignalReviewDialog({ contractId, contract: contractProp 
   const [note, setNote] = useState('')
   const [remember, setRemember] = useState(false)
   const [aliasText, setAliasText] = useState('')
+  const [refused, setRefused] = useState(() => new Set()) // папки, на которые сервер ответил 409 hard_conflict
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState(null)
   const seq = useRef(0)
@@ -202,6 +212,7 @@ export default function SignalReviewDialog({ contractId, contract: contractProp 
     db.from('contracts')
       .select('id', { count: 'exact', head: true })
       .eq('root_contract_id', contractId)
+      .in('record_type', DS_TYPES)
       .is('deleted_at', null)
       .then(({ count }) => { if (!cancelled) setDsCount(Number(count) || 0) }, () => {})
     return () => { cancelled = true }
@@ -215,16 +226,18 @@ export default function SignalReviewDialog({ contractId, contract: contractProp 
   const needsReplace = !!chosen && !!link && !isCurrentChosen
   const canEditHere = !!data?.canEdit
   const confirmAvailable = data?.confirmAvailable !== false
-  const hardState = WARN_STATES.includes(data?.state)
-  // Подтвердить можно папку, которой ещё нет в ссылке; текущую папку с противоречием, пропавшую или удалённую — нельзя.
-  // Папку, у которой не определена папка договора ДС (флаг family_unknown), подтвердить и заменить на неё нельзя — сервер откажет.
-  const blocked = !!chosen && isUnconfirmable(chosen)
-  const canConfirm = canEditHere && !!chosen && !blocked && !needsReplace && !(isCurrentChosen && hardState)
-  const canReplace = canEditHere && needsReplace && !blocked
+  const currentConfirmable = isCurrentConfirmable(data?.state, data?.reason)
+  // Текущую папку с противоречием, не видную или удалённую подтвердить нельзя (мягкое предупреждение корпуса — можно).
+  const currentBlocked = WARN_STATES.includes(data?.state) && !currentConfirmable
+  // Подтверждается выбранная папка; нет выбора, но ссылка принята без номера (или с мягким предупреждением) — текущая.
+  const confirmNode = chosen || (canEditHere && currentConfirmable && current ? current : null)
+  const confirmIsCurrent = !!confirmNode && !!current && confirmNode.nodeId === current.nodeId
+  const canConfirm = canEditHere && !!confirmNode && !needsReplace && !refused.has(confirmNode.nodeId) && !(confirmIsCurrent && currentBlocked)
+  const canReplace = canEditHere && needsReplace && !refused.has(chosen.nodeId)
   // Отклоняется предложение сервера (пара «договор — папка»), а не папка, найденная поиском или текущая.
   const canReject = canEditHere && !!chosen && !picked && !isCurrentChosen && candidates.some((c) => c.nodeId === chosen.nodeId)
   // Объект в пути папки назван иначе (у предложенной папки нет признака object_name) — предлагаем запомнить это название.
-  const showAlias = canEditHere && !!chosen && !picked && !blocked && suggestsAlias(chosen)
+  const showAlias = canEditHere && !!chosen && !picked && !refused.has(chosen.nodeId) && suggestsAlias(chosen)
   const aliasOk = aliasText.trim().length >= 2
   const objectName = contract?.objects?.name || ''
 
@@ -273,26 +286,29 @@ export default function SignalReviewDialog({ contractId, contract: contractProp 
   }) // обработчик берёт свежие busy и close — переподписка на каждый рендер дешёвая
 
   const act = async (kind) => {
-    if (busy || !data || !chosen) return
+    const target = kind === 'reject' ? chosen : confirmNode
+    if (busy || !data || !target) return
     setBusy(true)
     setMessage(null)
     try {
       let res
       if (kind === 'reject') {
         res = await signal.reject(contractId, {
-          nodeId: chosen.nodeId,
+          nodeId: target.nodeId,
           ...(note.trim() ? { note: note.trim().slice(0, 300) } : {}),
           expectedStateVersion: data.stateVersion,
-          idempotencyKey: keysRef.current.keyFor('reject', chosen.nodeId),
+          idempotencyKey: keysRef.current.keyFor('reject', target.nodeId),
         })
       } else {
         res = await signal.confirm(contractId, {
-          nodeId: chosen.nodeId,
+          nodeId: target.nodeId,
           replace: kind === 'replace',
-          ...(remember && aliasOk && showAlias ? { rememberAlias: aliasText.trim().slice(0, 120) } : {}),
+          ...(remember && aliasOk && showAlias && target === chosen ? { rememberAlias: aliasText.trim().slice(0, 120) } : {}),
           expectedSignalLink: link || null,
           expectedStateVersion: data.stateVersion,
-          idempotencyKey: keysRef.current.keyFor(kind, chosen.nodeId),
+          // Ревизия очереди, какой её видело окно: сервер не удалит строку пересчёта, появившуюся позже (С-18).
+          ...(Number.isInteger(data.revision) ? { expectedRevision: data.revision } : {}),
+          idempotencyKey: keysRef.current.keyFor(kind, target.nodeId),
         })
       }
       onChanged?.({
@@ -300,7 +316,7 @@ export default function SignalReviewDialog({ contractId, contract: contractProp 
         action: kind,
         state: res.state,
         stateVersion: res.stateVersion,
-        ...(kind === 'reject' ? {} : { signalLink: res.signalLink ?? null }),
+        ...(kind === 'reject' ? {} : { signalLink: res.signalLink ?? null, warning: res.warning ?? null }),
       })
       if (kind === 'reject' && res.state === 'suggested') {
         // Остались другие предложения: окно показывает следующее; новое действие — новый ключ.
@@ -312,7 +328,11 @@ export default function SignalReviewDialog({ contractId, contract: contractProp 
         close()
       }
     } catch (err) {
-      if (err?.status === 409) {
+      if (err?.status === 409 && err.code === 'hard_conflict') {
+        // Данные не устарели — папка не подходит договору: подтверждение для неё закрыто, окно и выбор остаются.
+        setRefused((prev) => new Set(prev).add(target.nodeId))
+        setMessage({ kind: 'error', text: HARD_CONFLICT_TEXT })
+      } else if (err?.status === 409) {
         setMessage({ kind: 'error', text: err.isStale || err.code === 'stale_state' ? STALE_TEXT : (err.message || STALE_TEXT) })
         if (err.code !== 'alias_taken') await load()
       } else {
@@ -329,9 +349,16 @@ export default function SignalReviewDialog({ contractId, contract: contractProp 
     for (const r of chosen.reasons || []) chips.push({ kind: 'ok', text: candidateReasonText(r) })
     for (const f of chosen.flags || []) chips.push({ kind: 'warn', text: candidateFlagText(f) })
   }
-  if (data && hardState && (!chosen || isCurrentChosen)) {
-    chips.push({ kind: data.state === 'conflict' ? 'bad' : 'warn', text: reasonText(data.reason) || STATE_LABEL[data.state].replace(/^Signal: /, '') })
+  if (data && (!chosen || isCurrentChosen)) {
+    const st = data.state
+    if (WARN_STATES.includes(st) || st === 'accepted') {
+      const text = (st === 'attention' && softWarningText(data.reason)) || reasonText(data.reason) || STATE_LABEL[st].replace(/^Signal: /, '')
+      chips.push({ kind: st === 'conflict' ? 'bad' : (st === 'accepted' ? 'info' : 'warn'), text })
+    } else if (st === 'unverified' && data.reason !== 'pending' && reasonText(data.reason)) {
+      chips.push({ kind: 'info', text: reasonText(data.reason) })
+    }
   }
+  if (confirmNode && refused.has(confirmNode.nodeId)) chips.push({ kind: 'bad', text: 'папка противоречит данным договора — подтвердить нельзя' })
   if (data?.pending) chips.push({ kind: 'info', text: reasonText('pending') })
 
   const files = current ? (data.files || []) : []

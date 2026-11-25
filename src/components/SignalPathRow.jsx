@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { signal } from '../api'
 import SignalReviewDialog from './SignalReviewDialog'
-import { fileMeta, filesSummary, hasReviewWork, isWebUrl, rowState } from '../utils/signalPathRow'
+import { aliasesForObject, fileMeta, filesSummary, hasReviewWork, isWebUrl, rowState, ruDate } from '../utils/signalPathRow'
 import './SignalPathRow.css'
 
 // «Путь к Signal» в карточке договора при включённой сверке (23.11.2026, интеграция с SIGNAL; без неё карточка показывает
 // прежний SignalLinkCell — ContractDetailPage передаёт его в fallback).
 //   <SignalPathRow contractId contract canEdit fallback onLinkChanged />
-// Строка: ссылка (полный путь папки, если сервер его даёт — папка видна договору; иначе исходная ссылка), состояние текстом
-// («сверено 23.11.2026», «ссылка не сверялась — данные на …», «противоречие: …», «папка не видна в Signal», «предложена папка …»
-// — последнее только при праве правки), действия «Сверить…» (окно сверки по contractId) и «Отвязать» — только при праве правки.
+// Строка: ссылка (путь папки так, как его отдаёт сервер — он уже от границы объекта, С-21: клиент путь не собирает и имя корня или
+// проекта не дописывает; нет пути — исходная ссылка), состояние текстом («сверено 23.11.2026», «ссылка принята, номер в папке не
+// найден», «ссылка не сверялась — данные на …», «противоречие: …», «папка не видна в Signal», «файл не виден в Signal», «файл
+// удалён в Signal», «корпус, очередь или секция не совпали — проверьте», «предложена папка …» — последнее только при праве
+// правки), действия «Сверить…» (окно сверки по contractId) и «Отвязать» — только при праве правки.
+// Запомненные названия объекта договора (синонимы, С-2) — компактно под состоянием, только при праве правки: сотрудник видит и
+// удаляет свои (сервер отдаёт ему только его), администратор — все, конфликтующие помечены (С-6).
 // Под строкой — список файлов папки (свёрнут): имя, версия, дата версии и «↗» в SIGNAL, только если сервер прислал url. Файл
 // через портал не скачивается и не открывается порталом: «↗» — обычная ссылка в новой вкладке. Подпапки раскрываются
 // отдельным запросом (signal.contract(id, { nodeId })). Метаданные и права проверяет сервер; сбой сервиса — строка как раньше.
@@ -116,7 +120,14 @@ export default function SignalPathRow({ contractId, contract = null, canEdit: ca
   const reviewBtn = useRef(null)
   const unlinkBtn = useRef(null)
   const filesId = useId()
+  const aliasesId = useId()
+  const [aliases, setAliases] = useState(null) // null — не загружены или нет доступа (блока нет)
+  const [aliasesOpen, setAliasesOpen] = useState(false)
+  const [aliasAsk, setAliasAsk] = useState(null) // синоним, у которого спрашиваем подтверждение удаления
+  const [aliasBusy, setAliasBusy] = useState(false)
   const pageLink = String(contract?.signal_link || '').trim()
+  const objectId = contract?.object_id || null
+  const aliasesWanted = canEditPage && data?.canEdit === true && !!objectId
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
 
   const load = useCallback(async () => {
@@ -134,6 +145,18 @@ export default function SignalPathRow({ contractId, contract = null, canEdit: ca
   }, [contractId])
   // Ссылку у договора могли поменять окно путей или другой человек — данные Signal перечитываются.
   useEffect(() => { load() }, [load, pageLink])
+
+  // Запомненные названия объекта договора (С-2): только при праве правки; нет доступа или сбой — блока нет, строка работает как прежде.
+  const loadAliases = useCallback(async () => {
+    if (!aliasesWanted) { setAliases(null); return }
+    try {
+      const r = await signal.aliases.list()
+      if (mounted.current) setAliases(aliasesForObject(r?.items, objectId))
+    } catch {
+      if (mounted.current) setAliases(null)
+    }
+  }, [aliasesWanted, objectId])
+  useEffect(() => { loadAliases() }, [loadAliases])
 
   if (!data || failed) return fallback || <span className="spr-empty">—</span>
 
@@ -186,6 +209,23 @@ export default function SignalPathRow({ contractId, contract = null, canEdit: ca
     await load()
     changed({ contractId, action: 'refresh' })
   }
+  const doRemoveAlias = async () => {
+    const a = aliasAsk
+    if (!a || aliasBusy) return
+    setAliasBusy(true)
+    setMessage(null)
+    try {
+      await signal.aliases.remove(a.id)
+      setAliasAsk(null)
+      setAliases((list) => (list || []).filter((x) => x.id !== a.id))
+      await load() // без названия сверка договора пересчитается — состояние перечитываем
+    } catch (err) {
+      setAliasAsk(null)
+      setMessage({ kind: 'error', text: err.message || 'Не удалось удалить название' })
+    } finally {
+      if (mounted.current) setAliasBusy(false)
+    }
+  }
 
   const linkView = link
     ? (showPath
@@ -228,6 +268,36 @@ export default function SignalPathRow({ contractId, contract = null, canEdit: ca
           {message.kind === 'stale' && <> <button type="button" className="spr-link" onClick={refresh}>Обновить</button></>}
         </p>
       )}
+      {canEdit && aliases && aliases.length > 0 && (
+        <div className="spr-aliases">
+          <button type="button" className="spr-files-toggle" aria-expanded={aliasesOpen} aria-controls={aliasesId} onClick={() => setAliasesOpen((v) => !v)}>
+            <IconChevron open={aliasesOpen} />
+            <span>Запомненные названия объекта: {aliases.length}</span>
+          </button>
+          <div id={aliasesId} hidden={!aliasesOpen}>
+            {aliasesOpen && (
+              <ul className="spr-alias-list">
+                {aliases.map((a) => (
+                  <li key={a.id} className={`spr-alias${a.conflict ? ' is-conflict' : ''}`}>
+                    <span className="spr-alias-text" title={[a.author, ruDate(a.createdAt)].filter(Boolean).join(' · ') || undefined}>{a.text}</span>
+                    {a.conflict && <span className="spr-badge is-warn" title="Совпало с названием или кодом другого объекта — при сверке не используется">конфликт</span>}
+                    <button type="button" className="spr-btn is-danger" disabled={aliasBusy} onClick={() => setAliasAsk(a)} aria-label={`Удалить название ${a.text}`}>Удалить</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          {aliasAsk && (
+            <div className="spr-confirm" role="group" aria-label="Подтверждение: удалить запомненное название объекта">
+              <span>Удалить название «{aliasAsk.text}»? Сверка договоров этого объекта пересчитается без него.</span>
+              <span className="spr-actions">
+                <button type="button" className="spr-btn is-danger" onClick={doRemoveAlias} disabled={aliasBusy} autoFocus>Да, удалить</button>
+                <button type="button" className="spr-btn" onClick={() => setAliasAsk(null)} disabled={aliasBusy}>Отмена</button>
+              </span>
+            </div>
+          )}
+        </div>
+      )}
       {showFiles && (
         <div className="spr-files">
           <button type="button" className="spr-files-toggle" aria-expanded={filesOpen} aria-controls={filesId} onClick={() => setFilesOpen((v) => !v)}>
@@ -247,7 +317,7 @@ export default function SignalPathRow({ contractId, contract = null, canEdit: ca
           contract={contract}
           returnFocus={() => reviewBtn.current}
           onClose={() => setReview(false)}
-          onChanged={(info) => { load(); changed(info) }}
+          onChanged={(info) => { load(); loadAliases(); changed(info) }}
         />
       )}
     </div>

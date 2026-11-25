@@ -54,7 +54,7 @@ import { createSupplyImport } from './lib/supplyImport.js'
 import { createSignalClient } from './lib/signalClient.js'
 import { createSignalApi } from './lib/signalApi.js'
 import { createSignalSync } from './lib/signalSync.js'
-import { createSignalJobs, createSignalCapability } from './lib/signalJobs.js'
+import { createSignalJobs, createSignalCapability, createDisabledCapability } from './lib/signalJobs.js'
 import { createRegistryRefresh } from './lib/registryRefresh.js'
 import { createSecretBox } from './lib/auth/secretBox.js'
 import { createPasswordVerifier } from './lib/auth/passwords.js'
@@ -541,9 +541,17 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   // Возможность включена, когда SIGNAL_SYNC=1, есть своя база и в ней схема нужной версии (проверка при запуске и раз в 5 минут);
   // иначе маршруты отвечают «выключено», таймеры не стартуют, портал работает как раньше. Ошибка проверки схемы запуск не роняет.
   // Обход (signalSync) стартует, только если задано подключение к Signal; очередь работает и без него — она читает свой снимок.
+  // Ошибка в настройках SIGNAL_* и SIGNAL_SYNC=1 без своей базы (OSP_DB_URL) службу не роняют (В-8): возможность выключена с причиной
+  // config_invalid, остальной портал работает. Имена неверных переменных — в журнале службы, во вкладке «Signal» у администратора
+  // (configErrors) и в /api/health (там только 'config_invalid'); значений нигде нет.
   let signalCtx = null
-  if (config.signal?.sync && !db) throw new Error('SIGNAL_SYNC=1: нужен OSP_DB_URL')
-  if (db && config.signal?.sync) {
+  const signalErrors = config.signal?.sync ? [...(config.signal.configErrors || []), ...(db ? [] : ['OSP_DB_URL'])] : []
+  if (signalErrors.length) {
+    app.log.error({ vars: signalErrors, problems: (config.signal.configIssues || []).map((i) => `${i.name}: ${String(i.text).replace(/^SIGNAL_\w+:\s*/, '')}`) },
+      'signal: настройки SIGNAL_* неверны или нет OSP_DB_URL — сверка с Signal выключена (config_invalid), остальной портал работает')
+    signalCtx = { config: { ...config.signal, configErrors: signalErrors }, api: null, capability: createDisabledCapability('config_invalid'), jobs: null, sync: null, timers: () => false }
+    app.decorate('signal', signalCtx)
+  } else if (db && config.signal?.sync) {
     // deps.signalClient — только для тестов (allowLoopback: http и порт только к 127.0.0.1, не из окружения).
     const client = createSignalClient({ ...config.signal, ...deps.signalClient, log: app.log })
     const api = createSignalApi({ client })
@@ -689,7 +697,9 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     handler: async () => {
       const configured = configuredParts(config)
       // Сверка Signal «настроена», только если она ещё и включена: схема в базе есть (проверка возможности).
-      if (configured.signal) configured.signal = Boolean(signalCtx?.capability.active())
+      // Неверные настройки SIGNAL_* — 'config_invalid' (без имён и значений: адрес открытый).
+      if (signalErrors.length) configured.signal = 'config_invalid'
+      else if (configured.signal) configured.signal = Boolean(signalCtx?.capability.active())
       return { ok: true, service: 'osp-api', configured }
     },
   })

@@ -4,20 +4,23 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  CANDIDATE_FLAG_TEXT, CANDIDATE_REASON_TEXT, REASON_TEXT, REVIEW_STATES, SIGNAL_STATES, STATE_LABEL, STATE_SHORT, candidateFlagText,
-  attemptKeys, candidateReasonText, isUnconfirmable, markFromMatch, markLook, markTitle, matchNotice, reasonText, signalReviewIds, suggestsAlias,
-  summarizeMatch, summaryLine, summaryTitle,
+  CANDIDATE_FLAG_TEXT, CANDIDATE_REASON_TEXT, REASON_TEXT, REVIEW_STATES, SIGNAL_STATES, STATE_LABEL, STATE_SHORT, WARN_STATES, candidateFlagText,
+  attemptKeys, candidateReasonText, hasBuildingWarning, hasSoftWarning, isCurrentConfirmable, isSoftReason, softWarningText, markFromMatch, markLook, markTitle, matchNotice, pendingMark,
+  reasonText, signalReviewIds, staleNotice, stateLabel, suggestsAlias, summarizeMatch, summaryLine, summaryTitle,
 } from '../../src/utils/signalReview.js'
+import { ruDateTime } from '../../src/utils/signalPathRow.js'
 import { MATCH_FLAGS, MATCH_REASONS, REASONS, STATES, STATE_REASONS } from '../../server/osp-api/src/lib/signalMatch.js'
 import { SIGNAL_DISABLED, SignalApiError, createSignalClient, newIdempotencyKey } from '../../src/api/signalClient.js'
 
 describe('значок и подписи', () => {
-  it('вид значка: предложение — красный с точкой, противоречие / не видна / удалён — жёлтый, остальное — как без Signal', () => {
+  it('вид значка: предложение — красный с точкой, противоречие / не видна / удалён — жёлтый, остальное (в том числе «принята») — как без Signal', () => {
     assert.equal(markLook(null), 'plain')
     assert.equal(markLook({ state: 'suggested' }), 'suggest')
     for (const state of ['conflict', 'attention', 'missing']) assert.equal(markLook({ state }), 'warn', state)
-    for (const state of ['none', 'verified', 'unverified', 'нет такого']) assert.equal(markLook({ state }), 'plain', state)
+    for (const state of ['none', 'verified', 'accepted', 'unverified', 'нет такого']) assert.equal(markLook({ state }), 'plain', state)
     assert.deepEqual(REVIEW_STATES, ['suggested', 'conflict', 'attention', 'missing'])
+    assert.deepEqual(WARN_STATES, ['conflict', 'attention', 'missing'])
+    assert.ok(!REVIEW_STATES.includes('accepted'), 'accepted — зелёный, вне фильтра «Сверка Signal»')
   })
 
   it('подпись: подсказка сервера или подпись состояния; ссылка — второй строкой; призыв — по праву', () => {
@@ -28,6 +31,46 @@ describe('значок и подписи', () => {
     assert.equal(markTitle({ state: 'verified', tip: 'Signal: сверено' }, { link: 'https://x.invalid/f', canAdd: true }), 'Signal: сверено\nhttps://x.invalid/f')
     assert.equal(markTitle({ state: 'неизвестное' }, {}), 'Signal')
     for (const state of Object.keys(STATE_LABEL)) assert.ok(STATE_LABEL[state].startsWith('Signal: '), state)
+  })
+
+  it('подпись по паре «состояние : причина» без подсказки сервера: новые состояния волны исправлений (spec §1)', () => {
+    assert.equal(stateLabel('accepted', 'number_not_found'), 'Signal: ссылка принята, номер в папке не найден')
+    assert.equal(stateLabel('attention', 'not_visible'), 'Signal: папка не видна в Signal')
+    assert.equal(stateLabel('attention', 'file_not_visible'), 'Signal: файл не виден в Signal')
+    assert.equal(stateLabel('attention', 'building_mismatch'), 'Signal: корпус, очередь или секция не совпали — проверьте')
+    assert.equal(stateLabel('missing', 'deleted'), 'Signal: файл удалён в Signal')
+    assert.equal(stateLabel('conflict', 'ds_mismatch'), 'Signal: противоречие — номер ДС не совпал с номером в названии папки')
+    assert.equal(stateLabel('attention', 'kind_mismatch'), 'Signal: папка относится к допсоглашению — проверьте', 'С-41: мягкое предупреждение, не противоречие')
+    assert.equal(stateLabel('conflict', 'foreign_party'), 'Signal: противоречие — в названии папки ИНН другой организации')
+    assert.equal(stateLabel('unverified', 'unavailable'), 'Signal: папка недоступна для сверки')
+    assert.equal(stateLabel('unverified', 'no_object'), 'Signal: у договора не указан объект')
+    assert.equal(stateLabel('unverified', 'pending'), 'Signal: ссылка не сверялась')
+    assert.equal(stateLabel('conflict', null), 'Signal: противоречие')
+    assert.equal(markTitle({ state: 'accepted', reason: 'number_not_found' }, { link: 'https://x.invalid/f' }), 'Signal: ссылка принята, номер в папке не найден\nhttps://x.invalid/f')
+    // Подсказка сервера главнее.
+    assert.equal(markTitle({ state: 'accepted', reason: 'number_not_found', tip: 'Signal: ссылка принята, номер в папке не найден · данные на 20.11.2026 · А / Б' }, {}), 'Signal: ссылка принята, номер в папке не найден · данные на 20.11.2026 · А / Б')
+  })
+
+  it('unverified:family_unknown и флаг кандидата family_unknown удалены (В-3); добавлены accepted и building_mismatch', () => {
+    assert.ok(!('family_unknown' in REASON_TEXT) && !('family_unknown' in CANDIDATE_FLAG_TEXT))
+    assert.ok('number_not_found' in REASON_TEXT && 'file_not_visible' in REASON_TEXT && 'foreign_party' in REASON_TEXT)
+    assert.ok(SIGNAL_STATES.includes('accepted'))
+    for (const old of ['outside_roots', 'root_disabled', 'not_in_snapshot', 'object_unassigned']) assert.ok(!(old in REASON_TEXT), `${old}: заменено на unavailable (С-20)`)
+  })
+
+  it('метка «не сверялась» после правки ссылки (С-9) и «нет ссылки» после её очистки', () => {
+    assert.deepEqual(pendingMark('c-1'), { id: 'c-1', state: 'unverified', reason: 'pending', pending: true, tip: 'Signal: ссылка не сверялась', hasCandidate: false })
+    assert.equal(markLook(pendingMark('c-1')), 'plain')
+    assert.equal(signalReviewIds([pendingMark('c-1')]).size, 0, 'ожидание — не в «Сверке Signal»')
+  })
+
+  it('полоса «данные устарели» (В-7): только при enabled и stale; дата — по Москве; без даты — общий текст', () => {
+    const fmt = ruDateTime
+    assert.equal(staleNotice({ enabled: true, stale: true, dataAt: '2026-11-21T05:30:00.000Z' }, fmt), 'Данные Signal обновлялись 21.11.2026 08:30 — сверка может быть устаревшей')
+    assert.equal(staleNotice({ enabled: true, stale: true, dataAt: null }, fmt), 'Данные Signal давно не обновлялись — сверка может быть устаревшей')
+    assert.equal(staleNotice({ enabled: true, stale: false, dataAt: '2026-11-21T05:30:00.000Z' }, fmt), '')
+    assert.equal(staleNotice({ enabled: false, stale: true }, fmt), '', 'выключено — полосы нет')
+    assert.equal(staleNotice(null, fmt), '')
   })
 
   it('«Слово «удалена» не используется» для папок: только «не видна»; файл — «удалён»', () => {
@@ -47,14 +90,35 @@ describe('значок и подписи', () => {
     assert.equal(reasonText('none'), 'ссылки нет')
   })
 
-  it('синоним предлагается, когда в причинах кандидата нет object_name; family_unknown подтвердить нельзя', () => {
+  it('синоним предлагается, когда в причинах кандидата нет object_name; предупреждение корпуса (В-11) не запрещает подтверждение', () => {
     assert.equal(suggestsAlias({ reasons: ['number', 'features'] }), true)
     assert.equal(suggestsAlias({ reasons: [] }), true)
     assert.equal(suggestsAlias({ reasons: ['number', 'object_name'] }), false)
     assert.equal(suggestsAlias(null), false)
-    assert.equal(isUnconfirmable({ flags: ['similar', 'family_unknown'] }), true)
-    assert.equal(isUnconfirmable({ flags: ['similar'] }), false)
-    assert.equal(isUnconfirmable({}), false)
+    assert.equal(hasBuildingWarning({ flags: ['similar', 'building_mismatch'] }), true)
+    assert.equal(hasBuildingWarning({ flags: ['similar'] }), false)
+    assert.equal(hasBuildingWarning({}), false)
+    assert.equal(candidateFlagText('building_mismatch'), 'Корпус, очередь или секция не совпали — проверьте')
+    // С-41: папка допсоглашения у договора — такое же мягкое предупреждение рядом с кандидатом.
+    assert.equal(candidateFlagText('kind_mismatch'), 'Папка допсоглашения, а не договора — проверьте')
+    assert.equal(hasSoftWarning({ flags: ['kind_mismatch'] }), true)
+    assert.equal(hasSoftWarning({ flags: ['building_mismatch'] }), true)
+    assert.equal(hasSoftWarning({ flags: ['similar', 'previously_rejected'] }), false)
+    assert.deepEqual(['building_mismatch', 'kind_mismatch', 'similar', 'ds_mismatch', null].map(isSoftReason), [true, true, false, false, false])
+    assert.equal(softWarningText('building_mismatch'), 'Корпус, очередь или секция не совпали — проверьте')
+    assert.equal(softWarningText('kind_mismatch'), 'Папка относится к допсоглашению — проверьте')
+    assert.equal(softWarningText(null), '')
+    assert.equal(softWarningText('что-то новое'), '', 'неизвестный код предупреждения — без текста')
+  })
+
+  it('текущую папку можно подтвердить: «ссылка принята» и мягкое предупреждение корпуса; остальное — нет (spec §1)', () => {
+    assert.equal(isCurrentConfirmable('accepted', 'number_not_found'), true)
+    assert.equal(isCurrentConfirmable('attention', 'building_mismatch'), true)
+    assert.equal(isCurrentConfirmable('attention', 'kind_mismatch'), true)
+    for (const [state, reason] of [['attention', 'not_visible'], ['attention', 'file_not_visible'], ['missing', 'deleted'], ['conflict', 'ds_mismatch'],
+      ['conflict', 'foreign_party'], ['verified', 'existing_url'], ['unverified', 'unavailable'], ['suggested', 'candidates'], ['none', 'none']]) {
+      assert.equal(isCurrentConfirmable(state, reason), false, `${state}:${reason}`)
+    }
   })
 })
 
@@ -85,11 +149,41 @@ describe('подписи покрывают коды сопоставителя 
   })
 })
 
+// Таблица состояний и причин из спецификации волны исправлений (§1) — независимо от того, что сейчас отдаёт server: подписи фронта
+// покрывают её целиком и не знают удалённых причин.
+const SPEC_STATE_REASONS = {
+  none: ['none', 'unlinked', 'no_object'],
+  suggested: ['candidates'],
+  verified: ['existing_url', 'confirmed'],
+  accepted: ['number_not_found'],
+  unverified: ['unsupported_url', 'unavailable', 'no_snapshot', 'not_observed', 'no_object', 'pending'],
+  attention: ['not_visible', 'file_not_visible', 'building_mismatch', 'kind_mismatch'],
+  missing: ['deleted'],
+  conflict: ['number_mismatch', 'object_mismatch', 'ambiguous', 'foreign_dp', 'ds_mismatch', 'foreign_party'],
+}
+describe('подписи покрывают таблицу состояний спецификации (§1)', () => {
+  it('состояния и причины: у каждой пары есть текст, лишних причин нет', () => {
+    assert.deepEqual([...SIGNAL_STATES].sort(), Object.keys(SPEC_STATE_REASONS).sort())
+    assert.deepEqual(Object.keys(STATE_LABEL).sort(), Object.keys(SPEC_STATE_REASONS).sort())
+    assert.deepEqual(Object.keys(STATE_SHORT).sort(), Object.keys(SPEC_STATE_REASONS).sort())
+    const reasons = [...new Set(Object.values(SPEC_STATE_REASONS).flat())].sort()
+    assert.deepEqual(Object.keys(REASON_TEXT).sort(), reasons)
+    for (const r of reasons) assert.ok(String(REASON_TEXT[r]).trim().length > 0, r)
+    for (const [state, list] of Object.entries(SPEC_STATE_REASONS)) for (const r of list) assert.ok(stateLabel(state, r).startsWith('Signal'), `${state}:${r}`)
+  })
+  it('жёлтый «!» — у conflict, attention, missing (все причины); зелёный accepted и unverified — как без Signal; в фильтре — четыре состояния', () => {
+    for (const state of ['conflict', 'attention', 'missing']) for (const reason of SPEC_STATE_REASONS[state]) assert.equal(markLook({ state, reason }), 'warn', `${state}:${reason}`)
+    for (const state of ['accepted', 'unverified', 'verified', 'none']) for (const reason of SPEC_STATE_REASONS[state]) assert.equal(markLook({ state, reason }), 'plain', `${state}:${reason}`)
+    assert.deepEqual([...REVIEW_STATES].sort(), ['attention', 'conflict', 'missing', 'suggested'])
+  })
+})
+
 describe('фильтр «Сверка Signal»: набор id', () => {
   it('предложение, противоречие, не видна, удалён; «ожидает» и прочие — нет; Map и массив', () => {
     const items = [
       { id: 'a', state: 'suggested' }, { id: 'b', state: 'conflict' }, { id: 'c', state: 'attention' }, { id: 'd', state: 'missing' },
       { id: 'e', state: 'verified' }, { id: 'f', state: 'unverified' }, { id: 'g', state: 'none' }, { id: 'h', state: 'suggested', pending: true }, { state: 'suggested' },
+      { id: 'i', state: 'accepted', reason: 'number_not_found' },
     ]
     assert.deepEqual([...signalReviewIds(items)], ['a', 'b', 'c', 'd'])
     assert.deepEqual([...signalReviewIds(new Map(items.filter((i) => i.id).map((i) => [i.id, i])))], ['a', 'b', 'c', 'd'])
@@ -100,10 +194,13 @@ describe('сообщение после сохранения (Р8)', () => {
   it('папка найдена — с путём; без пути — без него; противоречие — общая причина; остальное — ничего', () => {
     assert.deepEqual(matchNotice({ id: 'x', state: 'suggested', path: 'А / Б' }), { kind: 'found', text: 'Найдена папка в Signal: А / Б' })
     assert.deepEqual(matchNotice({ id: 'x', state: 'suggested' }), { kind: 'found', text: 'Найдена папка в Signal' })
-    assert.deepEqual(matchNotice({ id: 'x', state: 'conflict', reason: 'building_mismatch' }), { kind: 'warn', text: 'Signal: корпус или очередь в папке не совпадают с договором — проверьте' })
+    assert.deepEqual(matchNotice({ id: 'x', state: 'attention', reason: 'building_mismatch' }), { kind: 'warn', text: 'Signal: корпус, очередь или секция не совпали — проверьте' })
+    assert.equal(matchNotice({ id: 'x', state: 'attention', reason: 'kind_mismatch' }).text, 'Signal: папка относится к допсоглашению — проверьте')
+    assert.equal(matchNotice({ id: 'x', state: 'conflict', reason: 'ds_mismatch' }).text, 'Signal: номер ДС не совпал с номером в названии папки — проверьте')
     assert.equal(matchNotice({ id: 'x', state: 'attention', reason: 'not_visible' }).text, 'Signal: папка не видна в Signal — проверьте')
+    assert.equal(matchNotice({ id: 'x', state: 'attention', reason: 'file_not_visible' }).text, 'Signal: файл не виден в Signal — проверьте')
     assert.equal(matchNotice({ id: 'x', state: 'missing', reason: '???' }).text, 'Signal: файл удалён в Signal — проверьте', 'нет текста причины — подпись состояния')
-    for (const state of ['none', 'verified', 'unverified']) assert.equal(matchNotice({ id: 'x', state }), null, state)
+    for (const state of ['none', 'verified', 'accepted', 'unverified']) assert.equal(matchNotice({ id: 'x', state }), null, state)
     assert.equal(matchNotice(null), null)
   })
 
@@ -113,22 +210,27 @@ describe('сообщение после сохранения (Р8)', () => {
   })
 })
 
-describe('итог сверки импорта (Ф5): три группы по уникальным id', () => {
-  const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+describe('итог сверки импорта (Ф5, В-9): три группы по уникальным id', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']
   const items = [
     { id: 'a', state: 'verified' }, { id: 'b', state: 'suggested' }, { id: 'c', state: 'conflict' }, { id: 'd', state: 'attention' },
-    { id: 'e', state: 'unverified', reason: 'pending' }, { id: 'f', state: 'none' },
+    { id: 'e', state: 'unverified', reason: 'pending' }, { id: 'f', state: 'none' }, { id: 'h', state: 'accepted' }, { id: 'i', state: 'missing' },
     // g не ответил; чужой id не считается
     { id: 'чужой', state: 'verified' },
   ]
 
-  it('найдено = verified + suggested; внимание = conflict + attention + missing; ожидают = остальное и не ответившие; сумма = число id', () => {
+  it('найдено = verified + accepted + suggested; внимание = conflict + attention + missing; прочее (none, unverified, не ответившие); сумма = число id', () => {
     const s = summarizeMatch(ids, items)
-    assert.deepEqual([s.found, s.attention, s.waiting, s.unanswered], [2, 2, 3, 1])
+    assert.deepEqual([s.found, s.attention, s.waiting, s.unanswered], [3, 3, 3, 1])
     assert.equal(s.found + s.attention + s.waiting, s.total)
-    assert.equal(s.total, 7)
-    assert.equal(summaryLine(s), 'Signal: сверено или найдено 2 · требуют внимания 2 · ожидают сверки 3')
-    assert.equal(summaryTitle(s), 'Всего документов: 7 · сверено: 1 · предложена папка: 1 · противоречие: 1 · папка не видна: 1 · ссылка не сверена: 1 · нет ссылки: 1 · нет ответа сервера: 1')
+    assert.equal(s.total, 9)
+    assert.equal(summaryLine(s), 'Signal: найдено 3 · требуют внимания 3 · без папки или ожидают 3')
+    assert.equal(summaryTitle(s), 'Всего документов: 9 · сверено: 1 · ссылка принята: 1 · предложена папка: 1 · противоречие: 1 · не видна: 1 · файл удалён: 1 · ссылка не сверена: 1 · нет ссылки: 1 · нет ответа сервера: 1')
+  })
+
+  it('accepted — в «найдено» (не в «ожидают»); none и unverified — в третьей группе, не в «найдено»', () => {
+    const s = summarizeMatch(['x', 'y', 'z'], [{ id: 'x', state: 'accepted' }, { id: 'y', state: 'none' }, { id: 'z', state: 'unverified', reason: 'unavailable' }])
+    assert.deepEqual([s.found, s.attention, s.waiting], [1, 0, 2])
   })
 
   it('повторный ответ не удваивает; повторяющиеся id считаются один раз; пусто — нули', () => {
@@ -137,7 +239,12 @@ describe('итог сверки импорта (Ф5): три группы по �
     const empty = summarizeMatch([], [])
     assert.deepEqual([empty.total, empty.found, empty.attention, empty.waiting], [0, 0, 0, 0])
     const down = summarizeMatch(ids, [])
-    assert.deepEqual([down.found, down.attention, down.waiting], [0, 0, 7], 'сервер не ответил — все «ожидают», итог не выдуман')
+    assert.deepEqual([down.found, down.attention, down.waiting], [0, 0, 9], 'сервер не ответил — все «ожидают», итог не выдуман')
+  })
+
+  it('разные состояния одного id не считаются дважды: последний ответ по id', () => {
+    const s = summarizeMatch(['a'], [{ id: 'a', state: 'conflict' }, { id: 'a', state: 'verified' }])
+    assert.equal(s.found + s.attention + s.waiting, 1)
   })
 })
 
@@ -175,6 +282,35 @@ describe('клиент /api/signal/*', () => {
     assert.deepEqual(await make(async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('<html>') } })).status(), SIGNAL_DISABLED)
     const on = await make(async () => reply(200, { enabled: true, canView: true, canEdit: true, confirmAvailable: true })).status()
     assert.deepEqual([on.enabled, on.canView, on.canEdit, on.isAdmin, on.confirmAvailable], [true, true, true, false, true])
+    // Поля свежести (В-7) доходят до страницы как есть; у выключенного их нет.
+    const stale = await make(async () => reply(200, { enabled: true, canView: true, dataAt: '2026-11-21T05:30:00.000Z', stale: true, staleHours: 3 })).status()
+    assert.deepEqual([stale.stale, stale.dataAt, stale.staleHours], [true, '2026-11-21T05:30:00.000Z', 3])
+    assert.equal('stale' in SIGNAL_DISABLED, false)
+  })
+
+  it('status: выключено с причиной (В-8) — disabledReason и имена переменных SIGNAL_*; прочее отбрасывается; сеть и 404/503 — без причины', async () => {
+    const make = (impl) => createSignalClient({ fetchImpl: impl })
+    const off = await make(async () => reply(200, { enabled: false, disabledReason: 'config_invalid', configErrors: ['SIGNAL_URL', 'SIGNAL_TOKEN_2', 'не имя', 'signal_lower', 'SIGNAL_', 'SIGNAL_URL ', 42, null, 'SIGNAL_X=секрет', { a: 1 }, 'SIGNAL_UI_FOLDER_URL'] })).status()
+    assert.deepEqual(off, { ...SIGNAL_DISABLED, disabledReason: 'config_invalid', configErrors: ['SIGNAL_URL', 'SIGNAL_TOKEN_2', 'SIGNAL_UI_FOLDER_URL'] })
+    assert.equal(off.enabled, false)
+    // Не больше 20 имён.
+    const many = await make(async () => reply(200, { enabled: false, disabledReason: 'config_invalid', configErrors: Array.from({ length: 30 }, (_, i) => `SIGNAL_V${i}`) })).status()
+    assert.equal(many.configErrors.length, 20)
+    assert.deepEqual(many.configErrors.slice(0, 2), ['SIGNAL_V0', 'SIGNAL_V1'])
+    // Причина без списка имён; список не массив.
+    assert.deepEqual(await make(async () => reply(200, { enabled: false, disabledReason: 'no_schema' })).status(), { ...SIGNAL_DISABLED, disabledReason: 'no_schema', configErrors: [] })
+    assert.deepEqual(await make(async () => reply(200, { enabled: false, disabledReason: 'db_error', configErrors: 'SIGNAL_URL' })).status(), { ...SIGNAL_DISABLED, disabledReason: 'db_error', configErrors: [] })
+    // Сотруднику (без isAdmin) сервер полей не отдаёт; причина не строка, пустая; включено — причина не нужна.
+    for (const body of [{ enabled: false }, { enabled: false, disabledReason: 5 }, { enabled: false, disabledReason: '' }, { enabled: false, disabledReason: null, configErrors: ['SIGNAL_URL'] }]) {
+      assert.deepEqual(await make(async () => reply(200, body)).status(), SIGNAL_DISABLED, JSON.stringify(body))
+    }
+    const on = await make(async () => reply(200, { enabled: true, canView: true, disabledReason: 'config_invalid', configErrors: ['SIGNAL_URL'] })).status()
+    assert.deepEqual([on.enabled, on.disabledReason, on.configErrors], [true, 'config_invalid', ['SIGNAL_URL']], 'включено — ответ как есть')
+    // Сбои — по-прежнему без причины.
+    assert.deepEqual(await make(async () => reply(404, { enabled: false, disabledReason: 'config_invalid' })).status(), SIGNAL_DISABLED)
+    assert.deepEqual(await make(async () => reply(503, { enabled: false, disabledReason: 'db_error', configErrors: ['SIGNAL_URL'] })).status(), SIGNAL_DISABLED)
+    assert.deepEqual(await make(async () => { throw new TypeError('network') }).status(), SIGNAL_DISABLED)
+    assert.equal('disabledReason' in SIGNAL_DISABLED, false)
   })
 
   it('allMarks: по курсору до конца; Map id → метка; повтор курсора останавливает цикл', async () => {
@@ -255,6 +391,42 @@ describe('клиент /api/signal/*', () => {
       `GET /api/signal/folders?contractId=c-1&q=${encodeURIComponent('корп 14')}&after=p&limit=50`, 'GET /api/signal/folders?contractId=c-1',
       'POST /api/signal/aliases', 'DELETE /api/signal/aliases/a-1', 'POST /api/signal/sync', 'GET /api/signal/unassigned?sourceId=3&limit=10',
     ])
+  })
+
+  it('новые маршруты (В-6, С-2): tree, bindings, bindingPreview, unbind — адреса, методы и тела как у сервера', async () => {
+    const sent = []
+    const client = createSignalClient({ fetchImpl: async (path, init) => { sent.push({ method: init.method, path, body: init.body && JSON.parse(init.body) }); return reply(200, {}) } })
+    await client.admin.tree({ sourceId: 3 })
+    await client.admin.tree({ sourceId: 3, parentId: 'n-1', after: 'c1' })
+    await client.admin.tree({ sourceId: 3, q: 'корп 14' })
+    await client.admin.bindings(3)
+    await client.admin.bindingPreview({ sourceId: 3, nodeId: 'n-1', objectId: 'o-1' })
+    await client.admin.unbind({ sourceId: 3, nodeId: 'n-1' })
+    await client.admin.bind({ sourceId: 3, nodeId: 'n-1', objectId: 'o-1' })
+    await client.aliases.list()
+    const get = (path) => ({ method: 'GET', path, body: undefined })
+    assert.deepEqual(sent, [
+      get('/api/signal/tree?sourceId=3'),
+      get('/api/signal/tree?sourceId=3&parentId=n-1&after=c1'),
+      get(`/api/signal/tree?sourceId=3&q=${encodeURIComponent('корп 14')}`),
+      get('/api/signal/bindings?sourceId=3'),
+      { method: 'POST', path: '/api/signal/bindings/preview', body: { sourceId: 3, nodeId: 'n-1', objectId: 'o-1' } },
+      { method: 'POST', path: '/api/signal/bindings', body: { sourceId: 3, nodeId: 'n-1', objectId: null } },
+      { method: 'POST', path: '/api/signal/bindings', body: { sourceId: 3, nodeId: 'n-1', objectId: 'o-1' } },
+      get('/api/signal/aliases'),
+    ])
+  })
+
+  it('confirm: expectedRevision и прочие поля тела уходят как есть; ответ несёт warning', async () => {
+    let sent
+    const client = createSignalClient({ fetchImpl: async (path, init) => { sent = JSON.parse(init.body); return reply(200, { state: 'verified', stateVersion: 4, signalLink: 'u', warning: 'building_mismatch' }) } })
+    const res = await client.confirm('c-1', { nodeId: 'n', replace: false, expectedSignalLink: null, expectedStateVersion: 3, expectedRevision: 41, idempotencyKey: 'k' })
+    assert.deepEqual(sent, { nodeId: 'n', replace: false, expectedSignalLink: null, expectedStateVersion: 3, expectedRevision: 41, idempotencyKey: 'k' })
+    assert.equal(res.warning, 'building_mismatch')
+    await assert.rejects(
+      createSignalClient({ fetchImpl: async () => reply(409, { error: 'Папка противоречит данным договора — подтвердить нельзя', code: 'hard_conflict' }) }).confirm('c-1', {}),
+      (e) => e.status === 409 && e.code === 'hard_conflict' && !e.isStale,
+    )
   })
 
   it('ключ идемпотентности — uuid; сеть пропала — status 0 и «Сервер недоступен»', async () => {
