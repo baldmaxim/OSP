@@ -486,14 +486,7 @@
     "reason": null,
     "body": [
       "action",
-      "file_id",
-      "file_name",
-      "mime_type",
-      "operation_id",
-      "size_bytes",
-      "summary",
-      "tender_id",
-      "vor_file_id"
+      "file_id"
     ]
   },
   {

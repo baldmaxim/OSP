@@ -16,6 +16,7 @@ import './FilterDropdown.css'
 // показываются чекбоксами, панель не закрывается после клика, появляются «Все» /
 // «Очистить». Пустой массив = фильтр не применён (показывается allLabel).
 // По умолчанию (multiple=false) поведение прежнее — одиночный выбор.
+// Опция с disabled: true (одиночный режим) видна в списке, но не выбирается (напр. заявка подрядчика ждёт решения).
 export default function FilterDropdown({
   label,
   value,
@@ -232,6 +233,7 @@ export default function FilterDropdown({
                   key={String(o.value)}
                   className={`fdrop-option ${String(o.value) === String(value) ? 'is-current' : ''}`}
                   onClick={() => pick(o.value)}
+                  disabled={!!o.disabled}
                   title={o.label}
                 >
                   {renderOption ? renderOption(o) : <span className="fdrop-option-text">{o.label}</span>}

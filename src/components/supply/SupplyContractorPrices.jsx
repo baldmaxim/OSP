@@ -3,13 +3,15 @@ import { useRole } from '../../contexts/RoleContext'
 import { decideSupplyAccess, grantSupplyItems, loadSupplyItems, loadSupplyList } from '../../services/contractorBids'
 import { logSupplyAccess } from '../../services/supplyContractorPrices'
 import { normUnit } from '../../utils/supplySimilarity'
-import { IconChevronDown, IconHardHat } from '../icons/TenderHubIcons'
+import FilterDropdown from '../FilterDropdown'
+import { IconHardHat } from '../icons/TenderHubIcons'
+import { IconClose } from '../icons/ToolbarIcons'
 
 // Столбец «Цены подрядчику» в таблице расценки снабжения (решение пользователя 25.11.2026; заменил кнопку «Цены подрядчикам» и окна
 // в строке «Тендеров на материалы»). Только инженеру ОСП (роль engineer) и администратору — база других тоже не пускает
 // (osp_supply_engineer, миграция 20270303). По умолчанию столбец свёрнут в узкую кнопку; раскрыли — вверху подрядчик основного тендера
-// (только приглашённые и с принятой заявкой; кто просит — выбран сам), отметки «все / с документом / сбросить», «только отмеченные»
-// и «Сохранить». В строке — отметка: цену снабжения этой позиции подрядчик увидит и сможет взять.
+// (только приглашённые и с принятой заявкой; кто просит — выбран сам) общим выпадающим списком сайта, кнопки «Все / С документом /
+// Сбросить», «только отмеченные» и «Сохранить». В строке — отметка: цену снабжения этой позиции подрядчик увидит и сможет взять.
 //
 // Отметки — ключи позиций базы (ключ материала и ед. изм., bid_supply_items), не строки таблицы: собранная строка бывает из нескольких
 // ключей, а «По ВОРам» один ключ — в нескольких строках. Позиция без единой цены снабжения во всех ВОР подрядчику не отдаётся — в
@@ -185,16 +187,39 @@ export function useContractorPrices({ mainId, startOpen = false }) {
   }
 }
 
-const optionText = (r) => {
-  const name = r.counterparty_name || 'Организация'
-  if (r.status === 'requested') return `${name} — просит`
-  if (r.status === 'granted' && r.granted_items > 0) return `${name} — открыто ${r.granted_items}`
-  if (r.status === 'denied') return `${name} — закрыто`
-  return name
+// Состояние цен снабжения у подрядчика — под названием в списке и в поле выбора; tone — цвет подписи.
+const statusText = (r) => {
+  if (r.status === 'requested') return 'просит цены'
+  if (r.status === 'granted' && r.granted_items > 0) return `открыто ${r.granted_items}`
+  if (r.status === 'denied') return 'закрыто'
+  return 'цены не открыты'
+}
+const statusTone = (r) => {
+  if (r.status === 'requested') return ' is-asks'
+  if (r.status === 'granted' && r.granted_items > 0) return ' is-open'
+  return ''
+}
+
+// Строка списка подрядчиков (renderOption у FilterDropdown): название, под ним ИНН и состояние цен. Список рисуется в document.body —
+// стили .sp-cp-opt без корня страницы (SupplyPricing.css).
+const renderCpOption = (o) => {
+  const r = o.row
+  const state = o.disabled ? `заявка ждёт решения${r.status === 'requested' ? ', просит цены' : ''}` : statusText(r)
+  return (
+    <span className="fdrop-option-text sp-cp-opt">
+      <span className="sp-cp-opt-name">{o.label}</span>
+      <span className={`sp-cp-opt-meta${o.disabled ? '' : statusTone(r)}`}>
+        {r.counterparty_inn ? `ИНН ${r.counterparty_inn} · ${state}` : state}
+      </span>
+    </span>
+  )
 }
 
 // Шапка столбца: свёрнут — узкая кнопка (сколько просят); раскрыт — подрядчик и отметки. docKeys — ключи позиций с документом
 // (колонка «Документ»), selectedKeys — ключи строк, отмеченных слева.
+// Подрядчик — общим выпадающим списком сайта (FilterDropdown, как фильтры реестров и выбор контрагента в «Проверке ДП/ДС»): название
+// переносится, под ним — состояние цен; заявка ждёт решения — в списке, но не выбирается. Отметки — кнопками в одну группу
+// («Все / С документом / Сбросить»), не текстовыми ссылками: в них трудно было попасть (просьба пользователя 25.11.2026).
 export function ContractorPricesHead({ cp, docKeys, selectedKeys, bar = false }) {
   if (!cp.open) {
     return (
@@ -209,47 +234,56 @@ export function ContractorPricesHead({ cp, docKeys, selectedKeys, bar = false })
   }
   const cur = cp.current
   const ready = !!cur && !!cp.items
-  const empty = cp.members.length ? 'Подрядчик…' : 'Нет приглашённых'
+  const options = [
+    ...cp.members.map((r) => ({ value: r.counterparty_id, label: r.counterparty_name || 'Организация', row: r })),
+    ...cp.waiting.map((r) => ({ value: r.counterparty_id, label: r.counterparty_name || 'Организация', row: r, disabled: true })),
+  ]
+  const empty = cp.members.length ? 'Выберите подрядчика' : 'Нет приглашённых'
   return (
     <div className="sp-cp-head">
       <div className="sp-cp-title">
         <span>Цены подрядчику</span>
-        <button type="button" className="sp-cp-link" onClick={() => cp.setOpen(false)} disabled={cp.busy}
-          aria-label="Скрыть столбец «Цены подрядчику»">скрыть</button>
+        <button type="button" className="sp-cp-close" onClick={() => cp.setOpen(false)} disabled={cp.busy}
+          aria-label="Скрыть столбец «Цены подрядчику»" title="Скрыть столбец">
+          <IconClose size={14} />
+        </button>
       </div>
-      {/* Нативный select не переносит текст (docs/UI_GUIDELINES.md): видна плашка с переносом, select — прозрачным слоем поверх. */}
-      <span className="sp-cp-pick">
-        <span className={`sp-cp-pick-face${cur ? '' : ' is-empty'}`} aria-hidden="true">
-          {cur ? optionText(cur) : empty}
-          <IconChevronDown size={12} />
-        </span>
-        <select className="sp-cp-select" value={cp.cpId || ''} onChange={(e) => cp.select(e.target.value)} disabled={cp.busy}
-          aria-label="Подрядчик, которому открыть цены снабжения">
-          <option value="">{empty}</option>
-          {cp.members.map((r) => <option key={r.counterparty_id} value={r.counterparty_id}>{optionText(r)}</option>)}
-          {cp.waiting.map((r) => (
-            <option key={r.counterparty_id} value={r.counterparty_id} disabled>
-              {r.counterparty_name || 'Организация'} — заявка ждёт решения{r.status === 'requested' ? ', просит' : ''}
-            </option>
-          ))}
-        </select>
-      </span>
+      <FilterDropdown
+        className="sp-cp-fdrop"
+        value={cp.cpId || ''}
+        onChange={(v) => cp.select(v)}
+        options={options}
+        allLabel={empty}
+        disabled={cp.busy || !options.length}
+        searchable={options.length > 7}
+        searchPlaceholder="Поиск подрядчика…"
+        triggerTitle="Подрядчик, которому открыть цены снабжения"
+        renderOption={renderCpOption}
+        formatTrigger={(label) => (cur ? (
+          <>
+            <span className="sp-cp-trig-name">{label}</span>
+            <span className={`sp-cp-trig-meta${statusTone(cur)}`}>{statusText(cur)}</span>
+          </>
+        ) : label)}
+      />
       {cur && !cp.items && <span className="sp-cp-hint">Загрузка позиций…</span>}
       {ready && cp.items.size === 0 && <span className="sp-cp-hint">Снабжение ещё не расценило позиции одной ценой во всех ВОР</span>}
       {ready && cp.items.size > 0 && (
         <>
-          <div className="sp-cp-tools">
-            <button type="button" className="sp-cp-link" onClick={cp.pickAll} disabled={cp.busy}
-              title="Отметить все позиции с ценой снабжения">все</button>
-            <button type="button" className="sp-cp-link" onClick={() => cp.pickOnly(docKeys)} disabled={cp.busy || !docKeys.length}
-              title="Отметить только позиции с документом (колонка «Документ»), остальные снять">с документом</button>
-            {selectedKeys.length > 0 && (
-              <button type="button" className="sp-cp-link" onClick={() => cp.toggle(selectedKeys, true)} disabled={cp.busy}
-                title="Добавить позиции, отмеченные слева">отмеченные слева</button>
-            )}
-            <button type="button" className="sp-cp-link" onClick={cp.pickNone} disabled={cp.busy || !cp.picked.size}
-              title="Снять все отметки">сбросить</button>
+          <div className="sp-cp-seg" role="group" aria-label="Отметить позиции">
+            <button type="button" className="sp-cp-btn" onClick={cp.pickAll} disabled={cp.busy}
+              title="Отметить все позиции с ценой снабжения">Все</button>
+            <button type="button" className="sp-cp-btn" onClick={() => cp.pickOnly(docKeys)} disabled={cp.busy || !docKeys.length}
+              title={docKeys.length ? 'Отметить только позиции с документом (колонка «Документ»), остальные снять' : 'Ни у одной позиции нет документа'}>
+              С документом
+            </button>
+            <button type="button" className="sp-cp-btn" onClick={cp.pickNone} disabled={cp.busy || !cp.picked.size}
+              title="Снять все отметки">Сбросить</button>
           </div>
+          {selectedKeys.length > 0 && (
+            <button type="button" className="sp-cp-btn sp-cp-wide" onClick={() => cp.toggle(selectedKeys, true)} disabled={cp.busy}
+              title="Добавить к отметкам позиции, отмеченные галочками слева">Добавить отмеченные слева</button>
+          )}
           <div className="sp-cp-line">
             <label className="sp-cp-only">
               <input type="checkbox" checked={cp.onlyPicked} onChange={(e) => cp.setOnlyPicked(e.target.checked)} />
@@ -260,24 +294,24 @@ export function ContractorPricesHead({ cp, docKeys, selectedKeys, bar = false })
             </span>
           </div>
           {cp.changed ? (
-            <div className="sp-cp-line">
+            <div className="sp-cp-actions">
               <button type="button" className="btn-primary sp-cp-save" onClick={cp.save} disabled={cp.busy}>
                 {cp.busy ? 'Сохраняем…' : 'Сохранить'}
               </button>
-              <button type="button" className="sp-cp-link" onClick={cp.cancel} disabled={cp.busy}>отмена</button>
+              <button type="button" className="sp-cp-btn" onClick={cp.cancel} disabled={cp.busy}>Отмена</button>
             </div>
           ) : cur.status === 'requested' && cp.initial.size === 0 ? (
-            <div className="sp-cp-line">
-              <span className="sp-cp-hint">просит цены</span>
-              <button type="button" className="sp-cp-link is-danger" onClick={cp.deny} disabled={cp.busy}
-                title="Отказать в ценах снабжения (повторить просьбу подрядчик сможет через сутки)">отказать</button>
+            <div className="sp-cp-actions">
+              <button type="button" className="sp-cp-btn is-danger" onClick={cp.deny} disabled={cp.busy}
+                title="Отказать в ценах снабжения (повторить просьбу подрядчик сможет через сутки)">Отказать</button>
             </div>
           ) : null}
         </>
       )}
       {ready && cp.items.size === 0 && cur.status === 'requested' && (
-        <div className="sp-cp-line">
-          <button type="button" className="sp-cp-link is-danger" onClick={cp.deny} disabled={cp.busy}>отказать</button>
+        <div className="sp-cp-actions">
+          <button type="button" className="sp-cp-btn is-danger" onClick={cp.deny} disabled={cp.busy}
+            title="Отказать в ценах снабжения (повторить просьбу подрядчик сможет через сутки)">Отказать</button>
         </div>
       )}
       {cp.error && <span className="sp-cp-error" role="alert">{cp.error}</span>}

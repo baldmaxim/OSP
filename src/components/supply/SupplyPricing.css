@@ -191,14 +191,15 @@
 /* «Дата цены» (миграция 20261023): 6,5rem под «19.10.2026», у администратора — ещё ФИО того, кто поставил цену. */
 .sp-table .sp-c-date { width: 6.5rem; }
 .sp-table.has-authors .sp-c-date { width: 9.5rem; }
-/* «Цены подрядчику» (инженер ОСП и администратор, SupplyContractorPrices): свёрнут — 2,5rem под кнопку, раскрыт — 13rem под выбор
-   подрядчика и отметки. Ширина прибавляется к --sp-comment-w: на неё уже рассчитаны все min-width таблицы выше и ниже. */
+/* «Цены подрядчику» (инженер ОСП и администратор, SupplyContractorPrices): свёрнут — 2,5rem под кнопку, раскрыт — 15rem под выбор
+   подрядчика и кнопки «Все / С документом / Сбросить» в один ряд. Ширина прибавляется к --sp-comment-w: на неё уже рассчитаны все
+   min-width таблицы выше и ниже. */
 .sp-table .sp-c-cp { width: 2.5rem; }
-.sp-table.is-cp-open .sp-c-cp { width: 13rem; }
+.sp-table.is-cp-open .sp-c-cp { width: 15rem; }
 .sp-table.has-cp { --sp-comment-w: 2.5rem; }
-.sp-table.has-cp.is-cp-open { --sp-comment-w: 13rem; }
+.sp-table.has-cp.is-cp-open { --sp-comment-w: 15rem; }
 .sp-table.has-comments.has-cp { --sp-comment-w: 14.5rem; }
-.sp-table.has-comments.has-cp.is-cp-open { --sp-comment-w: 25rem; }
+.sp-table.has-comments.has-cp.is-cp-open { --sp-comment-w: 27rem; }
 .ui-work.ui-work .sp-table > thead > tr > th.sp-cp-th { padding: 0.25rem 0.375rem; color: var(--text-primary); font-weight: 400; }
 .ui-work.ui-work .sp-table:not(.is-cp-open) > thead > tr > th.sp-cp-th { padding: 0.25rem; text-align: center; }
 /* Свёрнут — кнопка-иконка 28px; сколько просят — рядом с иконкой внутри кнопки (над краем ячейки закреплённая шапка его обрезала бы). */
@@ -219,36 +220,94 @@
 .sp-cp-toggle:hover { border-color: var(--primary-color); color: var(--primary-color); }
 .sp-cp-toggle:has(.sp-cp-asks) { border-color: #d97706; }
 .sp-cp-asks { color: #b45309; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); font-weight: 600; font-variant-numeric: tabular-nums; }
-.sp-cp-head { display: grid; gap: 0.25rem; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
-.sp-cp-title { display: flex; align-items: baseline; justify-content: space-between; gap: 0.25rem; color: var(--text-secondary); font-weight: var(--ui-medium); }
-/* Подрядчик: плашка с переносом, нативный select — прозрачным слоем поверх (как WrapSelect в «Заявках на ДС»). */
-.sp-cp-pick { position: relative; display: block; }
-.sp-cp-pick-face {
-  display: block;
+.sp-cp-head { display: grid; gap: 0.375rem; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.sp-cp-title { display: flex; align-items: center; justify-content: space-between; gap: 0.25rem; color: var(--text-secondary); font-weight: var(--ui-medium); }
+/* «Скрыть» — крестик 24px в углу шапки. */
+.sp-cp-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.sp-cp-close:hover:not(:disabled) { border-color: var(--border-color-dark); background: var(--hover-bg); color: var(--text-primary); }
+/* Подрядчик — FilterDropdown на всю ширину столбца. Название переносится (не обрезается), под ним — состояние цен. Правила общего
+   вида фильтров в workUi.css действуют только в панелях реестров, здесь — свои, под .sp-cp-head (порядок подгрузки CSS не важен). */
+.ui-work.ui-work .sp-cp-head .sp-cp-fdrop { display: flex; width: 100%; }
+.ui-work.ui-work .sp-cp-head .sp-cp-fdrop .fdrop-trigger {
+  width: 100%;
+  max-width: none;
+  height: auto;
+  min-height: 2rem;
+  padding: 0.25rem 0.5rem;
+  border-color: var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  font-size: inherit;
+  line-height: inherit;
+  text-align: left;
+}
+.ui-work.ui-work .sp-cp-head .sp-cp-fdrop .fdrop-trigger:hover:not(:disabled) { border-color: var(--primary-color); }
+.ui-work.ui-work .sp-cp-head .sp-cp-fdrop.is-open .fdrop-trigger { border-color: var(--primary-color); }
+.ui-work.ui-work .sp-cp-head .sp-cp-fdrop .fdrop-value {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-weight: 400;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ui-work.ui-work .sp-cp-head .sp-cp-fdrop.is-active .fdrop-value { color: var(--text-primary); }
+.sp-cp-trig-name { font-weight: var(--ui-medium); }
+.sp-cp-trig-meta { color: var(--text-secondary); }
+.sp-cp-trig-meta.is-asks, .sp-cp-opt-meta.is-asks { color: #b45309; }
+.sp-cp-trig-meta.is-open, .sp-cp-opt-meta.is-open { color: var(--success-color); }
+/* Строка списка (портал в <body>, поэтому без корня страницы): название переносится, под ним — ИНН и состояние. */
+.fdrop-option .sp-cp-opt { display: flex; flex-direction: column; min-width: 0; white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+.fdrop-option .sp-cp-opt-meta { color: var(--text-secondary); font-size: 0.75rem; line-height: 1rem; font-weight: 400; }
+.fdrop-option.is-current .sp-cp-opt-meta:not(.is-asks):not(.is-open) { color: inherit; opacity: 0.75; }
+.fdrop-option:disabled .sp-cp-opt-name { color: var(--text-secondary); }
+/* Отметки — кнопки 28px одной группой (раньше — текстовые ссылки без отступов, в них трудно было попасть). */
+.sp-cp-seg { display: flex; }
+.sp-cp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 1.75rem;
-  padding: 0.3125rem 1.25rem 0.3125rem 0.375rem;
+  padding: 0.1875rem 0.5rem;
   border: 1px solid var(--border-color-dark);
   border-radius: var(--ui-radius);
   background: var(--bg-secondary);
   color: var(--text-primary);
+  font: inherit;
   font-weight: var(--ui-medium);
-  overflow-wrap: anywhere;
+  text-align: center;
+  cursor: pointer;
 }
-.sp-cp-pick-face.is-empty { color: var(--text-secondary); font-weight: 400; }
-.sp-cp-pick-face > svg { position: absolute; top: 0.5rem; right: 0.375rem; color: var(--text-secondary); }
-.sp-cp-select { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; font: inherit; }
-.sp-cp-select:disabled { cursor: default; }
-.sp-cp-pick:hover .sp-cp-pick-face { border-color: var(--primary-color); }
-.sp-cp-pick:focus-within .sp-cp-pick-face { outline: 2px solid var(--primary-color); outline-offset: 2px; }
-.sp-cp-tools, .sp-cp-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.125rem 0.625rem; }
+.sp-cp-btn:hover:not(:disabled) { border-color: var(--primary-color); background: var(--hover-bg); color: var(--primary-color); }
+.sp-cp-btn:disabled { color: var(--text-secondary); opacity: 0.55; cursor: default; }
+.sp-cp-btn.is-danger { color: var(--danger-color); }
+.sp-cp-btn.is-danger:hover:not(:disabled) { border-color: var(--danger-color); color: var(--danger-color); }
+.sp-cp-seg > .sp-cp-btn { flex: 1 1 auto; white-space: nowrap; }
+.sp-cp-seg > .sp-cp-btn:not(:first-child) { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.sp-cp-seg > .sp-cp-btn:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.sp-cp-seg > .sp-cp-btn:hover:not(:disabled), .sp-cp-seg > .sp-cp-btn:focus-visible { position: relative; z-index: 1; }
+.sp-cp-wide { width: 100%; }
+.sp-cp-line, .sp-cp-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; }
 .sp-cp-line { justify-content: space-between; }
-.sp-cp-link { padding: 0; border: 0; background: none; color: var(--ui-link); font: inherit; cursor: pointer; }
-.sp-cp-link:hover:not(:disabled) { text-decoration: underline; }
-.sp-cp-link:disabled { color: var(--text-secondary); opacity: 0.6; cursor: default; }
-.sp-cp-link.is-danger { color: var(--danger-color); }
-.sp-cp-only { display: inline-flex; align-items: center; gap: 0.25rem; cursor: pointer; }
-.sp-cp-only input { margin: 0; accent-color: var(--primary-color); }
-.ui-work.ui-work .sp-cp-save { height: 1.625rem; padding: 0 0.625rem; font-size: var(--ui-hint); }
+.sp-cp-only { display: inline-flex; align-items: center; gap: 0.375rem; min-height: 1.5rem; cursor: pointer; }
+.sp-cp-only input { width: 1rem; height: 1rem; margin: 0; accent-color: var(--primary-color); cursor: pointer; }
+/* Выше специфичностью, чем общие кнопки workUi.css (34px): тот файл подключается после CSS страницы. */
+.ui-work.ui-work .sp-cp-head .sp-cp-save { height: 1.75rem; min-height: 1.75rem; padding: 0 0.75rem; font-size: inherit; line-height: inherit; }
 .sp-cp-hint, .sp-cp-count, .sp-cp-na { color: var(--text-secondary); }
 .sp-cp-error { color: var(--danger-color); overflow-wrap: anywhere; }
 .sp-cp-note { color: var(--success-color); }
@@ -836,7 +895,13 @@
   /* «Цены подрядчику»: выбор подрядчика и отметки — над карточками; столбец свёрнут — в карточке пусто. */
   .sp-cp-bar { display: block; margin: 0 0 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: var(--ui-radius); background: var(--bg-secondary); }
   .sp-cp-bar:has(> .sp-cp-open) { padding: 0; border: 0; background: none; }
-  .sp-cp-bar .sp-cp-head { font-size: var(--ui-th); line-height: var(--ui-th-lh); }
+  .sp-cp-bar .sp-cp-head { gap: 0.5rem; font-size: var(--ui-th); line-height: var(--ui-th-lh); }
+  /* Под палец — 40px: кнопки, поле выбора и «скрыть». */
+  .ui-work.ui-work .sp-cp-bar :is(.sp-cp-btn, .sp-cp-save) { min-height: 2.5rem; height: auto; }
+  .ui-work.ui-work .sp-cp-bar .sp-cp-head .sp-cp-fdrop .fdrop-trigger { min-height: 2.5rem; }
+  .sp-cp-bar .sp-cp-close { width: 2.5rem; height: 2.5rem; margin: -0.5rem -0.5rem -0.5rem 0; }
+  .sp-cp-bar .sp-cp-only { min-height: 2.5rem; }
+  .sp-cp-bar .sp-cp-only input { width: 1.25rem; height: 1.25rem; }
   .sp-table td.sp-cp:empty { display: none; }
   .ui-work.ui-work .sp-table > tbody > tr > td.sp-cp.is-changed { box-shadow: none; }
   /* Отметка нескольких позиций — на компьютере; на телефоне ссылка прикладывается к позиции в её карточке. */

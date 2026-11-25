@@ -1082,6 +1082,22 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.match(res.body, /;"Описание ""в кавычках""";/)
     })
 
+    it('csv: текст, похожий на формулу, — с апострофом; числа и обычный текст — как есть', async () => {
+      const { csvCell, toCsv } = await import(path.join(SERVER, 'src', 'routes', 'rates.js'))
+      for (const [value, cell] of [
+        ['=HYPERLINK("http://x","y")', `"'=HYPERLINK(""http://x"",""y"")"`],
+        ['+7 (900) 000-00-00', "'+7 (900) 000-00-00"],
+        ['-ГОСТ', "'-ГОСТ"],
+        ['@SUM(A1)', "'@SUM(A1)"],
+        ['\tтаб', "'\tтаб"],
+        ['\r\n=1', `"'\r\n=1"`],
+        // Числа: и числом, и строкой (numeric из базы приходит строкой), в том числе отрицательные и с запятой.
+        [-5, '-5'], ['-5.50', '-5.50'], ['+3', '+3'], ['-1,5', '"-1,5"'], ['1e-3', '1e-3'],
+        ['Бетон В25 = 100 м3', 'Бетон В25 = 100 м3'], ['', ''], [null, ''], [undefined, ''],
+      ]) assert.equal(csvCell(value), cell, JSON.stringify(value))
+      assert.equal(toCsv([{ name: '=1+1', price: '-2.00' }]), "name;price\n'=1+1;-2.00")
+    })
+
     it('нет представления (42P01) — 503 с понятным текстом', async () => {
       state.missingView = true
       try {

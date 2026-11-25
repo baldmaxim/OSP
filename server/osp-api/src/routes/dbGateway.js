@@ -20,8 +20,9 @@
 // (src/data/allow-self-contractor.json): всё остальное для неё не существует, даже если правило базы ошибочно разрешило бы.
 // Список закрыт по умолчанию, новая таблица или функция сама в него не попадает.
 //
-// Без входа и у учётки с регистрации ограничена и форма запроса (restrictedQueryProblem): этим страницам нужны только простые
-// условия, всё остальное — отказ; число одновременных запросов тоже ограничено.
+// Без входа и у любого подрядчика (с регистрации или от администратора — то, что шлюз решает по его списку) ограничена и форма
+// запроса (restrictedQueryProblem): этим страницам нужны только простые условия, всё остальное — отказ; ограничены и число
+// запросов, и одновременные запросы, и тело. У подрядчика от администратора — свой общий предел одновременных запросов (25.11.2026).
 //
 // Права разделов (src/lib/dbSections.js, карта src/data/db-sections.json): после списка — какое право раздела нужно на
 // действие с таблицей, на каждую связанную таблицу в select и на вызов функции; права — из базы по пользователю из сессии
@@ -57,7 +58,8 @@ const RESPONSE_HEADERS = ['content-type', 'content-range', 'preference-applied',
 
 const pgError = (code, message) => ({ code, details: null, hint: null, message })
 
-// Список учётки с регистрации. Кабинету большие тела не нужны: сохранение цен — порциями до 500 строк.
+// Список учётки с регистрации. Кабинету большие тела не нужны (ни ей, ни подрядчику от администратора): сохранение цен — порциями до
+// 500 строк.
 export const SELF_REGISTERED_ALLOW = JSON.parse(fs.readFileSync(new URL('../data/allow-self-contractor.json', import.meta.url), 'utf8'))
 export const SELF_REGISTERED_BODY_LIMIT = 2 * 1024 * 1024
 // Подрядчик (учётка с организацией или роль contractor): только то, что вызывает его кабинет.
@@ -102,7 +104,7 @@ export function embeddedRelations(select) {
   return [...names]
 }
 
-// Форма запроса для тех, кому не верим: без входа и учётка с регистрации. → null или текст отказа.
+// Форма запроса для тех, кому не верим: без входа и подрядчик (с регистрации или от администратора). → null или текст отказа.
 const RESTRICTED_FILTER = /^(?:not\.)?(?:eq|neq|gt|gte|lt|lte|in|is)\./
 const RESTRICTED_ORDER = /^[A-Za-z_][A-Za-z0-9_]*(?:\.(?:asc|desc))?(?:\.nulls(?:first|last))?(?:,[A-Za-z_][A-Za-z0-9_]*(?:\.(?:asc|desc))?(?:\.nulls(?:first|last))?)*$/
 const RESTRICTED_SELECT = /^[A-Za-z0-9_,*\s]*$/
@@ -199,7 +201,11 @@ export function registerDbGateway(app, ctx) {
     }
     if (!rights) return { status: 403, body: pgError('42501', 'permission denied: нет учётной записи портала') }
     const select = params.get('select') || ''
-    if (rights.contractor) return decide(contractorAllow, 'authenticated', method, kind, name, { select, prefer })
+    if (rights.contractor) {
+      // Подрядчик — дальше и профиль недоверенного (форма запроса, лимиты, тело), как у учётки с регистрации.
+      who.contractor = true
+      return decide(contractorAllow, 'authenticated', method, kind, name, { select, prefer })
+    }
     if (!rights.employee) return { status: 403, body: pgError('42501', 'permission denied: учётка не одобрена или заблокирована') }
     const res = decideSections(sectionMap, rights, {
       kind, name, method, actions: kind === 'rpc' ? [] : neededActions(method, prefer, select), select, params, modes,
@@ -286,13 +292,16 @@ export function registerDbGateway(app, ctx) {
       const stop = await sectionsCheck(request, who, { method, kind, name, params, prefer })
       if (stop) return send(reply, stop.status, stop.body)
     }
-    const restricted = who.role === 'anon' || who.selfRegistered
+    // Подрядчик от администратора (не с регистрации): свой лимит и свой общий предел одновременных запросов.
+    const managedContractor = Boolean(who.contractor) && !who.selfRegistered
+    const restricted = who.role === 'anon' || who.selfRegistered || managedContractor
     if (restricted) {
       const problem = restrictedQueryProblem(params)
       if (problem) return send(reply, 400, pgError('PGRST100', problem))
     }
-    if (who.selfRegistered) {
-      if (ctx.limiters?.dbSelf && !ctx.limiters.dbSelf.take(who.user.id)) {
+    if (who.selfRegistered || managedContractor) {
+      const rate = who.selfRegistered ? ctx.limiters?.dbSelf : ctx.limiters?.dbContractor
+      if (rate && !rate.take(who.user.id)) {
         return send(reply.header('retry-after', '60'), 429, pgError('OSP_RATE_LIMIT', 'Слишком много запросов — повторите через минуту'))
       }
       // Тело только с объявленной длиной и не больше предела: потоковое тело на 50 МБ этой учётке ни к чему.
@@ -319,7 +328,8 @@ export function registerDbGateway(app, ctx) {
       const own = ctx.limiters.dbRestrictedKey.acquire(who.user?.id || request.ip)
       if (!own) return busy('Слишком много одновременных запросов — повторите через несколько секунд')
       releases.push(own)
-      const all = ctx.limiters.dbRestrictedTotal.acquire('all')
+      const total = (managedContractor && ctx.limiters.dbContractorTotal) || ctx.limiters.dbRestrictedTotal
+      const all = total.acquire('all')
       if (!all) return busy('Слишком много одновременных запросов — повторите через несколько секунд')
       releases.push(all)
     }

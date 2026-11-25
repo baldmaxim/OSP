@@ -8,7 +8,6 @@
 // Пока миграции нет, функции и таблицы отвечают «не найдено» — сервис возвращает null, страницы работают как раньше.
 import { db, requestBidFile, requestBidFileAdmin, requestBidSupplyDoc } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
-import { uuidv7 } from '../utils/uuid'
 import { fetchFileBytes, requestDownloadUrl, unwrapFunction } from './s3'
 import { cabinetSandbox, setCabinetPreview } from './cabinetPreview'
 
@@ -270,10 +269,9 @@ export async function loadVorSuperseded(tenderId) {
 }
 
 // ── Свой ВОР с расценками (миграция 20270113, решение пользователя 11.11.2026) ─────────────────────────
-// Расценка на сайте временно скрыта: подрядчик скачивает пустой ВОР, заполняет цены у себя и загружает файл к той же ведомости.
-// Строку пишет служба (/api/fn/bid-file) функциями базы; читают организация (свои) и администратор. Ключа файла браузер не видит.
+// С 24.11.2026 расценка — на сайте; 25.11.2026 загрузка файла закрыта (/api/fn/bid-file отвечает на upload и confirm 410). Ранее
+// загруженные файлы читают организация (свои) и администратор; ссылку выдаёт служба, ключа файла браузер не видит.
 const BID_FILE_COLUMNS = 'id, tender_id, counterparty_id, vor_file_id, vor_name, file_name, size_bytes, summary, uploaded_by_name, created_at, updated_at'
-export const BID_FILE_MAX_MB = 25
 
 // Свои файлы по тендеру. null — таблицы ещё нет (база раньше миграции): кабинет показывает прежнюю расценку на сайте.
 // counterpartyId — всегда своя организация: администратору (просмотр от имени подрядчика) правило показывает файлы всех.
@@ -308,28 +306,6 @@ export async function loadAllBidFiles() {
 }
 
 const bidFileCall = async (body) => unwrapFunction(await requestBidFile(body))
-
-// Загрузка: ссылка на PUT → файл в хранилище → подтверждение со сводкой. Повтор того же выбора не плодит строк: ключ операции один.
-export async function uploadBidFile({ tenderId, vorFileId, file, summary }) {
-  if (inSandbox()) throw new Error('Просмотр от имени подрядчика: файл не загружается')
-  const fields = {
-    tender_id: tenderId,
-    vor_file_id: vorFileId,
-    operation_id: uuidv7(),
-    file_name: file.name,
-    mime_type: file.type || 'application/octet-stream',
-    size_bytes: file.size,
-  }
-  const up = await bidFileCall({ action: 'upload', ...fields })
-  let res
-  try {
-    res = await fetch(up.presigned_url, { method: 'PUT', headers: { 'Content-Type': fields.mime_type }, body: file })
-  } catch (e) {
-    throw new Error(`Хранилище недоступно: ${e?.message || e}`)
-  }
-  if (!res.ok) throw new Error(`Хранилище не приняло файл (${res.status})`)
-  return bidFileCall({ action: 'confirm', ...fields, summary })
-}
 
 export const removeBidFile = (fileId) => bidFileCall({ action: 'delete', file_id: fileId })
 // { presigned_url, file_name } — ссылка на скачивание своего файла; администратору — свой маршрут.

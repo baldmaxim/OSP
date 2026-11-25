@@ -77,14 +77,21 @@ function clampInt(raw, def, min, max) {
   return Math.min(max, Math.max(min, Math.trunc(n)))
 }
 
+// Текст, который Excel принял бы за формулу (= + - @, табуляция, перевод строки в начале), — с апострофом впереди: наименования
+// в реестре приходят и от подрядчиков. Числа (в том числе отрицательные и строкой — так отдаёт numeric) не трогаются.
+const FORMULA_START = /^[=+\-@\t\r\n]/
+const NUMBER_TEXT = /^[-+]?\d+(?:[.,]\d+)?(?:[eE][-+]?\d+)?$/
+export function csvCell(v) {
+  if (v === null || v === undefined) return ''
+  let s = String(v)
+  if (typeof v === 'string' && FORMULA_START.test(s) && !NUMBER_TEXT.test(s)) s = `'${s}`
+  return /[",;\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
 export function toCsv(rows) {
   if (rows.length === 0) return ''
   const headers = Object.keys(rows[0])
-  const esc = (v) => {
-    if (v === null || v === undefined) return ''
-    const s = String(v)
-    return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-  }
+  const esc = csvCell
   // «;» — Excel с русской локалью открывает без мастера импорта; BOM добавляется при отдаче.
   return [headers.join(';'), ...rows.map((r) => headers.map((h) => esc(r[h])).join(';'))].join('\n')
 }

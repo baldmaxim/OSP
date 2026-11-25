@@ -700,7 +700,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
-  it('столбец «Цены подрядчику»: свёрнут, только инженеру и администратору; кто просит — выбран сам; «с документом», «все», «сбросить» — набором ключей позиций', async () => {
+  it('столбец «Цены подрядчику»: свёрнут, только инженеру и администратору; кто просит — выбран сам; «С документом», «Все», «Сбросить» — набором ключей позиций', async () => {
     const IZO = normName('Изоляция K-Flex 13×15')
     const PIPE = normName('Труба медная Ø12,7')
     // Как bid_supply_list / bid_supply_items / bid_supply_grant (20270303): цена снабжения одна во всех ВОР — у изоляции (к ней
@@ -732,18 +732,25 @@ describe('Расценка снабжением: таблица', { skip: !launc
       page.on('dialog', (d) => d.accept())
       const toggle = page.getByRole('button', { name: 'Цены подрядчику: показать столбец (просят: 2)' })
       await toggle.waitFor()
-      assert.equal(await page.locator('.sp-cp-select').count(), 0, 'по умолчанию столбец свёрнут')
+      assert.equal(await page.locator('.sp-cp-fdrop').count(), 0, 'по умолчанию столбец свёрнут')
       await toggle.click()
-      const select = page.locator('th .sp-cp-select')
-      await page.waitForFunction(() => document.querySelector('th .sp-cp-select')?.value === 'cp-site')
-      assert.equal(await select.locator('option', { hasText: 'ООО Ждёт' }).isDisabled(), true, 'заявка ждёт решения — выбрать нельзя')
+      // Подрядчик — общим выпадающим списком (FilterDropdown): кто просит — выбран сам, под названием — состояние цен.
+      const head = page.locator('th.sp-cp-th')
+      await page.waitForFunction(() => document.querySelector('th.sp-cp-th .sp-cp-trig-name')?.textContent === 'ООО Сайт')
+      assert.equal(await head.locator('.sp-cp-trig-meta').textContent(), 'просит цены')
+      await head.locator('.sp-cp-fdrop .fdrop-trigger').click()
+      const waitOpt = page.locator('.fdrop-panel .fdrop-option', { hasText: 'ООО Ждёт' })
+      assert.equal(await waitOpt.isDisabled(), true, 'заявка ждёт решения — выбрать нельзя')
+      assert.match(await waitOpt.textContent(), /заявка ждёт решения/)
+      await page.keyboard.press('Escape')
+      await page.locator('.fdrop-panel').waitFor({ state: 'detached' })
       const izo = page.getByRole('checkbox', { name: 'Открыть подрядчику цену: Изоляция K-Flex 13×15' })
       const pipe = page.getByRole('checkbox', { name: `Открыть подрядчику цену: ${TRUBA}` })
       await izo.waitFor()
       assert.equal(await rowOf(page, 'Кран шаровой Ду15', 'ОВ').locator('.sp-cp-na').count(), 1, 'без цены снабжения — «—»')
 
       // «с документом» — только изоляция; сохраняется ключ материала и ед. изм. позиции, в историю основного тендера.
-      await page.getByRole('button', { name: 'с документом', exact: true }).click()
+      await head.getByRole('button', { name: 'С документом', exact: true }).click()
       assert.equal(await izo.isChecked(), true)
       assert.equal(await pipe.isChecked(), false)
       await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
@@ -756,19 +763,19 @@ describe('Расценка снабжением: таблица', { skip: !launc
       await page.locator('th.sp-cp-th').getByLabel('только отмеченные').check()
       await pipe.waitFor({ state: 'detached' })
       await page.locator('th.sp-cp-th').getByLabel('только отмеченные').uncheck()
-      await page.getByRole('button', { name: 'все', exact: true }).click()
+      await head.getByRole('button', { name: 'Все', exact: true }).click()
       assert.equal(await pipe.isChecked(), true)
       await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
       await page.waitForFunction(() => window.__supplyCalls.length === 2)
       assert.equal((await page.evaluate(() => window.__supplyCalls[1])).p_items.length, 2)
 
       // «сбросить» и «Сохранить» — пустой набор (база закрывает цены), с вопросом.
-      await page.getByRole('button', { name: 'сбросить', exact: true }).click()
+      await head.getByRole('button', { name: 'Сбросить', exact: true }).click()
       await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
       await page.waitForFunction(() => window.__supplyCalls.length === 3)
       assert.deepEqual((await page.evaluate(() => window.__supplyCalls[2])).p_items, [])
       await page.getByRole('button', { name: 'Скрыть столбец «Цены подрядчику»' }).click()
-      await page.locator('th .sp-cp-select').waitFor({ state: 'detached' })
+      await page.locator('th .sp-cp-fdrop').waitFor({ state: 'detached' })
       assert.deepEqual(errors, [])
     } finally {
       await context.close()

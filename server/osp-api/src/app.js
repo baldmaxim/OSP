@@ -576,6 +576,8 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     dbSelf: createRateLimit(limits.dbSelfRegisteredPerUser || DEFAULT_LIMITS.dbSelfRegisteredPerUser),
     dbRestrictedKey: createConcurrency(limits.dbRestrictedConcurrentPerKey || DEFAULT_LIMITS.dbRestrictedConcurrentPerKey),
     dbRestrictedTotal: createConcurrency(limits.dbRestrictedConcurrentTotal || DEFAULT_LIMITS.dbRestrictedConcurrentTotal),
+    dbContractor: createRateLimit(limits.dbContractorPerUser || DEFAULT_LIMITS.dbContractorPerUser),
+    dbContractorTotal: createConcurrency(limits.dbContractorConcurrentTotal || DEFAULT_LIMITS.dbContractorConcurrentTotal),
     authFail,
     dbBodyBudget: createByteBudget(limits.dbBodyBudgetBytes || DEFAULT_LIMITS.dbBodyBudgetBytes),
     dbLargeBodyKey: createConcurrency(limits.dbLargeBodyPerKey || DEFAULT_LIMITS.dbLargeBodyPerKey),

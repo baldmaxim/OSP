@@ -10,42 +10,30 @@
 // заявка не отклонена). Другого файла тендера (пакет, РД) и файла чужого тендера этот маршрут не отдаёт. Функции нет в списке
 // шлюза: браузер вызвать её не может, ключ файла наружу не выходит.
 //
-// 2. Свой ВОР подрядчика с расценками (миграция 20270113, решение пользователя 11.11.2026: расценка на сайте временно скрыта,
-//    подрядчик загружает заполненный ВОР рядом с каждой ведомостью тендера).
+// 2. Свой ВОР подрядчика с расценками (миграция 20270113, решение пользователя 11.11.2026). С 24.11.2026 расценка — на сайте, страница
+//    этот путь не вызывает; 25.11.2026 загрузка закрыта (upload и confirm — 410): принятый файл не сверялся с тем, что лежит в
+//    хранилище. Ранее загруженные файлы по-прежнему скачиваются и убираются.
 //
 //   POST /api/fn/bid-file
-//     upload   { tender_id, vor_file_id, operation_id, file_name, mime_type, size_bytes } → { presigned_url, expires_in }
-//     confirm  { те же поля, summary } → { ok, vor_name } — объект в хранилище есть и того же размера → строка tender_bid_files;
-//              прежний файл этой ведомости удаляется из хранилища. Повтор с тем же ключом операции — та же строка
+//     upload, confirm → 410 OSP_BID_FILE_UPLOAD_CLOSED
 //     download { file_id } → { presigned_url, expires_in, file_name }
 //     delete   { file_id } → { ok } — сначала строка, затем объект; строки уже нет — { ok, already }
 //   POST /api/admin/bid-file { file_id } → { presigned_url, expires_in, file_name } — администратору (сводка расценок подрядчиков)
 //
 // Подрядчику общий /api/fn/s3-presign разрешает только скачивание, а учётке с регистрации закрыт совсем, поэтому — свой маршрут.
-// Всё решают функции базы под входом вошедшего (bid_file_target / save / remove / get): тендер открыт, организация — участник или
-// её заявка не отклонена, ведомость — Excel-файл ВОР этого тендера, чужие файлы не видны. Ключ объекта задаёт служба —
-// bids/<тендер>/<организация из базы>/<ключ операции>-<имя>, база принимает ключ только в каталоге своей организации; браузер ключа
-// не получает и не задаёт. Сводку сумм считает страница (разбор файла — в браузере, как «Цены из файла»), служба оставляет в ней
-// только известные поля с числами в своих пределах.
-//
-// Тип файла (25.11.2026): с 24.11.2026 страница этот путь не вызывает (BidVorFiles удалён), но маршрут открыт подрядчику — а сотрудник
-// скачивает эти файлы из «Расценок подрядчиков», проверки антивирусом у хранилища нет. Поэтому — только книга .xlsx: имя на .xlsx и
-// тип из допустимых для неё (upload и confirm), содержимое начинается с сигнатуры ZIP (confirm, первые байты объекта). Остальное —
-// .xlsm/.xls (макросы), PDF, .exe, .html, переименованный файл — отказ OSP_NOT_WORKBOOK, загруженный объект убирается.
-import { GetObjectCommand, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+// Всё решают функции базы под входом вошедшего (bid_file_get / bid_file_remove): только файлы своей организации (администратору — все),
+// убрать — пока идёт приём. Ключ объекта браузер не получает и не задаёт.
+import { GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { z } from 'zod'
 import { access } from '../lib/access.js'
 import { sanitizeFileName } from '../lib/files.js'
 import { READONLY_CODE, READONLY_TEXT } from '../lib/writeBarrier.js'
-import { attachmentDisposition, DOWNLOAD_TTL_SEC, UPLOAD_TTL_SEC } from './s3Presign.js'
-import { createUploadIntents } from '../lib/uploadIntents.js'
+import { attachmentDisposition, DOWNLOAD_TTL_SEC } from './s3Presign.js'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-// Ключ операции — UUIDv7, как у s3-presign (src/utils/uuid.js портала).
-const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const NOT_FOUND = 'Файл недоступен: приём предложений закрыт или заявка не подана'
-export const BID_FILE_MAX_BYTES = 25 * 1024 * 1024
+const UPLOAD_CLOSED = { error: 'Загрузка своего ВОР закрыта: расценка — на сайте', code: 'OSP_BID_FILE_UPLOAD_CLOSED' }
 const RATE = { limiter: 'presignRate', deny: 'Слишком много запросов к файлам — подождите минуту' }
 
 // Счёт снабжения в окне просмотра (просьба пользователя 25.11.2026 «посмотреть счёт»): ссылка «показать» — только PDF и картинки, тип
@@ -54,54 +42,9 @@ const VIEW_TYPES = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpe
 export const supplyDocViewType = (name) => VIEW_TYPES[String(name || '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1]] || null
 const inlineDisposition = (name) => `inline; filename="${sanitizeFileName(name)}"; filename*=UTF-8''${encodeURIComponent(name)}`
 
-// Свой ВОР — только .xlsx: Excel не запускает макросы из .xlsx. Тип, который браузер сообщает для .xlsx, бывает и общим (пустой →
-// octet-stream у страницы, vnd.ms-excel на части Windows); всё равно файл скачивается вложением, а не открывается на сайте.
-const XLSX_MIME = new Set([
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream', 'application/vnd.ms-excel',
-])
-const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04]
-const NOT_WORKBOOK = 'Свой ВОР — только книга Excel .xlsx до 25 МБ (без макросов: не .xlsm и не .xls)'
-export const isBidWorkbook = (fileName, mime, size) => /\.xlsx$/i.test(String(fileName || '').trim())
-  && XLSX_MIME.has(String(mime || '').toLowerCase()) && Number.isSafeInteger(size) && size >= ZIP_MAGIC.length
-// Первые байты объекта (Range): у книги .xlsx — сигнатура ZIP.
-async function startsAsZip(s3, bucket, key) {
-  const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: `bytes=0-${ZIP_MAGIC.length - 1}` }))
-  const head = await res.Body.transformToByteArray()
-  return head.length >= ZIP_MAGIC.length && ZIP_MAGIC.every((b, i) => head[i] === b)
-}
-
-// ── Сводка файла: только известные поля ─────────────────────────────────────────────────────────────
-const money = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 1e13 ? Math.round(v * 100) / 100 : null)
-const count = (v) => (Number.isSafeInteger(v) && v >= 0 && v <= 1e6 ? v : null)
-const byKind = (v) => {
-  if (!v || typeof v !== 'object') return null
-  const material = count(v.material)
-  const work = count(v.work)
-  return material == null && work == null ? null : { material: material ?? 0, work: work ?? 0 }
-}
-const SUMMARY_VAT = new Set(['gross', 'net', 'exempt'])
-export function cleanSummary(raw) {
-  const s = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
-  const out = { v: 1 }
-  for (const k of ['materials', 'works', 'total']) { const m = money(s[k]); if (m != null) out[k] = m }
-  for (const k of ['items', 'priced']) { const b = byKind(s[k]); if (b) out[k] = b }
-  for (const k of ['rows', 'unmatched']) { const c = count(s[k]); if (c != null) out[k] = c }
-  if (SUMMARY_VAT.has(s.vat)) out.vat = s.vat
-  if (typeof s.rate === 'number' && Number.isFinite(s.rate) && s.rate >= 0 && s.rate <= 50) out.rate = s.rate
-  if (typeof s.error === 'string' && /^[a-z_]{1,40}$/.test(s.error)) out.error = s.error
-  if (typeof s.sheet === 'string' && s.sheet.length <= 200) out.sheet = s.sheet
-  return out
-}
-
+// upload и confirm остаются в перечне, чтобы прежняя страница получила понятный отказ (410), а не «неверный запрос».
 const BID_FILE_BODY = z.object({
   action: z.enum(['upload', 'confirm', 'download', 'delete']),
-  tender_id: z.string().regex(UUID).optional(),
-  vor_file_id: z.string().regex(UUID).optional(),
-  operation_id: z.string().regex(UUID_V7).optional(),
-  file_name: z.string().min(1).max(255).optional(),
-  mime_type: z.string().max(200).optional(),
-  size_bytes: z.number().int().min(0).optional(),
-  summary: z.record(z.string(), z.unknown()).optional(),
   file_id: z.string().regex(UUID).optional(),
 })
 
@@ -115,9 +58,7 @@ function refusal(error) {
   return null
 }
 
-export function registerBidFiles(app, { config, getS3, isReadOnly = () => false, db = null }) {
-  // Незавершённые загрузки — с пределом на пользователя и уборкой (src/lib/uploadIntents.js).
-  const intents = createUploadIntents({ db })
+export function registerBidFiles(app, { config, getS3, isReadOnly = () => false }) {
   app.route({ method: 'POST', url: '/api/fn/bid-vor-file', config: {
     access: access.user({ require: 'contractor', deny: 'Файл ВОР — только для подрядчика', rate: RATE }),
     body: z.object({ file_id: z.string().regex(UUID) }),
@@ -202,90 +143,24 @@ export function registerBidFiles(app, { config, getS3, isReadOnly = () => false,
   }, handler: async (request, reply) => {
     const body = request.body
     const { supabase } = request.auth
+    if (body.action === 'upload' || body.action === 'confirm') return reply.code(410).send(UPLOAD_CLOSED)
     if (body.action !== 'download' && isReadOnly()) return reply.code(503).send({ error: READONLY_TEXT, code: READONLY_CODE })
+    if (!body.file_id) return reply.code(400).send({ error: 'Нет id файла' })
 
-    if (body.action === 'download') {
-      if (!body.file_id) return reply.code(400).send({ error: 'Нет id файла' })
-      return downloadUrl(request, reply, body.file_id)
-    }
+    if (body.action === 'download') return downloadUrl(request, reply, body.file_id)
 
-    if (body.action === 'delete') {
-      if (!body.file_id) return reply.code(400).send({ error: 'Нет id файла' })
-      const { data, error } = await supabase.rpc('bid_file_remove', { p_file: body.file_id })
-      if (error) {
-        const known = refusal(error)
-        if (known) return reply.code(known[0]).send({ error: known[1] })
-        request.log.error({ code: error.code, msg: String(error.message || '').slice(0, 200) }, 'bid_file_remove')
-        return reply.code(500).send({ error: 'Не удалось убрать файл' })
-      }
-      const key = typeof data === 'string' ? data : null
-      if (!key) return { ok: true, already: true }
-      await dropObject(request, key)
-      return { ok: true }
-    }
-
-    // upload / confirm
-    const { tender_id: tenderId, vor_file_id: vorFileId, operation_id: operationId, file_name: fileName } = body
-    if (!tenderId || !vorFileId || !operationId || !fileName || body.size_bytes == null) {
-      return reply.code(400).send({ error: 'Не хватает полей файла' })
-    }
-    if (body.size_bytes > BID_FILE_MAX_BYTES) return reply.code(400).send({ error: 'Файл больше 25 МБ' })
-    const mime = body.mime_type || 'application/octet-stream'
-    if (!isBidWorkbook(fileName, mime, body.size_bytes)) return reply.code(400).send({ error: NOT_WORKBOOK, code: 'OSP_NOT_WORKBOOK' })
-    const { data: target, error: targetError } = await supabase.rpc('bid_file_target', { p_tender: tenderId, p_vor_file: vorFileId })
-    if (targetError) {
-      const known = refusal(targetError)
+    // delete
+    const { data, error } = await supabase.rpc('bid_file_remove', { p_file: body.file_id })
+    if (error) {
+      const known = refusal(error)
       if (known) return reply.code(known[0]).send({ error: known[1] })
-      request.log.error({ code: targetError.code, msg: String(targetError.message || '').slice(0, 200) }, 'bid_file_target')
-      return reply.code(500).send({ error: 'Не удалось проверить тендер' })
+      request.log.error({ code: error.code, msg: String(error.message || '').slice(0, 200) }, 'bid_file_remove')
+      return reply.code(500).send({ error: 'Не удалось убрать файл' })
     }
-    const row = Array.isArray(target) ? target[0] : target
-    if (!row?.counterparty_id) return reply.code(403).send({ error: NOT_FOUND })
-    const key = `bids/${tenderId.toLowerCase()}/${String(row.counterparty_id).toLowerCase()}/${operationId.toLowerCase()}-${sanitizeFileName(fileName)}`
-    const s3 = getS3()
-
-    if (body.action === 'upload') {
-      const busy = await intents.note(key, request.auth.user.id, body.size_bytes)
-      if (busy) return reply.header('retry-after', '300').code(429).send({ error: busy, code: 'OSP_UPLOADS_PENDING' })
-      // Тип и длина — в подписи: по ссылке загружается только заявленный файл (размер — точно, не больше предела).
-      const put = new PutObjectCommand({ Bucket: config.s3.bucket, Key: key, ContentType: mime, ContentLength: body.size_bytes })
-      const url = await getSignedUrl(s3, put, { expiresIn: UPLOAD_TTL_SEC, signableHeaders: new Set(['content-type', 'content-length']) })
-      return { presigned_url: url, expires_in: UPLOAD_TTL_SEC }
-    }
-
-    let stored
-    try {
-      stored = await s3.send(new HeadObjectCommand({ Bucket: config.s3.bucket, Key: key }))
-    } catch (e) {
-      if (e?.name === 'NotFound' || e?.$metadata?.httpStatusCode === 404) {
-        return reply.code(409).send({ error: 'Файла ещё нет в хранилище — загрузка не завершилась', code: 'OSP_NOT_UPLOADED' })
-      }
-      throw e
-    }
-    if (Number(stored.ContentLength) !== body.size_bytes) {
-      return reply.code(409).send({ error: 'Размер файла в хранилище не совпадает с выбранным', code: 'OSP_SIZE_MISMATCH' })
-    }
-    // По ссылке на PUT загружаются любые байты заявленного размера: содержимое — книга .xlsx, а не переименованный файл.
-    if (!(await startsAsZip(s3, config.s3.bucket, key))) {
-      await dropObject(request, key)
-      await intents.drop(key)
-      return reply.code(400).send({ error: NOT_WORKBOOK, code: 'OSP_NOT_WORKBOOK' })
-    }
-    const { data: prev, error: saveError } = await supabase.rpc('bid_file_save', {
-      p_tender: tenderId, p_vor_file: vorFileId, p_s3_key: key, p_file_name: fileName, p_mime: mime,
-      p_size: body.size_bytes, p_summary: cleanSummary(body.summary),
-    })
-    if (saveError) {
-      // Строку не записали (приём закрылся, пока шла загрузка) — объекту в хранилище незачем оставаться.
-      await dropObject(request, key)
-      const known = refusal(saveError)
-      if (known) return reply.code(known[0]).send({ error: known[1] })
-      request.log.error({ code: saveError.code, msg: String(saveError.message || '').slice(0, 200) }, 'bid_file_save')
-      return reply.code(500).send({ error: 'Не удалось сохранить файл' })
-    }
-    await intents.drop(key)
-    if (typeof prev === 'string' && prev && prev !== key) await dropObject(request, prev)
-    return { ok: true, vor_name: row.vor_name }
+    const key = typeof data === 'string' ? data : null
+    if (!key) return { ok: true, already: true }
+    await dropObject(request, key)
+    return { ok: true }
   } })
 
   app.route({ method: 'POST', url: '/api/admin/bid-file', config: {
