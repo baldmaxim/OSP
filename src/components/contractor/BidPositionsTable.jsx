@@ -6,7 +6,7 @@ import { lineTotal } from '../../utils/bidPrice'
 import { IconEye } from '../icons/ActionIcons'
 
 // Список «Материалы» или «Работы» расценки подрядчика: уникальные позиции ведомостей тендера, цена за единицу с НДС и примечание.
-// Решения пользователя 24.11.2026: не расценённая позиция — жёлтым (как «Сравнение КП»); ведомость выбрана — объём и сумма по ней;
+// Решения пользователя 24.11.2026: не расценённая позиция — выделена (с 25.11.2026 мягким тёплым тоном вместо жёлтого); ведомость выбрана — объём и сумма по ней;
 // что изменилось в новой версии ВОР — отметкой в строке («новая», «было …»), как в расценке снабжения; разрешены цены снабжения —
 // колонка «Цена СУ-10» с кнопкой «взять»; у взятой цены снабжения — счёт (файл счёта / КП поставщика этой позиции, решение пользователя
 // 25.11.2026): своя колонка «Счёт» рядом с «Ценой СУ-10», кнопка открывает окно просмотра (просьба пользователя 25.11.2026 «не вижу
@@ -171,11 +171,12 @@ export default function BidPositionsTable({
             {vors.map((v) => <option key={v.id} value={v.id}>{v.title}</option>)}
           </select>
         )}
-        <label className="bid-check">
+        {/* Плашками с подложкой (просьба пользователя 25.11.2026: «только без цены недостаточно выделено»). */}
+        <label className={`bid-chip is-missing${onlyEmpty ? ' is-on' : ''}`}>
           <input type="checkbox" checked={onlyEmpty} onChange={(e) => setOnlyEmpty(e.target.checked)} /> только без цены
         </label>
         {hasChanges && (
-          <label className="bid-check">
+          <label className={`bid-chip is-changes${onlyChanged ? ' is-on' : ''}`}>
             <input type="checkbox" checked={onlyChanged} onChange={(e) => setOnlyChanged(e.target.checked)} /> только изменения ВОР
           </label>
         )}

@@ -2,10 +2,12 @@
 // оформлении, что они подгружены на сайт», каждый ВОР — своим файлом; «Главный лист» тоже заполняется).
 //
 // Книга не пересобирается: меняются только ячейки цен, примечаний и анкеты (utils/xlsxXml.js), всё остальное — оформление, формулы,
-// выпадающие списки, скрытые листы — как в файле отдела. Формулы остаются, их сохранённые результаты убираются (прежние итоги после
-// вписанных цен неверны; LibreOffice с ними показывал старый итог листа), и Excel пересчитывает книгу при открытии (fullCalcOnLoad):
-// итоги листов, цены «КП» (в шаблоне отдела это ВПР/XLOOKUP по «Материалам» и «Работам») и «ИТОГО с НДС» встанут сами. Программа,
-// которая книгу не считает (просмотр SheetJS), покажет на месте формул пустые ячейки, а не неверные суммы.
+// выпадающие списки, скрытые листы — как в файле отдела. Формулы остаются, а их сохранённые результаты (прежние итоги отдела после
+// вписанных цен неверны) с 25.11.2026 заменяются посчитанными по вписанным ценам (utils/xlsxFormula.js): Excel открывает скачанный файл в
+// защищённом просмотре и книгу не пересчитывает — до этого «КП» там был пустым (нулями), так же его видели почта и разборщики портала.
+// Что вычислитель наверняка не считает (незнакомая функция, ссылка на скрытый лист, скрытые строки под SUBTOTAL…) — как раньше:
+// результат, зависящий от цен, убирается, и Excel пересчитывает книгу при открытии (fullCalcOnLoad — в любом случае): итоги листов, цены
+// «КП» (в шаблоне отдела — XLOOKUP по «МАТЕРИАЛАМ» и «РАБОТАМ») и «ИТОГО с НДС» встанут сами.
 //
 // Куда вписывается:
 //   • «Материалы» / «Работы» — колонка «Цена…» (не «Итого», не «Стоимость») строки позиции; «Примечание…» — примечание подрядчика;
@@ -22,7 +24,8 @@ import { findBidSheets, detectKpColumns, parseKpSheet } from './bidVor.js'
 import { detectMaterialsColumns, parseMaterialsSheet } from './vorMaterialsSheet.js'
 import { bidKey } from './bidPrice.js'
 import { parseVatAnswer, VAT_FIELD_CODE } from './bidForm.js'
-import { sheetPaths, patchSheetXml, setFullCalcOnLoad, dataValidationRanges, stripFormulaValues } from './xlsxXml.js'
+import { sheetPaths, patchSheetXml, setFullCalcOnLoad, dataValidationRanges, setFormulaValues, hiddenRowNumbers } from './xlsxXml.js'
+import { workbookEvaluator, isXlError } from './xlsxFormula.js'
 
 const XLSX = XLSXNs.read ? XLSXNs : XLSXNs.default
 const PizZip = typeof PizZipNs === 'function' ? PizZipNs : PizZipNs.default
@@ -225,6 +228,33 @@ function formLabelEdits(ws, fields, answers, fromRow, toRow, usedFields) {
   return edits
 }
 
+// ── Результаты формул ────────────────────────────────────────────────────────────────────────────────
+// Вычислитель книги с вписанными значениями: edits — Map(лист → Map(строка с 1 → Map(колонка с 1 → значение))). → (лист, «L18») →
+// число | null (не посчитано наверняка или ошибка Excel — тогда решает прежнее правило).
+function formulaResults(wb, edits, zip, paths) {
+  const overrides = new Map()
+  for (const [sheet, rows] of edits) {
+    const m = new Map()
+    for (const [r, cols] of rows) for (const [c, v] of cols) m.set(`${r - 1},${c - 1}`, v)
+    overrides.set(sheet, m)
+  }
+  const hiddenRows = new Map()
+  for (const name of Object.keys(wb.Sheets)) {
+    const path = paths.get(name)
+    const file = path && zip.file(path)
+    if (file) hiddenRows.set(name, hiddenRowNumbers(file.asText()))
+  }
+  const ev = workbookEvaluator(XLSX, wb, { overrides, hiddenRows })
+  return (sheet, ref) => {
+    let at
+    try { at = XLSX.utils.decode_cell(ref) } catch { return null }
+    const res = ev.value(sheet, at.r, at.c)
+    if (!res.ok || isXlError(res.value)) return null
+    const v = res.value == null ? 0 : res.value
+    return typeof v === 'number' && Number.isFinite(v) ? v : null
+  }
+}
+
 // ── Книга ────────────────────────────────────────────────────────────────────────────────────────────
 // bytes — файл ВОР отдела; rates — Map(ключ позиции → { price, note }) (как в кабинете); fields / answers — анкета (поля и ответы
 // по id поля). → { bytes, stats: { prices, notes, answers, skipped } } | { error: ключ FILL_ERROR_TEXT, message? }.
@@ -256,7 +286,8 @@ export function fillBidVorBytes(input, { rates = new Map(), fields = [], answers
     if (!rows.has(r + 1)) rows.set(r + 1, new Map())
     rows.get(r + 1).set(c + 1, value)
   }
-  const stats = { prices: 0, notes: 0, answers: 0, skipped: 0, fields: [] }
+  // computed — формул с записанным результатом, uncomputed — с убранным (их считает программа при открытии).
+  const stats = { prices: 0, notes: 0, answers: 0, skipped: 0, fields: [], computed: 0, uncomputed: 0 }
   const rateOf = (kind, name, unit) => {
     const r = rates.get(bidKey(kind, clean(name), clean(unit)))
     const price = r?.price == null ? null : Number(r.price)
@@ -356,19 +387,27 @@ export function fillBidVorBytes(input, { rates = new Map(), fields = [], answers
       stats.skipped += res.skipped.length
       zip.file(path, res.xml)
     }
-    // Результаты формул, зависящих от цен (суммы, цены «КП», итоги, ссылки «Главного листа» на другие листы), убираются — их посчитает
-    // программа при открытии; объёмы, расход и наименования (SUMIFS по «КП» и т. п.) от цен не зависят — их результаты остаются, чтобы
-    // книга читалась и без пересчёта. Прочие листы книги не трогаются. Excel к тому же пересчитывает книгу целиком (fullCalcOnLoad).
+    // Результаты формул: посчитанные по вписанным ценам — записываются; что не посчитано наверняка — прежнее правило: результаты,
+    // зависящие от цен (суммы, цены «КП», итоги, ссылки «Главного листа» на другие листы), убираются — их посчитает программа при
+    // открытии; объёмы, расход и наименования (SUMIFS по «КП» и т. п.) от цен не зависят — их результаты остаются, чтобы книга читалась и
+    // без пересчёта. Прочие листы книги не трогаются. Excel к тому же пересчитывает книгу целиком (fullCalcOnLoad).
     if (edits.size) {
       const rules = new Map()
       for (const [sheet, keep] of keepCols) rules.set(sheet, ({ col }) => !keep.has(col))
       if (sheets.main && !rules.has(sheets.main)) rules.set(sheets.main, ({ formula }) => formula.includes('!'))
+      const result = formulaResults(wb, edits, zip, paths)
       for (const [sheet, shouldStrip] of rules) {
         const path = paths.get(sheet)
         const file = path && zip.file(path)
         if (!file) continue
-        const res = stripFormulaValues(file.asText(), shouldStrip)
-        if (res.cleared) zip.file(path, res.xml)
+        const res = setFormulaValues(file.asText(), ({ ref, col, formula }) => {
+          const value = result(sheet, ref)
+          if (value != null) return { value }
+          return shouldStrip({ col, formula }) ? { strip: true } : null
+        })
+        stats.computed += res.written
+        stats.uncomputed += res.cleared
+        if (res.written || res.cleared) zip.file(path, res.xml)
       }
       const wbXml = zip.file('xl/workbook.xml')
       if (wbXml) zip.file('xl/workbook.xml', setFullCalcOnLoad(wbXml.asText()))

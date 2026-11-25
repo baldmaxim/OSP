@@ -20,6 +20,7 @@ import BidStructureView from './BidStructureView'
 import BidFormPanel from './BidFormPanel'
 import BidVorSummary from './BidVorSummary'
 import BidSupplyBar from './BidSupplyBar'
+import BidImportLog from './BidImportLog'
 import './BidWorkspace.css'
 
 const BidImportDialog = lazy(() => import('./BidImportDialog'))
@@ -50,6 +51,11 @@ const BidSupplyDocViewer = lazy(() => import('./BidSupplyDocViewer'))
 // (BidSupplyDocViewer; просьба пользователя 25.11.2026 «не вижу столбец со счётом и возможностью его посмотреть»).
 //
 // canEdit — тендер открыт и у организации есть доступ (участник или заявка не отклонена): иначе только просмотр.
+//
+// Порядок страницы (вторая просьба пользователя 25.11.2026): сводка ВОР (итог по всем ВОР столбиком со ставкой НДС, «КП нужно
+// зафиксировать письмом», плитки ведомостей), затем блок расценки — «Загрузить файл с ценами», «Мои прошлые цены», цены снабжения
+// («взять цены» — у таблицы, к которой они относятся), что сделала загрузка цен из файла (BidImportLog: вернуть прежние / заменить),
+// вкладки и таблица позиций.
 
 const SAVE_DELAY_MS = 600
 
@@ -137,6 +143,19 @@ async function saveIsolating(tenderId, rows, stale) {
   }
 }
 
+// Что сделала загрузка «Цен из файла» — в браузере (в базе истории цен нет), по тендеру и организации.
+const IMPORT_LOG_PREFIX = 'osp.bidImportLog:'
+const SOURCES_FROM_PAGE = new Set(['manual', 'import', 'history'])
+function readImportLog(key) {
+  if (!key) return null
+  try {
+    const v = JSON.parse(window.localStorage.getItem(key) || 'null')
+    return v && Array.isArray(v.items) ? v : null
+  } catch {
+    return null
+  }
+}
+
 const rateEntry = (r) => ({
   price: r.price == null ? null : Number(r.price), note: r.note || '', source: r.source, updated_at: r.updated_at,
   kind: r.kind, item_key: r.item_key, unit_key: r.unit_key || '', name: r.name, unit: r.unit, volume: r.volume == null ? null : Number(r.volume),
@@ -160,6 +179,10 @@ export default function BidWorkspace({
   const [tab, setTab] = useState('material')
   const [vorId, setVorId] = useState('')
   const [importOpen, setImportOpen] = useState(false)
+  // Загрузка цен из файла: { at, files, items: [{ key, name, unit, old: { price, source } | null, file }] } — для «вернуть прежние».
+  // В просмотре от имени подрядчика (и без известной организации — чтобы на общем компьютере не смешать чужие) — только на странице.
+  const importLogKey = preview || !ownCp ? null : `${IMPORT_LOG_PREFIX}${tenderId}:${ownCp}`
+  const [importLog, setImportLog] = useState(() => readImportLog(importLogKey))
   const [viewDoc, setViewDoc] = useState(null) // счёт снабжения в окне просмотра: { doc, view, load, download }
   const closeViewDoc = useCallback(() => setViewDoc(null), [])
   const [save, setSave] = useState({ busy: false, failed: 0, error: '', stale: false, savedAt: null })
@@ -325,6 +348,25 @@ export default function BidWorkspace({
     }
   }, [tenderId, previewCounterpartyId])
   useEffect(() => { loadRates() }, [loadRates])
+
+  // Другой тендер — свой список загрузки цен из файла.
+  const logLoadedFor = useRef(`${tenderId}|${importLogKey}`)
+  useEffect(() => {
+    const id = `${tenderId}|${importLogKey}`
+    if (logLoadedFor.current === id) return
+    logLoadedFor.current = id
+    setImportLog(readImportLog(importLogKey))
+  }, [importLogKey, tenderId])
+  const saveImportLog = useCallback((log) => {
+    setImportLog(log)
+    if (!importLogKey) return
+    try {
+      if (log) window.localStorage.setItem(importLogKey, JSON.stringify(log))
+      else window.localStorage.removeItem(importLogKey)
+    } catch {
+      // Хранилище браузера переполнено или закрыто — список остаётся на открытой странице.
+    }
+  }, [importLogKey])
 
   // Перечитать цены после записи базой (цены снабжения): набранное и ещё не записанное не теряется.
   const refreshRates = useCallback(async () => {
@@ -560,6 +602,48 @@ export default function BidWorkspace({
     commitMany(historyHits.map((p) => ({ position: p, patch: { price: history.get(p.key).price, source: 'history' } })))
   }
 
+  // ── Цены из файла: поставить, запомнить прежние, вернуть ────────────────────────────────────────────
+  // apply — цены, которые ставим; kept — расхождения, где подрядчик оставил свою цену (её можно будет заменить потом). Повторная загрузка
+  // дополняет список: у позиции остаётся самая первая прежняя цена.
+  const applyImport = ({ apply, kept, files: names }) => {
+    const items = new Map((importLog?.items || []).map((x) => [x.key, x]))
+    const remember = (position, price) => {
+      const cur = rates.get(position.key)
+      const was = items.get(position.key)
+      const old = was ? was.old : cur?.price != null ? { price: cur.price, source: cur.source || 'manual' } : null
+      if (!was && old && old.price === price) return
+      items.set(position.key, { key: position.key, name: position.name, unit: position.unit || '', old, file: price })
+    }
+    for (const { position, patch } of apply) remember(position, patch.price)
+    for (const { position, price } of kept) remember(position, price)
+    commitMany(apply)
+    if (items.size) {
+      saveImportLog({ at: new Date().toISOString(), files: [...new Set([...(importLog?.files || []), ...names])], items: [...items.values()] })
+    }
+    setImportOpen(false)
+  }
+  // to: 'old' — прежняя цена (её не было — цена убирается), 'file' — цена файла. Прежняя цена снабжения возвращается базой (bid_supply_take,
+  // как «взять»), если снабжение даёт ту же цену: записью страницы она стала бы своей ценой подрядчика и потеряла бы счёт.
+  const restoreImport = (entries, to) => {
+    if (!editable) return
+    const list = []
+    const viaSupply = []
+    const gone = []
+    for (const x of entries) {
+      const position = view.byKey.get(x.key)
+      if (!position) { gone.push(x.name); continue }
+      if (to === 'file') list.push({ position, patch: { price: x.file, source: 'import' } })
+      else if (!x.old) list.push({ position, patch: { price: null, source: 'manual' } })
+      else if (x.old.source === 'supply' && supplyMap.get(x.key) === x.old.price) viaSupply.push(position)
+      else list.push({ position, patch: { price: x.old.price, source: SOURCES_FROM_PAGE.has(x.old.source) ? x.old.source : 'manual' } })
+    }
+    commitMany(list)
+    if (viaSupply.length) takeSupply(viaSupply, true)
+    if (gone.length) {
+      setVorError(`Не изменено ${gone.length} поз. (${gone.slice(0, 3).map((n) => `«${n}»`).join(', ')}${gone.length > 3 ? ' …' : ''}): их больше нет в актуальных ВОР.`)
+    }
+  }
+
   // Ключ файла есть только у подрядчика от администратора; учётке с регистрации файл отдаёт сервер по id.
   const downloadVor = async (f) => {
     setVorError('')
@@ -647,7 +731,7 @@ export default function BidWorkspace({
       if (await vorListChanged()) { setVorError(LIST_CHANGED); return }
       const [archive, bytes] = await Promise.all([import('../../utils/bidVorArchive'), vorBytes(f)])
       const res = archive.pricedVor(f, bytes, fillOptions(), counterpartyName)
-      if (res.error) { setVorError(`В «${fileTitle(f.file_name)}» цены не вписались: ${res.text}. Скачайте файл отдела значком «ВОР».`); return }
+      if (res.error) { setVorError(`В «${fileTitle(f.file_name)}» цены не вписались: ${res.text}. Скачайте файл отдела кнопкой «Исходный ВОР».`); return }
       saveAs(new Blob([res.bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), res.name)
     } catch (e) {
       setVorError(`«${fileTitle(f.file_name)}» не скачался: ${e.message || e}`)
@@ -672,59 +756,24 @@ export default function BidWorkspace({
   ]
   const shownVors = view.vors.filter((v) => !v.held)
   const allTotal = totals.total.total
+  // Ставка НДС — в итоге по всем ВОР (сводка); не указана — кнопка ведёт в анкету.
+  let vatSlot = null
+  if (formFields && vatField(formFields)) {
+    vatSlot = needVat ? (
+      <button type="button" className="bid-sum-cell bid-sum-warn bid-vs-vat" onClick={() => setTab('form')}>
+        <span className="bid-sum-label">Ставка НДС</span>
+        <span className="bid-sum-value">не указана — выбрать</span>
+      </button>
+    ) : (
+      <div className="bid-sum-cell bid-vs-vat">
+        <span className="bid-sum-label">НДС: {vatLabel(vat)}</span>
+        <span className="bid-sum-value">{vat.exempt ? '—' : `в т. ч. ${formatAmount(vatIncluded(allTotal, vat))} ₽`}</span>
+      </div>
+    )
+  }
 
   return (
     <div className="bid-ws">
-      <div className="bid-summary">
-        {/* Суммы — один раз: строка «ИТОГО по всем ВОР» сводки ниже (правило пользователя: одно и то же — один раз). Здесь — ставка НДС. */}
-        <div className="bid-summary-cells">
-          {formFields && vatField(formFields) && (
-            needVat ? (
-              <button type="button" className="bid-sum-cell bid-sum-warn" onClick={() => setTab('form')}>
-                <span className="bid-sum-label">Ставка НДС</span>
-                <span className="bid-sum-value">не указана — выбрать</span>
-              </button>
-            ) : (
-              <div className="bid-sum-cell">
-                <span className="bid-sum-label">НДС: {vatLabel(vat)}</span>
-                <span className="bid-sum-value">{vat.exempt ? '—' : `в т. ч. ${formatAmount(vatIncluded(allTotal, vat))} ₽`}</span>
-              </div>
-            )
-          )}
-        </div>
-        <div className="bid-summary-actions">
-          {editable && (
-            <button type="button" className="cab-btn" onClick={() => setImportOpen(true)} disabled={!view.positions.length}
-              title="Свой прайс, КП, счёт или заполненный ВОР — цены встанут к похожим позициям, проверите перед записью">
-              Загрузить файл с ценами
-            </button>
-          )}
-          {editable && historyHits.length > 0 && (
-            <button type="button" className="cab-btn" onClick={applyHistory} title="Те же позиции, что вы уже расценивали в других тендерах">
-              Мои прошлые цены ({historyHits.length})
-            </button>
-          )}
-        </div>
-      </div>
-
-      <SaveLine save={save} canEdit={canEdit} preview={preview} ratesState={ratesState} onRetry={() => flushRef.current()} onReload={loadRates} />
-
-      <BidSupplyBar
-        access={supply.access}
-        canEdit={editable}
-        withPrice={supplyStats.withPrice}
-        missing={supplyStats.missing}
-        differ={supplyStats.differ}
-        withDocs={supplyStats.docs}
-        busy={supply.busy}
-        message={supply.message}
-        error={supply.error}
-        onRequest={askSupply}
-        onRefresh={loadSupply}
-        onTakeMissing={takeMissing}
-        onTakeAll={takeAll}
-      />
-
       {vor.error && <div className="bid-note is-warn">{serverOnly ? 'Позиции ВОР не загрузились' : 'Ведомости ВОР не загрузились'}: {vor.error}</div>}
       {vorError && <div className="bid-note is-warn" role="alert">{vorError}</div>}
       {files.length === 0 && !vor.error && (
@@ -744,6 +793,7 @@ export default function BidWorkspace({
 
       {view.vors.length > 0 && (
         <BidVorSummary
+          vatSlot={vatSlot}
           rows={totals.rows}
           total={totals.total}
           selected={vorId}
@@ -770,57 +820,98 @@ export default function BidWorkspace({
         </div>
       )}
 
-      <nav className="bid-tabs" role="tablist">
-        {tabs.map((t) => (
-          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key}
-            className={`bid-tab${tab === t.key ? ' is-active' : ''}`} onClick={() => setTab(t.key)}>
-            {t.label}
-            {t.count != null && <span className="bid-tab-count">{t.count}</span>}
-            {t.missing > 0 && <span className="bid-tab-missing" title={`Без цены: ${t.missing}`}>без цены {t.missing}</span>}
-            {t.warn && <span className="bid-tab-warn" title="Не указана ставка НДС">!</span>}
-          </button>
-        ))}
-      </nav>
+      <section className="bid-pricing" aria-label="Расценка позиций">
+        <div className="bid-summary">
+          <h4 className="bid-vs-title">Расценка позиций</h4>
+          <div className="bid-summary-actions">
+            {editable && (
+              <button type="button" className="cab-btn" onClick={() => setImportOpen(true)} disabled={!view.positions.length}
+                title="Свои ВОР с ценами, прайс, КП или счёт — можно несколько файлов сразу; цены встанут к похожим позициям, ваши цены без вашего выбора не заменятся">
+                Загрузить файл с ценами
+              </button>
+            )}
+            {editable && historyHits.length > 0 && (
+              <button type="button" className="cab-btn" onClick={applyHistory} title="Те же позиции, что вы уже расценивали в других тендерах">
+                Мои прошлые цены ({historyHits.length})
+              </button>
+            )}
+          </div>
+        </div>
 
-      {tab === 'form' && (
-        <BidFormPanel
-          tenderId={tenderId}
-          canEdit={canEdit}
-          fields={formFields}
-          answers={shownAnswers}
-          card={companyReady ? companyCard : null}
-          companyAnswers={companyReady ? companyAnswers : null}
-          onCompanyAnswers={onCompanyAnswers}
-          previous={previousForm}
-          error={formError}
-          onAnswers={setAnswers}
-          onPreviousUsed={() => setPreviousForm(null)}
-        />
-      )}
-      {(tab === 'material' || tab === 'work') && (
-        <BidPositionsTable
-          key={tab}
-          kind={tab}
-          positions={tab === 'material' ? view.materials : view.works}
-          rates={rates}
-          history={history}
-          tenderNumbers={tenderNumbers}
+        <SaveLine save={save} canEdit={canEdit} preview={preview} ratesState={ratesState} onRetry={() => flushRef.current()} onReload={loadRates} />
+
+        <BidSupplyBar
+          access={supply.access}
           canEdit={editable}
-          vors={shownVors}
-          vorId={vorId}
-          onVorChange={setVorId}
-          titleOf={titleOf}
-          changes={changes}
-          supply={supply.access?.status === 'granted' && supplyMap.size ? supplyMap : null}
-          supplyDocs={supply.access?.status === 'granted' ? supply.docs : null}
-          onSupplyDoc={openSupplyDoc}
-          supplyBusy={supply.busy}
-          onTakeSupply={(p) => takeSupply([p], true)}
-          vatExempt={!!vat?.exempt}
-          onCommit={commit}
+          withPrice={supplyStats.withPrice}
+          missing={supplyStats.missing}
+          differ={supplyStats.differ}
+          withDocs={supplyStats.docs}
+          busy={supply.busy}
+          message={supply.message}
+          error={supply.error}
+          onRequest={askSupply}
+          onRefresh={loadSupply}
+          onTakeMissing={takeMissing}
+          onTakeAll={takeAll}
         />
-      )}
-      {tab === 'kp' && <BidStructureView files={okFiles.filter((f) => !held.has(f.id))} rates={rates} />}
+
+        {importLog && (
+          <BidImportLog log={importLog} rates={rates} canEdit={editable} busy={supply.busy} onRestore={restoreImport} onHide={() => saveImportLog(null)} />
+        )}
+
+        <nav className="bid-tabs" role="tablist">
+          {tabs.map((t) => (
+            <button key={t.key} type="button" role="tab" aria-selected={tab === t.key}
+              className={`bid-tab${tab === t.key ? ' is-active' : ''}`} onClick={() => setTab(t.key)}>
+              {t.label}
+              {t.count != null && <span className="bid-tab-count">{t.count}</span>}
+              {t.missing > 0 && <span className="bid-tab-missing" title={`Без цены: ${t.missing}`}>без цены {t.missing}</span>}
+              {t.warn && <span className="bid-tab-warn" title="Не указана ставка НДС">!</span>}
+            </button>
+          ))}
+        </nav>
+
+        {tab === 'form' && (
+          <BidFormPanel
+            tenderId={tenderId}
+            canEdit={canEdit}
+            fields={formFields}
+            answers={shownAnswers}
+            card={companyReady ? companyCard : null}
+            companyAnswers={companyReady ? companyAnswers : null}
+            onCompanyAnswers={onCompanyAnswers}
+            previous={previousForm}
+            error={formError}
+            onAnswers={setAnswers}
+            onPreviousUsed={() => setPreviousForm(null)}
+          />
+        )}
+        {(tab === 'material' || tab === 'work') && (
+          <BidPositionsTable
+            key={tab}
+            kind={tab}
+            positions={tab === 'material' ? view.materials : view.works}
+            rates={rates}
+            history={history}
+            tenderNumbers={tenderNumbers}
+            canEdit={editable}
+            vors={shownVors}
+            vorId={vorId}
+            onVorChange={setVorId}
+            titleOf={titleOf}
+            changes={changes}
+            supply={supply.access?.status === 'granted' && supplyMap.size ? supplyMap : null}
+            supplyDocs={supply.access?.status === 'granted' ? supply.docs : null}
+            onSupplyDoc={openSupplyDoc}
+            supplyBusy={supply.busy}
+            onTakeSupply={(p) => takeSupply([p], true)}
+            vatExempt={!!vat?.exempt}
+            onCommit={commit}
+          />
+        )}
+        {tab === 'kp' && <BidStructureView files={okFiles.filter((f) => !held.has(f.id))} rates={rates} />}
+      </section>
 
       {(orphans.length > 0 || removedByVor.length > 0) && (
         <details className="bid-removed" open={orphans.length > 0}>
@@ -873,7 +964,7 @@ export default function BidWorkspace({
             positions={view.positions}
             rates={rates}
             vat={vat}
-            onApply={(list) => { commitMany(list); setImportOpen(false) }}
+            onApply={applyImport}
             onClose={() => setImportOpen(false)}
           />
         </Suspense>

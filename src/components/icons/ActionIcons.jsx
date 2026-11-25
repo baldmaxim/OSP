@@ -117,3 +117,17 @@ export const IconEyeOff = ({ size }) => (
 export const IconImage = ({ size }) => (
   <AiSvg size={size}><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8.5" cy="9.5" r="1.5" /><path d="m21 16-5-5-9 9" /></AiSvg>
 )
+// Скачать файл ВОР отдела как есть («Исходный ВОР») и с вписанными ценами подрядчика («Расценённый ВОР», кабинет подрядчика, 25.11.2026):
+// значки разные, чтобы кнопки не путались и без подписи.
+export const IconFileDown = ({ size }) => (
+  <AiSvg size={size}>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" />
+    <path d="M12 11v6" /><path d="m9.5 14.5 2.5 2.5 2.5-2.5" />
+  </AiSvg>
+)
+export const IconFileCheck = ({ size }) => (
+  <AiSvg size={size}>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" />
+    <path d="m9 14.5 2 2 4-4" />
+  </AiSvg>
+)

@@ -108,6 +108,46 @@ export function stripFormulaValues(xml, shouldStrip = () => true) {
   return { xml: out, cleared }
 }
 
+// Результаты формул листа (ВОР с ценами, 25.11.2026): decide({ ref, col, formula }) → { value: число } — записать посчитанный результат
+// (сама формула остаётся; защищённый просмотр Excel, почта и разборщики видят верные итоги без пересчёта), { strip: true } — убрать
+// сохранённый результат (книгу посчитает программа при открытии), null — оставить как есть. → { xml, written, cleared }.
+export function setFormulaValues(xml, decide) {
+  let written = 0
+  let cleared = 0
+  const out = String(xml).replace(/<((?:\w+:)?)c\b([^>]*?)(?<!\/)>((?:(?!<\/\1c>)[\s\S])*?<\1f\b[\s\S]*?)<\/\1c>/g, (whole, p, attrs, body) => {
+    const ref = attr(`<c${attrs}>`, 'r') || ''
+    const letters = (/^([A-Z]+)/i.exec(ref) || [])[1]
+    const formula = xmlDecode((new RegExp(`<${p}f\\b[^>]*>([\\s\\S]*?)</${p}f>`).exec(body) || [])[1] || '')
+    const d = decide({ ref, col: letters ? colIndex(letters) : null, formula })
+    if (!d) return whole
+    const v = new RegExp(`<${p}v>[\\s\\S]*?</${p}v>|<${p}v/>`)
+    // Тип прежнего результата (t="str" / "b" / "e") новому числу (и пустоте) не подходит.
+    const cAttrs = attrs.replace(/\st=(?:"[^"]*"|'[^']*')/, '')
+    if (d.strip) {
+      if (!v.test(body)) return whole
+      cleared += 1
+      return `<${p}c${cAttrs}>${body.replace(v, '')}</${p}c>`
+    }
+    if (typeof d.value !== 'number' || !Number.isFinite(d.value)) return whole
+    written += 1
+    const value = `<${p}v>${String(d.value)}</${p}v>`
+    if (v.test(body)) return `<${p}c${cAttrs}>${body.replace(v, value)}</${p}c>`
+    // Результата не было — сразу после формулы (порядок по схеме: f, v, is).
+    return `<${p}c${cAttrs}>${body.replace(new RegExp(`<${p}f\\b[^>]*/>|<${p}f\\b[^>]*>[\\s\\S]*?</${p}f>`), (f) => f + value)}</${p}c>`
+  })
+  return { xml: out, written, cleared }
+}
+
+// Скрытые строки листа (номера с нуля) — SUBTOTAL по ним считает программа, не мы.
+export function hiddenRowNumbers(xml) {
+  const out = new Set()
+  for (const m of String(xml).matchAll(/<(?:\w+:)?row\b[^>]*>/g)) {
+    const h = attr(m[0], 'hidden')
+    if (h === '1' || h === 'true') out.add(Number(attr(m[0], 'r')) - 1)
+  }
+  return out
+}
+
 // Проверки данных листа (выпадающие списки) → [{ s: { r, c }, e: { r, c } }] (с нуля, как у SheetJS).
 export function dataValidationRanges(xml) {
   const out = []
