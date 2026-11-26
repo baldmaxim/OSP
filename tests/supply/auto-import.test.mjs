@@ -4,7 +4,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  targetNameForFile, planFileImports, planTabImports, planCleanup, unitSignature, fileVersion, estimateVersion,
+  targetNameForFile, planFileImports, planTabImports, planCleanup, unitSignature, fileVersion, estimateVersion, vorFilesForImport,
 } from '../../src/utils/supplyAutoImport.js'
 import { normName } from '../../src/utils/supplyRateHelpers.js'
 
@@ -107,5 +107,53 @@ describe('Одинаковые позиции', () => {
     assert.equal(unitSignature({ unit: ' М ' }), unitSignature({ unit: 'м' }))
     assert.notEqual(unitSignature({ unit: 'шт' }), unitSignature({ units: [{ unit: 'шт' }, { unit: 'компл' }] }))
     assert.equal(unitSignature({ units: [{ unit: 'компл' }, { unit: 'шт' }] }), unitSignature({ units: [{ unit: 'ШТ' }, { unit: 'компл' }] }))
+  })
+})
+
+// Версии файлов в «ВОРах и РД» (s3_documents.version_group_id, миграция 20270307): новая версия ведомости встаёт на место
+// прежней в том же ВОР снабжения — без вопроса «новая версия?», цены переходят по наименованию; файл, который сделали
+// самостоятельным, отметкой снабжения prior_document_ids больше не привязан к чужому ВОР.
+describe('Автозагрузка: версии файлов ВОР', () => {
+  const vfile = (id, name, at, group) => ({ ...file(id, name, at), version_group_id: group })
+
+  it('в план идут только текущие версии, у каждой — id всех версий; файлы без версий — как прежде', () => {
+    const v1 = vfile('v1', 'ВОР 2026-10-09.xlsx', '2026-10-09T10:00:00Z', 'G')
+    const v2 = vfile('v2', 'ВОР 2026-11-20.xlsx', '2026-11-20T10:00:00Z', 'G')
+    const k2 = vfile('k2', 'ВОР корпус 2.xlsx', '2026-10-15T10:00:00Z', null)
+    const list = vorFilesForImport([v1, k2, v2])
+    assert.deepEqual(list.map((f) => [f.id, f.version_ids]), [['v2', ['v1', 'v2']], ['k2', ['k2']]])
+    // База без колонки версий: все файлы, каждый сам по себе.
+    assert.deepEqual(vorFilesForImport([file('a', 'A.xlsx'), file('b', 'B.xlsx', '2026-10-11T00:00:00Z')]).map((f) => f.id), ['b', 'a'])
+  })
+
+  it('новая версия — в ВОР прежней: обновляет её список, прежняя не заводит отдельный ВОР и не «устаревший файл»', () => {
+    const v1 = vfile('v1', 'ВОР 2026-10-09.xlsx', '2026-10-09T10:00:00Z', 'G')
+    const v2 = vfile('v2', 'ВОР 2026-11-20.xlsx', '2026-11-20T10:00:00Z', 'G')
+    const sources = [src({ estimate_name: 'ВОР 2026-10-09', s3_document_id: 'v1', source_version: fileVersion(v1) })]
+    const { jobs, skipped } = planFileImports(vorFilesForImport([v1, v2]), sources, [])
+    assert.deepEqual(jobs.map((j) => [j.doc.id, j.name, j.existing?.estimate_name]), [['v2', 'ВОР 2026-10-09', 'ВОР 2026-10-09']])
+    assert.deepEqual(skipped, [])
+    // Без версий новый файл с другим именем завёл бы отдельный ВОР (и снабжение спрашивало бы «новая версия?»).
+    assert.deepEqual(planFileImports([v1, v2].map((f) => ({ ...f, version_group_id: null })), sources, []).jobs.map((j) => j.name), ['ВОР 2026-11-20'])
+  })
+
+  it('удалили текущую версию — ВОР возвращается к предыдущей (через отметку prior_document_ids той же группы)', () => {
+    const v1 = vfile('v1', 'ВОР ОВ.xlsx', '2026-10-01T00:00:00Z', 'G')
+    // Список был переведён на v2 (её удалили — ссылка на файл обнулилась), v1 — в отметке прежних.
+    const sources = [src({ estimate_name: 'Отопление', s3_document_id: null, prior_document_ids: ['v1'] })]
+    assert.equal(targetNameForFile(vorFilesForImport([v1])[0], sources, []), 'Отопление')
+  })
+
+  it('файл сделали самостоятельным — отметка снабжения его больше не держит; файл без группы — держит, как прежде', () => {
+    const n = vfile('n', 'ВОР ОВ.xlsx', '2026-10-01T00:00:00Z', 'G')
+    const d = vfile('d', 'ВОР ОВ изм.1.xlsx', '2026-10-20T00:00:00Z', 'G2') // своя группа из одного файла — связь снята
+    const sources = [src({ estimate_name: 'Отопление', s3_document_id: 'd', source_version: fileVersion(d), prior_document_ids: ['n'] })]
+    const files = vorFilesForImport([n, d])
+    const plan = planFileImports(files, sources, [])
+    assert.deepEqual(plan.jobs.map((j) => [j.doc.id, j.name]), [['n', 'ВОР ОВ']])
+    assert.deepEqual(plan.skipped, [])
+    // Файлы без групп (отметка «да, новая версия» у снабжения, 20261029) — прежний остаётся прежней версией.
+    const plain = vorFilesForImport([n, d].map((f) => ({ ...f, version_group_id: null })))
+    assert.deepEqual(planFileImports(plain, sources, []).skipped.map((x) => [x.doc.id, x.name]), [['n', 'Отопление']])
   })
 })

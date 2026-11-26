@@ -109,7 +109,7 @@ export default function VorRequestModal({
 
   return (
     <div className="s3-doc-modal-overlay">
-      <div className="s3-doc-modal vrq-modal" role="dialog" aria-modal="true" style={{ height: 'auto', maxHeight: '92vh' }}>
+      <div className={`s3-doc-modal vrq-modal${isCreate ? '' : ' is-wide'}`} role="dialog" aria-modal="true" style={{ height: 'auto', maxHeight: '92vh' }}>
         <div className="s3-doc-modal-header">
           <span className="s3-doc-modal-title">
             {isCreate
@@ -234,12 +234,14 @@ export default function VorRequestModal({
               </section>
               <section className="vrq-docs">
                 <h3 className="vrq-docs-title">Ведомость объёмов работ</h3>
+                {/* Новая версия ВОР — к прежнему файлу, а не отдельным документом (версии, миграция 20270307). */}
                 <S3DocumentList
                   ownerType={REQUEST_OWNER_TYPE}
                   ownerId={request.id}
                   category={REQUEST_VOR_CATEGORY}
                   title="Файлы ВОР"
                   canEdit={canEdit}
+                  versions
                   onChange={onDocsChanged}
                 />
               </section>

@@ -321,6 +321,19 @@
 .kpr-analog.is-off .kpr-analog-name, .kpr-analog.is-off .kpr-analog-price { color: var(--text-tertiary); }
 .kpr-analog.is-off .kpr-analog-price { font-weight: 500; }
 .kpr-analog.is-removed .kpr-analog-price { text-decoration: line-through; }
+/* Ступень похожести позиции реестра (utils/supplyDocMatch.gradeNames) — полоса слева; возможные — под заголовком ступени. */
+.kpr-analog[class*='is-grade-'] { padding-left: 0.5rem; border-left: 3px solid var(--border-color-dark); }
+.kpr-analog.is-grade-same { border-left-color: var(--success-color); }
+.kpr-analog.is-grade-close { border-left-color: var(--primary-color); }
+.kpr-analog.is-grade-refine { border-left-color: var(--info-color); }
+.kpr-analog.is-grade-near { border-left-color: var(--warning-color); }
+.kpr-analog.is-grade-manual { border-left-color: var(--text-primary); }
+.kpr-grade-head { margin-top: 0.25rem; color: var(--text-secondary); font-size: 0.75rem; font-weight: 600; }
+.kpr-grade-head.is-same { color: var(--success-color); }
+.kpr-grade-head.is-close { color: var(--primary-color); }
+.kpr-grade-head.is-refine { color: var(--info-color); }
+.kpr-grade-head.is-near { color: var(--warning-color); }
+.kpr-stale { color: var(--danger-color); font-weight: 600; }
 /* Реестр СУ-10: все цены позиции (раскрываются) и поиск позиции по реестру у строки проверки */
 .kpr-points {
   grid-column: 2 / -1;

@@ -186,6 +186,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
     delete state.noOspCan
     delete state.onInsert
     delete state.noFolderDateColumn
+    delete state.noVersionColumn
     await makeApp()
   })
 
@@ -732,6 +733,110 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.equal(res.statusCode, 503)
       assert.equal(res.json().code, 'OSP_RIGHTS_UNAVAILABLE')
       assert.equal(state.docs[KEY].row.file_name, before)
+    })
+  })
+
+  // Версии файлов (20270307, решение пользователя 26.11.2026): новая версия ВОР — к прежнему файлу; файл — версия другого файла того
+  // же списка или самостоятельный. Право — как у удаления; версии — только у ВОР тендера и заявки на ВОР; база без колонки — 409.
+  describe('версии файлов: новая версия при загрузке, связь и отделение', () => {
+    const VKEY = (n) => `tenders/${TENDER_1}/vor-${n}.xlsx`
+    const VID = (n) => `0190b000-0000-4000-8000-0000000000${String(n).padStart(2, '0')}`
+    const vorDoc = (n, over = {}) => ({ row: { id: VID(n), owner_type: 'tender', owner_id: TENDER_1, doc_category: 'vor_statement', file_name: `ВОР ${n}.xlsx`, ...over }, visibleTo: 'all' })
+    const xlsx = (over) => fileBody({ file_name: 'ВОР изм.1.xlsx', mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', category: 'vor_statement', ...over })
+    const upload = async (who, over) => {
+      const up = (await fn('s3-presign', who, { action: 'upload', ...xlsx(over) })).json()
+      await fetch(up.presigned_url, { method: 'PUT', headers: { 'Content-Type': xlsx().mime_type }, body: 'hello' })
+      return fn('s3-presign', who, { action: 'confirm', ...xlsx(over) })
+    }
+    const version = (who, id, of) => fn('s3-presign', who, { action: 'version', document_id: id, version_of: of })
+    const groupOf = (n) => state.docs[VKEY(n)].row.version_group_id ?? null
+
+    beforeEach(() => {
+      state.docs[VKEY(1)] = vorDoc(1)
+      state.docs[VKEY(2)] = vorDoc(2)
+    })
+
+    it('confirm с version_of: у прежнего файла заводится группа, новый — в ней; к той же группе — следующая версия', async () => {
+      const res = await upload(U.emp, { version_of: VID(1) })
+      assert.equal(res.statusCode, 200, res.body)
+      const group = groupOf(1)
+      assert.match(group, /^[0-9a-f-]{36}$/)
+      assert.equal(res.json().document.version_group_id, group)
+      const next = await upload(U.emp, { operation_id: OP(2), version_of: OP(1) })
+      assert.equal(next.statusCode, 200, next.body)
+      assert.equal(next.json().document.version_group_id, group, 'версия версии — та же группа')
+      // Повтор подтверждения — тот же документ, вторая строка не появляется.
+      const again = await fn('s3-presign', U.emp, { action: 'confirm', ...xlsx({ version_of: VID(1) }) })
+      assert.equal(again.json().already, true)
+    })
+
+    it('version_of: чужой список, другой раздел, невидимый файл, не-uuid — 400; категория без версий — 400; база без колонки — 409, строки нет', async () => {
+      state.docs[`tenders/${TENDER_1}/rd.pdf`] = { row: { id: VID(9), owner_type: 'tender', owner_id: TENDER_1, doc_category: 'rd' }, visibleTo: 'all' }
+      state.docs[`tenders/${TENDER_HIDDEN}/v.xlsx`] = { row: { id: VID(8), owner_type: 'tender', owner_id: TENDER_HIDDEN, doc_category: 'vor_statement' }, visibleTo: [U.admin.id] }
+      for (const [over, code, text] of [
+        [{ version_of: VID(9) }, 400, /не найден в этом списке/],
+        [{ version_of: VID(8) }, 400, /не найден в этом списке/],
+        [{ version_of: 'abc' }, 400, /Invalid version_of/],
+        [{ version_of: VID(1), category: 'tender_package' }, 400, /нет версий/],
+      ]) {
+        const res = await fn('s3-presign', U.emp, { action: 'confirm', ...xlsx(over) })
+        assert.equal(res.statusCode, code, `${JSON.stringify(over)}: ${res.body}`)
+        assert.match(res.json().error, text)
+      }
+      state.noVersionColumn = true
+      const refused = await upload(U.emp, { version_of: VID(1) })
+      assert.equal(refused.statusCode, 409, refused.body)
+      assert.equal(refused.json().code, 'OSP_NO_VERSIONS')
+      assert.equal(Object.values(state.docs).filter((d) => d.row.id === OP(1)).length, 0, 'отдельным файлом молча не лёг')
+      // Без version_of — как прежде, и в базе без колонки.
+      assert.equal((await upload(U.emp, {})).statusCode, 200)
+    })
+
+    it('version: файл — версия другого; затем самостоятельный (своя новая группа), остальные версии — вместе', async () => {
+      state.docs[VKEY(3)] = vorDoc(3)
+      const linked = await version(U.emp, VID(2), VID(1))
+      assert.equal(linked.statusCode, 200, linked.body)
+      const group = groupOf(1)
+      assert.ok(group)
+      assert.equal(groupOf(2), group)
+      assert.equal((await version(U.emp, VID(3), VID(2))).statusCode, 200)
+      assert.equal(groupOf(3), group, 'к версии группы — в ту же группу')
+      assert.equal((await version(U.emp, VID(3), VID(1))).statusCode, 200, 'уже в группе — ничего не меняется')
+      const own = await version(U.emp, VID(2), null)
+      assert.equal(own.statusCode, 200, own.body)
+      assert.ok(groupOf(2) && groupOf(2) !== group, 'самостоятельный — своя группа, связь снята явно')
+      assert.equal(groupOf(1), group)
+      assert.equal(groupOf(3), group)
+      // Файл без группы самостоятельным делать нечего; один в своей группе — тоже.
+      const before = groupOf(2)
+      assert.equal((await version(U.emp, VID(2), null)).statusCode, 200)
+      assert.equal(groupOf(2), before)
+    })
+
+    it('version: без права правки — 403, подрядчику — 403; сам себе, чужой список, без версий — 400; база без колонки — 409', async () => {
+      assert.equal((await version(U.viewer, VID(2), VID(1))).statusCode, 403)
+      assert.equal((await version(U.contractor, VID(2), VID(1))).statusCode, 403)
+      assert.equal(groupOf(1), null)
+      assert.equal((await version(U.emp, VID(1), VID(1))).statusCode, 400)
+      state.docs[`general-documents/${GDOC_1}/v.xlsx`] = { row: { id: VID(7), owner_type: 'general_document', owner_id: GDOC_1, doc_category: 'vor_statement' }, visibleTo: 'all' }
+      assert.equal((await version(U.emp, VID(2), VID(7))).statusCode, 400, 'другой владелец')
+      assert.equal((await version(U.emp, VID(7), VID(2))).statusCode, 400, 'у его списка версий нет')
+      assert.equal((await version(U.emp, 'nope', VID(1))).statusCode, 400)
+      assert.equal((await version(U.emp, VID(5), VID(1))).statusCode, 404)
+      state.noVersionColumn = true
+      const refused = await version(U.emp, VID(2), VID(1))
+      assert.equal(refused.statusCode, 409)
+      assert.equal(refused.json().code, 'OSP_NO_VERSIONS')
+    })
+
+    it('заявка на ВОР без тендера: версии у её ВОР (vor_request_vor), у РД заявки — нет', async () => {
+      state.can[U.emp.id] = [...state.can[U.emp.id], 'vors:view', 'vors:edit']
+      state.docs[`general/${VOR_1}/a.xlsx`] = { row: { id: VID(11), owner_type: 'general', owner_id: VOR_1, doc_category: 'vor_request_vor' }, visibleTo: 'all' }
+      state.docs[`general/${VOR_1}/b.xlsx`] = { row: { id: VID(12), owner_type: 'general', owner_id: VOR_1, doc_category: 'vor_request_vor' }, visibleTo: 'all' }
+      state.docs[`general/${VOR_1}/rd.pdf`] = { row: { id: VID(13), owner_type: 'general', owner_id: VOR_1, doc_category: 'vor_request_rd' }, visibleTo: 'all' }
+      const ok = await version(U.emp, VID(12), VID(11))
+      assert.equal(ok.statusCode, 200, ok.body)
+      assert.equal((await version(U.emp, VID(13), VID(11))).statusCode, 400)
     })
   })
 

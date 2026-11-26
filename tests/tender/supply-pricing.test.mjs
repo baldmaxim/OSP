@@ -872,7 +872,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
   })
 
   // Цены из других тендеров (миграция 20261023; стенд — reuse=1, у тендера № 445 «ЖК Север» свежие цены).
-  it('цены из других тендеров: одинаковая позиция — сама, с пометкой и документом; похожие — меню от новых, «Взять» с отметкой и документом', async () => {
+  it('цены из других тендеров: одинаковая позиция — сама, с пометкой и документом; похожие — окно по ступеням, «Взять» с отметкой и документом', async () => {
     const { page, context, errors } = await openPage('&reuse=1')
     try {
       // Кран в ОВ — тот же, что у № 445 (шт): подставлен сам; в ВК у крана «компл» — нет.
@@ -888,26 +888,43 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.equal(kranRate.source_rate_id, 'o-kran')
       assert.equal(await rateOf(page, 'Кран шаровой Ду15', 'ВК'), null, 'другая ед. изм. — не подставляется')
       await page.getByText('Из других тендеров подставлено цен: 1', { exact: false }).waitFor()
-      // Хомут: та же позиция у № 445, но цене больше 3 месяцев — ни сама, ни в меню.
+      // Хомут: та же позиция у № 445, но цене больше 3 месяцев — сама не подставляется, а в окне цен есть — с красной пометкой
+      // (решение пользователя 26.11.2026).
       assert.equal(await rateOf(page, 'Хомут монтажный', 'ОВ'), null)
+      const homutBtn = rowOf(page, 'Хомут монтажный', 'ОВ').locator('.sp-similar-btn')
+      await homutBtn.waitFor()
+      await homutBtn.click()
+      const homutWin = page.getByRole('dialog', { name: 'Цены: Хомут монтажный' })
+      await homutWin.getByRole('region', { name: 'Та же позиция' }).locator('.sp-pw-stale', { hasText: 'старше 3 месяцев' }).waitFor()
+      // Взять её можно: копия с отметкой источника и днём исходной цены (не «молодеет»).
+      await homutWin.getByRole('button', { name: /^Взять цену 35,00 ₽: Хомут монтажный/ }).click()
+      await homutWin.waitFor({ state: 'detached' })
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Хомут монтажный' && r.tender_id === 'tender-p' && r.source_rate_id === 'o-homut'))
+      const homut = await rateOf(page, 'Хомут монтажный', 'ОВ')
+      assert.deepEqual([Number(homut.supply_price), homut.source_kind], [35, 'pick'])
 
-      // Труба медная Ø12,7 — две похожие; меню с клавиатуры: Enter, стрелка вниз, Enter — вторая (с документом).
+      // Труба медная Ø12,7: у № 445 — очень похожая (бухта) и другой диаметр (с документом). Разделы по ступеням, другой диаметр —
+      // «отдалённо похожие», свёрнуты и не в счёте строки.
       const truba = rowOf(page, TRUBA, TWO)
       const btn = truba.locator('.sp-similar-btn')
       await btn.waitFor()
-      assert.match(plain(await btn.innerText()), /похожиецены:2/)
-      assert.equal(await rowOf(page, 'Хомут монтажный', 'ОВ').locator('.sp-similar-btn').count(), 0)
+      assert.match(plain(await btn.innerText()), /похожиецены:1/)
       await btn.focus()
       await page.keyboard.press('Enter')
-      const menu = page.getByRole('dialog', { name: `Похожие цены: ${TRUBA}` })
-      await menu.locator('li').first().waitFor()
-      assert.deepEqual(await menu.locator('.sp-suggest-name').evaluateAll((els) => els.map((e) => e.firstChild.textContent)),
-        ['Труба медная Ø12,7 мм (бухта)', 'Труба медная Ø15,9'], 'от новых к старым')
-      assert.match(await menu.locator('li').nth(1).innerText(), /тендер № 445[\s\S]*ЖК Север[\s\S]*ВОР «ОВ-2»[\s\S]*документ: Открыть/)
-      await page.waitForFunction(() => document.activeElement?.matches('.sp-suggest li'))
+      const win = page.getByRole('dialog', { name: `Цены: ${TRUBA}` })
+      await win.getByRole('region', { name: 'Очень похожие' }).getByText('Труба медная Ø12,7 мм (бухта)').waitFor()
+      await win.getByRole('button', { name: /Отдалённо похожие: 1/ }).click()
+      const far = win.getByRole('region', { name: 'Отдалённо похожие' })
+      assert.match(await far.locator('[data-item]').first().innerText(), /Труба медная Ø15,9[\s\S]*тендер № 445[\s\S]*ЖК «Северный квартал»[\s\S]*ВОР «ОВ-2»[\s\S]*документ: Открыть/)
+      // Окно не закрывается от щелчка мимо и прокрутки (прежнее меню закрывалось).
+      await page.mouse.click(4, 4)
+      await page.mouse.wheel(0, 400)
+      assert.ok(await win.isVisible())
+      // С клавиатуры: первая цена, стрелка вниз — цена другого диаметра, Enter — взять.
+      await win.locator('[data-item]').first().focus()
       await page.keyboard.press('ArrowDown')
       await page.keyboard.press('Enter')
-      await menu.waitFor({ state: 'detached' })
+      await win.waitFor({ state: 'detached' })
       await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Труба медная Ø12,7' && r.source_kind === 'pick'))
       const r = await rateOf(page, 'Труба медная Ø12,7', 'ОВ')
       assert.equal(r.source_rate_id, 'o-truba-2')
@@ -918,10 +935,10 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.match((await trubaOrigin.innerText()).trim(), /^Похожая цена: Труба медная Ø15,9; №445; \d\d\.\d\d\.\d{4}; документ: Открыть\.$/)
       assert.match(await trubaOrigin.getAttribute('title'), /ЖК Север · ВОР «ОВ-2»/, 'объект и ВОР — в подсказке')
       // Документ исходной позиции — к позиции в обоих ВОР (своего не было); цена в ВК — с той же отметкой.
-      await page.waitForFunction(() => window.__fakeDb.tender_supply_links.filter((l) => l.url === 'https://disk.example.ru/d/chek-17').length === 2)
+      await page.waitForFunction(() => window.__fakeDb.tender_supply_links.filter((l) => l.tender_id !== 'tender-o' && l.url === 'https://disk.example.ru/d/chek-17').length === 2)
       await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((x) => x.estimate_name === 'ВК' && x.source_rate_id === 'o-truba-2'))
-      const batches = await page.evaluate(() => window.__supabaseStats.requests.filter((q) => q.table === 'rpc:supply_suggestion_counts').map((q) => q.args.p_items.length))
-      assert.ok(batches.length >= 1 && batches.every((n) => n <= 200))
+      // Похожие считаются в браузере: функции базы не спрашиваются.
+      assert.equal(await page.evaluate(() => window.__supabaseStats.requests.filter((q) => /^rpc:supply_(suggestion_counts|rate_suggestions)$/.test(q.table)).length), 0)
 
       // Своя цена — уже своя: отметка снимается, кнопка похожих пропадает.
       await enter(page.getByLabel(price('Кран шаровой Ду15', 'ОВ')), '600')
@@ -935,12 +952,46 @@ describe('Расценка снабжением: таблица', { skip: !launc
   })
 
   // Взять из меню первую похожую цену трубы (Ø12,7 мм, документа у исходной позиции нет) или вторую (Ø15,9, документ — ссылка).
+  it('окно цен: файл исходной цены открывается поверх окна (страница и вкладка карточки), Esc закрывает сначала файл', async () => {
+    for (const route of ['/tenders/materials/mat-p/pricing', '/tenders/tender-p']) {
+      const { page, context, errors } = await open('&reuse=1', route)
+      try {
+        await page.waitForFunction(() => window.__fakeDb?.tender_supply_links, null, { timeout: 120000 })
+        await page.evaluate((k) => {
+          window.__fakeDb.s3_documents.push({ id: 'doc-o-homut', owner_type: 'tender', owner_id: 'tender-o', doc_category: 'supply_doc', file_name: 'Счёт хомут.pdf',
+            s3_key: 'tenders/tender-o/homut.pdf', created_at: '2026-07-01T09:00:00Z', size_bytes: 900, notes: null })
+          window.__fakeDb.tender_supply_links.push({ id: 'link-o-homut', tender_id: 'tender-o', estimate_name: 'ОВ-2', material_name: 'Хомут монтажный', material_key: k,
+            url: null, s3_document_id: 'doc-o-homut', updated_at: '2026-07-01T09:00:00Z', created_at: '2026-07-01T09:00:00Z' })
+        }, normName('Хомут монтажный'))
+        if (route === '/tenders/tender-p') await page.getByRole('button', { name: /Расценки снабжения/ }).first().click({ timeout: 120000 })
+        const btn = rowOf(page, 'Хомут монтажный', 'ОВ').locator('.sp-similar-btn')
+        await btn.waitFor({ timeout: 120000 })
+        await btn.click()
+        const win = page.getByRole('dialog', { name: 'Цены: Хомут монтажный' })
+        await win.getByRole('button', { name: 'документ: файл' }).click()
+        await page.locator('.s3-doc-modal-title', { hasText: 'Счёт хомут.pdf' }).waitFor()
+        assert.equal(await page.evaluate(() => !!document.elementFromPoint(window.innerWidth / 2, 60)?.closest('.s3-doc-modal-overlay')), true, `файл поверх окна: ${route}`)
+        await page.keyboard.press('Escape')
+        await page.locator('.s3-doc-modal-overlay').waitFor({ state: 'detached' })
+        assert.ok(await win.isVisible(), 'окно цен осталось')
+        assert.deepEqual(errors, [])
+      } finally {
+        await context.close()
+      }
+    }
+  })
+
+  // Цена трубы из тендера № 445 через окно цен: 0 — очень похожая (Ø12,7, бухта), 1 — другой диаметр (Ø15,9, «отдалённо похожие»,
+  // они свёрнуты).
   const pickOtherTruba = async (page, nth) => {
     const truba = rowOf(page, TRUBA, TWO)
     await truba.locator('.sp-similar-btn').click()
-    const menu = page.getByRole('dialog', { name: `Похожие цены: ${TRUBA}` })
-    await menu.locator('li').nth(nth).getByRole('button', { name: /Взять/ }).click()
-    await menu.waitFor({ state: 'detached' })
+    const win = page.getByRole('dialog', { name: `Цены: ${TRUBA}` })
+    await win.locator('[data-item]').first().waitFor()
+    if (nth === 1) await win.getByRole('button', { name: /Отдалённо похожие: 1/ }).click()
+    const name = nth === 1 ? 'Труба медная Ø15,9' : 'Труба медная Ø12,7 мм (бухта)'
+    await win.locator('[data-item].is-tender', { hasText: name }).getByRole('button', { name: /Взять/ }).first().click()
+    await win.waitFor({ state: 'detached' })
     await truba.locator('.sp-origin-open').waitFor()
     return truba
   }
@@ -1020,8 +1071,8 @@ describe('Расценка снабжением: таблица', { skip: !launc
       const btn = rowOf(page, TRUBA, TWO).locator('.sp-similar-btn')
       await btn.waitFor()
       await btn.click()
-      const menu = page.getByRole('dialog', { name: /Похожие цены/ })
-      await menu.locator('li').first().waitFor()
+      const menu = page.getByRole('dialog', { name: /^Цены: / })
+      await menu.locator('[data-item]').first().waitFor()
       assert.equal(await menu.getByRole('button', { name: /Взять/ }).count(), 0)
       await page.keyboard.press('Escape')
       await menu.waitFor({ state: 'detached' })
@@ -1035,18 +1086,18 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
-  it('похожие цены спрашиваются только для показанных строк и порциями: 2 тыс. позиций — не все сразу', async () => {
+  it('похожие цены считаются в браузере, без запросов к базе: 2 тыс. позиций — таблица прокручивается, реестр читается после таблицы', async () => {
     const { page, context, errors } = await openPage('&reuse=1&bigPricing=2000')
     try {
-      const counted = () => page.evaluate(() => window.__supabaseStats.requests.filter((q) => q.table === 'rpc:supply_suggestion_counts').map((q) => q.args.p_items.length))
-      await page.waitForFunction(() => window.__supabaseStats.requests.some((q) => q.table === 'rpc:supply_suggestion_counts'))
-      await page.waitForTimeout(800)
-      const first = await counted()
-      const asked = first.reduce((a, n) => a + n, 0)
-      assert.ok(first.every((n) => n <= 200), String(first))
-      assert.ok(asked > 0 && asked < 400, `спрошено ${asked} из ~1300 нерасценённых`)
+      await page.locator('.sp-table tbody tr').nth(5).waitFor({ timeout: 30000 })
+      // Реестр СУ-10 — не вместе с таблицей, а когда она загрузилась (через несколько секунд).
+      const tables = () => page.evaluate(() => window.__supabaseStats.requests.map((q) => q.table))
+      const early = await tables()
+      assert.ok(!early.includes('supply_rates_registry'), 'реестр не читается вместе с таблицей')
+      await page.waitForFunction(() => window.__supabaseStats.requests.some((q) => q.table === 'supply_rates_registry'), null, { timeout: 30000 })
       await page.locator('.sp-table-wrap').evaluate((el) => { el.scrollTop = el.scrollHeight / 2 })
-      await page.waitForFunction((n) => window.__supabaseStats.requests.filter((q) => q.table === 'rpc:supply_suggestion_counts').length > n, first.length)
+      await page.locator('.sp-table tbody tr', { hasText: 'Материал 4.' }).first().waitFor()
+      assert.equal((await tables()).filter((t) => /^rpc:supply_(suggestion_counts|rate_suggestions)$/.test(t)).length, 0)
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
@@ -1509,11 +1560,11 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.equal(await similarBtn(rowOf(page, TRUBA, TWO)).count(), 0)
       assert.equal(plain(await similarBtn(rowOf(page, 'Изоляция K-Flex 13×15', 'ОВ')).innerText()), 'ценыпоставщиков:1')
       await similarBtn(xomut).click()
-      const menu = page.getByRole('dialog', { name: 'Похожие цены: Хомут монтажный' })
-      await menu.getByText('Цены поставщиков', { exact: true }).waitFor()
-      const offer = menu.locator('li.is-offer', { hasText: 'Болт М12х80' })
+      const menu = page.getByRole('dialog', { name: 'Цены: Хомут монтажный' })
+      const offer = menu.getByRole('region', { name: 'Та же позиция' }).locator('[data-item]', { hasText: 'Болт М12х80' })
       await offer.getByText('выбрано вручную').waitFor()
-      assert.match(plain(await offer.locator('.sp-suggest-price').innerText()), /^15,03₽/)
+      await offer.getByText('счёт / КП тендера').waitFor()
+      assert.match(plain(await offer.locator('.sp-pw-price').innerText()), /^15,03₽/)
       await offer.getByRole('button', { name: /Взять цену 15,03/ }).click()
       await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Хомут монтажный' && r.estimate_name === 'ОВ'))
       const r = await rateOf(page, 'Хомут монтажный', 'ОВ')
@@ -1553,8 +1604,8 @@ describe('Расценка снабжением: таблица', { skip: !launc
       const kran = rowOf(page, 'Кран шаровой Ду15', 'ОВ')
       assert.equal(plain(await similarBtn(kran).innerText()), 'похожиецены:2')
       await similarBtn(kran).click()
-      const menu = page.getByRole('dialog', { name: 'Похожие цены: Кран шаровой Ду15' })
-      const offers = menu.locator('li.is-offer')
+      const menu = page.getByRole('dialog', { name: 'Цены: Кран шаровой Ду15' })
+      const offers = menu.locator('[data-item].is-offer')
       await offers.first().waitFor()
       assert.equal(await offers.count(), 2)
       assert.match(await offers.nth(0).innerText(), /Кран шаровой Ду 15[\s\S]*то же наименование[\s\S]*Счёт 15 ТеплоСнаб\.xlsx/)
@@ -2341,7 +2392,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.equal(plain(await btn.innerText()), 'похожиецены:1')
       assert.equal(await page.evaluate(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.material_name === 'Хомут монтажный' && r.tender_id === 'tender-p').length), 0, 'сама не подставилась')
       await btn.click()
-      const menu = page.getByRole('dialog', { name: 'Похожие цены: Хомут монтажный' })
+      const menu = page.getByRole('dialog', { name: 'Цены: Хомут монтажный' })
       const item = menu.getByRole('list', { name: 'Цены в другой ед. изм.' }).locator('li')
       await item.getByText('другая ед. изм.: цена за тыс. шт, здесь шт').waitFor()
       await item.getByText('тендер № 845').waitFor()

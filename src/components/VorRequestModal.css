@@ -1,5 +1,8 @@
 /* Заявка на ВОР без тендера (VorRequestModal) */
 .vrq-modal { width: min(720px, calc(100vw - 32px)); }
+/* Просмотр заявки шире (26.11.2026): таблица файлов с версиями и кнопками не помещалась — имена переносились по слову.
+   Новая заявка — форма, ей хватает прежней ширины. */
+.vrq-modal.is-wide { width: min(1280px, calc(100vw - 32px)); }
 .vrq-body { display: block !important; padding: 1rem !important; background: var(--bg-primary); overflow-y: auto; }
 .vrq-form, .vrq-view { display: flex; flex-direction: column; gap: 0.75rem; }
 .vrq-hint { margin: 0; font-size: 0.75rem; line-height: 1.45; color: var(--text-tertiary); }

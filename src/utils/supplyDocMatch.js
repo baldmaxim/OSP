@@ -507,40 +507,72 @@ export function pairScore(a, g, shared = null) {
   else if (numsApart) score = Math.min(score, 0.5)
   else if (qty && score >= QTY_SCORE_MIN) score += QTY_BONUS
   // Вид материала: нет первого слова позиции в строке — сама не выбирается, если совпало не вполне; есть — позиция
-  // того же вида хотя бы в списке выбора.
+  // того же вида хотя бы в списке выбора. Поиск цен (a.kindOf — первое слово искомого): в реестре наименование часто
+  // начинается с марки («Рубеж Извещатель пожарный…») — тогда вид совпал, если первое слово искомого есть в найденном: такое
+  // найденное в списке, а ступень похожести считается по похожести без ограничения (free); сама похожесть — как раньше.
+  let free = null
   if (!code && b.kind) {
     if (a.parts[0].words.some((w) => sameWord(w, b.kind))) score = Math.max(score, LIST_MIN)
-    else if (score < KIND_SURE) score = Math.min(score, KIND_CAP)
+    else {
+      const kindOf = !!a.kindOf && b.parts.words.some((w) => sameWord(w, a.kindOf))
+      if (kindOf) free = Math.min(0.99, Math.round(Math.max(score, LIST_MIN) * 1000) / 1000)
+      if (score < KIND_SURE) score = Math.min(score, KIND_CAP)
+      if (kindOf) score = Math.max(score, LIST_MIN)
+    }
   }
-  return { score: Math.min(0.99, Math.round(score * 1000) / 1000), words: base.words, text: Math.round(text * 1000) / 1000, code, qty, sameNums: base.sameNums, apart: !code && numsApart }
+  return { score: Math.min(0.99, Math.round(score * 1000) / 1000), free, words: base.words, text: Math.round(text * 1000) / 1000, code, qty, sameNums: base.sameNums, apart: !code && numsApart }
 }
 
 // Указатели по группам: ключ наименования, первые буквы основ слов, сочетания букв, артикулы (codes — только те, что
 // в тендере у одной позиции: «RS485» или «IP55» в наименованиях у нескольких — признак, а не артикул; articles — все,
 // для артикула из колонки документа; marked — названные в ВОР артикулом, «арт.», для артикула в наименовании строки).
-export function matchIndex(groups) {
+function indexBuilder() {
   const byKey = new Map()
   const heads = new Map()
   const tri = new Map()
   const codeKeys = new Map()
   const marked = new Map()
   const add = (map, k, g) => { let s = map.get(k); if (!s) { s = []; map.set(k, s) } s.push(g) }
+  return {
+    add(g) {
+      for (const k of g.ks || [g.k]) add(byKey, k, g)
+      const f = features(g)
+      const seen = new Set()
+      for (const w of f.parts.words) { const h = w.slice(0, 4); if (!seen.has(h)) { seen.add(h); add(heads, h, g) } }
+      for (const t of f.tri) add(tri, t, g)
+      for (const c of f.codes) { let s = codeKeys.get(c); if (!s) { s = new Map(); codeKeys.set(c, s) } add(s, g.k, g) }
+      for (const t of f.marked) add(marked, t, g)
+    },
+    done() {
+      const codes = new Map()
+      const articles = new Map()
+      for (const [c, byK] of codeKeys) {
+        articles.set(c, [...byK.values()].flat())
+        if (byK.size === 1) codes.set(c, [...byK.values()][0])
+      }
+      return { byKey, heads, tri, codes, articles, marked }
+    },
+  }
+}
+export function matchIndex(groups) {
+  const b = indexBuilder()
+  for (const g of groups) b.add(g)
+  return b.done()
+}
+// Тот же указатель порциями по sliceMs (между порциями — await pause()): большой реестр — десятки тысяч наименований. alive() —
+// false: бросить (ответ null).
+export async function matchIndexInSlices(groups, { pause, alive = () => true, sliceMs = 40 }) {
+  const b = indexBuilder()
+  let at = performance.now()
   for (const g of groups) {
-    for (const k of g.ks || [g.k]) add(byKey, k, g)
-    const f = features(g)
-    const seen = new Set()
-    for (const w of f.parts.words) { const h = w.slice(0, 4); if (!seen.has(h)) { seen.add(h); add(heads, h, g) } }
-    for (const t of f.tri) add(tri, t, g)
-    for (const c of f.codes) { let s = codeKeys.get(c); if (!s) { s = new Map(); codeKeys.set(c, s) } add(s, g.k, g) }
-    for (const t of f.marked) add(marked, t, g)
+    b.add(g)
+    if (performance.now() - at > sliceMs) {
+      await pause()
+      if (!alive()) return null
+      at = performance.now()
+    }
   }
-  const codes = new Map()
-  const articles = new Map()
-  for (const [c, byK] of codeKeys) {
-    articles.set(c, [...byK.values()].flat())
-    if (byK.size === 1) codes.set(c, [...byK.values()][0])
-  }
-  return { byKey, heads, tri, codes, articles, marked }
+  return b.done()
 }
 
 // Указатель с памятью кандидатов (memo) — один на набор групп (тот же массив). Расценка снабжения сопоставляет одни и те же строки
@@ -586,37 +618,44 @@ const byRank = (a, b) => rankOf(b) - rankOf(a)
 // первыми, не ниже LIST_MIN. packs — вызывающий пересчитывает цену на единицу позиции: тогда pack — сколько единиц
 // позиции в единице документа (docPack), и такая ед. изм. подходит. Без него (проверка реестра КП, кабинет подрядчика:
 // цена берётся как есть) упаковка штук остаётся другой ед. изм. Указатель с памятью (sharedMatchIndex) — строка ищется один раз;
-// список — копия: вызывающий может его сортировать.
-export function itemCandidates(item, groups, index = null, limit = MATCH_CANDIDATES, { packs = false } = {}) {
+// список — копия: вызывающий может его сортировать. graded — поиск цен (окно цен позиции, проверка по файлу реестра): у каждого
+// кандидата ступень похожести grade (gradeNames), порядок — по ступени, затем как обычно; в список идёт и найденное с похожестью ниже
+// LIST_MIN, где есть всё наименование искомого (длинная запись конкретной модели), вид материала — и по первому слову искомого.
+export function itemCandidates(item, groups, index = null, limit = MATCH_CANDIDATES, { packs = false, graded = false } = {}) {
   const ix = index || matchIndex(groups)
-  if (!ix.memo) return findCandidates(item, groups, ix, limit, packs)
+  if (!ix.memo) return findCandidates(item, groups, ix, limit, packs, graded)
   let byOpts = ix.memo.get(item)
   if (!byOpts) {
     byOpts = new Map()
     ix.memo.set(item, byOpts)
   }
-  const key = `${limit}|${packs ? 1 : 0}`
+  const key = `${limit}|${packs ? 1 : 0}|${graded ? 1 : 0}`
   let list = byOpts.get(key)
   if (!list) {
-    list = findCandidates(item, groups, ix, limit, packs)
+    list = findCandidates(item, groups, ix, limit, packs, graded)
     byOpts.set(key, list)
   }
   return list.slice()
 }
 
-function findCandidates(item, groups, ix, limit, packs) {
+const byGrade = (a, b) => GRADE_RANK[b.grade] - GRADE_RANK[a.grade] || byRank(a, b)
+// Сколько наименований на одно начало слова — ещё не «частое» (поиск цен по реестру, graded).
+const HEAD_POOL_MAX = 400
+
+function findCandidates(item, groups, ix, limit, packs, graded = false) {
   // Два наименования у строки («по запросу» и «предлагаемое») — ищем по обоим, лучшая оценка на позицию.
   if (item.name2) {
     const best = new Map()
     for (const it of [{ ...item, name2: null }, { ...item, name: item.name2, name2: null }]) {
-      for (const c of itemCandidates(it, groups, ix, limit, { packs })) {
+      for (const c of itemCandidates(it, groups, ix, limit, { packs, graded })) {
         const was = best.get(c.group.key)
-        if (!was || rankOf(c) > rankOf(was)) best.set(c.group.key, c)
+        if (!was || (graded ? byGrade(c, was) < 0 : rankOf(c) > rankOf(was))) best.set(c.group.key, c)
       }
     }
-    return [...best.values()].sort(byRank).slice(0, limit)
+    return [...best.values()].sort(graded ? byGrade : byRank).slice(0, limit)
   }
   const a = itemFeatures(item)
+  if (graded) a.kindOf = kindWord(expandName(item.name))
   const out = new Map()
   for (const n of a.names) {
     for (const g of ix.byKey.get(normName(n)) || []) out.set(g.key, { group: g, score: 1, exact: true, code: false, sameNums: true })
@@ -626,7 +665,17 @@ function findCandidates(item, groups, ix, limit, packs) {
   for (const t of a.tri) for (const g of ix.tri.get(t) || []) shared.set(g, (shared.get(g) || 0) + 1)
   const pool = new Set()
   for (const [g, n] of shared) if (dice(n, a.tri.size, features(g).tri.size) >= LIST_MIN) pool.add(g)
-  for (const p of a.parts) for (const w of p.words) for (const g of ix.heads.get(w.slice(0, 4)) || []) pool.add(g)
+  for (const p of a.parts) {
+    const lists = p.words.map((w) => ix.heads.get(w.slice(0, 4)) || [])
+    // Поиск цен по большому реестру (graded): частое начало слова («dkc», «оцин», «кабе» — тысячи наименований) кандидатов не даёт,
+    // кроме самого редкого из слов искомого — уточнения (всё наименование в найденном) так не теряются; похожее по тексту найдено
+    // по сочетаниям букв. Без graded — как раньше.
+    const rarest = graded ? lists.reduce((m, l) => (l.length && (!m || l.length < m.length) ? l : m), null) : null
+    for (const list of lists) {
+      if (graded && list !== rarest && list.length > HEAD_POOL_MAX) continue
+      for (const g of list) pool.add(g)
+    }
+  }
   const byCode = new Set()
   const byArticle = new Set()
   for (const c of a.articles) for (const g of articleGroups(ix, c)) { byArticle.add(g); byCode.add(g); pool.add(g) }
@@ -638,7 +687,7 @@ function findCandidates(item, groups, ix, limit, packs) {
     if (known) { known.article = byArticle.has(g); continue }
     const article = byArticle.has(g)
     const r = pairScore({ ...a, code: byCode.has(g), article }, g, shared.get(g) || 0)
-    if (r.score >= LIST_MIN) out.set(g.key, { group: g, ...r, exact: false, article })
+    if (r.score >= LIST_MIN || (graded && refines(item.name, g.name))) out.set(g.key, { group: g, ...r, exact: false, article })
   }
   const list = [...out.values()].map((c) => {
     const pack = packs && !c.group.units ? linePack(item, c.group) : null
@@ -647,8 +696,79 @@ function findCandidates(item, groups, ix, limit, packs) {
   }).filter((c) => !lineRejects(item, c.group))
   // То же наименование есть и в той же ед. изм. — «штука = комплект» не предлагается: это другая позиция ВОР.
   const exactKeys = new Set(list.filter((c) => c.unitOk && !c.unitNear).map((c) => c.group.k))
-  return list.filter((c) => !c.unitNear || !exactKeys.has(c.group.k)).sort(byRank).slice(0, limit)
+  const kept = list.filter((c) => !c.unitNear || !exactKeys.has(c.group.k))
+  if (!graded) return kept.sort(byRank).slice(0, limit)
+  // По ступеням — лучшие limit, и всегда те же лучшие по похожести, что без ступеней (что закрывается само, не меняется).
+  for (const c of kept) c.grade = gradeNames(item.name, c.group.name, c)
+  const both = new Set(kept.sort(byRank).slice(0, limit))
+  for (const c of [...kept].sort(byGrade).slice(0, limit)) both.add(c)
+  return [...both].sort(byGrade)
 }
+
+// ── Ступени похожести: только показ (окно цен позиции, проверка по файлу реестра) ────────────────────────
+// Похожесть (score) отвечает на вопрос «та же ли это позиция» и решает, что сопоставляется само; она симметрична, поэтому
+// короткое общее наименование против конкретной модели получает 0,5–0,65: «Извещатель пожарный дымовой» в тендере № 1158 и «Извещатель
+// пожарный дымовой ИП 212-64-R3 W2.03, РУБЕЖ» в реестре — 0,6 при пороге похожих цен 0,75 (жалоба 26.11.2026), и цены не находились.
+// Для подбора цены важно другое — есть ли в найденном всё, что сказано в искомом. Ступени, от лучшей:
+//  • same — та же позиция: то же наименование, тот же артикул, выбрано человеком, похожесть от 0,9 без явных различий;
+//  • close — очень похоже: от 0,75 и слова — от 0,6 (как «похожие цены» базы), размеры не разные, нет спора слов (ниже);
+//  • refine — уточнение: всё наименование искомого (слова и числа, от двух слов) есть в найденном — та же вещь с маркой или моделью;
+//  • near — похоже: от 0,5 и слова — от 0,5 без спора слов, или найденное — общее наименование (всё оно есть в искомом);
+//  • far — отдалённо: другой размер, спор слов, мало общего.
+// Спор слов — у каждой стороны своё слово, а общих чисел нет: «Извещатель пожарный дымовой» и «…ручной» — разные вещи (0,71). Общее
+// число (размер, мощность) спор снимает: «Решетка декоративная Рсв 700х400» и «Решетка вентиляционная АМН 700х400» — одно и то же.
+// score от ступени не зависит: что сопоставляется само (строки счетов, «Применить», проверка КП) — как раньше.
+export const GRADES = ['same', 'close', 'refine', 'near', 'far']
+export const GRADE_RANK = { same: 4, close: 3, refine: 2, near: 1, far: 0 }
+const CLOSE_MIN = 0.75
+const CLOSE_WORDS_MIN = 0.6
+const NEAR_MIN = 0.5
+const NEAR_WORDS_MIN = 0.5
+const REFINE_WORDS_MIN = 2
+// Признаки наименования для ступени — по тексту (одно наименование сравнивается с десятками найденных).
+const GRADE_PARTS = new Map()
+const GRADE_PARTS_MAX = 20000
+function gradeParts(name) {
+  const text = String(name ?? '')
+  let p = GRADE_PARTS.get(text)
+  if (!p) {
+    const parts = nameParts(expandName(text))
+    p = { words: parts.words, nums: parts.nums, design: designations(text) }
+    if (GRADE_PARTS.size >= GRADE_PARTS_MAX) GRADE_PARTS.clear()
+    GRADE_PARTS.set(text, p)
+  }
+  return p
+}
+// Все слова и числа a есть в b.
+const coveredBy = (a, b) => a.nums.every((n) => b.nums.includes(n)) && a.words.every((w) => b.words.some((x) => sameWord(w, x)))
+// Всё наименование искомого (от двух слов) есть в найденном.
+export function refines(query, found) {
+  const q = gradeParts(query)
+  return q.words.length >= REFINE_WORDS_MIN && coveredBy(q, gradeParts(found))
+}
+
+const ownWord = (a, b) => a.words.some((w) => !b.words.some((x) => sameWord(w, x)))
+
+// Ступень найденного для искомого: query, found — наименования; c — { score, words, exact, article, picked, apart } (кандидат
+// itemCandidates или строка документа для позиции — тогда искомое позиция, найденное строка; words нет — не проверяется).
+export function gradeNames(query, found, c) {
+  if (c.exact || c.article || c.picked) return 'same'
+  const q = gradeParts(query)
+  const f = gradeParts(found)
+  const score = c.free ?? c.score
+  if (score >= SAME_POSITION_MIN && !clearDifference(q.design, f.design, q.words, f.words).differs) return 'same'
+  if (c.apart) return 'far'
+  const words = c.words ?? 1
+  const conflict = ownWord(q, f) && ownWord(f, q) && !q.nums.some((n) => f.nums.includes(n))
+  if (score >= CLOSE_MIN && words >= CLOSE_WORDS_MIN && !conflict) return 'close'
+  if (q.words.length >= REFINE_WORDS_MIN && coveredBy(q, f)) return 'refine'
+  if (score >= NEAR_MIN && words >= NEAR_WORDS_MIN && !conflict) return 'near'
+  if (f.words.length >= REFINE_WORDS_MIN && coveredBy(f, q)) return 'near'
+  return 'far'
+}
+
+// Признаки групп заранее — порциями (указатель большого реестра строится без остановки страницы): matchIndex берёт их из памяти.
+export const primeGroupFeatures = (g) => { features(g) }
 
 // Сопоставляется сама: точно или не ниже AUTO_MIN.
 export const autoMatch = (c) => !!c && (c.exact || c.score >= AUTO_MIN)
@@ -656,7 +776,9 @@ export const autoMatch = (c) => !!c && (c.exact || c.score >= AUTO_MIN)
 // Какие позиции строка документа закрывает сама (кандидаты itemCandidates, лучшие первыми): лучшая не ниже AUTO_MIN, почти так же
 // похожая вторая (до 0,05 ниже) и с подходящей ед. изм. — тот же артикул или тот же материал под другой записью. Общее у цен
 // документа в расценке снабжением (offerMatches) и проверки цен по реестру СУ-10 (utils/supplyRegistryCheck); порядок — как в списке.
+// Список по ступеням (graded) — сначала в прежний порядок (byMatchRank): что закрывается само, от ступеней не зависит.
 const NEAR_RANK = 0.05
+export const byMatchRank = (a, b) => byRank(a, b)
 export function autoChosen(all) {
   const first = all.find(autoMatch)
   if (!first) return []

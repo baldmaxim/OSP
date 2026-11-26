@@ -553,6 +553,25 @@ window.__fakeDb.tender_supply_links = params.get('seedLink') === '1'
   : []
 window.__fakeUnique.tender_supply_links = ['tender_id', 'estimate_name', 'material_key']
 window.__fakeGenerated = { tender_supply_links: (r) => ({ material_key: normName(r.material_name) }) }
+// reuse=1 — цены тендера № 445 лежат и в таблице цен (окно цен позиции с 26.11.2026 ищет похожие в браузере по ним, а не функцией
+// базы), документы исходных позиций — ссылками, как в базе.
+if (params.get('reuse') === '1') {
+  const fdb = window.__fakeDb
+  if (!fdb.tenders.some((t) => t.id === 'tender-o')) {
+    fdb.tenders.push({ id: 'tender-o', tender_type: 'main', department: 'warranty', public_tender_number: 445, status: 'Завершен', work_description: 'Другой тендер',
+      object_id: 'obj-1', objects: objects[0], deleted_at: null, parent_tender_id: null })
+  }
+  for (const o of OTHER_RATES) {
+    if (!fdb.tender_vor_supply_rates.some((r) => r.id === o.id)) {
+      fdb.tender_vor_supply_rates.push({ id: o.id, tender_id: 'tender-o', estimate_name: o.estimate_name, material_name: o.material_name, material_key: o.k, unit: o.unit,
+        supply_price: o.unit_price, supply_price_exact: null, price_input: 'unit', price_date: o.price_date, source_rate_id: null, source_kind: null })
+    }
+    if (o.url) {
+      fdb.tender_supply_links.push({ id: `link-${o.id}`, tender_id: 'tender-o', estimate_name: o.estimate_name, material_name: o.material_name, material_key: o.k,
+        url: o.url, s3_document_id: null, updated_by: 'user-2', updated_at: '2026-10-18T09:00:00Z', created_at: '2026-10-18T09:00:00Z' })
+    }
+  }
+}
 // Как tender_supply_links_touch (20261025): документ — адрес или файл; записали одно — другое снимается.
 window.__fakeTriggers.tender_supply_links = (row, old) => {
   row.url = row.url == null ? null : (String(row.url).trim() || null)

@@ -5,6 +5,7 @@
 // операции; без флага всё как прежде.
 import { db, auth, invokeFunction, filesViaOspApi, ospFiles, requestBidVorFile, putToStorage } from '../api'
 import { chunkList } from '../utils/inChunks'
+import { generateUUID } from '../utils/uuid'
 
 const FUNCTION_NAME = 's3-presign'
 
@@ -89,10 +90,14 @@ export async function deleteS3Object(s3Key) {
 // Если не передана, в БД пишется default 'general'.
 // folderDate ('YYYY-MM-DD') — папка с датой в списке с dateFolders (s3_documents.folder_date, миграция 20270220); без неё файл
 // лежит в папке дня загрузки. onProgress({ stage, loaded, total }) — ход загрузки для кнопки (src/api/ospFiles.js).
-export async function uploadFile({ file, ownerType, ownerId, notes = null, category = null, folderDate = null, onProgress = null }) {
-  if (filesViaOspApi()) return ospFiles.upload({ file, ownerType, ownerId, notes, category, folderDate, onProgress })
+// versionOf — id файла того же списка: новая версия этого файла (s3_documents.version_group_id, миграция 20270307; только списки
+// с версиями — src/utils/docVersions.js).
+export async function uploadFile({ file, ownerType, ownerId, notes = null, category = null, folderDate = null, versionOf = null, onProgress = null }) {
+  if (filesViaOspApi()) return ospFiles.upload({ file, ownerType, ownerId, notes, category, folderDate, versionOf, onProgress })
   const mimeType = file.type || 'application/octet-stream'
   onProgress?.({ stage: 'prepare', loaded: 0, total: file.size })
+  // Прежний портал: группа версий — до загрузки, чтобы не оставить файл в хранилище без строки.
+  const versionGroup = versionOf ? await legacyVersionGroup(versionOf) : null
 
   const { s3_key, presigned_url } = await requestUploadUrl({
     ownerType,
@@ -140,6 +145,7 @@ export async function uploadFile({ file, ownerType, ownerId, notes = null, categ
       notes,
       ...(category ? { doc_category: category } : {}),
       ...(folderDate ? { folder_date: folderDate } : {}),
+      ...(versionGroup ? { version_group_id: versionGroup } : {}),
       uploaded_by,
       uploaded_by_name
     })
@@ -190,6 +196,34 @@ export async function renameDocument(doc, fileName) {
     .select('*')
   if (error) throw error
   if (!data?.length) throw new Error('Файл не переименован: нет права или его уже удалили')
+  return data[0]
+}
+
+// Версии файла (миграция 20270307) на прежнем портале — правками строк по правилу сотрудника (через osp-api — сервер, с проверкой
+// владельца, категории и права, server/osp-api/src/routes/s3Presign.js). Группа файла: есть — она, нет — новая.
+async function legacyVersionGroup(documentId) {
+  const { data: target, error } = await db.from('s3_documents').select('*').eq('id', documentId).maybeSingle()
+  if (error) throw error
+  if (!target) throw new Error('Файл, версию которого вы загружаете, не найден — обновите окно')
+  if (!Object.hasOwn(target, 'version_group_id')) throw new Error('Версии файлов появятся после обновления базы')
+  if (target.version_group_id) return target.version_group_id
+  const { data, error: updateError } = await db.from('s3_documents').update({ version_group_id: generateUUID() })
+    .eq('id', documentId).is('version_group_id', null).select('version_group_id')
+  if (updateError) throw updateError
+  if (data?.[0]?.version_group_id) return data[0].version_group_id
+  const { data: again } = await db.from('s3_documents').select('version_group_id').eq('id', documentId).maybeSingle()
+  if (!again?.version_group_id) throw new Error('Файл, версию которого вы загружаете, не найден — обновите окно')
+  return again.version_group_id
+}
+
+// Файл doc — версия файла versionOf того же списка или, при versionOf = null, самостоятельный (своя группа из одного файла: связь
+// снята явно). Остальные версии прежней группы остаются вместе. Ответ — строка s3_documents.
+export async function setDocumentVersion(doc, versionOf) {
+  if (filesViaOspApi()) return ospFiles.version(doc.id, versionOf)
+  const group = versionOf ? await legacyVersionGroup(versionOf) : generateUUID()
+  const { data, error } = await db.from('s3_documents').update({ version_group_id: group }).eq('id', doc.id).select('*')
+  if (error) throw error
+  if (!data?.length) throw new Error('Версия не изменена: нет права или файл уже удалили')
   return data[0]
 }
 

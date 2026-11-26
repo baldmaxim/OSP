@@ -9,6 +9,7 @@
 // Что изменилось с последнего просмотра — composeChanges (по непросмотренным версиям из базы).
 import { nameParts, scoreParts, normUnit, unitsCompatible, MATCH_MIN, MATCH_WORDS_MIN } from './supplySimilarity.js'
 import { normName } from './supplyRateHelpers.js'
+import { versionlessName } from './docVersions.js'
 
 const keysOf = (s) => new Set((s.positions || []).map((p) => p.k).filter(Boolean))
 const fileBase = (fileName) => String(fileName || '').replace(/\.[^.]+$/, '').trim()
@@ -28,20 +29,9 @@ export function vorTitle(source) {
   return keyMarked || newEdition ? file : key
 }
 
-// Имя без отметок редакции: «ВОР ОВ изм.1», «ВОР ОВ v2», «ВОР ОВ от 03.11.2026 версия 2», «ВОР ОВ (1)», «ВОР_ОВ» — одно «ВОР ОВ»
-// (в виде ключа normName: без регистра, пробелов и знаков). Номер раздела («ЭОМ-3», «14.6») — не отметка: остаётся.
-const VERSION_MARKS = [
-  /(^|[\s([,;.-])(?:v|ver|версия|вер|ред|редакция|изм|изменение|rev)\s*\.?\s*№?\s*\d+(?:\.\d+)?(?=$|[\s)\],;.-])/gu,
-  /(^|\s)от\s+\d{1,2}[./-]\d{1,2}[./-]\d{2,4}(?=$|[\s),;])/gu,
-  /(^|[\s(])\d{1,2}\.\d{1,2}\.\d{4}(?=$|[\s),;])/gu,
-  /(^|[\s(])\d{4}-\d{2}-\d{2}(?=$|[\s),;])/gu,
-  /(\s*)\(\d{1,2}\)\s*$/u,
-]
-export function versionlessName(name) {
-  let s = String(name ?? '').normalize('NFC').toLowerCase().replace(/_+/g, ' ')
-  for (const re of VERSION_MARKS) s = s.replace(re, '$1 ')
-  return normName(s)
-}
+// Имя без отметок редакции — общее с версиями файлов списка (utils/docVersions.js).
+export { versionlessName }
+
 const namesOf = (s) => [s.estimate_name, fileBase(s.file_name)].map(versionlessName).filter(Boolean)
 const sameVorName = (n, o) => { const on = namesOf(o); return namesOf(n).some((x) => on.includes(x)) }
 

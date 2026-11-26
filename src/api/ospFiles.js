@@ -6,7 +6,9 @@
 //              'prepare' (отпечаток файла и ссылка), 'send' (отправлено loaded из total байт), 'save' (подтверждение);
 //              putImpl (необязательно) — отправка с ходом и сторожем (storagePut.js), без него — fetchImpl;
 //   удаление — delete: сервер удаляет сначала строку, затем объект; повтор безопасен (до 3 попыток);
-//   переименование — rename: новое имя в строке, объект не меняется; повтор безопасен (до 3 попыток).
+//   переименование — rename: новое имя в строке, объект не меняется; повтор безопасен (до 3 попыток);
+//   версии — upload с versionOf (новая версия файла того же списка) и version: файл — версия другого или самостоятельный
+//            (s3_documents.version_group_id, 20270307); повтор безопасен.
 // Модуль чистый: вызов сервера, fetch, хэш, ключ и паузы передаются извне (tests/osp-api/client.test.mjs).
 
 const PUT_ATTEMPTS = 3
@@ -59,7 +61,7 @@ export function createOspFiles({ call, fetchImpl, putImpl = null, digest, newId,
     }
   }
 
-  async function upload({ file, ownerType, ownerId, notes = null, category = null, folderDate = null, onProgress = null }) {
+  async function upload({ file, ownerType, ownerId, notes = null, category = null, folderDate = null, versionOf = null, onProgress = null }) {
     // attempt — какая попытка отправки (на кнопке «попытка 2 из 3», чтобы повтор не выглядел зависанием).
     const progress = (stage, loaded = 0, attempt = 1) => onProgress?.({ stage, loaded, total: file.size, attempt, attempts: PUT_ATTEMPTS })
     progress('prepare')
@@ -96,9 +98,13 @@ export function createOspFiles({ call, fetchImpl, putImpl = null, digest, newId,
     if (already) return already
 
     progress('save', file.size)
-    // Папка с датой (S3DocumentList с dateFolders): только если выбрана — прежний сервер поля не знает.
+    // Папка с датой (S3DocumentList с dateFolders) и версия: только если выбраны — прежний сервер полей не знает.
     const confirmed = await withRetries(CONFIRM_ATTEMPTS,
-      () => invoke({ action: 'confirm', ...fileFields, category, notes, ...(folderDate ? { folder_date: folderDate } : {}) }),
+      () => invoke({
+        action: 'confirm', ...fileFields, category, notes,
+        ...(folderDate ? { folder_date: folderDate } : {}),
+        ...(versionOf ? { version_of: versionOf } : {}),
+      }),
       (err) => retryable(err) || err.code === 'OSP_NOT_UPLOADED')
     return confirmed.document
   }
@@ -139,5 +145,12 @@ export function createOspFiles({ call, fetchImpl, putImpl = null, digest, newId,
     return res.changed ?? 0
   }
 
-  return { upload, downloadUrl, remove, rename, describe, supplyNotes }
+  // Файл — версия файла versionOf того же списка; versionOf = null — самостоятельный. → строка s3_documents.
+  async function version(documentId, versionOf) {
+    const res = await withRetries(RENAME_ATTEMPTS,
+      () => invoke({ action: 'version', document_id: documentId, version_of: versionOf || null }), retryable)
+    return res.document
+  }
+
+  return { upload, downloadUrl, remove, rename, describe, supplyNotes, version }
 }

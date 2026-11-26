@@ -2,6 +2,20 @@
 // Только решения «что сделать» — без запросов; выполняет SupplyPricingPanel. Правило пользователя: сначала
 // файлы ВОР из «ВОРов и РД» (лист «Материалы»), если ни один не дал позиций — вкладка «ВОР» карточки.
 import { normName } from './supplyRateHelpers.js'
+import { currentWithVersionIds } from './docVersions.js'
+
+// Файлы ВОР для автозагрузки: только текущие версии (utils/docVersions.js), у каждой — id всех её версий (version_ids). Прежние
+// версии позиций не дают и в «устаревшие файлы» не попадают: их место заняла новая. Файлы без группы — как прежде.
+export const vorFilesForImport = (files) => currentWithVersionIds(files)
+
+// Группа версий каждого файла (и прежних версий — по version_ids текущих): Map(id → version_group_id | null).
+export function versionGroupIndex(files) {
+  const m = new Map()
+  for (const f of files || []) {
+    for (const id of (Array.isArray(f.version_ids) && f.version_ids.length ? f.version_ids : [f.id])) m.set(id, f.version_group_id || null)
+  }
+  return m
+}
 
 const baseName = (fileName) => String(fileName || '').replace(/\.[^.]+$/, '').trim()
 export const fileVersion = (doc) => `file:${doc.id}:${doc.created_at}`
@@ -17,13 +31,26 @@ const FORMULAS_MARK = 1
 export const needsVolumeRecalc = (s) => !!s && !(Number(s.column_map?.calc) >= FORMULAS_MARK)
   && (s.volume_gaps ?? (s.positions || []).some((p) => p?.volume == null && !p?.units?.length)) === true
 
-// Имя ВОР для файла: прежняя привязка этого файла (в том числе как прежней версии ВОР — prior_document_ids, миграция
-// 20261029) → ВОР карточки с тем же именем (без учёта регистра и пробелов) → прежний список с тем же именем файла →
-// имя файла без расширения. Прежняя версия ВОР, которую заменили файлом с другим именем, так не заводит отдельный ВОР:
-// её ВОР уже занят новым файлом, и она отмечается как устаревшая.
-export function targetNameForFile(doc, sources, cardDocNames = []) {
+// Имя ВОР для файла: прежняя привязка этого файла → привязка другой его версии в «ВОРах и РД» (version_ids — текущая версия и
+// прежние, utils/docVersions.js, миграция 20270307: новая версия ВОР встаёт на место прежней, цены переходят по наименованию,
+// прежний файл триггер базы кладёт в prior_document_ids) → отметка снабжения «прежняя версия» (prior_document_ids, миграция
+// 20261029) → ВОР карточки с тем же именем (без учёта регистра и пробелов) → прежний список с тем же именем файла → имя файла
+// без расширения. Прежняя версия ВОР, которую заменили файлом с другим именем, так не заводит отдельный ВОР: её ВОР уже занят
+// новым файлом, и она отмечается как устаревшая.
+// Связь версий, заданная в «ВОРах и РД», главнее отметки снабжения: файл в группе версий (version_group_id) отметка делает прежней
+// версией только того списка, чей текущий файл в той же группе или неизвестен (удалён, не загружен). Файл, который сделали
+// самостоятельным, так не остаётся «прежней версией» чужого ВОР. groupOf — Map(id файла → группа) по всем файлам (versionGroupIndex).
+export function targetNameForFile(doc, sources, cardDocNames = [], groupOf = versionGroupIndex([doc])) {
+  const ids = Array.isArray(doc.version_ids) && doc.version_ids.length ? doc.version_ids : [doc.id]
+  const group = doc.version_group_id || null
+  const priorHere = (s) => {
+    if (!Array.isArray(s.prior_document_ids) || !ids.some((id) => s.prior_document_ids.includes(id))) return false
+    if (!group || !s.s3_document_id || !groupOf.has(s.s3_document_id)) return true
+    return groupOf.get(s.s3_document_id) === group
+  }
   const bound = sources.find((s) => s.s3_document_id === doc.id)
-    || sources.find((s) => Array.isArray(s.prior_document_ids) && s.prior_document_ids.includes(doc.id))
+    || sources.find((s) => s.s3_document_id && ids.includes(s.s3_document_id))
+    || sources.find(priorHere)
   if (bound) return bound.estimate_name
   const base = baseName(doc.file_name) || 'ВОР'
   const key = normName(base)
@@ -42,9 +69,10 @@ export function planFileImports(files, sources, cardDocNames = []) {
   const skipped = []
   const recalc = []
   const taken = new Set()
+  const groupOf = versionGroupIndex(files)
   const sorted = [...files].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
   for (const doc of sorted) {
-    const name = targetNameForFile(doc, sources, cardDocNames)
+    const name = targetNameForFile(doc, sources, cardDocNames, groupOf)
     const existing = sources.find((s) => s.estimate_name === name) || null
     if (taken.has(name)) { skipped.push({ doc, name }); continue }
     taken.add(name)

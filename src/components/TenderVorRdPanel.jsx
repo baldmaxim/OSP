@@ -9,6 +9,7 @@ import {
 import S3DocumentList from './S3DocumentList'
 import S3DocumentPreview from './S3DocumentPreview'
 import VorRdZipButton from './VorRdZipButton'
+import { currentVersions } from '../utils/docVersions'
 import './S3DocumentList.css'
 import './TenderVorRdPanel.css'
 
@@ -19,9 +20,11 @@ import './TenderVorRdPanel.css'
 //      шифры РД. Шифры — общий список тендера (вкладка «Шифр РД», таблица
 //      tender_rd_codes): здесь их выбирают, а недостающий можно добавить прямо в
 //      форме — он появится и во вкладке «Шифр РД».
-//   2. Ведомость объёмов работ — файлы ВОР.
+//   2. Ведомость объёмов работ — файлы ВОР, с версиями (миграция 20270307, решение пользователя 26.11.2026): новая
+//      версия ведомости прикрепляется к прежней, номера — по дате загрузки (S3DocumentList versions, utils/docVersions.js).
 //   3. «Загружены ранее» — файлы прежней общей категории «ВОРы и РД», чтобы
 //      ничего из уже загруженного не пропало. Блок виден, только если такие есть.
+// Файлы всех разделов читаются одним запросом (loadVorRd) и передаются спискам — свой запрос списки не делают.
 
 const Icon = ({ children, size = 15 }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor"
@@ -94,6 +97,7 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
   const retry = () => { setLoading(true); reload() }
 
   const codeById = useMemo(() => new Map(data.codes.map(c => [c.id, c])), [data.codes])
+  const currentVorDocs = useMemo(() => currentVersions(data.vorDocs), [data.vorDocs])
 
   const docsCountByCode = useMemo(() => {
     const m = new Map()
@@ -294,7 +298,8 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
           </div>
           {data.vorDocs.length > 0 && (
             <div className="tvr-head-actions">
-              <VorRdZipButton tenderId={tenderId} section="vor" docs={data.vorDocs} />
+              {/* Архив — текущие версии ведомостей, прежние версии в него не входят. */}
+              <VorRdZipButton tenderId={tenderId} section="vor" docs={currentVorDocs} />
             </div>
           )}
         </div>
@@ -304,6 +309,8 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
           category={VOR_STATEMENT_CATEGORY}
           title="Файлы ВОР"
           canEdit={canEdit}
+          versions
+          documents={data.vorDocs}
           onChange={() => reload({ notify: true })}
         />
       </section>
@@ -329,6 +336,7 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
             category={LEGACY_VOR_CATEGORY}
             title="Файлы"
             canEdit={canEdit}
+            documents={data.legacyDocs}
             onChange={() => reload({ notify: true })}
           />
         </section>

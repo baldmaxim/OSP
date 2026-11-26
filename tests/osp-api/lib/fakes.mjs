@@ -43,6 +43,8 @@ function pick(row, select) {
 //   missingView — представления нет (42P01)
 //   noEtagColumn — у s3_documents нет колонки content_etag (база раньше 20270216): запись с ней — PGRST204, чтение — 42703
 //   noFolderDateColumn — у s3_documents нет колонки folder_date (база раньше 20270220): запись с ней — PGRST204
+//   noVersionColumn — у s3_documents нет колонки version_group_id (база раньше 20270307): строки без неё, запись с ней — PGRST204.
+//               С колонкой: фильтры version_group_id=eq./is.null, id=neq., у строк без группы — version_group_id: null
 export async function startFakeSupabase(state) {
   const requests = []
   const server = http.createServer(async (req, res) => {
@@ -75,10 +77,16 @@ export async function startFakeSupabase(state) {
       const select = url.searchParams.get('select')
       const byKey = eqParam(url, 's3_key')
       const byId = eqParam(url, 'id')
+      const byGroup = eqParam(url, 'version_group_id')
+      const groupIsNull = url.searchParams.get('version_group_id') === 'is.null'
+      const notId = (url.searchParams.get('id') || '').startsWith('neq.') ? url.searchParams.get('id').slice(4) : null
       const visible = (d) => d.visibleTo === 'all' || Boolean(uid && d.visibleTo.includes(uid))
+      const withGroup = (row) => (state.noVersionColumn || Object.hasOwn(row, 'version_group_id') ? row : { ...row, version_group_id: null })
       const found = Object.entries(state.docs)
-        .filter(([key, d]) => visible(d) && (byKey === null || key === byKey) && (byId === null || d.row.id === byId))
-        .map(([key, d]) => ({ key, row: { s3_key: key, ...d.row } }))
+        .filter(([key, d]) => visible(d) && (byKey === null || key === byKey) && (byId === null || d.row.id === byId)
+          && (byGroup === null || d.row.version_group_id === byGroup) && (!groupIsNull || d.row.version_group_id == null)
+          && (notId === null || d.row.id !== notId))
+        .map(([key, d]) => ({ key, row: withGroup({ s3_key: key, ...d.row }) }))
       // .single() просит один объект (Accept: application/vnd.pgrst.object+json), иначе — массив.
       const wantsObject = (req.headers.accept || '').includes('vnd.pgrst.object')
       const reply = (rows, status = 200) => {
@@ -98,6 +106,9 @@ export async function startFakeSupabase(state) {
         if (state.noFolderDateColumn && rows.some((r) => 'folder_date' in r)) {
           return send(400, { code: 'PGRST204', details: null, hint: null, message: "Could not find the 'folder_date' column of 's3_documents' in the schema cache" })
         }
+        if (state.noVersionColumn && rows.some((r) => 'version_group_id' in r)) {
+          return send(400, { code: 'PGRST204', details: null, hint: null, message: "Could not find the 'version_group_id' column of 's3_documents' in the schema cache" })
+        }
         for (const r of rows) state.onInsert?.(r)
         for (const r of rows) {
           if (state.docs[r.s3_key] || Object.values(state.docs).some((d) => d.row.id === r.id)) {
@@ -105,7 +116,7 @@ export async function startFakeSupabase(state) {
           }
         }
         const created = rows.map((r) => {
-          const row = { doc_category: 'general', created_at: new Date().toISOString(), ...r }
+          const row = { doc_category: 'general', created_at: new Date().toISOString(), ...(state.noVersionColumn ? {} : { version_group_id: null }), ...r }
           const { s3_key: key, ...rest } = row
           state.docs[key] = { row: rest, visibleTo: 'all' }
           return row
@@ -118,6 +129,9 @@ export async function startFakeSupabase(state) {
       }
       if (req.method === 'PATCH') {
         const patch = JSON.parse(body || '{}')
+        if (state.noVersionColumn && 'version_group_id' in patch) {
+          return send(400, { code: 'PGRST204', details: null, hint: null, message: "Could not find the 'version_group_id' column of 's3_documents' in the schema cache" })
+        }
         // Условие на прежние notes (заметки снабжения: «только если при файле ещё то, что читали»).
         const notesCond = url.searchParams.get('notes')
         const matches = (f) => notesCond === null || (notesCond === 'is.null' ? f.row.notes == null

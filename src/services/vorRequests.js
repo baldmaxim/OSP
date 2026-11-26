@@ -7,6 +7,7 @@
 import { db } from '../api'
 import { chunkList } from '../utils/inChunks'
 import { fetchAllRows } from '../utils/fetchAllRows'
+import { countVorRdFiles, readCountRows } from './tenderVorRd'
 
 export const VOR_REQUESTS_TABLE = 'vor_requests'
 export const REQUEST_RD_CATEGORY = 'vor_request_rd'
@@ -60,30 +61,22 @@ export async function updateVorRequest(id, patch) {
   if (error) throw error
 }
 
-// Число файлов заявок — для бейджа «РД и ВОР» и статус-гейта «Завершён».
+// Число файлов заявок — для бейджа «РД и ВОР» и статус-гейта «Завершён». Версии одного файла ВОР (миграция 20270307) — один файл,
+// как в окне заявки.
 export async function fetchVorRequestDocCounts(ids) {
-  const counts = {}
-  if (!ids?.length) return counts
+  if (!ids?.length) return {}
   // В порции — постранично: шлюз отдаёт не больше 1000 строк.
-  const parts = await Promise.all(chunkList(ids).map((chunk) => fetchAllRows((from, to) => db
+  const rows = await readCountRows(async (cols) => (await Promise.all(chunkList(ids).map((chunk) => fetchAllRows((from, to) => db
     .from('s3_documents')
-    .select('owner_id')
+    .select(cols)
     .eq('owner_type', REQUEST_OWNER_TYPE)
     .in('doc_category', REQUEST_DOC_CATEGORIES)
     .in('owner_id', chunk)
     .order('id', { ascending: true })
-    .range(from, to))))
-  for (const row of parts.flat()) counts[row.owner_id] = (counts[row.owner_id] || 0) + 1
-  return counts
+    .range(from, to))))).flat())
+  return countVorRdFiles(rows)
 }
 
 export async function countVorRequestDocs(id) {
-  const { count, error } = await db
-    .from('s3_documents')
-    .select('id', { count: 'exact', head: true })
-    .eq('owner_type', REQUEST_OWNER_TYPE)
-    .eq('owner_id', id)
-    .in('doc_category', REQUEST_DOC_CATEGORIES)
-  if (error) throw error
-  return count || 0
+  return (await fetchVorRequestDocCounts([id]))[id] || 0
 }
