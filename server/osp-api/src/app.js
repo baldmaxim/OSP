@@ -625,6 +625,8 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     dbSelf: createRateLimit(limits.dbSelfRegisteredPerUser || DEFAULT_LIMITS.dbSelfRegisteredPerUser),
     dbRestrictedKey: createConcurrency(limits.dbRestrictedConcurrentPerKey || DEFAULT_LIMITS.dbRestrictedConcurrentPerKey),
     dbRestrictedTotal: createConcurrency(limits.dbRestrictedConcurrentTotal || DEFAULT_LIMITS.dbRestrictedConcurrentTotal),
+    dbContractor: createRateLimit(limits.dbContractorPerUser || DEFAULT_LIMITS.dbContractorPerUser),
+    dbContractorTotal: createConcurrency(limits.dbContractorConcurrentTotal || DEFAULT_LIMITS.dbContractorConcurrentTotal),
     authFail,
     dbBodyBudget: createByteBudget(limits.dbBodyBudgetBytes || DEFAULT_LIMITS.dbBodyBudgetBytes),
     dbLargeBodyKey: createConcurrency(limits.dbLargeBodyPerKey || DEFAULT_LIMITS.dbLargeBodyPerKey),
@@ -819,7 +821,9 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     app.addHook('onClose', async () => clearInterval(timer))
   }
   // Позиции ВОР для кабинета подрядчика — заранее, на сервере: учётке с регистрации файл ВОР не отдаётся (src/lib/bidPositions.js).
-  if (signupUsable && configuredParts(config).s3 && !deps.noBidPositions) {
+  // С 24.11.2026 расценка на сайте — основной путь у всех подрядчиков: позиции с сервера берёт и кабинет подрядчика от администратора
+  // (без скачивания и разбора книги в браузере), поэтому служба идёт и там, где включён разбор ВОР для снабжения (OSP_SUPPLY_IMPORT=1).
+  if ((signupUsable || (db && config.supplyImport)) && configuredParts(config).s3 && !deps.noBidPositions) {
     const bidPositions = createBidPositions({ db, s3: getS3(), bucket: config.s3.bucket, log: app.log, ...deps.bidPositions })
     const stopBidPositions = bidPositions.start({ isReadOnly })
     app.addHook('onClose', async () => stopBidPositions())

@@ -283,17 +283,18 @@ export const positionUnit = (p) => (p.units ? p.units.map((u) => u.unit).filter(
 // delivery — доставка позиции ({ mode: 'unit' | 'total', value } или null — без доставки); undefined — не менять
 // (и без колонок доставки в базе — не пишется).
 // Ответ: { status: 'ok', row } | { status: 'conflict', current } — значение не записано, current — что в базе.
+// Что пишется в строку цены. Строится заново на каждый запрос: колонок доставки нет — повтор уже без неё.
+const ratePayload = ({ position, mode, value, source = null, delivery = undefined }) => ({
+  price_input: mode,
+  input_value: value,
+  volume_at_input: position.units ? null : position.volume,
+  unit: positionUnit(position),
+  ...(source?.rateId ? { source_rate_id: source.rateId, source_kind: source.kind || 'pick' } : {}),
+  ...(delivery !== undefined && deliveryColumns
+    ? { delivery_input: delivery ? delivery.mode : null, delivery_value: delivery ? delivery.value : null } : {}),
+})
 export async function saveRate({ rate, mainId, estimateName, position, mode, value, source = null, delivery = undefined }) {
-  // Строится заново на каждый запрос: колонок доставки нет — повтор уже без неё.
-  const payload = () => ({
-    price_input: mode,
-    input_value: value,
-    volume_at_input: position.units ? null : position.volume,
-    unit: positionUnit(position),
-    ...(source?.rateId ? { source_rate_id: source.rateId, source_kind: source.kind || 'pick' } : {}),
-    ...(delivery !== undefined && deliveryColumns
-      ? { delivery_input: delivery ? delivery.mode : null, delivery_value: delivery ? delivery.value : null } : {}),
-  })
+  const payload = () => ratePayload({ position, mode, value, source, delivery })
   if (rate) {
     const { data, error } = await withRateColumns((cols) => db.from('tender_vor_supply_rates').update(payload())
       .eq('id', rate.id).eq('row_version', rate.row_version).select(cols))
@@ -308,6 +309,19 @@ export async function saveRate({ rate, mainId, estimateName, position, mode, val
   }
   if (error) fail(error)
   return { status: 'ok', row: data[0] }
+}
+
+// Цены позиций, у которых строки цены ещё нет, — одной вставкой (окно «Счета и КП», «Применить цены»: запрос на каждую позицию
+// упирался в сеть, 24.11.2026). items — [{ estimateName, position, mode, value, delivery }]. Вставка в базе целиком: позицию уже
+// расценил другой (23505) или сбой — исключением, ни одна цена не записана; тогда страница пишет их по одной (saveRate, с проверкой
+// версии и вопросом «изменено другим»). Ответ — записанные строки.
+export async function insertRates(mainId, items) {
+  if (!items.length) return []
+  const { data, error } = await withRateColumns((cols) => db.from('tender_vor_supply_rates')
+    .insert(items.map((it) => ({ tender_id: mainId, estimate_name: it.estimateName, material_name: it.position.name, ...ratePayload(it) })))
+    .select(cols))
+  if (error) fail(error)
+  return data || []
 }
 
 // Убрать цену позиции (очистили поле). Ответ — как у saveRate; row: null.

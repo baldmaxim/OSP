@@ -41,6 +41,11 @@
         "select"
       ]
     },
+    "tender_bid_supply_access": {
+      "authenticated": [
+        "select"
+      ]
+    },
     "tender_counterparty_proposals": {
       "authenticated": [
         "select"
@@ -70,10 +75,28 @@
     "bid_positions": [
       "authenticated"
     ],
+    "bid_rate_history": [
+      "authenticated"
+    ],
     "bid_rates_save": [
       "authenticated"
     ],
     "bid_request": [
+      "authenticated"
+    ],
+    "bid_supply_docs": [
+      "authenticated"
+    ],
+    "bid_supply_prices": [
+      "authenticated"
+    ],
+    "bid_supply_request": [
+      "authenticated"
+    ],
+    "bid_supply_take": [
+      "authenticated"
+    ],
+    "bid_vor_changes": [
       "authenticated"
     ],
     "bid_vor_superseded": [

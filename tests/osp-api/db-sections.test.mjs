@@ -140,11 +140,12 @@ describe('права разделов: шлюз', { skip }, () => {
   })
   const reached = () => seen.length
 
-  async function makeApp() {
+  async function makeApp(limits = undefined) {
     await app?.close()
     logs = []
     const { rightsFromRow } = await lib('sectionRights.js')
     app = buildApp({
+      ...(limits ? { limits } : {}),
       logger: { level: 'info', stream: { write: (l) => logs.push(String(l)) } },
       config: {
         host: '127.0.0.1', port: 0, supabaseUrl: SUPABASE_URL, supabaseAnonKey: projectKey('anon'), supabaseServiceKey: projectKey('service_role'),
@@ -291,6 +292,43 @@ describe('права разделов: шлюз', { skip }, () => {
       assert.ok([403, 404].includes((await call('POST', `/api/db/rpc/${fn}`, { who: U.contractor, body: {} })).statusCode), fn)
     }
     assert.equal(reached(), 0)
+  })
+
+  it('подрядчик от администратора — профиль недоверенного (25.11.2026): простые условия, тело до 2 МБ, свой лимит; сотрудника не касается', async () => {
+    // Форма запроса кабинета проходит: простые условия, порядок, диапазон, not.is.null.
+    for (const url of [
+      '/api/db/tender_bid_rates?select=id,kind,price&tender_id=eq.t1&order=updated_at.desc,id.asc&limit=1000&offset=0',
+      '/api/db/tender_bid_rates?select=*&price=not.is.null&tender_id=in.(a,b)',
+    ]) assert.equal((await call('GET', url, { who: U.contractor })).statusCode, 200, url)
+    seen.length = 0
+    // Остальное — отказ до PostgREST.
+    for (const url of [
+      '/api/db/tender_bid_rates?select=id&or=(price.gt.0,id.eq.1)',
+      '/api/db/tender_bid_rates?select=id&name=ilike.*бетон*',
+      '/api/db/tender_bid_rates?select=id&name=match.^a',
+      '/api/db/tender_bid_rates?select=id,tender_bid_rates(id)',
+      '/api/db/tender_bid_rates?select=id,price::text',
+    ]) {
+      const res = await call('GET', url, { who: U.contractor })
+      assert.equal(res.statusCode, 400, url)
+      assert.equal(res.json().code, 'PGRST100', url)
+    }
+    const big = await app.inject({ method: 'POST', url: '/api/db/rpc/bid_rates_save', payload: Buffer.alloc(3 * 1024 * 1024, 0x20),
+      headers: { authorization: `Bearer ${userToken(SUPABASE_URL, U.contractor)}`, 'content-type': 'application/json' } })
+    assert.equal(big.statusCode, 413, 'тело больше 2 МБ')
+    assert.equal(reached(), 0)
+    // Сотрудник — как раньше: сложные условия проходят.
+    assert.equal((await call('GET', '/api/db/contracts?select=id&or=(contract_amount.gt.0,id.eq.1)', { who: U.viewer })).statusCode, 200)
+
+    // Свой лимит запросов: исчерпан у подрядчика — 429; сотрудник им не ограничен.
+    const { DEFAULT_LIMITS } = await lib('limits.js')
+    await makeApp({ ...DEFAULT_LIMITS, dbContractorPerUser: { max: 2, windowMs: 60_000 } })
+    const q = () => call('GET', '/api/db/tender_bid_rates?select=id', { who: U.contractor })
+    assert.equal((await q()).statusCode, 200)
+    assert.equal((await q()).statusCode, 200)
+    const over = await q()
+    assert.deepEqual([over.statusCode, over.json().code], [429, 'OSP_RATE_LIMIT'])
+    for (let i = 0; i < 4; i++) assert.equal((await call('GET', '/api/db/contracts?select=id', { who: U.viewer })).statusCode, 200)
   })
 
   it('пробный режим справочников: пропуск и строка журнала; чувствительное чтение — отказ и в нём', async () => {

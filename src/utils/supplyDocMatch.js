@@ -266,6 +266,42 @@ function tokensOf(text, marked) {
 export const codeTokens = (...texts) => tokensOf(texts.filter(Boolean).join(' '), false)
 const articleTokens = (code) => tokensOf(code, true)
 
+// Артикул — определитель товара (24.11.2026, просьба пользователя; тендер № 704: счёт «Дюбель для газобетона 5х30 … DKC CM280530»,
+// в ВОР «Дюбель металлический универсальный 5х30 мм, арт.СМ280530, ДКС» — похоже на 66 %, и окно строку не показало).
+// Артикул позиции ВОР — то, что сметчик сам назвал артикулом («арт.», «артикул»): просто код в наименовании бывает цветом
+// (RAL7024 — у десяти позиций 704) или серией (ИП 212-64-R3 — у четырёх разных извещателей). Строка документа, где этот артикул
+// стоит в любом месте наименования, — та же позиция, как с артикулом из колонки документа, как бы её ни назвал поставщик
+// («Скоба крепежная однолапковая … 53342R» = «Держатель оцинкованный односторонний …, арт.53342R»). Другой артикул — не запрет
+// (решение пользователя 24.11.2026: «иногда артикул разный — ничего страшного, товар может быть очень похож»): такую строку
+// решает похожесть наименования, как без артикула. Запись — как у кода: кириллица-двойник = латиница (СМ = CM), разделители не
+// важны, «FSB 11604» = «FSB11604».
+const MARKED_MIN = 5
+// Наименование → { marked, pieces }: marked — артикулы после «арт.» / «артикул» (от 5 знаков, с цифрой); pieces — каждое слово
+// с цифрой и пары соседних, где цифры только в одном («FSB 11604», «53342 R»; «35 522» — два числа, не артикул 35522), — искать
+// среди артикулов позиций.
+function articleForms(text) {
+  const s = String(text || '').toLowerCase().replace(/ё/g, 'е')
+    .replace(/(^|[^a-zа-я])(гост|ту|сто|снип|сп|din|iso|en) ?(р ?)?[0-9][0-9.–—/-]*/g, '$1 ')
+    .replace(/([0-9]),(?=[0-9])/g, '$1.')
+  const marked = new Set()
+  const pieces = new Set()
+  let afterMark = false
+  let prev = null
+  for (const piece of s.split(/[\s,;:()«»"'+№#]+/)) {
+    if (!piece) continue
+    if (ART_MARK_RE.test(piece)) { afterMark = true; prev = null; continue }
+    const isMarked = afterMark || /^(?:арт|art)[.=]/.test(piece)
+    afterMark = false
+    const t = sameCodeForm(piece.replace(/^(?:арт|art)[.:=]+/, '').replace(/[-./=]/g, ''))
+    if (prev != null && /[0-9]/.test(prev) !== /[0-9]/.test(t)) pieces.add(prev + t)
+    prev = t
+    if (!/[0-9]/.test(t)) continue
+    pieces.add(t)
+    if (isMarked && t.length >= MARKED_MIN) marked.add(t)
+  }
+  return { marked, pieces }
+}
+
 // Признаки группы считаются один раз (группы снабжения и кабинета подрядчика устроены одинаково, свои поля
 // не нужны).
 const FEATURES = new WeakMap()
@@ -273,7 +309,7 @@ function features(g) {
   let f = FEATURES.get(g)
   if (!f) {
     const name = expandName(g.name)
-    f = { parts: nameParts(name), tri: trigrams(name), codes: codeTokens(g.name), kind: kindWord(name) }
+    f = { parts: nameParts(name), tri: trigrams(name), codes: codeTokens(g.name), kind: kindWord(name), marked: articleForms(g.name).marked }
     FEATURES.set(g, f)
   }
   return f
@@ -292,7 +328,7 @@ function itemFeatures(item) {
   const articles = articleTokens(item.code)
   return {
     item, names, parts: [nameParts(name), ...(item.code ? [nameParts(`${name} ${item.code}`)] : [])], tri: trigrams(name),
-    articles, codes: new Set([...codeTokens(item.name, item.code2), ...articles]),
+    articles, codes: new Set([...codeTokens(item.name, item.code2), ...articles]), forms: articleForms(item.name),
   }
 }
 
@@ -481,12 +517,13 @@ export function pairScore(a, g, shared = null) {
 
 // Указатели по группам: ключ наименования, первые буквы основ слов, сочетания букв, артикулы (codes — только те, что
 // в тендере у одной позиции: «RS485» или «IP55» в наименованиях у нескольких — признак, а не артикул; articles — все,
-// для артикула из колонки документа).
+// для артикула из колонки документа; marked — названные в ВОР артикулом, «арт.», для артикула в наименовании строки).
 export function matchIndex(groups) {
   const byKey = new Map()
   const heads = new Map()
   const tri = new Map()
   const codeKeys = new Map()
+  const marked = new Map()
   const add = (map, k, g) => { let s = map.get(k); if (!s) { s = []; map.set(k, s) } s.push(g) }
   for (const g of groups) {
     for (const k of g.ks || [g.k]) add(byKey, k, g)
@@ -495,6 +532,7 @@ export function matchIndex(groups) {
     for (const w of f.parts.words) { const h = w.slice(0, 4); if (!seen.has(h)) { seen.add(h); add(heads, h, g) } }
     for (const t of f.tri) add(tri, t, g)
     for (const c of f.codes) { let s = codeKeys.get(c); if (!s) { s = new Map(); codeKeys.set(c, s) } add(s, g.k, g) }
+    for (const t of f.marked) add(marked, t, g)
   }
   const codes = new Map()
   const articles = new Map()
@@ -502,7 +540,7 @@ export function matchIndex(groups) {
     articles.set(c, [...byK.values()].flat())
     if (byK.size === 1) codes.set(c, [...byK.values()][0])
   }
-  return { byKey, heads, tri, codes, articles }
+  return { byKey, heads, tri, codes, articles, marked }
 }
 
 // Указатель с памятью кандидатов (memo) — один на набор групп (тот же массив). Расценка снабжения сопоставляет одни и те же строки
@@ -592,6 +630,8 @@ function findCandidates(item, groups, ix, limit, packs) {
   const byCode = new Set()
   const byArticle = new Set()
   for (const c of a.articles) for (const g of articleGroups(ix, c)) { byArticle.add(g); byCode.add(g); pool.add(g) }
+  // Артикул позиции («арт.») где угодно в наименовании строки — та же позиция (articleForms).
+  for (const t of a.forms.pieces) for (const g of ix.marked?.get(t) || []) { byArticle.add(g); byCode.add(g); pool.add(g) }
   for (const c of a.codes) for (const g of ix.codes.get(c) || []) { byCode.add(g); pool.add(g) }
   for (const g of pool) {
     const known = out.get(g.key)
@@ -612,6 +652,17 @@ function findCandidates(item, groups, ix, limit, packs) {
 
 // Сопоставляется сама: точно или не ниже AUTO_MIN.
 export const autoMatch = (c) => !!c && (c.exact || c.score >= AUTO_MIN)
+
+// Какие позиции строка документа закрывает сама (кандидаты itemCandidates, лучшие первыми): лучшая не ниже AUTO_MIN, почти так же
+// похожая вторая (до 0,05 ниже) и с подходящей ед. изм. — тот же артикул или тот же материал под другой записью. Общее у цен
+// документа в расценке снабжением (offerMatches) и проверки цен по реестру СУ-10 (utils/supplyRegistryCheck); порядок — как в списке.
+const NEAR_RANK = 0.05
+export function autoChosen(all) {
+  const first = all.find(autoMatch)
+  if (!first) return []
+  const near = first.exact ? null : all.find((c) => c !== first && autoMatch(c) && rankOf(first) - rankOf(c) <= NEAR_RANK)
+  return all.filter((c) => c === first || c === near || (c.unitOk && (c.article || sameMaterial(first.group, c.group))))
+}
 
 // Все строки документа: { item, match, also, candidates }. match — выбранная группа (или null), одна группа — одной
 // строке; also — ещё группы той же строки: тот же артикул или тот же материал под другой записью, ед. изм. подходит.
@@ -668,14 +719,8 @@ export function offerMatches(lines, groups, index = null) {
       }
       continue
     }
-    const all = itemCandidates(line, groups, ix, MATCH_CANDIDATES, { packs: true })
-    const first = all.find(autoMatch)
-    if (!first) continue
-    const near = first.exact ? null : all.find((c) => c !== first && autoMatch(c) && rankOf(first) - rankOf(c) <= 0.05)
-    for (const c of all) {
-      if (c === first || c === near || (c.unitOk && (c.article || sameMaterial(first.group, c.group)))) {
-        put(c.group, { line, score: c.score, exact: c.exact, picked: false, article: !!c.article, same: c.score >= SAME_POSITION_MIN && lineSameAsGroup(line, c.group), unitOk: c.unitOk, pack: c.pack })
-      }
+    for (const c of autoChosen(itemCandidates(line, groups, ix, MATCH_CANDIDATES, { packs: true }))) {
+      put(c.group, { line, score: c.score, exact: c.exact, picked: false, article: !!c.article, same: c.score >= SAME_POSITION_MIN && lineSameAsGroup(line, c.group), unitOk: c.unitOk, pack: c.pack })
     }
   }
   return out

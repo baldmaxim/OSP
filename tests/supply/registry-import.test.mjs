@@ -8,7 +8,8 @@ import assert from 'node:assert/strict'
 import * as XLSX from 'xlsx'
 import { readWorkbookBytes } from '../../src/utils/supplierDocRead.js'
 import {
-  classifyRegistryHeader, detectRegistryHeader, importPayload, invoiceLink, isBarePrimavera, kpNormName, moscowDay, objectIndex, parseRateDate,
+  REGISTRY_READ_OPTIONS, classifyRegistryHeader, detectRegistryHeader, importPayload, invoiceLink, invoiceLinkCounts, isBarePrimavera, kpNormName,
+  moscowDay, objectIndex, parseRateDate,
   parseRegistryWorkbook, prepareRegistryImport, primaveraK14, primaveraOnceUsed, registryRowKey, resolveObject, resolveTender,
 } from '../../src/utils/supplyRegistryImport.js'
 
@@ -281,6 +282,70 @@ describe('Загрузка в реестр СУ-10: итог строк', () => 
     assert.equal(invoiceLink('javascript:alert(1)'), null)
     assert.equal(invoiceLink('http://x.ru/a b'), null, 'с пробелом внутри — не адрес')
     assert.equal(invoiceLink('HTTPS://X.RU/4512'), 'HTTPS://X.RU/4512')
+  })
+
+  // Просьба пользователя 23.11.2026: в колонке «Ссылка на счёт» видно «Открыть счёт», адрес зашит в ячейку — он не читался
+  // (бралась подпись, а она не адрес — расценка оставалась без ссылки). Файл пишется и читается библиотекой, как в окне.
+  it('ссылка на счёт, зашитая в ячейку: гиперссылка, формула ГИПЕРССЫЛКА, адрес текстом; сетевой путь — не ссылка', () => {
+    const HEAD = ['Наименование', 'Ед. изм.', 'Цена, ₽', 'Дата расценки', 'Ссылка на счёт']
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['Расценки из папок счетов'],
+      HEAD,
+      ['Кабель ВВГ 3х2,5', 'м', 95.5, '05.10.2026', 'Открыть счёт'],
+      ['Труба PE-Xa 16', 'м', 120, '05.10.2026', 'Открыть счёт'],
+      ['Гофра ПВХ 20', 'м', 18, '05.10.2026', 'https://disk.example/s/text-7'],
+      ['Клей плиточный', 'кг', 40, '05.10.2026', 'Открыть счёт'],
+      ['Грунтовка', 'кг', 55, '05.10.2026', 'Открыть счёт'],
+      ['Анкер 10х100', 'шт', 12, '05.10.2026', ''],
+      ['Лоток 100х50', 'м', 310, '05.10.2026', 'Открыть счёт'],
+    ])
+    ws.E3.l = { Target: 'https://disk.example/i/AbC-123?dl=1', Tooltip: 'Счёт 4512' }
+    ws.E4 = { t: 's', v: 'Открыть счёт', f: 'HYPERLINK("https://disk.example/s/formula-9","Открыть счёт")' }
+    ws.E6.l = { Target: '\\\\fs\\Счета\\4512.pdf' }
+    ws.E9.l = { Target: 'https://disk.example/Счета 2026/Счёт 77.pdf' }
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Счета')
+    const bytes = new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }))
+
+    const res = parseRegistryWorkbook(XLSX, readWorkbookBytes(XLSX, bytes, 'счета.xlsx', REGISTRY_READ_OPTIONS))
+    assert.equal(res.error, undefined)
+    const links = Object.fromEntries(res.rows.map((r) => [r.name, r.invoiceUrl]))
+    assert.deepEqual(links, {
+      'Кабель ВВГ 3х2,5': 'https://disk.example/i/AbC-123?dl=1',
+      'Труба PE-Xa 16': 'https://disk.example/s/formula-9',
+      'Гофра ПВХ 20': 'https://disk.example/s/text-7',
+      'Клей плиточный': '\\\\fs\\Счета\\4512.pdf',
+      'Грунтовка': 'Открыть счёт',
+      'Анкер 10х100': '',
+      'Лоток 100х50': 'https://disk.example/Счета%202026/Счёт%2077.pdf',
+    })
+    // В запись — только адреса сайта; сетевой путь и подпись без ссылки — строка без ссылки, окно называет их число.
+    const prepared = prepareRegistryImport(res.rows, { index: INDEX, today: '2026-11-20' })
+    assert.deepEqual(prepared.lines.map((l) => importPayload(l).invoice_url), [
+      'https://disk.example/i/AbC-123?dl=1', 'https://disk.example/s/formula-9', 'https://disk.example/s/text-7', null, null, null,
+      'https://disk.example/Счета%202026/Счёт%2077.pdf',
+    ])
+    assert.deepEqual(invoiceLinkCounts(prepared.lines), { linked: 4, dropped: 2 })
+    // Без чтения формул (как читают счета и КП поставщиков) формула пропадает — поэтому окно читает с REGISTRY_READ_OPTIONS.
+    const plain = parseRegistryWorkbook(XLSX, readWorkbookBytes(XLSX, bytes, 'счета.xlsx'))
+    assert.equal(plain.rows[1].invoiceUrl, 'Открыть счёт')
+    assert.equal(plain.rows[0].invoiceUrl, 'https://disk.example/i/AbC-123?dl=1', 'гиперссылка ячейки читается и без формул')
+  })
+
+  it('ссылка на счёт формулой в CSV (текстом, как набрана) и в «старом» .xls', () => {
+    const csv = 'Наименование;Цена;Дата расценки;Ссылка на счёт\r\n'
+      + 'Кабель;95,5;05.10.2026;"=ГИПЕРССЫЛКА(""https://disk.example/s/csv-1"";""Открыть счёт"")"\r\n'
+      + 'Труба;120;05.10.2026;"=HYPERLINK(""https://disk.example/s/csv-2"",""Открыть"")"\r\n'
+    const fromCsv = parseRegistryWorkbook(XLSX, readWorkbookBytes(XLSX, new TextEncoder().encode(csv), 'счета.csv', REGISTRY_READ_OPTIONS))
+    assert.deepEqual(fromCsv.rows.map((r) => r.invoiceUrl), ['https://disk.example/s/csv-1', 'https://disk.example/s/csv-2'])
+
+    const ws = XLSX.utils.aoa_to_sheet([['Наименование', 'Цена', 'Дата расценки', 'Ссылка на счёт'], ['Кабель', 95.5, '05.10.2026', 'Открыть счёт']])
+    ws.D2.l = { Target: 'https://disk.example/i/xls-1' }
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Счета')
+    const xls = new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'biff8' }))
+    const fromXls = parseRegistryWorkbook(XLSX, readWorkbookBytes(XLSX, xls, 'счета.xls', REGISTRY_READ_OPTIONS))
+    assert.equal(fromXls.rows[0].invoiceUrl, 'https://disk.example/i/xls-1')
   })
 
   it('нормализация наименования — как kp_norm_name базы (ключ уникального индекса)', () => {

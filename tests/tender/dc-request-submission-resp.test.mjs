@@ -179,11 +179,20 @@ describe('Реестр заявок на ДС: ответственный за �
   const panelOptions = (page) => page.locator('.fdrop-panel .fdrop-option').allTextContents()
   const pickerOptions = (page) => page.locator('.fdrop-panel .fdrop-option .dcr-resp-option').allTextContents()
 
-  it('без колонок в базе — ни выбора, ни фильтра', async () => {
+  it('без колонок в базе — ни выбора, ни фильтра по ответственному; фильтр по статусу ОКС — есть', async () => {
     const { page, errors, close } = await open()
     try {
       assert.equal(await page.locator('.dcr-table .dcr-sub-resp').count(), 0)
-      assert.equal(await page.locator('.dcr-table thead .dcr-th-sub').count(), 0)
+      const th = page.locator('.dcr-table thead th', { hasText: 'Статус ОКС' })
+      assert.equal(await th.locator('[title*="по ответственному"]').count(), 0)
+      // Название — просто текст, рядом — воронка фильтра по статусу (24.11.2026).
+      assert.equal(await th.locator('.fdrop-trigger').count(), 1)
+      await th.locator('.dcr-th-status-fdrop .fdrop-trigger').click()
+      await page.locator('.fdrop-panel .fdrop-option', { hasText: 'Подано заказчику' }).click()
+      await page.keyboard.press('Escape')
+      assert.deepEqual(await visibleIds(page), ['d2'])
+      await th.getByRole('button', { name: 'Сбросить фильтр по статусу ОКС' }).click()
+      assert.equal((await visibleIds(page)).length, 5)
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
@@ -229,9 +238,10 @@ describe('Реестр заявок на ДС: ответственный за �
       assert.deepEqual([...all].sort(), ['d1', 'd2', 'd3', 'd4', 'd5'])
       const th = page.locator('.dcr-table thead th', { hasText: 'Статус ОКС' })
       // Отдельной плашки «Ответственный» нет: кнопка фильтра — само название столбца.
-      const title = th.locator('.dcr-th-fdrop .fdrop-trigger')
-      assert.equal((await th.innerText()).trim(), 'Статус ОКС')
-      assert.equal(await th.locator('.fdrop-trigger').count(), 1)
+      const title = th.locator('.dcr-th-fdrop:not(.dcr-th-status-fdrop) .fdrop-trigger')
+      assert.equal((await title.innerText()).trim(), 'Статус ОКС')
+      // Вторая кнопка — фильтр по самому статусу (24.11.2026).
+      assert.equal(await th.locator('.fdrop-trigger').count(), 2)
       assert.match(await title.getAttribute('title'), /отобрать заявки по ответственному/)
       await title.click()
       const options = await panelOptions(page)
@@ -261,6 +271,48 @@ describe('Реестр заявок на ДС: ответственный за �
     } finally { await close() }
   })
 
+  // 24.11.2026 (просьба пользователя): к фильтру по ответственному — второй, по самому статусу ОКС; действуют вместе.
+  it('фильтр по статусу ОКС — вторым, вместе с фильтром по ответственному; сброс — своим крестиком и «Сбросить»; помнится после обновления', async () => {
+    const { page, errors, close } = await open('&dcSubResp=1')
+    try {
+      const all = await visibleIds(page)
+      const th = page.locator('.dcr-table thead th', { hasText: 'Статус ОКС' })
+      const status = th.locator('.dcr-th-status-fdrop .fdrop-trigger')
+      assert.match(await status.getAttribute('title'), /фильтр по статусу/)
+      await status.click()
+      const options = (await panelOptions(page)).map(o => o.trim())
+      assert.deepEqual(options, [
+        'Подано заказчику (1)', 'Принято в работу (будет подаваться) (0)', 'Не будет подаваться (0)', 'Неполный комплект (0)', 'Не проверено (4)',
+      ])
+      await page.locator('.fdrop-panel .fdrop-option', { hasText: 'Не проверено' }).click()
+      await page.keyboard.press('Escape')
+      assert.deepEqual([...await visibleIds(page)].sort(), all.filter(id => id !== 'd2').sort())
+      assert.equal(await th.evaluate(el => el.classList.contains('dcr-th-filtered')), true)
+      assert.match(await th.locator('.dcr-th-status-chosen').innerText(), /Не проверено/)
+      // Вместе с ответственным: «Не назначен» и «Не проверено» — оба условия.
+      await th.locator('.dcr-th-fdrop:not(.dcr-th-status-fdrop) .fdrop-trigger').click()
+      await page.locator('.fdrop-panel .fdrop-option', { hasText: 'Не назначен' }).click()
+      await page.keyboard.press('Escape')
+      assert.deepEqual([...await visibleIds(page)].sort(), all.filter(id => !['d2', 'd4'].includes(id)).sort())
+      // Свой крестик снимает только свой фильтр.
+      await th.getByRole('button', { name: 'Сбросить фильтр по статусу ОКС' }).click()
+      assert.deepEqual([...await visibleIds(page)].sort(), all.filter(id => id !== 'd2' && id !== 'd4').sort())
+      assert.equal(await th.locator('.dcr-th-status-chosen').count(), 0)
+      assert.equal(await th.locator('.dcr-th-sub-chosen').count(), 1, 'ответственный выбран по-прежнему')
+      // Статус снова — и после обновления страницы оба фильтра на месте; «Сбросить» снимает оба.
+      await status.click()
+      await page.locator('.fdrop-panel .fdrop-option', { hasText: 'Не проверено' }).click()
+      await page.keyboard.press('Escape')
+      await page.reload()
+      await page.locator('.dcr-table td.ui-rownum').first().waitFor({ timeout: 120000 })
+      assert.match(await th.locator('.dcr-th-status-chosen').innerText(), /Не проверено/)
+      assert.deepEqual([...await visibleIds(page)].sort(), all.filter(id => id !== 'd2' && id !== 'd4').sort())
+      await page.locator('.dcr-filter-clear').click()
+      assert.deepEqual(await visibleIds(page), all)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
   it('не «Отдел по удорожанию» (администратор, без права правки) — только ФИО назначенного; фильтр — у всех', async () => {
     for (const extra of ['', '&canEdit=0']) {
       const { page, errors, close } = await open(`&dcSubResp=1${extra}`)
@@ -268,7 +320,7 @@ describe('Реестр заявок на ДС: ответственный за �
         assert.equal(await page.locator('.dcr-table .dcr-resp-fdrop').count(), 0, extra)
         assert.match(await rowOf(page, 'd2').locator('.dcr-sub-resp').textContent(), /Удорожаев И\.\s*П\./)
         assert.equal(await rowOf(page, 'd1').locator('.dcr-sub-resp').count(), 0)
-        assert.equal(await page.locator('.dcr-table thead .dcr-th-fdrop').count(), 1)
+        assert.equal(await page.locator('.dcr-table thead .dcr-th-fdrop:not(.dcr-th-status-fdrop)').count(), 1)
         assert.deepEqual(errors, [])
       } finally { await close() }
     }

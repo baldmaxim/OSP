@@ -1,7 +1,7 @@
-// Выгрузка расценки подрядчика в Excel (кабинет и сводка администратора, миграция 20261102). Подключается по
-// требованию: библиотека Excel тяжёлая.
+// Выгрузка расценки подрядчика в Excel для сводки администратора (миграция 20261102). Подключается по требованию: библиотека
+// Excel тяжёлая. Кабинет подрядчика с 25.11.2026 скачивает сами ВОР отдела с вписанными ценами (bidVorFill.js, bidVorArchive.js).
 import * as XLSX from 'xlsx'
-import { priceStructure, lineTotal } from './bidVor.js'
+import { lineTotal } from './bidPrice.js'
 
 const safeSheet = (name, used) => {
   let base = String(name || 'Лист').replace(/[\\/?*[\]:]/g, ' ').trim().slice(0, 28) || 'Лист'
@@ -32,51 +32,10 @@ function listSheet(rows, title) {
   return ws
 }
 
-function kpSheet(file, prices) {
-  const { rows, totals } = priceStructure(file.parsed.structure, prices)
-  const aoa = [[`ВОР: ${file.name}`], [], ['№', 'Код', 'Наименование', 'Ед. изм.', 'Объём', 'Цена мат., руб.', 'Цена СМР, руб.', 'Стоим. мат., руб.', 'Стоим. СМР, руб.', 'Итого, руб.']]
-  for (const r of rows) {
-    if (r.type === 'section') {
-      aoa.push([r.num, '', r.name, '', '', '', '', r.materials, r.works, r.materials + r.works])
-      continue
-    }
-    const work = r.kind === 'work'
-    aoa.push([r.num, r.code, r.name, r.unit, r.volume ?? '', work ? '' : (r.price ?? ''), work ? (r.price ?? '') : '',
-      work ? '' : (r.total ?? ''), work ? (r.total ?? '') : '', r.total ?? ''])
-  }
-  aoa.push(['', '', 'Итого', '', '', '', '', totals.materials, totals.works, totals.materials + totals.works])
-  const ws = XLSX.utils.aoa_to_sheet(aoa)
-  ws['!cols'] = [{ wch: 7 }, { wch: 8 }, { wch: 60 }, { wch: 9 }, { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 16 }, { wch: 16 }, { wch: 16 }]
-  return ws
-}
-
-const tenderLabel = (tender) => `Тендер № ${tender.public_tender_number ?? '—'}`
-
 function answersSheet(head, rows) {
   const ws = XLSX.utils.aoa_to_sheet([[`Анкета — ${head}`], [], ['Вопрос', 'Ответ'], ...rows.map((r) => [r.label, r.value])])
   ws['!cols'] = [{ wch: 70 }, { wch: 60 }]
   return ws
-}
-
-// Кабинет: позиции всех ВОР с ценами организации + лист «КП» каждого ВОР + анкета.
-// form — { fields, answers: { id поля: значение } }.
-export function downloadBidWorkbook({ tender, counterpartyName, positions, rates, files, form = null }) {
-  const wb = XLSX.utils.book_new()
-  const used = new Set()
-  const withRates = (list) => list.map((p) => ({ ...p, price: rates.get(p.key)?.price ?? null, note: rates.get(p.key)?.note || '' }))
-  const head = `${tenderLabel(tender)} · ${tender.object_name || ''} · ${counterpartyName || ''}`
-  XLSX.utils.book_append_sheet(wb, listSheet(withRates(positions.materials), `Материалы — ${head}`), safeSheet('Материалы', used))
-  XLSX.utils.book_append_sheet(wb, listSheet(withRates(positions.works), `Работы — ${head}`), safeSheet('Работы', used))
-  const prices = new Map([...rates].filter(([, r]) => r.price != null).map(([k, r]) => [k, r.price]))
-  for (const f of files) {
-    if (!f.parsed.structure?.length) continue
-    XLSX.utils.book_append_sheet(wb, kpSheet(f, prices), safeSheet(`КП ${f.name}`, used))
-  }
-  if (form?.fields?.length) {
-    const rows = form.fields.map((f) => ({ label: f.label, value: form.answers?.[f.id] || '' }))
-    XLSX.utils.book_append_sheet(wb, answersSheet(head, rows), safeSheet('Анкета', used))
-  }
-  XLSX.writeFile(wb, `${fileSafe(`Расценка ${tenderLabel(tender)} ${counterpartyName || ''}`)}.xlsx`)
 }
 
 // Сводка администратора: цены организации по тендеру (строки tender_bid_rates) и анкета.

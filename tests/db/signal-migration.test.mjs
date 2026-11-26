@@ -31,7 +31,7 @@ const NAME = '20270228_signal_integration'
 const file = (...p) => path.join(ROOT, ...p)
 const MIGRATION = file('migration', 'yandex', `${NAME}.sql`)
 const CHECK = file('migration', 'yandex', `${NAME}.check.sql`)
-const BACKUP_CHECK = file('migration', 'backup', 'checks', '20270228.sql')
+const BACKUP_CHECK = file('migration', 'backup', 'checks', '20270228_signal_integration.sql')
 const ROLLBACK = file('migration', 'rollback', `${NAME}_rollback.sql`)
 const read = (p) => fs.readFileSync(p, 'utf8')
 const stripComments = (text) => text.replace(/--.*$/gm, '')

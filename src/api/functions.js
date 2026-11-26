@@ -32,6 +32,12 @@ export function invokeFunction(name, options) {
 // Файл ВОР для расценки — только свой API: учётка с регистрации бывает только на новом портале, строк s3_documents она не видит.
 export const requestBidVorFile = (fileId) => callOspFunction('bid-vor-file', { body: { file_id: fileId } }, { getToken: ospToken, fetchImpl: sessionFetch })
 
+// Счёт снабжения к цене, взятой подрядчиком у снабжения (миграция 20270302) — только свой API: строки s3_documents подрядчику закрыты.
+// view — ссылка для окна просмотра (PDF и картинки; служба отвечает inline: true, если подписала её «показать»).
+export const requestBidSupplyDoc = (tenderId, documentId, view = false) => callOspFunction('bid-supply-doc',
+  { body: { tender_id: tenderId, document_id: documentId, ...(view ? { view: true } : {}) } },
+  { getToken: ospToken, fetchImpl: sessionFetch })
+
 // Свой ВОР подрядчика с расценками (миграция 20270113): загрузка, скачивание, удаление — только свой API, решают функции базы.
 export const requestBidFile = (body) => callOspFunction('bid-file', { body }, { getToken: ospToken, fetchImpl: sessionFetch })
 // Тот же файл администратору (сводка расценок подрядчиков) — маршрут /api/admin/bid-file, ответ в том же виде.

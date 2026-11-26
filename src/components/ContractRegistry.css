@@ -2431,49 +2431,6 @@
   white-space: nowrap;
 }
 
-/* ===== Охват реестра: все договоры / наши договоры ===== */
-.registry-scope {
-  display: inline-flex;
-  gap: 0.25rem;
-  margin: 0.25rem 0 0.5rem;
-  padding: 0.25rem;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-}
-.registry-scope-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.4rem 0.85rem;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-.registry-scope-btn:hover { color: var(--text-primary); }
-.registry-scope-btn.is-active {
-  background: var(--bg-primary);
-  border-color: var(--border-color);
-  color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
-}
-.registry-scope-count {
-  min-width: 1.4rem;
-  padding: 0 0.35rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, currentColor 14%, transparent);
-  font-size: 0.6875rem;
-  font-weight: 700;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
 /* Галочка в форме договора */
 .contract-form .inline-check,
 .inline-check {
@@ -2677,11 +2634,7 @@
   white-space: nowrap;
 }
 
-/* ===== Договор без номера — спокойная красная подсветка (без даты — нет, 13.11.2026) ===== */
-.contracts-table-compact td.cell-contract-num.is-incomplete {
-  background: rgba(185, 28, 28, 0.06);
-  box-shadow: inset 3px 0 0 rgba(185, 28, 28, 0.55);
-}
+/* Красной полосы у незаполненного договора нет (24.11.2026): видно по надписям «№ не присвоен» / «дата не указана». */
 
 /* Используется и в реестре, и в шапке карточки договора */
 .cds-missing {
@@ -2693,11 +2646,6 @@
 
 .contract-ds-link .cds-main.cds-missing {
   font-weight: 600;
-}
-
-[data-theme='dark'] .contracts-table-compact td.cell-contract-num.is-incomplete {
-  background: rgba(248, 113, 113, 0.08);
-  box-shadow: inset 3px 0 0 rgba(248, 113, 113, 0.5);
 }
 
 [data-theme='dark'] .cds-missing {

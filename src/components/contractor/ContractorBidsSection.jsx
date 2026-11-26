@@ -37,7 +37,7 @@ const PARTICIPATION = {
   declined: 'Участник · отказался',
 }
 const REQUEST = { pending: 'Заявка: ждёт решения', accepted: 'Заявка принята', rejected: 'Заявка отклонена' }
-const SOURCE = { manual: 'вручную', import: 'из файла', history: 'из прошлого тендера' }
+const SOURCE = { manual: 'вручную', import: 'из файла', history: 'из прошлого тендера', supply: 'цена снабжения (с разрешения отдела)' }
 
 const pairKey = (tenderId, counterpartyId) => `${tenderId}|${counterpartyId}`
 // Файлы подрядчиков по паре «тендер — организация»: { files, total } (итог — по файлам с посчитанной сводкой).

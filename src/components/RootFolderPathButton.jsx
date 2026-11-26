@@ -73,6 +73,8 @@ export default function RootFolderPathButton({
   // основное действие — «Открыть».
   driveLinkKey,
   driveLinkTitle = 'Общая папка в Google Drive',
+  // Необязательно: показать карточку раскрытой, без кнопки (внутри окна, где всплывающую обрезал бы край).
+  inline = false,
 }) {
   const [value, setValue] = useState('')
   const [loaded, setLoaded] = useState(false)
@@ -201,6 +203,157 @@ export default function RootFolderPathButton({
   // Ни пути, ни ссылки, а прав задать их нет — показывать нечего.
   if (!value && !driveLink && !canEdit) return null
 
+  const panel = (
+    <div className="rfpath-pop" role={inline ? 'group' : 'dialog'} aria-label={title}>
+      <div className="rfpath-pop-head">{title}</div>
+
+      {editing ? (
+        <>
+          <input
+            type="text"
+            className="rfpath-input"
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); save() }
+              if (e.key === 'Escape') { e.stopPropagation(); setEditing(false) }
+            }}
+            placeholder={placeholder}
+            disabled={saving}
+          />
+          <div className="rfpath-actions">
+            <button type="button" className="rfpath-act is-primary" onClick={save} disabled={saving}>
+              {saving ? 'Сохранение…' : 'Сохранить'}
+            </button>
+            <button type="button" className="rfpath-act" onClick={() => setEditing(false)} disabled={saving}>
+              Отмена
+            </button>
+          </div>
+        </>
+      ) : value ? (
+        <>
+          <div className="rfpath-path">{value}</div>
+          <div className="rfpath-actions">
+            {openable && (
+              <button type="button" className="rfpath-act is-primary" onClick={() => { openFolder(value); setOpen(false) }}>
+                <IconFolder size={14} /> Открыть
+              </button>
+            )}
+            <button type="button" className={`rfpath-act${openable ? '' : ' is-primary'}`} onClick={handleCopy}>
+              {copied ? <IconCheck /> : <IconCopy />}
+              {copied ? 'Скопировано' : 'Копировать'}
+            </button>
+            {canEdit && (
+              <button type="button" className="rfpath-act" onClick={startEdit}>
+                <IconPencil /> Изменить
+              </button>
+            )}
+          </div>
+          <div className="rfpath-hint">
+            {openable
+              ? '«Открыть» — папка в проводнике (нужен помощник: при первом нажатии подскажем, как его поставить). '
+              : ''}
+            Скопированный путь вставляют в адресную строку проводника: Win+E → Ctrl+L → Ctrl+V.
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="rfpath-hint">Путь к общей папке ещё не указан.</div>
+          {canEdit && (
+            <div className="rfpath-actions">
+              <button type="button" className="rfpath-act is-primary" onClick={startEdit}>
+                <IconPencil /> Указать путь
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {driveLinkKey && (driveLink || canEdit) && (
+        <div className="rfpath-drive">
+          <div className="rfpath-pop-head">{driveLinkTitle}</div>
+          {editingDrive ? (
+            <>
+              <input
+                type="url"
+                className="rfpath-input"
+                autoFocus
+                value={driveDraft}
+                onChange={(e) => setDriveDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); saveDrive() }
+                  if (e.key === 'Escape') { e.stopPropagation(); setEditingDrive(false) }
+                }}
+                placeholder="https://drive.google.com/drive/folders/…"
+                disabled={savingDrive}
+              />
+              <div className="rfpath-actions">
+                <button type="button" className="rfpath-act is-primary" onClick={saveDrive} disabled={savingDrive}>
+                  {savingDrive ? 'Сохранение…' : 'Сохранить'}
+                </button>
+                <button type="button" className="rfpath-act" onClick={() => setEditingDrive(false)} disabled={savingDrive}>
+                  Отмена
+                </button>
+              </div>
+            </>
+          ) : driveLink ? (
+            <>
+              <a
+                className="rfpath-link"
+                href={isWebUrl(driveLink) ? driveLink : undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={driveLink}
+              >
+                {driveLink}
+              </a>
+              <div className="rfpath-actions">
+                {isWebUrl(driveLink) && (
+                  <a
+                    className="rfpath-act is-primary"
+                    href={driveLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <IconExternal /> Открыть
+                  </a>
+                )}
+                <button type="button" className="rfpath-act" onClick={handleCopyDrive}>
+                  {driveCopied ? <IconCheck /> : <IconCopy />}
+                  {driveCopied ? 'Скопировано' : 'Копировать'}
+                </button>
+                {canEdit && (
+                  <button type="button" className="rfpath-act" onClick={() => { setDriveDraft(driveLink); setEditingDrive(true) }}>
+                    <IconPencil /> Изменить
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="rfpath-hint">Ссылка на Google Drive ещё не указана.</div>
+              <div className="rfpath-actions">
+                <button type="button" className="rfpath-act is-primary" onClick={() => { setDriveDraft(''); setEditingDrive(true) }}>
+                  <IconPencil /> Указать ссылку
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  // В окне («Документы» реестра договоров, 24.11.2026): карточка раскрыта сразу, без кнопки — всплывающую окно обрезало бы.
+  if (inline) {
+    return (
+      <div className="rfpath rfpath--inline" ref={wrapRef}>
+        {panel}
+      </div>
+    )
+  }
+
   return (
     <div className="rfpath" ref={wrapRef}>
       {/* Составной элемент: слева — раскрытие карточки, справа — копирование
@@ -232,147 +385,7 @@ export default function RootFolderPathButton({
         )}
       </div>
 
-      {open && (
-        <div className="rfpath-pop" role="dialog" aria-label={title}>
-          <div className="rfpath-pop-head">{title}</div>
-
-          {editing ? (
-            <>
-              <input
-                type="text"
-                className="rfpath-input"
-                autoFocus
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); save() }
-                  if (e.key === 'Escape') { e.stopPropagation(); setEditing(false) }
-                }}
-                placeholder={placeholder}
-                disabled={saving}
-              />
-              <div className="rfpath-actions">
-                <button type="button" className="rfpath-act is-primary" onClick={save} disabled={saving}>
-                  {saving ? 'Сохранение…' : 'Сохранить'}
-                </button>
-                <button type="button" className="rfpath-act" onClick={() => setEditing(false)} disabled={saving}>
-                  Отмена
-                </button>
-              </div>
-            </>
-          ) : value ? (
-            <>
-              <div className="rfpath-path">{value}</div>
-              <div className="rfpath-actions">
-                {openable && (
-                  <button type="button" className="rfpath-act is-primary" onClick={() => { openFolder(value); setOpen(false) }}>
-                    <IconFolder size={14} /> Открыть
-                  </button>
-                )}
-                <button type="button" className={`rfpath-act${openable ? '' : ' is-primary'}`} onClick={handleCopy}>
-                  {copied ? <IconCheck /> : <IconCopy />}
-                  {copied ? 'Скопировано' : 'Копировать'}
-                </button>
-                {canEdit && (
-                  <button type="button" className="rfpath-act" onClick={startEdit}>
-                    <IconPencil /> Изменить
-                  </button>
-                )}
-              </div>
-              <div className="rfpath-hint">
-                {openable
-                  ? '«Открыть» — папка в проводнике (нужен помощник: при первом нажатии подскажем, как его поставить). '
-                  : ''}
-                Скопированный путь вставляют в адресную строку проводника: Win+E → Ctrl+L → Ctrl+V.
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="rfpath-hint">Путь к общей папке ещё не указан.</div>
-              {canEdit && (
-                <div className="rfpath-actions">
-                  <button type="button" className="rfpath-act is-primary" onClick={startEdit}>
-                    <IconPencil /> Указать путь
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-
-          {driveLinkKey && (driveLink || canEdit) && (
-            <div className="rfpath-drive">
-              <div className="rfpath-pop-head">{driveLinkTitle}</div>
-              {editingDrive ? (
-                <>
-                  <input
-                    type="url"
-                    className="rfpath-input"
-                    autoFocus
-                    value={driveDraft}
-                    onChange={(e) => setDriveDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') { e.preventDefault(); saveDrive() }
-                      if (e.key === 'Escape') { e.stopPropagation(); setEditingDrive(false) }
-                    }}
-                    placeholder="https://drive.google.com/drive/folders/…"
-                    disabled={savingDrive}
-                  />
-                  <div className="rfpath-actions">
-                    <button type="button" className="rfpath-act is-primary" onClick={saveDrive} disabled={savingDrive}>
-                      {savingDrive ? 'Сохранение…' : 'Сохранить'}
-                    </button>
-                    <button type="button" className="rfpath-act" onClick={() => setEditingDrive(false)} disabled={savingDrive}>
-                      Отмена
-                    </button>
-                  </div>
-                </>
-              ) : driveLink ? (
-                <>
-                  <a
-                    className="rfpath-link"
-                    href={isWebUrl(driveLink) ? driveLink : undefined}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={driveLink}
-                  >
-                    {driveLink}
-                  </a>
-                  <div className="rfpath-actions">
-                    {isWebUrl(driveLink) && (
-                      <a
-                        className="rfpath-act is-primary"
-                        href={driveLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <IconExternal /> Открыть
-                      </a>
-                    )}
-                    <button type="button" className="rfpath-act" onClick={handleCopyDrive}>
-                      {driveCopied ? <IconCheck /> : <IconCopy />}
-                      {driveCopied ? 'Скопировано' : 'Копировать'}
-                    </button>
-                    {canEdit && (
-                      <button type="button" className="rfpath-act" onClick={() => { setDriveDraft(driveLink); setEditingDrive(true) }}>
-                        <IconPencil /> Изменить
-                      </button>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="rfpath-hint">Ссылка на Google Drive ещё не указана.</div>
-                  <div className="rfpath-actions">
-                    <button type="button" className="rfpath-act is-primary" onClick={() => { setDriveDraft(''); setEditingDrive(true) }}>
-                      <IconPencil /> Указать ссылку
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+      {open && panel}
     </div>
   )
 }

@@ -5,8 +5,8 @@ import { IconClose } from '../icons/ToolbarIcons'
 import { IconUpload } from '../icons/BsmIcons'
 import { readWorkbookBytes } from '../../utils/supplierDocRead'
 import {
-  DEFAULT_SOURCE, PARSE_ERROR_TEXT, PRIMAVERA_ONCE, REGISTRY_IMPORT_ACCEPT,
-  isBarePrimavera, moscowDay, objectIndex, parseRegistryWorkbook, prepareRegistryImport, primaveraK14, primaveraOnceUsed,
+  DEFAULT_SOURCE, PARSE_ERROR_TEXT, PRIMAVERA_ONCE, REGISTRY_IMPORT_ACCEPT, REGISTRY_READ_OPTIONS,
+  invoiceLinkCounts, isBarePrimavera, moscowDay, objectIndex, parseRegistryWorkbook, prepareRegistryImport, primaveraK14, primaveraOnceUsed,
 } from '../../utils/supplyRegistryImport'
 import { fmtMoney, fmtCount } from '../../utils/ratesRegistry'
 import { deleteImport, importRegistryRates, listImports, loadExistingKeys, loadImportContext } from '../../services/supplyRegistryImport'
@@ -106,6 +106,11 @@ export default function SupplyRegistryImportDialog({ onClose, onImported, onChan
     })
   }, [parsed, ctx, index, existing.keys, choices, onceInFile, primaveraOnce, defaults, today])
   const detailColumns = DETAIL_COLUMNS.filter(([field]) => parsed?.columns?.[field] != null).map(([, label]) => label)
+  // Ссылки на счёт у строк к загрузке: сколько запишется и сколько не адрес сайта (сетевой путь, подпись без ссылки).
+  const invoiceLinks = useMemo(
+    () => (prepared && parsed?.columns?.invoiceUrl != null ? invoiceLinkCounts(prepared.lines) : null),
+    [prepared, parsed],
+  )
 
   const readFile = useCallback(async (f) => {
     if (!f) return
@@ -117,7 +122,7 @@ export default function SupplyRegistryImportDialog({ onClose, onImported, onChan
     setPhase('reading')
     try {
       const XLSX = await import('xlsx')
-      const wb = readWorkbookBytes(XLSX, new Uint8Array(await f.arrayBuffer()), f.name)
+      const wb = readWorkbookBytes(XLSX, new Uint8Array(await f.arrayBuffer()), f.name, REGISTRY_READ_OPTIONS)
       const res = parseRegistryWorkbook(XLSX, wb)
       if (res.error) {
         setReadError(PARSE_ERROR_TEXT[res.error] || 'Файл не распознан.')
@@ -261,6 +266,15 @@ export default function SupplyRegistryImportDialog({ onClose, onImported, onChan
               {detailColumns.length > 0 && (
                 <p className="kpr-muted sri-details-note">
                   Подробности расценки из файла: {detailColumns.join(', ')} — будут видны по нажатию на строку реестра.
+                </p>
+              )}
+              {invoiceLinks && (invoiceLinks.linked > 0 || invoiceLinks.dropped > 0) && (
+                <p className="kpr-muted sri-links-note">
+                  Ссылки на счёт у строк к загрузке: <b className="kpr-num">{fmtCount(invoiceLinks.linked)}</b>
+                  {invoiceLinks.dropped > 0 && (
+                    <> · без ссылки останутся <b className="kpr-num">{fmtCount(invoiceLinks.dropped)}</b>: в ячейке не адрес сайта
+                      (сетевой путь, файл на диске или подпись без ссылки)</>
+                  )}
                 </p>
               )}
               {!existingReady && !existing.error && <p className="kpr-progress" role="status">Проверяем, что из файла уже есть в реестре…</p>}

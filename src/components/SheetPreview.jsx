@@ -6,7 +6,9 @@ import './SheetPreview.css'
 // Просмотр файла Excel в окне S3DocumentPreview (13.11.2026): листы вкладками, значения — как показывает Excel, объединённые ячейки
 // сохраняются. Только чтение; формулы, картинки и оформление не показываются. Текст ячеек выводит React — разметка из файла
 // в страницу не попадает. Скрытые листы не показываются; больше 2000 строк и 60 столбцов — начало и пометка.
-export default function SheetPreview({ s3Key }) {
+// loadBytes — когда ключа хранилища у страницы нет (счёт снабжения в кабинете подрядчика: ссылку выдаёт служба): () → байты файла.
+// Его меняют вместе с файлом (зависимость эффекта — s3Key или сама функция).
+export default function SheetPreview({ s3Key, loadBytes }) {
   const [state, setState] = useState({ status: 'loading', sheets: [], error: '' })
   const [active, setActive] = useState(0)
 
@@ -14,7 +16,7 @@ export default function SheetPreview({ s3Key }) {
     let cancelled = false
     setState({ status: 'loading', sheets: [], error: '' })
     setActive(0)
-    Promise.all([import('xlsx'), fetchFileBytes(s3Key)])
+    Promise.all([import('xlsx'), loadBytes ? loadBytes() : fetchFileBytes(s3Key)])
       .then(([XLSX, bytes]) => {
         if (cancelled) return
         const wb = XLSX.read(bytes, { type: 'array', cellDates: true })
@@ -26,7 +28,7 @@ export default function SheetPreview({ s3Key }) {
         if (!cancelled) setState({ status: 'error', sheets: [], error: err.message || 'Файл не открылся' })
       })
     return () => { cancelled = true }
-  }, [s3Key])
+  }, [s3Key, loadBytes])
 
   if (state.status === 'loading') return <div className="sheet-preview-status">Открываем таблицу…</div>
   if (state.status === 'error') return <div className="sheet-preview-status is-error">Таблица не открылась: {state.error}</div>

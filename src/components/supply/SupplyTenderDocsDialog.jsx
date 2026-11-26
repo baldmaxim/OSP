@@ -1,14 +1,14 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { IconUpload } from '../icons/BsmIcons'
-import { IconAlert, IconCheck, IconEyeOff, IconTrash } from '../icons/ActionIcons'
+import { IconAlert, IconCheck, IconEyeOff } from '../icons/ActionIcons'
 import { IconSearch } from '../icons/ToolbarIcons'
 import PaperclipIcon from '../icons/PaperclipIcon'
 import { formatAmount, roundMoney } from '../../utils/money'
 import { PICK_BLOCKS, autoPickRows, groupHideKeys, hideKeysByDoc, isHiddenAt, unplacedLines, windowOffers } from '../../utils/supplyAutoPick'
 import { searchGroups } from '../../utils/supplyDocMatch'
-import { DOC_READ_PROBLEM } from '../../utils/supplyDocPrice'
 import { nameDiff } from '../../utils/supplyNameDiff'
-import { offerVatMode, scanProgressText } from '../../utils/supplyOffers'
+import { scanProgressText } from '../../utils/supplyOffers'
+import SupplyTenderFilesDialog, { filesAttention } from './SupplyTenderFilesDialog'
 
 // За один раз — не больше (каждый файл читается и загружается по очереди).
 const FILES_MAX = 20
@@ -245,9 +245,12 @@ function UnplacedLine({ item, groups, busy, onPick }) {
 // удаления (файл один или вместе с его ценами) и отвечает { note }; removed — удалённые файлы, чьи цены ещё стоят
 // ([{ docId, name, at, rows }], utils/supplyDocPrices.removedDocPrices): строка «удалён …» в списке файлов — «снять цены»
 // (onClearRemoved) или «оставить» (onKeepRemoved); оба отвечают текстом для строки состояния.
+// 24.11.2026 (просьба пользователя): плашки файлов над таблицей заменены кнопкой «Документы» — все файлы, их состояние, скачать по
+// одному и все (SupplyTenderFilesDialog); здесь остались только загружаемые сейчас (ход чтения, отказ, повтор). На кнопке — сколько
+// файлов и, отдельной пометкой, что ждёт действия: курс валюты, удалённые файлы с ценами. archiveOwner — начало имени архива.
 export default function SupplyTenderDocsDialog({
   docs, dupes = [], others, byGroup, groups, rates, filesOn, currentOf, initialFiles = null, attachTo = null, onAddFile, onAttachDoc, onDeleteDoc, onOpenFile, onApply, onClose,
-  onPickLine, onRejectLine, onPack, onSetRate, onSetVat, onHide, onUnhide, removed = [], onClearRemoved, onKeepRemoved,
+  onPickLine, onRejectLine, onPack, onSetRate, onSetVat, onHide, onUnhide, removed = [], onClearRemoved, onKeepRemoved, archiveOwner = 'Тендер',
 }) {
   const [uploads, setUploads] = useState([]) // [{ id, name, status: reading | failed | duplicate, error }]
   const [chosen, setChosen] = useState(() => new Map()) // ключ группы → id цены, выбранной человеком
@@ -265,14 +268,33 @@ export default function SupplyTenderDocsDialog({
   const fileRef = useRef(null)
   const headBoxRef = useRef(null)
   const [removing, setRemoving] = useState(false) // снимаем или оставляем цены удалённого файла
+  const [filesOpen, setFilesOpen] = useState(false) // окно «Документы тендера»
   const uploading = uploads.some((u) => u.status === 'reading')
   const busy = applying || uploading || hiding || removing
 
+  // Escape: открыто окно документов — закрывает только его; открыт просмотр файла — только просмотр (он закрывается сам). Окно
+  // удаления файла ловит Escape раньше (на погружении) и дальше его не пускает. Был ли просмотр — смотрим на погружении: к нашему
+  // обработчику он уже закрылся (его обработчик — на document, раньше window), и Escape закрыл бы заодно и окно.
+  // Подписка — один раз, состояние — из ссылки: закрытый просмотр перерисовывает страницу посреди того же нажатия, и переподписанный
+  // обработчик не знал бы, что просмотр был.
+  const escState = useRef(null)
+  escState.current = { busy, filesOpen, onClose }
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape' && !busy) onClose() }
+    let covered = false
+    const onCapture = (e) => { if (e.key === 'Escape') covered = !!document.querySelector('.s3-doc-preview-overlay') }
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || covered) return
+      const { busy: working, filesOpen: inFiles, onClose: close } = escState.current
+      if (inFiles) setFilesOpen(false)
+      else if (!working) close()
+    }
+    window.addEventListener('keydown', onCapture, true)
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [busy, onClose])
+    return () => {
+      window.removeEventListener('keydown', onCapture, true)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [])
 
   // Удаление файла — в своём окне (SupplyDocDeleteDialog): с ценами, поставленными из него, или без; итог — строкой здесь.
   const deleteDoc = (doc) => Promise.resolve(onDeleteDoc(doc)).then((res) => { if (res?.note) { setError(''); setNote(res.note) } })
@@ -337,8 +359,12 @@ export default function SupplyTenderDocsDialog({
   const viewIds = view && docs.some((x) => view.has(x.doc.id)) ? view : null
   const viewDocs = useMemo(() => (viewIds ? docs.filter((x) => viewIds.has(x.doc.id)) : docs), [docs, viewIds])
   const shownOffers = useMemo(() => windowOffers(byGroup, docs, viewIds), [byGroup, docs, viewIds])
+  // Пока цены записываются, строки окна не пересчитываются на каждой записанной цене: окно закроется, когда запишутся все.
+  const ratesSeen = useRef(rates)
+  if (!applying) ratesSeen.current = rates
+  const ratesNow = ratesSeen.current
   // eslint-disable-next-line react-hooks/exhaustive-deps -- rates: currentOf читает цены из ссылки, пересчёт — при их смене
-  const { rows } = useMemo(() => autoPickRows(shownOffers.byGroup, groups, { chosen, currentOf, allByGroup: byGroup }), [shownOffers, groups, chosen, currentOf, rates, byGroup])
+  const { rows, held } = useMemo(() => autoPickRows(shownOffers.byGroup, groups, { chosen, currentOf, allByGroup: byGroup }), [shownOffers, groups, chosen, currentOf, ratesNow, byGroup])
   const isChecked = (r) => r.shown.unitOk && (ticked.has(r.group.key) || (r.auto && !unticked.has(r.group.key)))
   const toApply = rows.filter(isChecked)
   // Неотмеченные — и строки блока «введённые вручную» (сами не отмечаются): убрать их — оставить ручные цены как есть.
@@ -348,10 +374,10 @@ export default function SupplyTenderDocsDialog({
   const blocks = PICK_BLOCKS.map((block) => ({ block, rows: rows.filter((r) => r.block === block.key) })).filter((b) => b.rows.length)
   const unplaced = useMemo(() => unplacedLines(viewDocs, byGroup), [viewDocs, byGroup])
   const allLines = useMemo(() => viewDocs.filter((x) => !x.offer.currency).flatMap(({ doc, offer }) => offer.lines.filter((l) => !l.skip).map((line) => ({ doc, line }))), [viewDocs])
-  const onCheck = (key, on) => {
+  const onCheck = useCallback((key, on) => {
     setTicked((prev) => { const s = new Set(prev); if (on) s.add(key); else s.delete(key); return s })
     setUnticked((prev) => { const s = new Set(prev); if (on) s.delete(key); else s.add(key); return s })
-  }
+  }, [])
   // Галочка в шапке: отметить или снять все строки окна (строки с неподходящей ед. изм. не отмечаются).
   const allOn = checkable.length > 0 && checkable.every(isChecked)
   const someOn = toApply.length > 0 && !allOn
@@ -441,7 +467,23 @@ export default function SupplyTenderDocsDialog({
       if (!applying) addFiles(e.dataTransfer.files)
     },
   }
-  const rowProps = { busy: applying || hiding, allLines, onCheck, onPick: pickLine, onReject: rejectLine, onPack: setPack, onOpenFile }
+  // Обработчики строк — одни и те же между отрисовками (вызывают последние версии): иначе каждая отрисовка окна (ход записи цен,
+  // отметка строки) перерисовывала все строки таблицы — memo у PickRow не срабатывал.
+  const latest = useRef(null)
+  latest.current = { pickLine, rejectLine, setPack, onOpenFile }
+  const onPickRow = useCallback((...a) => latest.current.pickLine(...a), [])
+  const onRejectRow = useCallback((...a) => latest.current.rejectLine(...a), [])
+  const onPackRow = useCallback((...a) => latest.current.setPack(...a), [])
+  const onOpenRowFile = useCallback((doc) => latest.current.onOpenFile(doc), [])
+  const rowProps = { busy: applying || hiding, allLines, onCheck, onPick: onPickRow, onReject: onRejectRow, onPack: onPackRow, onOpenFile: onOpenRowFile }
+  // Строки без позиции рисуются, только когда их раскрыли: свёрнутые сотни строк тоже перерисовывались на каждом шаге записи цен.
+  const [unplacedOpen, setUnplacedOpen] = useState(false)
+  const fileCount = docs.length + dupes.length + others.length
+  const attention = filesAttention(docs, removed)
+  const setVat = (doc, mode) => Promise.resolve(onSetVat(doc, mode))
+    .then(() => setNote(`НДС в «${doc.file_name}» изменён: где его цены уже стоят, новые — в блоке «Заменят цены из документов», отмечены.`))
+    .catch((err) => setError(err.message))
+  const setRate = (doc, n) => Promise.resolve(onSetRate(doc, n)).catch((err) => setError(err.message))
   const noFiles = !docs.length && !dupes.length && !others.length && !uploads.length && !removed.length
   const showTools = rows.length > 0 || shownOffers.hidden > 0 || docs.length > 1
 
@@ -455,11 +497,19 @@ export default function SupplyTenderDocsDialog({
             <IconUpload size={16} /> Выбрать файлы
           </button>
           <span className="sp-muted">или перетащите в это окно</span>
+          {(fileCount > 0 || removed.length > 0) && (
+            <button type="button" className={`btn-secondary sp-td-files-btn${attention ? ' is-warn' : ''}`} onClick={() => setFilesOpen(true)} aria-haspopup="dialog"
+              aria-label={`Документы тендера: ${fileCount}${attention ? `, ждут действия: ${attention}` : ''}`}
+              title={attention ? 'Все файлы тендера. Есть что сделать: курс валюты или цены удалённого файла' : 'Все файлы тендера: открыть, скачать, удалить'}>
+              <PaperclipIcon size={16} /> Документы <span className="ui-num">{fileCount}</span>
+              {attention > 0 && <span className="sp-td-files-attn ui-num" aria-hidden="true"><IconAlert size={12} />{attention}</span>}
+            </button>
+          )}
           {!filesOn && <span className="sp-muted">Файлы к тендеру не сохраняются: на сервере не применено обновление базы.</span>}
         </div>
         <div className="sp-modal-body">
-          {!noFiles && (
-            <ul className="sp-td-files" aria-label="Файлы тендера">
+          {uploads.length > 0 && (
+            <ul className="sp-td-uploads" aria-label="Загружаемые файлы">
               {uploads.map((u) => (
                 <li key={`u${u.id}`} className={u.status === 'failed' ? 'is-off' : undefined} role="status">
                   <PaperclipIcon size={12} /> {u.name}
@@ -468,65 +518,6 @@ export default function SupplyTenderDocsDialog({
                     {u.status === 'duplicate' && 'уже есть у тендера'}
                     {u.status === 'failed' && <><IconAlert size={12} /> не загрузился: {u.error}</>}
                   </span>
-                </li>
-              ))}
-              {docs.map(({ doc, offer }) => {
-                const vat = offerVatMode(offer)
-                return (
-                  <li key={doc.id}>
-                    <button type="button" className="sp-td-file" onClick={() => onOpenFile(doc)} title="Открыть файл"><PaperclipIcon size={12} /> {doc.file_name}</button>
-                    {(offer.date || doc.created_at) && <span className="sp-td-meta ui-num">{fmtDay(offer.date || doc.created_at)}</span>}
-                    {offer.currency ? (
-                      <span className="sp-td-pack is-warn">
-                        цены в {offer.currency}, курс ₽:
-                        <input type="text" inputMode="decimal" className="sp-td-num" disabled={busy} aria-label={`Курс, ₽ за 1 ${offer.currency}: ${doc.file_name}`}
-                          onBlur={(e) => { const n = positive(e.target.value); if (n) Promise.resolve(onSetRate(doc, n)).catch((err) => setError(err.message)) }}
-                          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }} />
-                      </span>
-                    ) : (
-                      <select className="sp-td-vat" value={vat} disabled={busy} aria-label={`НДС в ценах: ${doc.file_name}`} title="Какие цены в документе. Цена в расценке — с НДС."
-                        onChange={(e) => Promise.resolve(onSetVat(doc, e.target.value))
-                          .then(() => setNote(`НДС в «${doc.file_name}» изменён: где его цены уже стоят, новые — в блоке «Заменят цены из документов», отмечены.`))
-                          .catch((err) => setError(err.message))}>
-                        <option value="gross">с НДС</option>
-                        <option value="net">без НДС, +{offer.vat?.rate ?? 22} %</option>
-                      </select>
-                    )}
-                    {offer.ocr && (
-                      <span className="sp-td-tag" title="Текст распознан со скана. Цену без сверки цена × кол-во = сумма расценка сама не отмечает.">со скана{offer.total?.ok ? ', итог сошёлся' : ''}</span>
-                    )}
-                    {offer.total && !offer.total.ok && (
-                      <span className="sp-td-tag is-warn" title={`Итог в документе ${formatAmount(offer.total.doc)} ₽, в прочитанных строках ${formatAmount(offer.total.read)} ₽: часть строк могла не прочитаться, или в документе скидка на весь заказ.`}>итог не сходится</span>
-                    )}
-                    <button type="button" className="sp-icon-btn sp-td-del" onClick={() => deleteDoc(doc)} disabled={busy}
-                      aria-label={`Удалить файл «${doc.file_name}»`} title="Удалить файл — пропадёт у всех позиций, где он документ"><IconTrash size={14} /></button>
-                  </li>
-                )
-              })}
-              {dupes.map(({ doc, of }) => (
-                <li key={doc.id} className="is-dup">
-                  <button type="button" className="sp-td-file" onClick={() => onOpenFile(doc)} title="Открыть файл"><PaperclipIcon size={12} /> {doc.file_name}</button>
-                  <span className="sp-td-meta">повтор «{of.file_name}» — цены не считаются второй раз</span>
-                  <button type="button" className="sp-icon-btn sp-td-del" onClick={() => deleteDoc(doc)} disabled={busy}
-                    aria-label={`Удалить файл «${doc.file_name}»`} title="Удалить повтор — пропадёт у всех позиций, где он документ"><IconTrash size={14} /></button>
-                </li>
-              ))}
-              {others.map(({ doc, failed, progress: reading }) => (
-                <li key={doc.id} className={failed ? 'is-off' : undefined}>
-                  <button type="button" className="sp-td-file" onClick={() => onOpenFile(doc)} title="Открыть файл"><PaperclipIcon size={12} /> {doc.file_name}</button>
-                  <span className="sp-td-meta">{failed ? DOC_READ_PROBLEM[failed] || DOC_READ_PROBLEM.broken : (reading || 'читаем…')}</span>
-                  <button type="button" className="sp-icon-btn sp-td-del" onClick={() => deleteDoc(doc)} disabled={busy}
-                    aria-label={`Удалить файл «${doc.file_name}»`} title="Удалить файл — пропадёт у всех позиций, где он документ"><IconTrash size={14} /></button>
-                </li>
-              ))}
-              {removed.map((entry) => (
-                <li key={`gone-${entry.docId}`} className="is-gone">
-                  <span className="sp-td-gone"><IconTrash size={12} /> {entry.name}</span>
-                  <span className="sp-td-meta">удалён{entry.at ? ` ${fmtDay(entry.at)}` : ''} · его цены стоят у позиций: <b className="ui-num">{entry.rows.length}</b></span>
-                  <button type="button" className="sp-link-btn is-danger" disabled={busy} onClick={() => removedAct(onClearRemoved, entry)}
-                    title="Снять цены, поставленные из этого файла. Цены, которые после удаления файла меняли, останутся.">снять цены</button>
-                  <button type="button" className="sp-link-btn" disabled={busy} onClick={() => removedAct(onKeepRemoved, entry)}
-                    title="Оставить цены как обычные: строка удалённого файла пропадёт">оставить</button>
                 </li>
               ))}
             </ul>
@@ -563,8 +554,10 @@ export default function SupplyTenderDocsDialog({
               )}
             </div>
           )}
-          {!noFiles && !rows.length && !uploading && docs.length > 0 && (
-            <p className="sp-td-empty" role="status"><IconCheck size={16} /> {shownOffers.hidden > 0 || viewIds
+          {/* Строки, похожие на позиции с другой ценой не наверняка (autoPickRows.held), окно не показывает — но и не говорит, что цены стоят. */}
+          {!noFiles && !rows.length && !uploading && docs.length > 0 && (held > 0
+            ? <p className="sp-td-empty" role="status">Новых цен нет: у позиций, на которые похожи строки документа ({held}), уже стоит другая цена, а это не та же позиция наверняка — нет того же артикула или наименования. Взять такую цену можно в таблице: «цены поставщиков» у позиции.</p>
+            : <p className="sp-td-empty" role="status"><IconCheck size={16} /> {shownOffers.hidden > 0 || viewIds
               ? 'Ставить больше нечего: цены этих документов уже стоят или позиции убраны.'
               : 'Все цены из документов уже стоят в расценке.'}</p>
           )}
@@ -599,16 +592,25 @@ export default function SupplyTenderDocsDialog({
           )}
 
           {unplaced.length > 0 && (
-            <details className="sp-td-unplaced">
+            <details className="sp-td-unplaced" onToggle={(e) => setUnplacedOpen(e.currentTarget.open)}>
               <summary>Строки счетов без позиции ВОР: {unplaced.length}</summary>
-              <ul>
-                {unplaced.map((u) => <UnplacedLine key={`${u.doc.id}:${u.line.name}`} item={u} groups={groups} busy={applying || hiding} onPick={pickLine} />)}
-              </ul>
+              {unplacedOpen && (
+                <ul>
+                  {unplaced.map((u) => <UnplacedLine key={`${u.doc.id}:${u.line.name}`} item={u} groups={groups} busy={applying || hiding} onPick={onPickRow} />)}
+                </ul>
+              )}
             </details>
           )}
-          {note && !error && <p className="sp-td-note" role="status">{note}</p>}
-          {error && <p className="sp-error-text" role="alert">{error}</p>}
+          {/* Окно документов открыто — строка состояния в нём (оно закрывает эту). */}
+          {note && !error && !filesOpen && <p className="sp-td-note" role="status">{note}</p>}
+          {error && !filesOpen && <p className="sp-error-text" role="alert">{error}</p>}
         </div>
+        {filesOpen && (
+          <SupplyTenderFilesDialog docs={docs} dupes={dupes} others={others} removed={removed} busy={busy} archiveOwner={archiveOwner}
+            note={note} error={error} onOpenFile={onOpenFile} onDelete={deleteDoc} onSetRate={setRate} onSetVat={setVat}
+            onClearRemoved={(entry) => removedAct(onClearRemoved, entry)} onKeepRemoved={(entry) => removedAct(onKeepRemoved, entry)}
+            onClose={() => setFilesOpen(false)} />
+        )}
         <div className="sp-modal-actions sp-td-actions">
           <span className="sp-td-sum" aria-live="polite">
             {applying && progress ? `Сохраняем цены: ${progress.done} из ${progress.total}…`

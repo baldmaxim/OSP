@@ -5,6 +5,7 @@
     "tender_bid_files": { "authenticated": ["select"] },
     "tender_bid_forms": { "authenticated": ["select"] },
     "tender_bid_rates": { "authenticated": ["select"] },
+    "tender_bid_supply_access": { "authenticated": ["select"] },
     "user_roles": { "authenticated": ["select"] }
   },
   "rpc": {
@@ -12,8 +13,14 @@
     "bid_contractor_tenders": ["authenticated"],
     "bid_form_save": ["authenticated"],
     "bid_positions": ["authenticated"],
+    "bid_rate_history": ["authenticated"],
     "bid_rates_save": ["authenticated"],
     "bid_request": ["authenticated"],
+    "bid_supply_docs": ["authenticated"],
+    "bid_supply_prices": ["authenticated"],
+    "bid_supply_request": ["authenticated"],
+    "bid_supply_take": ["authenticated"],
+    "bid_vor_changes": ["authenticated"],
     "bid_vor_superseded": ["authenticated"],
     "contractor_org_card": ["authenticated"],
     "contractor_org_name": ["authenticated"],

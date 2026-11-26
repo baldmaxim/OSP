@@ -3,7 +3,7 @@
 // Окно в браузере — «Счета и КП: убрать неотмеченные» в tests/tender/supply-pricing.test.mjs.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { autoPickRows, groupHideKeys, hideKeysByDoc, isHiddenAt, offersByGroup, windowOffers } from '../../src/utils/supplyAutoPick.js'
+import { autoPickRows, groupHideKeys, hideKeysByDoc, isHiddenAt, keepSameLines, offersByGroup, sameMatchDocs, windowOffers } from '../../src/utils/supplyAutoPick.js'
 import { mergeSamePositions, positionGroups } from '../../src/utils/supplyDocMatch.js'
 import { OFFER_HIDDEN_MAX, offerNotes, offerVatMode, offerWithVat, readOffer } from '../../src/utils/supplyOffers.js'
 import { normName } from '../../src/utils/supplyRateHelpers.js'
@@ -96,6 +96,32 @@ describe('окно «Счета и КП»: убранные позиции и ц
 
 // 18.11.2026, тендер № 704: «130_MLN.pdf» — прайс без НДС и таблица с колонкой «Цена с НДС». Переключатель НДС у документа меняет
 // только строки без НДС в колонке; строки, которые прежний переключатель сделал дороже на 22 %, при чтении возвращаются к цене колонки.
+// 24.11.2026 («Убрать неотмеченные очень долго делаются»): страница пересчитывала сопоставление всех строк документов с позициями
+// после каждого документа, хотя убранное цен не меняет. Документы для сопоставления те же, пока те же строки и то, что оно читает.
+describe('убранное из окна не запускает сопоставление заново', () => {
+  it('другой hidden — те же документы; правка строки, НДС, курс, дата — другие', () => {
+    const notes = offerNotes({ lines: [line('Кран шаровой Ду15', 100), line('Манометр общего назначения', 300)], vat: { mode: 'gross', rate: 22 } })
+    const doc = { id: 'a', file_name: 'a.xlsx', created_at: '2026-10-01T00:00:00Z' }
+    const was = [{ doc, offer: readOffer(notes) }]
+    // Как в странице: notes перечитаны, неизменённые строки — прежние объекты (keepSameLines).
+    const reread = (next) => [{ doc, offer: keepSameLines(readOffer(offerNotes(next)), was[0].offer) }]
+    const hidden = reread({ ...was[0].offer, hidden: groupHideKeys(groups[0]) })
+    assert.notEqual(hidden[0].offer, was[0].offer)
+    assert.equal(sameMatchDocs(was, hidden), true, 'убрали позицию — сопоставление то же')
+    // Цены от этого не меняются: те же цены по позициям.
+    const prices = (docs) => [...offersByGroup(docs, groups).entries()].map(([k, list]) => `${k}:${list.map((o) => o.price).join(',')}`).sort()
+    assert.deepEqual(prices(hidden), prices(was))
+
+    const edited = reread({ ...was[0].offer, lines: was[0].offer.lines.map((l, i) => (i ? l : { ...l, price: 120 })) })
+    assert.equal(sameMatchDocs(was, edited), false, 'строку правили')
+    assert.equal(sameMatchDocs(was, reread({ ...was[0].offer, vat: { mode: 'net', rate: 22 } })), false, 'НДС')
+    assert.equal(sameMatchDocs(was, reread({ ...was[0].offer, date: '2026-11-01' })), false, 'дата документа')
+    assert.equal(sameMatchDocs(was, reread({ ...was[0].offer, currency: 'USD' })), false, 'валюта')
+    assert.equal(sameMatchDocs(was, [{ doc: { ...doc }, offer: hidden[0].offer }]), false, 'другой файл')
+    assert.equal(sameMatchDocs(was, [...hidden, ...hidden]), false, 'другой набор документов')
+  })
+})
+
 describe('НДС у документа из двух частей', () => {
   const notesOf = (vat, lines) => JSON.stringify({ kind: 'supply_offer', v: 1, rv: 2, vat, delivery: 1, lines })
   it('переключатель не трогает строки «с НДС» по колонке; испорченные прежним переключателем — чинятся при чтении', () => {

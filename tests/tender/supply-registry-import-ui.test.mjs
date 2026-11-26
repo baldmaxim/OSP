@@ -20,9 +20,13 @@ const HEADERS = ['№ п/п', 'Источник', 'Объект', 'Наимен�
 // Шапка файла пользователя 23.11.2026 и колонка выгрузки «Ссылка на счёт».
 const FOLDER_HEADERS = ['Источник', 'Объект', 'Наименование', 'Ед. изм.', 'Цена, ₽', 'Тендер', 'Дата расценки',
   'Подрядчик по папке', '№ документа из\nимени файла', '№ заявки / заказа', 'Файл-источник', 'Ссылка на счёт']
-function registryXlsx(rows, headers = HEADERS) {
+// links — адреса, зашитые в ячейки: { 'L2': 'https://…' } (гиперссылка ячейки), formulas — { 'L3': 'HYPERLINK("…","…")' }.
+function registryXlsx(rows, headers = HEADERS, { links = {}, formulas = {} } = {}) {
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, ...rows]), 'Расценки СУ-10')
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+  for (const [addr, Target] of Object.entries(links)) ws[addr].l = { Target }
+  for (const [addr, f] of Object.entries(formulas)) ws[addr].f = f
+  XLSX.utils.book_append_sheet(wb, ws, 'Расценки СУ-10')
   return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }))
 }
 const FILE_ROWS = [
@@ -59,11 +63,11 @@ describe('Реестр СУ-10: загрузка расценок из Excel —
     await page.locator('.rr-table tbody tr').first().waitFor({ timeout: 120000 })
     return { page, errors, dialogs, close: () => context.close().catch(() => {}) }
   }
-  const upload = async (page, rows, { headers = HEADERS, name = 'Расценки снабжения.xlsx' } = {}) => {
+  const upload = async (page, rows, { headers = HEADERS, name = 'Расценки снабжения.xlsx', cells } = {}) => {
     await page.getByRole('button', { name: 'Загрузить из Excel' }).click()
     const dialog = page.getByRole('dialog', { name: 'Загрузка расценок СУ-10 из Excel' })
     await dialog.getByRole('button', { name: 'Выбрать файл' }).waitFor()
-    await dialog.locator('input[type=file]').setInputFiles({ name, mimeType: XLSX_MIME, buffer: registryXlsx(rows, headers) })
+    await dialog.locator('input[type=file]').setInputFiles({ name, mimeType: XLSX_MIME, buffer: registryXlsx(rows, headers, cells) })
     await dialog.locator('.sri-objects').waitFor()
     return dialog
   }
@@ -232,6 +236,36 @@ describe('Реестр СУ-10: загрузка расценок из Excel —
     }
   })
 
+  // Просьба пользователя 23.11.2026: в колонке видно «Открыть счёт», адрес зашит в ячейку — такая ссылка не читалась.
+  it('ссылка на счёт зашита в ячейку («Открыть счёт»): гиперссылка и формула — в реестре зелёная ссылка; сетевой путь — без ссылки', async () => {
+    const { page, errors, close } = await open()
+    try {
+      const dialog = await upload(page, [
+        ['Счета', 'Зил33', 'Кабель КГ 3х4', 'м', 140, '', '05.10.2026', 'ООО «Электро»', 4601, '', 'Счёт 4601.pdf', 'Открыть счёт'],
+        ['Счета', 'Зил33', 'Лоток 100х50', 'м', 310, '', '05.10.2026', 'ООО «Электро»', 4602, '', 'Счёт 4602.pdf', 'Открыть счёт'],
+        ['Счета', 'Зил33', 'Короб 40х25', 'м', 75, '', '05.10.2026', 'ООО «Электро»', 4603, '', 'Счёт 4603.pdf', 'Открыть счёт'],
+      ], {
+        headers: FOLDER_HEADERS, name: 'Счета со ссылками.xlsx',
+        cells: {
+          links: { L2: 'https://disk.example/i/Счёт 4601', L4: '\\\\fs\\Счета\\4603.pdf' },
+          formulas: { L3: 'HYPERLINK("https://disk.example/s/4602","Открыть счёт")' },
+        },
+      })
+      assert.match((await dialog.locator('.sri-links-note').innerText()).replace(/\s+/g, ' '),
+        /Ссылки на счёт у строк к загрузке: 2 · без ссылки останутся 1: в ячейке не адрес сайта/)
+      await dialog.getByRole('button', { name: 'Загрузить в реестр: 3' }).click()
+      await page.locator('.kpr-notice', { hasText: 'в реестр добавлено 3' }).waitFor()
+      const href = (name) => page.locator('.rr-table tbody tr', { hasText: name }).locator('.rr-td-invoice a.rr-invoice.is-linked').getAttribute('href')
+      assert.equal(await href('Кабель КГ 3х4'), 'https://disk.example/i/Счёт%204601', 'гиперссылка ячейки: кириллица цела, пробел — %20')
+      assert.equal(await href('Лоток 100х50'), 'https://disk.example/s/4602', 'формула ГИПЕРССЫЛКА')
+      assert.equal(await page.locator('.rr-table tbody tr', { hasText: 'Короб 40х25' }).locator('.rr-invoice.is-missing').count(), 1,
+        'сетевой путь — не адрес сайта')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
   it('база без колонок подробностей (20270227 не применена): колонки «Документ» нет, окно открывается; телефон — во весь экран', async () => {
     const { page, errors, close } = await open('&supplyDetailsMissing=1', { width: 390, height: 844 })
     try {
@@ -243,6 +277,92 @@ describe('Реестр СУ-10: загрузка расценок из Excel —
       assert.doesNotMatch(await card.innerText(), /Счёт/)
       const box = await card.boundingBox()
       assert.ok(box.width >= 388 && box.height >= 840, JSON.stringify(box))
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  // Просьба пользователя 25.11.2026 (миграция 20270306): строки счетов и КП тендера — в реестре, даже без найденных позиций;
+  // файл удалён из тендера — источник красный; статус «не применена в тендере»; в окне — номер тендера.
+  it('строки счетов тендера: файл удалён — источник красный, «Не применена в тендере», окно с номером тендера, файл открывается', async () => {
+    const { page, errors, close } = await open('&supplyDocs=1')
+    try {
+      const row = (name) => page.locator('.rr-table tbody tr', { hasText: name })
+      assert.equal(await page.locator('.rr-table tbody tr').count(), 5)
+      const color = (loc) => loc.evaluate((el) => getComputedStyle(el).color)
+
+      // Файл удалён: источник красный и словами в подсказке; значок «Документ» — красный с датой удаления.
+      const gone = row('Щит распределительный ЩРН-12')
+      const goneChip = gone.locator('.rr-td-source .rr-chip')
+      assert.equal(await goneChip.innerText(), 'Счёт / КП')
+      assert.match(await goneChip.getAttribute('class'), /is-deleted/)
+      assert.equal(await color(goneChip), 'rgb(185, 28, 28)')
+      assert.match(await goneChip.getAttribute('title'), /Файл удалён из тендера 24\.11\.2026: «КП старое\.pdf»/)
+      assert.match(await gone.locator('.rr-td-invoice .rr-invoice.is-missing').getAttribute('aria-label'), /Файл удалён из тендера 24\.11\.2026/)
+      // Файл есть — источник обычный.
+      assert.doesNotMatch(await row('Автомат 1P 16A').locator('.rr-td-source .rr-chip').getAttribute('class'), /is-deleted/)
+
+      // Статус: применённая — без пометки, не применённая — «Не применена в тендере»; у цен тендеров статус не спрашивается.
+      await row('Розетка двойная с заземлением').locator('.rr-status-badge', { hasText: 'Не применена в тендере' }).waitFor()
+      assert.equal(await row('Автомат 1P 16A').locator('.rr-status-badge').count(), 0)
+      assert.equal(await row('Плитка керамогранит 600х600').locator('.rr-status-badge').count(), 0)
+      const asked = await page.evaluate(() => window.__supplyDocStatusCalls)
+      assert.deepEqual(asked.map((ids) => [...ids].sort()), [['sr-d1', 'sr-d2', 'sr-d3']])
+
+      // Окно строки из удалённого файла: номер и описание тендера, «файл удалён», статус, документ без «Открыть».
+      await gone.locator('.rr-td-unit').click()
+      const card = page.getByRole('dialog', { name: 'Расценка' })
+      await card.waitFor()
+      await card.getByText('№ 640').waitFor()
+      let text = await card.innerText()
+      for (const part of ['Счёт / КП — файл удалён из тендера 24.11.2026', 'Отделка МОП', 'Не применена в тендере',
+        '«КП старое.pdf» — удалён из тендера 24.11.2026']) {
+        assert.ok(text.includes(part), `в окне нет «${part}»: ${text}`)
+      }
+      assert.doesNotMatch(text, /Цена снабжения из тендера|Ссылки на счёт нет/)
+      assert.equal(await card.getByRole('button', { name: 'Открыть' }).count(), 0)
+      await page.keyboard.press('Escape')
+      await card.waitFor({ state: 'detached' })
+
+      // Цена из тендера — тоже с номером тендера, без статуса.
+      await row('Плитка керамогранит 600х600').locator('.rr-td-price').click()
+      await card.getByText('№ 640').waitFor()
+      assert.doesNotMatch(await card.innerText(), /Статус|Не применена/)
+      await page.keyboard.press('Escape')
+      await card.waitFor({ state: 'detached' })
+
+      // Применённая строка: «Применена в тендере», «Открыть» — просмотр файла (окно закрывается).
+      await row('Автомат 1P 16A').locator('.rr-td-price').click()
+      await card.getByText('Применена в тендере').waitFor()
+      text = await card.innerText()
+      assert.ok(text.includes(`«${'Счёт 101 от 20.11.2026.pdf'}»`), text)
+      await card.getByRole('button', { name: 'Открыть' }).click()
+      await card.waitFor({ state: 'detached' })
+      await page.locator('.s3-doc-preview').first().waitFor({ timeout: 10000 })
+      await page.keyboard.press('Escape')
+      await page.locator('.s3-doc-preview').first().waitFor({ state: 'detached' })
+
+      // Значок «Документ» в строке открывает тот же файл и строку не раскрывает.
+      await row('Автомат 1P 16A').locator('.rr-td-invoice button.rr-invoice.is-linked').click()
+      await page.locator('.s3-doc-preview').first().waitFor({ timeout: 10000 })
+      assert.equal(await page.getByRole('dialog', { name: 'Расценка' }).count(), 0)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('база без колонок строк счетов (20270306 не применена): «Документ» и подробности на месте, статус не спрашивается', async () => {
+    const { page, errors, close } = await open('&supplyDocsMissing=1')
+    try {
+      const heads = await page.locator('.rr-table thead th').allTextContents()
+      assert.ok(heads.includes('Документ'), heads.join(' | '))
+      assert.equal(await page.locator('.rr-table tbody tr').count(), 2)
+      await page.locator('.rr-table tbody tr', { hasText: 'Клей плиточный' }).locator('.rr-td-price').click()
+      const card = page.getByRole('dialog', { name: 'Расценка' })
+      await card.getByText('№ 640').waitFor()
+      assert.equal(await page.evaluate(() => window.__supplyDocStatusCalls.length), 0)
       assert.deepEqual(errors, [])
     } finally {
       await close()

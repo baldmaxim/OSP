@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react'
+import { Fragment, useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react'
+import VirtualTableBody from '../components/VirtualTableBody'
 import { createPortal } from 'react-dom'
 import { useSearchParams } from 'react-router-dom'
 import * as XLSX from 'xlsx'
@@ -134,6 +135,9 @@ const DCR_COLUMNS = [
   { key: 'sub', label: 'Статус ОКС', rem: 10 },             // «Не будет подаваться ▾» в строку
   { key: 'actions', label: 'Действия', rem: 5, min: 5 },    // три кнопки 24px; своей границы нет, уже не сжимается
 ]
+
+// Сколько заявок рисовать целиком; больше — только видимые строки (renderRequestRow).
+const VIRTUAL_DC_FROM = 120
 
 const TABS = [
   { key: 'all', label: 'Все заявки' },
@@ -545,8 +549,9 @@ function SubRespPicker({ req, staff, canEdit, loadError, onChange }) {
 // Фильтр «Ответственный за статус ОКС». На компьютере (inHeader) кнопка фильтра — само название столбца «Статус ОКС»
 // (решение 30.10.2026: отдельной плашки «Ответственный» нет): нажатие открывает список ответственных; выбран — название
 // акцентом, под ним — кто выбран и крестик сброса. На телефоне шапки нет — в панели фильтров. value — id сотрудников и
-// NO_SUBMISSION_RESP; пусто — фильтр не применён.
-function SubRespFilter({ value, onChange, options, inHeader = false }) {
+// NO_SUBMISSION_RESP; пусто — фильтр не применён. С 24.11.2026 у названия значок человека: воронка рядом — фильтр по самому
+// статусу (SubStatusFilter); extra — она, ставится в строку с названием, extraChosen — её выбранное, под выбранным ответственным.
+function SubRespFilter({ value, onChange, options, inHeader = false, extra = null, extraChosen = null }) {
   const active = value.length > 0
   const names = value.map(v => options.find(o => o.value === v)?.name).filter(Boolean)
   const shown = names.length === 1 ? names[0] : `Ответственных: ${value.length}`
@@ -566,7 +571,7 @@ function SubRespFilter({ value, onChange, options, inHeader = false }) {
         ? `Статус ОКС — фильтр по ответственному: ${names.join(', ')}`
         : 'Статус ОКС — нажмите, чтобы отобрать заявки по ответственному'}
       formatTrigger={() => (inHeader
-        ? <><span className="dcr-th-sub-title">Статус ОКС</span><IconFilter size={11} /></>
+        ? <><span className="dcr-th-sub-title">Статус ОКС</span><IconUser size={11} /></>
         : active
           ? <><span className="ui-sr-only">Ответственный за статус ОКС: </span>{shown}</>
           : 'Все ответственные ОКС')}
@@ -575,7 +580,7 @@ function SubRespFilter({ value, onChange, options, inHeader = false }) {
   if (!inHeader) return dropdown
   return (
     <span className={`dcr-th-sub${active ? ' is-active' : ''}`}>
-      {dropdown}
+      <span className="dcr-th-sub-line">{dropdown}{extra}</span>
       {active && (
         <span className="dcr-th-sub-chosen">
           <span className="dcr-th-sub-who">
@@ -592,6 +597,53 @@ function SubRespFilter({ value, onChange, options, inHeader = false }) {
           </button>
         </span>
       )}
+      {extraChosen}
+    </span>
+  )
+}
+
+// Фильтр по самому «Статусу ОКС» (24.11.2026, просьба пользователя: в заголовке был только фильтр по ответственному — нужен и по
+// статусу, вторым, вместе с ним). На компьютере (inHeader) — значок воронки рядом с названием столбца, выбранное — строкой под
+// ним с крестиком сброса (chosen); на телефоне — в панели фильтров. value — значения submission_check (SUBMISSION_OPTIONS). В
+// заголовке у кнопки только значок: имя для диктора — из подсказки (title), текст заголовка остаётся «Статус ОКС».
+function SubStatusFilter({ value, onChange, options, inHeader = false }) {
+  const active = value.length > 0
+  const names = value.map(v => SUBMISSION_LABEL[v]).filter(Boolean)
+  const shown = names.length === 1 ? names[0] : `Статусов ОКС: ${value.length}`
+  return (
+    <FilterDropdown
+      className={inHeader ? 'dcr-th-fdrop dcr-th-status-fdrop' : ''}
+      label=""
+      multiple
+      allLabel="Все статусы ОКС"
+      icon={inHeader ? null : <IconFilter size={15} />}
+      value={value}
+      onChange={onChange}
+      options={options}
+      triggerTitle={active
+        ? `Статус ОКС — фильтр по статусу: ${names.join(', ')}`
+        : 'Статус ОКС — фильтр по статусу: нажмите, чтобы отобрать заявки'}
+      formatTrigger={() => (inHeader
+        ? <IconFilter size={11} />
+        : active ? <><span className="ui-sr-only">Статус ОКС: </span>{shown}</> : 'Все статусы ОКС')}
+    />
+  )
+}
+function SubStatusChosen({ value, onChange }) {
+  if (!value.length) return null
+  const names = value.map(v => SUBMISSION_LABEL[v]).filter(Boolean)
+  return (
+    <span className="dcr-th-sub-chosen dcr-th-status-chosen">
+      <span className="dcr-th-sub-who" title={names.join(', ')}>{names.length === 1 ? names[0] : `Статусов: ${value.length}`}</span>
+      <button
+        type="button"
+        className="dcr-th-sub-clear"
+        onClick={() => onChange([])}
+        aria-label="Сбросить фильтр по статусу ОКС"
+        title="Сбросить фильтр: все статусы ОКС"
+      >
+        <IconClose size={10} />
+      </button>
     </span>
   )
 }
@@ -666,6 +718,8 @@ function DcRequestsPage() {
   const [filterDivisions, setFilterDivisions] = useState(savedView.divisions)
   // Фильтр «Ответственный за статус ОКС» (id сотрудников, NO_SUBMISSION_RESP — не назначен) — в заголовке столбца.
   const [filterSubResps, setFilterSubResps] = useState(savedView.subResps)
+  // Фильтр по самому статусу ОКС (значения submission_check) — в заголовке столбца рядом с фильтром по ответственному.
+  const [filterSubChecks, setFilterSubChecks] = useState(savedView.subChecks)
   // Сотрудники для выбора ответственного за статус ОКС (справочник employee_directory; роль — на странице).
   const [employees, setEmployees] = useState([])
   const [employeesError, setEmployeesError] = useState('')
@@ -753,10 +807,10 @@ function DcRequestsPage() {
     writeDcView({
       tab: activeTab, search: searchQuery, statuses: filterStatuses, objects: filterObjectIds,
       counterparties: filterCounterpartyIds, responsibles: filterResponsibleIds, divisions: filterDivisions,
-      subResps: filterSubResps, expanded: [...expandedDocs], notesOpen: [...openNotes],
+      subResps: filterSubResps, subChecks: filterSubChecks, expanded: [...expandedDocs], notesOpen: [...openNotes],
     })
   }, [activeTab, searchQuery, filterStatuses, filterObjectIds, filterCounterpartyIds, filterResponsibleIds, filterDivisions,
-    filterSubResps, expandedDocs, openNotes])
+    filterSubResps, filterSubChecks, expandedDocs, openNotes])
 
   // Прокрутку возвращаем, когда высота строк окончательная: заявки, их файлы и договоры (подписи договоров).
   // На компьютере прокручивается таблица под закреплённой шапкой, на телефоне — страница.
@@ -1830,6 +1884,7 @@ function DcRequestsPage() {
   // Ответственный за статус ОКС и фильтр по нему — когда есть и его колонки (миграция 20261117).
   const subRespEnabled = submissionEnabled && hasSubmissionRespColumns(requests)
   const subRespFilterOn = subRespEnabled && filterSubResps.length > 0
+  const subCheckFilterOn = submissionEnabled && filterSubChecks.length > 0
   // Примечание — когда есть колонка (миграция 20261230). Сотруднику, привязанному к объектам, не показывается: это
   // внутренние заметки, как примечание юриста в реестре договоров (hideNotes в ContractsPage). Пишут те, кто правит
   // раздел, и «Отдел по удорожанию»: он рассматривает заявки, а права правки раздела у него нет.
@@ -1892,8 +1947,20 @@ function DcRequestsPage() {
       .map(([value, label]) => ({ value, label: `${label} (${counts.get(value) || 0})`, name: label }))
   })()
 
+  // Фильтр по статусу ОКС: варианты по порядку выбора в ячейке; число — заявок вкладки без этого фильтра.
+  const subCheckOptions = (() => {
+    if (!submissionEnabled) return []
+    const counts = new Map()
+    for (const r of requests) {
+      if (isDeletedTab ? r.deleted_at == null : r.deleted_at != null) continue
+      const key = submissionOf(r)
+      counts.set(key, (counts.get(key) || 0) + 1)
+    }
+    return SUBMISSION_OPTIONS.map(o => ({ value: o.value, label: `${o.label} (${counts.get(o.value) || 0})` }))
+  })()
+
   // Фильтрация: таб (soft-delete) → статусы → объект → контрагент → ответственный → подразделение → ответственный
-  // за статус ОКС → поиск.
+  // за статус ОКС → статус ОКС → поиск.
   // Выгрузка в Excel берёт этот же список, поэтому при нескольких выбранных
   // статусах в файл попадают заявки всех этих статусов.
   const filtered = requests
@@ -1906,6 +1973,7 @@ function DcRequestsPage() {
     .filter(r => filterResponsibleIds.length === 0 || filterResponsibleIds.includes(r.responsible_contact_id))
     .filter(r => !divisionFilterOn || filterDivisions.includes(r.division || NO_VOR_DIVISION))
     .filter(r => !subRespFilterOn || filterSubResps.includes(submissionRespKey(r)))
+    .filter(r => !subCheckFilterOn || filterSubChecks.includes(submissionOf(r)))
     .filter(r => {
       const q = searchQuery.trim().toLowerCase()
       if (!q) return true
@@ -2113,6 +2181,548 @@ function DcRequestsPage() {
     />
   )
 
+  // Строка заявки и примечание под ней (vt-part — та же запись окна строк). Больше VIRTUAL_DC_FROM заявок — в таблице
+  // только видимые строки (VirtualTableBody по положению на экране): 600 заявок рисовались целиком — 67 тыс. элементов,
+  // каждая буква в поиске и сброс фильтров подвисали на 0,4–0,7 с (замер на стенде 24.11.2026).
+  const renderRequestRow = (req) => {
+      const currentStatus = req.status || 'in_work'
+      const statusOpt = STATUS_OPTIONS.find(o => o.value === currentStatus)
+      const isStatusOpen = statusPopoverFor === req.id
+
+      const docs = docsByReq.get(req.id) || []
+      // task 370: рабочие vs итоговые документы.
+      const generalDocs = docs.filter(d => !SPECIAL_DOC_CATEGORIES.has(d.doc_category))
+      const finalDocs = docs.filter(d => d.doc_category === 'final')
+      const reportDocs = docs.filter(d => d.doc_category === 'check_report')
+      // Блок отчёта показываем с этапа «Итог проверки» и дальше, а также
+      // всегда, если отчёт уже приложен.
+      const showReport = reportDocs.length > 0 || hasVerdict(req)
+        || (canEditDc && currentStatus !== 'contract_check')
+      const docsOpen = expandedDocs.has(req.id)
+
+      const submission = submissionOf(req)
+      // Статус ОКС, комментарий и ответственный — только «Отдел по удорожанию», не в «Удаленных».
+      const canEditSubmission = isCostIncreaseUser && !isDeletedTab
+
+      const row = (
+        <tr key={req.id} className={req.deleted_at ? 'row-deleted' : ''}>
+          <td className="ui-rownum" style={{ textAlign: 'center' }}>{req.requestNo}</td>
+          <td>
+            <div className="dcr-object-name">
+              {req.objects?.name || <span className="muted-dash">—</span>}
+            </div>
+            {(req.created_at || req.created_by_name) && (
+              <div className="dcr-meta-line">
+                <span className="dcr-meta-icon" aria-hidden><IconClock size={12} /></span>
+                {req.created_at && <span className="ui-num">{formatShortDate(req.created_at)}</span>}
+                {req.created_by_name && (
+                  <>
+                    <span className="dcr-meta-sep">·</span>
+                    <PersonName full={req.created_by_name} titlePrefix="Создал" className="dcr-meta-author" />
+                  </>
+                )}
+              </div>
+            )}
+            {/* task 365: ориентировочный срок согласования + inline-edit */}
+            <div className="dcr-meta-deadline">
+              <span className="dcr-meta-icon" aria-hidden><IconCalendar size={12} /></span>
+              <span className="dcr-meta-deadline-label">Ориентировочный срок:</span>
+              {req.expected_approval_date ? (
+                <button
+                  type="button"
+                  className="dcr-meta-deadline-value"
+                  onClick={canEditDc ? (e) => openDeadlinePopover(req.id, e) : undefined}
+                  disabled={!canEditDc}
+                  title={canEditDc ? 'Изменить срок' : undefined}
+                >
+                  {formatShortDate(req.expected_approval_date)}г.
+                </button>
+              ) : canEditDc ? (
+                <button
+                  type="button"
+                  className="dcr-meta-deadline-link"
+                  onClick={(e) => openDeadlinePopover(req.id, e)}
+                >
+                  Указать срок
+                </button>
+              ) : (
+                <span className="dcr-meta-deadline-empty">—</span>
+              )}
+              {deadlinePopover?.id === req.id && (
+                <DeadlinePopover
+                  initial={req.expected_approval_date || ''}
+                  anchorRect={deadlinePopover.rect}
+                  onClose={() => setDeadlinePopover(null)}
+                  onSave={(newDate) => handleQuickSaveDeadline(req.id, newDate)}
+                />
+              )}
+            </div>
+          </td>
+          <td>
+            {req.counterparties?.name || <span className="muted-dash">—</span>}
+            {/* task 370 + 371: материал. Сотрудник меняет инлайн-селектором
+                прямо в таблице, остальные видят бейдж «Материал: …». */}
+            {canEditDc ? (
+              <div className="dcr-material-edit">
+                <span className="dcr-material-edit-label">Материал:</span>
+                <WrapSelect
+                  faceClassName={`dcr-material-select ${MATERIAL_CLASS[req.material_type] || 'is-empty'}`}
+                  label={MATERIAL_LABEL[req.material_type] || 'Не указан'}
+                  value={req.material_type || ''}
+                  onChange={(e) => handleSaveMaterial(req.id, e.target.value)}
+                  title="Тип материала"
+                  aria-label="Тип материала"
+                >
+                  <option value="">Не указан</option>
+                  {MATERIAL_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </WrapSelect>
+              </div>
+            ) : req.material_type && (
+              <div className={`dcr-material-badge ${MATERIAL_CLASS[req.material_type] || ''}`}>
+                Материал: {MATERIAL_LABEL[req.material_type]}
+              </div>
+            )}
+            {/* Тип ДС — под материалом, тем же инлайн-селектором: признак
+                самой заявки, отдельная колонка раздула бы таблицу. */}
+            {canEditDc ? (
+              <div className="dcr-material-edit">
+                <span className="dcr-material-edit-label">Тип ДС:</span>
+                <WrapSelect
+                  faceClassName={`dcr-material-select dcr-dstype-select ${DS_TYPE_CLASS[req.ds_type] || (req.ds_type ? '' : 'is-empty')}`}
+                  label={req.ds_type ? (DS_TYPE_LABEL[req.ds_type] || req.ds_type) : 'Не указан'}
+                  value={req.ds_type || ''}
+                  onChange={(e) => handleSaveDsType(req.id, e.target.value)}
+                  title="Тип ДС"
+                  aria-label="Тип ДС"
+                >
+                  <option value="">Не указан</option>
+                  {req.ds_type && !DS_TYPE_OPTIONS.some(o => o.value === req.ds_type) && (
+                    <option value={req.ds_type} disabled>{DS_TYPE_LABEL[req.ds_type] || req.ds_type}</option>
+                  )}
+                  {DS_TYPE_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </WrapSelect>
+              </div>
+            ) : req.ds_type && (
+              <div className={`dcr-tag ${DS_TYPE_CLASS[req.ds_type] || ''}`}>
+                Тип ДС: {DS_TYPE_LABEL[req.ds_type] || req.ds_type}
+              </div>
+            )}
+          </td>
+          {linkEnabled ? (
+            // Договор, под ним № ДС и «в ДС» — один столбец: ДС — часть договора.
+            <td className="dcr-cell-contract">
+              <DcContractCell
+                req={req}
+                contracts={contracts}
+                contractsById={contractsById}
+                parties={contractParties}
+                canEdit={canEditDc && !isDeletedTab}
+                onChange={(contractId) => handleSaveContract(req, contractId)}
+              />
+              <div className="dcr-cell-dsnum dcr-dsnum-line">
+                <span className="dcr-dsnum-label">№ ДС:</span>
+                {req.ds_number
+                  ? <BreakableId value={req.ds_number} className="ui-num-wrap" />
+                  : <span className="muted-dash">—</span>}
+              </div>
+              <DcAmendmentMark
+                req={req}
+                contracts={contracts}
+                contractsById={contractsById}
+                canEdit={canEditDc && !isDeletedTab}
+                onLink={(amendmentId) => handleSaveAmendment(req, amendmentId)}
+              />
+            </td>
+          ) : (
+            <td className="dcr-cell-dsnum">
+              {req.ds_number
+                ? <BreakableId value={req.ds_number} className="ui-num-wrap" />
+                : <span className="muted-dash">—</span>}
+            </td>
+          )}
+          <td className="dcr-cell-works">
+            {/* До трёх строк, длиннее — «Показать полностью». */}
+            <ClampText text={req.works_description} />
+            {/* Подразделение — плашкой под описанием, как подразделение ВОР у тендеров. */}
+            {linkEnabled && (
+              <div className="dcr-division">
+                <VorDivisionChip
+                  subject="dc"
+                  value={req.division}
+                  canEdit={canEditDc && !isDeletedTab}
+                  onChange={(v) => handleSaveDivision(req, v)}
+                />
+              </div>
+            )}
+          </td>
+          {/* Суммы ДС одним блоком из двух частей: «Было ПСДЦ / ДС подрядчика / Согласовано ДС ОСП» и под двойной
+              чертой «Было ВОР подрядчик / Стало ВОР ОСП» (06.11.2026); правятся прямо в ячейке. */}
+          <td className="dcr-cell-amount">
+            <DcRequestAmounts
+              req={req}
+              columns={amountColumns}
+              canEdit={canEditDc}
+              onSave={(field, v) => handleSaveAmount(req.id, field, v)}
+            />
+          </td>
+          <td>
+            <div className="dcr-status-wrap">
+              <button
+                type="button"
+                className={`dcr-status-chip ${statusOpt?.className || ''}${isStatusOpen ? ' is-open' : ''}`}
+                onClick={(e) => canChangeStatus(currentStatus) && !isDeletedTab && toggleStatusPopover(e, req.id)}
+                disabled={!canChangeStatus(currentStatus) || isDeletedTab}
+                title={currentStatus === 'contract_check' && !canLeaveContractCheck
+                  ? 'Снять статус «Проверка по договору» может только юрист ОСП или администратор'
+                  : undefined}
+                aria-haspopup="listbox"
+                aria-expanded={isStatusOpen}
+              >
+                <span>{STATUS_LABEL[currentStatus]}</span>
+                <span className="dcr-status-chev" aria-hidden>▾</span>
+              </button>
+              {isStatusOpen && (
+                <div className={`dcr-status-popover${statusPopoverUp ? ' is-up' : ''}`} role="listbox">
+                  {STATUS_OPTIONS.map(opt => {
+                    const isCurrent = opt.value === currentStatus
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        role="option"
+                        aria-selected={isCurrent}
+                        className={`dcr-status-popover-item ${opt.className}${isCurrent ? ' is-current' : ''}`}
+                        onClick={() => {
+                          if (!isCurrent) handleStatusChange(req.id, opt.value)
+                          setStatusPopoverFor(null)
+                        }}
+                      >
+                        <span className="dcr-status-popover-dot" />
+                        {opt.label}
+                        {isCurrent && <span className="dcr-status-popover-check" aria-hidden>✓</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+            {/* Итог сверки с договором: чем закончилась проверка.
+                Клик открывает окно с заключением и файлами отчёта. */}
+            {hasVerdict(req) ? (
+              <button
+                type="button"
+                className={`dcr-verdict-badge ${CHECK_STATUS_CLASS[req.check_status] || ''}`}
+                onClick={() => openVerdictModal(req)}
+                title={[
+                  CHECK_STATUS_LABEL[req.check_status],
+                  req.check_result_notes,
+                  [req.checked_by_name, formatDateTime(req.checked_at)].filter(Boolean).join(' · '),
+                ].filter(Boolean).join('\n')}
+              >
+                <span className="dcr-verdict-badge-text">{CHECK_STATUS_SHORT[req.check_status]}</span>
+                {req.checked_at && (
+                  <span className="dcr-verdict-badge-date">{formatShortDate(req.checked_at)}</span>
+                )}
+              </button>
+            ) : canEditDc && !isDeletedTab && (canLeaveContractCheck || currentStatus !== 'contract_check') ? (
+              <button
+                type="button"
+                className="dcr-verdict-add"
+                onClick={() => openVerdictModal(req)}
+                title="Зафиксировать итог проверки по договору"
+              >+ Итог проверки</button>
+            ) : null}
+            <DcResponsiblePicker
+              name={req.responsible?.full_name}
+              value={contactRepById[req.responsible_contact_id] || req.responsible_contact_id || ''}
+              options={responsibleOptions}
+              canEdit={canEditDc && !isDeletedTab}
+              onChange={(contactId) => handleSaveResponsible(req.id, contactId)}
+            />
+          </td>
+          <td className="dcr-cell-docs">
+            {/* Путь к папке в хранилище — первым: с него начинают поиск
+                документов, файлы на сайте лишь дополняют его.
+                Правится прямо здесь, без захода в форму заявки. */}
+            {pathEdit?.id === req.id ? (
+              <div className="dcr-folder-path is-edit">
+                <IconFolder />
+                <input
+                  type="text"
+                  className="dcr-folder-path-input"
+                  autoFocus
+                  value={pathEdit.draft}
+                  onChange={(e) => setPathEdit(prev => (prev?.id === req.id ? { ...prev, draft: e.target.value } : prev))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); handleSaveFolderPath(req.id, pathEdit.draft) }
+                    if (e.key === 'Escape') setPathEdit(null)
+                  }}
+                  placeholder="\\su10-fs\ДС\ЖК Алия\ДС-14"
+                  disabled={savingPath}
+                />
+                <button
+                  type="button"
+                  className="dcr-folder-path-btn"
+                  onClick={() => handleSaveFolderPath(req.id, pathEdit.draft)}
+                  disabled={savingPath}
+                >{savingPath ? '…' : 'ОК'}</button>
+                <button
+                  type="button"
+                  className="dcr-folder-path-btn is-cancel"
+                  onClick={() => setPathEdit(null)}
+                  disabled={savingPath}
+                >Отмена</button>
+              </div>
+            ) : req.folder_path ? (
+              <div className="dcr-folder-path" title={req.folder_path}>
+                <IconFolder />
+                {/* Нажатие на путь — папка в проводнике (помощник, FolderOpen.jsx); не путь к папке
+                    Windows или не Windows — только текст, путь копируют кнопкой. */}
+                {folderOpenable(req.folder_path) ? (
+                  <span
+                    className="dcr-folder-path-text is-openable"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openFolder(req.folder_path)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFolder(req.folder_path) }
+                    }}
+                    title={`Открыть папку в проводнике:\n${req.folder_path}`}
+                  >{req.folder_path}</span>
+                ) : (
+                  <span className="dcr-folder-path-text">{req.folder_path}</span>
+                )}
+                <button
+                  type="button"
+                  className="dcr-folder-path-copy"
+                  onClick={() => handleCopyFolderPath(req.id, req.folder_path)}
+                  title="Скопировать путь"
+                  aria-label="Скопировать путь к папке"
+                >
+                  {copiedPathId === req.id ? <IconCheck /> : <IconCopy />}
+                </button>
+                {canEditDc && !isDeletedTab && (
+                  <button
+                    type="button"
+                    className="dcr-folder-path-copy"
+                    onClick={() => setPathEdit({ id: req.id, draft: req.folder_path || '' })}
+                    title="Изменить путь"
+                    aria-label="Изменить путь к папке"
+                  ><IconPencil /></button>
+                )}
+              </div>
+            ) : canEditDc && !isDeletedTab ? (
+              <button
+                type="button"
+                className="dcr-folder-path-add"
+                onClick={() => setPathEdit({ id: req.id, draft: '' })}
+              ><IconFolder /> Указать путь к папке</button>
+            ) : null}
+            {/* Рабочие документы */}
+            <div className="dcr-docs">
+              {generalDocs.length > 0 && (
+                <button
+                  type="button"
+                  className="dcr-docs-toggle"
+                  onClick={() => toggleDocsExpanded(req.id)}
+                  aria-expanded={docsOpen}
+                >
+                  <span className="dcr-docs-chev" aria-hidden>{docsOpen ? '▼' : '▶'}</span>
+                  <svg
+                    className="dcr-docs-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                  </svg>
+                  <span className="dcr-docs-summary">
+                    Файлы: <strong>{generalDocs.length}</strong>
+                  </span>
+                </button>
+              )}
+              {docsOpen && generalDocs.length > 0 && (
+                <div className="dcr-doc-chips">
+                  {generalDocs.map(renderDocChip)}
+                </div>
+              )}
+              {canEditDc && (
+                <button
+                  type="button"
+                  className="dcr-doc-add"
+                  onClick={() => handleDocPick(req.id, 'general')}
+                  title="Добавить документ"
+                >+ Документ</button>
+              )}
+            </div>
+
+            {/* Отчёт по документам — результат этапа «Итог проверки». */}
+            {showReport && (
+              <div className={`dcr-final-docs dcr-report-docs${reportDocs.length > 0 ? ' has-final' : ''}`}>
+                <div className="dcr-final-docs-title">
+                  <IconFileSpreadsheet size={12} />
+                  Отчёт по документам
+                  {reportDocs.length > 0 && (
+                    <span className="dcr-final-docs-count">{reportDocs.length}</span>
+                  )}
+                </div>
+                {reportDocs.length > 0 && (
+                  <div className="dcr-doc-chips">
+                    {reportDocs.map(renderDocChip)}
+                  </div>
+                )}
+                {canEditDc && !isDeletedTab && (
+                  <button
+                    type="button"
+                    className="dcr-doc-add dcr-doc-add-final"
+                    onClick={() => handleDocPick(req.id, 'check_report')}
+                    title="Приложить отчёт по проверке документов"
+                  >+ Отчёт</button>
+                )}
+              </div>
+            )}
+
+            {/* task 370: итоговые документы — отдельная секция,
+                подсвечивается при наличии файлов. */}
+            {(finalDocs.length > 0 || canEditDc) && (
+              <div className={`dcr-final-docs${finalDocs.length > 0 ? ' has-final' : ''}`}>
+                <div className="dcr-final-docs-title">
+                  <span className="dcr-final-docs-icon" aria-hidden><IconCheckMark size={12} /></span>
+                  Итоговые документы
+                  {finalDocs.length > 0 && (
+                    <span className="dcr-final-docs-count">{finalDocs.length}</span>
+                  )}
+                </div>
+                {finalDocs.length > 0 && (
+                  <div className="dcr-doc-chips">
+                    {finalDocs.map(renderDocChip)}
+                  </div>
+                )}
+                {canEditDc && (
+                  <button
+                    type="button"
+                    className="dcr-doc-add dcr-doc-add-final"
+                    onClick={() => handleDocPick(req.id, 'final')}
+                    title="Добавить итоговый документ"
+                  >+ Итоговый документ</button>
+                )}
+              </div>
+            )}
+          </td>
+          {/* Статус ОКС: выбор прямо в ячейке; под ним — кто и когда сменил (ставит база)
+              и комментарий. Перед последним столбцом («Действия»). */}
+          {submissionEnabled && (
+            <td className="dcr-cell-sub">
+              {canEditSubmission ? (
+                <WrapSelect
+                  faceClassName={`dcr-material-select dcr-sub-select ${SUBMISSION_CLASS[submission] || ''}`}
+                  label={SUBMISSION_LABEL[submission] || submission}
+                  value={submission}
+                  onChange={(e) => handleSaveSubmission(req.id, 'submission_check', e.target.value)}
+                  title="Статус ОКС: подаётся ли ДС заказчику"
+                  aria-label="Статус ОКС"
+                >
+                  {SUBMISSION_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </WrapSelect>
+              ) : (
+                <span className={`dcr-sub-tag ${SUBMISSION_CLASS[submission] || ''}`}>
+                  {SUBMISSION_LABEL[submission] || submission}
+                </span>
+              )}
+              {req.submission_at && (
+                <div className="dcr-sub-meta" title={`Статус ОКС изменил: ${req.submission_by_name || 'имя не записано'}, ${formatDateTime(req.submission_at)}`}>
+                  {req.submission_by_name && (
+                    <PersonName full={req.submission_by_name} titlePrefix="Статус ОКС изменил" className="dcr-meta-author" />
+                  )}
+                  <span className="ui-num">{formatShortDate(req.submission_at)}</span>
+                </div>
+              )}
+              {subRespEnabled && (
+                <SubRespPicker
+                  req={req}
+                  staff={costIncreaseStaff}
+                  canEdit={canEditSubmission}
+                  loadError={employeesError}
+                  onChange={(v) => handleSaveSubmissionResp(req.id, v)}
+                />
+              )}
+              {canEditSubmission ? (
+                <SubmissionCommentInput
+                  value={req.submission_comment}
+                  hint={SUBMISSION_HINT[submission]}
+                  missing={submissionNeedsComment(req)}
+                  onSave={(v) => handleSaveSubmission(req.id, 'submission_comment', v)}
+                />
+              ) : req.submission_comment && (
+                <div className="dcr-sub-comment-text"><ClampText text={req.submission_comment} /></div>
+              )}
+            </td>
+          )}
+          <td className="actions-cell">
+            {/* История доступна всем, кто видит заявку, — она только для чтения */}
+            <button
+              className="btn-icon btn-history"
+              onClick={() => openHistory(req)}
+              title="История изменений"
+              aria-label="История изменений"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 3v5h5" />
+                <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+            </button>
+            {isDeletedTab ? (
+              <>
+                {canEditDc && (
+                  <button type="button" className="btn-icon btn-restore" onClick={() => handleRestore(req.id)} title="Восстановить" aria-label="Восстановить заявку"><IconRestore /></button>
+                )}
+                {isAdmin && (
+                  <button type="button" className="btn-icon btn-delete" onClick={() => handleHardDelete(req.id)} title="Удалить безвозвратно (админ)" aria-label="Удалить заявку безвозвратно"><IconTrash /></button>
+                )}
+              </>
+            ) : canEditDc ? (
+              <>
+                <button type="button" className="btn-icon btn-edit" onClick={() => handleEdit(req)} title="Редактировать" aria-label="Редактировать заявку"><IconEdit /></button>
+                <button type="button" className="btn-icon btn-delete" onClick={() => handleDelete(req.id)} title="Удалить" aria-label="Удалить заявку"><IconTrash /></button>
+              </>
+            ) : null}
+          </td>
+        </tr>
+      )
+      const note = renderNote(req)
+    return (
+      <Fragment key={req.id}>
+        {row}
+        {note && (
+          <tr key={`${req.id}-note`} className={`vt-part dcr-note-row${req.deleted_at ? ' row-deleted' : ''}`}>
+            <td colSpan={tableColumns.length}>{note}</td>
+          </tr>
+        )}
+      </Fragment>
+    )
+  }
+  const virtualRequests = filtered.length > VIRTUAL_DC_FROM
+  const requestRowCache = new Map()
+  const cachedRequestRow = (req) => {
+    let row = requestRowCache.get(req.id)
+    if (!row) {
+      row = renderRequestRow(req)
+      requestRowCache.set(req.id, row)
+    }
+    return row
+  }
+
   return (
     // dcr-dense — плотный вариант реестра (DcRequestsPage.css, конец файла);
     // на телефоне заявки идут карточками, их вид не меняем.
@@ -2286,11 +2896,16 @@ function DcRequestsPage() {
             <SubRespFilter value={filterSubResps} onChange={setFilterSubResps} options={subRespOptions} />
           </div>
         )}
-        {(filterStatuses.length > 0 || filterObjectIds.length > 0 || filterCounterpartyIds.length > 0 || filterResponsibleIds.length > 0 || divisionFilterOn || subRespFilterOn) && (
+        {submissionEnabled && isPhone && (
+          <div className={`dcr-filter-drop${filterSubChecks.length ? ' is-active' : ''}`}>
+            <SubStatusFilter value={filterSubChecks} onChange={setFilterSubChecks} options={subCheckOptions} />
+          </div>
+        )}
+        {(filterStatuses.length > 0 || filterObjectIds.length > 0 || filterCounterpartyIds.length > 0 || filterResponsibleIds.length > 0 || divisionFilterOn || subRespFilterOn || subCheckFilterOn) && (
           <button
             type="button"
             className="dcr-filter-clear"
-            onClick={() => { setFilterStatuses([]); setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterResponsibleIds([]); setFilterDivisions([]); setFilterSubResps([]) }}
+            onClick={() => { setFilterStatuses([]); setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterResponsibleIds([]); setFilterDivisions([]); setFilterSubResps([]); setFilterSubChecks([]) }}
             title="Сбросить фильтры"
           >Сбросить</button>
         )}
@@ -2489,553 +3104,44 @@ function DcRequestsPage() {
                 {/* Статус ОКС — подаётся ли ДС заказчику; под ним пояснение (номер письма, срок…).
                     Перед последним столбцом («Действия»). Название — кнопка фильтра по ответственному. */}
                 {submissionEnabled && (
-                  <th className={subRespFilterOn ? 'dcr-th-filtered' : undefined}>
-                    {subRespEnabled
-                      ? <SubRespFilter inHeader value={filterSubResps} onChange={setFilterSubResps} options={subRespOptions} />
-                      : 'Статус ОКС'}
+                  <th className={subRespFilterOn || subCheckFilterOn ? 'dcr-th-filtered' : undefined}>
+                    {subRespEnabled ? (
+                      <SubRespFilter inHeader value={filterSubResps} onChange={setFilterSubResps} options={subRespOptions}
+                        extra={<SubStatusFilter inHeader value={filterSubChecks} onChange={setFilterSubChecks} options={subCheckOptions} />}
+                        extraChosen={<SubStatusChosen value={filterSubChecks} onChange={setFilterSubChecks} />} />
+                    ) : (
+                      <span className={`dcr-th-sub dcr-th-sub-plain${filterSubChecks.length ? ' is-status-active' : ''}`}>
+                        <span className="dcr-th-sub-line">
+                          <span className="dcr-th-sub-title">Статус ОКС</span>
+                          <SubStatusFilter inHeader value={filterSubChecks} onChange={setFilterSubChecks} options={subCheckOptions} />
+                        </span>
+                        <SubStatusChosen value={filterSubChecks} onChange={setFilterSubChecks} />
+                      </span>
+                    )}
                     {resizer('sub')}
                   </th>
                 )}
                 <th><span className="ui-sr-only">Действия</span></th>
               </tr>
             </thead>
-            <tbody>
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={submissionEnabled ? 10 : 9} className="no-data" style={{ textAlign: 'center' }}>
-                    {searchQuery
-                      ? 'Ничего не найдено.'
-                      : (activeTab === 'all'
-                        ? 'Заявок пока нет. Нажмите «+ Добавить заявку».'
-                        : `Нет заявок со статусом «${STATUS_LABEL[activeTab]}».`)}
-                  </td>
-                </tr>
-              ) : (
-                filtered.flatMap((req) => {
-                  const currentStatus = req.status || 'in_work'
-                  const statusOpt = STATUS_OPTIONS.find(o => o.value === currentStatus)
-                  const isStatusOpen = statusPopoverFor === req.id
-
-                  const docs = docsByReq.get(req.id) || []
-                  // task 370: рабочие vs итоговые документы.
-                  const generalDocs = docs.filter(d => !SPECIAL_DOC_CATEGORIES.has(d.doc_category))
-                  const finalDocs = docs.filter(d => d.doc_category === 'final')
-                  const reportDocs = docs.filter(d => d.doc_category === 'check_report')
-                  // Блок отчёта показываем с этапа «Итог проверки» и дальше, а также
-                  // всегда, если отчёт уже приложен.
-                  const showReport = reportDocs.length > 0 || hasVerdict(req)
-                    || (canEditDc && currentStatus !== 'contract_check')
-                  const docsOpen = expandedDocs.has(req.id)
-
-                  const submission = submissionOf(req)
-                  // Статус ОКС, комментарий и ответственный — только «Отдел по удорожанию», не в «Удаленных».
-                  const canEditSubmission = isCostIncreaseUser && !isDeletedTab
-
-                  const row = (
-                    <tr key={req.id} className={req.deleted_at ? 'row-deleted' : ''}>
-                      <td className="ui-rownum" style={{ textAlign: 'center' }}>{req.requestNo}</td>
-                      <td>
-                        <div className="dcr-object-name">
-                          {req.objects?.name || <span className="muted-dash">—</span>}
-                        </div>
-                        {(req.created_at || req.created_by_name) && (
-                          <div className="dcr-meta-line">
-                            <span className="dcr-meta-icon" aria-hidden><IconClock size={12} /></span>
-                            {req.created_at && <span className="ui-num">{formatShortDate(req.created_at)}</span>}
-                            {req.created_by_name && (
-                              <>
-                                <span className="dcr-meta-sep">·</span>
-                                <PersonName full={req.created_by_name} titlePrefix="Создал" className="dcr-meta-author" />
-                              </>
-                            )}
-                          </div>
-                        )}
-                        {/* task 365: ориентировочный срок согласования + inline-edit */}
-                        <div className="dcr-meta-deadline">
-                          <span className="dcr-meta-icon" aria-hidden><IconCalendar size={12} /></span>
-                          <span className="dcr-meta-deadline-label">Ориентировочный срок:</span>
-                          {req.expected_approval_date ? (
-                            <button
-                              type="button"
-                              className="dcr-meta-deadline-value"
-                              onClick={canEditDc ? (e) => openDeadlinePopover(req.id, e) : undefined}
-                              disabled={!canEditDc}
-                              title={canEditDc ? 'Изменить срок' : undefined}
-                            >
-                              {formatShortDate(req.expected_approval_date)}г.
-                            </button>
-                          ) : canEditDc ? (
-                            <button
-                              type="button"
-                              className="dcr-meta-deadline-link"
-                              onClick={(e) => openDeadlinePopover(req.id, e)}
-                            >
-                              Указать срок
-                            </button>
-                          ) : (
-                            <span className="dcr-meta-deadline-empty">—</span>
-                          )}
-                          {deadlinePopover?.id === req.id && (
-                            <DeadlinePopover
-                              initial={req.expected_approval_date || ''}
-                              anchorRect={deadlinePopover.rect}
-                              onClose={() => setDeadlinePopover(null)}
-                              onSave={(newDate) => handleQuickSaveDeadline(req.id, newDate)}
-                            />
-                          )}
-                        </div>
-                      </td>
-                      <td>
-                        {req.counterparties?.name || <span className="muted-dash">—</span>}
-                        {/* task 370 + 371: материал. Сотрудник меняет инлайн-селектором
-                            прямо в таблице, остальные видят бейдж «Материал: …». */}
-                        {canEditDc ? (
-                          <div className="dcr-material-edit">
-                            <span className="dcr-material-edit-label">Материал:</span>
-                            <WrapSelect
-                              faceClassName={`dcr-material-select ${MATERIAL_CLASS[req.material_type] || 'is-empty'}`}
-                              label={MATERIAL_LABEL[req.material_type] || 'Не указан'}
-                              value={req.material_type || ''}
-                              onChange={(e) => handleSaveMaterial(req.id, e.target.value)}
-                              title="Тип материала"
-                              aria-label="Тип материала"
-                            >
-                              <option value="">Не указан</option>
-                              {MATERIAL_OPTIONS.map(opt => (
-                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                              ))}
-                            </WrapSelect>
-                          </div>
-                        ) : req.material_type && (
-                          <div className={`dcr-material-badge ${MATERIAL_CLASS[req.material_type] || ''}`}>
-                            Материал: {MATERIAL_LABEL[req.material_type]}
-                          </div>
-                        )}
-                        {/* Тип ДС — под материалом, тем же инлайн-селектором: признак
-                            самой заявки, отдельная колонка раздула бы таблицу. */}
-                        {canEditDc ? (
-                          <div className="dcr-material-edit">
-                            <span className="dcr-material-edit-label">Тип ДС:</span>
-                            <WrapSelect
-                              faceClassName={`dcr-material-select dcr-dstype-select ${DS_TYPE_CLASS[req.ds_type] || (req.ds_type ? '' : 'is-empty')}`}
-                              label={req.ds_type ? (DS_TYPE_LABEL[req.ds_type] || req.ds_type) : 'Не указан'}
-                              value={req.ds_type || ''}
-                              onChange={(e) => handleSaveDsType(req.id, e.target.value)}
-                              title="Тип ДС"
-                              aria-label="Тип ДС"
-                            >
-                              <option value="">Не указан</option>
-                              {req.ds_type && !DS_TYPE_OPTIONS.some(o => o.value === req.ds_type) && (
-                                <option value={req.ds_type} disabled>{DS_TYPE_LABEL[req.ds_type] || req.ds_type}</option>
-                              )}
-                              {DS_TYPE_OPTIONS.map(opt => (
-                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                              ))}
-                            </WrapSelect>
-                          </div>
-                        ) : req.ds_type && (
-                          <div className={`dcr-tag ${DS_TYPE_CLASS[req.ds_type] || ''}`}>
-                            Тип ДС: {DS_TYPE_LABEL[req.ds_type] || req.ds_type}
-                          </div>
-                        )}
-                      </td>
-                      {linkEnabled ? (
-                        // Договор, под ним № ДС и «в ДС» — один столбец: ДС — часть договора.
-                        <td className="dcr-cell-contract">
-                          <DcContractCell
-                            req={req}
-                            contracts={contracts}
-                            contractsById={contractsById}
-                            parties={contractParties}
-                            canEdit={canEditDc && !isDeletedTab}
-                            onChange={(contractId) => handleSaveContract(req, contractId)}
-                          />
-                          <div className="dcr-cell-dsnum dcr-dsnum-line">
-                            <span className="dcr-dsnum-label">№ ДС:</span>
-                            {req.ds_number
-                              ? <BreakableId value={req.ds_number} className="ui-num-wrap" />
-                              : <span className="muted-dash">—</span>}
-                          </div>
-                          <DcAmendmentMark
-                            req={req}
-                            contracts={contracts}
-                            contractsById={contractsById}
-                            canEdit={canEditDc && !isDeletedTab}
-                            onLink={(amendmentId) => handleSaveAmendment(req, amendmentId)}
-                          />
-                        </td>
-                      ) : (
-                        <td className="dcr-cell-dsnum">
-                          {req.ds_number
-                            ? <BreakableId value={req.ds_number} className="ui-num-wrap" />
-                            : <span className="muted-dash">—</span>}
-                        </td>
-                      )}
-                      <td className="dcr-cell-works">
-                        {/* До трёх строк, длиннее — «Показать полностью». */}
-                        <ClampText text={req.works_description} />
-                        {/* Подразделение — плашкой под описанием, как подразделение ВОР у тендеров. */}
-                        {linkEnabled && (
-                          <div className="dcr-division">
-                            <VorDivisionChip
-                              subject="dc"
-                              value={req.division}
-                              canEdit={canEditDc && !isDeletedTab}
-                              onChange={(v) => handleSaveDivision(req, v)}
-                            />
-                          </div>
-                        )}
-                      </td>
-                      {/* Суммы ДС одним блоком из двух частей: «Было ПСДЦ / ДС подрядчика / Согласовано ДС ОСП» и под двойной
-                          чертой «Было ВОР подрядчик / Стало ВОР ОСП» (06.11.2026); правятся прямо в ячейке. */}
-                      <td className="dcr-cell-amount">
-                        <DcRequestAmounts
-                          req={req}
-                          columns={amountColumns}
-                          canEdit={canEditDc}
-                          onSave={(field, v) => handleSaveAmount(req.id, field, v)}
-                        />
-                      </td>
-                      <td>
-                        <div className="dcr-status-wrap">
-                          <button
-                            type="button"
-                            className={`dcr-status-chip ${statusOpt?.className || ''}${isStatusOpen ? ' is-open' : ''}`}
-                            onClick={(e) => canChangeStatus(currentStatus) && !isDeletedTab && toggleStatusPopover(e, req.id)}
-                            disabled={!canChangeStatus(currentStatus) || isDeletedTab}
-                            title={currentStatus === 'contract_check' && !canLeaveContractCheck
-                              ? 'Снять статус «Проверка по договору» может только юрист ОСП или администратор'
-                              : undefined}
-                            aria-haspopup="listbox"
-                            aria-expanded={isStatusOpen}
-                          >
-                            <span>{STATUS_LABEL[currentStatus]}</span>
-                            <span className="dcr-status-chev" aria-hidden>▾</span>
-                          </button>
-                          {isStatusOpen && (
-                            <div className={`dcr-status-popover${statusPopoverUp ? ' is-up' : ''}`} role="listbox">
-                              {STATUS_OPTIONS.map(opt => {
-                                const isCurrent = opt.value === currentStatus
-                                return (
-                                  <button
-                                    key={opt.value}
-                                    type="button"
-                                    role="option"
-                                    aria-selected={isCurrent}
-                                    className={`dcr-status-popover-item ${opt.className}${isCurrent ? ' is-current' : ''}`}
-                                    onClick={() => {
-                                      if (!isCurrent) handleStatusChange(req.id, opt.value)
-                                      setStatusPopoverFor(null)
-                                    }}
-                                  >
-                                    <span className="dcr-status-popover-dot" />
-                                    {opt.label}
-                                    {isCurrent && <span className="dcr-status-popover-check" aria-hidden>✓</span>}
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </div>
-                        {/* Итог сверки с договором: чем закончилась проверка.
-                            Клик открывает окно с заключением и файлами отчёта. */}
-                        {hasVerdict(req) ? (
-                          <button
-                            type="button"
-                            className={`dcr-verdict-badge ${CHECK_STATUS_CLASS[req.check_status] || ''}`}
-                            onClick={() => openVerdictModal(req)}
-                            title={[
-                              CHECK_STATUS_LABEL[req.check_status],
-                              req.check_result_notes,
-                              [req.checked_by_name, formatDateTime(req.checked_at)].filter(Boolean).join(' · '),
-                            ].filter(Boolean).join('\n')}
-                          >
-                            <span className="dcr-verdict-badge-text">{CHECK_STATUS_SHORT[req.check_status]}</span>
-                            {req.checked_at && (
-                              <span className="dcr-verdict-badge-date">{formatShortDate(req.checked_at)}</span>
-                            )}
-                          </button>
-                        ) : canEditDc && !isDeletedTab && (canLeaveContractCheck || currentStatus !== 'contract_check') ? (
-                          <button
-                            type="button"
-                            className="dcr-verdict-add"
-                            onClick={() => openVerdictModal(req)}
-                            title="Зафиксировать итог проверки по договору"
-                          >+ Итог проверки</button>
-                        ) : null}
-                        <DcResponsiblePicker
-                          name={req.responsible?.full_name}
-                          value={contactRepById[req.responsible_contact_id] || req.responsible_contact_id || ''}
-                          options={responsibleOptions}
-                          canEdit={canEditDc && !isDeletedTab}
-                          onChange={(contactId) => handleSaveResponsible(req.id, contactId)}
-                        />
-                      </td>
-                      <td className="dcr-cell-docs">
-                        {/* Путь к папке в хранилище — первым: с него начинают поиск
-                            документов, файлы на сайте лишь дополняют его.
-                            Правится прямо здесь, без захода в форму заявки. */}
-                        {pathEdit?.id === req.id ? (
-                          <div className="dcr-folder-path is-edit">
-                            <IconFolder />
-                            <input
-                              type="text"
-                              className="dcr-folder-path-input"
-                              autoFocus
-                              value={pathEdit.draft}
-                              onChange={(e) => setPathEdit(prev => (prev?.id === req.id ? { ...prev, draft: e.target.value } : prev))}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') { e.preventDefault(); handleSaveFolderPath(req.id, pathEdit.draft) }
-                                if (e.key === 'Escape') setPathEdit(null)
-                              }}
-                              placeholder="\\su10-fs\ДС\ЖК Алия\ДС-14"
-                              disabled={savingPath}
-                            />
-                            <button
-                              type="button"
-                              className="dcr-folder-path-btn"
-                              onClick={() => handleSaveFolderPath(req.id, pathEdit.draft)}
-                              disabled={savingPath}
-                            >{savingPath ? '…' : 'ОК'}</button>
-                            <button
-                              type="button"
-                              className="dcr-folder-path-btn is-cancel"
-                              onClick={() => setPathEdit(null)}
-                              disabled={savingPath}
-                            >Отмена</button>
-                          </div>
-                        ) : req.folder_path ? (
-                          <div className="dcr-folder-path" title={req.folder_path}>
-                            <IconFolder />
-                            {/* Нажатие на путь — папка в проводнике (помощник, FolderOpen.jsx); не путь к папке
-                                Windows или не Windows — только текст, путь копируют кнопкой. */}
-                            {folderOpenable(req.folder_path) ? (
-                              <span
-                                className="dcr-folder-path-text is-openable"
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => openFolder(req.folder_path)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFolder(req.folder_path) }
-                                }}
-                                title={`Открыть папку в проводнике:\n${req.folder_path}`}
-                              >{req.folder_path}</span>
-                            ) : (
-                              <span className="dcr-folder-path-text">{req.folder_path}</span>
-                            )}
-                            <button
-                              type="button"
-                              className="dcr-folder-path-copy"
-                              onClick={() => handleCopyFolderPath(req.id, req.folder_path)}
-                              title="Скопировать путь"
-                              aria-label="Скопировать путь к папке"
-                            >
-                              {copiedPathId === req.id ? <IconCheck /> : <IconCopy />}
-                            </button>
-                            {canEditDc && !isDeletedTab && (
-                              <button
-                                type="button"
-                                className="dcr-folder-path-copy"
-                                onClick={() => setPathEdit({ id: req.id, draft: req.folder_path || '' })}
-                                title="Изменить путь"
-                                aria-label="Изменить путь к папке"
-                              ><IconPencil /></button>
-                            )}
-                          </div>
-                        ) : canEditDc && !isDeletedTab ? (
-                          <button
-                            type="button"
-                            className="dcr-folder-path-add"
-                            onClick={() => setPathEdit({ id: req.id, draft: '' })}
-                          ><IconFolder /> Указать путь к папке</button>
-                        ) : null}
-                        {/* Рабочие документы */}
-                        <div className="dcr-docs">
-                          {generalDocs.length > 0 && (
-                            <button
-                              type="button"
-                              className="dcr-docs-toggle"
-                              onClick={() => toggleDocsExpanded(req.id)}
-                              aria-expanded={docsOpen}
-                            >
-                              <span className="dcr-docs-chev" aria-hidden>{docsOpen ? '▼' : '▶'}</span>
-                              <svg
-                                className="dcr-docs-icon"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                aria-hidden="true"
-                              >
-                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                              </svg>
-                              <span className="dcr-docs-summary">
-                                Файлы: <strong>{generalDocs.length}</strong>
-                              </span>
-                            </button>
-                          )}
-                          {docsOpen && generalDocs.length > 0 && (
-                            <div className="dcr-doc-chips">
-                              {generalDocs.map(renderDocChip)}
-                            </div>
-                          )}
-                          {canEditDc && (
-                            <button
-                              type="button"
-                              className="dcr-doc-add"
-                              onClick={() => handleDocPick(req.id, 'general')}
-                              title="Добавить документ"
-                            >+ Документ</button>
-                          )}
-                        </div>
-
-                        {/* Отчёт по документам — результат этапа «Итог проверки». */}
-                        {showReport && (
-                          <div className={`dcr-final-docs dcr-report-docs${reportDocs.length > 0 ? ' has-final' : ''}`}>
-                            <div className="dcr-final-docs-title">
-                              <IconFileSpreadsheet size={12} />
-                              Отчёт по документам
-                              {reportDocs.length > 0 && (
-                                <span className="dcr-final-docs-count">{reportDocs.length}</span>
-                              )}
-                            </div>
-                            {reportDocs.length > 0 && (
-                              <div className="dcr-doc-chips">
-                                {reportDocs.map(renderDocChip)}
-                              </div>
-                            )}
-                            {canEditDc && !isDeletedTab && (
-                              <button
-                                type="button"
-                                className="dcr-doc-add dcr-doc-add-final"
-                                onClick={() => handleDocPick(req.id, 'check_report')}
-                                title="Приложить отчёт по проверке документов"
-                              >+ Отчёт</button>
-                            )}
-                          </div>
-                        )}
-
-                        {/* task 370: итоговые документы — отдельная секция,
-                            подсвечивается при наличии файлов. */}
-                        {(finalDocs.length > 0 || canEditDc) && (
-                          <div className={`dcr-final-docs${finalDocs.length > 0 ? ' has-final' : ''}`}>
-                            <div className="dcr-final-docs-title">
-                              <span className="dcr-final-docs-icon" aria-hidden><IconCheckMark size={12} /></span>
-                              Итоговые документы
-                              {finalDocs.length > 0 && (
-                                <span className="dcr-final-docs-count">{finalDocs.length}</span>
-                              )}
-                            </div>
-                            {finalDocs.length > 0 && (
-                              <div className="dcr-doc-chips">
-                                {finalDocs.map(renderDocChip)}
-                              </div>
-                            )}
-                            {canEditDc && (
-                              <button
-                                type="button"
-                                className="dcr-doc-add dcr-doc-add-final"
-                                onClick={() => handleDocPick(req.id, 'final')}
-                                title="Добавить итоговый документ"
-                              >+ Итоговый документ</button>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      {/* Статус ОКС: выбор прямо в ячейке; под ним — кто и когда сменил (ставит база)
-                          и комментарий. Перед последним столбцом («Действия»). */}
-                      {submissionEnabled && (
-                        <td className="dcr-cell-sub">
-                          {canEditSubmission ? (
-                            <WrapSelect
-                              faceClassName={`dcr-material-select dcr-sub-select ${SUBMISSION_CLASS[submission] || ''}`}
-                              label={SUBMISSION_LABEL[submission] || submission}
-                              value={submission}
-                              onChange={(e) => handleSaveSubmission(req.id, 'submission_check', e.target.value)}
-                              title="Статус ОКС: подаётся ли ДС заказчику"
-                              aria-label="Статус ОКС"
-                            >
-                              {SUBMISSION_OPTIONS.map(opt => (
-                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                              ))}
-                            </WrapSelect>
-                          ) : (
-                            <span className={`dcr-sub-tag ${SUBMISSION_CLASS[submission] || ''}`}>
-                              {SUBMISSION_LABEL[submission] || submission}
-                            </span>
-                          )}
-                          {req.submission_at && (
-                            <div className="dcr-sub-meta" title={`Статус ОКС изменил: ${req.submission_by_name || 'имя не записано'}, ${formatDateTime(req.submission_at)}`}>
-                              {req.submission_by_name && (
-                                <PersonName full={req.submission_by_name} titlePrefix="Статус ОКС изменил" className="dcr-meta-author" />
-                              )}
-                              <span className="ui-num">{formatShortDate(req.submission_at)}</span>
-                            </div>
-                          )}
-                          {subRespEnabled && (
-                            <SubRespPicker
-                              req={req}
-                              staff={costIncreaseStaff}
-                              canEdit={canEditSubmission}
-                              loadError={employeesError}
-                              onChange={(v) => handleSaveSubmissionResp(req.id, v)}
-                            />
-                          )}
-                          {canEditSubmission ? (
-                            <SubmissionCommentInput
-                              value={req.submission_comment}
-                              hint={SUBMISSION_HINT[submission]}
-                              missing={submissionNeedsComment(req)}
-                              onSave={(v) => handleSaveSubmission(req.id, 'submission_comment', v)}
-                            />
-                          ) : req.submission_comment && (
-                            <div className="dcr-sub-comment-text"><ClampText text={req.submission_comment} /></div>
-                          )}
-                        </td>
-                      )}
-                      <td className="actions-cell">
-                        {/* История доступна всем, кто видит заявку, — она только для чтения */}
-                        <button
-                          className="btn-icon btn-history"
-                          onClick={() => openHistory(req)}
-                          title="История изменений"
-                          aria-label="История изменений"
-                        >
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M3 3v5h5" />
-                            <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
-                            <path d="M12 7v5l3 2" />
-                          </svg>
-                        </button>
-                        {isDeletedTab ? (
-                          <>
-                            {canEditDc && (
-                              <button type="button" className="btn-icon btn-restore" onClick={() => handleRestore(req.id)} title="Восстановить" aria-label="Восстановить заявку"><IconRestore /></button>
-                            )}
-                            {isAdmin && (
-                              <button type="button" className="btn-icon btn-delete" onClick={() => handleHardDelete(req.id)} title="Удалить безвозвратно (админ)" aria-label="Удалить заявку безвозвратно"><IconTrash /></button>
-                            )}
-                          </>
-                        ) : canEditDc ? (
-                          <>
-                            <button type="button" className="btn-icon btn-edit" onClick={() => handleEdit(req)} title="Редактировать" aria-label="Редактировать заявку"><IconEdit /></button>
-                            <button type="button" className="btn-icon btn-delete" onClick={() => handleDelete(req.id)} title="Удалить" aria-label="Удалить заявку"><IconTrash /></button>
-                          </>
-                        ) : null}
-                      </td>
-                    </tr>
-                  )
-                  const note = renderNote(req)
-                  return note ? [row, (
-                    <tr key={`${req.id}-note`} className={`dcr-note-row${req.deleted_at ? ' row-deleted' : ''}`}>
-                      <td colSpan={tableColumns.length}>{note}</td>
-                    </tr>
-                  )] : [row]
-                })
-              )}
-            </tbody>
+            {filtered.length === 0 ? (
+              <tbody>
+                  <tr>
+                    <td colSpan={submissionEnabled ? 10 : 9} className="no-data" style={{ textAlign: 'center' }}>
+                      {searchQuery
+                        ? 'Ничего не найдено.'
+                        : (activeTab === 'all'
+                          ? 'Заявок пока нет. Нажмите «+ Добавить заявку».'
+                          : `Нет заявок со статусом «${STATUS_LABEL[activeTab]}».`)}
+                    </td>
+                  </tr>
+              </tbody>
+            ) : virtualRequests ? (
+              <VirtualTableBody viewport rowCount={filtered.length} renderRow={(i) => cachedRequestRow(filtered[i])}
+                colSpan={tableColumns.length} rowHeight={72} />
+            ) : (
+              <tbody>{filtered.map(renderRequestRow)}</tbody>
+            )}
           </table>
         </div>
       )}

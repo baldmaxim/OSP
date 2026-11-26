@@ -2,13 +2,17 @@ import { useMemo, useState } from 'react'
 import { readBidPriceDoc, BID_DOC_ACCEPT, DOC_ERROR_TEXT, bidGroups, matchBidItems, searchBidGroups } from '../../utils/bidImport'
 import { unitPriceWithVat, DEFAULT_VAT_RATE } from '../../utils/supplierDoc'
 import { formatAmount } from '../../utils/money'
-import { BID_KIND_LABEL } from '../../utils/bidVor'
+import { BID_KIND_LABEL, bidItemKey, bidUnitKey } from '../../utils/bidPrice'
 
 // «Цены из файла»: подрядчик загружает свой прайс («базу расценок»), КП, счёт или заполненный ВОР — строки с
 // ценами сопоставляются с позициями расценки (сначала точно по наименованию, затем самые похожие), человек
 // проверяет каждое сопоставление, может выбрать другую позицию или снять. Цена в расценку — за единицу с НДС по
 // ставке подрядчика из анкеты (vat); «Без НДС» — цены файла как есть. Своя уже введённая цена заменяется только по
 // отметке.
+// Просьба пользователя 25.11.2026 («если подрядчик свои ВОРы закинет, расценки не сбросятся; выбор — заменять или нет; кнопки „заменить
+// всё“ / „вернуть всё“»): файлов можно выбрать несколько сразу (каждый ВОР своим файлом); где у позиции уже стоит ваша цена, а в файле
+// другая — по умолчанию остаётся ваша, «Заменить все мои цены» / «Оставить все мои цены» — разом. onApply получает и что заменено, и что
+// оставлено: страница помнит прежние цены и даёт вернуть их (или взять цены файла) потом — BidImportLog в BidWorkspace.
 
 const MAX_FILE_MB = 25
 const pct = (score) => `${Math.round(score * 100)} %`
@@ -18,7 +22,7 @@ export default function BidImportDialog({ positions, rates, vat: ownVat = null, 
   const groups = useMemo(() => bidGroups(positions), [positions])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [doc, setDoc] = useState(null) // { fileName, items, vat, sheetName, pages }
+  const [doc, setDoc] = useState(null) // { names: [имена файлов], items, vat, sheetName, pages, failed: [текст] }
   const [rows, setRows] = useState([]) // [{ item, match, candidates, on }]
   // Подрядчик без НДС — цены файла как есть; иначе НДС сверху — по его ставке из анкеты.
   const [vatMode, setVatMode] = useState(ownVat?.exempt ? 'gross' : 'auto') // auto | gross | net
@@ -27,22 +31,52 @@ export default function BidImportDialog({ positions, rates, vat: ownVat = null, 
   const [query, setQuery] = useState('')
 
   const onFile = async (e) => {
-    const file = e.target.files?.[0]
+    const list = [...(e.target.files || [])]
     e.target.value = ''
-    if (!file) return
+    if (!list.length) return
     setError('')
-    if (file.size > MAX_FILE_MB * 1024 * 1024) { setError(`Файл больше ${MAX_FILE_MB} МБ.`); return }
     setBusy(true)
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer())
-      const res = await readBidPriceDoc(bytes, file.name)
-      if (res.error) { setError(DOC_ERROR_TEXT[res.error] || 'Файл не распознан.'); return }
-      const matched = matchBidItems(res.items, groups)
-      setDoc({ fileName: file.name, ...res })
+      // Файлы — по одному (разбор нагружает страницу); не прочитавшийся остальные не останавливает — он в списке над таблицей.
+      const items = []
+      const names = []
+      const failed = []
+      let first = null
+      for (const file of list) {
+        if (file.size > MAX_FILE_MB * 1024 * 1024) { failed.push(`«${file.name}» — больше ${MAX_FILE_MB} МБ`); continue }
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer())
+          const res = await readBidPriceDoc(bytes, file.name)
+          if (res.error) { failed.push(`«${file.name}» — ${DOC_ERROR_TEXT[res.error] || 'файл не распознан'}`); continue }
+          names.push(file.name)
+          if (!first) first = res
+          // НДС «как в документе» — свой у каждого файла.
+          for (const it of res.items) items.push({ ...it, file: file.name, docVat: res.vat || null })
+        } catch (err) {
+          failed.push(`«${file.name}» — ${err.message || String(err)}`)
+        }
+      }
+      if (!names.length) { setError(failed.length ? `Не прочитались: ${failed.join('; ')}.` : 'Файл не распознан.'); return }
+      // Одна и та же строка в нескольких своих ВОР: с той же ценой — одной строкой (файлы — списком), с другой — без сопоставления, позицию
+      // выбирает человек: иначе повтор ушёл бы на похожую позицию (точная уже занята первой строкой) и поставил бы туда чужую цену.
+      const sameKey = (it) => `${it.kindHint || ''}|${bidItemKey(it.name)}|${bidUnitKey(it.unit)}`
+      const sameCost = (a, b) => a.price === b.price && a.sum === b.sum && a.qty === b.qty && a.priceVat === b.priceVat && a.sumVat === b.sumVat
+      const firstOf = new Map()
+      const uniq = []
+      const dupOf = new Map() // индекс в uniq → файл первой такой строки
+      for (const it of items) {
+        const k = sameKey(it)
+        const first = firstOf.get(k)
+        if (first && sameCost(first, it)) { first.alsoFiles = [...(first.alsoFiles || []), it.file]; continue }
+        if (first) dupOf.set(uniq.length, first.file)
+        else firstOf.set(k, it)
+        uniq.push(it)
+      }
+      const matched = matchBidItems(uniq, groups).map((m, i) => (dupOf.has(i) ? { ...m, match: null, dupOf: dupOf.get(i) } : m))
+      setDoc({ names, items: uniq, vat: first.vat || null, sheetName: names.length === 1 ? first.sheetName : null, pages: names.length === 1 ? first.pages : null, failed })
+      // Своя цена по умолчанию остаётся: отмечены только позиции без цены.
       setRows(matched.map((m) => ({ ...m, on: !!m.match && rates.get(m.match.group.key)?.price == null })))
-      if (res.vat?.rate && !(ownVat && !ownVat.exempt)) setVatRate(res.vat.rate)
-    } catch (err) {
-      setError(err.message || String(err))
+      if (first.vat?.rate && !(ownVat && !ownVat.exempt)) setVatRate(first.vat.rate)
     } finally {
       setBusy(false)
     }
@@ -55,7 +89,8 @@ export default function BidImportDialog({ positions, rates, vat: ownVat = null, 
   }, [vatMode, vatRate, doc])
 
   const priceOf = (item) => {
-    const p = unitPriceWithVat(item, vat)
+    const v = vatMode === 'auto' && item.docVat !== undefined ? { ...(item.docVat || {}), rate: item.docVat?.rate ?? vatRate } : vat
+    const p = unitPriceWithVat(item, v)
     return p == null ? null : Math.round(p * 100) / 100
   }
 
@@ -76,9 +111,23 @@ export default function BidImportDialog({ positions, rates, vat: ownVat = null, 
 
   const toApply = rows.filter((r) => r.on && r.match && priceOf(r.item) != null)
   const matchedCount = rows.filter((r) => r.match).length
+  // Расхождения: у позиции уже стоит ваша цена, в файле — другая. Та же цена — не расхождение, ставить нечего.
+  const ownOf = (r) => (r.match ? rates.get(r.match.group.key)?.price ?? null : null)
+  const conflictIdx = rows.map((r, i) => {
+    const own = ownOf(r)
+    const price = priceOf(r.item)
+    return own != null && price != null && price !== own ? i : -1
+  }).filter((i) => i >= 0)
+  const conflictOn = conflictIdx.filter((i) => rows[i].on).length
+  const setConflicts = (on) => setRows((list) => list.map((r, i) => (conflictIdx.includes(i) ? { ...r, on } : r)))
 
   const apply = () => {
-    onApply(toApply.map((r) => ({ position: r.match.group.position, patch: { price: priceOf(r.item), source: 'import' } })))
+    const kept = conflictIdx.filter((i) => !rows[i].on).map((i) => ({ position: rows[i].match.group.position, price: priceOf(rows[i].item) }))
+    onApply({
+      apply: toApply.map((r) => ({ position: r.match.group.position, patch: { price: priceOf(r.item), source: 'import' } })),
+      kept,
+      files: doc?.names || [],
+    })
   }
 
   const searchResults = searchRow != null && query.trim() ? searchBidGroups(query, groups, rows[searchRow]?.item.kindHint || null) : []
@@ -97,16 +146,36 @@ export default function BidImportDialog({ positions, rates, vat: ownVat = null, 
         <div className="bid-modal-body">
           <div className="bid-import-file">
             <label className={`cab-btn cab-btn-primary${busy ? ' is-busy' : ''}`}>
-              {busy ? 'Читаем файл…' : doc ? 'Другой файл' : 'Выбрать файл'}
-              <input type="file" accept={BID_DOC_ACCEPT} hidden disabled={busy} onChange={onFile} />
+              {busy ? 'Читаем файлы…' : doc ? 'Другие файлы' : 'Выбрать файлы'}
+              <input type="file" accept={BID_DOC_ACCEPT} multiple hidden disabled={busy} onChange={onFile} />
             </label>
-            {doc && (
+            {doc ? (
               <span className="bid-muted">
-                {doc.fileName}{doc.sheetName ? ` · лист ${doc.sheetName}` : doc.pages ? ` · страниц: ${doc.pages}` : ''} · строк с ценой: {doc.items.length}
+                {doc.names.length === 1 ? doc.names[0] : `файлов: ${doc.names.length}`}
+                {doc.sheetName ? ` · лист ${doc.sheetName}` : doc.pages ? ` · страниц: ${doc.pages}` : ''} · строк с ценой: {doc.items.length}
               </span>
+            ) : (
+              <span className="bid-muted">Можно выбрать несколько файлов сразу — например, все свои ВОР.</span>
             )}
           </div>
           {error && <div className="bid-note is-warn">{error}</div>}
+          {doc?.failed?.length > 0 && <div className="bid-note is-warn">Не прочитались: {doc.failed.join('; ')}.</div>}
+          {doc && conflictIdx.length > 0 && (
+            <div className="bid-import-conflicts" role="group" aria-label="Ваши цены и цены файла">
+              <span>
+                <b>У {conflictIdx.length} поз. уже стоит ваша цена, а в файле — другая.</b>
+                {' '}{conflictOn ? `Заменить отмечено: ${conflictOn}.` : 'Сейчас все ваши цены остаются.'} Прежние цены можно будет вернуть.
+              </span>
+              <span className="bid-import-conflicts-acts">
+                <button type="button" className="cab-btn" disabled={conflictOn === conflictIdx.length} onClick={() => setConflicts(true)}>
+                  Заменить все мои цены ({conflictIdx.length})
+                </button>
+                <button type="button" className="cab-btn" disabled={conflictOn === 0} onClick={() => setConflicts(false)}>
+                  Оставить все мои цены
+                </button>
+              </span>
+            </div>
+          )}
 
           {doc && (
             <>
@@ -153,8 +222,15 @@ export default function BidImportDialog({ positions, rates, vat: ownVat = null, 
                           <td className="bid-import-src">
                             <span className="bid-name">{r.item.name}</span>
                             <span className="bid-docs">
-                              {[r.item.unit, r.item.qty != null ? `кол-во ${r.item.qty}` : null, r.item.sheet, r.item.source].filter(Boolean).join(' · ')}
+                              {[r.item.unit, r.item.qty != null ? `кол-во ${r.item.qty}` : null,
+                                doc.names.length > 1 ? [r.item.file, ...(r.item.alsoFiles || [])].join(', ') : null, r.item.sheet, r.item.source]
+                                .filter(Boolean).join(' · ')}
                             </span>
+                            {r.dupOf && !g && (
+                              <span className="bid-docs bid-import-own">
+                                эта строка есть и в «{r.dupOf}» с другой ценой — какую ставить, выберите сами
+                              </span>
+                            )}
                           </td>
                           <td className="num">{price == null ? '—' : formatAmount(price)}</td>
                           <td className="bid-import-target">
@@ -196,8 +272,10 @@ export default function BidImportDialog({ positions, rates, vat: ownVat = null, 
                                   <option value="__search">другая позиция…</option>
                                 </select>
                                 {g && own != null && (
-                                  <span className="bid-docs">
-                                    {r.on ? `заменит вашу цену ${formatAmount(own)} ₽` : `ваша цена ${formatAmount(own)} ₽ — отметьте, чтобы заменить`}
+                                  <span className={`bid-docs${own !== price && price != null ? ' bid-import-own' : ''}`}>
+                                    {own === price ? `та же цена уже стоит: ${formatAmount(own)} ₽`
+                                      : r.on ? `заменит вашу цену ${formatAmount(own)} ₽ (её можно будет вернуть)`
+                                        : `останется ваша цена ${formatAmount(own)} ₽ — отметьте, чтобы заменить`}
                                   </span>
                                 )}
                                 {g && !r.match.exact && !r.match.manual && <span className="bid-docs">{BID_KIND_LABEL[g.kind]}: проверьте, та ли это позиция</span>}

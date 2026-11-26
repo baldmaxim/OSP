@@ -18,7 +18,7 @@ import { ROOT, skipReason, startSingleOwner, latestVerifiedCopy } from '../db/li
 const SERVER = path.join(ROOT, 'server', 'osp-api')
 const skip = skipReason({ needCopy: true }) || (fs.existsSync(path.join(SERVER, 'node_modules', 'pg')) ? false : 'нет зависимостей: npm ci --prefix server/osp-api')
 const id = (n) => `00000000-0000-4000-8000-0000000e${String(n).padStart(4, '0')}`
-const U = { admin: id(1), self: id(2), bound: id(3), managed: id(4), foreign: id(5) }
+const U = { admin: id(1), self: id(2), bound: id(3), managed: id(4), foreign: id(5), engineer: id(6), superadmin: id(7) }
 const CP = { self: id(11), old: id(12), foreign: id(13) }
 const OBJ = id(21)
 const T = { open: id(31), foreign: id(32), done: id(33), doneMember: id(34), rejected: id(35) }
@@ -38,17 +38,20 @@ const OPEN_TO_EVERYONE = new Set(['roles', 'role_permissions', 'public_open_tend
 
 const SEED = `
   insert into auth.users (id, aud, role, email) select u, 'authenticated', 'authenticated', u || '@example.invalid'
-    from unnest(array['${U.admin}', '${U.self}', '${U.bound}', '${U.managed}', '${U.foreign}']::uuid[]) u;
+    from unnest(array['${U.admin}', '${U.self}', '${U.bound}', '${U.managed}', '${U.foreign}', '${U.engineer}', '${U.superadmin}']::uuid[]) u;
   insert into public.counterparties (id, name, inn, notes, registered_via) values
     ('${CP.self}', 'ООО С сайта', '7707083893', null, 'self'),
     ('${CP.old}', 'ООО Старый', '7736050003', 'служебное примечание отдела', null),
     ('${CP.foreign}', 'ООО Чужой', '7702070139', null, null);
   insert into public.user_roles (user_id, role, is_approved, is_blocked, full_name, work_phone, email, counterparty_id, self_registered) values
     ('${U.admin}', 'admin', true, false, 'Админов', null, 'admin@example.invalid', null, false),
+    ('${U.engineer}', 'engineer', true, false, 'Инженеров', null, 'engineer@example.invalid', null, false),
+    ('${U.superadmin}', 'engineer', true, false, 'Суперадминов', null, 'super@example.invalid', null, false),
     ('${U.self}', 'contractor', true, false, 'Сайтов', '+79160000001', 'self@example.invalid', '${CP.self}', true),
     ('${U.bound}', 'contractor', true, false, 'Привязанный', '+79160000002', 'bound@example.invalid', '${CP.old}', true),
     ('${U.managed}', 'contractor', true, false, 'От администратора', null, 'managed@example.invalid', '${CP.old}', false),
     ('${U.foreign}', 'contractor', true, false, 'Чужой', null, 'foreign@example.invalid', '${CP.foreign}', false);
+  insert into public.superadmins (user_id) values ('${U.superadmin}');
   insert into public.objects (id, name, address, status) values ('${OBJ}', 'ЖК Изоляция', 'Москва', 'main_construction');
   insert into public.tenders (id, work_description, object_id, status, public_tender_number, cost_plan_link, notes) values
     ('${T.open}', 'Открытый', '${OBJ}', 'Идет тендерная процедура', 9921, 'https://example.invalid/plan', 'служебное'),
@@ -102,6 +105,7 @@ describe('Учётка с регистрации на сайте: база (ко
     assert.match(res.stdout, /OK 20261204_contractor_self_access: применена/)
     assert.match(res.stdout, /OK 20261226_contractor_org_card_vor_file: применена/)
     assert.match(res.stdout, /OK 20261229_signup_phone_ext: применена/)
+    assert.match(res.stdout, /OK 20270304_bid_positions_preview: применена/)
     sql(SEED)
     as(U.self, `select public.bid_request('${T.open}')`)
     sql(`insert into public.tender_bid_rates (tender_id, counterparty_id, kind, item_key, unit_key, name, unit, volume, price, total) values
@@ -215,7 +219,13 @@ describe('Учётка с регистрации на сайте: база (ко
     assert.ok(!JSON.stringify(rows[0]).includes('s3_key') && !JSON.stringify(rows[0]).includes('tenders/open'), 'пути к файлу нет')
     assert.throws(() => as(U.self, `select * from public.bid_positions('${T.foreign}')`), /подайте заявку/)
     assert.equal(as(U.self, `select count(*) from public.bid_positions('${T.rejected}')`), '0')
-    assert.throws(() => as(U.admin, `select * from public.bid_positions('${T.open}')`), /только для подрядчика/)
+    // Администратор смотрит кабинет «как подрядчик» (20270304): те же ведомости из разбора службы, без пути к файлу; прочим сотрудникам —
+    // отказ, как раньше.
+    const preview = JSON.parse(as(U.admin, `select json_agg(p) from public.bid_positions('${T.open}') p`))
+    assert.deepEqual(preview.map((r) => `${r.title}:${r.status}:${r.positions.length}`), ['ВОР паркинга:ok:2'])
+    assert.ok(!JSON.stringify(preview).includes('tenders/open'), 'пути к файлу нет и администратору')
+    assert.equal(as(U.superadmin, `select count(*) from public.bid_positions('${T.open}')`), '1', 'суперадмин (роль не admin) — тоже: просмотр есть и у него')
+    assert.throws(() => as(U.engineer, `select * from public.bid_positions('${T.open}')`), /только для подрядчика/)
     // Новый файл, который служба ещё не разобрала, виден как «готовится», файлы других категорий — нет.
     sql(`insert into public.s3_documents (id, owner_type, owner_id, s3_key, file_name, doc_category) values ('${DOC.vorBad}', 'tender', '${T.open}', 'tenders/open/new.xlsx', 'Новый ВОР.xlsx', 'vor')`)
     const titles = JSON.parse(as(U.self, `select json_agg(json_build_object('t', p.title, 's', p.status)) from public.bid_positions('${T.open}') p`))
@@ -235,8 +245,17 @@ describe('Учётка с регистрации на сайте: база (ко
     assert.equal(row.counterparty_id, CP.self, 'организацию из запроса не выбрать')
     assert.equal(save([{ kind: 'material', key: 'бетон в25', unit_key: 'м3', name: 'x', price: null, note: null }]), '1')
     assert.equal(as(U.self, `select count(*) from public.tender_bid_rates where tender_id = '${T.open}' and item_key = 'бетон в25'`), '0', 'свою цену убрать можно')
-    // Подрядчик от администратора — прежний путь, с позициями из браузера.
-    assert.equal(as(U.managed, `select public.bid_rates_save('${T.open}', '[{"kind":"work","key":"своя","unit_key":"","name":"Своя","price":5,"volume":2}]'::jsonb)`), '1')
+    // Подрядчик от администратора (20270301, аудит 24.11.2026): ведомости тендера разобраны — позиции сверяются и у него, наименование и
+    // объём — из разбора, а не из запроса.
+    const managedSave = (row) => as(U.managed, `select public.bid_rates_save('${T.open}', '${JSON.stringify([row]).replace(/'/g, "''")}'::jsonb)`)
+    assert.throws(() => managedSave({ kind: 'work', key: 'своя', unit_key: '', name: 'Своя', price: 5, volume: 2 }), /Позиции нет в ВОР/)
+    assert.equal(managedSave({ kind: 'work', key: 'устройство плиты', unit_key: 'м3', name: 'Подмена', price: 5, volume: 2 }), '1')
+    assert.equal(as(U.managed, `select name || ':' || volume from public.tender_bid_rates where tender_id = '${T.open}' and item_key = 'устройство плиты'
+      and counterparty_id = '${CP.old}'`), 'Устройство плиты:100.5000')
+    // Ведомость ещё не разобрана службой — у него прежний путь: позиции из браузера (он разбирает файл сам).
+    sql(`insert into public.s3_documents (id, owner_type, owner_id, s3_key, file_name, doc_category) values ('${DOC.vorBad}', 'tender', '${T.open}', 'tenders/open/wait.xlsx', 'Ждёт разбора.xlsx', 'vor')`)
+    assert.equal(managedSave({ kind: 'work', key: 'своя', unit_key: '', name: 'Своя', price: 5, volume: 2 }), '1')
+    sql(`delete from public.s3_documents where id = '${DOC.vorBad}'`)
     // Закрытый тендер.
     assert.throws(() => as(U.self, `select public.bid_rates_save('${T.done}', '[]'::jsonb)`), /закрыта/)
   })

@@ -87,7 +87,7 @@
   gap: 0.5rem;
   margin-bottom: 0.875rem;
 }
-.kpr-subbar .rr-sub-tabs { margin-bottom: 0; }
+.kpr-subbar .rr-sub-tabs, .kpr-subbar .rr-supply-counter-note { margin-bottom: 0; }
 .kpr-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .kpr-notice {
   margin-bottom: 0.75rem;
@@ -321,6 +321,52 @@
 .kpr-analog.is-off .kpr-analog-name, .kpr-analog.is-off .kpr-analog-price { color: var(--text-tertiary); }
 .kpr-analog.is-off .kpr-analog-price { font-weight: 500; }
 .kpr-analog.is-removed .kpr-analog-price { text-decoration: line-through; }
+/* Реестр СУ-10: все цены позиции (раскрываются) и поиск позиции по реестру у строки проверки */
+.kpr-points {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0.125rem 0 0;
+  padding: 0.25rem 0 0.25rem 0.625rem;
+  border-left: 2px solid var(--border-color);
+  list-style: none;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.kpr-points li { display: flex; flex-wrap: wrap; gap: 0.125rem 0.625rem; }
+.kpr-points a { color: inherit; }
+.kpr-find { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; max-width: 36rem; }
+.kpr-find-input {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-tertiary);
+}
+.kpr-find-input:focus-within { border-color: #2563eb; }
+.kpr-find-input input { flex: 1 1 auto; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-primary); font: inherit; }
+.kpr-find-list { display: flex; flex-direction: column; width: 100%; margin: 0; padding: 0; list-style: none; border: 1px solid var(--border-color); border-radius: 6px; }
+.kpr-find-list li + li { border-top: 1px solid var(--border-color); }
+.kpr-find-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.kpr-find-opt:hover, .kpr-find-opt:focus-visible { background: var(--bg-tertiary); }
 /* Настройки одной строкой: варианты внутри блока — в ряд, таблице остаётся место */
 .kpr-settings.is-row { gap: 0.5rem 0.75rem; }
 .kpr-settings.is-row fieldset { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.875rem; padding-top: 0.25rem; padding-bottom: 0.5rem; }

@@ -1,9 +1,10 @@
 // «Реестр по договорам» (/contracts/registry): вид раздела — как у других разделов (решение пользователя 29.10.2026),
 // 11.11.2026 разгружен (решение пользователя: «сумбурный, непонятный, перегруженный», права те же).
 //   • рабочий стиль (workUi.css, класс ui-work) и плотный вариант cr-dense на компьютере;
-//   • шапка — одна строка: название с плиткой, отдел («ОС и ГО» / ОС / ГО), справа действия (и «+ Заявка на заключение ДП»);
+//   • шапка — одна строка: название с плиткой, отдел — один список («ОС и ГО» / ОС / ГО), справа действия (и «+ Заявка на
+//     заключение ДП»); путь к общей папке — в окне «Документы» (24.11.2026);
 //   • вкладки — вид документа с числами, статусы — переключателями; «Все» нет: это «Договоры и ДС»;
-//   • панель — одной строкой: поиск, фильтры, «Просрочено», «Не в Larix» — одна высота; «Сбросить» — только при фильтре;
+//   • панель — одной строкой: поиск и фильтры (в том числе «Тендер») — одна высота; «Сбросить» — только при фильтре;
 //   • страницы — один раз, под таблицей; над ней — только итог;
 //   • договоры отделены друг от друга: каждый второй — подложкой, раскрытый договор и его область — одним блоком
 //     (полоса акцентом слева у обеих строк); в таблице ничего мельче 11px, отметки документа — одной строкой;
@@ -53,8 +54,8 @@ describe('Договоры и ДС: вид раздела', { skip: !launch && '
       const header = page.locator('.registry-header')
       assert.equal(await header.locator('h2 .ic-tile').count(), 1, 'плитка раздела у названия')
       assert.match(await header.locator('h2').innerText(), /Реестр по договорам/)
-      assert.deepEqual(await header.locator('.registry-scope-btn').allInnerTexts(), ['ОС и ГО', 'ОС', 'ГО'])
-      assert.match(await header.locator('.cr-header-actions').innerText(), /Путь к общей папке/)
+      assert.equal(await header.locator('.registry-dept .fdrop-trigger').innerText().then((t) => t.replace('▾', '').trim()), 'ОС и ГО')
+      assert.doesNotMatch(await header.innerText(), /Путь к общей папке/, 'путь к общей папке — в окне «Документы»')
       assert.deepEqual(
         (await header.locator('.cr-header-actions > button').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim()),
         ['Документы', 'Компактный вид', '+ Заявка на заключение ДП', '+ Добавить договор'],
@@ -62,7 +63,7 @@ describe('Договоры и ДС: вид раздела', { skip: !launch && '
       // Одна строка: название, охват и действия — на одной высоте.
       const rows = await header.evaluate((h) => {
         const top = (el) => Math.round(el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2)
-        return [top(h.querySelector('h2')), top(h.querySelector('.registry-scope')), top(h.querySelector('.btn-primary'))]
+        return [top(h.querySelector('h2')), top(h.querySelector('.registry-dept')), top(h.querySelector('.btn-primary'))]
       })
       assert.ok(Math.max(...rows) - Math.min(...rows) <= 2, `шапка в одну строку: ${rows}`)
 
@@ -85,10 +86,12 @@ describe('Договоры и ДС: вид раздела', { skip: !launch && '
       ].map((el) => Math.round(el.getBoundingClientRect().height)))
       assert.deepEqual([...new Set(heights)], [32], `высоты: ${heights}`)
       assert.equal(await page.locator('.cr-toolbar .cr-filter-clear').count(), 0, 'без фильтров «Сбросить» нет')
-      await page.locator('.cr-toolbar .qfilter', { hasText: 'Не в Larix' }).click()
-      assert.equal(await page.locator('.cr-toolbar .qfilter', { hasText: 'Не в Larix' }).getAttribute('aria-pressed'), 'true')
+      assert.equal(await page.locator('.cr-toolbar .qfilter').count(), 0, '«Наши договоры», «Просрочено», «Не в Larix» убраны')
+      await page.locator('.cr-toolbar .cr-tender-filter .fdrop-trigger').click()
+      await page.locator('.fdrop-panel .fdrop-option', { hasText: 'Без тендера' }).click()
+      assert.match(await page.locator('.cr-toolbar .cr-tender-filter').getAttribute('class'), /\bis-active\b/)
       await page.locator('.cr-toolbar .cr-filter-clear').click()
-      assert.equal(await page.locator('.cr-toolbar .qfilter', { hasText: 'Не в Larix' }).getAttribute('aria-pressed'), 'false')
+      assert.doesNotMatch(await page.locator('.cr-toolbar .cr-tender-filter').getAttribute('class'), /\bis-active\b/)
       assert.equal(await page.locator('.cr-toolbar .cr-filter-clear').count(), 0)
 
       // «Компактный вид» — переключатель, как у тендеров.

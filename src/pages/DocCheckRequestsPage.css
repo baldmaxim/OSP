@@ -869,6 +869,9 @@
 .dc-row-kv dt { font-size: var(--ui-th); line-height: var(--ui-text-lh); color: var(--text-secondary); }
 .dc-row-kv dd { margin: 0; font-size: var(--ui-text); line-height: var(--ui-text-lh); color: var(--text-primary); overflow-wrap: anywhere; }
 .dc-detail-mail { display: inline-flex; align-items: center; gap: 0.375rem; color: var(--ui-link); }
+/* «Реестр»: ссылка «Открыть в реестре» и вид документа с ID (24.11.2026); на узком окне вид переносится под ссылку. */
+.dc-detail-registry { display: flex; flex-wrap: wrap; align-items: center; gap: 0.125rem 0.625rem; }
+.dc-detail-registry-id { color: var(--text-tertiary); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
 
 /* Исполнители — по человеку на строку. */
 .dc-detail-people { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }

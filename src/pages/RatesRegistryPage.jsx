@@ -13,6 +13,8 @@ import {
 import { SOURCE_FILTER_OPTIONS, SOURCE_KINDS } from '../utils/kpRegistrySources'
 import { deleteManualRate, loadDocument } from '../services/kpManualRates'
 import { importAvailable } from '../services/supplyRegistryImport'
+import { forgetSupplyCheckIndex } from '../services/supplyRegistryCheck'
+import { isSupplyDocRow, loadDocLineStatus } from '../services/supplyRegistryDocs'
 import './RatesRegistryPage.css'
 
 // Цены подрядчиков из кабинета по идущим тендерам (миграция 20261102) — только администратору.
@@ -24,6 +26,8 @@ const S3DocumentPreview = lazy(() => import('../components/S3DocumentPreview'))
 // Реестр СУ-10 (миграция 20270224): загрузка расценок из Excel; (20270227) окно «Расценка» по нажатию на строку.
 const SupplyRegistryImportDialog = lazy(() => import('../components/rates/SupplyRegistryImportDialog'))
 const SupplyRateDetailsDialog = lazy(() => import('../components/rates/SupplyRateDetailsDialog'))
+// Реестр СУ-10: проверка цен файла по реестру — позиции ищутся, как в тендерах на материалы (миграции нет).
+const SupplyRateCheckDialog = lazy(() => import('../components/rates/SupplyRateCheckDialog'))
 
 // task 356/354/411: «Реестр расценок» — общий список расценок из разных источников.
 //   1) От подрядчиков (КП) — представление kp_rates_registry (дедуп на стороне БД).
@@ -69,6 +73,11 @@ const SUPPLY_SELECT_COLS =
 const SUPPLY_DETAIL_COLS =
   ',import_id,contractor_label,doc_number,order_number,source_file,invoice_url,object_label,tender_label,row_no'
 let supplyDetailsKnown = null
+// Миграция 20270306: строки счетов и КП, загруженных в тендер (source_type 'supply_doc'), — файл строки и «файл удалён из
+// тендера». Колонок нет (база раньше миграции, 42703) — строк счетов в реестре и так нет: без этих колонок, подробности
+// 20270227 остаются. Признак — на модуль.
+const SUPPLY_DOC_COLS = ',doc_id,doc_deleted_at'
+let supplyDocsKnown = null
 const SUPPLY_SORT_COLUMN = {
   name: 'item_name', price: 'price', date: 'rate_date', tender: 'tender_desc',
 }
@@ -105,6 +114,12 @@ function SupplyRegistrySection({ canEdit = false }) {
   // Окно «Расценка» (строка страницы) и есть ли в базе подробности строки (миграция 20270227).
   const [detailsRow, setDetailsRow] = useState(null)
   const [detailsEnabled, setDetailsEnabled] = useState(supplyDetailsKnown !== false)
+  // Строки счетов тендеров (миграция 20270306): применена ли строка в тендере — Map id → да/нет для показанных строк (null —
+  // статус не прочитан или функции нет); открытый файл строки.
+  const [docStatus, setDocStatus] = useState(null)
+  const [docPreview, setDocPreview] = useState(null)
+  // Окно «Проверить по файлу» — всем, кто видит вкладку: только чтение реестра.
+  const [checkOpen, setCheckOpen] = useState(false)
 
   // Только объекты/тендеры, по которым есть расценки снабжения (distinct из реестра).
   const [objects, setObjects] = useState([])
@@ -120,6 +135,7 @@ function SupplyRegistrySection({ canEdit = false }) {
   }, [canEdit])
 
   const afterImportChange = (text) => {
+    forgetSupplyCheckIndex()
     setReloadToken((t) => t + 1)
     if (text) {
       setNotice(text)
@@ -212,16 +228,28 @@ function SupplyRegistrySection({ canEdit = false }) {
           .order('id', { ascending: true })
           .range(from, to)
         let withDetails = supplyDetailsKnown !== false
-        let { data, error: qErr } = await query(SUPPLY_SELECT_COLS + (withDetails ? SUPPLY_DETAIL_COLS : ''))
+        let withDocs = withDetails && supplyDocsKnown !== false
+        const cols = () => SUPPLY_SELECT_COLS + (withDetails ? SUPPLY_DETAIL_COLS : '') + (withDocs ? SUPPLY_DOC_COLS : '')
+        let { data, error: qErr } = await query(cols())
+        // Сначала без колонок строк счетов (база раньше 20270306), потом и без подробностей (раньше 20270227).
+        if (qErr && withDocs && isMissingColumn(qErr)) {
+          withDocs = false
+          ;({ data, error: qErr } = await query(cols()))
+        }
         if (qErr && withDetails && isMissingColumn(qErr)) {
           withDetails = false
-          ;({ data, error: qErr } = await query(SUPPLY_SELECT_COLS))
+          ;({ data, error: qErr } = await query(cols()))
         }
         if (qErr) throw qErr
         supplyDetailsKnown = withDetails
+        if (withDetails) supplyDocsKnown = withDocs
         if (cancelled) return
         setDetailsEnabled(withDetails)
         setRows(data || [])
+        // Статус строк счетов — отдельным запросом после показа страницы: таблица не ждёт.
+        if ((data || []).some(isSupplyDocRow)) {
+          loadDocLineStatus(data).then((m) => { if (!cancelled) setDocStatus(m) })
+        }
         // Если точный подсчёт не прошёл — оцениваем так, чтобы «Вперёд»
         // продолжало работать до реального конца данных.
         if (countFailed) {
@@ -295,6 +323,18 @@ function SupplyRegistrySection({ canEdit = false }) {
   }
   const sortIndicator = (col) => (sortBy === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '')
   const closeDetails = useCallback(() => setDetailsRow(null), [])
+  const closeCheck = useCallback(() => setCheckOpen(false), [])
+  // Файл строки счёта — просмотр файла портала (как документ строки КП). Файла нет или нет доступа к документам тендера — сообщение.
+  const openDocFile = useCallback(async (row) => {
+    try {
+      const doc = await loadDocument(row.doc_id)
+      if (doc) setDocPreview(doc)
+      else alert('Файл недоступен: его удалили из тендера или нет доступа к документам тендера.')
+    } catch (err) {
+      alert('Не удалось открыть файл: ' + (err.message || err))
+    }
+  }, [])
+  const docFileOf = (r) => (isSupplyDocRow(r) && r.doc_id ? { name: r.source_file, deletedAt: r.doc_deleted_at } : null)
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
   const fromRow = totalCount === 0 ? 0 : page * pageSize + 1
@@ -302,8 +342,18 @@ function SupplyRegistrySection({ canEdit = false }) {
 
   return (
     <>
-      <div className="rr-supply-counter-note">
-        Найдено: <strong>{totalCount}</strong> расценок СУ-10
+      <div className="kpr-subbar">
+        <div className="rr-supply-counter-note">
+          Найдено: <strong>{totalCount}</strong> расценок СУ-10
+        </div>
+        {!error && (
+          <div className="kpr-actions">
+            <button type="button" className="kpr-btn" onClick={() => setCheckOpen(true)}
+              title="Загрузить счёт, КП или ВОР и сравнить цены с реестром СУ-10">
+              Проверить по файлу
+            </button>
+          </div>
+        )}
       </div>
       <div className="rr-filters">
         <div className={`rr-filter-group rr-filter-group-search ${search ? 'is-active' : ''}`}>
@@ -437,7 +487,18 @@ function SupplyRegistrySection({ canEdit = false }) {
                   }}>
                     <td className="rr-td-num">{page * pageSize + idx + 1}</td>
                     <td className="rr-td-source">
-                      <span className="rr-chip rr-chip-supply" title={r.source_name || 'СУ-10'}>{r.source_name || 'СУ-10'}</span>
+                      {isSupplyDocRow(r) && r.doc_deleted_at ? (
+                        // Файл строки удалён из тендера — источник красным (и словами — в подсказке).
+                        <span className="rr-chip rr-chip-supply is-deleted" aria-label={`${r.source_name}: файл удалён из тендера`}
+                          title={`Файл удалён из тендера ${fmtMoscowDate(r.doc_deleted_at)}: «${r.source_file || 'без имени'}»`}>
+                          {r.source_name}
+                        </span>
+                      ) : (
+                        <span className="rr-chip rr-chip-supply"
+                          title={isSupplyDocRow(r) ? `Файл тендера: «${r.source_file || 'без имени'}»` : (r.source_name || 'СУ-10')}>
+                          {r.source_name || 'СУ-10'}
+                        </span>
+                      )}
                     </td>
                     <td className="rr-td-object">
                       <span className="rr-chip rr-chip-object" title={r.object_name || '—'}>{r.object_name || '—'}</span>
@@ -446,6 +507,9 @@ function SupplyRegistrySection({ canEdit = false }) {
                       <button type="button" className="rr-name-btn" title="Подробнее о расценке" onClick={() => setDetailsRow(r)}>
                         {r.item_name}
                       </button>
+                      {isSupplyDocRow(r) && docStatus?.get(r.id) === false && (
+                        <span className="rr-status-badge" title="Цена этой строки не стоит ни у одной позиции тендера">Не применена в тендере</span>
+                      )}
                     </td>
                     <td className="rr-td-tender" title={r.tender_desc}>
                       {r.tender_id && r.tender_desc
@@ -462,7 +526,11 @@ function SupplyRegistrySection({ canEdit = false }) {
                     <td className="rr-td-unit">{r.unit || '—'}</td>
                     <td className="rr-td-price">{fmtMoney(r.price)}</td>
                     <td className="rr-td-date">{fmtMoscowDate(r.rate_date)}</td>
-                    {detailsEnabled && <td className="rr-td-invoice"><SupplyInvoiceCell url={r.invoice_url} /></td>}
+                    {detailsEnabled && (
+                      <td className="rr-td-invoice">
+                        <SupplyInvoiceCell url={r.invoice_url} docFile={docFileOf(r)} onOpenFile={() => openDocFile(r)} />
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -490,7 +558,22 @@ function SupplyRegistrySection({ canEdit = false }) {
 
       {detailsRow && (
         <Suspense fallback={null}>
-          <SupplyRateDetailsDialog row={detailsRow} hasDetails={detailsEnabled} onClose={closeDetails} />
+          <SupplyRateDetailsDialog row={detailsRow} hasDetails={detailsEnabled} onClose={closeDetails}
+            applied={isSupplyDocRow(detailsRow) ? docStatus?.get(detailsRow.id) : undefined}
+            onOpenFile={isSupplyDocRow(detailsRow) && detailsRow.doc_id && !detailsRow.doc_deleted_at
+              // Просмотр файла — поверх страницы, окно «Расценка» закрывается (оно выше просмотра по слоям).
+              ? () => { const r = detailsRow; setDetailsRow(null); openDocFile(r) }
+              : null} />
+        </Suspense>
+      )}
+      {docPreview && (
+        <Suspense fallback={null}>
+          <S3DocumentPreview doc={docPreview} onClose={() => setDocPreview(null)} />
+        </Suspense>
+      )}
+      {checkOpen && (
+        <Suspense fallback={null}>
+          <SupplyRateCheckDialog hasDetails={detailsEnabled} onClose={closeCheck} />
         </Suspense>
       )}
       {importOpen && (
@@ -806,6 +889,7 @@ function RatesRegistryPage() {
       const { data, error } = await db.rpc('refresh_rates_registry')
       if (error) throw error
       setRefreshedAt(data || new Date().toISOString())
+      forgetSupplyCheckIndex()
       // Перечитываем текущую страницу: заставляем эффект отработать заново.
       setReloadToken(t => t + 1)
     } catch (err) {

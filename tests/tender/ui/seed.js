@@ -297,6 +297,24 @@ if (BIG_PRICING > 0) {
     })
   }
   window.__fakeDb.s3_documents = window.__fakeDb.s3_documents.filter((d) => d.owner_id !== 'tender-p')
+  // bigOffers=N — к большому тендеру N прочитанных счетов (у каждого — строки на свои 120 позиций, через одну с другим
+  // написанием): замер окна «Счета и КП» («Убрать неотмеченные», «Применить цены») на объёме прода (24 документа).
+  const BIG_OFFERS = Number(params.get('bigOffers') || 0)
+  const sources = window.__fakeDb.tender_supply_sources
+  for (let d = 0; d < BIG_OFFERS; d++) {
+    const lines = []
+    for (let j = 0; j < 120; j++) {
+      const src = sources[(d + j) % sources.length]
+      const p = src.positions[(d * 37 + j * 7) % src.positions.length]
+      lines.push({ n: j % 2 ? `${p.name} (поставщик ${d + 1})` : p.name, p: 200 + d + j, u: p.unit, q: p.volume })
+    }
+    window.__fakeDb.s3_documents.push({
+      id: `doc-big-${d}`, owner_type: 'tender', owner_id: 'tender-p', doc_category: 'supply_doc', file_name: `Счёт ${d + 1}.xlsx`,
+      s3_key: `tenders/tender-p/big-${d}.xlsx`, created_at: `2026-11-${String(1 + (d % 20)).padStart(2, '0')}T09:00:00Z`,
+      uploaded_by_name: 'Снабженцев С. С.', size_bytes: 9000 + d,
+      notes: JSON.stringify({ kind: 'supply_offer', v: 1, rv: 3, at: '2026-11-20T09:00:00Z', source: null, vat: null, delivery: 1, lines }),
+    })
+  }
 }
 
 // Тендер без файлов ВОР: позиции берутся из вкладки «ВОР» карточки (tender_estimate_items).
@@ -1538,6 +1556,23 @@ if (params.get('docCheck') === '1') {
   // Постоянный номер заявки (ID, миграция 20270123) — по порядку как в миграции; ?dcNoNumber=1 — колонки ещё нет.
   fdb.doc_check_requests.forEach((r, i) => { r.request_number = i + 1 })
   fdb.doc_check_request_audit_log = []
+  // dcRegistry=1 — документы «Реестра по договорам» из заявок (contracts.doc_check_request_id, 20270225/20270228): у dcr-2 (ДП) —
+  // договор ID 2080, у dcr-1 (ДС) — ДС ID 2081 в «Удалённых»; dcr-3 в реестр не внесена — причина в «Истории».
+  if (params.get('dcRegistry') === '1') {
+    const o1 = obj('obj-2')
+    const base = (over) => ({ record_type: 'dp', parent_contract_id: null, root_contract_id: null, status: 'new_request', contract_date: null,
+      contract_amount: null, currency: 'RUB', created_at: '2026-11-20T09:00:00Z', tenders: null, contract_counterparties: [],
+      counterparties: cpOf('cp-2'), counterparty_id: 'cp-2', object_id: 'obj-2', objects: { name: o1?.name, status: o1?.status }, ...over })
+    fdb.contracts.push(
+      base({ id: 'k-dcr-2', display_id: 2080, contract_number: 'СУ2-001', doc_check_request_id: 'dcr-2', deleted_at: null }),
+      base({ id: 'k-dcr-1', display_id: 2081, record_type: 'ds_extra', parent_contract_id: 'k-dcr-2', root_contract_id: 'k-dcr-2',
+        contract_number: '1', doc_check_request_id: 'dcr-1', deleted_at: '2026-11-21T09:00:00Z' }),
+    )
+    fdb.doc_check_request_audit_log.push({ id: 'dca-reg-1', request_id: 'dcr-3', event_type: 'registry_skipped', field_name: null,
+      old_value: null, new_value: { reason: 'no_contract', candidates: 0 }, changed_at: '2026-11-24T09:00:00Z', changed_by_role: null,
+      changed_by_name: 'Автоматически',
+      description: 'В «Реестр по договорам» не внесена: договора с этим контрагентом на объекте в реестре нет — ДС внесёт юрист' })
+  }
   // Файлы dcr-2: документ на проверку (без категории, как все прежние) и понятийное соглашение — своя категория (11.11.2026).
   fdb.s3_documents.push({ id: 'dcr-file-1', owner_type: 'doc_check_request', owner_id: 'dcr-2', file_name: 'ДП СУ2-001.pdf',
     s3_key: 'doc-check-requests/dcr-2/dp.pdf', size_bytes: 1024, created_at: '2026-10-21T09:00:00Z' })

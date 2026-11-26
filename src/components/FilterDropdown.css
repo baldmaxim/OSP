@@ -130,6 +130,7 @@
   font-weight: 600;
 }
 .fdrop-check { color: var(--primary-color); font-size: 0.8rem; flex: 0 0 auto; }
+.fdrop-option:disabled { color: var(--text-secondary); background: transparent; cursor: default; }
 
 /* ===== Множественный выбор (multiple) ===== */
 .fdrop-multi-actions {

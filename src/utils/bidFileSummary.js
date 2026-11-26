@@ -10,7 +10,7 @@
 // анкеты, иначе 22 %); подрядчик без НДС — цены как есть.
 import { readBidPriceDoc, bidGroups, matchBidItems } from './bidImport.js'
 import { unitPriceWithVat, DEFAULT_VAT_RATE } from './supplierDoc.js'
-import { roundMoney2, bidItemKey, bidUnitKey } from './bidVor.js'
+import { roundMoney2, bidItemKey, bidUnitKey } from './bidPrice.js'
 
 export function bidFileVat(doc, ownVat = null) {
   if (ownVat?.exempt) return { mode: 'gross', force: true, rate: 0, exempt: true }

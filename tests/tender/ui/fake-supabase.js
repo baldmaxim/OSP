@@ -32,7 +32,8 @@
 // window.__fakeUploads — что загружали ({ s3_key, size, type }).
 // window.__fakeRemoteFiles = true — ссылка на скачивание ведёт в «хранилище» на другом домене, как настоящая (переход
 // по ней увёл бы страницу или открыл вкладку), байты отдаёт fetch стенда; 'missing' — хранилище отвечает 404.
-// window.__fakeFileDelay — задержка ответа хранилища, мс (fetch с signal её прерывает, как настоящий).
+// window.__fakeFileDelay — задержка ответа хранилища, мс (fetch с signal её прерывает, как настоящий); с ней window.__fakeFileMaxInFlight —
+// сколько файлов скачивалось одновременно (больше всего).
 const LATENCY_MS = Number(new URLSearchParams(window.location.search).get('latency') || 120)
 const MAX_ROWS = Number(new URLSearchParams(window.location.search).get('maxRows') || 0)
 const FAKE_S3 = 'https://fake-s3.invalid/'
@@ -53,10 +54,16 @@ window.fetch = async (url, init = {}) => {
     return new Response(null, { status: 200 })
   }
   if (window.__fakeFileDelay) {
-    await new Promise((resolve, reject) => {
-      const t = setTimeout(resolve, window.__fakeFileDelay)
-      init.signal?.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Скачивание отменено', 'AbortError')) })
-    })
+    window.__fakeFileInFlight = (window.__fakeFileInFlight || 0) + 1
+    window.__fakeFileMaxInFlight = Math.max(window.__fakeFileMaxInFlight || 0, window.__fakeFileInFlight)
+    try {
+      await new Promise((resolve, reject) => {
+        const t = setTimeout(resolve, window.__fakeFileDelay)
+        init.signal?.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Скачивание отменено', 'AbortError')) })
+      })
+    } finally {
+      window.__fakeFileInFlight -= 1
+    }
   }
   if (window.__fakeRemoteFiles !== 'missing' && window.__fakeFiles?.[key]) return realFetch(window.__fakeFiles[key])
   return new Response(null, { status: 404 })

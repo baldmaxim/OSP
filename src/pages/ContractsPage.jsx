@@ -11,7 +11,6 @@ import DocLinkMarks from '../components/DocLinkMarks'
 import SignalReviewDialog from '../components/SignalReviewDialog'
 import EstimatToggle from '../components/EstimatToggle'
 import { estimatEvent, estimatPatch, estimatState } from '../utils/contractEstimat'
-import RootFolderPathButton from '../components/RootFolderPathButton'
 import VorDivisionChip from '../components/VorDivisionChip'
 import VorDivisionFilter from '../components/VorDivisionFilter'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
@@ -32,7 +31,7 @@ const ContractsImportModal = lazy(() => import('../components/ContractsImportMod
 import { fetchCounterpartyDocSummary, deleteDocument } from '../services/s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { chunkList } from '../utils/inChunks'
-import { LARIX_LINK_FIELD, LARIX_LINK_LABEL, isInLarix } from '../utils/contractLarix'
+import { LARIX_LINK_FIELD, LARIX_LINK_LABEL } from '../utils/contractLarix'
 import { kindCounts, registryCounts, registryRows, signalReviewCountShown, signalReviewIds } from '../utils/contractRegistryTabs'
 import { STATE_LABEL, isReviewState, markFromMatch, markLook, matchNotice, pendingMark, softWarningText, stateLabel, staleNotice } from '../utils/signalReview'
 import { ruDateTime } from '../utils/signalPathRow'
@@ -114,15 +113,22 @@ const STATUS_OPTIONS = [
 const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map(s => [s.value, s.label]))
 
 // Отдел (03.11, решение пользователя): реестр делится на основное строительство и гарантийное обслуживание — по объекту
-// документа. «Наши договоры» (contracts.handled_by_us, миграция 20260827) — с того же дня фильтр в панели, а не второй охват.
-// 11.11.2026 (реестр разгружен): «ОС и ГО» вместо «Все договоры» — третьего «все» рядом с видом документа и статусами нет;
-// чисел на переключателе нет — их показывают вкладки вида документа ниже.
+// документа. 11.11.2026 (реестр разгружен): «ОС и ГО» вместо «Все договоры», чисел на отделе нет — их показывают вкладки вида
+// документа ниже. 24.11.2026 (решение пользователя): отдел — один выпадающий список в шапке, по умолчанию «ОС и ГО» при каждом
+// открытии (выбор больше не запоминается); фильтров «Наши договоры», «Просрочено», «Не в Larix» нет, «Тендер» — список из трёх.
 const DEPTS = [
   { key: 'all', label: 'ОС и ГО', hint: 'Основное строительство и гарантийное обслуживание' },
   { key: 'main_construction', label: 'ОС', hint: 'Основное строительство: договоры и ДС по объектам ОС' },
   { key: 'warranty_service', label: 'ГО', hint: 'Гарантийное обслуживание: договоры и ДС по объектам ГО' },
 ]
+// Прежний ключ запомненного отдела: убираем, чтобы реестр не открывался выбранным когда-то отделом.
 const DEPT_STORAGE_KEY = 'contracts-dept'
+// «Тендер»: все документы, только с тендером или только без (ДС — по тендеру своего договора, docTender).
+const TENDER_FILTERS = [
+  { value: '', label: 'Тендер: все' },
+  { value: 'with', label: 'Есть тендер' },
+  { value: 'without', label: 'Без тендера' },
+]
 
 // Договоры и ДС лежат в одной таблице; что показывать — фильтр «Документ»
 // (вместо прежнего отдельного представления «Дополнительные соглашения»).
@@ -142,13 +148,6 @@ const DOC_KINDS = [
 const DOC_KIND_STORAGE_KEY = 'contracts-doc-kind'
 // Понятийные соглашения — файлы договора в s3_documents (ConceptAgreementCell).
 const CONCEPT_DOC_COLUMNS = 'id, owner_id, file_name, s3_key, mime_type, size_bytes, created_at'
-
-function readStoredDept() {
-  try {
-    const saved = localStorage.getItem(DEPT_STORAGE_KEY)
-    return DEPTS.some(d => d.key === saved) ? saved : 'all'
-  } catch { return 'all' }
-}
 
 function readStoredDocKind() {
   try {
@@ -423,14 +422,13 @@ function ContractRegistry() {
   // Раздел — единый реестр без выбора отдела: договоры ведутся и по объектам
   // основного строительства, и по объектам гарантийного обслуживания.
   const [activeTab, setActiveTab] = useState('all')
-  // Отдел: основное строительство, гарантийное обслуживание или оба. Выбор запоминается в браузере.
-  const [dept, setDept] = useState(readStoredDept)
+  // Отдел: основное строительство, гарантийное обслуживание или оба; при открытии — «ОС и ГО».
+  const [dept, setDept] = useState('all')
   useEffect(() => {
-    try { localStorage.setItem(DEPT_STORAGE_KEY, dept) } catch { /* noop */ }
-  }, [dept])
-  // Только договоры, которые ведёт наш отдел.
-  const [onlyOurs, setOnlyOurs] = useState(false)
-  const scope = onlyOurs ? 'ours' : 'all'
+    try { localStorage.removeItem(DEPT_STORAGE_KEY) } catch { /* noop */ }
+  }, [])
+  // Охват «Наши договоры» снят из реестра (24.11.2026): счётчики и строки — по всему реестру.
+  const scope = 'all'
   // Тип документа: договоры, ДС или оба (DOC_KINDS).
   const [docKind, setDocKind] = useState(readStoredDocKind)
   useEffect(() => {
@@ -445,6 +443,8 @@ function ContractRegistry() {
   const [employees, setEmployees] = useState(() => new Map())
   const [tenders, setTenders] = useState([])
   const [loading, setLoading] = useState(false)
+  // Реестр прочитан хотя бы раз — до этого переход «Открыть в реестре» (?id=) ждёт, а не говорит «не найден».
+  const [contractsLoaded, setContractsLoaded] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [editingContract, setEditingContract] = useState(null)
@@ -458,7 +458,7 @@ function ContractRegistry() {
   // Приложения объектов
   const [showAttachmentsModal, setShowAttachmentsModal] = useState(false)
   // Справочник «Структура хранения документов» + корень хранилища, который в
-  // нём показывается (значение поднимается из RootFolderPathButton).
+  // нём показывается (значение поднимается из карточки пути в окне «Документы»).
   const [showStorageStructure, setShowStorageStructure] = useState(false)
   // «Документы раздела»: шаблоны, структура хранения, приложения, импорт Excel и загрузка ПСДЦ — одним окном.
   const [showDocsMenu, setShowDocsMenu] = useState(false)
@@ -520,9 +520,6 @@ function ContractRegistry() {
   const [filterDsType, setFilterDsType] = useState('')
   const [filterLawyerId, setFilterLawyerId] = useState('')
   const [searchText, setSearchText] = useState('')
-  const [onlyOverdue, setOnlyOverdue] = useState(false)
-  // Быстрый фильтр: заключённые договоры, ещё не внесённые в Larix.
-  const [onlyNoLarix, setOnlyNoLarix] = useState(false)
   // «Сверка Signal» (23.11.2026): сервер сверки может быть выключен или не настроен — тогда ни метки, ни переключателя, ни
   // окна нет и реестр работает как раньше. signalStatus — ответ /api/signal/status, signalMarks — Map id → метка.
   const [signalStatus, setSignalStatus] = useState(null)
@@ -533,7 +530,11 @@ function ContractRegistry() {
   const signalNoticeRef = useRef(null)
   const signalSeq = useRef(0)
   const signalMarksSeq = useRef(0) // номер последней перезагрузки меток: устаревший ответ игнорируется
-  const [onlyNoTender, setOnlyNoTender] = useState(false)
+  // Тендер: '' — все, 'with' — с тендером, 'without' — без (TENDER_FILTERS).
+  const [filterTender, setFilterTender] = useState('')
+  // Один документ — переход «Открыть в реестре» (?id=): { id — строка реестра (у ДС — его договор, в виде «ДС» — само ДС),
+  // label — «договор ID N» / «ДС ID N» }. Отбор по самой строке, а не по тексту ID: «42» нашёл бы десятки документов.
+  const [focusDoc, setFocusDoc] = useState(null)
   // Подразделение договора (коды подразделений ВОР, NO_VOR_DIVISION — «Не указано»); пусто — все.
   const [filterDivisions, setFilterDivisions] = useState([])
 
@@ -622,6 +623,7 @@ function ContractRegistry() {
           return (a.contract_date || '').localeCompare(b.contract_date || '')
         })
       setContracts(filtered)
+      setContractsLoaded(true)
       // Таблицу показываем сразу; приложения и сводку документов догружаем в фоне,
       // чтобы реестр не ждал их (бейджи появятся чуть позже).
       setLoading(false)
@@ -1322,9 +1324,8 @@ function ContractRegistry() {
   // «Договоры и ДС»: строки — договоры, их ДС раскрываются под строкой.
   const nestDs = docKind === 'all'
 
-  // Отдел, «Наши договоры» и тип документа применяются до вкладок и счётчиков — это тот же реестр, просто суженный,
-  // поэтому и статусные счётчики считаются в нём. В «Договорах и ДС» договор и ДС считаются каждый по своему статусу.
-  const { tabs: tabCounts, scopes: scopeCounts } = useMemo(
+  // Отдел и тип документа применяются до вкладок и счётчиков. В «Договорах и ДС» у договора и ДС свои статусы.
+  const { tabs: tabCounts } = useMemo(
     () => registryCounts(contracts, { docKind, scope, dept }),
     [contracts, docKind, scope, dept])
   // Числа на вкладках вида документа — при выбранном статусе (без него — все, кроме удалённых).
@@ -1491,10 +1492,8 @@ function ContractRegistry() {
     if (filterObjectIds.length > 0 && !filterObjectIds.includes(c.object_id)) return false
     if (filterDsType && c.record_type !== filterDsType) return false
     if (filterLawyerId && shownLawyerId(c, employees) !== filterLawyerId) return false
-    if (onlyOverdue && !isOverdue(c)) return false
-    // «Не в Larix» — только заключённые (не «Новая заявка») и ещё не внесённые.
-    if (onlyNoLarix && (isInLarix(c) || (c.status || 'new_request') === 'new_request')) return false
-    if (onlyNoTender && docTender(c, docIndex.byId)) return false
+    if (focusDoc && c.id !== focusDoc.id) return false
+    if (filterTender && Boolean(docTender(c, docIndex.byId)) !== (filterTender === 'with')) return false
     if (q) {
       // У ДС ищем ещё и по основному договору: в реестре ДС его номер и ID —
       // главный ориентир, по которому документ и разыскивают.
@@ -1514,7 +1513,7 @@ function ContractRegistry() {
       if (!hay.includes(q) && !hits.has(c.id)) return false
     }
     return true
-  }, [filterObjectIds, filterDsType, filterLawyerId, onlyOverdue, onlyNoLarix, onlyNoTender, searchText, isOverdue, employees, docIndex])
+  }, [filterObjectIds, filterDsType, filterLawyerId, focusDoc, filterTender, searchText, employees, docIndex])
 
   const filteredBeforeCounterparty = useMemo(
     () => tabContracts.filter(c => rowPassesFilters(c, dsSearchHits)),
@@ -1546,10 +1545,15 @@ function ContractRegistry() {
       (c) => rowPassesFilters(c, hits) && (!cpIds || hasCounterparty(c, cpIds)) && passesDivision(c))
   }, [signalReviewView, signalReviewSet, signalReviewOnly, dsSearchHits, searchHitsOf, rowPassesFilters, filterCounterpartyIds, passesDivision])
 
-  // Сколько строк вкладки без тендера — на кнопке фильтра.
+  // Сколько строк вкладки без тендера и с ним — в списке «Тендер».
   const noTenderCount = useMemo(
     () => tabContracts.filter(c => !docTender(c, docIndex.byId)).length,
     [tabContracts, docIndex])
+  const tenderFilterOptions = useMemo(() => TENDER_FILTERS.map(o => ({
+    ...o,
+    label: o.value === 'with' ? `${o.label} · ${tabContracts.length - noTenderCount}`
+      : o.value === 'without' ? `${o.label} · ${noTenderCount}` : o.label,
+  })), [tabContracts, noTenderCount])
 
   const divisionCounts = useMemo(() => {
     if (!divisionEnabled) return null
@@ -1593,7 +1597,7 @@ function ContractRegistry() {
     })
   }, [filteredBeforeDivision, passesDivision, sortKey, sortDir])
 
-  const hasActiveFilters = !!(filterObjectIds.length || filterCounterpartyIds.length || filterDsType || filterLawyerId || searchText || onlyOverdue || onlyNoLarix || onlyNoTender || onlySignalReview || onlyOurs || divisionFilterOn)
+  const hasActiveFilters = !!(focusDoc || filterObjectIds.length || filterCounterpartyIds.length || filterDsType || filterLawyerId || searchText || filterTender || onlySignalReview || divisionFilterOn)
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -1602,7 +1606,8 @@ function ContractRegistry() {
 
   const resetFilters = () => {
     setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterDsType(''); setFilterLawyerId(''); setSearchText('')
-    setOnlyOverdue(false); setOnlyNoLarix(false); setOnlyNoTender(false); setOnlySignalReview(false); setOnlyOurs(false); setFilterDivisions([])
+    setFilterTender(''); setFilterDivisions([]); setFocusDoc(null)
+    setOnlySignalReview(false)
   }
 
   // Сохранение примечания юриста из раскрытого блока (по blur), с индикатором «Сохранение…».
@@ -1667,12 +1672,58 @@ function ContractRegistry() {
   useEffect(() => {
     setPage(1)
     setRowToggled(new Set())
-  }, [activeTab, scope, dept, docKind, filterObjectIds, filterCounterpartyIds, filterDsType, filterLawyerId, filterDivisions, searchText, onlyOverdue, onlyNoLarix, onlyNoTender, onlySignalReview, sortKey, sortDir, pageSize])
+  }, [activeTab, scope, dept, docKind, focusDoc, filterObjectIds, filterCounterpartyIds, filterDsType, filterLawyerId, filterDivisions, searchText, filterTender, onlySignalReview, sortKey, sortDir, pageSize])
 
   // Закрываем раскрытие при перелистывании страниц.
   useEffect(() => {
     setRowToggled(new Set())
   }, [page])
+
+  // «Открыть в реестре» из окна заявки ДП/ДС (решение пользователя 24.11.2026): /contracts/registry?id=<ID документа>. Документ
+  // показывается при любых прежних фильтрах: отдел «ОС и ГО», статусы — все (удалённый — «Удаленные»), отбор — одна строка
+  // (focusDoc, плашка «… ID N ×» в панели снимает его); договор — своей строкой, ДС — под своим договором (в виде «ДС» — своей
+  // строкой). Строку раскрываем и прокручиваем к ней, когда фильтры применились (эффект ниже — после сброса раскрытия выше, иначе
+  // тот закрыл бы её).
+  const [openTarget, setOpenTarget] = useState(null) // { rowId, dsId }
+  useEffect(() => {
+    const raw = (searchParams.get('id') || '').trim()
+    if (!raw || !contractsLoaded) return
+    setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('id'); return next }, { replace: true })
+    const doc = contracts.find(c => String(c.display_id) === raw)
+    if (!doc) {
+      alert(`Документ ID ${raw} в реестре не найден: он удалён насовсем или относится не к вашим объектам.`)
+      return
+    }
+    const isDs = doc.record_type !== DOC_TYPE.CONTRACT
+    const root = isDs ? contracts.find(c => c.id === (doc.root_contract_id || doc.parent_contract_id)) : doc
+    // ДС своей строкой — в виде «ДС», удалённое или без договора; иначе — под договором в текущем виде.
+    const kind = isDs
+      ? (docKind === 'amendments' || doc.deleted_at || !root || root.deleted_at ? 'amendments' : docKind)
+      : (docKind === 'amendments' ? 'all' : docKind)
+    const row = kind === 'amendments' ? doc : root
+    resetFilters()
+    setDept('all')
+    if (kind !== docKind) setDocKind(kind)
+    setActiveTab(row.deleted_at ? 'deleted' : 'all')
+    setFocusDoc({ id: row.id, label: `${isDs ? 'ДС' : 'Договор'} ID ${doc.display_id}` })
+    setPage(1)
+    setOpenTarget({ rowId: row.id, dsId: row.id === doc.id ? null : doc.id })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, contractsLoaded])
+  useEffect(() => {
+    if (!openTarget) return
+    const { rowId, dsId } = openTarget
+    setOpenTarget(null)
+    if (!pagedContracts.some(c => c.id === rowId)) return
+    // Раскрыта ли строка сама (найдена поиском по своим ДС, показана ради них) — тогда отметка не нужна (isRowOpen — «или-или»).
+    const autoOpen = nestDs && (dsSearchHits.has(rowId) || tabView.context.has(rowId))
+    setRowToggled(autoOpen ? new Set() : new Set([rowId]))
+    if (dsId) setOpenDsItems(prev => new Set(prev).add(dsId))
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-doc-row="${rowId}"]`)?.scrollIntoView({ block: 'center' })
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTarget])
 
   // Заголовок с сортировкой по клику (не вложенный компонент — обычная функция-рендер)
   const sortableTh = (col, label, style) => (
@@ -2841,35 +2892,19 @@ function ContractRegistry() {
           Реестр по договорам
         </h2>
         {/* Отдел: сначала выбираем, какой реестр смотрим, и только потом — вид документа и статус внутри него (ниже).
-            Чисел здесь нет: сколько документов — на вкладках вида документа. */}
-        <div className="registry-scope" role="tablist" aria-label="Отдел">
-          {DEPTS.map(d => (
-            <button
-              key={d.key}
-              type="button"
-              role="tab"
-              aria-selected={dept === d.key}
-              title={d.hint}
-              className={`registry-scope-btn${dept === d.key ? ' is-active' : ''}`}
-              onClick={() => changeDept(d.key)}
-            >
-              {d.label}
-            </button>
-          ))}
-        </div>
+            Один список (24.11.2026): нажатие раскрывает выбор; по умолчанию «ОС и ГО». Чисел здесь нет — они на вкладках вида. */}
+        <FilterDropdown
+          label=""
+          value={dept}
+          onChange={(v) => changeDept(v || 'all')}
+          options={DEPTS.map(d => ({ value: d.key, label: d.label }))}
+          allLabel="ОС и ГО"
+          triggerTitle={`Отдел: ${DEPTS.find(d => d.key === dept)?.hint || ''}`}
+          className="registry-dept"
+        />
         <div className="cr-header-actions">
-          {/* Путь к общей папке всего раздела (app_settings). Путь к папке
-              конкретного договора — в его строке реестра. Сотруднику объекта не нужна (10.11.2026). */}
-          {!siteStaff && (
-            <RootFolderPathButton
-              settingKey="contracts_root_folder_path"
-              title="Общая папка договоров"
-              canEdit={canEditContracts}
-              placeholder="\\192.168.5.55\SharA_Tender\СУБПОДРЯДЫ ДОГОВОРА И ДС"
-              onValueChange={setRootFolderPath}
-            />
-          )}
-          {/* Структура хранения, приложения, импорт Excel, загрузка ПСДЦ и шаблоны — в окне «Документы»,
+          {/* Путь к общей папке раздела — в окне «Документы» (24.11.2026, решение пользователя); путь к папке конкретного
+              договора — в его строке реестра. Структура хранения, приложения, импорт Excel, загрузка ПСДЦ и шаблоны — в окне «Документы»,
               как у «Тендеров — Основное строительство». */}
           <button
             type="button"
@@ -3031,28 +3066,18 @@ function ContractRegistry() {
           allLabel="Все юристы"
           icon={<IconUser size={15} />}
         />
-        {/* Быстрые фильтры — переключатели: включённый отмечен рамкой и подложкой, как выбранный фильтр. */}
-        <button
-          type="button"
-          className={`qfilter${onlyOurs ? ' active' : ''}`}
-          aria-pressed={onlyOurs}
-          onClick={() => setOnlyOurs(v => !v)}
-          title="Договоры, которые обрабатывает наш отдел"
-        >Наши договоры<span className="qfilter-count">{scopeCounts.ours}</span></button>
-        <button
-          type="button"
-          className={`qfilter${onlyOverdue ? ' active' : ''}`}
-          aria-pressed={onlyOverdue}
-          onClick={() => setOnlyOverdue(v => !v)}
-          title="Просроченная плановая дата подписания"
-        >Просрочено</button>
-        <button
-          type="button"
-          className={`qfilter${onlyNoLarix ? ' active' : ''}`}
-          aria-pressed={onlyNoLarix}
-          onClick={() => setOnlyNoLarix(v => !v)}
-          title="Заключённые договоры, ещё не внесённые в Larix"
-        >Не в Larix</button>
+        {/* Тендер (24.11.2026: «без тендера / есть тендер»): ДС считается с тендером, если тендер есть у его договора. */}
+        <FilterDropdown
+          label=""
+          value={filterTender}
+          onChange={(v) => setFilterTender(v || '')}
+          options={tenderFilterOptions}
+          allLabel="Тендер: все"
+          formatTrigger={(text) => String(text).split(' · ')[0]}
+          triggerTitle="Документы с тендером или без: ДС — по тендеру своего договора"
+          icon={<IconTag size={15} />}
+          className="cr-tender-filter"
+        />
         {signalCanEdit && signalReviewSet && (
           <button
             type="button"
@@ -3062,13 +3087,16 @@ function ContractRegistry() {
             title="Документы, у которых Signal предложил папку, нашёл противоречие или не видит папку: сверить"
           >Сверка Signal<span className="qfilter-count">{signalCount}</span></button>
         )}
-        <button
-          type="button"
-          className={`qfilter${onlyNoTender ? ' active' : ''}`}
-          aria-pressed={onlyNoTender}
-          onClick={() => setOnlyNoTender(v => !v)}
-          title="Документы без привязки к тендеру: ДС считается привязанным, если тендер есть у его договора"
-        >Без тендера<span className="qfilter-count">{noTenderCount}</span></button>
+        {focusDoc && (
+          <button
+            type="button"
+            className="cr-focus-chip"
+            onClick={() => setFocusDoc(null)}
+            title="Показан документ из заявки — нажмите, чтобы вернуться ко всему реестру"
+          >
+            {focusDoc.label}<span className="cr-status-x" aria-hidden="true">×</span>
+          </button>
+        )}
         {hasActiveFilters && (
           <button
             type="button"
@@ -3128,6 +3156,7 @@ function ContractRegistry() {
                 <Link
                   key={contract.id}
                   to={`/contracts/${contract.id}`}
+                  data-doc-row={contract.id}
                   className={`mcard is-tappable${overdue ? ' mcard-overdue' : ''}`}
                 >
                   <div className="mcard-head">
@@ -3305,6 +3334,7 @@ function ContractRegistry() {
                 return (
                 <Fragment key={contract.id}>
                 <tr
+                  data-doc-row={contract.id}
                   // is-alt — каждый второй договор подложкой: так договоры отделяются друг от друга
                   // (раскрытая область под строкой не сбивает чередование — считается по договорам).
                   className={`contract-row ${docDeleted ? 'row-deleted' : ''} ${isExpanded ? 'is-expanded' : ''}${index % 2 ? ' is-alt' : ''}`}
@@ -3329,10 +3359,11 @@ function ContractRegistry() {
                     {/* Бейдж только у ГО: объектов ОС большинство, метка на каждом — визуальный шум. */}
                     {isWarrantyObject(contract.objects?.status) && <ObjectDeptBadge status={contract.objects?.status} />}
                   </td>
-                  {/* Красная полоса — только у договора без номера: без даты договоров много, полоса у них мешала
-                      (13.11.2026, просьба пользователя); «дата не указана» в строке осталась. */}
+                  {/* Красной полосы у ячейки нет: 13.11.2026 её убрали у договоров без даты, 24.11.2026 — совсем (у договора
+                      без номера дата обычно тоже пустая, и полоса снова была «у договоров без даты»). Незаполненное видно
+                      надписями «№ не присвоен» и «дата не указана». */}
                   <td
-                    className={`cell-contract-num ${!dsNum && !docDeleted ? 'is-incomplete' : ''}`}
+                    className="cell-contract-num"
                     onClick={(e) => e.stopPropagation()}
                     title={missingLabel ? `Не заполнено: ${missingLabel}` : undefined}
                   >
@@ -3835,8 +3866,8 @@ function ContractRegistry() {
                   </select>
                 </div>
 
-                {/* Признак «наш» договор — от него зависит, попадёт ли он в
-                    реестр «Наши договоры». */}
+                {/* Признак «наш» договор (contracts.handled_by_us). Фильтра «Наши договоры» в реестре нет с 24.11.2026 (решение
+                    пользователя) — отметка хранится, как и прежде, и грузится импортом Excel. */}
                 <div className="form-group full-width">
                   <label className="inline-check">
                     <input
@@ -3847,9 +3878,6 @@ function ContractRegistry() {
                     />
                     <span>Договор ведёт наш отдел</span>
                   </label>
-                  <small style={{ color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>
-                    Отмеченные договоры попадают в реестр «Наши договоры»; остальные видны только в «Все договоры».
-                  </small>
                 </div>
 
                 <div className={fieldGroupCls('contract_amount')}>
@@ -4045,6 +4073,8 @@ function ContractRegistry() {
           canImport={!isDeletedTab && canEditContracts}
           canEditTemplates={isAdmin}
           showSetup={!siteStaff}
+          canEditRootPath={canEditContracts}
+          onRootPathChange={setRootFolderPath}
         />
       )}
 

@@ -17,7 +17,8 @@ import './ContractorCompanyTab.css'
 // и сам стоит в анкете каждого тендера (bid_company_save поправляет и анкеты идущих тендеров). Новое поле о компании, которое заведёт
 // администратор, появится здесь само; скрытое — пропадёт.
 //
-// preview — просмотр от имени подрядчика: сведения прочитаны из таблиц, учётки нет, пароль сменился бы у администратора.
+// preview — просмотр от имени подрядчика: сведения прочитаны из таблиц (сведения учётки — учётки организации), ответы анкеты идут в
+// черновик просмотра (services/contractorBids.js), а не в базу; смена пароля сменила бы пароль администратора — вместо формы пояснение.
 const ROWS = [
   ['name', 'Название'],
   ['inn', 'ИНН'],
@@ -182,7 +183,7 @@ export default function ContractorCompanyTab({ card, error, preview = false, com
               : 'Заполните один раз — ответы сами встанут в анкету каждого тендера (и тех, где вы уже участвуете). Поменять можно здесь или в анкете любого тендера.'}
           </p>
           <CompanyFormFields fields={ownFields} card={card} answers={companyAnswers || {}}
-            canEdit={!preview && companyAnswers !== null} onAnswers={onCompanyAnswers} />
+            canEdit={companyAnswers !== null} onAnswers={onCompanyAnswers} />
         </section>
       )}
       {contacts.length > 0 && (
@@ -191,14 +192,12 @@ export default function ContractorCompanyTab({ card, error, preview = false, com
           <ContactPersons contacts={contacts} />
         </section>
       )}
-      {!preview && (
-        <section className="cab-section">
-          <h3>Учётная запись</h3>
-          <dl className="cab-org-list"><Rows card={shown} rows={ACCOUNT} /></dl>
-        </section>
-      )}
+      <section className="cab-section">
+        <h3>Учётная запись</h3>
+        <dl className="cab-org-list"><Rows card={shown} rows={ACCOUNT} /></dl>
+      </section>
       <p className="cab-hint">Чтобы изменить сведения, напишите на <a href="mailto:tender.osp@su10.ru">tender.osp@su10.ru</a>.</p>
-      {auth.isSso && !preview && (
+      {auth.isSso && (
         <section className="cab-section">
           <h3>Пароль</h3>
           {/* Вход через СУ-10: пароль меняется в профиле СУ-10. */}
@@ -207,11 +206,17 @@ export default function ContractorCompanyTab({ card, error, preview = false, com
             : <p className="cab-hint">Пароль меняется в СУ-10 (auth.su10.ru).</p>}
         </section>
       )}
-      {auth.isOwn && !auth.isSso && !preview && (
+      {auth.isOwn && !auth.isSso && (
         <section className="cab-section">
           <h3>Пароль</h3>
           {passwordDone && <div className="cab-note is-ok">Пароль изменён, остальные входы завершены.</div>}
-          {passwordOpen ? (
+          {/* Просмотр от имени подрядчика: форма сменила бы пароль администратора — вместо неё пояснение. */}
+          {passwordOpen && preview ? (
+            <div className="cab-note is-warn">
+              Просмотр от имени подрядчика: пароль организации здесь не меняется (форма сменила бы ваш пароль).{' '}
+              <button type="button" className="cab-btn-small" onClick={() => setPasswordOpen(false)}>Понятно</button>
+            </div>
+          ) : passwordOpen ? (
             <ChangePasswordForm
               className="cab-org-password"
               buttonClassName="cab-btn cab-btn-primary"

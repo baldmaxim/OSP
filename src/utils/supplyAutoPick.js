@@ -152,6 +152,14 @@ const sameList = (a, b) => a === b || (!!a && !!b && a.length === b.length && a.
 // позиций с ним) меняется при каждом «Взять» и «Применить», но решает только, какой из повторов оставить.
 export const sameOfferView = (a, b) => sameList(a.docs, b.docs) && a.dupes.length === b.dupes.length
   && a.dupes.every((x, i) => x.doc === b.dupes[i].doc && x.of === b.dupes[i].of)
+// Документы для сопоставления ([{ doc, offer }]) те же: тот же файл, те же объекты строк (keepSameLines) и то, что сопоставление
+// читает у документа (offersByGroup, docInfo, offerDate). Убранные из окна позиции (offer.hidden) цен не меняют: «Убрать
+// неотмеченные» у 24 документов (24.11.2026) пересчитывало сопоставление всех строк с позициями по разу на каждый документ.
+const sameJson = (a, b) => a === b || JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+const sameForMatch = (a, b) => a === b || (a.currency === b.currency && a.date === b.date && a.ocr === b.ocr
+  && sameJson(a.vat, b.vat) && sameJson(a.total, b.total) && sameList(a.lines, b.lines))
+export const sameMatchDocs = (a, b) => a === b || (!!a && !!b && a.length === b.length
+  && a.every((x, i) => x.doc === b[i].doc && sameForMatch(x.offer, b[i].offer)))
 // Документы, перечитанные из базы ([{ doc, offer, notes }], возврат на вкладку браузера): тот же файл с теми же строками (notes —
 // строкой, как в базе) — прежняя запись; ничего не изменилось — прежний список. Запись без notes (не из базы) заменяется.
 export function keepSameOffers(prev, next) {
@@ -321,10 +329,13 @@ export function replacedBy(cur, price, all) {
 // ед. изм., разброс цен, итог документа не сошёлся; block — блок окна (PICK_BLOCKS), replaced — что заменится (replacedBy.items),
 // sameDoc — заменится цена из этого же документа (другой НДС, пересчёт). chosen — Map ключ группы → id цены, выбранной человеком;
 // currentOf(group) — что сейчас в расценке; allByGroup — цены всех документов (узнать документ своей цены, когда окно показывает
-// один документ). hidden — сколько позиций с ценами из документов не показано: цена уже стоит правильно.
+// один документ). hidden — сколько позиций с ценами из документов не показано: цена уже стоит правильно; held — из них те, где стоит
+// другая цена, а строка документа похожа не наверняка (не та же позиция, не тот же артикул): окно говорит о них, а не «цены уже
+// стоят» (24.11.2026, тендер № 704: счёт с четырьмя позициями — «ставить больше нечего», хотя три цены были другими).
 export function autoPickRows(byGroup, groups, { chosen = null, currentOf, allByGroup = null }) {
   const rows = []
   let hidden = 0
+  let held = 0
   for (const group of groups) {
     const offers = byGroup.get(group.key)
     if (!offers?.length) continue
@@ -346,7 +357,7 @@ export function autoPickRows(byGroup, groups, { chosen = null, currentOf, allByG
     const show = block === 'empty' || block === 'auto' ? true
       : block === 'doc' ? !!byPerson || sameDoc || sure || wrong
         : !!byPerson || sure || wrong
-    if (!show) { hidden += 1; continue }
+    if (!show) { hidden += 1; held += 1; continue }
     const sureOthers = offers.filter((o) => usable(o) && isSure(o)).map((o) => o.price)
     const prices = sure && usable(shown) ? [shown.price, ...sureOthers] : []
     const times = prices.length > 1 ? Math.max(...prices) / Math.min(...prices) : 1
@@ -361,7 +372,7 @@ export function autoPickRows(byGroup, groups, { chosen = null, currentOf, allByG
   }
   const order = (r) => BLOCK_RANK[r.block] * 2 + (r.check ? 0 : 1)
   rows.sort((a, b) => order(a) - order(b))
-  return { rows, hidden }
+  return { rows, hidden, held }
 }
 
 // Строки документов, которым не нашлась позиция ВОР: [{ doc, line }]. Цены в валюте ждут курса и сюда не идут.

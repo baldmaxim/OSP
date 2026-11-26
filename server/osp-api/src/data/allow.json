@@ -863,6 +863,11 @@
       "authenticated": [
         "select"
       ]
+    },
+    "tender_bid_supply_access": {
+      "authenticated": [
+        "select"
+      ]
     }
   },
   "rpc": {
@@ -1191,6 +1196,39 @@
       "authenticated"
     ],
     "kp_estimate_activate": [
+      "authenticated"
+    ],
+    "bid_supply_prices": [
+      "authenticated"
+    ],
+    "bid_supply_request": [
+      "authenticated"
+    ],
+    "bid_supply_take": [
+      "authenticated"
+    ],
+    "bid_supply_decide": [
+      "authenticated"
+    ],
+    "bid_supply_list": [
+      "authenticated"
+    ],
+    "bid_vor_changes": [
+      "authenticated"
+    ],
+    "bid_supply_docs": [
+      "authenticated"
+    ],
+    "bid_rate_history": [
+      "authenticated"
+    ],
+    "bid_supply_grant": [
+      "authenticated"
+    ],
+    "bid_supply_items": [
+      "authenticated"
+    ],
+    "supply_doc_rates_status": [
       "authenticated"
     ]
   }

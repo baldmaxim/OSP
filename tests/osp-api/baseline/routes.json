@@ -486,14 +486,19 @@
     "reason": null,
     "body": [
       "action",
-      "file_id",
-      "file_name",
-      "mime_type",
-      "operation_id",
-      "size_bytes",
-      "summary",
+      "file_id"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/fn/bid-supply-doc",
+    "kind": "user",
+    "require": "contractor",
+    "reason": null,
+    "body": [
+      "document_id",
       "tender_id",
-      "vor_file_id"
+      "view"
     ]
   },
   {

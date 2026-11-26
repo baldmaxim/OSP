@@ -41,3 +41,23 @@
   font-weight: 600;
 }
 [data-theme='dark'] .bidreq-self { color: #fca5a5; }
+
+/* «Просят цены: N» под «Расценка: N из M» строки «Тендеров на материалы» (инженер ОСП, администратор): ссылка в расценку, столбец
+   «Цены подрядчику» раскрыт сразу. Решение — там (окна в строке больше нет, решение пользователя 25.11.2026). */
+.tenders-page .tp-supply-access.tp-supply-access {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.2rem;
+  font-size: var(--ui-hint, 0.75rem);
+  line-height: var(--ui-hint-lh, 1rem);
+  text-decoration: none;
+}
+.tenders-page .tp-supply-access.tp-supply-access:hover .tp-supply-access-asks { text-decoration: underline; }
+.tp-supply-access-asks {
+  padding: 0 0.35rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, #d97706 16%, transparent);
+  color: #b45309;
+  font-weight: 600;
+}
+[data-theme='dark'] .tp-supply-access-asks { color: #fcd34d; }

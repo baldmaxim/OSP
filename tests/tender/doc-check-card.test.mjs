@@ -280,6 +280,52 @@ describe('Окно заявки на проверку ДП/ДС в браузе�
     } finally { await close() }
   })
 
+  it('«Открыть в реестре»: у заявки с документом реестра — ссылка с видом и ID; без документа или без права «Договоры» — строки нет', async () => {
+    const { page, errors, close } = await openPage('&dcRegistry=1')
+    try {
+      let modal = await openCard(page, 'dcr-2')
+      const reg = modal.locator('.dc-detail-registry')
+      await reg.waitFor()
+      assert.equal(await reg.locator('a').getAttribute('href'), '/contracts/registry?id=2080')
+      assert.equal((await reg.innerText()).replace(/\s+/g, ' ').trim(), 'Открыть в реестре договор · ID 2080')
+      await modal.locator('.modal-close').click()
+      await modal.waitFor({ state: 'detached' })
+
+      modal = await openCard(page, 'dcr-1')
+      await modal.locator('.dc-detail-registry').waitFor()
+      assert.match(await modal.locator('.dc-detail-registry').innerText(), /ДС · ID 2081 · в «Удалённых»/)
+      await modal.locator('.modal-close').click()
+      await modal.waitFor({ state: 'detached' })
+
+      // Не внесена — строки нет, причина — в «Истории».
+      modal = await openCard(page, 'dcr-3', 'История')
+      await modal.locator('.dc-history li').first().waitFor()
+      assert.equal(await modal.locator('.dc-detail-registry').count(), 0)
+      const skipped = modal.locator('.dc-history li', { hasText: 'Не внесена в реестр' })
+      assert.match(await skipped.innerText(), /договора с этим контрагентом на объекте в реестре нет/)
+      await modal.locator('.modal-close').click()
+      await modal.waitFor({ state: 'detached' })
+
+      // Переход: реестр открывается с найденным документом.
+      modal = await openCard(page, 'dcr-2')
+      await modal.locator('.dc-detail-registry a').click()
+      await page.locator('.contract-registry .cr-focus-chip', { hasText: 'Договор ID 2080' }).waitFor({ timeout: 60000 })
+      await page.locator('.contracts-table tr.contract-row[data-doc-row="k-dcr-2"]').waitFor()
+      assert.equal(await page.locator('.contracts-table tr.contract-row').count(), 1)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+
+    const other = await openPage('&dcRegistry=1&noView=contracts')
+    try {
+      const modal = await openCard(other.page, 'dcr-2')
+      await modal.locator('.dc-file-name').first().waitFor()
+      assert.equal(await modal.locator('.dc-detail-registry').count(), 0)
+      assert.equal(await other.page.evaluate(() => window.__supabaseStats.requests.filter((r) => r.table === 'contracts').length), 0,
+        'без права «Договоры» договор не запрашивается')
+      assert.deepEqual(other.errors, [])
+    } finally { await other.close() }
+  })
+
   it('документы двумя частями: понятийное соглашение — своей категорией, остальное — «Загружаемые документы»', async () => {
     const { page, errors, dialogs, close } = await openPage()
     try {

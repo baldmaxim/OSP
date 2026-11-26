@@ -10,11 +10,14 @@ import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { chromium } from 'playwright'
+import PizZipNs from 'pizzip'
 import * as XLSX from 'xlsx'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import { invoiceJpeg, jpegPdf } from '../supply/lib/scan-pdf.mjs'
+import { normName } from '../../src/utils/supplyRateHelpers.js'
 
 const launch = browserLaunchOptions()
+const PizZip = typeof PizZipNs === 'function' ? PizZipNs : PizZipNs.default
 const plain = (s) => String(s ?? '').replace(/\s/g, '')
 // Подпись строки: один ВОР — его имя, несколько — «ВОР: N» (как в таблице).
 const vorText = (vor) => (vor.startsWith('ВОР:') ? vor : `ВОР «${vor}»`)
@@ -697,6 +700,98 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
+  it('столбец «Цены подрядчику»: свёрнут, только инженеру и администратору; кто просит — выбран сам; «С документом», «Все», «Сбросить» — набором ключей позиций', async () => {
+    const IZO = normName('Изоляция K-Flex 13×15')
+    const PIPE = normName('Труба медная Ø12,7')
+    // Как bid_supply_list / bid_supply_items / bid_supply_grant (20270303): цена снабжения одна во всех ВОР — у изоляции (к ней
+    // приложен документ, seedLink=1) и у трубы (pipeRates=partial). Второй подрядчик — заявка ждёт решения.
+    const fake = ({ izo, pipe }) => {
+      window.__supplyCalls = []
+      const granted = new Set()
+      const items = [
+        { item_key: izo, unit_key: 'м', name: 'Изоляция K-Flex 13×15', unit: 'м', price: 96, vors: 1, taken: false },
+        { item_key: pipe, unit_key: 'м', name: 'Труба медная Ø12,7', unit: 'м', price: 400, vors: 1, taken: false },
+      ]
+      const cp = (id, name, access, status) => ({ tender_id: 'tender-p', counterparty_id: id, counterparty_name: name, counterparty_inn: null,
+        access, status, requested_at: null, requested_by_name: null, decided_at: null, decided_by_name: null, priced: 0, from_supply: 0,
+        granted_items: id === 'cp-site' ? granted.size : 0, supply_items: items.length })
+      window.__fakeRpc = { ...(window.__fakeRpc || {}),
+        bid_supply_list: () => ({ data: [cp('cp-site', 'ООО Сайт', 'invited', granted.size ? 'granted' : 'requested'), cp('cp-wait', 'ООО Ждёт', 'pending', 'requested')], error: null }),
+        bid_supply_items: () => ({ data: items.map((r) => ({ ...r, granted: granted.has(`${r.item_key}|${r.unit_key}`) })), error: null }),
+        bid_supply_grant: (args) => {
+          window.__supplyCalls.push(args)
+          granted.clear()
+          for (const r of args.p_items) granted.add(`${r.key}|${r.unit_key}`)
+          return { data: granted.size, error: null }
+        },
+      }
+    }
+    const init = { fn: fake, arg: { izo: IZO, pipe: PIPE } }
+    const { page, context, errors } = await openPage('&seedLink=1&pipeRates=partial', { init })
+    try {
+      page.on('dialog', (d) => d.accept())
+      const toggle = page.getByRole('button', { name: 'Цены подрядчику: показать столбец (просят: 2)' })
+      await toggle.waitFor()
+      assert.equal(await page.locator('.sp-cp-fdrop').count(), 0, 'по умолчанию столбец свёрнут')
+      await toggle.click()
+      // Подрядчик — общим выпадающим списком (FilterDropdown): кто просит — выбран сам, под названием — состояние цен.
+      const head = page.locator('th.sp-cp-th')
+      await page.waitForFunction(() => document.querySelector('th.sp-cp-th .sp-cp-trig-name')?.textContent === 'ООО Сайт')
+      assert.equal(await head.locator('.sp-cp-trig-meta').textContent(), 'просит цены')
+      await head.locator('.sp-cp-fdrop .fdrop-trigger').click()
+      const waitOpt = page.locator('.fdrop-panel .fdrop-option', { hasText: 'ООО Ждёт' })
+      assert.equal(await waitOpt.isDisabled(), true, 'заявка ждёт решения — выбрать нельзя')
+      assert.match(await waitOpt.textContent(), /заявка ждёт решения/)
+      await page.keyboard.press('Escape')
+      await page.locator('.fdrop-panel').waitFor({ state: 'detached' })
+      const izo = page.getByRole('checkbox', { name: 'Открыть подрядчику цену: Изоляция K-Flex 13×15' })
+      const pipe = page.getByRole('checkbox', { name: `Открыть подрядчику цену: ${TRUBA}` })
+      await izo.waitFor()
+      assert.equal(await rowOf(page, 'Кран шаровой Ду15', 'ОВ').locator('.sp-cp-na').count(), 1, 'без цены снабжения — «—»')
+
+      // «с документом» — только изоляция; сохраняется ключ материала и ед. изм. позиции, в историю основного тендера.
+      await head.getByRole('button', { name: 'С документом', exact: true }).click()
+      assert.equal(await izo.isChecked(), true)
+      assert.equal(await pipe.isChecked(), false)
+      await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+      await page.waitForFunction(() => window.__supplyCalls.length === 1)
+      assert.deepEqual(await page.evaluate(() => window.__supplyCalls[0]),
+        { p_tender: 'tender-p', p_counterparty: 'cp-site', p_items: [{ key: IZO, unit_key: 'м' }], p_all: false })
+      await page.waitForFunction(() => window.__fakeDb.tender_audit_log.some((r) => r.field_name === 'supply_prices_access' && r.tender_id === 'tender-p'))
+
+      // «только отмеченные» — в таблице одна изоляция; «все» — обе позиции.
+      await page.locator('th.sp-cp-th').getByLabel('только отмеченные').check()
+      await pipe.waitFor({ state: 'detached' })
+      await page.locator('th.sp-cp-th').getByLabel('только отмеченные').uncheck()
+      await head.getByRole('button', { name: 'Все', exact: true }).click()
+      assert.equal(await pipe.isChecked(), true)
+      await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+      await page.waitForFunction(() => window.__supplyCalls.length === 2)
+      assert.equal((await page.evaluate(() => window.__supplyCalls[1])).p_items.length, 2)
+
+      // «сбросить» и «Сохранить» — пустой набор (база закрывает цены), с вопросом.
+      await head.getByRole('button', { name: 'Сбросить', exact: true }).click()
+      await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+      await page.waitForFunction(() => window.__supplyCalls.length === 3)
+      assert.deepEqual((await page.evaluate(() => window.__supplyCalls[2])).p_items, [])
+      await page.getByRole('button', { name: 'Скрыть столбец «Цены подрядчику»' }).click()
+      await page.locator('th .sp-cp-fdrop').waitFor({ state: 'detached' })
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+
+    // Снабжение столбца не видит: решает только инженер ОСП или администратор.
+    const supply = await openPage('&seedLink=1&pipeRates=partial&asRole=supply', { init })
+    try {
+      await supply.page.waitForFunction(() => window.__supabaseStats.active === 0)
+      assert.equal(await supply.page.locator('.sp-cp-toggle, .sp-cp-open').count(), 0)
+      assert.deepEqual(supply.errors, [])
+    } finally {
+      await supply.context.close()
+    }
+  })
+
   it('цену изменил другой пользователь — значение не записано, окно выбора; «Записать моё» — по новой версии', async () => {
     const { page, context, errors } = await openPage()
     try {
@@ -1072,13 +1167,28 @@ describe('Расценка снабжением: таблица', { skip: !launc
     await tenderDocs(page).locator('input[type=file]').waitFor({ state: 'attached' })
     return tenderDocs(page)
   }
+  // Файлы тендера (24.11.2026) — не плашками над таблицей, а в окне «Документы тендера» по кнопке «Документы» в шапке окна.
+  const filesDialog = (page) => page.getByRole('dialog', { name: 'Документы тендера' })
+  const openFiles = async (docs) => {
+    const files = filesDialog(docs.page())
+    if (!(await files.count())) await docs.getByRole('button', { name: /^Документы тендера/ }).click()
+    await files.waitFor()
+    return files
+  }
+  const closeFiles = async (docs) => {
+    const files = filesDialog(docs.page())
+    if (!(await files.count())) return
+    await files.getByRole('button', { name: 'Закрыть окно документов' }).click()
+    await files.waitFor({ state: 'detached' })
+  }
+  const uploadsOf = (docs) => docs.getByRole('list', { name: 'Загружаемые файлы' })
   const closeTenderDocs = async (page) => {
-    await tenderDocs(page).getByRole('button', { name: 'Закрыть' }).click()
+    await closeFiles(tenderDocs(page))
+    await tenderDocs(page).getByRole('button', { name: 'Закрыть', exact: true }).click()
     await tenderDocs(page).waitFor({ state: 'detached' })
   }
   const pickRow = (docs, text) => docs.locator('.sp-td-table tbody tr', { hasText: text })
   const applyBox = (row) => row.getByRole('checkbox', { name: /^Применить цену/ })
-  const fileChips = (docs) => docs.getByRole('list', { name: 'Файлы тендера' })
 
   it('счёт (Excel): позиция ВОР полужирным и строка счёта рядом, единицы совпадают; свежий документ заменяет свою цену; применённое больше не показывается', async () => {
     const { page, context, errors } = await openPage()
@@ -1172,7 +1282,9 @@ describe('Расценка снабжением: таблица', { skip: !launc
     try {
       const docs = await openTenderDocs(page)
       await docs.locator('input[type=file]').setInputFiles({ name: 'скан.pdf', mimeType: 'application/pdf', buffer: scan })
-      await docs.getByText('скан или фото: текст не распознался', { exact: false }).waitFor({ timeout: 60000 })
+      // Почему цен нет — у файла в окне документов (24.11.2026: не плашкой над таблицей).
+      await (await openFiles(docs)).locator('tr', { hasText: 'скан.pdf' }).getByText('скан или фото: текст не распознался', { exact: false }).waitFor({ timeout: 60000 })
+      await closeFiles(docs)
       await docs.locator('input[type=file]').setInputFiles({ name: 'КП 7.pdf', mimeType: 'application/pdf', buffer: pdf })
       const kran = pickRow(docs, 'Кран шаровой полнопроходной')
       await kran.waitFor({ timeout: 60000 })
@@ -1181,13 +1293,14 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.equal(await pickRow(docs, 'Хомут монтажный').locator('.sp-td-tag').count(), 0)
       assert.equal(plain(await kran.locator('.sp-td-price').innerText()), '1220,00')
       assert.equal(plain(await pickRow(docs, 'Хомут монтажный').locator('.sp-td-price').innerText()), '43,31')
-      // Документ понят неверно — поправить у файла: цены пересчитываются и запоминаются.
-      const vat = docs.getByLabel('НДС в ценах: КП 7.pdf')
+      // Документ понят неверно — поправить у файла (в окне документов): цены пересчитываются и запоминаются.
+      const vat = (await openFiles(docs)).getByLabel('НДС в ценах: КП 7.pdf')
       assert.equal(await vat.inputValue(), 'net')
       await vat.selectOption('gross')
       await page.waitForFunction(() => /1000,00/.test(document.querySelector('.sp-td-table')?.innerText.replace(/\s/g, '') || ''))
       await vat.selectOption('net')
       await page.waitForFunction(() => /1220,00/.test(document.querySelector('.sp-td-table')?.innerText.replace(/\s/g, '') || ''))
+      await closeFiles(docs)
       await docs.getByRole('button', { name: 'Применить цены: 2' }).click()
       await docs.waitFor({ state: 'detached', timeout: 30000 })
       await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Хомут монтажный'))
@@ -1199,7 +1312,9 @@ describe('Расценка снабжением: таблица', { skip: !launc
       // Тендер № 704: документ уже применён, НДС у него поменяли — цены из этого же документа предлагаются заново и отмечены.
       const again = await openTenderDocs(page)
       await again.getByText('Все цены из документов уже стоят в расценке.').waitFor()
-      await again.getByLabel('НДС в ценах: КП 7.pdf').selectOption('gross')
+      await (await openFiles(again)).getByLabel('НДС в ценах: КП 7.pdf').selectOption('gross')
+      await again.getByText('НДС в «КП 7.pdf» изменён', { exact: false }).waitFor()
+      await closeFiles(again)
       const hom = pickRow(again, 'Хомут монтажный')
       await hom.waitFor()
       assert.match(await hom.locator('.sp-td-now.is-doc').innerText(), /43,31[\s\S]*из этого же документа/)
@@ -1421,16 +1536,18 @@ describe('Расценка снабжением: таблица', { skip: !launc
         { name: 'КП 3 Климат-Опт.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx2() },
       ]
       await dialog.locator('input[type=file]').setInputFiles(invoices)
-      const files = fileChips(dialog)
+      const files = await openFiles(dialog)
       await files.locator('.sp-td-file', { hasText: 'Счёт 15 ТеплоСнаб.xlsx' }).waitFor({ timeout: 60000 })
       await files.locator('.sp-td-file', { hasText: 'КП 3 Климат-Опт.xlsx' }).waitFor({ timeout: 60000 })
+      await closeFiles(dialog)
       const second = await offerDoc(page, 'КП 3 Климат-Опт.xlsx')
       assert.equal(second.offer.lines.length, 2)
       assert.ok(second.offer.lines.every((l) => !l.k && !l.x), 'позиции не выбраны — их найдёт расценка')
       assert.equal(await page.evaluate(() => window.__fakeDb.tender_supply_links.length), 0)
 
       await dialog.locator('input[type=file]').setInputFiles(invoices[1])
-      await files.getByText('уже есть у тендера', { exact: false }).waitFor({ timeout: 30000 })
+      // Повтор — в строке загружаемых файлов над таблицей (все файлы — в окне «Документы»).
+      await uploadsOf(dialog).getByText('уже есть у тендера', { exact: false }).waitFor({ timeout: 30000 })
       assert.equal(await page.evaluate(() => window.__fakeDb.s3_documents.filter((d) => d.doc_category === 'supply_doc').length), 2)
       await closeTenderDocs(page)
       const kran = rowOf(page, 'Кран шаровой Ду15', 'ОВ')
@@ -1462,7 +1579,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
       }
       await dropFile(rowOf(page, 'Кран шаровой Ду15', 'ОВ').locator('td.sp-doc'), 'Чек 9.pdf')
       const docs = tenderDocs(page)
-      await fileChips(docs).getByText('Чек 9.pdf').waitFor({ timeout: 60000 })
+      await (await openFiles(docs)).getByText('Чек 9.pdf').waitFor({ timeout: 60000 })
       await page.waitForFunction(() => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Кран шаровой Ду15' && l.s3_document_id))
       await closeTenderDocs(page)
       await rowOf(page, 'Кран шаровой Ду15', 'ОВ').getByRole('button', { name: 'Открыть файл документа «Чек 9.pdf» к «Кран шаровой Ду15»' }).waitFor()
@@ -1472,8 +1589,8 @@ describe('Расценка снабжением: таблица', { skip: !launc
       const dialog = page.getByRole('dialog', { name: 'Документ к позиции' })
       await dialog.getByRole('tab', { name: 'Ссылка' }).click()
       await dropFile(dialog, 'Счёт 10.pdf')
-      await fileChips(docs).getByText('Счёт 10.pdf').waitFor({ timeout: 60000 })
       await dialog.waitFor({ state: 'detached' })
+      await (await openFiles(docs)).getByText('Счёт 10.pdf').waitFor({ timeout: 60000 })
       await page.waitForFunction(() => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Хомут монтажный' && l.s3_document_id))
       await closeTenderDocs(page)
 
@@ -1481,7 +1598,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
       const before = await page.evaluate(() => window.__fakeDb.tender_supply_links.length)
       await dropFile(page.locator('.sp-toolbar-right'), 'мимо.pdf')
       await page.getByRole('heading', { name: 'Расценка материалов' }).waitFor()
-      await fileChips(docs).getByText('мимо.pdf').waitFor({ timeout: 60000 })
+      await (await openFiles(docs)).getByText('мимо.pdf').waitFor({ timeout: 60000 })
       await page.waitForFunction(() => window.__fakeDb.s3_documents.filter((d) => d.doc_category === 'supply_doc').length === 3, null, { timeout: 60000 })
       assert.equal(await page.evaluate(() => window.__fakeDb.tender_supply_links.length), before)
       assert.deepEqual(errors, [])
@@ -1498,7 +1615,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.equal(await dialog.getByRole('tab', { name: 'Файл' }).getAttribute('aria-selected'), 'true', 'обычно прикладывают файл')
       await dialog.locator('input[type=file]').setInputFiles({ name: 'Чек 777.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%%EOF\n') })
       const docs = tenderDocs(page)
-      await fileChips(docs).getByText('Чек 777.pdf').waitFor({ timeout: 60000 })
+      await (await openFiles(docs)).getByText('Чек 777.pdf').waitFor({ timeout: 60000 })
       await page.waitForFunction(() => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Кран шаровой Ду15' && l.s3_document_id))
       await closeTenderDocs(page)
       const doc = await page.evaluate(() => window.__fakeDb.s3_documents.find((d) => d.file_name === 'Чек 777.pdf'))
@@ -1626,12 +1743,13 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.equal(stored['doc-photo'], null, 'Word не скачиваем')
       await rowOf(page, 'Кран шаровой Ду15', 'ОВ').getByRole('button', { name: /похожие цены: 1|цены поставщиков: 1/i }).waitFor({ timeout: 30000 })
 
-      // Окно: прочитанный файл — плашкой, нечитаемый и фото — с причиной; цены применяются без новой загрузки.
+      // Окно документов: прочитанный файл — со строками, нечитаемый и фото — с причиной; цены применяются без новой загрузки.
       const docs = await openTenderDocs(page)
-      const list = fileChips(docs)
-      await list.locator('.sp-td-file', { hasText: 'Счёт старый.xlsx' }).waitFor()
-      await list.locator('li', { hasText: 'Испорченный.xlsx' }).getByText('не нашли таблицу', { exact: false }).or(list.locator('li', { hasText: 'Испорченный.xlsx' }).getByText('файл не читается', { exact: false })).waitFor()
-      await list.locator('li', { hasText: 'Чек.docx' }).getByText('цены из него не прочитать', { exact: false }).waitFor()
+      const list = await openFiles(docs)
+      await list.locator('tr', { hasText: 'Счёт старый.xlsx' }).getByText('строк с ценами:', { exact: false }).waitFor()
+      await list.locator('tr', { hasText: 'Испорченный.xlsx' }).getByText('не нашли таблицу', { exact: false }).or(list.locator('tr', { hasText: 'Испорченный.xlsx' }).getByText('файл не читается', { exact: false })).waitFor()
+      await list.locator('tr', { hasText: 'Чек.docx' }).getByText('цены из него не прочитать', { exact: false }).waitFor()
+      await closeFiles(docs)
       await docs.getByRole('button', { name: /^Применить цены:/ }).click()
       await docs.waitFor({ state: 'detached', timeout: 30000 })
       await page.waitForFunction(() => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Кран шаровой Ду15' && l.s3_document_id === 'doc-unread'))
@@ -1710,7 +1828,8 @@ describe('Расценка снабжением: таблица', { skip: !launc
 
       // В окне: файл со скана помечен, цены стоят у своих позиций и отмечены сами.
       const docs = await openTenderDocs(page)
-      await fileChips(docs).locator('li', { hasText: 'Скан счёта.pdf' }).getByText('со скана, итог сошёлся').waitFor()
+      await (await openFiles(docs)).locator('tr', { hasText: 'Скан счёта.pdf' }).getByText('со скана, итог сошёлся').waitFor()
+      await closeFiles(docs)
       const row = docs.locator('tr', { hasText: 'Кран шаровой Ду15' }).first()
       await row.getByText('512,50').waitFor()
       assert.equal(await row.locator('input[type=checkbox]').isChecked(), true)
@@ -1732,8 +1851,10 @@ describe('Расценка снабжением: таблица', { skip: !launc
         { name: 'Счёт 15 ТеплоСнаб.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx() },
         { name: 'КП 3 Климат-Опт.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx2() },
       ])
-      await fileChips(docs).locator('.sp-td-file', { hasText: 'КП 3 Климат-Опт.xlsx' }).waitFor({ timeout: 60000 })
-      await fileChips(docs).locator('.sp-td-file', { hasText: 'Счёт 15 ТеплоСнаб.xlsx' }).waitFor({ timeout: 60000 })
+      const files = await openFiles(docs)
+      await files.locator('.sp-td-file', { hasText: 'КП 3 Климат-Опт.xlsx' }).waitFor({ timeout: 60000 })
+      await files.locator('.sp-td-file', { hasText: 'Счёт 15 ТеплоСнаб.xlsx' }).waitFor({ timeout: 60000 })
+      await closeFiles(docs)
       const rowOfPick = (text) => docs.locator('.sp-td-table tbody tr').filter({ has: page.locator('b.sp-td-name', { hasText: text }) })
       // Кран: 513,46 с тем же наименованием важнее 500 похожего; выбор можно поменять.
       const kran = rowOfPick('Кран шаровой Ду15')
@@ -1796,7 +1917,8 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.match(hidden.offer.xh[0], /flex/i)
       // Новый документ — отдельно: в окне только его цены; изоляция им предложена заново, трубы в нём нет.
       await docs.locator('input[type=file]').setInputFiles({ name: 'КП 3 Климат-Опт.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx2() })
-      await fileChips(docs).locator('.sp-td-file', { hasText: 'КП 3 Климат-Опт.xlsx' }).waitFor({ timeout: 60000 })
+      await (await openFiles(docs)).locator('.sp-td-file', { hasText: 'КП 3 Климат-Опт.xlsx' }).waitFor({ timeout: 60000 })
+      await closeFiles(docs)
       const view = docs.getByLabel('Цены каких документов показывать')
       await view.waitFor()
       assert.match(await view.locator('option:checked').innerText(), /^новый: КП 3 Климат-Опт\.xlsx/)
@@ -1828,6 +1950,160 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
+  // 24.11.2026 (просьба пользователя): плашки файлов над таблицей — с повторами и причинами, почему цен нет, — мешали; вместо них кнопка
+  // «Документы»: окно со всеми файлами таблицей, скачать один или все одним ZIP.
+  it('Счета и КП: файлы — в окне по кнопке «Документы»: таблицей с состоянием, скачать один и все ZIP; Escape закрывает только его', async () => {
+    const { page, context, errors } = await openPage()
+    try {
+      const docs = await openTenderDocs(page)
+      await docs.locator('input[type=file]').setInputFiles([
+        { name: 'Счёт 15 ТеплоСнаб.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx() },
+        { name: 'Счёт 15 копия.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx() },
+        { name: 'Письмо.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: Buffer.from('не Word') },
+      ])
+      await pickRow(docs, 'Труба медная 12,7 мм (бухта 15 м)').waitFor({ timeout: 60000 })
+      // Над таблицей плашек файлов нет — кнопка со счётом файлов.
+      const btn = docs.getByRole('button', { name: 'Документы тендера: 3' })
+      await btn.waitFor({ timeout: 60000 })
+      assert.equal(await docs.getByRole('list', { name: 'Файлы тендера' }).count(), 0)
+      assert.equal(await uploadsOf(docs).count(), 0, 'загрузка закончилась — строки загрузки нет')
+      await btn.click()
+      const files = filesDialog(page)
+      await files.waitFor()
+      // Строка — по кнопке файла: имя оставленного файла есть и в строке его повтора.
+      const row = (name) => files.locator('tbody tr').filter({ has: page.locator('.sp-td-file', { hasText: name }) })
+      assert.equal(await files.locator('tbody tr').count(), 3)
+      await files.getByText(/повтор «Счёт 15 (ТеплоСнаб|копия)\.xlsx» — цены не считаются второй раз/).waitFor()
+      await row('Письмо.docx').getByText('цены из него не прочитать', { exact: false }).waitFor()
+      const read = (await row('Счёт 15 ТеплоСнаб.xlsx').innerText()) + (await row('Счёт 15 копия.xlsx').innerText())
+      assert.match(read, /строк с ценами: \d+/)
+      assert.match(plain(await files.locator('.sp-tf-head').innerText()), /файлов:3·повторов:1·ценынепрочитаны:1/)
+      // Один файл — скачивается, не открывается во вкладке.
+      const [one] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), row('Письмо.docx').getByRole('button', { name: 'Скачать «Письмо.docx»' }).click()])
+      assert.equal(one.suggestedFilename(), 'Письмо.docx')
+      // Все — одним ZIP с исходными именами.
+      const [zip] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), files.getByRole('button', { name: /Скачать всё/ }).click()])
+      assert.equal(zip.suggestedFilename(), 'Тендер № 291 — Счета и КП.zip')
+      const archive = new PizZip(fs.readFileSync(await zip.path()))
+      assert.deepEqual(Object.keys(archive.files).sort(), ['Письмо.docx', 'Счёт 15 ТеплоСнаб.xlsx', 'Счёт 15 копия.xlsx'])
+      assert.equal(archive.file('Письмо.docx').asText(), 'не Word')
+      // Файл открывается просмотром поверх окна документов; Escape закрывает только просмотр.
+      await row('Счёт 15 ТеплоСнаб.xlsx').locator('.sp-td-file').click()
+      const preview = page.locator('.s3-doc-preview-overlay')
+      await preview.waitFor()
+      assert.equal(await page.evaluate(() => !!document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.closest('.s3-doc-preview-overlay')), true, 'просмотр — сверху')
+      await page.keyboard.press('Escape')
+      await preview.waitFor({ state: 'detached' })
+      await files.waitFor()
+      // Escape закрывает только окно документов; «Счета и КП» на месте.
+      await page.keyboard.press('Escape')
+      await files.waitFor({ state: 'detached' })
+      await docs.waitFor()
+      await pickRow(docs, 'Труба медная 12,7 мм (бухта 15 м)').waitFor()
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  // 24.11.2026 (просьба пользователя: «Убрать неотмеченные очень долго делаются, также как и применение цен»): большой тендер
+  // (bigPricing — позиции, bigOffers — прочитанные счета). Убранное — одной правкой окна, строки файлов пишутся по нескольку разом,
+  // а не друг за другом; новые цены — вставкой порциями, а не запросом на позицию.
+  it('большой тендер: «Убрать неотмеченные» — файлы пишутся параллельно; «Применить цены» — новые цены вставкой порциями', async () => {
+    const { page, context, errors } = await openPage('&bigPricing=300&bigOffers=6')
+    try {
+      const docs = await openTenderDocs(page)
+      await docs.locator('.sp-td-table').waitFor({ timeout: 120000 })
+      await page.evaluate(() => {
+        window.__noteWrites = []
+        window.__fakeHold = ({ table, op }) => {
+          if (table !== 's3_documents' || op !== 'update') return {}
+          window.__noteWrites.push(performance.now())
+          return { delay: 150 }
+        }
+      })
+      // Своих цен позиций (введены вручную) не трогаем — убрать их из окна.
+      const hide = docs.getByRole('button', { name: /^Убрать неотмеченные: [1-9]/ })
+      await hide.click()
+      await docs.getByRole('button', { name: 'Убрать неотмеченные: 0' }).waitFor({ timeout: 60000 })
+      await docs.getByText(/^Убрано позиций: \d+/).waitFor()
+      const writes = await page.evaluate(() => window.__noteWrites)
+      const hiddenDocs = await page.evaluate(() => window.__fakeDb.s3_documents.filter((d) => /"xh"/.test(d.notes || '')).length)
+      assert.ok(hiddenDocs > 1, `убрано у документов: ${hiddenDocs}`)
+      assert.equal(writes.length, hiddenDocs, 'по записи на документ')
+      assert.ok(writes[1] - writes[0] < 100, `записи начались одновременно, а не друг за другом: ${JSON.stringify(writes.map((t) => Math.round(t - writes[0])))}`)
+      assert.deepEqual(await docs.locator('.sp-td-group .sp-td-block-title').allInnerTexts(), ['Не расценены'])
+
+      await page.evaluate(() => {
+        window.__rateWrites = []
+        window.__fakeHold = ({ table, op, payload }) => {
+          if (table === 'tender_vor_supply_rates' && op !== 'select') window.__rateWrites.push({ op, rows: payload?.length || 1 })
+          return {}
+        }
+      })
+      const before = await page.evaluate(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.tender_id === 'tender-p').length)
+      const apply = docs.getByRole('button', { name: /^Применить цены: [1-9]/ })
+      const n = Number((await apply.innerText()).match(/\d+/)[0])
+      await apply.click()
+      await docs.waitFor({ state: 'detached', timeout: 120000 })
+      await page.getByText(`Цен записано: ${n}`, { exact: false }).waitFor()
+      const rw = await page.evaluate(() => window.__rateWrites)
+      assert.deepEqual(rw.map((w) => w.op), Array.from({ length: Math.ceil(n / 100) }, () => 'insert'), 'только вставки, порциями по 100')
+      assert.equal(rw.reduce((sum, w) => sum + w.rows, 0), n)
+      const after = await page.evaluate(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.tender_id === 'tender-p'))
+      assert.equal(after.length, before + n)
+      assert.ok(after.slice(before).every((r) => r.price_input === 'unit' && Number(r.supply_price) > 0 && r.material_key), 'цена посчитана базой')
+      // Таблица страницы — с новыми ценами: расценено было 100 из 300.
+      await page.getByRole('button', { name: `Расценены (${100 + n})`, exact: true }).waitFor()
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  // Новые цены пишутся вставкой порциями (24.11.2026). Порция в базе — целиком: позицию между открытием окна и «Применить» расценил
+  // коллега — отказ, ничего не записано; тогда цены — по одной обычной очередью: чужая не перетирается, окно «Цену уже изменили», файл к
+  // этой позиции не прикрепляется.
+  it('новые цены вставкой: позицию уже расценил коллега — порция отвергнута, цены по одной; чужая цена не перетёрта', async () => {
+    const { page, context, errors } = await openPage()
+    try {
+      const docs = await openTenderDocs(page)
+      await docs.locator('input[type=file]').setInputFiles({ name: 'Счёт 15 ТеплоСнаб.xlsx', mimeType: XLSX_MIME, buffer: supplierXlsx() })
+      await pickRow(docs, 'Труба медная 12,7 мм (бухта 15 м)').waitFor({ timeout: 60000 })
+      const apply = docs.getByRole('button', { name: 'Применить цены: 2' })
+      await apply.waitFor()
+      await page.evaluate((key) => {
+        window.__fakeDb.tender_vor_supply_rates.push({
+          id: 'rate-colleague', tender_id: 'tender-p', estimate_name: 'ОВ', material_name: 'Кран шаровой Ду15', material_key: key, unit: 'шт',
+          supply_price: 600, supply_price_exact: null, supply_total: 28800, price_input: 'unit', input_value: 600, volume_at_input: 48,
+          row_version: 3, updated_by: 'user-2', updated_at: new Date().toISOString(), created_at: new Date().toISOString(),
+        })
+        window.__inserts = []
+        window.__fakeHold = ({ table, op, payload }) => {
+          if (table !== 'tender_vor_supply_rates' || op !== 'insert') return {}
+          window.__inserts.push(payload.length)
+          return payload.length > 1 ? { error: { code: '23505', message: 'duplicate key value violates unique constraint' } } : {}
+        }
+      }, normName('Кран шаровой Ду15'))
+      await apply.click()
+      await docs.waitFor({ state: 'detached', timeout: 30000 })
+      const ask = page.getByRole('alertdialog')
+      await ask.getByText('Цену уже изменили').waitFor()
+      assert.match(await ask.innerText(), /Кран шаровой Ду15[\s\S]*Петров П\. П\./)
+      await page.getByText('Цен записано: 2, не сохранено: 1', { exact: false }).waitFor()
+      assert.deepEqual(await page.evaluate(() => window.__inserts), [3, 1, 1, 1], 'порция из трёх отвергнута — по одной')
+      assert.equal((await rateOf(page, 'Кран шаровой Ду15', 'ОВ')).supply_price, 600, 'цена коллеги на месте')
+      assert.equal((await rateOf(page, 'Труба медная Ø12,7', 'ОВ')).supply_price, 981.83)
+      assert.equal((await rateOf(page, TRUBA, 'ВК')).supply_price, 981.83)
+      await page.waitForFunction(() => window.__fakeDb.tender_supply_links.filter((l) => l.s3_document_id).length === 2)
+      assert.deepEqual(await page.evaluate(() => window.__fakeDb.tender_supply_links.map((l) => l.material_name).sort()), [TRUBA, 'Труба медная Ø12,7'].sort(),
+        'файл — документ только записанных цен')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
   // 19.11.2026 (просьба пользователя: «когда убираю счёт, как снять цены, которые из него проставлялись … и после удаления»).
   // Счёт применён: труба (два ВОР) и кран получили цены из него; цену крана потом исправили руками — она уже не «из файла».
   const removedDocs = (page) => page.evaluate(() => window.__fakeDb.tender_supply_removed_docs.map((t) => ({ rate: t.rate_id, doc: t.doc_name, price: t.price })))
@@ -1844,7 +2120,13 @@ describe('Расценка снабжением: таблица', { skip: !launc
     await page.getByText('Цен записано: 3', { exact: false }).waitFor()
   }
   const deleteDialog = (page) => page.getByRole('alertdialog', { name: 'Удалить файл?' })
-  const goneChip = (docs) => fileChips(docs).locator('li.is-gone')
+  // Окно «Счета и КП» и в нём — окно документов (там удаление файла и строки удалённых файлов).
+  const openDocsFiles = async (page) => {
+    const docs = await openTenderDocs(page)
+    await openFiles(docs)
+    return docs
+  }
+  const goneChip = (docs) => filesDialog(docs.page()).getByRole('list', { name: 'Удалённые файлы, чьи цены стоят' }).locator('li')
 
   it('удаление счёта: окно с ценами из него; «только файл» — цены остаются и снимаются позже строкой удалённого файла; исправленная руками цена не трогается', async () => {
     const { page, context, errors } = await openPage()
@@ -1855,7 +2137,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
       const before = await tenderRates(page)
       assert.equal(before.length, 4)
 
-      const docs = await openTenderDocs(page)
+      const docs = await openDocsFiles(page)
       await docs.getByRole('button', { name: 'Удалить файл «Счёт 15 ТеплоСнаб.xlsx»' }).click()
       const ask = deleteDialog(page)
       await ask.waitFor()
@@ -1885,15 +2167,17 @@ describe('Расценка снабжением: таблица', { skip: !launc
       const traces = await removedDocs(page)
       assert.deepEqual(traces.map((t) => [t.doc, t.price]), [['Счёт 15 ТеплоСнаб.xlsx', 981.83], ['Счёт 15 ТеплоСнаб.xlsx', 981.83]])
       // В окне: файла нет, вместо него — строка удалённого файла.
-      assert.equal(await fileChips(docs).locator('.sp-td-file', { hasText: 'Счёт 15 ТеплоСнаб.xlsx' }).count(), 0)
+      assert.equal(await filesDialog(page).locator('.sp-td-file', { hasText: 'Счёт 15 ТеплоСнаб.xlsx' }).count(), 0)
       await goneChip(docs).waitFor()
       assert.match(plain(await goneChip(docs).innerText()), /Счёт15ТеплоСнаб\.xlsxудалён[\d.]+·егоценыстоятупозиций:2снятьценыоставить/)
       await docs.getByText('Его цены остались у позиций: 2', { exact: false }).waitFor()
 
       // Окно открыли заново — строка на месте (следы в базе). Снять цены: с подтверждением, только нетронутые.
       await closeTenderDocs(page)
-      const again = await openTenderDocs(page)
+      const again = await openDocsFiles(page)
       await goneChip(again).waitFor()
+      // На кнопке окна документов — пометка: цены удалённого файла ждут решения.
+      assert.equal(await again.getByRole('button', { name: 'Документы тендера: 0, ждут действия: 1' }).count(), 1)
       let asked = ''
       page.once('dialog', (d) => { asked = d.message(); d.accept() })
       await goneChip(again).getByRole('button', { name: 'снять цены' }).click()
@@ -1917,7 +2201,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
     let docs
     try {
       await applyInvoice(page)
-      docs = await openTenderDocs(page)
+      docs = await openDocsFiles(page)
       await docs.getByRole('button', { name: 'Удалить файл «Счёт 15 ТеплоСнаб.xlsx»' }).click()
       await deleteDialog(page).getByRole('button', { name: 'Удалить файл и снять цены: 3' }).click()
       await deleteDialog(page).waitFor({ state: 'detached' })
@@ -1935,7 +2219,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
     ;({ page, context, errors } = await openPage())
     try {
       await applyInvoice(page)
-      docs = await openTenderDocs(page)
+      docs = await openDocsFiles(page)
       await docs.getByRole('button', { name: 'Удалить файл «Счёт 15 ТеплоСнаб.xlsx»' }).click()
       await deleteDialog(page).getByRole('button', { name: 'Удалить только файл' }).click()
       await goneChip(docs).waitFor()
@@ -1944,7 +2228,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
       // Трубу поправили руками (оба ВОР строки) — это уже не цена файла.
       await enter(page.getByLabel(price(TRUBA, TWO)), '1000')
       await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.supply_price === 1000).length === 2)
-      docs = await openTenderDocs(page)
+      docs = await openDocsFiles(page)
       await goneChip(docs).waitFor()
       assert.match(plain(await goneChip(docs).innerText()), /егоценыстоятупозиций:1/)
       const before = await tenderRates(page)
@@ -1963,7 +2247,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
     const { page, context, errors } = await openPage()
     try {
       await applyInvoice(page)
-      const docs = await openTenderDocs(page)
+      const docs = await openDocsFiles(page)
       const state = () => page.evaluate(() => [
         window.__fakeDb.s3_documents.filter((d) => d.doc_category === 'supply_doc').length,
         window.__fakeDb.tender_supply_links.length,
@@ -1990,7 +2274,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
       await ask.getByRole('button', { name: 'Отмена' }).click()
       await ask.waitFor({ state: 'detached' })
       assert.equal(await goneChip(docs).count(), 0)
-      await fileChips(docs).locator('.sp-td-file', { hasText: 'Счёт 15 ТеплоСнаб.xlsx' }).waitFor()
+      await filesDialog(page).locator('.sp-td-file', { hasText: 'Счёт 15 ТеплоСнаб.xlsx' }).waitFor()
       // 3. Сбой прошёл — удаление с ценами проходит целиком.
       await page.evaluate(() => { window.__fakeHold = null })
       await docs.getByRole('button', { name: 'Удалить файл «Счёт 15 ТеплоСнаб.xlsx»' }).click()
@@ -2008,7 +2292,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
     const { page, context, errors } = await openPage('&noRemovedDocs=1')
     try {
       await applyInvoice(page)
-      const docs = await openTenderDocs(page)
+      const docs = await openDocsFiles(page)
       await docs.getByRole('button', { name: 'Удалить файл «Счёт 15 ТеплоСнаб.xlsx»' }).click()
       const ask = deleteDialog(page)
       await ask.waitFor()
@@ -2032,7 +2316,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
     try {
       const docs = await openTenderDocs(page)
       await docs.locator('input[type=file]').setInputFiles({ name: 'Спецификация ЭТМ.xlsx', mimeType: XLSX_MIME, buffer: packXlsx() })
-      await fileChips(docs).locator('.sp-td-file', { hasText: 'Спецификация ЭТМ.xlsx' }).waitFor({ timeout: 60000 })
+      await (await openFiles(docs)).locator('.sp-td-file', { hasText: 'Спецификация ЭТМ.xlsx' }).waitFor({ timeout: 60000 })
       await closeTenderDocs(page)
       // Новые цены из документов — числом на кнопке окна.
       await page.getByRole('button', { name: /^Счета и КП \(1\) · новых цен: \d+/ }).waitFor()

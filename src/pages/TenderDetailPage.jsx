@@ -1620,6 +1620,7 @@ function TenderDetailPage() {
 
   const HISTORY_FIELD_LABELS = {
     work_description: 'Описание работ',
+    supply_prices_access: 'Цены снабжения подрядчику',
     start_date: 'Дата начала',
     end_date: 'Дата окончания',
     tender_package_link: 'Ссылка на тендерный пакет',

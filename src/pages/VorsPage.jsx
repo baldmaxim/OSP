@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useId, Fragment } fr
 import { Link } from 'react-router-dom'
 import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
+import VirtualTableBody from '../components/VirtualTableBody'
 import { useRole } from '../contexts/RoleContext'
 import VorRdModal from '../components/VorRdModal'
 import VorRequestModal from '../components/VorRequestModal'
@@ -81,6 +82,8 @@ const NO_SETS = []
 // Порции отрисовки таблицы: первый экран и добавка на каждый следующий кадр.
 const ROWS_FIRST = 50
 const ROWS_STEP = 400
+// Больше строк — окно видимых строк (renderVorRow), а не порции.
+const VIRTUAL_VORS_FROM = 120
 
 // ФИО в ячейке — «Фамилия И. О.», полное — в подсказке (мышь) и в тексте для
 // экранного диктора (vr-sr-only). Поиск и выгрузка работают по полному значению.
@@ -656,7 +659,8 @@ function VorsPage() {
   // экран, остальное дорисовывается следующими кадрами — данные, фильтры,
   // поиск, счётчики и выгрузка при этом работают по полному набору строк.
   useEffect(() => {
-    if (renderLimit >= visible.length) return undefined
+    // Длинный список — окном строк (renderVorRow), дорисовывать порциями нечего.
+    if (renderLimit >= visible.length || visible.length > VIRTUAL_VORS_FROM) return undefined
     const id = requestAnimationFrame(() => setRenderLimit(n => n + ROWS_STEP))
     return () => cancelAnimationFrame(id)
   }, [renderLimit, visible.length])
@@ -669,6 +673,292 @@ function VorsPage() {
         <div className="loading">Загрузка...</div>
       </div>
     )
+  }
+
+  // Строка реестра и раскрытые наборы РД под ней (vt-part — та же запись окна строк). Больше VIRTUAL_VORS_FROM строк —
+  // в таблице только видимые (VirtualTableBody по положению на экране): 400 тендеров — 20 тыс. элементов, каждая буква
+  // в поиске и сброс фильтров подвисали на 0,3–0,4 с (замер на стенде 24.11.2026). Меньше — порциями, как раньше.
+  const renderVorRow = (t) => {
+    const sets = rdSetsByOwner.get(t.id) || NO_SETS
+    const open = expandedIds.has(t.id)
+    const readySets = sets.filter(s => s.vor_ready).length
+    const ownerLabel = t._kind === 'request'
+      ? `заявка № ${t.request_number}`
+      : `тендер № ${t.public_tender_number ?? '—'}`
+    return (
+    <Fragment key={t.id}>
+    <tr
+      className={`vr-main-row${t._kind === 'request' ? ' vor-request-row' : ''}${open ? ' is-open' : ''}`}
+      onClick={(e) => { if (isRowToggleClick(e)) toggleExpanded(t.id) }}
+    >
+      <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>
+        {/* Раскрытие комплектов РД — кнопкой (с клавиатуры) или нажатием
+            по свободному месту строки. */}
+        <button
+          type="button"
+          className={`vr-rd-toggle${open ? ' is-open' : ''}`}
+          aria-expanded={open}
+          aria-controls={open ? `vr-rd-${t.id}` : undefined}
+          aria-label={`Комплекты РД: ${ownerLabel}`}
+          title={open ? 'Скрыть комплекты РД' : 'Показать комплекты РД'}
+          onClick={() => toggleExpanded(t.id)}
+        >
+          <IconChevronRight />
+          <span>{t._kind === 'request' ? t.request_number : (t.public_tender_number ?? '—')}</span>
+        </button>
+        {/* Плашка — под номером, а не рядом: стрелка, «Заявка» и «№ 128» в одну колонку 4,5rem не помещались,
+            и плашка наезжала на название объекта. */}
+        {t._kind === 'request' && <div className="vor-request-badge" title="Заявка на ВОР без тендера">заявка</div>}
+        {sets.length > 0 && (
+          <div
+            className={`vr-rd-count${readySets === sets.length ? ' is-done' : ''}`}
+            title={`ВОР готов по ${readySets} из ${sets.length} комплектов РД`}
+          >
+            {readySets} из {sets.length}
+          </div>
+        )}
+      </td>
+      <td>
+        {t.object_id && canOpenObject ? (
+          <Link
+            to={`/general/objects/${t.object_id}`}
+            className="row-link primary"
+            title="Открыть карточку объекта (Ctrl+клик — в новой вкладке)"
+          >
+            {t.objects?.name || '—'}
+          </Link>
+        ) : (
+          <span>{t.objects?.name || '—'}</span>
+        )}
+      </td>
+      <td>
+        <ClampedDescription
+          text={t.work_description}
+          renderAction={(content) => (t._kind === 'request' ? (
+            <button
+              type="button"
+              className="vor-desc-link vor-desc-btn"
+              onClick={() => setRequestModal({ id: t.id })}
+              title={`${t.work_description || ''}\n\nОткрыть заявку на ВОР`}
+            >
+              {content}
+            </button>
+          ) : canOpenTender ? (
+            <Link
+              to={`/tenders/${t.id}`}
+              className="vor-desc-link"
+              title={`${t.work_description || ''}\n\nОткрыть тендер (Ctrl+клик — в новой вкладке)`}
+            >
+              {content}
+            </Link>
+          ) : (
+            <button
+              type="button"
+              className="vor-desc-link vor-desc-btn"
+              onClick={() => setVorDocsModalTenderId(t.id)}
+              title={`${t.work_description || ''}\n\nОткрыть ВОРы и РД по тендеру`}
+            >
+              {content}
+            </button>
+          ))}
+        />
+      </td>
+      <td>
+        <FilterDropdown
+          className="vor-resp-fdrop vor-div-fdrop"
+          label=""
+          allLabel="Не указано"
+          value={t.vor_division || ''}
+          onChange={(v) => handleChangeDivision(t.id, v)}
+          disabled={!canEditVors}
+          options={[{ value: '', label: 'Не указано' }, ...VOR_DIVISIONS]}
+          formatTrigger={() => (
+            t.vor_division
+              ? <span className="vor-div-chip">{VOR_DIVISION_LABEL[t.vor_division] || t.vor_division}</span>
+              : <span className="vor-resp-empty">Не указано</span>
+          )}
+        />
+      </td>
+      <td>
+        {(() => {
+          const resp = vorResponsibleOf(t)
+          return (
+            <>
+              {/* Тот же портальный выпадающий список с поиском, что в
+                  фильтрах страницы: нативный <select> в строке таблицы
+                  выглядел чужеродно и не искал по фамилии. */}
+              <FilterDropdown
+                className="vor-resp-fdrop"
+                label="" searchable
+                searchPlaceholder="Поиск сотрудника СТО…"
+                allLabel="Не назначен"
+                value={t.vor_sto_user_id || ''}
+                onChange={(v) => handleChangeResponsible(t.id, v)}
+                disabled={!canEditVors}
+                options={[
+                  { value: '', label: 'Не назначен' },
+                  ...stoEmployees.map(emp => ({ value: emp.user_id, label: emp.display_name })),
+                ]}
+                formatTrigger={() => (
+                  resp.name
+                    ? <span className="vor-resp-person" title={resp.name}>
+                        <span className="vor-resp-avatar" aria-hidden>{initialsOf(resp.name)}</span>
+                        <span className="vor-resp-name">
+                          <span aria-hidden="true">{shortPersonName(resp.name)}</span>
+                          <span className="vr-sr-only">{resp.name}</span>
+                        </span>
+                      </span>
+                    : (VOR_CLOSED.includes(t.vor_status) || t.deleted_at
+                      ? <span className="vor-resp-empty">Не назначен</span>
+                      : <span className="vor-resp-empty is-alert" title="ВОР в работе, а ответственный СТО не назначен">Не назначен</span>)
+                )}
+                renderOption={(o) => (
+                  o.value
+                    ? <span className="vor-resp-person">
+                        <span className="vor-resp-avatar" aria-hidden>{initialsOf(o.label)}</span>
+                        <span className="vor-resp-name">{o.label}</span>
+                      </span>
+                    : <span className="vor-resp-empty">Не назначен</span>
+                )}
+              />
+              {stoError && <div className="muted-tiny vor-resp-warn">{stoError}</div>}
+              {/* Прежний ответственный из справочника «Сотрудники» — пока
+                  СТО из реестра не назначен. */}
+              {resp.name && !resp.fromRegistry && (
+                <div className="muted-tiny" title="Назначен до перехода на выбор из реестра СТО — переназначьте">
+                  не из реестра СТО
+                </div>
+              )}
+            </>
+          )
+        })()}
+      </td>
+      <td className="muted-text">
+        {t._kind === 'request'
+          ? (t.created_by_name
+            ? <span><PersonName full={t.created_by_name} titlePrefix="Автор заявки" /><div className="muted-tiny">автор заявки</div></span>
+            : <span className="muted-tiny">—</span>)
+          : (t.responsible_contact?.full_name
+            ? <PersonName full={t.responsible_contact.full_name} />
+            : <span className="muted-tiny">—</span>)}
+      </td>
+      <td>
+        {(() => {
+          const winners = tenderWinnersOf(t)
+          if (winners.length === 0) {
+            return t.status === 'Завершен'
+              ? <span className="muted-tiny">Не выбран</span>
+              : <span className="muted-tiny">—</span>
+          }
+          return winners.map(w => (
+            <div key={w.id} className="vr-winner" title={w.scope ? `Победитель: ${w.name} — ${w.scope}` : `Победитель: ${w.name}`}>
+              <span className="vr-winner-icon" aria-hidden="true"><IconTrophy size={14} /></span>
+              <span>{w.name}{w.scope && <span className="vr-winner-scope"> — {w.scope}</span>}</span>
+            </div>
+          ))
+        })()}
+      </td>
+      <td>
+        {/* Срок — читаемым текстом; правка в окошке. Просрочен, если
+            окончание прошло, а ВОР ещё не завершён. */}
+        <DateRangeCell
+          start={vorStartDate(t)}
+          lockStart
+          lockStartHint={t._kind === 'request' ? 'дата создания заявки' : 'дата создания тендера'}
+          end={t.vor_end_date}
+          disabled={!canEditVors}
+          overdue={!!t.vor_end_date && !VOR_CLOSED.includes(t.vor_status)
+            && t.vor_end_date < new Date().toISOString().slice(0, 10)}
+          showCountdown={!VOR_CLOSED.includes(t.vor_status)}
+          onChange={(field, value) => { if (field === 'end') handleChangeVorDate(t.id, 'vor_end_date', value) }}
+        />
+      </td>
+      <td>
+        <div className="vor-links-cell">
+          {t.vor_link ? (
+            <div className="cost-plan-link-cell">
+              <a
+                href={t.vor_link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="link"
+              >
+                Открыть
+              </a>
+              {canEditVors && <button
+                className="link-edit-btn"
+                onClick={() => handleChangeVorLink(t.id, t.vor_link)}
+                title="Изменить ссылку"
+                aria-label="Изменить ссылку"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                </svg>
+              </button>}
+            </div>
+          ) : canEditVors ? (
+            <button
+              className="link-add-btn"
+              onClick={() => handleChangeVorLink(t.id, '')}
+              title="Добавить ссылку на ВОРы и РД"
+            >
+              + ссылка
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className={`vor-docs-btn${vorDocCounts[t.id] ? ' has-docs' : ''}`}
+            onClick={() => (t._kind === 'request' ? setRequestModal({ id: t.id }) : setVorDocsModalTenderId(t.id))}
+            title="Рабочая документация (PDF с шифрами) и ведомости объёмов работ"
+          >
+            <PaperclipIcon size={12} />
+            <span>РД и ВОР</span>
+            {vorDocCounts[t.id] > 0 && <span className="vor-docs-count">{vorDocCounts[t.id]}</span>}
+          </button>
+        </div>
+      </td>
+      <td>
+        <select
+          className={`plan-status-select status-${t.vor_status}`}
+          value={t.vor_status || 'not_started'}
+          disabled={!canEditVors}
+          onChange={(e) => handleChangeStatus(t.id, e.target.value)}
+        >
+          {STATUS_OPTIONS.map(s => (
+            <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+          ))}
+        </select>
+      </td>
+    </tr>
+    {open && (
+      <tr className="vt-part vr-rd-row" id={`vr-rd-${t.id}`}>
+        <td colSpan={10}>
+          <VorRdSetsPanel
+            owner={{ kind: t._kind === 'request' ? 'request' : 'tender', id: t.id }}
+            ownerLabel={ownerLabel}
+            sets={sets}
+            status={rdSetsStatus}
+            canEdit={canEditVors}
+            onAdded={(row) => setRdSets(prev => [...prev, row])}
+            onChanged={(row) => setRdSets(prev => prev.map(x => (x.id === row.id ? row : x)))}
+            onRemoved={(id) => setRdSets(prev => prev.filter(x => x.id !== id))}
+          />
+        </td>
+      </tr>
+    )}
+    </Fragment>
+    )
+  }
+  const virtualRows = visible.length > VIRTUAL_VORS_FROM
+  const vorRowCache = new Map()
+  const cachedVorRow = (t) => {
+    let row = vorRowCache.get(t.id)
+    if (!row) {
+      row = renderVorRow(t)
+      vorRowCache.set(t.id, row)
+    }
+    return row
   }
 
   return (
@@ -883,300 +1173,31 @@ function VorsPage() {
               <th>Статус</th>
             </tr>
           </thead>
-          <tbody>
-            {visible.length === 0 ? (
-              <tr>
-                <td colSpan={10} className="no-data">
-                  {tenders.length === 0
-                    ? 'Нет тендеров и заявок. Создайте тендер на странице «Тендеры» или заявку на ВОР кнопкой выше.'
-                    : activeTab === 'deleted'
-                      ? 'Удалённых ВОРов нет'
-                      : activeTab === 'completed'
-                        ? 'Завершённых ВОРов нет'
-                        : activeTab === 'not_required'
-                          ? 'Нет тендеров, для которых ВОР не требуется'
-                        : activeTab === 'in_progress'
-                          ? 'Нет ВОРов в работе'
-                          : activeTab === 'not_started'
-                            ? 'Нет ВОРов со статусом «Не начат»'
-                            : 'Нет ВОРов по выбранному фильтру'}
-                </td>
-              </tr>
-            ) : (
-              renderedRows.map((t) => {
-                const sets = rdSetsByOwner.get(t.id) || NO_SETS
-                const open = expandedIds.has(t.id)
-                const readySets = sets.filter(s => s.vor_ready).length
-                const ownerLabel = t._kind === 'request'
-                  ? `заявка № ${t.request_number}`
-                  : `тендер № ${t.public_tender_number ?? '—'}`
-                return (
-                <Fragment key={t.id}>
-                <tr
-                  className={`vr-main-row${t._kind === 'request' ? ' vor-request-row' : ''}${open ? ' is-open' : ''}`}
-                  onClick={(e) => { if (isRowToggleClick(e)) toggleExpanded(t.id) }}
-                >
-                  <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>
-                    {/* Раскрытие комплектов РД — кнопкой (с клавиатуры) или нажатием
-                        по свободному месту строки. */}
-                    <button
-                      type="button"
-                      className={`vr-rd-toggle${open ? ' is-open' : ''}`}
-                      aria-expanded={open}
-                      aria-controls={open ? `vr-rd-${t.id}` : undefined}
-                      aria-label={`Комплекты РД: ${ownerLabel}`}
-                      title={open ? 'Скрыть комплекты РД' : 'Показать комплекты РД'}
-                      onClick={() => toggleExpanded(t.id)}
-                    >
-                      <IconChevronRight />
-                      <span>{t._kind === 'request' ? t.request_number : (t.public_tender_number ?? '—')}</span>
-                    </button>
-                    {/* Плашка — под номером, а не рядом: стрелка, «Заявка» и «№ 128» в одну колонку 4,5rem не помещались,
-                        и плашка наезжала на название объекта. */}
-                    {t._kind === 'request' && <div className="vor-request-badge" title="Заявка на ВОР без тендера">заявка</div>}
-                    {sets.length > 0 && (
-                      <div
-                        className={`vr-rd-count${readySets === sets.length ? ' is-done' : ''}`}
-                        title={`ВОР готов по ${readySets} из ${sets.length} комплектов РД`}
-                      >
-                        {readySets} из {sets.length}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    {t.object_id && canOpenObject ? (
-                      <Link
-                        to={`/general/objects/${t.object_id}`}
-                        className="row-link primary"
-                        title="Открыть карточку объекта (Ctrl+клик — в новой вкладке)"
-                      >
-                        {t.objects?.name || '—'}
-                      </Link>
-                    ) : (
-                      <span>{t.objects?.name || '—'}</span>
-                    )}
-                  </td>
-                  <td>
-                    <ClampedDescription
-                      text={t.work_description}
-                      renderAction={(content) => (t._kind === 'request' ? (
-                        <button
-                          type="button"
-                          className="vor-desc-link vor-desc-btn"
-                          onClick={() => setRequestModal({ id: t.id })}
-                          title={`${t.work_description || ''}\n\nОткрыть заявку на ВОР`}
-                        >
-                          {content}
-                        </button>
-                      ) : canOpenTender ? (
-                        <Link
-                          to={`/tenders/${t.id}`}
-                          className="vor-desc-link"
-                          title={`${t.work_description || ''}\n\nОткрыть тендер (Ctrl+клик — в новой вкладке)`}
-                        >
-                          {content}
-                        </Link>
-                      ) : (
-                        <button
-                          type="button"
-                          className="vor-desc-link vor-desc-btn"
-                          onClick={() => setVorDocsModalTenderId(t.id)}
-                          title={`${t.work_description || ''}\n\nОткрыть ВОРы и РД по тендеру`}
-                        >
-                          {content}
-                        </button>
-                      ))}
-                    />
-                  </td>
-                  <td>
-                    <FilterDropdown
-                      className="vor-resp-fdrop vor-div-fdrop"
-                      label=""
-                      allLabel="Не указано"
-                      value={t.vor_division || ''}
-                      onChange={(v) => handleChangeDivision(t.id, v)}
-                      disabled={!canEditVors}
-                      options={[{ value: '', label: 'Не указано' }, ...VOR_DIVISIONS]}
-                      formatTrigger={() => (
-                        t.vor_division
-                          ? <span className="vor-div-chip">{VOR_DIVISION_LABEL[t.vor_division] || t.vor_division}</span>
-                          : <span className="vor-resp-empty">Не указано</span>
-                      )}
-                    />
-                  </td>
-                  <td>
-                    {(() => {
-                      const resp = vorResponsibleOf(t)
-                      return (
-                        <>
-                          {/* Тот же портальный выпадающий список с поиском, что в
-                              фильтрах страницы: нативный <select> в строке таблицы
-                              выглядел чужеродно и не искал по фамилии. */}
-                          <FilterDropdown
-                            className="vor-resp-fdrop"
-                            label="" searchable
-                            searchPlaceholder="Поиск сотрудника СТО…"
-                            allLabel="Не назначен"
-                            value={t.vor_sto_user_id || ''}
-                            onChange={(v) => handleChangeResponsible(t.id, v)}
-                            disabled={!canEditVors}
-                            options={[
-                              { value: '', label: 'Не назначен' },
-                              ...stoEmployees.map(emp => ({ value: emp.user_id, label: emp.display_name })),
-                            ]}
-                            formatTrigger={() => (
-                              resp.name
-                                ? <span className="vor-resp-person" title={resp.name}>
-                                    <span className="vor-resp-avatar" aria-hidden>{initialsOf(resp.name)}</span>
-                                    <span className="vor-resp-name">
-                                      <span aria-hidden="true">{shortPersonName(resp.name)}</span>
-                                      <span className="vr-sr-only">{resp.name}</span>
-                                    </span>
-                                  </span>
-                                : (VOR_CLOSED.includes(t.vor_status) || t.deleted_at
-                                  ? <span className="vor-resp-empty">Не назначен</span>
-                                  : <span className="vor-resp-empty is-alert" title="ВОР в работе, а ответственный СТО не назначен">Не назначен</span>)
-                            )}
-                            renderOption={(o) => (
-                              o.value
-                                ? <span className="vor-resp-person">
-                                    <span className="vor-resp-avatar" aria-hidden>{initialsOf(o.label)}</span>
-                                    <span className="vor-resp-name">{o.label}</span>
-                                  </span>
-                                : <span className="vor-resp-empty">Не назначен</span>
-                            )}
-                          />
-                          {stoError && <div className="muted-tiny vor-resp-warn">{stoError}</div>}
-                          {/* Прежний ответственный из справочника «Сотрудники» — пока
-                              СТО из реестра не назначен. */}
-                          {resp.name && !resp.fromRegistry && (
-                            <div className="muted-tiny" title="Назначен до перехода на выбор из реестра СТО — переназначьте">
-                              не из реестра СТО
-                            </div>
-                          )}
-                        </>
-                      )
-                    })()}
-                  </td>
-                  <td className="muted-text">
-                    {t._kind === 'request'
-                      ? (t.created_by_name
-                        ? <span><PersonName full={t.created_by_name} titlePrefix="Автор заявки" /><div className="muted-tiny">автор заявки</div></span>
-                        : <span className="muted-tiny">—</span>)
-                      : (t.responsible_contact?.full_name
-                        ? <PersonName full={t.responsible_contact.full_name} />
-                        : <span className="muted-tiny">—</span>)}
-                  </td>
-                  <td>
-                    {(() => {
-                      const winners = tenderWinnersOf(t)
-                      if (winners.length === 0) {
-                        return t.status === 'Завершен'
-                          ? <span className="muted-tiny">Не выбран</span>
-                          : <span className="muted-tiny">—</span>
-                      }
-                      return winners.map(w => (
-                        <div key={w.id} className="vr-winner" title={w.scope ? `Победитель: ${w.name} — ${w.scope}` : `Победитель: ${w.name}`}>
-                          <span className="vr-winner-icon" aria-hidden="true"><IconTrophy size={14} /></span>
-                          <span>{w.name}{w.scope && <span className="vr-winner-scope"> — {w.scope}</span>}</span>
-                        </div>
-                      ))
-                    })()}
-                  </td>
-                  <td>
-                    {/* Срок — читаемым текстом; правка в окошке. Просрочен, если
-                        окончание прошло, а ВОР ещё не завершён. */}
-                    <DateRangeCell
-                      start={vorStartDate(t)}
-                      lockStart
-                      lockStartHint={t._kind === 'request' ? 'дата создания заявки' : 'дата создания тендера'}
-                      end={t.vor_end_date}
-                      disabled={!canEditVors}
-                      overdue={!!t.vor_end_date && !VOR_CLOSED.includes(t.vor_status)
-                        && t.vor_end_date < new Date().toISOString().slice(0, 10)}
-                      showCountdown={!VOR_CLOSED.includes(t.vor_status)}
-                      onChange={(field, value) => { if (field === 'end') handleChangeVorDate(t.id, 'vor_end_date', value) }}
-                    />
-                  </td>
-                  <td>
-                    <div className="vor-links-cell">
-                      {t.vor_link ? (
-                        <div className="cost-plan-link-cell">
-                          <a
-                            href={t.vor_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="link"
-                          >
-                            Открыть
-                          </a>
-                          {canEditVors && <button
-                            className="link-edit-btn"
-                            onClick={() => handleChangeVorLink(t.id, t.vor_link)}
-                            title="Изменить ссылку"
-                            aria-label="Изменить ссылку"
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <path d="M12 20h9" />
-                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                            </svg>
-                          </button>}
-                        </div>
-                      ) : canEditVors ? (
-                        <button
-                          className="link-add-btn"
-                          onClick={() => handleChangeVorLink(t.id, '')}
-                          title="Добавить ссылку на ВОРы и РД"
-                        >
-                          + ссылка
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className={`vor-docs-btn${vorDocCounts[t.id] ? ' has-docs' : ''}`}
-                        onClick={() => (t._kind === 'request' ? setRequestModal({ id: t.id }) : setVorDocsModalTenderId(t.id))}
-                        title="Рабочая документация (PDF с шифрами) и ведомости объёмов работ"
-                      >
-                        <PaperclipIcon size={12} />
-                        <span>РД и ВОР</span>
-                        {vorDocCounts[t.id] > 0 && <span className="vor-docs-count">{vorDocCounts[t.id]}</span>}
-                      </button>
-                    </div>
-                  </td>
-                  <td>
-                    <select
-                      className={`plan-status-select status-${t.vor_status}`}
-                      value={t.vor_status || 'not_started'}
-                      disabled={!canEditVors}
-                      onChange={(e) => handleChangeStatus(t.id, e.target.value)}
-                    >
-                      {STATUS_OPTIONS.map(s => (
-                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                      ))}
-                    </select>
+          {visible.length === 0 ? (
+            <tbody>
+                <tr>
+                  <td colSpan={10} className="no-data">
+                    {tenders.length === 0
+                      ? 'Нет тендеров и заявок. Создайте тендер на странице «Тендеры» или заявку на ВОР кнопкой выше.'
+                      : activeTab === 'deleted'
+                        ? 'Удалённых ВОРов нет'
+                        : activeTab === 'completed'
+                          ? 'Завершённых ВОРов нет'
+                          : activeTab === 'not_required'
+                            ? 'Нет тендеров, для которых ВОР не требуется'
+                          : activeTab === 'in_progress'
+                            ? 'Нет ВОРов в работе'
+                            : activeTab === 'not_started'
+                              ? 'Нет ВОРов со статусом «Не начат»'
+                              : 'Нет ВОРов по выбранному фильтру'}
                   </td>
                 </tr>
-                {open && (
-                  <tr className="vr-rd-row" id={`vr-rd-${t.id}`}>
-                    <td colSpan={10}>
-                      <VorRdSetsPanel
-                        owner={{ kind: t._kind === 'request' ? 'request' : 'tender', id: t.id }}
-                        ownerLabel={ownerLabel}
-                        sets={sets}
-                        status={rdSetsStatus}
-                        canEdit={canEditVors}
-                        onAdded={(row) => setRdSets(prev => [...prev, row])}
-                        onChanged={(row) => setRdSets(prev => prev.map(x => (x.id === row.id ? row : x)))}
-                        onRemoved={(id) => setRdSets(prev => prev.filter(x => x.id !== id))}
-                      />
-                    </td>
-                  </tr>
-                )}
-                </Fragment>
-                )
-              })
-            )}
-          </tbody>
+            </tbody>
+          ) : virtualRows ? (
+            <VirtualTableBody viewport rowCount={visible.length} renderRow={(i) => cachedVorRow(visible[i])} colSpan={10} rowHeight={64} />
+          ) : (
+            <tbody>{renderedRows.map(renderVorRow)}</tbody>
+          )}
         </table>
       </div>
 
