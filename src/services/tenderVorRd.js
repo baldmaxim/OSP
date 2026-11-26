@@ -10,6 +10,7 @@ import { db } from '../api'
 import { chunkList } from '../utils/inChunks'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { deleteDocument, uploadFile } from './s3'
+import { isMissingVersionColumn } from '../utils/docVersions'
 
 export const RD_CATEGORY = 'rd'
 export const VOR_STATEMENT_CATEGORY = 'vor_statement'
@@ -61,14 +62,20 @@ export async function loadVorRd(tenderId) {
   // Части окна независимы: зависшие шифры не должны прятать уже загруженные
   // файлы. Запросы supabase не бросают исключений (ошибка — в .error), поэтому
   // Promise.all дожидается обоих, а разбираем каждую часть отдельно.
-  const [docsRes, codesRes] = await Promise.all([
-    withTimeout(db
+  // Файлы — с группой версий (миграция 20270307); базы без колонки — без неё: окно работает как раньше, без версий.
+  const readDocs = async () => {
+    const read = (cols) => withTimeout(db
       .from('s3_documents')
-      .select(DOC_COLUMNS)
+      .select(cols)
       .eq('owner_type', 'tender')
       .eq('owner_id', tenderId)
       .in('doc_category', VOR_RD_CATEGORIES)
-      .order('created_at', { ascending: false })),
+      .order('created_at', { ascending: false }))
+    const res = await read(`${DOC_COLUMNS}, version_group_id`)
+    return res.error && isMissingVersionColumn(res.error) ? read(DOC_COLUMNS) : res
+  }
+  const [docsRes, codesRes] = await Promise.all([
+    readDocs(),
     withTimeout(db
       .from('tender_rd_codes')
       .select('id, code, title, sort_order, created_at')
@@ -213,31 +220,51 @@ export async function setDocumentCodes(documentId, nextCodeIds, prevCodeIds, byN
   }
 }
 
+// Счётчик «Документы (N)» — файлы, как в окне: версии одного файла (миграция 20270307) — один файл. rows — строки с owner_id,
+// id и (если есть колонка) version_group_id → { owner_id: N }.
+export function countVorRdFiles(rows) {
+  const keys = new Map()
+  for (const r of rows || []) {
+    if (!keys.has(r.owner_id)) keys.set(r.owner_id, new Set())
+    keys.get(r.owner_id).add(r.version_group_id ? `g:${r.version_group_id}` : `d:${r.id}`)
+  }
+  return Object.fromEntries([...keys].map(([owner, set]) => [owner, set.size]))
+}
+
+// Строки файлов раздела для счётчиков — с группой версий; база без колонки — без неё (каждый файл отдельно, как раньше).
+export async function readCountRows(build) {
+  try {
+    return await build('id, owner_id, version_group_id')
+  } catch (error) {
+    if (!isMissingVersionColumn(error)) throw error
+    return build('id, owner_id')
+  }
+}
+
 // Счётчики документов раздела по тендерам — для реестров. Порции по 150 id:
 // сотни UUID одним IN-списком в URL роняют запрос.
 export async function fetchVorRdDocCounts(tenderIds) {
-  const counts = {}
-  if (!tenderIds?.length) return counts
+  if (!tenderIds?.length) return {}
   // В порции — постранично: шлюз отдаёт не больше 1000 строк, .limit(10000) его не обходит.
-  const parts = await Promise.all(chunkList(tenderIds).map((chunk) => fetchAllRows((from, to) => db
+  const rows = await readCountRows(async (cols) => (await Promise.all(chunkList(tenderIds).map((chunk) => fetchAllRows((from, to) => db
     .from('s3_documents')
-    .select('owner_id')
+    .select(cols)
     .eq('owner_type', 'tender')
     .in('doc_category', VOR_RD_CATEGORIES)
     .in('owner_id', chunk)
     .order('id', { ascending: true })
-    .range(from, to))))
-  for (const row of parts.flat()) counts[row.owner_id] = (counts[row.owner_id] || 0) + 1
-  return counts
+    .range(from, to))))).flat())
+  return countVorRdFiles(rows)
 }
 
 export async function countVorRdDocs(tenderId) {
-  const { count, error } = await db
+  const rows = await readCountRows((cols) => fetchAllRows((from, to) => db
     .from('s3_documents')
-    .select('id', { count: 'exact', head: true })
+    .select(cols)
     .eq('owner_type', 'tender')
     .eq('owner_id', tenderId)
     .in('doc_category', VOR_RD_CATEGORIES)
-  if (error) throw error
-  return count || 0
+    .order('id', { ascending: true })
+    .range(from, to)))
+  return countVorRdFiles(rows)[tenderId] || 0
 }

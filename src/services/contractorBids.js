@@ -8,6 +8,7 @@
 // Пока миграции нет, функции и таблицы отвечают «не найдено» — сервис возвращает null, страницы работают как раньше.
 import { db, requestBidFile, requestBidFileAdmin, requestBidSupplyDoc } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
+import { isMissingVersionColumn, withoutOlderVersions } from '../utils/docVersions'
 import { fetchFileBytes, requestDownloadUrl, unwrapFunction } from './s3'
 import { cabinetSandbox, setCabinetPreview } from './cabinetPreview'
 
@@ -230,13 +231,21 @@ export const VOR_CATEGORIES = ['vor_statement', 'vor']
 // запоминается.
 const TENDER_FILES_TTL_MS = 15_000
 const tenderFilesShared = new Map() // `${организация}|${тендер}` → { at, promise }
-const readTenderFiles = async (tenderId) => unwrap(await db
-  .from('s3_documents')
-  .select('id, owner_id, doc_category, file_name, s3_key, mime_type, size_bytes, created_at')
-  .eq('owner_type', 'tender')
-  .eq('owner_id', tenderId)
-  .in('doc_category', BID_DOC_CATEGORIES)
-  .order('created_at', { ascending: false })) || []
+// Прежние версии ведомости (версии файлов «ВОРов и РД», миграция 20270307) подрядчику не показываются — ни в «Расценке», ни в
+// «Документах тендера»; база без колонки версий — все файлы, как раньше.
+const TENDER_FILE_COLUMNS = 'id, owner_id, doc_category, file_name, s3_key, mime_type, size_bytes, created_at'
+const readTenderFiles = async (tenderId) => {
+  const read = (cols) => db
+    .from('s3_documents')
+    .select(cols)
+    .eq('owner_type', 'tender')
+    .eq('owner_id', tenderId)
+    .in('doc_category', BID_DOC_CATEGORIES)
+    .order('created_at', { ascending: false })
+  let res = await read(`${TENDER_FILE_COLUMNS}, version_group_id`)
+  if (res.error && isMissingVersionColumn(res.error)) res = await read(TENDER_FILE_COLUMNS)
+  return withoutOlderVersions(unwrap(res) || [])
+}
 export function loadTenderFiles(tenderId, counterpartyId = null) {
   if (!counterpartyId) return readTenderFiles(tenderId)
   const key = `${counterpartyId}|${tenderId}`

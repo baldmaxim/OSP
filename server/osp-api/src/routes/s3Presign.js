@@ -8,7 +8,12 @@
 //   confirm  { те же поля, category?, notes?, folder_date? } → { document } — объект в бакете есть и того же
 //            размера → строка s3_documents с id = operation_id; повтор — { already: true, document }.
 //            folder_date ('ГГГГ-ММ-ДД') — папка с датой, куда файл положили явно (20270220; не позже завтрашнего дня);
-//            база без колонки — 409 OSP_NO_FOLDER_DATE, файл не кладётся молча в папку сегодняшнего дня
+//            база без колонки — 409 OSP_NO_FOLDER_DATE, файл не кладётся молча в папку сегодняшнего дня.
+//            version_of (id файла того же списка) — новая версия этого файла (s3_documents.version_group_id, 20270307; только
+//            списки с версиями — VERSIONED_CATEGORIES); база без колонки — 409 OSP_NO_VERSIONS, отдельным файлом молча не кладётся
+//   version  { document_id, version_of }             → { document } — файл становится версией файла version_of (того же владельца
+//            и категории) или, при version_of: null, самостоятельным. Право — как у удаления, на оба файла. Номер версии не
+//            хранится: порядок по времени загрузки внутри группы (src/utils/docVersions.js)
 //   download { s3_key, file_name?, download? }      → { presigned_url, expires_in }
 //   delete   { s3_key }                             → { ok: true } — сначала строка, затем объект;
 //            строки уже нет (повтор) — { ok: true, already: true }
@@ -50,6 +55,7 @@
 // раздела (osp_can из Р2a, WRITE_RULES). Функции osp_can нет — 503: без проверки прав не пишем.
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { randomUUID } from 'node:crypto'
 import { sanitizeFileName } from '../lib/files.js'
 import { fileNameProblem } from '../shared/fileRename.js'
 import { z } from 'zod'
@@ -154,6 +160,15 @@ export const READ_RULES = {
 }
 // Предел размера (решение 11.11.2026): РД, ВОР и тендерный пакет — больше (PDF чертежей), остальное — общий.
 export const LARGE_CATEGORIES = new Set(['vor', 'vor_statement', 'rd', 'tender_package', 'vor_request_rd', 'vor_request_vor'])
+// Списки файлов с версиями (решение пользователя 26.11.2026): ведомости ВОР тендера и заявки на ВОР без тендера. Вид владельца →
+// категории. Новая версия — та же группа s3_documents.version_group_id (20270307); прочие файлы версий не имеют.
+export const VERSIONED_CATEGORIES = {
+  tender: new Set(['vor_statement']),
+  general: new Set(['vor_request_vor']),
+}
+export const isVersioned = (ownerType, category) => Boolean(VERSIONED_CATEGORIES[ownerType]?.has(category || ''))
+const NO_VERSIONS = { error: 'Версии файлов появятся после обновления базы — загрузите файл кнопкой «Загрузить»', code: 'OSP_NO_VERSIONS' }
+const VERSION_TARGET_MISSING = 'Файл, версию которого вы загружаете, не найден в этом списке — обновите окно'
 // Строки распознанного документа поставщика: тело маршрута ограничено 2 МБ.
 const SUPPLY_NOTES_MAX = 1_900_000
 const SUPPLY_DOC = 'supply_doc'
@@ -275,6 +290,9 @@ function readFile(body) {
   if (category !== null && !CATEGORY_RE.test(category)) return { error: 'Invalid category' }
   const folderDate = readFolderDate(body.folder_date)
   if (folderDate?.error) return { error: folderDate.error }
+  const versionOf = optional(body.version_of)?.toLowerCase() ?? null
+  if (versionOf !== null && !UUID_RE.test(versionOf)) return { error: 'Invalid version_of' }
+  if (versionOf !== null && !isVersioned(ownerType, category)) return { error: 'У файлов этого списка нет версий' }
   return {
     file: {
       operation_id: operationId,
@@ -288,6 +306,7 @@ function readFile(body) {
     category,
     notes: optional(body.notes),
     folderDate,
+    versionOf,
   }
 }
 
@@ -312,13 +331,14 @@ export const PRESIGN_BODY = z.object({
   mime_type: any,
   notes: any,
   folder_date: any,
+  version_of: any,
   s3_key: any,
   download: any,
   document_id: any,
   only_if: any,
 })
 
-const WRITE_ACTIONS = new Set(['upload', 'confirm', 'delete', 'rename', 'describe', 'supply-notes'])
+const WRITE_ACTIONS = new Set(['upload', 'confirm', 'delete', 'rename', 'describe', 'supply-notes', 'version'])
 const DOC_NOTE_MAX = 500
 
 export function registerS3Presign(app, { config, getS3, gatewayOn = false, isReadOnly = () => false, loadStatus = null, db = null, getServiceClient = null, security = null }) {
@@ -452,6 +472,30 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
       if (error) throw error
       return data
     }
+    // Версии (20270307). Файл, к которому прикладывают версию или в чью группу переносят: виден пользователю, того же владельца и
+    // категории, категория — с версиями. Ответ — строка или [код, ответ].
+    const versionTarget = async (id, { ownerType, ownerId, category }) => {
+      const doc = await findDocument(id)
+      if (!doc || doc.owner_type !== ownerType || String(doc.owner_id).toLowerCase() !== ownerId
+        || (doc.doc_category || null) !== (category || null)) return [400, { error: VERSION_TARGET_MISSING }]
+      if (!Object.hasOwn(doc, 'version_group_id')) return [409, NO_VERSIONS]
+      return doc
+    }
+    // Группа версий файла: есть — она; нет — новая. Ставится, только пока у файла группы нет: две одновременные загрузки версий
+    // одного файла попадают в одну группу (вторая перечитывает строку). Ответ — id группы или [код, ответ].
+    const ensureVersionGroup = async (doc) => {
+      if (doc.version_group_id) return doc.version_group_id
+      const { data, error } = await supabase.from('s3_documents').update({ version_group_id: randomUUID() })
+        .eq('id', doc.id).is('version_group_id', null).select('version_group_id')
+      if (error) {
+        if (error.code === '42501') return [403, { error: NO_RIGHT }]
+        if (MISSING_COLUMN.has(error.code)) return [409, NO_VERSIONS]
+        throw error
+      }
+      if (data?.[0]?.version_group_id) return data[0].version_group_id
+      const again = await findDocument(doc.id)
+      return again?.version_group_id || [400, { error: VERSION_TARGET_MISSING }]
+    }
     // Ссылку по «угаданному» ключу не выдаём: строка s3_documents должна быть видна пользователю, ключ — лежать в каталоге
     // своего владельца (иначе строку переставили на другого владельца — только администратор). Сотруднику ещё нужно видеть
     // владельца и иметь право чтения его раздела (READ_RULES).
@@ -520,12 +564,22 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
         case 'confirm': {
           const req = readFile(body)
           if (req.error) return reply.code(400).send({ error: req.error })
-          const { file, category, notes, folderDate } = req
+          const { file, category, notes, folderDate, versionOf } = req
           if (file.size_bytes > maxBytesFor(category, limits)) return reply.code(413).send({ error: 'Файл слишком большой', code: 'OSP_FILE_TOO_LARGE' })
           const denied = await uploadDenied(file, category)
           if (denied) return reply.code(denied[0]).send(denied[1])
           const existing = await findDocument(file.operation_id)
           if (existing) return sameFile(existing, file) ? { already: true, document: existing } : reply.code(409).send(KEY_REUSE)
+
+          // Новая версия файла: группа прежнего файла (нет — заводится, это правка прежнего файла — право как у удаления).
+          let versionGroup = null
+          if (versionOf) {
+            const target = await versionTarget(versionOf, { ownerType: file.owner_type, ownerId: file.owner_id, category })
+            if (Array.isArray(target)) return reply.code(target[0]).send(target[1])
+            if (!target.version_group_id && !await mayChangeDoc(target)) return reply.code(403).send({ error: NO_RIGHT })
+            versionGroup = await ensureVersionGroup(target)
+            if (Array.isArray(versionGroup)) return reply.code(versionGroup[0]).send(versionGroup[1])
+          }
 
           const s3Key = keyFor(file)
           let stored
@@ -559,6 +613,7 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
             ...(category ? { doc_category: category } : {}),
             ...(etag ? { content_etag: etag } : {}),
             ...(folderDate ? { folder_date: folderDate } : {}),
+            ...(versionGroup ? { version_group_id: versionGroup } : {}),
           }
           const insert = (values) => supabase.from('s3_documents').insert(values).select('*').single()
           let { data, error } = await insert(row)
@@ -571,6 +626,9 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           // База без колонки папки (раньше 20270220): файл не кладётся молча в папку сегодняшнего дня — отказ с причиной.
           if (error && folderDate && MISSING_COLUMN.has(error.code) && /folder_date/.test(error.message || '')) {
             return reply.code(409).send({ error: 'Папки с датой появятся после обновления базы — загрузите файл кнопкой «Загрузить»', code: 'OSP_NO_FOLDER_DATE' })
+          }
+          if (error && versionGroup && MISSING_COLUMN.has(error.code) && /version_group_id/.test(error.message || '')) {
+            return reply.code(409).send(NO_VERSIONS)
           }
           if (error) {
             // Параллельный повтор успел первым — та же строка; другой файл с этим ключом — отказ.
@@ -693,6 +751,48 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
             throw updateError
           }
           // Правка, не задевшая строку (правило базы, файл только что удалили), — ошибка, а не молчание.
+          if (!saved?.length) return reply.code(404).send({ error: 'Файл не найден' })
+          return { document: saved[0] }
+        }
+
+        // Файл — версия другого файла того же списка или самостоятельный (перетаскивание в окне «ВОРы и РД», 26.11.2026).
+        // Переносится один файл: остальные версии его прежней группы остаются вместе. Самостоятельный получает свою, новую
+        // группу из одного файла, а не пустую: так видно, что связь сняли явно, и отметка снабжения «прежняя версия»
+        // (prior_document_ids) на него больше не действует (bid_vor_superseded, supplyAutoImport.targetNameForFile).
+        case 'version': {
+          const id = String(body.document_id || '').toLowerCase()
+          if (!UUID_RE.test(id)) return reply.code(400).send({ error: 'Missing document_id' })
+          const targetId = body.version_of == null || body.version_of === '' ? null : String(body.version_of).toLowerCase()
+          if (targetId !== null && !UUID_RE.test(targetId)) return reply.code(400).send({ error: 'Invalid version_of' })
+          if (targetId === id) return reply.code(400).send({ error: 'Файл не может быть версией самого себя' })
+          const doc = await findDocument(id)
+          if (!doc) return reply.code(404).send({ error: 'Файл не найден' })
+          if (!isVersioned(doc.owner_type, doc.doc_category)) return reply.code(400).send({ error: 'У файлов этого списка нет версий' })
+          if (!Object.hasOwn(doc, 'version_group_id')) return reply.code(409).send(NO_VERSIONS)
+          if (!await mayChangeDoc(doc)) return reply.code(403).send({ error: NO_RIGHT })
+          let group
+          if (targetId === null) {
+            // Уже самостоятельный: без группы или один в своей.
+            if (!doc.version_group_id) return { document: doc }
+            const { data: mates, error: matesError } = await supabase.from('s3_documents').select('id')
+              .eq('version_group_id', doc.version_group_id).neq('id', doc.id).limit(1)
+            if (matesError) throw matesError
+            if (!mates?.length) return { document: doc }
+            group = randomUUID()
+          } else {
+            const target = await versionTarget(targetId, { ownerType: doc.owner_type, ownerId: String(doc.owner_id).toLowerCase(), category: doc.doc_category })
+            if (Array.isArray(target)) return reply.code(target[0]).send(target[1])
+            if (!target.version_group_id && !await mayChangeDoc(target)) return reply.code(403).send({ error: NO_RIGHT })
+            group = await ensureVersionGroup(target)
+            if (Array.isArray(group)) return reply.code(group[0]).send(group[1])
+            if (group === doc.version_group_id) return { document: doc }
+          }
+          const { data: saved, error: updateError } = await supabase.from('s3_documents')
+            .update({ version_group_id: group }).eq('id', doc.id).select('*')
+          if (updateError) {
+            if (updateError.code === '42501') return reply.code(403).send({ error: NO_RIGHT })
+            throw updateError
+          }
           if (!saved?.length) return reply.code(404).send({ error: 'Файл не найден' })
           return { document: saved[0] }
         }

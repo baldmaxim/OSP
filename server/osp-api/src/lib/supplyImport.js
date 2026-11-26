@@ -23,7 +23,7 @@
 import { fork } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
-import { estimateVersion, fileVersion, planCleanup, planFileImports, planTabImports } from '../shared/supplyAutoImport.js'
+import { estimateVersion, fileVersion, planCleanup, planFileImports, planTabImports, vorFilesForImport } from '../shared/supplyAutoImport.js'
 import { positionsFromEstimate } from '../shared/vorMaterials.js'
 import { VOR_PARSER_VERSION, isWorkbookFileName } from '../shared/vorFiles.js'
 
@@ -115,7 +115,8 @@ with mains as (
 select json_build_object(
   'id', t.id,
   'locked', public.supply_rates_locked(t.id),
-  'files', (select coalesce(json_agg(json_build_object('id', d.id, 'file_name', d.file_name, 's3_key', d.s3_key, 'created_at', d.created_at)), '[]'::json)
+  'files', (select coalesce(json_agg(json_build_object('id', d.id, 'file_name', d.file_name, 's3_key', d.s3_key, 'created_at', d.created_at,
+                'version_group_id', to_jsonb(d)->'version_group_id')), '[]'::json)
             from public.s3_documents d
             where d.owner_type = 'tender' and d.owner_id = t.id and d.doc_category = any($1::text[])),
   'sources', (select coalesce(json_agg(json_build_object('id', s.id, 'estimate_name', s.estimate_name, 'source', s.source,
@@ -207,7 +208,8 @@ export function createSupplyImport({ db, s3, bucket, log = console, parse = pars
     return true
   }
 
-  const workbookFiles = (t) => (t.files || []).filter((f) => isWorkbookFileName(f.file_name))
+  // Только книги Excel и из версий файла — текущая (с id прежних: позиции встают на место прежней версии, utils/docVersions.js).
+  const workbookFiles = (t) => vorFilesForImport((t.files || []).filter((f) => isWorkbookFileName(f.file_name)))
   const knownFileIssue = (t, doc) => (Array.isArray(t.state?.issues) ? t.state.issues : [])
     .find((i) => i.doc_id === doc.id && i.version === fileVersion(doc) && i.parser === VOR_PARSER_VERSION && STICKY.has(i.kind))
   // Подпись вкладки «ВОР» нужна, если позиции могут прийти из неё или файлам нужны имена ВОР карточки.

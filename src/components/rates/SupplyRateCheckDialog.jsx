@@ -13,6 +13,8 @@ import {
 import { isWebLink, moscowToday } from '../../utils/kpRegistrySources'
 import { fmtMoney, fmtMoscowDate, downloadXlsx, todayStamp } from '../../utils/ratesRegistry'
 import { loadSupplyCheckIndex } from '../../services/supplyRegistryCheck'
+import { GRADES, GRADE_INFO, moscowDay } from '../../utils/supplyPriceSearch'
+import { isFreshPriceDate } from '../../utils/supplyRateHelpers'
 import { RateFilePicker, ToleranceFieldset, VatFieldset, fmtDev, pct, useFileDrop, useVatChoice } from './RateCheckParts'
 import './KpRates.css'
 
@@ -307,6 +309,8 @@ const CheckLine = memo(function CheckLine({ line, index, onToggle, onPick }) {
   // Включённая человеком видна всегда; своих нет ни одной — возможные видны сразу, иначе их не заметить.
   const shownPossible = morePossible ? possible : possible.filter((e, n) => e.on || (!chosen.length && n < VISIBLE_ANALOGS))
   const entry = (e) => <RegistryEntry key={e.key} e={e} i={i} item={item} onToggle={onToggle} />
+  // Возможные — по ступеням похожести, с заголовком ступени (26.11.2026: «непонятно визуальное разделение»).
+  const possibleByGrade = GRADES.map((g) => [g, shownPossible.filter((e) => (e.grade || 'far') === g)]).filter(([, list]) => list.length)
   return (
     <tr>
       <td>
@@ -327,6 +331,7 @@ const CheckLine = memo(function CheckLine({ line, index, onToggle, onPick }) {
               цен: {stats.n}{stats.names > 1 ? `, позиций: ${stats.names}` : ''}{stats.exact ? `, то же наименование: ${stats.exact}` : ''}
             </span>
             <span className="kpr-muted">последняя {fmtMoscowDate(stats.newest.row.rate_date)}: {fmtMoney(stats.newest.price)}</span>
+            {stats.models && <span className="kpr-muted" title="В строке нет модели или марки: медиана — по разным моделям из реестра">по уточнённым моделям</span>}
           </div>
         ) : (
           <span className="kpr-muted">
@@ -346,7 +351,10 @@ const CheckLine = memo(function CheckLine({ line, index, onToggle, onPick }) {
               {moreChosen ? 'свернуть' : `ещё ${chosen.length - VISIBLE_ANALOGS}`}
             </button></li>
           )}
-          {shownPossible.map(entry)}
+          {possibleByGrade.map(([g, list]) => [
+            <li key={`h:${g}`} className={`kpr-grade-head is-${g}`}>возможные · {GRADE_INFO[g].title.toLowerCase()}: {list.length}</li>,
+            ...list.map(entry),
+          ])}
           {possible.length > shownPossible.length && (
             <li><button type="button" className="kpr-link-btn" onClick={() => setMorePossible(true)}>
               {shownPossible.length ? `ещё возможные: ${possible.length - shownPossible.length}` : `возможные: ${possible.length}`}
@@ -365,13 +373,18 @@ const CheckLine = memo(function CheckLine({ line, index, onToggle, onPick }) {
   )
 })
 
+// Ступень похожести — коротко (utils/supplyDocMatch.gradeNames).
+const GRADE_SHORT = { same: 'та же позиция', close: 'очень похоже', refine: 'уточнённая модель', near: 'похоже', far: 'отдалённо' }
 const entryLabel = (c) => {
   if (c.manual) return c.exact ? 'то же наименование · найдено поиском' : 'найдено поиском'
   if (c.exact) return 'то же наименование'
   if (c.article || c.code) return `артикул совпал · ${pct(c.score)}`
   if (c.apart) return 'другой размер или марка'
-  return `похоже на ${pct(c.score)}`
+  return c.grade ? `${GRADE_SHORT[c.grade]} · ${pct(c.score)}` : `похоже на ${pct(c.score)}`
 }
+// Цена старше 3 месяцев — с красной пометкой (решение пользователя 26.11.2026).
+const staleDate = (iso) => !isFreshPriceDate(moscowDay(iso))
+const Stale = () => <span className="kpr-stale">старше 3 месяцев</span>
 const fmtFactor = (n) => String(Math.round(n * 10000) / 10000).replace('.', ',')
 
 // Позиция реестра у строки: галочка «учитывать», цены за единицу строки файла и откуда они; все цены — по нажатию.
@@ -384,7 +397,7 @@ function RegistryEntry({ e, i, item, onToggle }) {
   const hi = Math.max(...prices)
   const newest = points[0]
   return (
-    <li className={`kpr-analog has-check${e.on ? '' : e.auto ? ' is-off is-removed' : ' is-off'}`}>
+    <li className={`kpr-analog has-check is-grade-${e.grade || 'manual'}${e.on ? '' : e.auto ? ' is-off is-removed' : ' is-off'}`}>
       <input type="checkbox" checked={e.on} onChange={(ev) => onToggle(i, e.key, ev.target.checked)} aria-label={`Учитывать: ${group.name}`} />
       <span className="kpr-analog-name">{group.name}</span>
       <span className="kpr-analog-price">{lo === hi ? fmtMoney(lo) : `${fmtMoney(lo)}–${fmtMoney(hi)}`} ₽{unit ? ` / ${unit}` : ''}</span>
@@ -392,6 +405,7 @@ function RegistryEntry({ e, i, item, onToggle }) {
         <span className="kpr-score">{entryLabel(c)}</span>
         {factor !== 1 && <span>1 {item.unit} = {fmtFactor(factor)} {group.unit}, в реестре {fmtMoney(Number(newest.row.price))} ₽ / {group.unit}</span>}
         <span>{fmtMoscowDate(newest.row.rate_date)}</span>
+        {staleDate(newest.row.rate_date) && <Stale />}
         {newest.row.object_name && <span>{newest.row.object_name}</span>}
         <span>{newest.row.source_name || 'СУ-10'}</span>
         {newest.row.contractor_label && <span>{newest.row.contractor_label}</span>}
@@ -410,6 +424,7 @@ function RegistryEntry({ e, i, item, onToggle }) {
           {points.slice(0, POINTS_LIMIT).map((p) => (
             <li key={p.row.id}>
               <span className="kpr-num">{fmtMoscowDate(p.row.rate_date)}</span>
+              {staleDate(p.row.rate_date) && <Stale />}
               <b className="kpr-num">{fmtMoney(p.price)} ₽</b>
               {p.row.object_name && <span>{p.row.object_name}</span>}
               <span>{p.row.source_name || 'СУ-10'}</span>

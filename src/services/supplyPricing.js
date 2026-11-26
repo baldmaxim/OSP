@@ -15,8 +15,9 @@ import { isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
 import { deleteDocument, fetchFileBytes, saveSupplyDocNotesRow, uploadFile } from './s3'
 import { VOR_STATEMENT_CATEGORY, LEGACY_VOR_CATEGORY, isNetworkError } from './tenderVorRd'
 import { isWorkbookFileName } from '../utils/vorFiles'
+import { vorFilesForImport } from '../utils/supplyAutoImport'
+import { isMissingVersionColumn } from '../utils/docVersions'
 import { offerNeedsReread, offerNeedsRefresh, readOffer, unreadableOfferNotes } from '../utils/supplyOffers'
-import { isFreshPriceDate } from '../utils/supplyRateHelpers'
 import { mergeNote } from '../utils/dcRequestNotes'
 // Библиотека Excel (vorMaterialsSheet → xlsx, 430 КБ) — только по требованию: сервис импортирует и реестр
 // тендеров (прогресс расценки), которому она не нужна.
@@ -167,15 +168,20 @@ export async function loadPricingBundle(id, { ctx = null, withItems = false } = 
 
 // ── Источники позиций ───────────────────────────────────────────────────────────────────────────────
 // Файлы ВОР из «ВОРов и РД» основного тендера — только книги Excel (в старой категории vor бывают PDF).
+// Из версий файла (utils/docVersions.js, миграция 20270307) — только текущая, с id прежних (version_ids): её позиции встают на
+// место прежней версии. База без колонки версий — все файлы, как раньше.
+const VOR_FILE_COLUMNS = 'id, file_name, s3_key, doc_category, created_at, uploaded_by_name'
 export async function loadVorFiles(mainId) {
-  const { data, error } = await db.from('s3_documents')
-    .select('id, file_name, s3_key, doc_category, created_at, uploaded_by_name')
+  const read = (cols) => db.from('s3_documents')
+    .select(cols)
     .eq('owner_type', 'tender')
     .eq('owner_id', mainId)
     .in('doc_category', [VOR_STATEMENT_CATEGORY, LEGACY_VOR_CATEGORY])
     .order('created_at', { ascending: false })
+  let { data, error } = await read(`${VOR_FILE_COLUMNS}, version_group_id`)
+  if (error && isMissingVersionColumn(error)) ({ data, error } = await read(VOR_FILE_COLUMNS))
   if (error) fail(error)
-  return (data || []).filter((d) => isWorkbookFileName(d.file_name))
+  return vorFilesForImport((data || []).filter((d) => isWorkbookFileName(d.file_name)))
 }
 
 // Вся книга — для окна «Указать лист и колонки» (выбор листа).
@@ -514,26 +520,26 @@ export async function loadPriceOrigin(sourceRateId, tenderId) {
   return { source, offers, files: [...offers.map((x) => x.doc), ...unread, ...others.map((x) => x.doc)] }
 }
 
-// Свежие (не старше 3 месяцев) свои цены других тендеров — для меню похожих: те, что в другой ед. изм. (база их не отбирает,
-// utils/supplyAutoPick.otherUnitPrices). Ответ — [{ id, tender_id, tender_number, object_name, estimate_name, material_key,
-// material_name, unit, price, price_date }], новые первыми. Колонок ещё нет (база раньше миграции 20261023) — []: расценка
-// работает как раньше. Постранично, но не больше OTHER_RATES_PAGES страниц (самые свежие); ответ держится 5 минут: повторное
-// открытие расценки не читает заново.
+// Свои (не скопированные) цены снабжения всех тендеров — для окна цен позиции (utils/supplyPriceSearch: похожие из других тендеров и
+// других ВОР этого; сама позиция отбрасывается там) и «в другой ед. изм.» (utils/supplyAutoPick.otherUnitPrices — только свежие цены
+// других тендеров). С 26.11.2026 — любой давности: старше 3 месяцев тоже предлагаются, с пометкой (решение пользователя); сами не
+// подставляются. Ответ — [{ id, tender_id, tender_number, object_name, estimate_name, material_key, material_name, unit, price,
+// price_date }], новые первыми. Колонок ещё нет (база раньше миграции 20261023) — []: расценка работает как раньше. Постранично, но не
+// больше OTHER_RATES_PAGES страниц (самые свежие); ответ держится 5 минут: повторное открытие расценки не читает заново.
 const OTHER_RATES_PAGES = 20
 const otherRatesCache = new Map()
 export async function loadOtherTenderRates(mainId) {
   const hit = otherRatesCache.get(mainId)
   if (hit && Date.now() - hit.at < SUGGEST_TTL_MS) return hit.rows
-  const since = new Date(Date.now() - 92 * 24 * 3600 * 1000).toISOString().slice(0, 10)
   const rows = []
   for (let page = 0; page < OTHER_RATES_PAGES; page++) {
     const { data, error } = await db.from('tender_vor_supply_rates')
       .select('id, tender_id, estimate_name, material_key, material_name, unit, supply_price, supply_price_exact, price_date')
-      .is('source_rate_id', null).gte('price_date', since).neq('tender_id', mainId)
+      .is('source_rate_id', null).not('price_date', 'is', null)
       .order('price_date', { ascending: false }).order('id', { ascending: true })
       .range(page * 1000, page * 1000 + 999)
     if (error) return []
-    rows.push(...(data || []).filter((r) => isFreshPriceDate(r.price_date)))
+    rows.push(...(data || []))
     if ((data || []).length < 1000) break
   }
   const tenders = new Map()

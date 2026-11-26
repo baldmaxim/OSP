@@ -37,7 +37,8 @@ import '../components/ParticipantsTable.css'
 import { participantStatusKey, participantStatusLabel } from '../utils/participantStatus'
 import VorDocsModal from '../components/VorDocsModal'
 import VorRdModal from '../components/VorRdModal'
-import { VOR_RD_CATEGORIES, countVorRdDocs } from '../services/tenderVorRd'
+import { VOR_RD_CATEGORIES, countVorRdDocs, countVorRdFiles } from '../services/tenderVorRd'
+import { isMissingVersionColumn } from '../utils/docVersions'
 import { loadSupplyProgress } from '../services/supplyPricing'
 import { revisionTitle } from '../utils/supplyVorVersions'
 import { fetchStoEmployees, vorResponsibleName, isMissingStoColumnError, STO_MIGRATION_HINT } from '../services/stoEmployees'
@@ -759,21 +760,26 @@ ${ATTACHMENT_BLOCK}
     try {
       // Порциями id, параллельно: сотни UUID одним IN-списком в URL роняют запрос (inChunks.js). В порции —
       // постранично: шлюз отдаёт не больше 1000 строк, и .limit(10000) его не обходит — счётчики занижались бы.
-      const parts = await Promise.all(chunkList(tenderIds).map((chunk) => fetchAllRows((from, to) => db
+      // Версии одного файла ВОР (миграция 20270307) — один файл, как в окне; база без колонки версий — каждый файл отдельно.
+      const read = (cols) => Promise.all(chunkList(tenderIds).map((chunk) => fetchAllRows((from, to) => db
         .from('s3_documents')
-        .select('owner_id, doc_category')
+        .select(cols)
         .eq('owner_type', 'tender')
         .in('doc_category', [...VOR_RD_CATEGORIES, 'tender_package'])
         .in('owner_id', chunk)
         .order('id', { ascending: true })
         .range(from, to))))
-      const vor = {}
+      const parts = await read('id, owner_id, doc_category, version_group_id').catch((err) => {
+        if (isMissingVersionColumn(err)) return read('id, owner_id, doc_category')
+        throw err
+      })
       const pkg = {}
+      const vorRows = []
       for (const row of parts.flat()) {
-        const bucket = row.doc_category === 'tender_package' ? pkg : vor
-        bucket[row.owner_id] = (bucket[row.owner_id] || 0) + 1
+        if (row.doc_category === 'tender_package') pkg[row.owner_id] = (pkg[row.owner_id] || 0) + 1
+        else vorRows.push(row)
       }
-      setVorDocCounts(vor)
+      setVorDocCounts(countVorRdFiles(vorRows))
       setPackageDocCounts(pkg)
     } catch (err) {
       console.error('Ошибка загрузки счётчиков документов тендера:', err.message)

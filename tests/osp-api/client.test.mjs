@@ -352,6 +352,33 @@ describe('src/api/ospFiles.js — загрузка с ключом операц�
     assert.equal('folder_date' in calls[3], false, 'без папки поле не отправляется (прежний сервер)')
   })
 
+  it('версии (20270307): version_of — только в подтверждении и только если выбран; version — файл и версия чего (null — самостоятельный)', async () => {
+    const calls = []
+    const files = createOspFiles({
+      call: async (body) => {
+        calls.push(body)
+        return body.action === 'upload' ? presigned : { data: { document: DOC }, error: null }
+      },
+      fetchImpl: async () => ({ ok: true, status: 200, statusText: 'OK' }),
+      digest: async () => 'f'.repeat(64),
+      newId: () => 'op-1',
+      sleep: async () => {},
+    })
+    await files.upload({ file, ownerType: 'tender', ownerId: 't', category: 'vor_statement', versionOf: 'doc-prev' })
+    assert.deepEqual(calls.map((c) => c.action), ['upload', 'confirm'])
+    assert.equal('version_of' in calls[0], false, 'ссылка на загрузку — без версии')
+    assert.equal(calls[1].version_of, 'doc-prev')
+    await files.upload({ file, ownerType: 'tender', ownerId: 't', category: 'vor_statement' })
+    assert.equal('version_of' in calls[3], false, 'без версии поле не отправляется (прежний сервер)')
+    calls.length = 0
+    assert.deepEqual(await files.version('doc-a', 'doc-b'), DOC)
+    assert.deepEqual(await files.version('doc-a', null), DOC)
+    assert.deepEqual(calls, [
+      { action: 'version', document_id: 'doc-a', version_of: 'doc-b' },
+      { action: 'version', document_id: 'doc-a', version_of: null },
+    ])
+  })
+
   it('отправка встала (сторож) — новая ссылка и повтор; после попыток — «Хранилище не отвечает»', async () => {
     const calls = []
     let puts = 0

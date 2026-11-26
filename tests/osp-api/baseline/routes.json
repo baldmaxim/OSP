@@ -544,7 +544,8 @@
       "owner_type",
       "s3_key",
       "sha256",
-      "size_bytes"
+      "size_bytes",
+      "version_of"
     ]
   },
   {

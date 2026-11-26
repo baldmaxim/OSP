@@ -490,3 +490,177 @@
   .s3-doc-folder-add { min-height: 2.25rem; padding: 0 0.625rem; }
 }
 .s3-doc-btn-primary { font-variant-numeric: tabular-nums; }
+
+/* Версии файлов (проп versions, ВОР в «ВОРах и РД», 26.11.2026): строка — текущая версия с отметкой «Версия N», прежние —
+   под ней приглушённо и с отступом; строку можно перетащить на другой файл (ручка слева) или на полосу «самостоятельный». */
+.s3-doc-list.has-version-ui .s3-doc-actions-col { width: 10.5rem; }
+/* Ячейка действий — настоящая ячейка таблицы (не flex): фон прежних версий и нижняя граница идут на всю высоту строки. */
+.s3-doc-list.has-version-ui td.s3-doc-actions { display: table-cell; white-space: nowrap; }
+.s3-doc-list.has-version-ui td.s3-doc-actions button { vertical-align: middle; margin-right: 0.25rem; }
+
+.s3-ver-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  min-width: 0;
+}
+
+.s3-ver-file { min-width: 0; overflow-wrap: anywhere; }
+
+.s3-ver-grip {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: -0.25rem;
+  color: var(--text-tertiary);
+  cursor: grab;
+}
+
+.s3-doc-table tr[draggable='true'] { cursor: grab; }
+.s3-doc-table tr[draggable='true'] button { cursor: pointer; }
+.s3-doc-table tr.is-dragging-row > td { opacity: 0.45; }
+
+.s3-ver-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.0625rem 0.4375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+}
+
+.s3-ver-chip.is-current {
+  color: var(--primary-color, #2563eb);
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 10%, var(--bg-secondary, #fff));
+  border-color: color-mix(in srgb, var(--primary-color, #2563eb) 35%, transparent);
+}
+
+.s3-ver-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.0625rem 0.375rem 0.0625rem 0.125rem;
+  font: inherit;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.s3-ver-toggle:hover { color: var(--text-primary); border-color: var(--border-color); background: var(--bg-tertiary); }
+.s3-ver-toggle:focus-visible { outline: 2px solid var(--primary-color, #2563eb); outline-offset: 1px; }
+.s3-ver-toggle > .s3-ver-chevron { display: inline-flex; transition: transform 0.12s ease; }
+.s3-ver-toggle > .s3-ver-chevron > svg { width: 14px; height: 14px; }
+.s3-ver-toggle.is-open > .s3-ver-chevron { transform: rotate(90deg); }
+
+/* Прежние версии — под текущей, с отступом и приглушённо: видно, что это одна ведомость. */
+.s3-doc-table tr.s3-ver-old > td { background: var(--bg-tertiary); color: var(--text-secondary); font-size: 0.8125rem; }
+.s3-doc-table tr.s3-ver-old > td.s3-doc-name { padding-left: 1.75rem; font-weight: 400; }
+/* Группа из нескольких версий отделена от соседней чуть заметнее. */
+.s3-doc-table tbody.s3-ver-group.has-versions > tr:last-child > td { border-bottom-color: color-mix(in srgb, var(--text-tertiary) 45%, var(--border-color)); }
+
+.s3-doc-table tbody.s3-ver-group.is-drop-target > tr > td {
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 10%, var(--bg-secondary, #fff));
+}
+.s3-doc-table tbody.s3-ver-group.is-drop-target > tr:first-child > td { box-shadow: inset 0 2px 0 var(--primary-color, #2563eb); }
+.s3-doc-table tbody.s3-ver-group.is-drop-target > tr:last-child > td { box-shadow: inset 0 -2px 0 var(--primary-color, #2563eb); }
+.s3-doc-table tbody.s3-ver-group.is-drop-target > tr:only-child > td { box-shadow: inset 0 2px 0 var(--primary-color, #2563eb), inset 0 -2px 0 var(--primary-color, #2563eb); }
+
+.s3-doc-actions button.is-active { color: var(--primary-color, #2563eb); border-color: var(--border-color); background: var(--bg-tertiary); }
+.s3-doc-actions button:disabled { opacity: 0.5; cursor: default; }
+
+/* Полоса «самостоятельный файл» — пока тянут строку версии. Прилипает к низу прокрутки окна: длинный список не уводит её с экрана;
+   подсказка перетаскивания на это время — сверху списка. */
+.s3-doc-list.has-standalone .s3-doc-drop-hint { top: 0.5rem; bottom: auto; }
+.s3-ver-standalone {
+  position: sticky;
+  bottom: 0.5rem;
+  z-index: 3;
+  background: var(--bg-secondary, #fff);
+  padding: 0.75rem;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  border: 2px dashed var(--border-color);
+  border-radius: 6px;
+}
+.s3-ver-standalone.is-drop-target {
+  color: var(--primary-color, #2563eb);
+  border-color: var(--primary-color, #2563eb);
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 8%, var(--bg-secondary, #fff));
+}
+
+/* Выбор связи версий у строки и выбор «как загрузить» похожие файлы. */
+.s3-doc-table tr.s3-ver-edit-row > td { padding: 0; background: var(--bg-secondary); }
+.s3-ver-edit,
+.s3-ver-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0.875rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--primary-color, #2563eb);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+.s3-ver-edit { margin: 0.375rem 0.5rem 0.5rem 1.75rem; }
+.s3-ver-edit-title,
+.s3-ver-plan-title { font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.s3-ver-edit-options { display: flex; flex-direction: column; gap: 0.25rem; }
+.s3-ver-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.3125rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.s3-ver-option:hover { background: var(--bg-tertiary); }
+.s3-ver-option.is-checked { background: color-mix(in srgb, var(--primary-color, #2563eb) 8%, var(--bg-secondary, #fff)); }
+.s3-ver-option > input { margin-top: 0.15rem; flex-shrink: 0; }
+.s3-ver-edit-hint { margin: 0; color: var(--text-tertiary); font-size: 0.75rem; }
+.s3-ver-edit-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.s3-ver-plan-list { display: flex; flex-direction: column; gap: 0.375rem; margin: 0; padding: 0; list-style: none; }
+.s3-ver-plan-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 22rem) auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+.s3-ver-plan-file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.s3-ver-plan-list select {
+  min-width: 0;
+  padding: 0.3125rem 0.5rem;
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+.s3-ver-plan-note { font-size: 0.75rem; color: var(--primary-color, #2563eb); white-space: nowrap; }
+
+@media (max-width: 768px) {
+  .s3-ver-edit { margin-left: 0.5rem; }
+  .s3-ver-plan-list > li { grid-template-columns: minmax(0, 1fr); }
+  .s3-ver-grip { display: none; }
+  .s3-doc-list.has-version-ui td.s3-doc-actions { white-space: normal; }
+}
+/* Узкий экран (телефон, окно на телефоне): размер и автор — в подсказке не нужны, без них таблица помещается по ширине. */
+@media (max-width: 640px) {
+  .s3-doc-list.has-version-ui .s3-doc-table th:nth-child(2),
+  .s3-doc-list.has-version-ui .s3-doc-table td:nth-child(2):not([colspan]),
+  .s3-doc-list.has-version-ui .s3-doc-table th:nth-child(3),
+  .s3-doc-list.has-version-ui .s3-doc-table td:nth-child(3) { display: none; }
+  .s3-doc-list.has-version-ui .s3-doc-actions-col { width: 5.5rem; }
+}

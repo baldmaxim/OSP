@@ -7,7 +7,7 @@
 // вкладке его сбрасывают (forgetSupplyCheckIndex).
 import { db } from '../api'
 import { fetchAllRowsParallel } from '../utils/fetchAllRows'
-import { supplyCheckIndex } from '../utils/supplyRegistryCheck'
+import { supplyCheckIndexInSlices } from '../utils/supplyRegistryCheck'
 
 const VIEW = 'supply_rates_registry'
 const COLS = 'id,source_name,item_name,unit,price,tender_id,object_id,tender_desc,object_name,rate_date'
@@ -19,7 +19,7 @@ const CACHE_MS = 10 * 60 * 1000
 let cached = null // { at, details, promise }
 
 // Указатель реестра (supplyCheckIndex). onProgress(прочитано строк, всего строк) — пока читается; onIndexing() — строки прочитаны,
-// строится указатель (около секунды-двух на всём реестре). Ошибка и пустой реестр не запоминаются.
+// строится указатель (около секунды-двух на всём реестре — порциями, окно не замирает). Ошибка и пустой реестр не запоминаются.
 export function loadSupplyCheckIndex({ details = false, onProgress, onIndexing } = {}) {
   if (cached && cached.details === details && Date.now() - cached.at < CACHE_MS) return cached.promise
   let read = 0
@@ -36,7 +36,7 @@ export function loadSupplyCheckIndex({ details = false, onProgress, onIndexing }
     // Построение указателя останавливает страницу — сначала отрисуем подпись.
     onIndexing?.()
     await new Promise((resolve) => { setTimeout(resolve, 30) })
-    const index = supplyCheckIndex(rows)
+    const index = await supplyCheckIndexInSlices(rows, () => new Promise((resolve) => { setTimeout(resolve, 0) }))
     if (!index.rowCount && cached === entry) cached = null
     return index
   })

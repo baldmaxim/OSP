@@ -19,7 +19,7 @@
 // как в файле загрузки (ставку загрузка не спрашивает).
 import { normName } from './supplyRateHelpers.js'
 import { canonUnit, nameParts } from './supplySimilarity.js'
-import { autoChosen, groupUnitOk, itemCandidates, linePack, matchIndex } from './supplyDocMatch.js'
+import { autoChosen, byMatchRank, groupUnitOk, itemCandidates, linePack, matchIndex, matchIndexInSlices, primeGroupFeatures } from './supplyDocMatch.js'
 import { unitPriceWithVat } from './supplierDoc.js'
 import { DEFAULT_TOLERANCE, VERDICT_TEXT, deviation, median, round2, verdictOf } from './kpRateCheck.js'
 
@@ -34,6 +34,24 @@ const OTHER_UNIT_MAX = 3
 // units, parts, targets, rows }. targets пуст: объёмов ВОР у реестра нет (количество строки не поднимает похожесть). Строки без цены
 // и без наименования в указатель не идут.
 export function supplyCheckIndex(rows) {
+  const { groups, byKey, rowCount } = checkGroups(rows)
+  return { groups, byKey, ix: matchIndex(groups), rowCount }
+}
+// Тот же указатель порциями (окно проверки не замирает на секунду-две, пока строится указатель всего реестра): pause — между порциями.
+const INDEX_SLICE_MS = 40
+export async function supplyCheckIndexInSlices(rows, pause) {
+  const { groups, byKey, rowCount } = checkGroups(rows)
+  let at = performance.now()
+  for (const g of groups) {
+    primeGroupFeatures(g)
+    if (performance.now() - at > INDEX_SLICE_MS) {
+      await pause()
+      at = performance.now()
+    }
+  }
+  return { groups, byKey, ix: await matchIndexInSlices(groups, { pause, sliceMs: INDEX_SLICE_MS }), rowCount }
+}
+function checkGroups(rows) {
   const byKey = new Map()
   let rowCount = 0
   for (const r of rows || []) {
@@ -49,8 +67,7 @@ export function supplyCheckIndex(rows) {
     g.rows.push(r)
     rowCount += 1
   }
-  const groups = [...byKey.values()]
-  return { groups, byKey, ix: matchIndex(groups), rowCount }
+  return { groups: [...byKey.values()], byKey, rowCount }
 }
 
 // ── Строки файла ────────────────────────────────────────────────────────────────────────────────────
@@ -74,17 +91,28 @@ export function materialLines(list) {
   return { items, works }
 }
 
-// Кандидаты строки файла (itemCandidates с пересчётом единиц), лучшие первыми.
+// Кандидаты строки файла (itemCandidates с пересчётом единиц и ступенями похожести), лучшие первыми.
 export function lineCandidates(item, index) {
   if (item.delivery) return []
-  return itemCandidates(item, index.groups, index.ix, CANDIDATES_MAX, { packs: true })
+  return itemCandidates(item, index.groups, index.ix, CANDIDATES_MAX, { packs: true, graded: true })
 }
 
 // Позиция, которую человек нашёл поиском по реестру и добавил строке: та же ед. изм. или пересчёт, как у кандидата.
 export function pickedCandidate(item, group) {
   const pack = group.units ? null : linePack(item, group)
   return { group, score: null, exact: normName(item.name) === group.k, code: false, article: false, apart: false, manual: true, pack,
-    unitOk: pack != null || groupUnitOk(item.unit, group) }
+    unitOk: pack != null || groupUnitOk(item.unit, group), grade: 'manual' }
+}
+
+// Что идёт в сравнение само (26.11.2026): как строка счёта закрыла бы позицию (autoChosen, как раньше), а если среди этого нет той же
+// позиции и очень похожих, а строка файла — общее наименование («Извещатель пожарный дымовой»), — ещё и все уточнения (модели с маркой,
+// где есть всё наименование строки): какая модель, строка не говорит, и брать только две самые короткие записи было бы случайностью.
+const STRONG = new Set(['same', 'close'])
+export function autoEntries(cands) {
+  const own = cands.filter((c) => !c.manual)
+  const chosen = new Set(autoChosen([...own].sort(byMatchRank)))
+  if (![...chosen].some((c) => STRONG.has(c.grade))) for (const c of own) if (c.grade === 'refine' && c.unitOk) chosen.add(c)
+  return chosen
 }
 
 // Самая ранняя дата расценки для «за N месяцев» (0 — за всё время): today — «ГГГГ-ММ-ДД» (по Москве), ответ — миллисекунды полуночи
@@ -114,7 +142,7 @@ export function checkSupplyLines(items, found, { vat = null, tolerance = DEFAULT
     const price = raw != null && raw > 0 ? round2(raw) : null
     const cands = item.delivery ? [] : [...(found?.get(i) || [])]
     for (const g of picked?.get(i) || []) if (!cands.some((c) => c.group.key === g.key)) cands.push(pickedCandidate(item, g))
-    const chosen = new Set(autoChosen(cands.filter((c) => !c.manual)))
+    const chosen = autoEntries(cands)
     const entries = []
     const otherUnit = []
     let older = 0
@@ -129,7 +157,7 @@ export function checkSupplyLines(items, found, { vat = null, tolerance = DEFAULT
       const points = rows.map((row) => ({ row, price: round2(Number(row.price) * factor) })).sort(newestFirst)
       const auto = chosen.has(c)
       const key = c.group.key
-      entries.push({ key, group: c.group, c, points, auto, manual: !!c.manual, factor, on: choices?.get(`${i}|${key}`) ?? (auto || !!c.manual) })
+      entries.push({ key, group: c.group, c, grade: c.grade || null, points, auto, manual: !!c.manual, factor, on: choices?.get(`${i}|${key}`) ?? (auto || !!c.manual) })
     }
     const stats = pointStats(entries.filter((e) => e.on))
     return {
@@ -140,8 +168,9 @@ export function checkSupplyLines(items, found, { vat = null, tolerance = DEFAULT
   })
 }
 
-// Цены включённых позиций: { n, min, max, median, names, exact, newest } или null; names — сколько позиций реестра, exact — сколько
-// цен у того же наименования, newest — самая свежая расценка { row, price }.
+// Цены включённых позиций: { n, min, max, median, names, exact, newest, models } или null; names — сколько позиций реестра, exact —
+// сколько цен у того же наименования, newest — самая свежая расценка { row, price }; models — все включённые позиции — уточнённые
+// модели (строка файла — общее наименование): медиана по разным моделям, это видно в окне и выгрузке.
 export function pointStats(entries) {
   const points = entries.flatMap((e) => e.points)
   const prices = points.map((p) => p.price).filter((p) => p > 0).sort((a, b) => a - b)
@@ -154,6 +183,7 @@ export function pointStats(entries) {
     names: entries.filter((e) => e.points.length).length,
     exact: entries.filter((e) => e.c.exact).reduce((s, e) => s + e.points.length, 0),
     newest: [...points].sort(newestFirst)[0],
+    models: entries.some((e) => e.points.length) && entries.every((e) => !e.points.length || e.grade === 'refine'),
   }
 }
 
@@ -196,7 +226,7 @@ export function supplyCheckExportRows(lines) {
       n + 1, l.item.name, l.item.unit || '', qty ?? '', l.price ?? '', l.stats?.n ?? 0, l.stats?.names ?? 0,
       l.stats?.min ?? '', l.stats?.median ?? '', l.stats?.max ?? '', l.dev ?? '',
       l.price != null && qty > 0 ? round2(l.price * qty) : '', l.stats && qty > 0 ? round2(l.stats.median * qty) : '',
-      l.verdict === 'noprice' && l.stats ? 'цены в файле нет' : VERDICT_TEXT[l.verdict] || '',
+      (l.verdict === 'noprice' && l.stats ? 'цены в файле нет' : VERDICT_TEXT[l.verdict] || '') + (l.stats?.models ? ' (по уточнённым моделям)' : ''),
       r?.item_name || '', r?.unit || '', r ? Number(r.price) : '', p?.price ?? '', r?.source_name || (r ? 'СУ-10' : ''), r?.object_name || '',
       r?.tender_desc || '', mskDay(r?.rate_date),
     ]

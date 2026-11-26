@@ -14,6 +14,7 @@ import { SOURCE_FILTER_OPTIONS, SOURCE_KINDS } from '../utils/kpRegistrySources'
 import { deleteManualRate, loadDocument } from '../services/kpManualRates'
 import { importAvailable } from '../services/supplyRegistryImport'
 import { forgetSupplyCheckIndex } from '../services/supplyRegistryCheck'
+import { forgetRegistryPrices } from '../services/supplyPriceSources'
 import { isSupplyDocRow, loadDocLineStatus } from '../services/supplyRegistryDocs'
 import './RatesRegistryPage.css'
 
@@ -136,6 +137,7 @@ function SupplyRegistrySection({ canEdit = false }) {
 
   const afterImportChange = (text) => {
     forgetSupplyCheckIndex()
+    forgetRegistryPrices()
     setReloadToken((t) => t + 1)
     if (text) {
       setNotice(text)
@@ -890,6 +892,7 @@ function RatesRegistryPage() {
       if (error) throw error
       setRefreshedAt(data || new Date().toISOString())
       forgetSupplyCheckIndex()
+      forgetRegistryPrices()
       // Перечитываем текущую страницу: заставляем эффект отработать заново.
       setReloadToken(t => t + 1)
     } catch (err) {

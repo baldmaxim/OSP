@@ -307,7 +307,7 @@
 .tvr-codes-editor { display: flex; flex-direction: column; gap: 0.45rem; }
 
 /* ── Окно на странице «ВОРы и РД» ── */
-.tvr-modal { width: min(1100px, calc(100vw - 2rem)); }
+.tvr-modal { width: min(1280px, calc(100vw - 2rem)); }
 .tvr-modal .s3-doc-modal-body { overflow-y: auto; }
 
 @media (max-width: 640px) {
