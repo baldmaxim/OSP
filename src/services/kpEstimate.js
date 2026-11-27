@@ -1,6 +1,7 @@
 // Смета КП / ПЗ объекта — запросы к базе (миграция 20270215). Таблицы: kp_estimates (документ и его версии),
 // kp_estimate_rows (строки, только чтение после загрузки), kp_estimate_marks (отметки), kp_estimate_allocations
-// (распределения), kp_estimate_log (история, пишут триггеры). Правила — utils/kpEstimate.js, разбор файлов —
+// (распределения), kp_estimate_log (история, пишут триггеры), kp_estimate_prices / kp_estimate_price_docs (цены
+// администратора, 20270308). Правила — utils/kpEstimate.js, цены — utils/kpEstimatePrices.js, разбор файлов —
 // utils/kpEstimateImport.js.
 import { db } from '../api'
 import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
@@ -182,6 +183,59 @@ export async function loadLeftovers(estimateId) {
   const rows = []
   for (const part of chunkList(ids, 100)) rows.push(...(check(await db.from('kp_estimate_rows').select(ROW_COLUMNS).in('id', part)) || []))
   return { rows, marks, allocs }
+}
+
+// ── Цены, изменённые администратором (миграция 20270308) ────────────────────
+// Читают все, кто видит смету; пишут только функции базы kp_estimate_price_apply / kp_estimate_price_reset (администратор).
+export const PRICE_COLUMNS = 'id, estimate_id, row_id, unit_price, unit_materials, unit_works, total, doc_qty, source, doc_id, note, row_version, updated_at, updated_by, updated_by_name'
+export const PRICE_DOC_COLUMNS = 'id, estimate_id, title, stage, summary, applied_by_name, applied_at'
+const PRICE_CHUNK = 1500
+
+// { prices: [...], docs: [...], missing } — missing: таблиц цен ещё нет (база раньше 20270308), смета работает как раньше.
+export async function loadPrices(estimateId) {
+  try {
+    const [prices, docs] = await Promise.all([
+      fetchAllRows((from, to) => db.from('kp_estimate_prices').select(PRICE_COLUMNS).eq('estimate_id', estimateId).order('id', { ascending: true }).range(from, to)),
+      db.from('kp_estimate_price_docs').select(PRICE_DOC_COLUMNS).eq('estimate_id', estimateId)
+        .order('applied_at', { ascending: false }).order('id', { ascending: true }).limit(100).then(check),
+    ])
+    return { prices, docs: docs || [], missing: false }
+  } catch (e) {
+    if (isMissingTable(e)) return { prices: [], docs: [], missing: true }
+    throw e
+  }
+}
+
+// Записать цены (одна правка вручную или строки документа порциями): doc — { title, stage, summary } или null (вручную).
+// Ответ: { doc_id, applied, same, conflicts: [row_id], skipped: [row_id], volumes }.
+export async function applyPrices(estimateId, doc, items, onProgress = () => {}) {
+  const total = { doc_id: null, applied: 0, same: 0, conflicts: [], skipped: [], volumes: 0 }
+  const parts = chunkList(items, PRICE_CHUNK)
+  let done = 0
+  for (const part of parts.length ? parts : [[]]) {
+    const pDoc = doc ? (total.doc_id ? { id: total.doc_id } : doc) : null
+    const { data, error } = await db.rpc('kp_estimate_price_apply', { p_estimate: estimateId, p_doc: pDoc, p_items: part })
+    if (error) throw error
+    total.doc_id = total.doc_id || data?.doc_id || null
+    total.applied += data?.applied || 0
+    total.same += data?.same || 0
+    total.volumes += data?.volumes || 0
+    total.conflicts.push(...(data?.conflicts || []))
+    total.skipped.push(...(data?.skipped || []))
+    done += part.length
+    onProgress(done, items.length)
+  }
+  return total
+}
+
+export async function resetPrices(estimateId, rowIds) {
+  let n = 0
+  for (const part of chunkList([...new Set(rowIds)], PRICE_CHUNK)) {
+    const { data, error } = await db.rpc('kp_estimate_price_reset', { p_estimate: estimateId, p_row_ids: part })
+    if (error) throw error
+    n += Number(data) || 0
+  }
+  return n
 }
 
 // ── Справочники для распределения (только с правом правки сметы) ─────────────

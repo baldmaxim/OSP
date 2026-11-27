@@ -213,6 +213,38 @@ const EXPAND = [
   // Анкер и анкерный болт — один материал, и размер пишут по-разному: «d-8мм, L-120мм» = «8x120».
   [/(^|[^a-zа-яё])d ?[-=]? ?([0-9]+(?:[.,][0-9]+)?) ?(?:мм)?[,; ]+l ?[-=]? ?([0-9]+(?:[.,][0-9]+)?) ?(?:мм)?/gi, '$1$2×$3'],
   [/(^|[^a-zа-яё])анкер(?=[\s,;.)]|$)/gi, '$1анкерный болт'],
+  // Металлопрокат (27.11.2026, журнал ручных сопоставлений, тендер № 1157: КП «Металлсервиса» и ВОР ТП — 13 строк сопоставлены руками,
+  // похожесть 0,3). Масса метра и квадратного метра в скобках, марка стали, длина проката — не признак позиции (цена за тонну та же), а
+  // их числа у каждой стороны свои и давали штраф: «Полоса 80*6 … (м/п=3,768 кг)» и «полоса г/к … Ст3сп2 6x80 дл.6м» — 0,4.
+  [/\((?:м\/п|мп|м\.п\.?|м2|м²|1 ?м2?)\s*=\s*[0-9]+(?:[.,][0-9]+)?\s*кг\.?\)/gi, ' '],
+  // «еп», «пе», «СтЗ» — так скан читает «сп», «пс», «Ст3».
+  [/(^|[^a-zа-яё])ст\s?[0-6зэ](?:пс|сп|кп|гсп|еп|пе)[0-9]?(?:[/-](?:пс|сп|кп|еп|пе)?[0-9]?)*(?![a-zа-яё0-9])/gi, '$1 '],
+  // Длина проката — метровая («дл 12м») или от 5000 мм («дл.6000»): «дл 50мм» у шурупа и «дл 2000 мм» у регистра отопления — размер.
+  [/(^|[^a-zа-яё])дл\.?\s?(?:([0-9]+(?:[.,][0-9]+)?)\s?м(?![a-zа-яё])|([0-9]{4,5})(?:\s?мм)?)(?![a-zа-яё0-9])/gi,
+    (m, pre, meters, mm) => (meters != null || Number(mm) >= 5000 ? `${pre} ` : m)],
+  [/(^|[^a-zа-яё])(?:н\/обр|норм\.?\s+точн\.?)(?![a-zа-яё])/gi, '$1 '],
+  // «ТУ» перед размером — «по ТУ», а не номер ТУ («сетка сварная ТУ 200х4х2000х6000»): иначе размер ушёл бы вместе со ссылкой на ТУ.
+  [/(^|[^a-zа-яё])ту\s+(?=[0-9]+(?:[.,][0-9]+)? ?[xх×*] ?[0-9])/gi, '$1'],
+  // Сокращения металлобаз: «угл р/пол» — уголок равнополочный, «н/пол» — неравнополочный.
+  [/(^|[^a-zа-яё])угл\.?(?=[\s,]|$)/gi, '$1уголок'],
+  [/(^|[^a-zа-яё])р\/пол\.?(?![a-zа-яё])/gi, '$1равнополочный'],
+  [/(^|[^a-zа-яё])н\/пол\.?(?![a-zа-яё])/gi, '$1неравнополочный'],
+  // Равнополочный уголок металлобазы пишут полка × толщина («угл р/пол 50х5»), смета — обе полки («Уголок 50*50*5»).
+  [/^[\s\S]*$/, (s) => (/(^|[^a-zа-яё])уголок/i.test(s) && !/неравнопол/i.test(s)
+    ? s.replace(/(^|[^0-9.,×xх*])([0-9]+(?:[.,][0-9]+)?) ?[xх×*] ?([0-9]+(?:[.,][0-9]+)?)(?![0-9]|[.,][0-9]| ?[xх×*] ?[0-9])/gi,
+      (m, pre, a, b) => (parseFloat(a.replace(',', '.')) > parseFloat(b.replace(',', '.')) ? `${pre}${a}×${a}×${b}` : m))
+    : s)],
+  // Сетка сварная металлобазы — ячейка × проволока × ширина × длина карты («сетка … 200х4х2000х6000»), смета — ячейка и проволока
+  // («Сетка сварная яч. 200х200х4»): размер ячейки — квадратный, карта — отдельно.
+  [/^[\s\S]*$/, (s) => (/(^|[^a-zа-яё])сетк/i.test(s)
+    ? s.replace(/(^|[^0-9.,×xх*])([0-9]{2,3}) ?[xх×*] ?([0-9]{1,2}(?:[.,][0-9]+)?) ?[xх×*] ?([0-9]{3,4}) ?[xх×*] ?([0-9]{3,5})(?![0-9])/i,
+      (m, pre, cell, wire, w, l) => (Number(cell) > parseFloat(wire.replace(',', '.')) ? `${pre}${cell}×${cell}×${wire} ${w}×${l}` : m))
+    : s)],
+  // Лист металлобазы — толщина × ширина × длина («лист г/к 5х1500х3000»), смета — толщина («Лист 5 ГОСТ 19903»): толщина — ещё и
+  // отдельным числом (первый такой размер в наименовании).
+  [/^[\s\S]*$/, (s) => (/(^|[^a-zа-яё])лист/i.test(s)
+    ? s.replace(/(^|[^0-9.,×xх*])([0-9]+(?:[.,][0-9]+)?) ?[xх×*] ?([0-9]{3,4}) ?[xх×*] ?([0-9]{3,5})(?![0-9])/i, '$1$2 $2×$3×$4')
+    : s)],
 ]
 export const expandName = (name) => EXPAND.reduce((s, [re, to]) => s.replace(re, to), String(name ?? ''))
 
@@ -309,7 +341,7 @@ function features(g) {
   let f = FEATURES.get(g)
   if (!f) {
     const name = expandName(g.name)
-    f = { parts: nameParts(name), tri: trigrams(name), codes: codeTokens(g.name), kind: kindWord(name), marked: articleForms(g.name).marked }
+    f = { parts: nameParts(name), tri: trigrams(name), codes: codeTokens(g.name), kind: kindWord(name), marked: articleForms(g.name).marked, mark: leadingMark(g.name) }
     FEATURES.set(g, f)
   }
   return f
@@ -328,8 +360,33 @@ function itemFeatures(item) {
   const articles = articleTokens(item.code)
   return {
     item, names, parts: [nameParts(name), ...(item.code ? [nameParts(`${name} ${item.code}`)] : [])], tri: trigrams(name),
-    articles, codes: new Set([...codeTokens(item.name, item.code2), ...articles]), forms: articleForms(item.name),
+    articles, codes: new Set([...codeTokens(item.name, item.code2), ...articles]), forms: articleForms(item.name), marks: nameMarks(item.name),
   }
+}
+
+// Марка из ведомости проёмов и спецификаций (27.11.2026, журнал ручных сопоставлений, тендер № 1157): позиция ВОР начинается с марки
+// («Д-1. Двери металлические…», «ВР-1. Ворота…»), а КП пишет её где угодно («… Марк. Д-1», «… 7021 Д-2»). Размеры в КП свои
+// (поставщик даёт размер коробки), и строку «Д-1» алгоритм ставил к «Д-2». Марка — 1–3 буквы, дефис по желанию, 1–3 цифры; буквы —
+// латиницей для двойников, ведущие нули не важны («ДП-02» = «дп-2»).
+const MARK_RE = /(^|[^a-zа-яё0-9])([a-zа-яё]{1,3})-?([0-9]{1,3})(?![0-9]|[.,][0-9]|[a-zа-яё])/gi
+const markOf = (letters, num) => `${sameCodeForm(letters.toLowerCase().replace(/ё/g, 'е'))}-${Number(num)}`
+function leadingMark(name) {
+  // Только с точкой после марки, как в ведомости («Д-1. Двери…»): «М10 Гайка», «В25 Бетон» — не марки.
+  const m = /^\s*([a-zа-яё]{1,3})-?([0-9]{1,3})\.\s/i.exec(String(name || ''))
+  return m ? markOf(m[1], m[2]) : null
+}
+function nameMarks(name) {
+  const out = new Set()
+  for (const m of String(name || '').matchAll(MARK_RE)) out.add(markOf(m[2], m[3]))
+  return out
+}
+// Та же марка — та же позиция (не ниже MARK_SAME), марка с теми же буквами, но другим номером, — другая позиция (не выше KIND_CAP).
+const MARK_SAME = 0.7
+function markVerdict(a, b) {
+  if (!b.mark || !a.marks?.size) return null
+  if (a.marks.has(b.mark)) return 'same'
+  const letters = b.mark.split('-')[0]
+  return [...a.marks].some((m) => m.split('-')[0] === letters) ? 'other' : null
 }
 
 // Группы — один материал под разной записью: более короткое наименование целиком (слова и числа) входит в другое
@@ -520,6 +577,9 @@ export function pairScore(a, g, shared = null) {
       if (kindOf) score = Math.max(score, LIST_MIN)
     }
   }
+  const mark = markVerdict(a, b)
+  if (mark === 'same') score = Math.max(score, MARK_SAME)
+  else if (mark === 'other' && !code) score = Math.min(score, KIND_CAP)
   return { score: Math.min(0.99, Math.round(score * 1000) / 1000), free, words: base.words, text: Math.round(text * 1000) / 1000, code, qty, sameNums: base.sameNums, apart: !code && numsApart }
 }
 

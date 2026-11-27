@@ -45,7 +45,7 @@ import {
   uniqueOfferDocs, windowOffers,
 } from '../../utils/supplyAutoPick'
 import { pricesOfDoc, removedDocPrices, tracePriceSame } from '../../utils/supplyDocPrices'
-import { lineForGroup, lineNotForGroup, offerInRoubles, offerNotes, offerVatMode, offerWithVat, readOffer, scanProgressText } from '../../utils/supplyOffers'
+import { carryOfferMarks, lineForGroup, lineNotForGroup, offerInRoubles, offerNotes, offerVatMode, offerWithVat, readOffer, scanProgressText } from '../../utils/supplyOffers'
 import {
   carrySuggestions, carryTargets, composeChanges, revisionTitle, unitMismatch, versionQuestions, vorTitle,
 } from '../../utils/supplyVorVersions'
@@ -930,8 +930,13 @@ export default function SupplyPricingPanel({
         if (refresh) {
           const before = readOffer(was)
           const fresh = notes ? readOffer(notes) : null
-          if (!fresh?.lines.length || !before) continue
-          notes = offerNotes(offerWithVat(fresh, offerVatMode(before)))
+          if (!before) continue
+          // Перечитано хуже (строк нет; у скана строк без сверки больше) — остаются прежние строки. Выбор человека переносится
+          // (carryOfferMarks); не переносится весь — тоже прежние. Прежние — с новой версией чтения (offerNotes пишет её сама): иначе
+          // файл перечитывался бы при каждом открытии расценки у каждого, кто может править.
+          const worse = !fresh?.lines.length || (before.ocr && fresh.lines.filter((l) => l.unsure).length > before.lines.filter((l) => l.unsure).length)
+          const carried = worse ? null : carryOfferMarks(offerWithVat(fresh, offerVatMode(before)), before)
+          notes = offerNotes(carried || before)
         }
         const offer = notes ? readOffer(notes) : null
         if (offer?.lines.length) setOfferDocs((prev) => [{ doc, offer, notes }, ...(prev || []).filter((x) => x.doc.id !== doc.id)])

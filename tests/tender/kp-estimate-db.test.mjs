@@ -5,7 +5,8 @@
 // строки сметы и история вошедшим не переписать; просмотр — право «Объекты», правка — «Смета КП/ПЗ», чужой объект и
 // подрядчик — ничего; новая версия переносит отметки, распределения и историю по ключу строки, остальное — у прежней
 // (её править нельзя); действующую удаляет только администратор (с историей); откат и повтор. Второй блок — копия прода
-// как база Яндекса: настоящий migrate.sh с проверкой прав под одну учётку и те же правила от имени вошедшего.
+// как база Яндекса: настоящий migrate.sh с проверкой прав под одну учётку и те же правила от имени вошедшего (он применяет и
+// 20270308 — её проверку прав). Отдельный блок — цены администратора (20270308) на слепке Supabase.
 // Страница — kp-estimate.test.mjs. Нужны Docker и psql.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -163,6 +164,93 @@ describe('Смета КП / ПЗ — база (слепок схемы прод�
     assert.equal(sql('select count(*) from public.kp_estimate_rows'), '3')
     psqlAt(db.port, null, { file: MIGRATION })
     assert.doesNotMatch(psqlAt(db.port, null, { file: CHECK }), /^FAIL/m)
+  })
+})
+
+// Цены администратора (20270308, 27.11.2026): пишут только kp_estimate_price_apply / kp_estimate_price_reset — администратор по
+// объекту охвата; экономист и прямая запись — отказ; история «price»; объём документа — в отметку; перенос на новую версию.
+describe('Смета КП / ПЗ — цены администратора (20270308, слепок схемы прода)', { skip: skipReason(), timeout: 600000 }, () => {
+  const PRICES = path.join(ROOT, 'supabase', 'migrations', '20270308_kp_estimate_prices.sql')
+  const PRICES_CHECK = path.join(ROOT, 'migration', 'backup', 'checks', '20270308.sql')
+  const PRICES_ROLLBACK = path.join(ROOT, 'migration', 'rollback', '20270308_kp_estimate_prices_rollback.sql')
+  let db
+  const sql = (text) => psqlAt(db.port, text)
+  const as = (uid, text) => psqlAt(db.port, `begin;
+    set local "request.jwt.claims" = '${JSON.stringify({ sub: uid, role: 'authenticated' })}';
+    set local role authenticated;
+    ${text};
+    commit;`)
+  const apply = (uid, doc, items) => JSON.parse(as(uid, `select public.kp_estimate_price_apply('${EST}', ${doc ? `'${JSON.stringify(doc)}'::jsonb` : 'null'}, '${JSON.stringify(items)}'::jsonb)`))
+
+  before(() => {
+    db = startSnapshot()
+    for (const m of appliedAfter()) psqlAt(db.port, null, { file: path.join(ROOT, 'supabase', 'migrations', m) })
+    sql(`
+      insert into public.roles (key, label, is_system) values ('economist', 'Экономист ОСП', true), ('engineer', 'Инженер ОСП', true)
+        on conflict (key) do nothing;
+      insert into public.role_permissions (role, section, can_view, can_edit) values ('engineer', 'objects', true, false)
+        on conflict (role, section) do update set can_view = true, can_edit = false;
+      insert into public.user_roles (user_id, role, is_approved, is_blocked, full_name, email, counterparty_id, object_ids) values
+        ('${U.economist}', 'economist', true, false, 'Экономова Е. Е.', 'e@example.invalid', null, '{}'),
+        ('${U.engineer}', 'engineer', true, false, 'Инженеров И. И.', 'i@example.invalid', null, '{}'),
+        ('${U.admin}', 'admin', true, false, 'Админов А. А.', 'a@example.invalid', null, '{}');
+      insert into public.objects (id, name, address, status) values ('${OBJ}', 'ЖК Пример', 'Москва', 'main_construction');`)
+    psqlAt(db.port, null, { file: MIGRATION })
+    psqlAt(db.port, null, { file: PRICES })
+    as(U.economist, draft(EST, 'К1'))
+    as(U.economist, rowsOf(EST))
+    as(U.economist, `select public.kp_estimate_activate('${EST}')`)
+  })
+  after(() => db?.stop())
+
+  it('проверка — все OK; повтор миграции безопасен', () => {
+    psqlAt(db.port, null, { file: PRICES })
+    const out = psqlAt(db.port, null, { file: PRICES_CHECK })
+    assert.doesNotMatch(out, /^FAIL/m, out)
+    assert.equal(out.split('\n').filter((l) => l.startsWith('OK ')).length, 6, out)
+  })
+
+  it('экономист — отказ функции и прямой записи; администратор — цена позиции и сумма раздела, с историей; читает «Объекты»', () => {
+    assert.throws(() => apply(U.economist, null, [{ row_id: R(2), unit_price: 6 }]), /kp_estimate_price_admin/)
+    assert.throws(() => as(U.economist, `insert into public.kp_estimate_prices (estimate_id, row_id, object_id, unit_price, source) values ('${EST}', '${R(2)}', '${OBJ}', 6, 'manual')`), /permission denied/)
+    assert.throws(() => as(U.admin, `insert into public.kp_estimate_prices (estimate_id, row_id, object_id, unit_price, source) values ('${EST}', '${R(2)}', '${OBJ}', 6, 'manual')`), /permission denied/)
+    const res = apply(U.admin, { title: 'ДС №4', stage: null, summary: { lines: 2 } }, [
+      { row_id: R(2), unit_materials: 2, unit_works: 4, doc_qty: 210, actual_qty: 210, actual_reason: 'По документу «ДС №4»' },
+      { row_id: R(1), total: 5000 },
+      { row_id: R(3), total: 1 },
+    ])
+    assert.equal(res.applied, 2)
+    assert.equal(res.volumes, 1)
+    assert.deepEqual(res.skipped, [R(3)], 'позиция с кол-вом — ценой за единицу, не суммой')
+    assert.equal(sql(`select unit_price || '|' || source || '|' || updated_by_name from public.kp_estimate_prices where row_id = '${R(2)}'`), '6|document|Админов А. А.')
+    assert.equal(sql(`select actual_qty || '|' || actual_reason from public.kp_estimate_marks where row_id = '${R(2)}'`), '210|По документу «ДС №4»')
+    assert.equal(sql(`select string_agg(action || ':' || coalesce(row_id::text, '-'), ',' order by id) from public.kp_estimate_log where entity = 'price'`),
+      `insert:${R(2)},insert:${R(1)},import:-`)
+    assert.equal(sql(`select summary ->> 'applied' from public.kp_estimate_price_docs`), '2')
+    assert.equal(as(U.engineer, `select count(*) from public.kp_estimate_prices`), '2', '«Объекты» — смотреть')
+    // Правка вручную с версией: устаревшая — конфликт, без записи.
+    const stale = apply(U.admin, null, [{ row_id: R(2), unit_price: 7, row_version: 0 }])
+    assert.deepEqual([stale.applied, stale.conflicts], [0, [R(2)]])
+    assert.equal(apply(U.admin, null, [{ row_id: R(2), unit_price: 7, row_version: 1 }]).applied, 1)
+  })
+
+  it('вернуть цену файла — только администратор; новая версия переносит цены и документы', () => {
+    assert.throws(() => as(U.economist, `select public.kp_estimate_price_reset('${EST}', array['${R(1)}']::uuid[])`), /kp_estimate_price_admin/)
+    assert.equal(as(U.admin, `select public.kp_estimate_price_reset('${EST}', array['${R(1)}']::uuid[])`), '1')
+    assert.equal(sql(`select count(*) from public.kp_estimate_log where entity = 'price' and action = 'delete'`), '1')
+    as(U.economist, draft(EST2, 'К1 v2'))
+    as(U.economist, rowsOf(EST2, 'Плита (новая)'))
+    const res = JSON.parse(as(U.economist, `select public.kp_estimate_activate('${EST2}')`))
+    assert.deepEqual([res.moved_prices, res.left_prices], [1, 0])
+    assert.equal(sql(`select row_id from public.kp_estimate_prices`), R(2, EST2))
+    assert.equal(sql(`select estimate_id from public.kp_estimate_price_docs`), EST2)
+  })
+
+  it('откат: права сняты, данные на месте', () => {
+    psqlAt(db.port, null, { file: PRICES_ROLLBACK })
+    assert.match(psqlAt(db.port, null, { file: PRICES_CHECK }), /^FAIL /m)
+    assert.throws(() => as(U.admin, 'select count(*) from public.kp_estimate_prices'), /permission denied/)
+    assert.equal(sql('select count(*) from public.kp_estimate_prices'), '1')
   })
 })
 

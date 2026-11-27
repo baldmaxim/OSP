@@ -2,20 +2,25 @@
 // файл сметы ПЗ отдельно (можно оба сразу, бросить в окно). До загрузки — сводка: строки, разделы, сверка формул и
 // итогов, коэффициенты; при замене действующей версии — сколько отметок и распределений перейдёт на новую.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { buildEstimateRows, detectEstimateWorkbook, masteringToAllocations, parseKpWorkbook, parsePzWorkbook } from '../../utils/kpEstimateImport'
+import { ESTIMATE_READ_OPTIONS, buildEstimateRows, detectEstimateWorkbook, masteringToAllocations, parseKpWorkbook, parsePzWorkbook } from '../../utils/kpEstimateImport'
 import { fmtMoney } from '../../utils/kpEstimate'
 import { insertAllocations, loadRows, uploadEstimate } from '../../services/kpEstimate'
 
 const isExcel = (f) => /\.(xlsx|xlsm|xls)$/i.test(f?.name || '')
+const NESTING_TEXT = {
+  subtotal: ', вложенность — по формулам SUBTOTAL',
+  codes: ', формул SUBTOTAL нет — вложенность по кодам',
+  outline: ', вложенность — по группировке строк файла',
+}
 
 async function readWorkbook(file) {
   const mod = await import('xlsx')
   const XLSX = mod.utils ? mod : mod.default
   const buf = await file.arrayBuffer()
-  return { XLSX, wb: XLSX.read(buf, { type: 'array', cellFormula: true }) }
+  return { XLSX, wb: XLSX.read(buf, { type: 'array', ...ESTIMATE_READ_OPTIONS }) }
 }
 
-export default function KpEstimateImportDialog({ objectId, current, currentRows, currentMarks, currentAllocs, onClose, onDone }) {
+export default function KpEstimateImportDialog({ objectId, current, currentRows, currentMarks, currentAllocs, currentPrices = null, onClose, onDone }) {
   const [files, setFiles] = useState({ kp: null, pz: null })
   const [parsed, setParsed] = useState({ kp: null, pz: null })
   const [reading, setReading] = useState(false)
@@ -79,11 +84,13 @@ export default function KpEstimateImportDialog({ objectId, current, currentRows,
     if (!built?.rows || !current) return null
     const keys = new Set(built.rows.map((r) => r.row_key))
     const byId = new Map((currentRows || []).map((r) => [r.id, r]))
-    let marks = 0; let marksLeft = 0; let allocs = 0; let allocsLeft = 0
+    let marks = 0; let marksLeft = 0; let allocs = 0; let allocsLeft = 0; let prices = 0; let pricesLeft = 0
     for (const m of currentMarks?.values?.() || []) (keys.has(byId.get(m.row_id)?.row_key) ? marks++ : marksLeft++)
     for (const list of currentAllocs?.values?.() || []) for (const a of list) (keys.has(byId.get(a.row_id)?.row_key) ? allocs++ : allocsLeft++)
-    return { marks, marksLeft, allocs, allocsLeft }
-  }, [built, current, currentRows, currentMarks, currentAllocs])
+    // Цены администратора (20270308) переходят так же: своя цена строки — на строку с тем же ключом.
+    for (const id of currentPrices?.keys?.() || []) (keys.has(byId.get(id)?.row_key) ? prices++ : pricesLeft++)
+    return { marks, marksLeft, allocs, allocsLeft, prices, pricesLeft }
+  }, [built, current, currentRows, currentMarks, currentAllocs, currentPrices])
 
   const upload = async () => {
     if (!built?.rows?.length) return
@@ -155,18 +162,21 @@ export default function KpEstimateImportDialog({ objectId, current, currentRows,
               <h4>{meta.title}</h4>
               <dl className="kpe-dl">
                 <dt>Строк</dt><dd>{built.rows.length.toLocaleString('ru-RU')}: разделов {kinds.section || 0}, групп {kinds.group || 0}, укрупнённых позиций {kinds.aggregate || 0}, позиций {(kinds.position || 0) + (kinds.adjust || 0)}</dd>
-                {parsed.kp && <><dt>КП</dt><dd>лист «{parsed.kp.sheetName}», итог {fmtMoney(fc?.totals?.total)} ₽{parsed.kp.hasSubtotals ? ', вложенность — по формулам SUBTOTAL' : ', формул SUBTOTAL нет — вложенность по кодам'}</dd></>}
-                {(parsed.pz || parsed.kp?.hasInlinePz) && <><dt>План затрат</dt><dd>{parsed.pz ? `лист «${parsed.pz.sheetName}», ` : 'столбцами строк КП, '}позиций с прямыми затратами {st.linked.toLocaleString('ru-RU')}{st.pzOnly ? `, только в ПЗ — ${st.pzOnly}` : ''}{meta.pz_file?.totals ? `; прямые ${fmtMoney(meta.pz_file.totals.direct)} ₽` : ''}</dd></>}
+                {parsed.kp && <><dt>КП</dt><dd>лист «{parsed.kp.sheetName}», итог {fmtMoney(fc?.totals?.total)} ₽{parsed.kp.fileTotals?.label ? ` — как «${parsed.kp.fileTotals.label}» в файле` : ''}{NESTING_TEXT[parsed.kp.nesting] || ''}</dd></>}
+                {(parsed.pz || parsed.kp?.hasInlinePz) && <><dt>План затрат</dt><dd>{parsed.pz ? `лист «${parsed.pz.sheetName}», ` : parsed.kp.resources ? `ресурсами под строками КП (${parsed.kp.resources.count.toLocaleString('ru-RU')}, без цены — ${parsed.kp.resources.unpriced.toLocaleString('ru-RU')}), ` : 'столбцами строк КП, '}позиций с прямыми затратами {st.linked.toLocaleString('ru-RU')}{st.pzOnly ? `, только в ПЗ — ${st.pzOnly}` : ''}{meta.pz_file?.totals ? `; прямые ${fmtMoney(meta.pz_file.totals.direct)} ₽` : ''}{fc?.totals?.direct !== undefined ? `; прямые (известная часть) ${fmtMoney(fc.totals.direct)} ₽` : ''}</dd></>}
                 {parsed.kp && !parsed.pz && !parsed.kp.hasInlinePz && <><dt>План затрат</dt><dd className="kpe-muted">в файле нет — столбец «Прямые затраты» будет пустым</dd></>}
                 <dt>Формулы</dt><dd>{fc?.issue_count ? <span className="kpe-over">расхождений: {fc.issue_count} — список в «Паспорте» после загрузки</span> : 'сверены: кол-во × цена, суммы групп и итог совпадают'}</dd>
                 {meta.vat && <><dt>НДС</dt><dd>{meta.vat}</dd></>}
-                {meta.coefficients?.length > 0 && <><dt>Коэффициенты</dt><dd>лист «Коэффициенты» сохранён ({meta.coefficients.length} строк)</dd></>}
+                {parsed.kp?.stages?.length > 0 && <><dt>Этапы договора</dt><dd>{parsed.kp.stages.map((st) => `${st.short}: ${fmtMoney(st.totals?.total)} ₽`).join('; ')} — в паспорт; цены этапа ставит администратор: режим «Цены» → «Цены по документу…»</dd></>}
+                {parsed.kp?.qtyByCustomer > 0 && <><dt>Объём</dt><dd>у {parsed.kp.qtyByCustomer} позиций «Кол-во ГП» пусто, сумма в файле посчитана от кол-ва заказчика — объём взят тот же</dd></>}
+                {meta.coefficients?.length > 0 && <><dt>Коэффициенты</dt><dd>{parsed.kp?.layout === 'tree' ? 'таблица из контрольных расчётов файла сохранена' : `лист «Коэффициенты» сохранён (${meta.coefficients.length} строк)`}</dd></>}
                 {built.mastering?.length > 0 && <><dt>Освоение</dt><dd>{built.mastering.length} списаний станут распределениями</dd></>}
               </dl>
               {current && transfer && (
                 <div className="kpe-note-box">
                   Действующая версия «{current.title}» станет прежней (её можно открыть). На новую перейдут отметки: {transfer.marks}, распределения: {transfer.allocs}
-                  {(transfer.marksLeft || transfer.allocsLeft) ? <> — не найдётся строк для {transfer.marksLeft} отметок и {transfer.allocsLeft} распределений, они останутся у прежней версии</> : null}.
+                  {transfer.prices || transfer.pricesLeft ? <>, изменённые цены: {transfer.prices} (новая цена строки останется в силе — при необходимости верните цену файла в режиме «Цены»)</> : null}
+                  {(transfer.marksLeft || transfer.allocsLeft || transfer.pricesLeft) ? <> — не найдётся строк для {transfer.marksLeft} отметок, {transfer.allocsLeft} распределений{transfer.pricesLeft ? ` и ${transfer.pricesLeft} цен` : ''}, они останутся у прежней версии</> : null}.
                 </div>
               )}
             </div>

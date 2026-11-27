@@ -4,11 +4,13 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  darkShare, eraseRulings, estimateSkew, findRulings, looksSideways, ocrChecked, ocrItems, ocrUnit, otsuThreshold, rulingsToPage,
+  cleanNumber, darkShare, eraseRulings, estimateSkew, findRulings, lanczosResize, looksSideways, numberBox, numberish, ocrChecked, ocrItems, ocrName,
+  ocrUnit, otsuThreshold, pageImageInfo, reconcileWithTotal, repairBySum, rulingsToPage,
 } from '../../src/utils/supplierOcrPage.js'
+import { classifyHeader } from '../../src/utils/supplierDoc.js'
 import { parseSupplierPdfPages } from '../../src/utils/supplierDocRead.js'
 import { offerNotesOfDoc } from '../../src/utils/supplyDocPrice.js'
-import { readOffer, READER_VERSION } from '../../src/utils/supplyOffers.js'
+import { carryOfferMarks, offerNeedsRefresh, readOffer, READER_VERSION } from '../../src/utils/supplyOffers.js'
 
 // Картинка в серых тонах: фон 250 и нарисованные тёмные прямоугольники.
 function canvas(w, h) {
@@ -201,13 +203,16 @@ describe('скан: разбор строк и проверка цифр', () =>
     assert.deepEqual(r.total, { ok: true, read: 24547.54, doc: 24547.54 })
   })
 
-  it('цифра прочитана неверно: цена × кол-во ≠ сумма — строка помечена, итог не сошёлся', () => {
-    const wrongPrice = read({ price2: '390' }).items[0]
-    assert.equal(wrongPrice.price, 60390)
-    assert.equal(wrongPrice.sumOff, true)
-    assert.equal(wrongPrice.unsure, true)
+  it('одна неверная цифра исправляется по сумме строки; две — строка помечена, итог не сошёлся', () => {
+    // 27.11.2026: «60 390» при количестве 0,026 и сумме 1 583,14 — единственная правка одной цифры, при которой сходится до копеек.
+    const fixed = read({ price2: '390' }).items[0]
+    assert.equal(fixed.price, 60890)
+    assert.equal(fixed.sumOff, false)
+    assert.equal(fixed.unsure, false)
+    assert.equal(fixed.ocrFixed, true)
     const r = read({ sum1: '983,14' })
-    assert.equal(r.items[0].sumOff, true)
+    assert.equal(r.items[0].sumOff, true, 'сумма с двумя ошибками одной правкой не исправляется')
+    assert.equal(r.items[0].unsure, true)
     assert.equal(r.total.ok, false)
   })
 
@@ -238,5 +243,115 @@ describe('скан: разбор строк и проверка цифр', () =>
     assert.equal(offer.rv, READER_VERSION)
     assert.equal(offer.lines[0].unsure, undefined)
     assert.equal(offer.lines[1].unsure, true)
+  })
+})
+
+// 27.11.2026, тендер № 1157: КП «Металлсервиса» — страница-картинка 90 dpi. Числа и наименования — как их читал распознаватель.
+describe('скан мелкой картинкой: цифры, итог, наименования', () => {
+  it('одна ошибка в строке: потерянная цифра, лишняя цифра, потерянная точка, другая цифра — исправляются по сумме', () => {
+    assert.deepEqual(repairBySum(1.392, 4990, 104386.08), { qty: 1.392, price: 74990, sum: 104386.08 }, '«74990» без «7»')
+    assert.deepEqual(repairBySum(2.297, 130090, 2986816.73), { qty: 2.297, price: 130090, sum: 298816.73 }, 'лишняя «6» в сумме')
+    assert.deepEqual(repairBySum(35.573, 62090, 220872757), { qty: 35.573, price: 62090, sum: 2208727.57 }, 'сумма без точки')
+    assert.deepEqual(repairBySum(2.297, 130080, 298816.73), { qty: 2.297, price: 130090, sum: 298816.73 }, '«8» вместо «9»: допуск 0,2 % такую ошибку пропускал')
+    assert.equal(repairBySum(1, 100, 350), null, 'нет единственной правки — не исправляем')
+  })
+
+  it('сверка строки — до копеек: неверная цифра десятков не проходит как «сошлось»', () => {
+    const [it] = ocrChecked([{ name: 'трубы', unit: 'т', qty: 2.297, price: 130080, sum: 298816.73 }])
+    assert.equal(it.price, 130090)
+    assert.equal(it.ocrFixed, true)
+    const [own] = ocrChecked([{ name: 'Труба', price: 100, qty: 2, sum: 244, unit: 'м' }])
+    assert.equal(own.unsure, false, 'НДС сверху — по-прежнему сходится')
+  })
+
+  it('две ошибки в строке: сумма исправляется по итогу документа, затем цена — по сумме', () => {
+    const items = ocrChecked([
+      { name: 'а', unit: 'т', qty: 1, price: 1000, sum: 1000 },
+      { name: 'б', unit: 'т', qty: 8.181, price: 108580, sum: 688374.79 },
+    ])
+    assert.equal(items[1].sumOff, true)
+    const done = reconcileWithTotal(items, 889374.79)
+    assert.deepEqual([done[1].qty, done[1].price, done[1].sum, done[1].sumOff, done[1].unsure], [8.181, 108590, 888374.79, false, false])
+    assert.equal(reconcileWithTotal(items, 5000), items, 'итог не близок — ничего не трогаем')
+  })
+
+  it('наименование со скана: латиница в ГОСТ и ТУ, «з» вместо «э», «an.» вместо «дл.», «З» и «Б» вместо цифр', () => {
+    assert.equal(ocrName('трубы злектросварные 108x4 ГОСТ an. 12000 MOCT10705-80,MOCT10704-91'), 'трубы электросварные 108x4 ГОСТ дл.12000 ГОСТ10705-80,ГОСТ10704-91')
+    assert.equal(ocrName('швеллер ГОСТ 8240/TY СтЗпс/сп5 16П дл 12м'), 'швеллер ГОСТ 8240/ТУ Ст3пс/сп5 16П дл 12м')
+    assert.equal(ocrName('уголок неравнополочный ГОСТ 8510 СтЭпс/сп5 Б3х40х5'), 'уголок неравнополочный ГОСТ 8510 Ст3пс/сп5 63х40х5')
+    assert.equal(ocrName('вод/газ 25x2.8 оцинк ДУ дл.Б000 ГОСТ3262-75'), 'вод/газ 25x2.8 оцинк ДУ дл.6000 ГОСТ3262-75')
+    assert.equal(ocrName('трубы оцинк 89%3.5'), 'трубы оцинк 89х3.5')
+    assert.equal(ocrName('Блок Б12 ГОСТ'), 'Блок Б12 ГОСТ', 'верное наименование не меняется')
+    assert.equal(ocrName('Кабель MOCTRON'), 'Кабель MOCTRON')
+  })
+
+  it('шапка латиницей («Kon-Bo») — колонка количества; английская шапка — как была', () => {
+    assert.deepEqual(classifyHeader('Kon-Bo'), { field: 'qty' })
+    assert.equal(classifyHeader('Qty'), null)
+    assert.equal(classifyHeader('Ед.из').field, 'unit')
+  })
+
+  it('второе чтение чисел: что похоже на число и где его перечитать', () => {
+    assert.equal(numberish('#15622.70'), true)
+    assert.equal(numberish('g86374.79'), true)
+    assert.equal(numberish('ГОСТ3262-75'), false)
+    assert.equal(numberish('7'), false, 'одна цифра — номер строки')
+    assert.equal(cleanNumber('2208727 57'), '220872757')
+    assert.equal(cleanNumber('74990.00'), '74990.00')
+    assert.equal(cleanNumber('7#990'), null)
+    // Слово «26374.54» в ячейке суммы: рамка — от соседа слева (в другой ячейке, за линией) до линии справа.
+    const words = [{ text: '1.392', bbox: { x0: 300, y0: 100, x1: 360, y1: 130 } }, { text: '26374.54', bbox: { x0: 520, y0: 100, x1: 620, y1: 130 } }]
+    const box = numberBox(words, 1, [400, 640], 2000, 3000)
+    assert.ok(box.x0 > 400 && box.x0 < 520, 'расширено влево, но не за линию ячейки')
+    assert.ok(box.x1 <= 640 && box.x1 >= 620)
+    assert.ok(box.y0 < 100 && box.y1 > 130)
+  })
+
+  it('картинка страницы и её разрешение — по командам pdf.js; увеличение Lanczos сохраняет чёрное и белое', () => {
+    const OPS = { save: 1, restore: 2, transform: 3, paintImageXObject: 4, paintInlineImageXObject: 5, paintFormXObjectBegin: 6, paintFormXObjectEnd: 7 }
+    const info = pageImageInfo([1, 3, 4, 2], [null, [699, 0, 0, 849, 0, 0], ['img_1', 877, 1077], null], OPS, 699, 849)
+    assert.ok(Math.abs(info.sx * 72 - 90.3) < 0.1, 'около 90 dpi по ширине')
+    assert.equal(info.cover, 1)
+    assert.equal(pageImageInfo([], [], OPS, 595, 842), null)
+    const g = new Uint8Array(4 * 4).fill(255)
+    g[5] = 0; g[6] = 0; g[9] = 0; g[10] = 0
+    const big = lanczosResize(g, 4, 4, 16, 16)
+    assert.equal(big.length, 256)
+    assert.ok(big[6 * 16 + 6] < 60, 'середина чёрного квадрата — тёмная')
+    assert.ok(big[0] > 200, 'угол — светлый')
+  })
+})
+
+// Скан, прочитанный прежней версией, перечитывается новой — с выбором человека (27.11.2026: в КП «Металлсервиса» тендера № 1157 уже
+// 13 строк сопоставлены вручную).
+describe('скан прежней версии: перечитать, выбор человека перенести', () => {
+  const old = (lines, extra = {}) => ({ at: null, source: 'pdf', vat: null, delivery: 1, failed: null, date: null, currency: null, total: null, ocr: true, rv: 3, hidden: ['x|т'], lines, ...extra })
+
+  it('скан со строками без сверки — перечитать, даже с выбором человека; без строк без сверки или не скан — по-старому', () => {
+    assert.equal(offerNeedsRefresh(old([{ name: 'а', price: 1, unsure: true, k: 'key' }])), true)
+    assert.equal(offerNeedsRefresh(old([{ name: 'а', price: 1 }])), false, 'все строки сверены')
+    assert.equal(offerNeedsRefresh(old([{ name: 'а', price: 1, unsure: true, k: 'key' }], { ocr: false })), false, 'не скан, есть выбор человека')
+    assert.equal(offerNeedsRefresh(old([{ name: 'а', price: 1, unsure: true }], { rv: READER_VERSION })), false, 'уже новой версией')
+  })
+
+  it('выбор переносится по коду поставщика, по наименованию, по месту в таблице; не найти — файл не трогаем', () => {
+    const before = old([
+      { name: 'швеллер ГОСТ 8240/TY СтЗпс 160', code: '1266425', price: 4990, k: 'шв16п' },
+      { name: 'лист рифленый 5х1500х3000', code: null, price: 62790, no: ['лист10'] },
+      { name: 'полоса 4x40', code: null, price: 72490 },
+    ])
+    const fresh = { ...old([
+      { name: 'швеллер ГОСТ 8240/ТУ Ст3пс 16П', code: '1266425', price: 74990 },
+      { name: 'лист рифленый 5х1500х3000', code: null, price: 62790 },
+      { name: 'полоса 4х40', code: null, price: 72490 },
+    ]), rv: READER_VERSION, hidden: [] }
+    const got = carryOfferMarks(fresh, before)
+    assert.equal(got.lines[0].k, 'шв16п', 'по коду')
+    assert.equal(got.lines[0].price, 74990, 'цена — нового чтения')
+    assert.deepEqual(got.lines[1].no, ['лист10'], 'по наименованию')
+    assert.deepEqual(got.hidden, ['x|т'], 'убранные из окна позиции — как были')
+    // Строка с выбором, которую не найти (ни кода, ни того же наименования, строк другое число), — выбор дороже нового чтения.
+    const lost = carryOfferMarks({ ...fresh, lines: fresh.lines.slice(1) }, old([{ name: 'другое', price: 1, k: 'key' }, { name: 'ещё', price: 1 }, { name: 'и ещё', price: 1 }]))
+    assert.equal(lost, null)
   })
 })

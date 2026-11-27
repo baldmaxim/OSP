@@ -131,3 +131,10 @@ export const IconFileCheck = ({ size }) => (
     <path d="m9 14.5 2 2 4-4" />
   </AiSvg>
 )
+export const IconPlus = ({ size }) => (
+  <AiSvg size={size}><path d="M12 5v14" /><path d="M5 12h14" /></AiSvg>
+)
+// Раскрыть/свернуть вложенные строки: повернуть на 90° (CSS) — «развёрнуто».
+export const IconChevronRight = ({ size }) => (
+  <AiSvg size={size}><path d="m9 6 6 6-6 6" /></AiSvg>
+)

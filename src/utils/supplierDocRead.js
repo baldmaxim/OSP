@@ -14,7 +14,7 @@ import {
   cellText, currencyFromText, detectGridHeader, detectLinesHeader, docDateFromText, gridRows, gridTotals, itemsFromRows, linesFromWords, pdfRows,
   rulingsFromOps, totalsCheck, vatFromText, wordsFromTextItems,
 } from './supplierDoc.js'
-import { ocrChecked } from './supplierOcrPage.js'
+import { ocrChecked, reconcileWithTotal } from './supplierOcrPage.js'
 
 export const SUPPLIER_DOC_ACCEPT = '.xlsx,.xlsm,.xlsb,.xls,.ods,.csv,.pdf,.jpg,.jpeg,.png,.webp'
 export const isPdfFile = (name) => /\.pdf$/i.test(String(name || ''))
@@ -219,7 +219,12 @@ async function readScan(bytes, fileName, kind, onProgress) {
   try {
     const r = parseSupplierPdfPages(pages)
     if (r.error) return r
-    return { ...r, kind, ocr: true, items: ocrChecked(r.items), date: r.date || docDateFromText(fileName) }
+    // Цифры со скана: сверка строки (и починка одной цифры), затем — итог документа (вторая ошибка в строке, reconcileWithTotal).
+    const items = reconcileWithTotal(ocrChecked(r.items), r.total?.doc)
+    // Итог — по исправленным цифрам («220872757» без точки давал итог в 231 млн), только если что-то исправлено: иначе — сверка разбора
+    // (она сверяет со всеми итогами документа, а здесь известен только наибольший).
+    const total = r.total && items.some((it) => it.ocrFixed) ? (totalsCheck(items, [r.total.doc]) || r.total) : r.total
+    return { ...r, kind, ocr: true, items, total, date: r.date || docDateFromText(fileName) }
   } catch (e) {
     return { error: 'broken', message: String(e?.message || e) }
   }

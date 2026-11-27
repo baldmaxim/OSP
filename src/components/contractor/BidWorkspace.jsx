@@ -29,7 +29,7 @@ const BidSupplyDocViewer = lazy(() => import('./BidSupplyDocViewer'))
 // Расценка ВОР подрядчиком в кабинете (миграции 20261102, 20270301). Решение пользователя 24.11.2026: расценка на сайте — основной
 // путь; как только у организации есть доступ к тендеру (участник или заявка), сразу видны ведомости ВОР и их позиции с ценами.
 // Файл — дополнительно: «Загрузить файл с ценами» расценивает всё разом. Скачать (просьба пользователя 25.11.2026): у ведомости — файл
-// отдела и он же с вашими ценами, над ведомостями — все ВОР одним ZIP, каждый своим файлом, тоже с ценами (bidVorArchive.js): цены и
+// отдела и он же с вашими ценами, в строке ИТОГО — все ВОР одним ZIP, каждый своим файлом, тоже с ценами (bidVorArchive.js): цены и
 // анкета вписываются в исходную книгу отдела, оформление как на сайте (bidVorFill.js). Прежняя выгрузка «всё одной книгой» убрана.
 // КП подрядчик фиксирует письмом на почту отдела (ссылка в сводке).
 //
@@ -52,10 +52,11 @@ const BidSupplyDocViewer = lazy(() => import('./BidSupplyDocViewer'))
 //
 // canEdit — тендер открыт и у организации есть доступ (участник или заявка не отклонена): иначе только просмотр.
 //
-// Порядок страницы (вторая просьба пользователя 25.11.2026): сводка ВОР (итог по всем ВОР столбиком со ставкой НДС, «КП нужно
-// зафиксировать письмом», плитки ведомостей), затем блок расценки — «Загрузить файл с ценами», «Мои прошлые цены», цены снабжения
-// («взять цены» — у таблицы, к которой они относятся), что сделала загрузка цен из файла (BidImportLog: вернуть прежние / заменить),
-// вкладки и таблица позиций.
+// Порядок страницы (27.11.2026, просьба пользователя «слишком много информации — сделать такой же простой вид, как в „Сравнении КП“»):
+// сводка ВОР одной таблицей (строка на ведомость, ИТОГО и ставка НДС внизу, скачать — значками слева, «КП — письмом» одной строкой),
+// затем одна строка — вкладки капсулами, как «Исходный КП / Материалы / Работы» в «Сравнении КП», справа сохранение, «Загрузить файл
+// с ценами» и «Мои прошлые цены»; цены снабжения — только на вкладке «Материалы» (они только о материалах); что сделала загрузка цен из
+// файла (BidImportLog: вернуть прежние / заменить); таблица позиций.
 
 const SAVE_DELAY_MS = 600
 
@@ -731,7 +732,7 @@ export default function BidWorkspace({
       if (await vorListChanged()) { setVorError(LIST_CHANGED); return }
       const [archive, bytes] = await Promise.all([import('../../utils/bidVorArchive'), vorBytes(f)])
       const res = archive.pricedVor(f, bytes, fillOptions(), counterpartyName)
-      if (res.error) { setVorError(`В «${fileTitle(f.file_name)}» цены не вписались: ${res.text}. Скачайте файл отдела кнопкой «Исходный ВОР».`); return }
+      if (res.error) { setVorError(`В «${fileTitle(f.file_name)}» цены не вписались: ${res.text}. Скачайте файл отдела значком «Исходный ВОР» (файл со стрелкой) слева в строке.`); return }
       saveAs(new Blob([res.bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), res.name)
     } catch (e) {
       setVorError(`«${fileTitle(f.file_name)}» не скачался: ${e.message || e}`)
@@ -756,20 +757,11 @@ export default function BidWorkspace({
   ]
   const shownVors = view.vors.filter((v) => !v.held)
   const allTotal = totals.total.total
-  // Ставка НДС — в итоге по всем ВОР (сводка); не указана — кнопка ведёт в анкету.
-  let vatSlot = null
+  // Ставка НДС — строкой под ИТОГО сводки; не указана — кнопка ведёт в анкету.
+  let vatLine = null
   if (formFields && vatField(formFields)) {
-    vatSlot = needVat ? (
-      <button type="button" className="bid-sum-cell bid-sum-warn bid-vs-vat" onClick={() => setTab('form')}>
-        <span className="bid-sum-label">Ставка НДС</span>
-        <span className="bid-sum-value">не указана — выбрать</span>
-      </button>
-    ) : (
-      <div className="bid-sum-cell bid-vs-vat">
-        <span className="bid-sum-label">НДС: {vatLabel(vat)}</span>
-        <span className="bid-sum-value">{vat.exempt ? '—' : `в т. ч. ${formatAmount(vatIncluded(allTotal, vat))} ₽`}</span>
-      </div>
-    )
+    vatLine = needVat ? { missing: true }
+      : { label: vatLabel(vat), value: vat.exempt ? '—' : `в т. ч. ${formatAmount(vatIncluded(allTotal, vat))} ₽` }
   }
 
   return (
@@ -793,7 +785,8 @@ export default function BidWorkspace({
 
       {view.vors.length > 0 && (
         <BidVorSummary
-          vatSlot={vatSlot}
+          vat={vatLine}
+          onPickVat={() => setTab('form')}
           rows={totals.rows}
           total={totals.total}
           selected={vorId}
@@ -821,9 +814,20 @@ export default function BidWorkspace({
       )}
 
       <section className="bid-pricing" aria-label="Расценка позиций">
-        <div className="bid-summary">
-          <h4 className="bid-vs-title">Расценка позиций</h4>
-          <div className="bid-summary-actions">
+        <div className="bid-toolbar">
+          <nav className="bid-tabs" role="tablist" aria-label="Расценка позиций">
+            {tabs.map((t) => (
+              <button key={t.key} type="button" role="tab" aria-selected={tab === t.key}
+                className={`bid-tab${tab === t.key ? ' is-active' : ''}`} onClick={() => setTab(t.key)}>
+                {t.label}
+                {t.count != null && <span className="bid-tab-count">{t.count}</span>}
+                {t.missing > 0 && <span className="bid-tab-missing" title={`Без цены: ${t.missing}`}>без цены {t.missing}</span>}
+                {t.warn && <span className="bid-tab-warn" title="Не указана ставка НДС">!</span>}
+              </button>
+            ))}
+          </nav>
+          <div className="bid-toolbar-side">
+            <SaveLine save={save} canEdit={canEdit} preview={preview} ratesState={ratesState} onRetry={() => flushRef.current()} onReload={loadRates} />
             {editable && (
               <button type="button" className="cab-btn" onClick={() => setImportOpen(true)} disabled={!view.positions.length}
                 title="Свои ВОР с ценами, прайс, КП или счёт — можно несколько файлов сразу; цены встанут к похожим позициям, ваши цены без вашего выбора не заменятся">
@@ -838,39 +842,28 @@ export default function BidWorkspace({
           </div>
         </div>
 
-        <SaveLine save={save} canEdit={canEdit} preview={preview} ratesState={ratesState} onRetry={() => flushRef.current()} onReload={loadRates} />
-
-        <BidSupplyBar
-          access={supply.access}
-          canEdit={editable}
-          withPrice={supplyStats.withPrice}
-          missing={supplyStats.missing}
-          differ={supplyStats.differ}
-          withDocs={supplyStats.docs}
-          busy={supply.busy}
-          message={supply.message}
-          error={supply.error}
-          onRequest={askSupply}
-          onRefresh={loadSupply}
-          onTakeMissing={takeMissing}
-          onTakeAll={takeAll}
-        />
+        {/* Цены снабжения — о материалах; на других вкладках — только итог действия (например, возврат цены снабжения из журнала загрузки). */}
+        {(tab === 'material' || supply.error || supply.message) && (
+          <BidSupplyBar
+            access={supply.access}
+            canEdit={editable}
+            withPrice={supplyStats.withPrice}
+            missing={supplyStats.missing}
+            differ={supplyStats.differ}
+            withDocs={supplyStats.docs}
+            busy={supply.busy}
+            message={supply.message}
+            error={supply.error}
+            onRequest={askSupply}
+            onRefresh={loadSupply}
+            onTakeMissing={takeMissing}
+            onTakeAll={takeAll}
+          />
+        )}
 
         {importLog && (
           <BidImportLog log={importLog} rates={rates} canEdit={editable} busy={supply.busy} onRestore={restoreImport} onHide={() => saveImportLog(null)} />
         )}
-
-        <nav className="bid-tabs" role="tablist">
-          {tabs.map((t) => (
-            <button key={t.key} type="button" role="tab" aria-selected={tab === t.key}
-              className={`bid-tab${tab === t.key ? ' is-active' : ''}`} onClick={() => setTab(t.key)}>
-              {t.label}
-              {t.count != null && <span className="bid-tab-count">{t.count}</span>}
-              {t.missing > 0 && <span className="bid-tab-missing" title={`Без цены: ${t.missing}`}>без цены {t.missing}</span>}
-              {t.warn && <span className="bid-tab-warn" title="Не указана ставка НДС">!</span>}
-            </button>
-          ))}
-        </nav>
 
         {tab === 'form' && (
           <BidFormPanel

@@ -87,7 +87,7 @@ export function PassportDialog({ estimate, onClose }) {
             <table className="kpe-plain">
               <thead><tr><th>Строка файла</th><th>Код</th><th>Что</th><th>По формуле</th><th>В файле</th></tr></thead>
               <tbody>{(fc.issues || []).map((x, i) => (
-                <tr key={i}><td>{x.row ?? '—'}</td><td>{x.code}</td><td>{{ materials: 'материалы', works: 'работы', total: 'итог' }[x.key] || x.key}</td><td>{fmtMoney(x.expected)}</td><td>{fmtMoney(x.actual)}</td></tr>
+                <tr key={i}><td>{x.row ?? '—'}</td><td>{x.code}</td><td>{{ materials: 'материалы', works: 'работы', total: 'итог', direct: 'прямые затраты' }[x.key] || x.key}</td><td>{fmtMoney(x.expected)}</td><td>{fmtMoney(x.actual)}</td></tr>
               ))}</tbody>
             </table>
           </>

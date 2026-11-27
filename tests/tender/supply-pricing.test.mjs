@@ -1280,9 +1280,11 @@ describe('Расценка снабжением: таблица', { skip: !launc
       await manualAll.uncheck()
       assert.equal(await applyBox(iso).isChecked(), false)
       await applyBox(iso).check()
-      // Строки, которым нет позиции, — свёрнуты внизу, не в таблице.
+      // Строки, которым нет позиции, — не в таблице, а кнопкой в шапке окна (подсвечена, пока такие строки есть).
       assert.equal(await pickRow(docs, 'Болт М12х80').count(), 0)
-      await docs.getByText('Строки счетов без позиции ВОР: 1').waitFor()
+      const unplacedBtn = docs.getByRole('button', { name: 'Строки счетов без позиции ВОР: 1' })
+      await unplacedBtn.waitFor()
+      assert.match(await unplacedBtn.getAttribute('class'), /is-attn/)
 
       await docs.getByRole('button', { name: 'Применить цены: 3' }).click()
       await docs.waitFor({ state: 'detached', timeout: 30000 })
@@ -1533,10 +1535,19 @@ describe('Расценка снабжением: таблица', { skip: !launc
       await pipe.getByRole('searchbox', { name: `Найти строку счёта для «${TRUBA}»` }).waitFor()
       await pipe.getByRole('button', { name: 'нет в счетах — не предлагать эту строку' }).click()
       await pipe.waitFor({ state: 'detached' })
-      await docs.getByText('Строки счетов без позиции ВОР: 2').click()
-      // Болт — хомуту, найденному поиском среди всех позиций: строка появляется и отмечена.
-      await docs.getByRole('searchbox', { name: 'Найти позицию ВОР для «Болт М12х80»' }).fill('хомут')
-      await docs.locator('.sp-td-unplaced .sp-td-opt', { hasText: 'Хомут монтажный' }).click()
+      await docs.getByRole('button', { name: 'Строки счетов без позиции ВОР: 2' }).click()
+      // Своё окно, как «Документы» (27.11.2026). Болт — хомуту, найденному поиском среди всех позиций.
+      const unplaced = page.getByRole('dialog', { name: 'Строки счетов без позиции ВОР' })
+      await unplaced.getByRole('searchbox', { name: 'Найти позицию ВОР для «Болт М12х80»' }).fill('хомут')
+      await unplaced.locator('.sp-un-found .sp-td-opt', { hasText: 'Хомут монтажный' }).click()
+      // Окно само не закрывается: строка остаётся в нём с отметкой «сопоставлено» и «отменить», вторая строка — на месте.
+      await unplaced.getByText(/Сопоставлено: Хомут монтажный/).waitFor()
+      assert.equal(await unplaced.getByRole('button', { name: 'отменить' }).count(), 1)
+      assert.equal(await unplaced.getByRole('searchbox', { name: /^Найти позицию ВОР для «Труба медная 12,7/ }).count(), 1)
+      await page.keyboard.press('Escape')
+      await unplaced.waitFor({ state: 'detached' })
+      assert.equal(await docs.isVisible(), true, 'Escape закрыл только окно строк без позиции')
+      // Строка появляется в таблице окна и отмечена.
       const xomutRow = pickRow(docs, 'Хомут монтажный')
       await xomutRow.waitFor()
       assert.match(await xomutRow.innerText(), /Болт М12х80/)

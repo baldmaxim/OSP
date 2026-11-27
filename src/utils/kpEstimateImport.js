@@ -13,11 +13,31 @@
 //     и лист «Смета», или лист КП, у которого рядом со столбцами КП — прямые затраты («Прямые затраты», «Прямые:
 //     основные материалы» …): тогда план затрат берётся из той же строки.
 //
+//   • КП с ресурсами ПЗ одним листом (26.11.2026, «Алия — КП до перекидок после ДС1–8», лист «КП до перекидок») — те же
+//     строки КП (раздел, подраздел, работа), но под каждой работой — её ресурсы ПЗ (мат / суб-мат / раб / суб-раб,
+//     добавки ДС «Материалы» / «Работы»); вид строки — столбец «Тип строки / затрат». Вложенность — группировка строк
+//     Excel (кнопки слева), формулы SUBTOTAL там многодиапазонные. Ресурсы строками сметы не становятся: их сумма —
+//     прямые затраты работы (основные / вспомогательные материалы по «Типу материала», работы). Над деревом — итоги
+//     файла (в паспорт), под деревом — «Контрольные расчёты» (оттуда берутся только коэффициенты): дерево кончается на
+//     первой строке без типа.
+//     Та же раскладка с другими подписями (27.11.2026, «King_Sons_КП_до_перекидок_единый_ДС1-14»): строки КП — «Раздел» /
+//     «Подраздел» / «Позиция», прямые затраты — «ПЗ · материалы / работы / всего», итоги файла — над шапкой.
+//
+//   • КП с этапами договора (27.11.2026, «Событие_6_2_КП_до_перекидок,_ДГП,_Допники», лист «Комм. затраты») — номера
+//     позиции нет, код раздела у каждой строки; справа — те же суммы по этапам («ДГП 12.01.2026 Материалы, руб.», «ДС №1 …»).
+//     Вложенность — SUBTOTAL материалов и работ (итог строки — SUM(материалы:работы)). Этапы в строки сметы не идут: их итоги —
+//     в паспорт, цены этапа ставит администратор окном «Цены по документу» (kpEstimatePrices.js).
+//
 // Результат — одна таблица строк: строка КП со своими данными ПЗ (kp / pz). Формулы файла сверяются при разборе
 // (formulaCheck), коэффициенты и паспорт — как в файле (meta). Модуль чистый: XLSX передаётся снаружи (в браузере
 // грузится лениво), тесты — tests/tender/kp-estimate.test.mjs.
 
-export const KP_ESTIMATE_PARSER_VERSION = 1
+export const KP_ESTIMATE_PARSER_VERSION = 2
+
+// Как читать книгу (окно загрузки и тесты — одинаково): формулы — для вложенности по SUBTOTAL и сверки, cellStyles —
+// ради уровней группировки строк (без него SheetJS не читает ws['!rows'], и дерево листа с ресурсами стало бы плоским).
+// Передавать копией ({ ...ESTIMATE_READ_OPTIONS }): XLSX.read дописывает в объект параметров свои поля (type).
+export const ESTIMATE_READ_OPTIONS = { cellFormula: true, cellStyles: true }
 
 // ── Мелочи ──────────────────────────────────────────────────────────────────
 const norm = (s) => String(s ?? '').toLowerCase().replace(/ё/g, 'е').replace(/[\s\u00a0]+/g, ' ').trim()
@@ -70,10 +90,19 @@ export const fitRowKey = (key) => (key.length <= ROW_KEY_MAX ? key : `${key.slic
 const close = (a, b) => Math.abs((a || 0) - (b || 0)) <= Math.max(0.011, Math.abs(b || 0) * 1e-9)
 
 // ── Чтение листа ────────────────────────────────────────────────────────────
-// Ячейки листа построчно: { r (номер строки Excel, с 1), cells: [{ v, f }] }. Пустые строки пропускаются.
+// Ячейки листа построчно: { r (номер строки Excel, с 1), level (уровень группировки), cells: [{ v, f }] }. Пустые
+// строки пропускаются. Прочитанный лист запоминается: книгу смотрят определение вида, разбор КП и разбор ПЗ.
+const sheetCache = new WeakMap()
 function sheetRows(XLSX, ws, maxCols = 40) {
   if (!ws || !ws['!ref']) return []
+  let byCols = sheetCache.get(ws)
+  if (!byCols) { byCols = new Map(); sheetCache.set(ws, byCols) }
+  if (!byCols.has(maxCols)) byCols.set(maxCols, readSheetRows(XLSX, ws, maxCols))
+  return byCols.get(maxCols)
+}
+function readSheetRows(XLSX, ws, maxCols) {
   const range = XLSX.utils.decode_range(ws['!ref'])
+  const props = ws['!rows'] || []
   const out = []
   const lastC = Math.min(range.e.c, maxCols - 1)
   for (let r = range.s.r; r <= range.e.r; r++) {
@@ -86,7 +115,7 @@ function sheetRows(XLSX, ws, maxCols = 40) {
       if (v !== null && v !== '') any = true
       cells.push({ v, f: cell.f || null })
     }
-    if (any) out.push({ r: r + 1, cells })
+    if (any) out.push({ r: r + 1, level: props[r]?.level || 0, cells })
   }
   return out
 }
@@ -94,7 +123,9 @@ function sheetRows(XLSX, ws, maxCols = 40) {
 const val = (row, i) => (i === undefined || i < 0 ? null : row.cells[i]?.v ?? null)
 const formula = (row, i) => (i === undefined || i < 0 ? null : row.cells[i]?.f ?? null)
 
-// Строка шапки: первая из первых 15, где нашлись все обязательные столбцы. map — { ключ: [подписи] }.
+// Строка шапки: первая из первых 15, где нашлись все обязательные столбцы. map — { ключ: [подписи] }; подпись —
+// точный текст или выражение (подпись с датой или номером ДС).
+const labelHit = (h, l) => (l instanceof RegExp ? l.test(h) : h === l)
 function findHeader(rows, map, required) {
   for (const row of rows.slice(0, 15)) {
     const cols = {}
@@ -102,7 +133,7 @@ function findHeader(rows, map, required) {
       const h = norm(cell?.v)
       if (!h) return
       for (const [key, labels] of Object.entries(map)) {
-        if (cols[key] === undefined && labels.some((l) => h === l)) cols[key] = i
+        if (cols[key] === undefined && labels.some((l) => labelHit(h, l))) cols[key] = i
       }
     })
     if (required.every((k) => cols[k] !== undefined)) return { headerRow: row.r, cols }
@@ -138,11 +169,121 @@ const KP_COLUMNS = {
 const KP_REQUIRED = ['code', 'pos', 'name', 'unit', 'total']
 
 const SUBTOTAL_RE = /SUBTOTAL\(\s*9\s*,\s*\$?[A-Z]+\$?(\d+)\s*:\s*\$?[A-Z]+\$?(\d+)\s*\)/i
+// Диапазон SUBTOTAL строки — в итоге, материалах или работах: у «События 6.2» итог строки — SUM(материалы:работы), а SUBTOTAL
+// стоит у материалов и работ (без этого вложенность молча собиралась бы по кодам).
+function subtotalOf(row, c) {
+  for (const key of ['total', 'materials', 'works']) {
+    const m = SUBTOTAL_RE.exec(formula(row, c[key]) || '')
+    if (m) return m
+  }
+  return null
+}
+// Строка входит в самый узкий диапазон SUBTOTAL, который её покрывает (диапазоны вложены).
+function nestBySubtotal(items) {
+  const stack = []
+  items.forEach((it, index) => {
+    while (stack.length && stack[stack.length - 1].range[1] < it.sheetRow) stack.pop()
+    it.parentIndex = stack.length ? stack[stack.length - 1].index : null
+    if (it.range) stack.push({ range: it.range, index })
+  })
+}
+// Буква столбца по номеру (0 — A): какой столбец кол-ва умножает формула суммы строки.
+const colName = (i) => {
+  let s = ''
+  for (let n = i + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s
+  return s
+}
 
-// Лист КП в книге: шапка с номером раздела, номером позиции, названием, единицей и коммерческой стоимостью.
+// КП с ресурсами ПЗ одним листом (раскладка «Алия — КП до перекидок после ДС1–8»). Отдельная карта шапки: подписи
+// К14 не трогаем. Столбцы справа (расценки, ссылки, «Код в ПЗ», «Кол-во ГП (ПЗ)») не нужны: строка КП берёт кол-во и
+// суммы из основных столбцов, ресурс — сумму ПЗ и «ПЗ × коэфф.».
+const TREE_COLUMNS = {
+  code: ['код раздела'],
+  pos: ['№ позиции'],
+  name: ['наименование раздела / работы / ресурса'],
+  type: ['тип строки / затрат'],
+  unit: ['ед. изм.'],
+  qtyCustomer: ['кол-во заказчика'],
+  qtyGp: ['кол-во гп / ресурса'],
+  materials: ['кп · материалы, ₽'],
+  works: ['кп · работы, ₽'],
+  total: ['кп · всего, ₽'],
+  direct: ['пз · известная часть, ₽'],
+  coefTotal: ['пз × коэфф., ₽'],
+  status: ['статус / примечание'],
+  base: ['база по кп, ₽'],
+  unitBase: ['база кп за ед., ₽'],
+  unitMaterials: ['кп · мат. за ед., ₽'],
+  unitWorks: ['кп · раб. за ед., ₽'],
+  unitCommercial: ['кп · всего за ед., ₽'],
+  customerNote: ['примечание заказчика (кп)'],
+  gpNote: ['примечание гп (кп)'],
+  materialType: ['тип материала'],
+  pzNote: ['примечание гп (пз)'],
+}
+const TREE_REQUIRED = ['code', 'pos', 'name', 'type', 'unit', 'total', 'direct']
+// Та же раскладка «King & Sons» (27.11.2026): строки КП — «Раздел» / «Подраздел» / «Позиция», кода раздела в начале нет
+// (столбец «№ раздела · КП» почти пуст), прямые затраты — «ПЗ · материалы / работы / всего» (у ресурса — его сумма).
+const TREE_COLUMNS_KS = {
+  code: ['№ раздела · кп'],
+  pos: ['№ позиции'],
+  name: ['наименование работ и ресурсов'],
+  type: ['тип строки'],
+  unit: ['ед. изм.'],
+  qtyGp: ['количество гп'],
+  qtyCustomer: ['количество заказчика'],
+  materials: ['кп · материалы, ₽'],
+  works: ['кп · работы, ₽'],
+  total: ['кп · всего, ₽'],
+  direct: ['пз · всего, ₽'],
+  base: ['кп · базовая стоимость, ₽'],
+  unitBase: ['кп · базовая цена за ед., ₽'],
+  unitCommercial: ['кп · коммерческая цена за ед., ₽'],
+  unitMaterials: ['кп · материалы за ед., ₽'],
+  unitWorks: ['кп · работы за ед., ₽'],
+  customerNote: ['примечание заказчика · кп'],
+  gpNote: ['примечание гп · кп'],
+  materialType: ['тип материала'],
+  pzNote: ['примечание гп · пз'],
+}
+const TREE_LAYOUTS = [
+  { cols: TREE_COLUMNS, required: TREE_REQUIRED },
+  { cols: TREE_COLUMNS_KS, required: ['pos', 'name', 'type', 'unit', 'total', 'direct'] },
+]
+// Типы строк-ресурсов ПЗ — точно (не по началу слова: «Работа» — строка КП, «Работы» — ресурс-добавка ДС).
+const RESOURCE_WORKS = new Set(['раб', 'суб-раб', 'работы'])
+const RESOURCE_MATERIALS = new Set(['мат', 'суб-мат', 'материалы'])
+const isResourceType = (t) => RESOURCE_WORKS.has(t) || RESOURCE_MATERIALS.has(t)
+
+// КП с этапами договора («Событие 6.2»): номера позиции нет, суммы КП — «Итого материалы / работы», итог строки —
+// «КП до перекидок Итого материалы + работы, руб.»; этапы (ДГП, ДС) — столбцы справа, их ищет stageColumns.
+const STAGE_COLUMNS = {
+  code: ['номер раздела'],
+  name: ['наименование'],
+  qtyCustomer: ['кол-во заказчика'],
+  qtyGp: ['кол-во гп'],
+  unit: ['ед. изм.', 'ед. изм', 'единица'],
+  unitMaterials: ['цена за ед. мат-ал в кп', /^цена за ед\.? мат/],
+  unitWorks: ['цена за ед. раб', /^цена за ед\.? раб/],
+  materials: ['итого материалы'],
+  works: ['итого работы'],
+  gpNote: ['примечание гп'],
+  total: [/^кп до перекидок.*итого/],
+  psdcRef: [/^сопоставление с .*псдц/],
+}
+const STAGE_REQUIRED = ['code', 'name', 'unit', 'materials', 'works', 'total']
+
+// Лист КП в книге: шапка листа КП с ресурсами ПЗ (layout: 'tree'), КП с этапами договора (layout: 'stages') или шапка
+// с номером раздела, номером позиции, названием, единицей и коммерческой стоимостью (К14, «Лот 31»).
 export function findKpSheet(XLSX, wb) {
   for (const name of wb.SheetNames) {
     const rows = sheetRows(XLSX, wb.Sheets[name])
+    for (const layout of TREE_LAYOUTS) {
+      const tree = findHeader(rows, layout.cols, layout.required)
+      if (tree) return { sheetName: name, rows, header: tree, layout: 'tree' }
+    }
+    const stages = findHeader(rows, STAGE_COLUMNS, STAGE_REQUIRED)
+    if (stages) return { sheetName: name, rows, header: stages, layout: 'stages' }
     const header = findHeader(rows, KP_COLUMNS, KP_REQUIRED)
     // «Смета» тоже содержит «Код», «Наименование», «Ед. изм.» — но не «Номер позиции» + «Коммерческая стоимость».
     if (header && norm(val(rows.find((r) => r.r === header.headerRow), header.cols.total)) !== 'коммерция итого') {
@@ -152,9 +293,34 @@ export function findKpSheet(XLSX, wb) {
   return null
 }
 
+// Без формул SUBTOTAL и без группировки — по коду: родитель — ближайшая выше строка с кодом-префиксом; строка без
+// кода — рядом с предыдущей строкой с кодом. Группа — строка, у которой есть дети.
+function nestByCodes(items) {
+  const lastByCode = new Map()
+  let lastParent = null
+  items.forEach((it, index) => {
+    if (it.code) {
+      const parts = it.code.split('.')
+      let parent = null
+      for (let k = parts.length - 1; k > 0 && parent === null; k--) {
+        const p = lastByCode.get(parts.slice(0, k).join('.'))
+        if (p !== undefined) parent = p
+      }
+      it.parentIndex = parent
+      lastByCode.set(it.code, index)
+      lastParent = parent
+    } else {
+      it.parentIndex = lastParent
+    }
+  })
+  for (const it of items) if (it.parentIndex !== null) items[it.parentIndex].range = items[it.parentIndex].range || [0, 0]
+}
+
 export function parseKpWorkbook(XLSX, wb) {
   const found = findKpSheet(XLSX, wb)
   if (!found) return { error: 'kp_header', message: 'Не найден лист КП: нужны столбцы «Номер раздела», «Номер позиции», «Название», «Единица», «Коммерческая стоимость».' }
+  if (found.layout === 'tree') return parseKpTreeSheet(found)
+  if (found.layout === 'stages') return parseKpStagesSheet(found)
   const { sheetName, rows, header } = found
   const c = header.cols
   const data = rows.filter((r) => r.r > header.headerRow)
@@ -173,8 +339,7 @@ export function parseKpWorkbook(XLSX, wb) {
       continue
     }
     if (!name && !code && !pos) continue
-    const f = formula(row, c.total) || formula(row, c.materials) || ''
-    const sub = SUBTOTAL_RE.exec(f)
+    const sub = subtotalOf(row, c)
     if (sub) hasSubtotals = true
     items.push({
       sheetRow: row.r,
@@ -217,36 +382,356 @@ export function parseKpWorkbook(XLSX, wb) {
 
   // Вложенность: строка входит в самый узкий диапазон SUBTOTAL, который её покрывает (диапазоны вложены).
   // Без формул (книга сохранена значениями) — по коду: родитель — ближайшая выше строка с кодом-префиксом.
-  if (hasSubtotals) {
-    const stack = []
-    items.forEach((it, index) => {
-      while (stack.length && stack[stack.length - 1].range[1] < it.sheetRow) stack.pop()
-      it.parentIndex = stack.length ? stack[stack.length - 1].index : null
-      if (it.range) stack.push({ range: it.range, index })
-    })
-  } else {
-    const lastByCode = new Map()
-    let lastParent = null
-    items.forEach((it, index) => {
-      if (it.code) {
-        const parts = it.code.split('.')
-        let parent = null
-        for (let k = parts.length - 1; k > 0 && parent === null; k--) {
-          const p = lastByCode.get(parts.slice(0, k).join('.'))
-          if (p !== undefined) parent = p
-        }
-        it.parentIndex = parent
-        lastByCode.set(it.code, index)
-        lastParent = parent
-      } else {
-        it.parentIndex = lastParent
-      }
-    })
-    // Группа без формулы — строка, у которой есть дети.
-    for (const it of items) if (it.parentIndex !== null) items[it.parentIndex].range = items[it.parentIndex].range || [0, 0]
-  }
+  if (hasSubtotals) nestBySubtotal(items)
+  else nestByCodes(items)
   items.forEach((it, index) => { it.index = index })
-  return { sheetName, headerRow: header.headerRow, items, fileTotals, hasSubtotals, hasInlinePz: c.direct !== undefined }
+  return {
+    sheetName, headerRow: header.headerRow, items, fileTotals, hasSubtotals, hasInlinePz: c.direct !== undefined,
+    nesting: hasSubtotals ? 'subtotal' : 'codes',
+  }
+}
+
+// ── КП с этапами договора («Событие 6.2») ───────────────────────────────────
+// Сумма строки посчитана от «Кол-ва заказчика» (формула «C19*F19»), а «Кол-во ГП» пусто или 0 (у «События 6.2» — 70 позиций
+// с деньгами): объём позиции — кол-во заказчика, иначе у позиции со стоимостью не было бы объёма и цены за единицу. Кол-во ГП
+// файла остаётся в kp.qty_gp_file, признак — kp.qty_basis = 'customer'. Строки без денег (кол-во заказчика при «Учтено в …»)
+// остаются с ГП, как у К14 (13.11.2026: «ориентируемся только на Количество (ГП)»). Выключатель — здесь.
+const QTY_BY_CUSTOMER_FORMULA = true
+const QTY_FORMULA_RE = /^\s*=?\s*\$?([A-Z]{1,3})\$?\d+\s*\*/i
+
+// Столбцы этапов справа от КП: «<этап> Материалы, руб.» / «… Работы, руб.» / «… Итого, руб.»; подпись короче — в строке над
+// шапкой («ДС №1 01.03.2026»). Процент изменения и пустые столбцы между этапами не нужны.
+const STAGE_HEAD_RE = /^(.+?)\s+(материалы|работы|итого)(?:,\s*руб\.?)?$/i
+const STAGE_PART = { материалы: 'materials', работы: 'works', итого: 'total' }
+export function stageColumns(rows, header) {
+  const head = rows.find((r) => r.r === header.headerRow)
+  const above = rows.find((r) => r.r === header.headerRow - 1)
+  const used = new Set(Object.values(header.cols))
+  const byLabel = new Map()
+  head?.cells.forEach((cell, i) => {
+    if (used.has(i)) return
+    const raw = text(cell?.v).replace(/\s+/g, ' ')
+    const m = STAGE_HEAD_RE.exec(raw)
+    if (!m || /^кп до перекидок/i.test(m[1])) return
+    let s = byLabel.get(m[1])
+    if (!s) {
+      s = { label: m[1], short: text(above?.cells[i]?.v) || m[1], cols: {} }
+      byLabel.set(m[1], s)
+    }
+    const part = STAGE_PART[m[2].toLowerCase()]
+    if (s.cols[part] === undefined) s.cols[part] = i
+  })
+  return [...byLabel.values()].filter((s) => s.cols.total !== undefined || (s.cols.materials !== undefined && s.cols.works !== undefined))
+}
+function stageValues(row, stages) {
+  return stages.map((s) => {
+    const m = cellNumber(val(row, s.cols.materials))
+    const w = cellNumber(val(row, s.cols.works))
+    const t = s.cols.total !== undefined ? cellNumber(val(row, s.cols.total)) : (m === null && w === null ? null : (m || 0) + (w || 0))
+    return { materials: m, works: w, total: t }
+  })
+}
+
+function parseKpStagesSheet({ sheetName, rows, header }) {
+  const c = header.cols
+  const stages = stageColumns(rows, header)
+  const custCol = c.qtyCustomer === undefined ? null : colName(c.qtyCustomer)
+  const items = []
+  const after = []
+  let fileTotals = null
+  let fileStages = null
+  let ended = false
+  let hasSubtotals = false
+  let byCustomer = 0
+  for (const row of rows) {
+    if (row.r <= header.headerRow) continue
+    const name = text(val(row, c.name))
+    const code = codeText(val(row, c.code))
+    if (ended) {
+      // Под итогом: строки вне КП («Новые позиции ПСДЦ, отсутствующие в КП») и пояснения этапов под их столбцами.
+      if (name) after.push(name)
+      for (const s of stages) {
+        const note = row.cells[s.cols.materials ?? s.cols.total]?.v
+        if (typeof note === 'string' && note.trim() && !s.note) s.note = text(note)
+      }
+      continue
+    }
+    if (!code && /^итого/i.test(name)) {
+      fileTotals = { materials: cellNumber(val(row, c.materials)), works: cellNumber(val(row, c.works)), total: cellNumber(val(row, c.total)) }
+      fileStages = stageValues(row, stages)
+      ended = true
+      continue
+    }
+    if (!name && !code) continue
+    const sub = subtotalOf(row, c)
+    if (sub) hasSubtotals = true
+    const qtyGpFile = cellNumber(val(row, c.qtyGp))
+    const qtyCustomer = cellNumber(val(row, c.qtyCustomer))
+    const total = cellNumber(val(row, c.total))
+    const qf = sub ? null : QTY_FORMULA_RE.exec(formula(row, c.materials) || formula(row, c.works) || '')
+    const customerBasis = QTY_BY_CUSTOMER_FORMULA && !!qf && qf[1].toUpperCase() === custCol && !qtyGpFile && !!total && !!qtyCustomer
+    if (customerBasis) byCustomer++
+    const psdcRef = text(val(row, c.psdcRef))
+    items.push({
+      sheetRow: row.r,
+      code, pos: '', name,
+      unit: text(val(row, c.unit)),
+      customerNote: '',
+      gpNote: text(val(row, c.gpNote)),
+      kp: {
+        qty_gp: customerBasis ? qtyCustomer : qtyGpFile,
+        qty_customer: qtyCustomer,
+        base: null,
+        materials: cellNumber(val(row, c.materials)),
+        works: cellNumber(val(row, c.works)),
+        total,
+        unit_base: null,
+        unit_commercial: null,
+        unit_materials: sub ? null : cellNumber(val(row, c.unitMaterials)),
+        unit_works: sub ? null : cellNumber(val(row, c.unitWorks)),
+        ...(customerBasis ? { qty_basis: 'customer', qty_gp_file: qtyGpFile } : {}),
+        ...(psdcRef ? { psdc_ref: psdcRef } : {}),
+      },
+      formulas: { materials: formula(row, c.materials), works: formula(row, c.works), total: formula(row, c.total) },
+      range: sub ? [Number(sub[1]), Number(sub[2])] : null,
+      stages: stageValues(row, stages),
+      pzInline: null,
+    })
+  }
+  if (!items.length) return { error: 'kp_empty', message: `На листе «${sheetName}» нет строк КП под шапкой.` }
+  if (hasSubtotals) nestBySubtotal(items)
+  else nestByCodes(items)
+  items.forEach((it, index) => { it.index = index })
+
+  const money = (t) => (t ? `${fmtRub(t.total || 0)}${t.materials !== null || t.works !== null ? ` (материалы ${fmtRub(t.materials || 0)}, работы ${fmtRub(t.works || 0)})` : ''}` : '—')
+  const passport = []
+  if (fileTotals) passport.push(['КП до перекидок', `итог ${money(fileTotals)}`])
+  stages.forEach((s, i) => passport.push([s.label, [`итог ${money(fileStages?.[i])}`, s.note].filter(Boolean).join(' — ')]))
+  if (byCustomer) passport.push(['Объём по кол-ву заказчика', `${byCustomer} поз.: «Кол-во ГП» пусто, сумма в файле посчитана от кол-ва заказчика — объём позиции взят тот же`])
+  if (after.length) passport.push(['Ниже итога файла (в смету не вошло)', `${after[0]}${after.length > 1 ? ` и ещё строк: ${after.length - 1}` : ''}`])
+  return {
+    sheetName, headerRow: header.headerRow, items, fileTotals, hasSubtotals, hasInlinePz: false,
+    layout: 'stages', nesting: hasSubtotals ? 'subtotal' : 'codes', passport,
+    stages: stages.map((s, i) => ({ label: s.label, short: s.short, totals: fileStages?.[i] || null, note: s.note || null })),
+    qtyByCustomer: byCustomer,
+  }
+}
+
+// ── КП с ресурсами ПЗ одним листом ──────────────────────────────────────────
+const fmtRub = (v) => `${(Math.round(v * 100) / 100).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽`
+// Примечания без повторов: пустые и совпавшие с уже показанным (примечанием ГП КП) не повторяются.
+const distinctNotes = (list, shown = '') => [...new Set(list.filter((s) => s && s !== shown))].join('\n')
+
+function addResource(item, type, row, c) {
+  const r = item.res
+  r.count++
+  const sum = cellNumber(val(row, c.direct))
+  const coef = cellNumber(val(row, c.coefTotal))
+  const isWork = RESOURCE_WORKS.has(type)
+  if (sum === null) {
+    r.unpriced++
+  } else {
+    r.priced++
+    r.direct += sum
+    if (isWork) r.works += sum
+    else if (norm(val(row, c.materialType)).startsWith('вспомогат')) r.aux += sum
+    else r.main += sum
+  }
+  if (coef !== null) {
+    r.hasCoef = true
+    r.coefTotal += coef
+    if (isWork) r.coefWorks += coef
+    else r.coefMaterials += coef
+  }
+}
+
+// Таблица коэффициентов из «Контрольных расчётов» (строка с «раб», «мат», «суб-раб», «суб-мат» и значения под ней) —
+// как лист «Коэффициенты» у К14. Пустые во всём блоке столбцы убираются.
+function coefficientBlock(tail) {
+  const labels = ['раб', 'мат', 'суб-раб', 'суб-мат']
+  const at = tail.findIndex((row) => labels.filter((l) => row.cells.some((cell) => norm(cell?.v) === l)).length >= 3)
+  if (at < 0) return []
+  const block = [tail[at]]
+  for (const row of tail.slice(at + 1, at + 6)) {
+    if (row.r !== block[block.length - 1].r + 1 || !row.cells.some((cell) => typeof cell?.v === 'number')) break
+    block.push(row)
+  }
+  const width = Math.max(...block.map((row) => row.cells.length))
+  const keep = []
+  for (let i = 0; i < width; i++) if (block.some((row) => text(row.cells[i]?.v))) keep.push(i)
+  const out = block.map((row) => {
+    const cells = keep.map((i) => row.cells[i]?.v ?? null)
+    while (cells.length && (cells[cells.length - 1] === null || cells[cells.length - 1] === '')) cells.pop()
+    return cells
+  })
+  // Название таблицы — строка прямо над ней с одним текстом («Коэффициенты Alia · версия 1 · …»).
+  const prev = tail[at - 1]
+  const prevText = prev && prev.r === tail[at].r - 1 ? prev.cells.map((cell) => cell?.v).filter((v) => text(v)) : []
+  if (prevText.length === 1 && typeof prevText[0] === 'string') out.unshift([text(prevText[0])])
+  return out
+}
+
+function parseKpTreeSheet({ sheetName, rows, header }) {
+  const c = header.cols
+  const items = []
+  const preamble = []
+  const passport = []
+  const resources = { count: 0, unpriced: 0, orphan: 0 }
+  let started = false
+  let endIndex = rows.length
+  let last = null
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]
+    if (row.r <= header.headerRow) {
+      if (row.r === header.headerRow) continue
+      // Над шапкой — название и пояснения файла; у «King & Sons» там же итоги («ИТОГО ПО РЕСУРСНОМУ РАСЧЁТУ», «Цена договора
+      // · рабочая редакция ДС №14») — строка с наименованием и суммами идёт в итоги файла, как строки без типа у «Алии».
+      const name = text(val(row, c.name))
+      if (name && [c.total, c.direct, c.materials, c.works].some((k) => typeof val(row, k) === 'number')) {
+        preamble.push({
+          name,
+          materials: cellNumber(val(row, c.materials)), works: cellNumber(val(row, c.works)), total: cellNumber(val(row, c.total)),
+          direct: cellNumber(val(row, c.direct)), coefTotal: cellNumber(val(row, c.coefTotal)), note: text(val(row, c.status)),
+        })
+        continue
+      }
+      const line = row.cells.map((cell) => text(cell?.v)).filter(Boolean).join(' ')
+      if (line) passport.push([line])
+      continue
+    }
+    const type = norm(val(row, c.type))
+    if (!type) {
+      // Строка без типа: до дерева — итог файла («КП после ДС8, с опционом» …), после — начало контрольных расчётов.
+      if (started) { endIndex = i; break }
+      const name = text(val(row, c.name))
+      if (name) {
+        preamble.push({
+          name,
+          materials: cellNumber(val(row, c.materials)), works: cellNumber(val(row, c.works)), total: cellNumber(val(row, c.total)),
+          direct: cellNumber(val(row, c.direct)), coefTotal: cellNumber(val(row, c.coefTotal)), note: text(val(row, c.status)),
+        })
+      }
+      continue
+    }
+    started = true
+    if (isResourceType(type)) {
+      resources.count++
+      if (last) addResource(last, type, row, c)
+      else resources.orphan++
+      continue
+    }
+    const gpNote = text(val(row, c.gpNote))
+    last = {
+      sheetRow: row.r,
+      level: row.level,
+      type,
+      code: codeText(val(row, c.code)),
+      pos: posText(val(row, c.pos)),
+      name: text(val(row, c.name)),
+      unit: text(val(row, c.unit)),
+      customerNote: text(val(row, c.customerNote)),
+      gpNote,
+      kp: {
+        qty_gp: cellNumber(val(row, c.qtyGp)),
+        qty_customer: cellNumber(val(row, c.qtyCustomer)),
+        base: cellNumber(val(row, c.base)),
+        materials: cellNumber(val(row, c.materials)),
+        works: cellNumber(val(row, c.works)),
+        total: cellNumber(val(row, c.total)),
+        unit_base: cellNumber(val(row, c.unitBase)),
+        unit_commercial: cellNumber(val(row, c.unitCommercial)),
+        unit_materials: cellNumber(val(row, c.unitMaterials)),
+        unit_works: cellNumber(val(row, c.unitWorks)),
+      },
+      formulas: {
+        materials: formula(row, c.materials),
+        works: formula(row, c.works),
+        total: formula(row, c.total),
+      },
+      range: null,
+      res: { count: 0, priced: 0, unpriced: 0, direct: 0, main: 0, aux: 0, works: 0, hasCoef: false, coefTotal: 0, coefMaterials: 0, coefWorks: 0 },
+      fileDirect: cellNumber(val(row, c.direct)),
+      // «Статус / примечание» и «Примечание ГП (ПЗ)» — примечанием ПЗ, если не повторяют примечание ГП КП.
+      pzNote: distinctNotes([text(val(row, c.pzNote)), text(val(row, c.status))], gpNote),
+    }
+    items.push(last)
+  }
+  if (!items.length) return { error: 'kp_empty', message: `На листе «${sheetName}» нет строк КП под шапкой.` }
+
+  // План затрат строки — сумма её ресурсов. «Прямые затраты» — известная часть: у ресурса без цены суммы нет.
+  // Коммерция — стоимость КП той же строки, как у файла «КП + ПЗ» со столбцами прямых затрат (по ней считается цена за
+  // единицу); «ПЗ × коэфф.» — отдельно (coef_*): это расчёт по известным ресурсам, со стоимостью КП он не сведён.
+  for (const it of items) {
+    const r = it.res
+    const k = it.kp
+    it.resDirect = r.priced ? r.direct : null
+    it.pzInline = {
+      // Ни у одного ресурса нет цены — прямые затраты неизвестны, а не 0 (SUBTOTAL пустых ячеек в файле даёт 0; у «Алии»
+      // так у 1318 работ; файл: «пустые цены — неизвестные, а не нулевые»).
+      direct: r.count && !r.priced ? null : (it.fileDirect ?? it.resDirect),
+      direct_main: r.priced ? r.main : null,
+      direct_aux: r.priced ? r.aux : null,
+      direct_works: r.priced ? r.works : null,
+      comm_materials: k.materials,
+      comm_works: k.works,
+      comm_total: k.total,
+      coef_materials: r.hasCoef ? r.coefMaterials : null,
+      coef_works: r.hasCoef ? r.coefWorks : null,
+      coef_total: r.hasCoef ? r.coefTotal : null,
+      note: it.pzNote,
+      qty_gp: k.qty_gp,
+    }
+    if (r.count) {
+      it.pzInline.resources = r.count
+      if (r.unpriced) it.pzInline.unpriced = r.unpriced
+    }
+    if (r.unpriced) resources.unpriced += r.unpriced
+    delete it.res
+    delete it.fileDirect
+    delete it.pzNote
+  }
+
+  // Вложенность — группировка строк Excel (строка КП — внутри ближайшей выше строки КП с меньшим уровнем). Глубже 7
+  // уровней Excel не группирует: там ресурсы стоят на уровне своей работы, поэтому ресурс всегда относится к строке КП
+  // над ним, а не по уровню. По кодам такой лист не собрать: у работы тот же код, что у подраздела над ней, позиции ДС
+  // стоят после старых строк (у «Алии» по кодам — 105 строк не на месте и итог на 1,2 млрд больше), поэтому без
+  // группировки (книга пересохранена без неё) — отказ, а не неверное дерево.
+  if (!items.some((it) => it.level > 0)) {
+    return { error: 'kp_outline', message: `На листе «${sheetName}» нет группировки строк (кнопок «+» слева) — без неё не понять, что во что вложено. Загрузите файл в том виде, как он сохранён в Excel с группировкой.` }
+  }
+  const stack = []
+  items.forEach((it, index) => {
+    while (stack.length && stack[stack.length - 1].level >= it.level) stack.pop()
+    it.parentIndex = stack.length ? stack[stack.length - 1].index : null
+    stack.push({ level: it.level, index })
+  })
+  // Группа — строка с вложенными (как у книги без формул): раздел с нулевыми суммами — не заголовок файла.
+  for (const it of items) if (it.parentIndex !== null) items[it.parentIndex].range = [0, 0]
+  items.forEach((it, index) => { it.index = index })
+
+  // Итог для сверки — строка над деревом в той же базе, что и строки («… в сопоставимой базе НДС 20% …»), иначе
+  // первая; прямые затраты — первая строка с ними.
+  const withTotal = preamble.filter((p) => p.total !== null)
+  const base = withTotal.find((p) => /сопоставим/i.test(p.name)) || withTotal[0] || null
+  const fileTotals = base ? {
+    label: base.name, materials: base.materials, works: base.works, total: base.total,
+    direct: preamble.find((p) => p.direct !== null)?.direct ?? null,
+  } : null
+  for (const p of preamble) {
+    const parts = [
+      p.total !== null && `всего ${fmtRub(p.total)}${p.materials !== null || p.works !== null ? ` (материалы ${fmtRub(p.materials || 0)}, работы ${fmtRub(p.works || 0)})` : ''}`,
+      p.direct !== null && `ПЗ, известная часть ${fmtRub(p.direct)}`,
+      p.coefTotal !== null && `ПЗ × коэфф. ${fmtRub(p.coefTotal)}`,
+    ].filter(Boolean)
+    passport.push([p.name, [parts.join('; '), p.note].filter(Boolean).join(' — ')])
+  }
+  const vat = preamble.find((p) => /ндс/i.test(p.note))?.note || passport.find((r) => /ндс/i.test(r[0]))?.[0] || null
+  return {
+    sheetName, headerRow: header.headerRow, items, fileTotals, hasSubtotals: false, hasInlinePz: true,
+    layout: 'tree', nesting: 'outline',
+    resources: { ...resources, positions: items.filter((it) => it.pzInline.resources).length },
+    passport, coefficients: coefficientBlock(rows.slice(endIndex)), vat,
+  }
 }
 
 // ── Смета (ПЗ) ──────────────────────────────────────────────────────────────
@@ -389,9 +874,12 @@ export function detectEstimateWorkbook(XLSX, wb) {
 // без единицы и сумм; adjust — техническая строка ПЗ вне КП («Округление до копеек»).
 export const ROW_KINDS = ['title', 'section', 'group', 'aggregate', 'position', 'note', 'adjust']
 
+// Раздел листа с ресурсами ПЗ — раздел, даже с единицей («King & Sons»: «Планировочная организация земельного участка» —
+// «компл», 1). Подраздел с единицей — укрупнённая позиция, как раньше (у «Алии» — «Фундаменты»).
+const GROUP_TYPES = new Set(['раздел'])
 function kindOf(it, hasChildren) {
   if (hasChildren || it.range) {
-    if (it.unit) return 'aggregate'
+    if (it.unit && !GROUP_TYPES.has(it.type)) return 'aggregate'
     return it.parentIndex === null ? 'section' : 'group'
   }
   if (it.unit) return 'position'
@@ -402,15 +890,34 @@ function kindOf(it, hasChildren) {
 }
 
 // Сверка формул файла: позиция — материалы = Кол-во ГП × за ед. материалов, работы = Кол-во ГП × за ед. работ,
-// итог = материалы + работы; группа — сумма вложенных строк; итог файла — сумма позиций.
+// итог = материалы + работы; группа — сумма вложенных строк; итог файла — сумма позиций; у листа с ресурсами ПЗ —
+// ещё «ПЗ · известная часть» строки = сумма её ресурсов и итог прямых затрат.
+const GROUP_KEYS = ['materials', 'works', 'total']
 function checkFormulas(items, children, fileTotals) {
   const issues = []
-  const sumOf = (index, key) => (children.get(index) || []).reduce((s, ch) => s + (items[ch].kp[key] || 0), 0)
+  // Сумма группы — снизу вверх: у вложенной группы берётся её посчитанная сумма, а не значение в файле. Иначе одна
+  // группа, неверная в файле (у «Алии» — заголовок подраздела с постоянным 0 над оценённой работой), давала бы
+  // расхождение ещё и у всех предков, хотя их SUBTOTAL верны. У книги с верными суммами групп результат тот же.
+  const computed = new Map()
+  for (let i = items.length - 1; i >= 0; i--) {
+    const ch = children.get(items[i].index)
+    if (!ch) continue
+    const s = { materials: 0, works: 0, total: 0 }
+    for (const c of ch) {
+      const sub = computed.get(c)
+      for (const key of GROUP_KEYS) s[key] += sub ? sub[key] : (items[c].kp[key] || 0)
+    }
+    computed.set(items[i].index, s)
+  }
   for (const it of items) {
     const k = it.kp
+    if (it.resDirect !== undefined && it.resDirect !== null && !close(it.resDirect, it.pzInline?.direct)) {
+      issues.push({ row: it.sheetRow, code: it.code, key: 'direct', expected: it.resDirect, actual: it.pzInline?.direct ?? null })
+    }
     if (children.has(it.index)) {
-      for (const key of ['materials', 'works', 'total']) {
-        if (!close(sumOf(it.index, key), k[key])) issues.push({ row: it.sheetRow, code: it.code, key, expected: sumOf(it.index, key), actual: k[key] })
+      const s = computed.get(it.index)
+      for (const key of GROUP_KEYS) {
+        if (!close(s[key], k[key])) issues.push({ row: it.sheetRow, code: it.code, key, expected: s[key], actual: k[key] })
       }
     } else if (it.unit) {
       if (k.unit_materials !== null && k.qty_gp !== null && it.formulas.materials && !close(k.qty_gp * k.unit_materials, k.materials)) {
@@ -424,11 +931,14 @@ function checkFormulas(items, children, fileTotals) {
       }
     }
   }
-  const leafSum = (key) => items.filter((it) => !children.has(it.index)).reduce((s, it) => s + (it.kp[key] || 0), 0)
+  const leaves = items.filter((it) => !children.has(it.index))
+  const leafSum = (key) => leaves.reduce((s, it) => s + (it.kp[key] || 0), 0)
   const totals = { materials: leafSum('materials'), works: leafSum('works'), total: leafSum('total') }
+  if (items.some((it) => it.resDirect !== undefined)) totals.direct = leaves.reduce((s, it) => s + (it.pzInline?.direct || 0), 0)
   if (fileTotals) {
-    for (const key of ['materials', 'works', 'total']) {
-      if (fileTotals[key] !== null && Math.abs(totals[key] - fileTotals[key]) > 0.05) issues.push({ row: null, code: 'ИТОГО', key, expected: totals[key], actual: fileTotals[key] })
+    for (const key of ['materials', 'works', 'total', 'direct']) {
+      if (fileTotals[key] === null || fileTotals[key] === undefined || totals[key] === undefined) continue
+      if (Math.abs(totals[key] - fileTotals[key]) > 0.05) issues.push({ row: null, code: 'ИТОГО', key, expected: totals[key], actual: fileTotals[key] })
     }
   }
   return { issues, totals }
@@ -530,13 +1040,19 @@ export function buildEstimateRows({ kp = null, pz = null, kpFileName = '', pzFil
   const meta = {
     parser: KP_ESTIMATE_PARSER_VERSION,
     title: titleFrom(pz, kp, kpFileName || pzFileName),
-    kp_file: kp ? { name: kpFileName, sheet: kp.sheetName, header_row: kp.headerRow, has_subtotals: kp.hasSubtotals, totals: kp.fileTotals, inline_pz: !pz && !!kp.hasInlinePz } : null,
+    kp_file: kp ? {
+      name: kpFileName, sheet: kp.sheetName, header_row: kp.headerRow, has_subtotals: kp.hasSubtotals, totals: kp.fileTotals,
+      inline_pz: !pz && !!kp.hasInlinePz,
+      ...(kp.layout ? { layout: kp.layout, nesting: kp.nesting, resources: kp.resources } : {}),
+      ...(kp.stages?.length ? { stages: kp.stages } : {}),
+    } : null,
     pz_file: pz ? { name: pzFileName, sheet: pz.sheetName, header_row: pz.headerRow, totals: pz.summaryTotals } : null,
-    passport: pz?.passport || [],
-    coefficients: pz?.coefficients || [],
+    // Лист КП с ресурсами ПЗ несёт паспорт (итоги над деревом) и коэффициенты сам.
+    passport: pz?.passport?.length ? pz.passport : (kp?.passport || []),
+    coefficients: pz?.coefficients?.length ? pz.coefficients : (kp?.coefficients || []),
     out_of_total: pz?.outOfTotal || [],
     detail: pz?.detail || [],
-    vat: vatFrom(pz),
+    vat: vatFrom(pz) || kp?.vat || null,
     pz_sections: pzSections(pz),
     formula_check: { issues: formulaCheck.issues.slice(0, 50), issue_count: formulaCheck.issues.length, totals: formulaCheck.totals },
     stats,
@@ -595,7 +1111,8 @@ function titleFrom(pz, kp, fileName) {
   if (pz?.passport?.[0]?.[0] && pz.passport[0].length === 1) return text(pz.passport[0][0])
   const title = kp?.items?.find((it) => kindOf(it, false) === 'title' && it.parentIndex === null)
   if (title?.name) return title.name
-  return String(fileName || 'Смета').replace(/\.(xlsx|xlsm|xls)$/i, '')
+  // Имя файла: «Событие_6_2_КП_до_перекидок,_ДГП,_Допники» — подчёркивания пробелами.
+  return String(fileName || 'Смета').replace(/\.(xlsx|xlsm|xls)$/i, '').replace(/_+/g, ' ').trim()
 }
 
 function vatFrom(pz) {

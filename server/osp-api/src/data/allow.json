@@ -868,6 +868,16 @@
       "authenticated": [
         "select"
       ]
+    },
+    "kp_estimate_prices": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "kp_estimate_price_docs": {
+      "authenticated": [
+        "select"
+      ]
     }
   },
   "rpc": {
@@ -1229,6 +1239,12 @@
       "authenticated"
     ],
     "supply_doc_rates_status": [
+      "authenticated"
+    ],
+    "kp_estimate_price_apply": [
+      "authenticated"
+    ],
+    "kp_estimate_price_reset": [
       "authenticated"
     ]
   }

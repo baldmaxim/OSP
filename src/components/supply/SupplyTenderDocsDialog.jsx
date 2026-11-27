@@ -5,10 +5,10 @@ import { IconSearch } from '../icons/ToolbarIcons'
 import PaperclipIcon from '../icons/PaperclipIcon'
 import { formatAmount, roundMoney } from '../../utils/money'
 import { PICK_BLOCKS, autoPickRows, groupHideKeys, hideKeysByDoc, isHiddenAt, unplacedLines, windowOffers } from '../../utils/supplyAutoPick'
-import { searchGroups } from '../../utils/supplyDocMatch'
 import { nameDiff } from '../../utils/supplyNameDiff'
 import { scanProgressText } from '../../utils/supplyOffers'
 import SupplyTenderFilesDialog, { filesAttention } from './SupplyTenderFilesDialog'
+import SupplyUnplacedDialog from './SupplyUnplacedDialog'
 
 // За один раз — не больше (каждый файл читается и загружается по очереди).
 const FILES_MAX = 20
@@ -192,31 +192,6 @@ const PickRow = memo(function PickRow({ row, checked, busy, allLines, onCheck, o
   )
 })
 
-// Строка счёта без позиции ВОР: указать позицию поиском.
-function UnplacedLine({ item, groups, busy, onPick }) {
-  const [query, setQuery] = useState('')
-  const found = useMemo(() => (query.trim() ? searchGroups(query, groups, PICK_LIMIT) : []), [query, groups])
-  const { doc, line } = item
-  return (
-    <li>
-      <span className="sp-td-unplaced-name">{line.name}<span className="sp-td-meta ui-num">{formatAmount(line.price)} ₽{line.unit ? ` за ${line.unit}` : ''} · {doc.file_name}</span></span>
-      <span className="sp-td-unplaced-find">
-        <label className="ui-search sp-td-find">
-          <IconSearch size={14} />
-          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Найти позицию ВОР" disabled={busy} aria-label={`Найти позицию ВОР для «${line.name}»`} />
-        </label>
-        {found.length > 0 && (
-          <ul className="sp-td-picker-list">
-            {found.map((g) => (
-              <li key={g.key}><button type="button" className="sp-td-opt" disabled={busy} onClick={() => { onPick(g, doc, line); setQuery('') }}>{g.name}{g.unit ? <span className="sp-td-meta">{g.unit}</span> : null}</button></li>
-            ))}
-          </ul>
-        )}
-      </span>
-    </li>
-  )
-}
-
 // Счета и КП тендера: закинули файлы (кнопкой или перетаскиванием в окно) — расценка сама читает их и подбирает позициям цены:
 // самую похожую строку, а если та же позиция есть в нескольких документах — из самого свежего (utils/supplyAutoPick). Человек
 // сравнивает позицию ВОР и строку счёта, единицы и применяет одной кнопкой: цены пишутся как ввод руками, файл становится документом
@@ -248,6 +223,9 @@ function UnplacedLine({ item, groups, busy, onPick }) {
 // 24.11.2026 (просьба пользователя): плашки файлов над таблицей заменены кнопкой «Документы» — все файлы, их состояние, скачать по
 // одному и все (SupplyTenderFilesDialog); здесь остались только загружаемые сейчас (ход чтения, отказ, повтор). На кнопке — сколько
 // файлов и, отдельной пометкой, что ждёт действия: курс валюты, удалённые файлы с ценами. archiveOwner — начало имени архива.
+// 27.11.2026 (просьба пользователя): «Строки счетов без позиции ВОР» — не раскрывающийся блок внизу, а кнопка в шапке рядом с
+// «Документами» (подсвечена, пока такие строки есть) и своё большое окно (SupplyUnplacedDialog): похожие позиции одной кнопкой, поиск,
+// после выбора окно не закрывается.
 export default function SupplyTenderDocsDialog({
   docs, dupes = [], others, byGroup, groups, rates, filesOn, currentOf, initialFiles = null, attachTo = null, onAddFile, onAttachDoc, onDeleteDoc, onOpenFile, onApply, onClose,
   onPickLine, onRejectLine, onPack, onSetRate, onSetVat, onHide, onUnhide, removed = [], onClearRemoved, onKeepRemoved, archiveOwner = 'Тендер',
@@ -269,23 +247,25 @@ export default function SupplyTenderDocsDialog({
   const headBoxRef = useRef(null)
   const [removing, setRemoving] = useState(false) // снимаем или оставляем цены удалённого файла
   const [filesOpen, setFilesOpen] = useState(false) // окно «Документы тендера»
+  const [unplacedOpen, setUnplacedOpen] = useState(false) // окно «Строки счетов без позиции ВОР»
   const uploading = uploads.some((u) => u.status === 'reading')
   const busy = applying || uploading || hiding || removing
 
-  // Escape: открыто окно документов — закрывает только его; открыт просмотр файла — только просмотр (он закрывается сам). Окно
+  // Escape: открыто окно документов или строк без позиции — закрывает только его; открыт просмотр файла — только просмотр (он закрывается сам). Окно
   // удаления файла ловит Escape раньше (на погружении) и дальше его не пускает. Был ли просмотр — смотрим на погружении: к нашему
   // обработчику он уже закрылся (его обработчик — на document, раньше window), и Escape закрыл бы заодно и окно.
   // Подписка — один раз, состояние — из ссылки: закрытый просмотр перерисовывает страницу посреди того же нажатия, и переподписанный
   // обработчик не знал бы, что просмотр был.
   const escState = useRef(null)
-  escState.current = { busy, filesOpen, onClose }
+  escState.current = { busy, filesOpen, unplacedOpen, onClose }
   useEffect(() => {
     let covered = false
     const onCapture = (e) => { if (e.key === 'Escape') covered = !!document.querySelector('.s3-doc-preview-overlay') }
     const onKey = (e) => {
       if (e.key !== 'Escape' || covered) return
-      const { busy: working, filesOpen: inFiles, onClose: close } = escState.current
+      const { busy: working, filesOpen: inFiles, unplacedOpen: inUnplaced, onClose: close } = escState.current
       if (inFiles) setFilesOpen(false)
+      else if (inUnplaced) setUnplacedOpen(false)
       else if (!working) close()
     }
     window.addEventListener('keydown', onCapture, true)
@@ -476,8 +456,6 @@ export default function SupplyTenderDocsDialog({
   const onPackRow = useCallback((...a) => latest.current.setPack(...a), [])
   const onOpenRowFile = useCallback((doc) => latest.current.onOpenFile(doc), [])
   const rowProps = { busy: applying || hiding, allLines, onCheck, onPick: onPickRow, onReject: onRejectRow, onPack: onPackRow, onOpenFile: onOpenRowFile }
-  // Строки без позиции рисуются, только когда их раскрыли: свёрнутые сотни строк тоже перерисовывались на каждом шаге записи цен.
-  const [unplacedOpen, setUnplacedOpen] = useState(false)
   const fileCount = docs.length + dupes.length + others.length
   const attention = filesAttention(docs, removed)
   const setVat = (doc, mode) => Promise.resolve(onSetVat(doc, mode))
@@ -503,6 +481,13 @@ export default function SupplyTenderDocsDialog({
               title={attention ? 'Все файлы тендера. Есть что сделать: курс валюты или цены удалённого файла' : 'Все файлы тендера: открыть, скачать, удалить'}>
               <PaperclipIcon size={16} /> Документы <span className="ui-num">{fileCount}</span>
               {attention > 0 && <span className="sp-td-files-attn ui-num" aria-hidden="true"><IconAlert size={12} />{attention}</span>}
+            </button>
+          )}
+          {(unplaced.length > 0 || unplacedOpen) && (
+            <button type="button" className={`btn-secondary sp-td-files-btn sp-td-unplaced-btn${unplaced.length ? ' is-attn' : ''}`} onClick={() => setUnplacedOpen(true)} aria-haspopup="dialog"
+              aria-label={`Строки счетов без позиции ВОР: ${unplaced.length}`}
+              title="Строки счетов и КП, которым алгоритм не нашёл позицию ВОР: сопоставить вручную">
+              <IconAlert size={15} /> Без позиции ВОР <span className="ui-num">{unplaced.length}</span>
             </button>
           )}
           {!filesOn && <span className="sp-muted">Файлы к тендеру не сохраняются: на сервере не применено обновление базы.</span>}
@@ -574,7 +559,7 @@ export default function SupplyTenderDocsDialog({
                       <input ref={headBoxRef} type="checkbox" checked={allOn} disabled={busy || !checkable.length}
                         onChange={(e) => checkAll(e.target.checked)} aria-label="Отметить все строки" title={allOn ? 'Снять все' : 'Отметить все'} />
                     </th>
-                    <th>Позиция ВОР</th>
+                    <th className="sp-td-pos-h">Позиция ВОР</th>
                     <th>В счёте</th>
                     <th>Ед. изм.</th>
                     <th className="ui-money">Цена, ₽</th>
@@ -591,20 +576,14 @@ export default function SupplyTenderDocsDialog({
             </div>
           )}
 
-          {unplaced.length > 0 && (
-            <details className="sp-td-unplaced" onToggle={(e) => setUnplacedOpen(e.currentTarget.open)}>
-              <summary>Строки счетов без позиции ВОР: {unplaced.length}</summary>
-              {unplacedOpen && (
-                <ul>
-                  {unplaced.map((u) => <UnplacedLine key={`${u.doc.id}:${u.line.name}`} item={u} groups={groups} busy={applying || hiding} onPick={onPickRow} />)}
-                </ul>
-              )}
-            </details>
-          )}
           {/* Окно документов открыто — строка состояния в нём (оно закрывает эту). */}
           {note && !error && !filesOpen && <p className="sp-td-note" role="status">{note}</p>}
           {error && !filesOpen && <p className="sp-error-text" role="alert">{error}</p>}
         </div>
+        {unplacedOpen && (
+          <SupplyUnplacedDialog items={unplaced} groups={groups} busy={applying || hiding} onPick={onPickRow} onUndo={onRejectRow}
+            onOpenFile={onOpenRowFile} onClose={() => setUnplacedOpen(false)} />
+        )}
         {filesOpen && (
           <SupplyTenderFilesDialog docs={docs} dupes={dupes} others={others} removed={removed} busy={busy} archiveOwner={archiveOwner}
             note={note} error={error} onOpenFile={onOpenFile} onDelete={deleteDoc} onSetRate={setRate} onSetVat={setVat}

@@ -35,6 +35,19 @@
   background: rgba(96, 165, 250, 0.06);
   border-left-color: #60a5fa;
 }
+/* Приложение к приложению — светлее полоса, плотнее подложка, рамка пунктиром: видно, что это уровень ниже. Те же
+   цвета, что у строк второго уровня в таблице (ObjectDetailPage.css, .doc-row-l2). */
+.odc-card-att.odc-card-att2 {
+  background: rgba(37, 99, 235, 0.07);
+  border-left-color: #93c5fd;
+  border-top-style: dashed;
+  border-right-style: dashed;
+  border-bottom-style: dashed;
+}
+[data-theme='dark'] .odc-card-att.odc-card-att2 {
+  background: rgba(96, 165, 250, 0.11);
+  border-left-color: rgba(96, 165, 250, 0.5);
+}
 
 /* Сверху — название, номер и примечание; справа в углу — «Редактировать» и «Удалить». */
 .odc-top {

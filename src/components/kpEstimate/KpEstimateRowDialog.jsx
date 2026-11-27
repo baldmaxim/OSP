@@ -1,12 +1,15 @@
 // Окно строки сметы КП / ПЗ (13.11.2026 вместо панели справа): данные КП до перекидок и плана затрат одним блоком,
 // уточнённый объём и причина, распределение — тендер (может не быть) и подрядчик, который его выиграл (подставляется из
 // победителей тендера), и объём; примечание, заливка строки, история. Всё сохраняется само.
+// Цена (27.11.2026): действующая — с изменениями администратора (своя, документом, пересчёт группой); администратор меняет
+// её здесь же (у группы — сумму, состав пересчитывается пропорционально).
 import { useEffect, useState } from 'react'
 import {
   FILL_COLORS, STATUS_LABELS, allocQty, allocationText, fmtMoney, fmtQty, hasVolume, isPosition, originalQty, pairKey,
-  parseQtyInput, unitPrice,
+  parseQtyInput, round2, rowTotal, unitPrice,
 } from '../../utils/kpEstimate'
 import { describeLogEntry, fmtLogTime } from '../../utils/kpEstimateLog'
+import { changePct, priceSourceText } from '../../utils/kpEstimatePrices'
 import { Modal, SaveOnBlur, TenderContractorFields, qtyText } from './KpEstimateFields'
 
 function Fact({ label, children, hint }) {
@@ -51,7 +54,7 @@ function AddAllocation({ pickers, freeQty, unit, existing, onAdd }) {
 
 export default function KpEstimateRowDialog({
   tree, rowId, marks, allocsByRow, states, sums, canEdit, pickers, onNeedPickers, onMark, onAllocInsert, onAllocUpdate,
-  onAllocDelete, onClose, loadRowLog, logVersion, onPrevNext,
+  onAllocDelete, onClose, loadRowLog, logVersion, onPrevNext, effPrice = null, priceDoc = null, canPrice = false, onPrice = null,
 }) {
   const row = tree.byId.get(rowId)
   const mark = marks.get(rowId)
@@ -60,8 +63,9 @@ export default function KpEstimateRowDialog({
   const sum = sums.get(rowId)
   const [log, setLog] = useState(null)
   const [actualError, setActualError] = useState('')
+  const [priceError, setPriceError] = useState('')
 
-  useEffect(() => { setActualError('') }, [rowId])
+  useEffect(() => { setActualError(''); setPriceError('') }, [rowId])
   useEffect(() => {
     let alive = true
     setLog(null)
@@ -74,8 +78,20 @@ export default function KpEstimateRowDialog({
   const pos = isPosition(row)
   const k = row.kp || {}
   const p = row.pz
-  const price = unitPrice(row)
+  // Деньги окна — по действующей цене (с изменениями администратора), как в таблице.
+  const filePrice = unitPrice(row)
+  const price = state?.price ?? effPrice?.unit ?? filePrice
   const orig = originalQty(row)
+  const group = tree.children.has(rowId)
+  // Как задаётся цена строки: позиция с «Кол-вом (ГП)» — за единицу, группа и позиция без кол-ва — суммой.
+  const priceKind = group ? 'group_total' : pos && orig ? 'price' : pos ? 'group_total' : null
+  const fileTotal = group ? (sum?.total ?? 0) : rowTotal(row)
+  const ownKey = priceKind === 'price' ? 'unit_price' : 'total'
+  const ownValue = effPrice?.own && effPrice.own[ownKey] !== null && effPrice.own[ownKey] !== undefined ? qtyText(round2(Number(effPrice.own[ownKey]))) : ''
+  const pctOf = (next, prev) => {
+    const v = changePct(next, prev)
+    return v === null ? '' : `, ${v > 0 ? '+' : ''}${v.toLocaleString('ru-RU', { maximumFractionDigits: 1 })} %`
+  }
   const unit = row.unit || ''
   const parts = (list) => list.filter(([, v]) => v !== null && v !== undefined && v !== 0).map(([l, v]) => `${l} ${fmtMoney(v)}`).join(' · ')
 
@@ -101,7 +117,11 @@ export default function KpEstimateRowDialog({
             <Fact label="Стоимость КП"><b>{fmtMoney(k.total ?? p?.comm_total)}</b>{!row.kp && <span className="kpe-muted"> (строка только плана затрат, в итог КП не входит)</span>}
               {(k.materials || k.works) ? <span className="kpe-muted"> ({parts([['материалы', k.materials], ['работы', k.works]])})</span> : null}</Fact>
             {p && <Fact label="Прямые затраты"><b>{fmtMoney(p.direct)}</b>
-              {parts([['осн. материалы', p.direct_main], ['вспом.', p.direct_aux], ['работы', p.direct_works]]) && <span className="kpe-muted"> ({parts([['осн. материалы', p.direct_main], ['вспом.', p.direct_aux], ['работы', p.direct_works]])})</span>}</Fact>}
+              {parts([['осн. материалы', p.direct_main], ['вспом.', p.direct_aux], ['работы', p.direct_works]]) && <span className="kpe-muted"> ({parts([['осн. материалы', p.direct_main], ['вспом.', p.direct_aux], ['работы', p.direct_works]])})</span>}
+              {p.unpriced ? <span className="kpe-muted"> · известная часть: без цены {p.unpriced} из {p.resources} {p.resources % 10 === 1 && p.resources % 100 !== 11 ? 'ресурса' : 'ресурсов'}</span> : null}</Fact>}
+            {p?.coef_total !== null && p?.coef_total !== undefined && (
+              <Fact label="ПЗ × коэфф." hint="Прямые затраты известных ресурсов, умноженные на коэффициенты файла">{fmtMoney(p.coef_total)}</Fact>
+            )}
           </>
         ) : sum ? (
           <>
@@ -114,7 +134,45 @@ export default function KpEstimateRowDialog({
         {row.customer_note && <Fact label="Примечание заказчика">{row.customer_note}</Fact>}
         {row.gp_note && <Fact label="Примечание ГП">{row.gp_note}</Fact>}
         {p?.note && p.note !== row.gp_note && <Fact label="Примечание ПЗ">{p.note}</Fact>}
+        {k.qty_basis === 'customer' && <Fact label="Объём" hint="Раскладка «Событие 6.2»: формула суммы строки умножает кол-во заказчика">по кол-ву заказчика — «Кол-во ГП» в файле пусто, сумма строки посчитана от кол-ва заказчика</Fact>}
+        {k.psdc_ref && <Fact label="ПСДЦ">{k.psdc_ref}</Fact>}
       </section>
+
+      {priceKind && (effPrice?.changed || effPrice?.own || canPrice) && (
+        <section className="kpe-box">
+          <h4>Цена</h4>
+          {priceKind === 'price' && (
+            <Fact label="Действующая за ед.">{fmtMoney(effPrice?.unit ?? filePrice)} ₽ / {unit}
+              {effPrice?.changed && <span className="kpe-muted"> (в файле {fmtMoney(filePrice)}{pctOf(effPrice.unit, filePrice)})</span>}</Fact>
+          )}
+          <Fact label={group ? 'Сумма по действующим ценам' : 'Стоимость по действующей цене'}>{fmtMoney(effPrice ? effPrice.total : fileTotal)} ₽
+            {effPrice?.changed && <span className="kpe-muted"> (в файле {fmtMoney(fileTotal)}{pctOf(effPrice.total, fileTotal)})</span>}</Fact>
+          {effPrice?.unreached && <div className="kpe-warn">Заданная сумма {fmtMoney(effPrice.target)} ₽ не достигнута: позиции внутри со своей ценой дают {fmtMoney(effPrice.total)} ₽, пересчитывать нечего.</div>}
+          {effPrice && (effPrice.own || effPrice.scaled) && (
+            <Fact label="Откуда">{priceSourceText(effPrice)}{priceDoc ? ` — «${priceDoc.title}»${priceDoc.stage ? `, ${priceDoc.stage}` : ''}` : ''}
+              {effPrice.own?.updated_by_name ? <span className="kpe-muted">; {effPrice.own.updated_by_name}, {fmtLogTime(effPrice.own.updated_at)}</span> : null}</Fact>
+          )}
+          {canPrice && onPrice && (
+            <>
+              <div className="kpe-vol-grid">
+                <label className="kpe-f">{priceKind === 'price' ? `Новая цена за ед., ₽${unit ? ` / ${unit}` : ''}` : group ? 'Новая сумма, ₽' : 'Новая стоимость, ₽'}
+                  <SaveOnBlur value={ownValue} label={priceKind === 'price' ? 'Новая цена за единицу' : 'Новая сумма'} inputMode="decimal" className="kpe-num"
+                    placeholder={fmtMoney(priceKind === 'price' ? (effPrice?.unit ?? filePrice) : (effPrice ? effPrice.total : fileTotal))} invalid={!!priceError}
+                    onSave={(v) => {
+                      const n = parseQtyInput(v)
+                      if (Number.isNaN(n)) { setPriceError('Цена — число'); return }
+                      setPriceError('')
+                      onPrice(rowId, priceKind, n)
+                    }} />
+                </label>
+                {effPrice?.own && <button type="button" className="kpe-btn" onClick={() => onPrice(rowId, priceKind, null)}>Вернуть цену файла</button>}
+              </div>
+              {priceError && <div className="kpe-error-line">{priceError}</div>}
+              {group && <p className="kpe-small kpe-muted">Позиции внутри пересчитаются пропорционально (уменьшатся или увеличатся). Позиции со своей ценой остаются как есть — остаток суммы делится на остальные.</p>}
+            </>
+          )}
+        </section>
+      )}
 
       {hasVolume(row) && (
         <section className="kpe-box">

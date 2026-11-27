@@ -5,11 +5,14 @@
 //     (подсказка не ловит мышь, ничему не мешает); ещё — прокрутка таблицы вбок (Shift + колесо). Узкое окно — без закрепления;
 //   • нажатие по строке открывает окно строки; флажок слева (Shift — диапазон) выделяет строки, у группы — со всем её
 //     составом; «Ячейки» — протянуть мышью прямоугольник ячеек для заливки;
-//   • нажатие по «Актуальному» или «Примечанию» (с правом правки) — правка прямо в ячейке (Enter — сохранить, Esc — отмена).
+//   • нажатие по «Актуальному» или «Примечанию» (с правом правки) — правка прямо в ячейке (Enter — сохранить, Esc — отмена);
+//   • режим «Цены» (администратор, 27.11.2026): свои столбцы (columns.PRICE_MODE_COLUMNS) — цена позиции и сумма группы
+//     правятся в ячейке так же; пустое поле — вернуть цену файла.
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import VirtualTableBody from '../VirtualTableBody'
-import { allocQty, allocationText, fmtMoney, fmtQty, hasVolume, isPosition, originalQty, parseQtyInput } from '../../utils/kpEstimate'
+import { allocQty, allocationText, fmtMoney, fmtQty, hasVolume, isPosition, originalQty, parseQtyInput, rowTotal, unitPrice } from '../../utils/kpEstimate'
+import { changePct, priceSourceText } from '../../utils/kpEstimatePrices'
 
 const SEL_W = 2.25
 const MIN_NAME_REM = 16
@@ -31,9 +34,10 @@ function qtyCell(v, { sign = false } = {}) {
   return sign && v > 0 ? `+${s}` : s
 }
 
-// Что показать в ячейке. ctx: { state, sum, mark, allocs }.
+const pctText = (v) => (v === null || v === undefined ? '' : `${v > 0 ? '+' : ''}${v.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}`)
+// Что показать в ячейке. ctx: { state, sum, mark, allocs, price }; price — действующая цена строки (kpEstimatePrices).
 function cellContent(col, row, ctx) {
-  const { state: s, sum, mark } = ctx
+  const { state: s, sum, mark, price } = ctx
   const pos = isPosition(row)
   const group = !!sum
   switch (col.key) {
@@ -81,10 +85,44 @@ function cellContent(col, row, ctx) {
       )
     }
     case 'note': return mark?.note ? <span className="kpe-note-text">{mark.note}</span> : ''
+    case 'current': {
+      const v = group ? sum.current : s?.current
+      if (v === null || v === undefined || (!v && !row.unit)) return ''
+      const base = group ? sum.total : (row.kp?.total ?? null)
+      const diff = base === null ? 0 : v - base
+      return <span className={Math.abs(diff) > 0.005 ? (diff > 0 ? 'kpe-up' : 'kpe-down') : ''} title={base !== null && Math.abs(diff) > 0.005 ? `Стоимость КП ${fmtMoney(base)}, разница ${diff > 0 ? '+' : ''}${fmtMoney(diff)}` : undefined}>{fmtMoney(v)}</span>
+    }
+    case 'base_unit':
+      return !group && pos && originalQty(row) ? fmtMoney(unitPrice(row)) : ''
+    case 'new_unit': {
+      if (group || !pos || !originalQty(row)) return ''
+      const base = unitPrice(row)
+      const v = price?.unit ?? base
+      const d = v - base
+      return <span className={Math.abs(d) > 0.005 ? (d > 0 ? 'kpe-up' : 'kpe-down') : 'kpe-muted'} title={Math.abs(d) > 0.005 ? `В файле ${fmtMoney(base)}` : 'Как в файле'}>{fmtMoney(v)}</span>
+    }
+    case 'new_total': {
+      const base = group ? sum.total : (pos ? rowTotal(row) : null)
+      if (base === null || (!base && !price?.total)) return ''
+      const v = price ? price.total : base
+      const d = v - base
+      return <span className={Math.abs(d) > 0.005 ? (d > 0 ? 'kpe-up' : 'kpe-down') : ''}>{fmtMoney(v)}</span>
+    }
+    case 'pct': {
+      if (!price?.changed) return ''
+      const base = group ? sum.total : rowTotal(row)
+      return <span className={price.total > base ? 'kpe-up' : 'kpe-down'}>{pctText(changePct(price.total, base))}</span>
+    }
+    case 'source': {
+      const t = priceSourceText(price)
+      const doc = price?.own?.doc_id ? ctx.docs?.get(price.own.doc_id) : null
+      return t ? <span className="kpe-muted" title={[doc && `Документ: ${doc.title}${doc.stage ? `, ${doc.stage}` : ''}`, price.own?.updated_by_name && `Изменил(а): ${price.own.updated_by_name}`].filter(Boolean).join('. ') || undefined}>{t}</span> : ''
+    }
     default: return ''
   }
 }
 
+const EDITOR_LABEL = { actual: 'Актуальный объём', price: 'Цена за единицу', group_total: 'Сумма' }
 function InlineEditor({ kind, initial, onCommit, onCancel }) {
   const [value, setValue] = useState(initial)
   const ref = useRef(null)
@@ -103,7 +141,7 @@ function InlineEditor({ kind, initial, onCommit, onCancel }) {
     )
   }
   return (
-    <input ref={ref} className="kpe-inline" value={value} inputMode="decimal" aria-label="Актуальный объём"
+    <input ref={ref} className="kpe-inline" value={value} inputMode="decimal" aria-label={EDITOR_LABEL[kind] || 'Число'}
       onChange={(e) => setValue(e.target.value)} onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === 'Escape') { e.preventDefault(); cancel() }
@@ -114,7 +152,7 @@ function InlineEditor({ kind, initial, onCommit, onCancel }) {
 
 const Row = memo(function Row({
   row, index, columns, place, ctx, level, collapsed, hasChildren, selected, active, highlighted, remote, cellSel, brush,
-  canEdit, editing, onToggle, onSelect, onOpen, onCellDown, onCellEnter, onStartEdit, onCommitEdit, onCancelEdit, onNameHover,
+  canEdit, priceEdit, editing, onToggle, onSelect, onOpen, onCellDown, onCellEnter, onStartEdit, onCommitEdit, onCancelEdit, onNameHover,
 }) {
   const mark = ctx.mark
   const rowFill = mark?.fill || null
@@ -143,7 +181,9 @@ const Row = memo(function Row({
         if (col.strong) tdCls.push('kpe-strong')
         if (fill) tdCls.push('has-cell-fill')
         if (inSel) tdCls.push('is-cell-sel')
-        const editable = canEdit && col.editable && (col.editable === 'note' || hasVolume(row))
+        const editable = col.editable === 'price' ? priceEdit && !hasChildren && isPosition(row) && !!originalQty(row)
+          : col.editable === 'group_total' ? priceEdit && (hasChildren || (isPosition(row) && !originalQty(row)))
+            : canEdit && col.editable && (col.editable === 'note' || hasVolume(row))
         if (editable) tdCls.push('is-editable')
         const style = p?.style ? { ...p.style } : {}
         if (fill) style['--kpe-cell-fill'] = fill
@@ -151,7 +191,8 @@ const Row = memo(function Row({
         if (isEditing) tdCls.push('is-editing')
         let content
         if (isEditing) {
-          const initial = col.editable === 'note' ? (mark?.note || '') : (mark?.actual_qty ?? '')
+          const initial = col.editable === 'note' ? (mark?.note || '') : col.editable === 'price' ? priceInitial(ctx.price?.own, 'unit_price')
+            : col.editable === 'group_total' ? priceInitial(ctx.price?.own, 'total') : (mark?.actual_qty ?? '')
           content = <InlineEditor kind={col.editable} initial={initial === null ? '' : String(initial).replace('.', ',')}
             onCommit={(v) => onCommitEdit(row.id, col.editable, v)} onCancel={onCancelEdit} />
         } else if (col.key === 'name') {
@@ -175,7 +216,7 @@ const Row = memo(function Row({
             onMouseDown={brush ? (e) => { if (e.button === 0) { e.preventDefault(); onCellDown(index, ci, e.shiftKey) } } : undefined}
             onMouseEnter={brush ? () => onCellEnter(index, ci) : undefined}
             onClick={editable && !brush && !isEditing ? (e) => { e.stopPropagation(); onStartEdit(row.id, col.key) } : undefined}
-            title={editable && !isEditing ? 'Нажмите, чтобы изменить' : undefined}>
+            title={editable && !isEditing ? (col.editable === 'group_total' && hasChildren ? 'Нажмите, чтобы задать сумму: позиции внутри пересчитаются пропорционально' : 'Нажмите, чтобы изменить') : undefined}>
             {content}
           </td>
         )
@@ -184,9 +225,12 @@ const Row = memo(function Row({
   )
 })
 
+// Начальное значение правки цены: своя цена строки (пусто — цены администратора нет, будет цена файла).
+const priceInitial = (own, key) => (own && own[key] !== null && own[key] !== undefined ? Math.round(Number(own[key]) * 100) / 100 : '')
+
 export default function KpEstimateTable({
   tree, ids, columns, marks, allocsByRow, states, sums, collapsed, selection, activeId, highlight, remoteIds,
-  cellSel, setCellSel, brush, canEdit, scrollTo, onToggle, onSelect, onOpen, onEdit,
+  cellSel, setCellSel, brush, canEdit, priceEdit = false, effective = null, priceDocs = null, scrollTo, onToggle, onSelect, onOpen, onEdit,
 }) {
   const scrollRef = useRef(null)
   const [editing, setEditing] = useState(null)
@@ -290,7 +334,11 @@ export default function KpEstimateTable({
   const onCommitEdit = useCallback((id, kind, value) => {
     setEditing(null)
     if (kind === 'note') onEdit(id, { note: value })
-    else {
+    else if (kind === 'price' || kind === 'group_total') {
+      const n = parseQtyInput(value)
+      if (Number.isNaN(n)) return onEdit(id, { invalid: 'Цена — число' })
+      onEdit(id, { price: n, priceKind: kind })
+    } else {
       const n = parseQtyInput(value)
       if (Number.isNaN(n) || (n !== null && n < 0)) return onEdit(id, { invalid: 'Объём — неотрицательное число' })
       onEdit(id, { actual_qty: n })
@@ -326,12 +374,14 @@ export default function KpEstimateTable({
       sum: hasChildren ? sums.get(id) : null,
       mark: marks.get(id),
       allocs: allocsByRow.get(id),
+      price: effective?.get(id) || null,
+      docs: priceDocs,
     }
     const rowSel = cellSel && index >= cellSel.r1 && index <= cellSel.r2 ? cellSel : null
     return (
       <Row key={id} row={row} index={index} columns={columns} place={place} ctx={ctx} level={row.level}
         collapsed={collapsed.has(id)} hasChildren={hasChildren} selected={selection.has(id)} active={activeId === id}
-        highlighted={highlight.has(id)} remote={remoteIds.has(id)} cellSel={rowSel} brush={brush} canEdit={canEdit}
+        highlighted={highlight.has(id)} remote={remoteIds.has(id)} cellSel={rowSel} brush={brush} canEdit={canEdit} priceEdit={priceEdit}
         editing={editing && editing.id === id ? editing : null}
         onToggle={onToggle} onSelect={onSelect} onOpen={onOpen} onCellDown={onCellDown} onCellEnter={onCellEnter}
         onStartEdit={onStartEdit} onCommitEdit={onCommitEdit} onCancelEdit={onCancelEdit} onNameHover={onNameHover} />

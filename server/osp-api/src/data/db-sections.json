@@ -3739,6 +3739,56 @@
       "update": "none",
       "delete": "none",
       "why": "Смета КП / ПЗ во вкладке «Смета» карточки объекта (components/kpEstimate, services/kpEstimate.js): читают «Объекты» или «Объекты: смета КП/ПЗ», пишет право правки сметы; охват объектов — правило базы (миграция 20270215). История пишут только триггеры базы."
+    },
+    "kp_estimate_prices": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "view"
+            ],
+            [
+              "kp_estimate",
+              "edit"
+            ],
+            [
+              "objects",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Цены сметы КП / ПЗ, изменённые администратором (components/kpEstimate — режим «Цены» и окно «Цены по документу», services/kpEstimate.js): читают, как смету, — «Объекты» или «Объекты: смета КП/ПЗ»; охват объектов — правило базы (миграция 20270308). Пишут только служебные функции kp_estimate_price_apply / kp_estimate_price_reset — администратор."
+    },
+    "kp_estimate_price_docs": {
+      "read": "sensitive",
+      "select": [
+        {
+          "any": [
+            [
+              "kp_estimate",
+              "view"
+            ],
+            [
+              "kp_estimate",
+              "edit"
+            ],
+            [
+              "objects",
+              "view"
+            ]
+          ]
+        }
+      ],
+      "insert": "none",
+      "update": "none",
+      "delete": "none",
+      "why": "Документы, по которым администратор изменил цены сметы КП / ПЗ (название, этап, кто и когда). читают, как смету, — «Объекты» или «Объекты: смета КП/ПЗ»; охват объектов — правило базы (миграция 20270308). Пишут только служебные функции kp_estimate_price_apply / kp_estimate_price_reset — администратор."
     }
   },
   "rpc": {
@@ -4870,6 +4920,18 @@
         }
       ],
       "why": "Смета КП / ПЗ: черновик → действующая версия с переносом отметок (ObjectDetailPage → KpEstimateImportDialog)."
+    },
+    "kp_estimate_price_apply": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "admin",
+      "why": "Смета КП / ПЗ: администратор меняет цены — вручную (режим «Цены») или документом (окно «Цены по документу»); проверка администратора и охвата объекта — в функции базы (20270308)."
+    },
+    "kp_estimate_price_reset": {
+      "kind": "write",
+      "read": "sensitive",
+      "call": "admin",
+      "why": "Смета КП / ПЗ: администратор возвращает цену из файла; проверка администратора и охвата объекта — в функции базы (20270308)."
     },
     "supply_registry_import": {
       "kind": "write",

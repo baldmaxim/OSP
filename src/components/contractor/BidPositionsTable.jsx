@@ -6,7 +6,9 @@ import { lineTotal } from '../../utils/bidPrice'
 import { IconEye } from '../icons/ActionIcons'
 
 // Список «Материалы» или «Работы» расценки подрядчика: уникальные позиции ведомостей тендера, цена за единицу с НДС и примечание.
-// Решения пользователя 24.11.2026: не расценённая позиция — выделена (с 25.11.2026 мягким тёплым тоном вместо жёлтого); ведомость выбрана — объём и сумма по ней;
+// Решения пользователя 24.11.2026: не расценённая позиция — выделена; 27.11.2026 (просьба пользователя): как в «Тендерах на материалы» —
+// жёлтым только поле цены, строка не заливается; наименование — тёмным и полужирнее подсказок, строки — через одну подложкой, под
+// указателем и при вводе — заметнее (чтобы позиции не сливались); ведомость выбрана — объём и сумма по ней;
 // что изменилось в новой версии ВОР — отметкой в строке («новая», «было …»), как в расценке снабжения; разрешены цены снабжения —
 // колонка «Цена СУ-10» с кнопкой «взять»; у взятой цены снабжения — счёт (файл счёта / КП поставщика этой позиции, решение пользователя
 // 25.11.2026): своя колонка «Счёт» рядом с «Ценой СУ-10», кнопка открывает окно просмотра (просьба пользователя 25.11.2026 «не вижу
@@ -25,6 +27,19 @@ function changesOf(p, changes, vorId, titleOf) {
     if (c) out.push({ id, title: titleOf.get(id) || '', ...c })
   }
   return out
+}
+
+// В каких ведомостях позиция (все ВОР в таблице): одна-две — названиями, больше — числом, названия — в подсказке (27.11.2026: под каждой
+// позицией перечень всех ВОР занимал по три строки — «слишком много информации»). Позиции одной ведомости — выбором ВОР над таблицей.
+function VorsOf({ ids, titleOf, total }) {
+  const names = ids.map((id) => titleOf.get(id)).filter(Boolean)
+  if (!names.length) return null
+  if (names.length <= 2) return <span className="bid-docs">ВОР: {names.join(', ')}</span>
+  return (
+    <span className="bid-docs" title={names.join('\n')}>
+      {names.length >= total ? `во всех ВОР (${names.length})` : `в ${names.length} ВОР из ${total}`}
+    </span>
+  )
 }
 
 function ChangeMark({ c, withTitle, unit }) {
@@ -90,11 +105,11 @@ export default function BidPositionsTable({
     // от имени подрядчика база отдаёт счета всех открытых позиций (20270305): «взять» там — черновик страницы, отбор — здесь.
     const docs = fromSupply && supplyDocs && (sp == null || sp === price) ? supplyDocs.get(`${p.itemKey}|${p.unitKey}`) || null : null
     return (
-      <tr key={p.key} className={price != null ? 'is-priced' : 'is-unpriced'}>
+      <tr key={p.key} className={`${price != null ? 'is-priced' : 'is-unpriced'}${i % 2 ? ' is-alt' : ''}`}>
         <td className="bid-col-n">{i + 1}</td>
         <td className="bid-col-name">
           <span className="bid-name">{p.name}</span>
-          {multi && !vorId && <span className="bid-docs">ВОР: {p.files.map((id) => titleOf.get(id)).filter(Boolean).join(', ')}</span>}
+          {multi && !vorId && <VorsOf ids={p.files} titleOf={titleOf} total={vors.length} />}
           {marks.map((c) => <ChangeMark key={c.id} c={c} withTitle={multi && !vorId} unit={p.unit} />)}
           {hist && canEdit && (
             <span className="bid-hint">
@@ -146,7 +161,9 @@ export default function BidPositionsTable({
           />
           {fromSupply && <span className="bid-source">цена снабжения</span>}
         </td>
-        <td className="num bid-col-sum">{price != null && volume != null ? formatAmount(lineTotal(price, volume)) : 'нет цены'}</td>
+        <td className="num bid-col-sum">
+          {price != null && volume != null ? formatAmount(lineTotal(price, volume)) : <span className="bid-muted-cell" title={price == null ? 'Нет цены — нет суммы' : 'В ВОР нет объёма — нет суммы'}>—</span>}
+        </td>
         <td className="bid-col-note">
           <NoteInput value={r?.note || ''} disabled={!canEdit} label={`Примечание: ${p.name}`} onCommit={(note) => onCommit(p, { note })} />
         </td>

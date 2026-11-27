@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { uploadFile } from '../services/s3'
+import { uploadFile, deleteDocument } from '../services/s3'
 import { downloadS3File } from './FileDownload'
 import './ObjectDocumentFileSlot.css'
 
@@ -12,6 +12,9 @@ import './ObjectDocumentFileSlot.css'
 // (onUploaded(новая, прежняя), onRemoved(прежняя)). Родитель знает, какие записи загружены в этой
 // форме, а какие уже привязаны к документу: привязанный файл удаляется только после сохранения формы,
 // иначе «Заменить» и затем «Отмена» оставляли документ без файла (прежний удалялся сразу, новый — при отмене).
+//
+// Окно закрыли, пока файл грузился, — догрузившийся файл ни к чему не привязан и удаляется здесь же (раньше оставался
+// в хранилище, а ответ приходил в уже закрытую форму). Ход загрузки — в процентах: большой файл не выглядит зависшим.
 
 function formatBytes(bytes) {
   if (bytes == null) return ''
@@ -34,11 +37,21 @@ export default function ObjectDocumentFileSlot({
 }) {
   const inputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
+  const [percent, setPercent] = useState(null)
   const [error, setError] = useState(null)
-
+  const alive = useRef(true)
   useEffect(() => {
-    onUploadingChange?.(uploading)
-  }, [uploading, onUploadingChange])
+    alive.current = true
+    return () => { alive.current = false }
+  }, [])
+
+  // Родителю — только смена «идёт / не идёт». Обработчик берётся последний, но в зависимостях его нет: родитель,
+  // передающий новую функцию на каждый рендер, иначе крутил бесконечный цикл перерисовок.
+  const onUploadingChangeRef = useRef(onUploadingChange)
+  useEffect(() => { onUploadingChangeRef.current = onUploadingChange })
+  useEffect(() => {
+    onUploadingChangeRef.current?.(uploading)
+  }, [uploading])
 
   const label = slot === 'signed' ? 'Подписанный' : 'Редактируемый'
   const accentClass = slot === 'signed' ? 'doc-slot-signed' : 'doc-slot-editable'
@@ -54,16 +67,29 @@ export default function ObjectDocumentFileSlot({
     if (!file) return
 
     setUploading(true)
+    setPercent(null)
     setError(null)
     let newDoc = null
     try {
-      newDoc = await uploadFile({ file, ownerType: 'object', ownerId })
+      newDoc = await uploadFile({
+        file,
+        ownerType: 'object',
+        ownerId,
+        onProgress: ({ stage, loaded, total }) => {
+          if (alive.current && stage === 'send' && total > 0) setPercent(Math.min(99, Math.round((loaded / total) * 100)))
+        },
+      })
     } catch (err) {
+      if (!alive.current) return
       setError(err.message || 'Ошибка загрузки')
       setUploading(false)
       return
     }
 
+    if (!alive.current) {
+      deleteDocument(newDoc).catch(() => { /* лучшее усилие: файл ни к чему не привязан */ })
+      return
+    }
     setUploading(false)
     onUploaded(newDoc, currentDoc || null)
   }
@@ -88,7 +114,7 @@ export default function ObjectDocumentFileSlot({
     <div className={`doc-slot ${accentClass}`}>
       <div className="doc-slot-header">
         <span className="doc-slot-label">{label}</span>
-        {uploading && <span className="doc-slot-status">Загрузка…</span>}
+        {uploading && <span className="doc-slot-status">Загрузка…{percent != null ? ` ${percent} %` : ''}</span>}
       </div>
 
       <input
@@ -107,7 +133,7 @@ export default function ObjectDocumentFileSlot({
           disabled={disabled || uploading}
         >
           {uploading ? (
-            'Загрузка…'
+            `Загрузка…${percent != null ? ` ${percent} %` : ''}`
           ) : (
             <>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

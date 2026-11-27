@@ -193,6 +193,128 @@ export function eraseRulings(gray, w, h, threshold, rules) {
   }
 }
 
+// ── Мелкая картинка страницы ─────────────────────────────────────────────────────────────────────────
+// 27.11.2026, тендер № 1157, КП «Металлсервис» (mc.ru): страница — картинка 877×1077 точек на листе 699×849 pt, то есть ~90 dpi,
+// 16 цветов, буквы без сглаживания по 8–9 точек. Отрисовка pdf.js в 300 dpi растягивает её сглаживанием в 3,3 раза: края букв
+// расплываются, «Кол-во» читалось «Kon-Bo» (колонку количества разбор не находил, сверять цены было не с чем), «74990.00» —
+// «4990.00», «16П» — «160». Такую страницу рисуем точка в точку и увеличиваем сами (Lanczos), как у распознавателя при обучении.
+
+// Самая большая картинка страницы по командам рисования pdf.js: { w, h, sx, sy, cover } — её точки, точек на pt по осям и доля
+// листа, которую она занимает; нет картинки — null. Положение картинки — текущая матрица (save / restore / transform / формы).
+export function pageImageInfo(fnArray, argsArray, OPS, pageWidth, pageHeight) {
+  let ctm = [1, 0, 0, 1, 0, 0]
+  const stack = []
+  const mul = (m, n) => [
+    n[0] * m[0] + n[1] * m[2], n[0] * m[1] + n[1] * m[3],
+    n[2] * m[0] + n[3] * m[2], n[2] * m[1] + n[3] * m[3],
+    n[4] * m[0] + n[5] * m[2] + m[4], n[4] * m[1] + n[5] * m[3] + m[5],
+  ]
+  let best = null
+  for (let i = 0; i < fnArray.length; i++) {
+    const fn = fnArray[i]
+    const args = argsArray[i]
+    if (fn === OPS.save) stack.push(ctm)
+    else if (fn === OPS.restore) ctm = stack.pop() || [1, 0, 0, 1, 0, 0]
+    else if (fn === OPS.transform && args?.length === 6) ctm = mul(ctm, args)
+    else if (fn === OPS.paintFormXObjectBegin) {
+      stack.push(ctm)
+      if (Array.isArray(args?.[0]) && args[0].length === 6) ctm = mul(ctm, args[0])
+    } else if (fn === OPS.paintFormXObjectEnd) ctm = stack.pop() || [1, 0, 0, 1, 0, 0]
+    else if (fn === OPS.paintImageXObject || fn === OPS.paintInlineImageXObject) {
+      const w = fn === OPS.paintImageXObject ? Number(args?.[1]) : Number(args?.[0]?.width)
+      const h = fn === OPS.paintImageXObject ? Number(args?.[2]) : Number(args?.[0]?.height)
+      const dw = Math.hypot(ctm[0], ctm[1])
+      const dh = Math.hypot(ctm[2], ctm[3])
+      if (!(w > 0 && h > 0 && dw > 0 && dh > 0)) continue
+      const cover = (dw * dh) / Math.max(1, pageWidth * pageHeight)
+      if (!best || cover > best.cover) best = { w, h, sx: w / dw, sy: h / dh, cover }
+    }
+  }
+  return best
+}
+
+// Увеличение серой картинки (Lanczos, окно 3): ровные края букв без ступенек и без размытия. Масштабы по осям бывают разные (точки
+// картинки не квадратные относительно листа), поэтому размер — W×H целиком. Ответ — Uint8Array W×H.
+const LANCZOS_A = 3
+function lanczosTaps(src, dst) {
+  const scale = dst / src
+  const taps = new Int32Array(dst)
+  const weights = new Float32Array(dst * 2 * LANCZOS_A)
+  for (let i = 0; i < dst; i++) {
+    const center = (i + 0.5) / scale - 0.5
+    const left = Math.floor(center) - LANCZOS_A + 1
+    taps[i] = left
+    let sum = 0
+    for (let k = 0; k < 2 * LANCZOS_A; k++) {
+      const x = center - (left + k)
+      const v = x === 0 ? 1 : Math.abs(x) >= LANCZOS_A ? 0
+        : (LANCZOS_A * Math.sin(Math.PI * x) * Math.sin((Math.PI * x) / LANCZOS_A)) / (Math.PI * Math.PI * x * x)
+      weights[i * 2 * LANCZOS_A + k] = v
+      sum += v
+    }
+    for (let k = 0; k < 2 * LANCZOS_A; k++) weights[i * 2 * LANCZOS_A + k] /= sum || 1
+  }
+  return { taps, weights }
+}
+export function lanczosResize(gray, w, h, W, H) {
+  const n = 2 * LANCZOS_A
+  const xs = lanczosTaps(w, W)
+  const ys = lanczosTaps(h, H)
+  const mid = new Float32Array(W * h)
+  for (let y = 0; y < h; y++) {
+    const row = y * w
+    for (let x = 0; x < W; x++) {
+      const left = xs.taps[x]
+      let s = 0
+      for (let k = 0; k < n; k++) {
+        const sx = Math.min(w - 1, Math.max(0, left + k))
+        s += gray[row + sx] * xs.weights[x * n + k]
+      }
+      mid[y * W + x] = s
+    }
+  }
+  const out = new Uint8Array(W * H)
+  for (let y = 0; y < H; y++) {
+    const top = ys.taps[y]
+    for (let x = 0; x < W; x++) {
+      let s = 0
+      for (let k = 0; k < n; k++) {
+        const sy = Math.min(h - 1, Math.max(0, top + k))
+        s += mid[sy * W + x] * ys.weights[y * n + k]
+      }
+      out[y * W + x] = s < 0 ? 0 : s > 255 ? 255 : Math.round(s)
+    }
+  }
+  return out
+}
+
+// ── Числа: второе чтение ─────────────────────────────────────────────────────────────────────────────
+// Слово похоже на число таблицы (цена, сумма, количество, код): цифры и то, во что распознаватель превращает цифры мелкого шрифта
+// («#15622.70», «2.29?», «Б7326.09», «{15622.70», «g86374.79»). Слова с буквами наименования («ГОСТ3262-75», «дл.7800») — нет.
+const NUMBERISH_RE = /^[0-9ОоOoЗзlIбБSBВgbqszZ#?%{}“”"'.,:;/\\|-]+$/
+export const numberish = (text) => NUMBERISH_RE.test(String(text || '')) && (String(text).match(/[0-9]/g) || []).length >= 2
+// Чистое число второго чтения («74990.00», «2.297», «1201444»).
+export const cleanNumber = (text) => {
+  const s = String(text || '').replace(/\s+/g, '')
+  return /^[0-9]+(?:[.,][0-9]+)?$/.test(s) ? s : null
+}
+// Где перечитать число: от конца соседнего слова слева до начала соседнего справа, в пределах ячейки (линии рамки cuts — x в
+// точках картинки), с запасом по высоте. Так в рамку попадает и цифра, которую первое чтение потеряло («26374.54» вместо
+// «726374.54»: «7» мелкого шрифта — тонкая черта). words — слова строки распознавателя по порядку, i — номер слова.
+export function numberBox(words, i, cuts, imgW, imgH) {
+  const w = words[i].bbox
+  const h = Math.max(4, w.y1 - w.y0)
+  const leftCut = Math.max(0, ...cuts.filter((x) => x <= w.x0 + 1))
+  const rightCut = Math.min(imgW, ...cuts.filter((x) => x >= w.x1 - 1))
+  const prev = words[i - 1]?.bbox
+  const next = words[i + 1]?.bbox
+  const x0 = Math.max(leftCut + 2, prev && prev.x1 < w.x0 ? prev.x1 + 2 : 0, w.x0 - 2 * h)
+  const x1 = Math.min(rightCut - 2, next && next.x0 > w.x1 ? next.x0 - 2 : imgW, w.x1 + h)
+  const y0 = Math.max(0, w.y0 - Math.round(h * 0.35))
+  const y1 = Math.min(imgH, w.y1 + Math.round(h * 0.35))
+  return x1 - x0 >= 4 && y1 - y0 >= 4 ? { x0: Math.round(x0), y0, x1: Math.round(x1), y1 } : null
+}
+
 // Линии в координатах страницы разбора (точки PDF, y от верха): как у rulingsFromOps.
 export function rulingsToPage(rules, scale) {
   return {
@@ -307,15 +429,120 @@ export function ocrUnit(text) {
 // unsure: строка видна, но сама не отмечается, человек сверяет её с файлом.
 const VAT_FACTORS = [1, 1.22, 1.2, 1.1, 1.07, 1.05]
 const near = (a, b) => Math.abs(a - b) <= Math.max(1, b * 0.002)
+const fitsSum = (price, qty, sum) => {
+  const made = price * qty
+  return VAT_FACTORS.some((f) => near(made * f, sum) || near(made, sum * f))
+}
+// Точно — до копеек (цена в документе округлена до копеек: на количество набегает до полкопейки на единицу), НДС сверху — тоже.
+// Допуск 0,2 % (fitsSum) пропускал неверную цифру десятков: «130080» вместо «130090» при сумме 298 816,73 — разница 23 ₽ (27.11.2026).
+export const fitsExactly = (price, qty, sum) => {
+  const made = price * qty
+  return VAT_FACTORS.some((f) => {
+    const tol = (0.006 + qty * 0.005) * f + 0.01
+    return Math.abs(made * f - sum) <= tol || Math.abs(made - sum * f) <= tol
+  })
+}
+// Наименование со скана: то, что распознаватель путает в каждом счёте на металл (тендер № 1157, КП «Металлсервиса») — латиница вместо
+// кириллицы в ГОСТ и ТУ, «э» как «з», «дл.» как «an.», «3» марки стали как «З» / «Э», «6» в начале размера как «Б», «х» размера как «%».
+// Только то, что русским словом и размером не бывает: правка не может испортить верно прочитанное.
+const OCR_NAME_FIXES = [
+  [/(^|[^a-zа-яё])[MTrFГ][OО][CС][TТ](?=[\s0-9-]|$)/g, '$1ГОСТ'],
+  [/\/T[YУ](?![a-zа-яё])/g, '/ТУ'],
+  [/(^|[^a-zа-яё])злектр/g, '$1электр'],
+  [/(^|[^a-zа-яё])(?:an|gn|ал|дп)\.\s?(?=[0-9])/g, '$1дл.'],
+  [/(^|[^a-zа-яё])Ст[ЗЭ](?=(?:пс|сп|кп|еп|пе|[/ ]|$))/g, '$1Ст3'],
+  [/(^|[^a-zа-яё0-9])Б(?=[0-9]+(?:[.,][0-9]+)?[xх×*][0-9])/g, '$16'],
+  [/(дл\.?\s?)Б(?=[0-9]{2,})/g, '$16'],
+  [/([0-9])%(?=[0-9])/g, '$1х'],
+]
+export const ocrName = (name) => (name ? OCR_NAME_FIXES.reduce((s, [re, to]) => s.replace(re, to), String(name)) : name)
+
 export function ocrChecked(items) {
   return items.map((raw) => {
-    const it = { ...raw, unit: ocrUnit(raw.unit) }
+    const it = { ...raw, name: ocrName(raw.name), unit: ocrUnit(raw.unit) }
     if (it.price > 0 && it.qty > 0 && it.sum > 0) {
-      const made = it.price * it.qty
-      const fits = VAT_FACTORS.some((f) => near(made * f, it.sum) || near(made, it.sum * f))
       // unsure из разбора (несколько позиций в одной ячейке) сверка не снимает.
-      return fits ? { ...it, sumOff: false, unsure: raw.unsure === true } : { ...it, sumOff: true, unsure: true }
+      if (fitsExactly(it.price, it.qty, it.sum)) return { ...it, sumOff: false, unsure: raw.unsure === true }
+      // Не сошлось до копеек — сначала одна неверная цифра (repairBySum); не нашлась, а сходится с допуском 0,2 % — как раньше:
+      // так бывает у документа, где цена и сумма округлены по-своему.
+      const fixed = it.per ? null : repairBySum(it.qty, it.price, it.sum)
+      if (fixed) return { ...it, ...fixed, sumOff: false, unsure: raw.unsure === true, ocrFixed: true }
+      if (fitsSum(it.price, it.qty, it.sum)) return { ...it, sumOff: false, unsure: raw.unsure === true }
+      return { ...it, sumOff: true, unsure: true, stacked: raw.unsure === true }
     }
     return { ...it, unsure: true }
   })
+}
+
+// Одна цифра прочитана неверно (27.11.2026, тендер № 1157: «74990.00» прочитано «4990.00», «2208727.57» — без точки, «298816.73» —
+// «2986816.73»): цена × количество ≠ сумма. Пробуем исправить ОДНУ ошибку в одном из трёх чисел — лишняя, потерянная или другая
+// цифра, потерянная точка — и берём исправление, только если сходится ровно одно и сходится точно (до копеек, без НДС сверху).
+// Иначе ответ null: строка остаётся «сверьте с файлом». Количество — с тем же числом знаков, что прочитано.
+const REPAIR_FIELDS = ['qty', 'price', 'sum']
+function numberText(v) {
+  const s = String(v)
+  return /e/i.test(s) ? null : s
+}
+function variants(text, { money }) {
+  const out = new Set()
+  const [int, frac = null] = text.split('.')
+  const digits = int + (frac ?? '')
+  const point = int.length
+  const build = (d, p) => {
+    if (!d || p <= 0 || p > d.length) return
+    if (d.length > 1 && d[0] === '0' && p > 1) return
+    out.add(p < d.length ? `${d.slice(0, p)}.${d.slice(p)}` : d)
+  }
+  for (let i = 0; i < digits.length; i++) {
+    // Лишняя цифра.
+    build(digits.slice(0, i) + digits.slice(i + 1), i < point ? point - 1 : point)
+    // Другая цифра.
+    for (let c = 0; c <= 9; c++) if (String(c) !== digits[i]) build(digits.slice(0, i) + c + digits.slice(i + 1), point)
+  }
+  // Потерянная цифра.
+  for (let i = 0; i <= digits.length; i++) for (let c = 0; c <= 9; c++) build(digits.slice(0, i) + c + digits.slice(i), i <= point ? point + 1 : point)
+  // Потерянная точка: у денег — копейки, у количества — до трёх знаков.
+  if (frac == null) for (const k of money ? [2] : [1, 2, 3]) if (digits.length > k) build(digits, digits.length - k)
+  out.delete(text)
+  return [...out].map(Number).filter((n) => n > 0)
+}
+// Итог документа против строк (после ocrChecked): строка, у которой не сошлись цена × количество и сумма, а все прочие строки верны,
+// — сумма с одной неверной цифрой даёт разницу с итогом. Если ровно одна правка суммы ровно одной такой строки закрывает разницу до
+// копеек — сумма исправляется, затем по ней и цена (repairBySum). Тендер № 1157, КП «Металлсервиса»: «688374.79» вместо «888374.79» и
+// цена «108580» вместо «108590» — две ошибки в строке, по одной строке не исправить. docTotal — итог документа. Ответ — новые строки.
+export function reconcileWithTotal(items, docTotal) {
+  if (!(docTotal > 0)) return items
+  const value = (it) => it.sum ?? (it.price > 0 && it.qty > 0 ? it.price * it.qty : 0)
+  const read = items.reduce((s, it) => s + value(it), 0)
+  // Итог — с НДС или без (каждый вариант), не дальше четверти от прочитанного: одна цифра старшего разряда — это и 20 %.
+  const targets = VAT_FACTORS.map((f) => docTotal / f).filter((t) => Math.abs(read - t) <= t * 0.25)
+  if (!targets.length || targets.some((t) => Math.abs(read - t) <= 0.02)) return items
+  const found = []
+  items.forEach((it, i) => {
+    if (!it.sumOff || !(it.sum > 0) || it.per) return
+    const text = numberText(it.sum)
+    if (!text) return
+    for (const v of variants(text, { money: true })) if (targets.some((t) => Math.abs(read - it.sum + v - t) <= 0.02)) found.push({ i, v })
+  })
+  if (found.length !== 1) return items
+  const { i, v } = found[0]
+  const it = items[i]
+  const fixed = fitsExactly(it.price, it.qty, v) ? { sum: v } : repairBySum(it.qty, it.price, v)
+  if (!fixed || (fixed.sum != null && fixed.sum !== v)) return items
+  return items.map((x, k) => (k === i ? { ...x, ...fixed, sum: v, sumOff: false, unsure: x.stacked === true, ocrFixed: true } : x))
+}
+
+export function repairBySum(qty, price, sum) {
+  const exact = (q, p, s) => fitsExactly(p, q, s)
+  const now = { qty, price, sum }
+  const found = new Map()
+  for (const field of REPAIR_FIELDS) {
+    const text = numberText(now[field])
+    if (!text) continue
+    for (const v of variants(text, { money: field !== 'qty' })) {
+      const t = { ...now, [field]: v }
+      if (exact(t.qty, t.price, t.sum)) found.set(`${t.qty}|${t.price}|${t.sum}`, t)
+    }
+  }
+  return found.size === 1 ? [...found.values()][0] : null
 }

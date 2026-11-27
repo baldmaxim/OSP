@@ -81,10 +81,11 @@ describe('приложение к ДС удаляется отдельно от 
         // Документы с приложениями раскрыты сразу при открытии вкладки.
         const attRows = page.locator('tr.doc-row-tr-attachment')
         await attRows.filter({ hasText: 'Ведомость' }).waitFor()
-        for (const text of ['Приложение к договору', 'График работ', 'Ведомость', 'Смета']) {
+        // У приложения к приложению («Ведомость») «＋» нет — третьего уровня не бывает (26.11.2026): две кнопки.
+        for (const [text, count] of [['Приложение к договору', 3], ['График работ', 3], ['Ведомость', 2], ['Смета', 3]]) {
           const buttons = attRows.filter({ hasText: text }).locator('.doc-cell-actions button')
-          assert.equal(await buttons.count(), 3, text)
-          for (let i = 0; i < 3; i++) assert.ok(await reachable(buttons.nth(i), scroll), `${text}: кнопка ${i + 1} видна целиком`)
+          assert.equal(await buttons.count(), count, text)
+          for (let i = 0; i < count; i++) assert.ok(await reachable(buttons.nth(i), scroll), `${text}: кнопка ${i + 1} видна целиком`)
           assert.ok(await reachable(attRows.filter({ hasText: text }).locator('.doc-action-delete'), scroll), `${text}: «Удалить»`)
         }
         for (const id of ['gc', 'ds']) {

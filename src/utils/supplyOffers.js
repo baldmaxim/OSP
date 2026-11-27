@@ -21,7 +21,11 @@ export const OFFER_VERSION = 1
 // причина записана при файле, и иначе он так и остался бы непрочитанным (тендер № 902: скан — «failed: scan», счёт 1С со
 // шапкой в 50-й строке — «failed: no_table»). 2 — распознавание сканов и шапка глубже 40-й строки. 3 (18.11.2026) — несколько
 // позиций в одной ячейке PDF и числа только с разрядами по три (тендер № 546: две цены «22 350» и «6 496» читались как 223 506 496).
-export const READER_VERSION = 3
+// 4 (27.11.2026) — скан мелкой картинкой (КП «Металлсервиса», тендер № 1157: «Кол-во» не находилось, «74990» читалось «4990»): своё
+// увеличение, второе чтение чисел, исправление одной цифры по сумме и по итогу документа.
+export const READER_VERSION = 4
+// Версия, с которой скан читается так: скан, прочитанный раньше, со строками без сверки — перечитать (offerNeedsRefresh).
+const SCAN_READER_VERSION = 4
 // Отказы, которые новая версия чтения может исправить. Пароль и испорченный файл от чтения не зависят.
 const RETRY_FAILED = new Set(['scan', 'no_table', 'empty'])
 // Скан распознаётся секунды на страницу: «читаем…» без хода выглядело бы как зависание.
@@ -32,7 +36,33 @@ export const offerHasMarks = (offer) => !!offer?.hidden?.length || !!offer?.line
   || (l.packs && Object.keys(l.packs).length) || l.skip)
 // Документ со строками, у которого итог не сошёлся, прочитан прежней версией — перечитать один раз (строки могли склеиться). Только
 // без выбора человека: его при перечитывании не перенести.
-export const offerNeedsRefresh = (offer) => !!offer?.lines?.length && (offer.rv || 0) < READER_VERSION && offer.total?.ok === false && !offerHasMarks(offer)
+// Скан, прочитанный до SCAN_READER_VERSION, где есть строки без сверки, — тоже, и с выбором человека: его переносит carryOfferMarks.
+export const offerNeedsRefresh = (offer) => !!offer?.lines?.length && (offer.rv || 0) < READER_VERSION
+  && ((offer.total?.ok === false && !offerHasMarks(offer)) || (offer.ocr && (offer.rv || 0) < SCAN_READER_VERSION && offer.lines.some((l) => l.unsure)))
+
+// Выбор человека из прежнего чтения файла — в новое (27.11.2026: скан перечитан новой версией, а в нём уже 13 сопоставлений вручную,
+// тендер № 1157). Строка та же — по коду поставщика («Код тов.»), иначе по тому же наименованию, иначе по месту в таблице (строк
+// столько же). Хоть одну строку с выбором не найти — null: файл остаётся прежним, выбор человека дороже лучшего чтения. Убранные из
+// окна позиции (hidden) — как были. Ответ — новое чтение с выбором.
+const MARK_KEYS = ['k', 'also', 'no', 'packs', 'skip']
+const lineMarked = (l) => !!(l.k || l.also?.length || l.no?.length || (l.packs && Object.keys(l.packs).length) || l.skip)
+export function carryOfferMarks(fresh, before) {
+  if (!fresh?.lines?.length || !before) return null
+  const lines = fresh.lines.map((l) => ({ ...l }))
+  const used = new Set()
+  const sameCount = lines.length === before.lines.length
+  for (let i = 0; i < before.lines.length; i++) {
+    const old = before.lines[i]
+    if (!lineMarked(old)) continue
+    let at = old.code ? lines.findIndex((l, k) => !used.has(k) && l.code === old.code) : -1
+    if (at < 0) at = lines.findIndex((l, k) => !used.has(k) && l.name === old.name)
+    if (at < 0 && sameCount && !used.has(i)) at = i
+    if (at < 0) return null
+    used.add(at)
+    for (const key of MARK_KEYS) if (old[key] != null && old[key] !== false) lines[at][key] = old[key]
+  }
+  return { ...fresh, lines, hidden: before.hidden || [] }
+}
 // Больше строк в одном документе не храним (счёт на тысячи строк — уже не документ к позициям); наименование —
 // не длиннее NAME_MAX. Так notes даже в худшем случае (кириллица — 2 байта) меньше 1 МБ: запрос записи файла в
 // osp-api ограничен 2 МБ (BODY_LIMIT).

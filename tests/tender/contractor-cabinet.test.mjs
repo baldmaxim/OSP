@@ -19,7 +19,10 @@
 //     в просмотре от имени подрядчика — обычный путь файлов, счёт и у цены, взятой в черновике, 20270305); прошлые цены — одним
 //     запросом по ключам позиций тендера (без функции — как раньше);
 //   • решения пользователя 11.11.2026 (стенд ?bidFiles=1 — миграция 20270113): файлы ВОР — только в расценке, РД — свёрнута, шаблонов
-//     нет; свои файлы с расценками, загруженные тогда, — списком для скачивания (новых не принимаем: файл с ценами расценивает сайт).
+//     нет; свои файлы с расценками, загруженные тогда, — списком для скачивания (новых не принимаем: файл с ценами расценивает сайт);
+//   • просьба пользователя 27.11.2026 («слишком много информации — как в „Сравнении КП“»): сводка ВОР — одной таблицей (ИТОГО и НДС
+//     внизу), скачать исходный и расценённый ВОР — значками без текста слева; в таблице позиций жёлтым только поле цены (как в «Тендерах
+//     на материалы»), строка не заливается, строки — через одну подложкой.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import * as XLSX from 'xlsx'
@@ -95,8 +98,10 @@ describe('Кабинет подрядчика: расценка на сайте'
       assert.equal(row.source, 'manual')
       assert.ok(row.key && row.unit_key === 'м3', JSON.stringify(row))
       assert.match(await concrete.locator('.bid-col-sum').textContent(), /1\s017\s965,25/)
-      assert.match(await text(page.locator('.bid-vs-total .bid-vs-line').nth(0)), /1 017 965,25 1 из 2/, 'итог — один раз, строкой «ИТОГО по всем ВОР»')
-      assert.equal(await page.locator('.bid-sum-cell', { hasText: 'Материалы' }).count(), 0, 'над сводкой сумм не дублируем')
+      const totalMat = page.locator('.bid-vs-total .bid-vs-num').nth(0)
+      assert.equal(await text(totalMat), '1 017 965,25', 'итог — один раз, строкой «ИТОГО по всем ВОР»')
+      assert.match(await totalMat.getAttribute('title'), /без цены 1 из 2/, 'сколько расценено — в подсказке')
+      assert.equal(await page.locator('.bid-vs-wrap table.bid-vs-table').count(), 1, 'сводка — одной таблицей')
 
       await tab('Структура КП').click()
       const kp = page.locator('.bid-kp-table')
@@ -234,21 +239,42 @@ describe('Кабинет подрядчика: расценка на сайте'
       await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
       const summary = page.locator('.bid-vs-wrap')
       await summary.waitFor({ timeout: 60000 })
-      await summary.locator('li.bid-vs-row', { hasText: 'ВОР корпус 2' }).waitFor({ timeout: 60000 })
-      assert.deepEqual(await summary.locator('li.bid-vs-row .bid-vs-pick').allTextContents(), ['ВОР корпус 2', 'ВОР паркинга'], 'ведомости — по имени')
-      // Меньше пяти ведомостей — плитки растягиваются на весь ряд (две — по половине).
-      const widths = await summary.locator('li.bid-vs-row').evaluateAll((els) => els.map((e) => {
-        const r = e.getBoundingClientRect()
-        return { top: r.top, width: r.width }
-      }))
-      assert.equal(Math.round(widths[0].top), Math.round(widths[1].top), 'две плитки — в одном ряду')
-      assert.ok(widths[0].width > (await summary.locator('ul.bid-vs').evaluate((e) => e.clientWidth)) / 3, 'плитки растянуты на ряд')
-      // Ничего не расценено — всё выделено: строки таблицы, суммы плиток и итог.
-      assert.equal(await summary.locator('.bid-vs-line.is-incomplete').count(), 9)
+      await summary.locator('tr.bid-vs-row', { hasText: 'ВОР корпус 2' }).waitFor({ timeout: 60000 })
+      assert.deepEqual(await summary.locator('tr.bid-vs-row .bid-vs-pick').allTextContents(), ['ВОР корпус 2', 'ВОР паркинга'], 'ведомости — по имени')
+      // Просьба пользователя 27.11.2026: сводка — таблицей, как в «Сравнении КП»: строка на ВОР, ИТОГО внизу; скачать — значками без текста
+      // слева (подпись — для диктора и в подсказке).
+      assert.deepEqual((await summary.locator('thead th').allTextContents()).map((h) => h.trim()),
+        ['Скачать', 'ВОР', 'Материалы, ₽', 'Работы, ₽', 'Итого с НДС, ₽'])
+      const icons = summary.locator('tr.bid-vs-row', { hasText: 'ВОР паркинга' }).locator('td.bid-vs-dl button')
+      assert.equal(await icons.count(), 2, 'исходный и расценённый — двумя значками')
+      assert.deepEqual(await icons.evaluateAll((els) => els.map((e) => e.innerText.trim())), ['', ''], 'значки — без текста')
+      assert.deepEqual(await icons.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label'))),
+        ['Исходный ВОР «ВОР паркинга.xlsx»', 'Расценённый ВОР «ВОР паркинга.xlsx»'])
+      await summary.getByRole('button', { name: 'Скачать все расценённые ВОР' }).waitFor()
+      // Ничего не расценено — суммы сводки выделены: 2 ВОР × 3 суммы + ИТОГО.
+      assert.equal(await summary.locator('.bid-vs-num.is-incomplete').count(), 9)
       await page.locator('.bid-tab', { hasText: 'Материалы' }).locator('.bid-tab-missing', { hasText: 'без цены 2' }).waitFor()
       assert.equal(await page.locator('.bid-table tbody tr.is-unpriced').count(), 2)
-      const bg = await page.locator('.bid-table tbody tr.is-unpriced .bid-col-price').first().evaluate((el) => getComputedStyle(el).backgroundColor)
-      assert.match(bg, /rgb\(251, 241, 223\)/, 'не расценено — мягким тёплым тоном (25.11.2026: прежний жёлтый пользователь счёл токсичным)')
+      // Просьба пользователя 27.11.2026: строка без цены не заливается — жёлтым только поле цены, как в «Тендерах на материалы».
+      const unpriced = page.locator('.bid-table tbody tr.is-unpriced').first()
+      await page.mouse.move(0, 0)
+      const colors = await unpriced.evaluate((tr) => ({
+        name: getComputedStyle(tr.querySelector('.bid-col-name')).backgroundColor,
+        price: getComputedStyle(tr.querySelector('.bid-col-price')).backgroundColor,
+        sum: getComputedStyle(tr.querySelector('.bid-col-sum')).backgroundColor,
+        input: getComputedStyle(tr.querySelector('.bid-money-input')).backgroundColor,
+        border: getComputedStyle(tr.querySelector('.bid-money-input')).borderTopColor,
+      }))
+      const row0 = await page.locator('.bid-table tbody tr').first().getAttribute('class')
+      const plain = /is-alt/.test(await unpriced.getAttribute('class')) ? 'rgb(244, 246, 249)' : 'rgba(0, 0, 0, 0)'
+      assert.equal(colors.name, plain, `строка не заливается (${row0})`)
+      assert.equal(colors.price, plain, 'ячейка цены — как строка')
+      assert.equal(colors.sum, plain, 'ячейка суммы — как строка')
+      assert.equal(colors.input, 'rgb(255, 251, 235)', 'поле цены — жёлтым (--warning-light)')
+      assert.equal(colors.border, 'rgb(252, 211, 77)', 'рамка поля цены — --warning-muted')
+      // Строки — через одну подложкой (классом по номеру строки), наименование — тёмным, полужирнее.
+      assert.deepEqual(await page.locator('.bid-table tbody tr').evaluateAll((els) => els.map((e) => e.classList.contains('is-alt'))), [false, true])
+      assert.equal(await page.locator('.bid-table tbody tr .bid-name').first().evaluate((el) => getComputedStyle(el).fontWeight), '500')
 
       // Цена бетона — одна на тендер, суммы — по каждой ведомости (130,5 м3 в каждой).
       const concrete = page.locator('.bid-table tbody tr', { hasText: 'Бетон В25 W8' })
@@ -256,12 +282,15 @@ describe('Кабинет подрядчика: расценка на сайте'
       await concrete.locator('.bid-money-input').fill('7800')
       await concrete.locator('.bid-money-input').press('Enter')
       await page.locator('.bid-save', { hasText: 'Все цены сохранены' }).waitFor({ timeout: 10000 })
-      const row = (name) => summary.locator('li.bid-vs-row', { hasText: name })
-      assert.match(await text(row('ВОР паркинга').locator('.bid-vs-line').nth(0)), /1 017 900,00 1 из 2/)
-      assert.match(await text(summary.locator('.bid-vs-total .bid-vs-line').nth(0)), /2 035 800,00 1 из 2/)
+      const row = (name) => summary.locator('tr.bid-vs-row', { hasText: name })
+      assert.equal(await text(row('ВОР паркинга').locator('.bid-vs-num').nth(0)), '1 017 900,00')
+      assert.match(await row('ВОР паркинга').locator('.bid-vs-num').nth(0).getAttribute('title'), /без цены 1 из 2/)
+      assert.equal(await text(summary.locator('.bid-vs-total .bid-vs-num').nth(0)), '2 035 800,00')
       assert.equal(await page.locator('.bid-table tbody tr.is-priced').count(), 1)
+      assert.notEqual(await concrete.locator('.bid-money-input').evaluate((el) => getComputedStyle(el).backgroundColor), 'rgb(255, 251, 235)',
+        'расценённая позиция — поле цены без жёлтого')
 
-      // Плитка сводки — ведомость таблицы: объём и сумма — по ней.
+      // Строка сводки — ведомость таблицы: объём и сумма — по ней.
       await row('ВОР паркинга').locator('.bid-vs-pick').click()
       assert.equal(await row('ВОР паркинга').getAttribute('class'), 'bid-vs-row is-selected')
       assert.match(await concrete.locator('.bid-col-vol').textContent(), /130,5/)
@@ -284,6 +313,31 @@ describe('Кабинет подрядчика: расценка на сайте'
     }
   })
 
+  // Просьба пользователя 27.11.2026: сводка — таблицей; на телефоне строка — карточкой, все три суммы видны без прокрутки вбок.
+  it('телефон: сводка ВОР карточками — значки, название и суммы с подписями в пределах экрана, страница вбок не прокручивается', async () => {
+    const { page, errors, close } = await open('&bidFiles=1', { width: 390, height: 900 })
+    try {
+      await openTender(page, 857)
+      await page.getByRole('button', { name: 'Участвовать и расценить' }).click()
+      const row = page.locator('.bid-vs-wrap tr.bid-vs-row', { hasText: 'ВОР паркинга' })
+      await row.waitFor({ timeout: 60000 })
+      const cells = await row.locator('td.bid-vs-num').evaluateAll((els) => els.map((e) => {
+        const r = e.getBoundingClientRect()
+        return { label: getComputedStyle(e, '::before').content, left: Math.round(r.left), right: Math.round(r.right) }
+      }))
+      assert.deepEqual(cells.map((c) => c.label), ['"Материалы"', '"Работы"', '"Итого с НДС"'])
+      for (const c of cells) assert.ok(c.left >= 0 && c.right <= 390, `сумма в пределах экрана: ${JSON.stringify(c)}`)
+      const icons = await row.locator('td.bid-vs-dl button').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().right)))
+      assert.equal(icons.length, 2)
+      assert.ok(icons.every((x) => x <= 390))
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0, 'страница вбок не прокручивается')
+      assert.equal(await page.locator('.bid-vs-scroll').evaluate((e) => e.scrollWidth - e.clientWidth), 0, 'сводка — без прокрутки вбок')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
   it('что изменилось в ВОР: отметки в строках и в сводке, убранное — списком, цену можно перенести; неподтверждённая версия — не в расценке', async () => {
     const { page, errors, close } = await open('&vorChanges=1&heldVor=1')
     try {
@@ -293,7 +347,7 @@ describe('Кабинет подрядчика: расценка на сайте'
       await summary.locator('.bid-vs-badge.is-changed').waitFor({ timeout: 60000 })
       assert.match(await text(summary.locator('.bid-vs-badge.is-changed')), /Отдел обновил ВОР 20\.10\.2026: новых 1 · убрано 1 · изменено 1/)
       // Новая версия, которую отдел не подтвердил: видна, но не расценивается и в итог не входит; позиций не удваивает.
-      const held = summary.locator('li.bid-vs-row.is-held')
+      const held = summary.locator('tr.bid-vs-row.is-held')
       await held.waitFor({ timeout: 60000 })
       assert.match(await text(held), /ВОР паркинга изм\.1.*ждёт подтверждения отдела.*не входит в итог/)
       await page.locator('.bid-tab', { hasText: 'Материалы' }).locator('.bid-tab-count', { hasText: '2' }).waitFor()
@@ -634,14 +688,14 @@ describe('Кабинет подрядчика: расценка на сайте'
       await page.getByRole('button', { name: 'Исходный ВОР «ВОР паркинга.xlsx»' }).waitFor({ timeout: 60000 })
       await page.locator('.bid-tab', { hasText: 'Материалы' }).locator('.bid-tab-count', { hasText: '2' }).waitFor({ timeout: 60000 })
       await page.locator('.bid-save', { hasText: 'в базу не записываются' }).waitFor()
-      assert.match(await text(page.locator('.bid-vs-total .bid-vs-line').nth(0)), /0 из 2/, 'цена другой организации в просмотр не попала')
+      assert.match(await page.locator('.bid-vs-total .bid-vs-num').nth(0).getAttribute('title'), /без цены 2 из 2/, 'цена другой организации в просмотр не попала')
       await page.getByRole('button', { name: 'Загрузить файл с ценами' }).waitFor()
       // Цену можно ввести, как подрядчику: она остаётся на экране (черновик просмотра), в базу не уходит.
       const input = page.locator('.bid-table .bid-money-input:not([disabled])').first()
       await input.fill('1234')
       await input.press('Tab')
       await page.waitForTimeout(1200)
-      assert.match(await text(page.locator('.bid-vs-total .bid-vs-line').nth(0)), /1 из 2/, 'цена встала в сводку')
+      assert.match(await page.locator('.bid-vs-total .bid-vs-num').nth(0).getAttribute('title'), /без цены 1 из 2/, 'цена встала в сводку')
       assert.deepEqual(await calls(page, 'bid_request'), [], 'заявка не записана')
       assert.deepEqual(await calls(page, 'bid_rates_save'), [], 'цена не записана')
       assert.deepEqual(errors, [])
@@ -680,16 +734,19 @@ describe('Кабинет подрядчика: расценка на сайте'
         const before = await page.evaluate(() => window.__supabaseStats.requests.length)
         await openTender(page, 857)
         await page.waitForFunction(() => !document.body.innerText.includes('Читаем ведомости')
-          && document.querySelectorAll('.bid-vs-wrap li.bid-vs-row').length >= 6, null, { timeout: 60000 })
+          && document.querySelectorAll('.bid-vs-wrap tr.bid-vs-row').length >= 6, null, { timeout: 60000 })
         assert.equal((await calls(page, 'bid_positions')).length, 1, 'сначала — разбор службы')
         assert.equal((await vorKeys(page)).length, 6, 'все шесть ведомостей скачаны')
         const atOnce = await page.evaluate(() => window.__fakeFileMaxInFlight)
         assert.ok(atOnce >= 2 && atOnce <= 4, `одновременно скачивалось ${atOnce}: нужно по нескольку, но не больше 4`)
-        // Просьба пользователя 25.11.2026: плиток ВОР не больше 5 в ряд; шестая — во втором ряду той же ширины.
-        const rowsOf = await page.evaluate(() => [...document.querySelectorAll('.bid-vs-wrap li.bid-vs-row')]
-          .map((e) => ({ top: Math.round(e.getBoundingClientRect().top), width: Math.round(e.getBoundingClientRect().width) })))
-        assert.equal(rowsOf.filter((t) => t.top === rowsOf[0].top).length, 5, 'в первом ряду — 5 плиток')
-        assert.ok(Math.abs(rowsOf[5].width - rowsOf[0].width) <= 1, 'плитка второго ряда — той же ширины')
+        // Просьба пользователя 27.11.2026: ведомости — строками одной таблицы (как «Сравнение КП»), каждая — своей строкой.
+        const rowsOf = await page.evaluate(() => [...document.querySelectorAll('.bid-vs-wrap tr.bid-vs-row')]
+          .map((e) => Math.round(e.getBoundingClientRect().top)))
+        assert.equal(new Set(rowsOf).size, rowsOf.length, 'каждая ведомость — своей строкой')
+        // Под позицией — не перечень всех шести ВОР, а число; названия — в подсказке.
+        const docs = page.locator('.bid-table tbody tr', { hasText: 'Бетон В25 W8' }).locator('.bid-docs')
+        assert.equal(await text(docs), 'во всех ВОР (6)')
+        assert.equal((await docs.getAttribute('title')).split('\n').length, 6)
         const tables = await page.evaluate((n) => window.__supabaseStats.requests.slice(n).map((r) => r.table), before)
         assert.equal(tables.filter((t) => t === 's3_documents').length, 1, 'документы тендера и ведомости расценки — один запрос списка файлов')
         assert.deepEqual(errors, [])
@@ -811,8 +868,9 @@ describe('Кабинет подрядчика: расценка на сайте'
       await page.locator('.bid-conditions li', { hasText: 'ГУ в размере 5 %' }).waitFor({ timeout: 60000 })
       assert.equal(await page.locator('.bid-conditions li').count(), 2)
       // Ставка не выбрана — в итогах «не указана», у вкладки «Анкета» — знак; нажатие ведёт в анкету.
-      const warn = page.locator('.bid-sum-warn')
+      const warn = page.getByRole('button', { name: 'Ставка НДС не указана — выбрать в анкете' })
       await warn.waitFor()
+      assert.equal(await page.locator('tr.bid-vs-vat.is-missing').count(), 1, 'строкой под ИТОГО сводки')
       assert.equal(await page.locator('.bid-tab', { hasText: 'Анкета' }).locator('.bid-tab-warn').count(), 1)
       await warn.click()
       await page.locator('.bid-form-row').first().waitFor({ timeout: 30000 })
@@ -828,18 +886,18 @@ describe('Кабинет подрядчика: расценка на сайте'
       let saves = await calls(page, 'bid_form_save')
       assert.deepEqual(saves.map((s) => s.answers), [{ 'f-name': 'ООО «Альфа»' }, { 'f-vat': '22 %' }])
       assert.match(await page.locator('.bid-filters-total', { hasText: 'Заполнено' }).textContent(), /Заполнено 2 из 2/)
-      assert.equal(await page.locator('.bid-sum-warn').count(), 0)
-      assert.match(await page.locator('.bid-sum-cell', { hasText: 'НДС: 22 %' }).textContent(), /в т\. ч\. 0,00 ₽/)
+      assert.equal(await page.locator('tr.bid-vs-vat.is-missing').count(), 0)
+      assert.match(await text(page.locator('tr.bid-vs-vat', { hasText: 'НДС: 22 %' })), /в т\. ч\. 0,00 ₽/)
       // Цена → в т. ч. НДС 22 %: 1000 × 130,5 = 130 500 → НДС 23 532,79.
       await page.locator('.bid-tab', { hasText: 'Материалы' }).click()
       const concrete = page.locator('.bid-table tbody tr', { hasText: 'Бетон В25 W8' })
       await concrete.locator('.bid-money-input').fill('1000')
       await concrete.locator('.bid-money-input').press('Enter')
-      await page.locator('.bid-sum-cell', { hasText: 'НДС: 22 %' }).filter({ hasText: /23\s532,79/ }).waitFor({ timeout: 10000 })
+      await page.locator('tr.bid-vs-vat', { hasText: 'НДС: 22 %' }).filter({ hasText: /23\s532,79/ }).waitFor({ timeout: 10000 })
       // Сменили ставку — «в т. ч. НДС» по новой: 130 500 × 5 / 105 = 6 214,29.
       await page.locator('.bid-tab', { hasText: 'Анкета' }).click()
       await page.getByLabel('Ставка НДС').selectOption('5 %')
-      await page.locator('.bid-sum-cell', { hasText: 'НДС: 5 %' }).filter({ hasText: /6\s214,29/ }).waitFor({ timeout: 10000 })
+      await page.locator('tr.bid-vs-vat', { hasText: 'НДС: 5 %' }).filter({ hasText: /6\s214,29/ }).waitFor({ timeout: 10000 })
       saves = await calls(page, 'bid_form_save')
       assert.deepEqual(saves.at(-1).answers, { 'f-vat': '5 %' })
       assert.deepEqual(errors, [])

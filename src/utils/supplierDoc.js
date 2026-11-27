@@ -69,9 +69,19 @@ export function parseNum(v) {
 // Колонка по тексту шапки: { field, vat } | null. vat — 'gross' (с НДС), 'net' (без НДС) или null (не сказано).
 // field: num, name, code, unit, qty, price, sum, vat (сумма НДС), vatRate, delivery (доставка: perUnit — за единицу,
 // иначе сумма по строке), skip (известная, но не нужная).
+// Шапка со скана: распознаватель читает русское слово латиницей («Kon-Bo» — «Кол-во», КП «Металлсервис», тендер № 1157). Слово только
+// из латинских букв — ещё раз, с русскими двойниками (n — л: так в мелком шрифте). Английская шапка («Qty», «Price») узнаётся раньше.
+const HEADER_TWINS = { a: 'а', b: 'в', c: 'с', e: 'е', h: 'н', k: 'к', m: 'м', n: 'л', o: 'о', p: 'р', r: 'г', t: 'т', u: 'и', x: 'х', y: 'у' }
+const latinTwins = (t) => t.replace(/[a-z]+/g, (w) => (/^[abcehkmnoprtuxy]+$/.test(w) ? w.replace(/[a-z]/g, (c) => HEADER_TWINS[c]) : w))
 export function classifyHeader(text) {
   const t = norm(text)
   if (!t) return null
+  const found = classifyHeaderText(t)
+  if (found || !/[a-z]/.test(t)) return found
+  const twin = latinTwins(t)
+  return twin === t ? null : classifyHeaderText(twin)
+}
+function classifyHeaderText(t) {
   const discounted = /(со|с\s*уч[её]том|после)\s*скидк/.test(t)
   if ((!discounted && /скидк/.test(t)) || /акциз|страна|декларац|прослеживаем|масса|вес\b|брутто|нетто|склад|наличи|срок|гарант|примечан|комментар/.test(t)) return { field: 'skip' }
   if (/в\s*упак|упаковк|фасовк|кратност/.test(t) && !/цена|сумм|стоимост/.test(t)) return { field: 'pack' }
@@ -227,7 +237,8 @@ export function detectGridHeader(grid, scanRows = HEADER_SCAN_ROWS) {
   return best && { headerRow: best.headerRow, span: best.span, columns: best.columns }
 }
 
-const TOTAL_RE = /^(итого|итог|всего|в том числе|в т\.? ?ч\.?|ндс\b|сумма ндс|к оплате)/
+// «Общий вес по коммерческому предложению», «На сумму … руб.» — итог КП «Металлсервиса» (тендер № 1157).
+const TOTAL_RE = /^(итого|итог|всего|в том числе|в т\.? ?ч\.?|ндс\b|сумма ндс|к оплате|на сумму\s+[0-9]|общий вес)/
 const COLUMN_NUMBERS_RE = /^[0-9]{1,2}[а-яa-z]?$/
 
 // Строки таблицы Excel после шапки → строки документа: [{ [поле]: текст | число, row }].
@@ -249,7 +260,7 @@ export function gridRows(grid, header) {
 }
 
 // Итоговые строки: «Итого», «Всего», «Всего к оплате» — но не «Итого по разделу» и не «В том числе НДС». Ответ — числа.
-const FINAL_TOTAL_RE = /^(итого|итог|всего|к оплате)/
+const FINAL_TOTAL_RE = /^(итого|итог|всего|к оплате|на сумму\s+[0-9])/
 const SUBTOTAL_RE = /^(итого|всего)\s+(по|за)\s/
 const isFinalTotal = (t) => FINAL_TOTAL_RE.test(t) && !SUBTOTAL_RE.test(t)
 export function gridTotals(grid, header) {

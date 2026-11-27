@@ -6,6 +6,8 @@
 //   • «Распределение» — каждая строка «тендер + подрядчик + объём», сумма = объём × цена;
 //   • «Коэффициенты» и «Паспорт» — как в загруженном файле.
 // Заливка строки и ячеек переносится; xlsx-js-style грузится лениво. Сборка — чистая (tests/tender/kp-estimate.test.mjs).
+// Цены администратора (20270308, ctx.effective): справа — действующая цена за ед., стоимость по ней и актуальная стоимость;
+// «Распределение» — по действующей цене; документы цен — в «Паспорт». Без изменённых цен лист — как раньше.
 import { allocQty, allocationText, ancestorsOf, hasVolume, isPosition, originalQty, unitPrice } from './kpEstimate.js'
 
 const hex = (c) => `FF${String(c || '').replace('#', '').toUpperCase()}`
@@ -74,6 +76,9 @@ export const ESTIMATE_HEAD = ['Код', '№ п/п', 'Наименование',
 const CELL = { code: 0, name: 2, qty_gp: 4, total: 7, direct: 9, actual: 13, free: 16, alloc: 17, note: 18 }
 const SUM_COLS = [['F', 5, 'materials'], ['G', 6, 'works'], ['H', 7, 'total'], ['J', 9, 'direct'], ['K', 10, 'directMain'], ['L', 11, 'directAux'], ['M', 12, 'directWorks']]
 
+// Столбцы действующих цен (только если цены менялись): номер столбца листа.
+export const PRICE_HEAD = ['Действующая цена за ед., ₽', 'Стоимость по действующей цене, ₽', 'Актуальная стоимость, ₽']
+const PRICE_COL = ESTIMATE_HEAD.length
 const allocText = (allocs) => (allocs || []).map((a) => `${allocationText(a)}: ${allocQty(a)}`).join('; ')
 
 function estimateSheetRows(ctx, ids) {
@@ -132,6 +137,14 @@ function estimateSheetRows(ctx, ids) {
     out[18] = cell(mark?.note)
     out[19] = cell(r.customer_note)
     out[20] = cell(r.gp_note || p.note)
+    if (ctx.effective?.size) {
+      const eff = ctx.effective.get(id)
+      if (!group && isPosition(r) && r.unit && eff?.unit !== undefined) out[PRICE_COL] = cell(eff.unit)
+      if (eff) out[PRICE_COL + 1] = cell(eff.total)
+      const current = group ? sums.get(id)?.current : s?.current
+      if (current !== undefined && current !== null) out[PRICE_COL + 2] = cell(current)
+      if (eff?.changed) red[i] = [...(red[i] || []), PRICE_COL, PRICE_COL + 1]
+    }
     rowsOut.push(out)
     fills[i] = { row: mark?.fill, cells: mapCellFills(mark?.cell_fills, CELL) }
     bold[i] = group
@@ -140,6 +153,7 @@ function estimateSheetRows(ctx, ids) {
   const total = []
   total[2] = cell('ИТОГО')
   for (const [col, c, key] of SUM_COLS) total[c] = cell(ctx.total?.[key], `SUBTOTAL(9,${col}2:${col}${T - 1})`)
+  if (ctx.effective?.size) total[PRICE_COL + 2] = cell(ctx.total?.current)
   rowsOut.push(total)
   bold[ids.length] = true
   return { rows: rowsOut, fills, bold, red }
@@ -161,16 +175,19 @@ export async function buildEstimateWorkbook(ctx, { ids, scopeLabel = '' } = {}) 
 export function buildWith(XLSX, ctx, { ids, scopeLabel = '' }) {
   const wb = XLSX.utils.book_new()
   const e = estimateSheetRows(ctx, ids)
+  const withPrices = !!ctx.effective?.size
   XLSX.utils.book_append_sheet(wb, sheetFrom(XLSX, {
-    headers: ESTIMATE_HEAD, rows: e.rows, fills: e.fills, bold: e.bold, red: e.red, wrap: [14, 17, 18, 19, 20],
-    numFmt: { 4: QTY, 5: MONEY, 6: MONEY, 7: MONEY, 8: MONEY, 9: MONEY, 10: MONEY, 11: MONEY, 12: MONEY, 13: QTY, 15: QTY, 16: QTY },
-    widths: [10, 8, 80, 7, 12, 16, 16, 18, 13, 18, 16, 16, 16, 12, 26, 12, 12, 34, 34, 24, 24],
+    headers: withPrices ? [...ESTIMATE_HEAD, ...PRICE_HEAD] : ESTIMATE_HEAD, rows: e.rows, fills: e.fills, bold: e.bold, red: e.red, wrap: [14, 17, 18, 19, 20],
+    numFmt: { 4: QTY, 5: MONEY, 6: MONEY, 7: MONEY, 8: MONEY, 9: MONEY, 10: MONEY, 11: MONEY, 12: MONEY, 13: QTY, 15: QTY, 16: QTY,
+      ...(withPrices ? { [PRICE_COL]: MONEY, [PRICE_COL + 1]: MONEY, [PRICE_COL + 2]: MONEY } : {}) },
+    widths: [10, 8, 80, 7, 12, 16, 16, 18, 13, 18, 16, 16, 16, 12, 26, 12, 12, 34, 34, 24, 24, ...(withPrices ? [16, 18, 18] : [])],
   }), 'Смета')
 
   const rows = []
   for (const id of ids) {
     const r = ctx.tree.byId.get(id)
-    const price = unitPrice(r)
+    // Сумма распределения — по действующей цене (с изменениями администратора), как на экране.
+    const price = ctx.effective?.get(id)?.unit ?? unitPrice(r)
     for (const a of ctx.allocsByRow.get(id) || []) {
       const R = rows.length + 2
       const q = allocQty(a)
@@ -195,6 +212,12 @@ export function buildWith(XLSX, ctx, { ids, scopeLabel = '' }) {
     ['Портал: файлы', [...new Set([est.kp_file_name, est.pz_file_name].filter(Boolean))].join('; ')],
     ['Портал: выгрузка', `${new Date().toLocaleString('ru-RU')}${scopeLabel ? `, ${scopeLabel}` : ''}`],
     ['Как считается остаток', 'Объём — «Количество (ГП)» КП до перекидок (уточнённый — «Актуальный объём»). Свободно = актуальный объём − сумма распределений «тендер + подрядчик».'])
+  if (withPrices) {
+    lines.push(['Цены', 'Действующая цена — с изменениями администратора: своя цена позиции или новая сумма группы (позиции внутри пересчитаны пропорционально). Стоимость КП — из файла.'])
+    for (const d of ctx.priceDocs || []) {
+      lines.push([`Документ цен: ${d.title}`, [d.stage, d.applied_by_name, d.applied_at ? new Date(d.applied_at).toLocaleString('ru-RU') : '', d.summary?.applied != null ? `изменено строк ${d.summary.applied}` : ''].filter(Boolean).join(', ')])
+    }
+  }
   const ws = XLSX.utils.aoa_to_sheet(lines)
   ws['!cols'] = [{ wch: 34 }, { wch: 110 }]
   XLSX.utils.book_append_sheet(wb, ws, 'Паспорт')

@@ -3,14 +3,16 @@ import { IconFileCheck, IconFileDown, IconLetter } from '../icons/ActionIcons'
 import { TENDER_MAILBOX } from '../../utils/bidMail'
 
 // Сводка расценки по ведомостям ВОР (решение пользователя 24.11.2026: расценка по каждому ВОР видна сразу, как только у подрядчика
-// есть доступ к тендеру). С 25.11.2026 (просьба пользователя: «название ВОРа, а снизу три стоимости», ведомости рядом, с промежутком,
-// «чтобы не сливались в кашу») — плитка на ведомость: название, под ним материалы, работы, итого и сколько позиций расценено; неполная
-// сумма — мягким тёплым тоном (не кислотно-жёлтым). Плитка выбирает ведомость для таблицы позиций ниже.
-// Позже 25.11.2026 (вторая просьба): название крупнее и темнее; плиток не больше 5 в ряд, меньше — растягиваются на ряд; итог по всем ВОР —
-// не полосой, а столбиком (материалы, работы, итог, НДС), рядом — крупный блок «КП нужно зафиксировать письмом»; «Исходный ВОР» (файл
-// отдела, как загружен) и «Расценённый ВОР» (тот же файл с вашими ценами) — разными кнопками: исходный — серой рамкой, расценённый —
-// бирюзовой заливкой и своим значком; над плитками — «Скачать все исходные ВОР» и «Скачать все расценённые ВОР» (ZIP, каждый ВОР своим
-// файлом). Отдел обновил ВОР — «что изменилось»; новая версия, которую отдел ещё не подтвердил, — серой плиткой, в итог не входит.
+// есть доступ к тендеру).
+// 27.11.2026 (просьба пользователя: «слишком много информации, подрядчик теряется — сделать такой же простой вид, как в „Сравнении
+// КП“»): вместо плиток — одна таблица, как сводная матрица «Сравнения КП»: строка на ведомость (материалы, работы, итого), внизу —
+// ИТОГО по всем ВОР и ставка НДС. Неполная сумма — мягким тёплым тоном (сколько расценено — в подсказке ячейки: «без цены N» уже есть
+// у вкладок и над таблицей позиций). Скачать — значками без текста слева в строке: «файл ↓» — исходный ВОР отдела, бирюзовый «файл ✓» —
+// он же с вашими ценами; в строке ИТОГО те же значки скачивают все ВОР одним ZIP (каждый своим файлом). Имена кнопок для диктора и
+// поиска — прежние. Крупный блок «КП нужно зафиксировать письмом» свёрнут в одну строку под таблицей. На телефоне строка — карточкой:
+// значки и название, под ними суммы с подписями (data-label) — «Итого» видно без прокрутки вбок.
+// Строка выбирает ведомость для таблицы позиций ниже. Отдел обновил ВОР — «что изменилось» под названием; новая версия, которую отдел
+// ещё не подтвердил, — серой строкой, в итог не входит.
 
 const dateOf = (v) => {
   if (!v) return ''
@@ -18,156 +20,171 @@ const dateOf = (v) => {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('ru-RU')
 }
 
-function KindLine({ s, label }) {
-  if (!s.items) {
-    return (
-      <div className="bid-vs-line is-empty">
-        <span className="bid-vs-label">{label}</span>
-        <span className="bid-vs-money">—</span>
-        <span className="bid-vs-count" />
-      </div>
-    )
-  }
+// Сумма вида работ ведомости (или всех): s = { items, priced, total }.
+function KindCell({ s, label }) {
+  if (!s.items) return <td className="num bid-vs-num is-empty" data-label={label} title={`${label}: позиций нет`}>—</td>
   const incomplete = s.priced < s.items
   return (
-    <div className={`bid-vs-line${incomplete ? ' is-incomplete' : ''}`}
-      title={incomplete ? `${label}: без цены ${s.items - s.priced} поз. — сумма неполная` : undefined}>
-      <span className="bid-vs-label">{label}</span>
-      <span className="bid-vs-money">{formatAmount(s.total)}</span>
-      <span className="bid-vs-count">{s.priced} из {s.items}</span>
-    </div>
+    <td className={`num bid-vs-num${incomplete ? ' is-incomplete' : ''}`} data-label={label}
+      title={incomplete ? `${label}: без цены ${s.items - s.priced} из ${s.items} поз. — сумма неполная` : `${label}: расценены все ${s.items} поз.`}>
+      {formatAmount(s.total)}
+    </td>
   )
 }
 
-// Итог ведомости (или всех): сумма и сколько позиций расценено из всех.
-function TotalLine({ s, label }) {
-  const priced = s.material.priced + s.work.priced
+function TotalCell({ s, label }) {
   const items = s.material.items + s.work.items
+  const priced = s.material.priced + s.work.priced
   return (
-    <div className={`bid-vs-line bid-vs-line-total${s.incomplete ? ' is-incomplete' : ''}`}
-      title={s.incomplete ? `Без цены ${items - priced} поз. — итог неполный` : undefined}>
-      <span className="bid-vs-label">{label}</span>
-      <span className="bid-vs-money">{formatAmount(s.total)}</span>
-      <span className="bid-vs-count">{items ? `${priced} из ${items}` : ''}</span>
-    </div>
+    <td className={`num bid-vs-num bid-vs-sum${s.incomplete ? ' is-incomplete' : ''}`} data-label={label}
+      title={s.incomplete ? `Без цены ${items - priced} из ${items} поз. — итог неполный` : undefined}>
+      {formatAmount(s.total)}
+    </td>
   )
 }
 
-const progressText = (busy) => (busy?.total ? `Собираем ${busy.done} из ${busy.total}…` : 'Готовим…')
+const progressText = (busy) => (busy?.total ? `Собираем архив ВОР: ${busy.done} из ${busy.total}…` : 'Готовим архив ВОР…')
 
+// vat: null (поля НДС в анкете нет) | { missing: true } | { label, value } — ставка и «в т. ч.» для строки под итогом.
 export default function BidVorSummary({
-  rows, total, selected, onSelect, changes, held, files, vatExempt, vatSlot = null, mailHref = `mailto:${TENDER_MAILBOX}`,
+  rows, total, selected, onSelect, changes, held, files, vatExempt, vat = null, onPickVat, mailHref = `mailto:${TENDER_MAILBOX}`,
   onDownload, onDownloadPriced, onDownloadAll, onDownloadAllPriced, busy = null, pricedReady = false, pricedHint = '',
 }) {
   const fileById = new Map(files.map((f) => [f.id, f]))
   const totalLabel = vatExempt ? 'Итого без НДС' : 'Итого с НДС'
   const anyBusy = !!busy
+  const busyOne = busy?.kind === 'one' ? fileById.get(busy.id) : null
   return (
     <section className="bid-vs-wrap" aria-label="Ведомости ВОР">
-      <div className="bid-vs-bar">
-        <h3 className="bid-vs-title">Ведомости ВОР <span className="bid-vs-n">{rows.length}</span></h3>
-        <div className="bid-vs-bar-acts">
-          <button type="button" className="bid-dl is-source is-big" onClick={onDownloadAll} disabled={anyBusy || !files.length}
-            title="Все ведомости отдела как загружены на сайт, без ваших цен: ZIP-архив, каждая — своим файлом">
-            <IconFileDown size={16} />
-            <span>{busy?.kind === 'all' ? progressText(busy) : 'Скачать все исходные ВОР'}</span>
-          </button>
-          <button type="button" className="bid-dl is-priced is-big" onClick={onDownloadAllPriced} disabled={anyBusy || !pricedReady}
-            title={pricedReady
-              ? 'Каждый ВОР — своим файлом в оформлении отдела, с вашими ценами, посчитанными итогами и анкетой; все — одним ZIP-архивом'
-              : pricedHint}>
-            <IconFileCheck size={16} />
-            <span>{busy?.kind === 'priced' ? progressText(busy) : 'Скачать все расценённые ВОР'}</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="bid-vs-head">
-        {/* Итог по всем ВОР — столбиком, как в плитке (просьба пользователя 25.11.2026); ставка НДС — здесь же. */}
-        <div className={`bid-vs-total${selected ? ' is-clickable' : ''}`}>
-          <div className="bid-vs-total-name">
-            {selected
-              ? <button type="button" className="bid-vs-pick" onClick={() => onSelect('')} title="Показать позиции всех ведомостей">ИТОГО по всем ВОР</button>
-              : <b>ИТОГО по всем ВОР</b>}
-          </div>
-          <div className="bid-vs-sums">
-            <KindLine s={total.material} label="Материалы" />
-            <KindLine s={total.work} label="Работы" />
-            <TotalLine s={total} label={totalLabel} />
-          </div>
-          {vatSlot}
-        </div>
-
-        {/* КП фиксируется письмом на почту отдела (просьба пользователя 25.11.2026); крупно — вторая просьба того же дня. */}
-        <div className="bid-vs-mail" role="note">
-          <div className="bid-vs-mail-title"><IconLetter size={20} /><span>КП нужно зафиксировать письмом</span></div>
-          <ol className="bid-vs-mail-steps">
-            <li>Скачайте все расценённые ВОР — кнопка «Скачать все расценённые ВОР» выше.</li>
-            <li>Отправьте файлы на <a href={mailHref}>{TENDER_MAILBOX}</a></li>
-          </ol>
-          <p className="bid-vs-mail-note">Цены на сайте сохраняются сами и сразу видны отделу, письмо фиксирует ваше предложение.</p>
-        </div>
-      </div>
-
-      <ul className="bid-vs">
-        {rows.map((r) => {
-          const ch = changes.get(r.id)
-          const heldBy = held.get(r.id)
-          const isSel = selected === r.id
-          const f = fileById.get(r.id)
-          const oneBusy = busy?.kind === 'one' && busy.id === r.id
-          return (
-            <li key={r.id} className={`bid-vs-row${isSel ? ' is-selected' : ''}${heldBy ? ' is-held' : ''}`}>
-              <div className="bid-vs-name">
-                <button type="button" className="bid-vs-pick" aria-pressed={isSel} onClick={() => onSelect(isSel ? '' : r.id)}
-                  title={isSel ? 'Показать все ведомости' : 'Показать позиции этой ведомости'}>
-                  {r.title}
-                </button>
-                {heldBy && (
-                  <span className="bid-vs-badge is-wait">
-                    Похоже на новую версию «{heldBy}» — ждёт подтверждения отдела, пока не расценивается и в итог не входит
-                  </span>
-                )}
-                {ch && (ch.counts.added + ch.counts.removed + ch.counts.volume + ch.counts.unit > 0) && (
-                  <span className="bid-vs-badge is-changed">
-                    Отдел обновил ВОР{dateOf(ch.at) ? ` ${dateOf(ch.at)}` : ''}:
-                    {ch.counts.added > 0 && ` новых ${ch.counts.added}`}
-                    {ch.counts.removed > 0 && ` · убрано ${ch.counts.removed}`}
-                    {ch.counts.volume + ch.counts.unit > 0 && ` · изменено ${ch.counts.volume + ch.counts.unit}`}
-                  </span>
-                )}
-              </div>
-              {heldBy ? (
-                <div className="bid-vs-sums"><div className="bid-vs-line is-empty"><span className="bid-vs-label">не входит в итог</span></div></div>
-              ) : (
-                <div className="bid-vs-sums">
-                  <KindLine s={r.material} label="Материалы" />
-                  <KindLine s={r.work} label="Работы" />
-                  <TotalLine s={r} label={totalLabel} />
-                </div>
-              )}
-              {f && (
-                <div className="bid-vs-acts">
-                  {/* Имена кнопок не входят одно в другое: поиск по имени (и экранный диктор) их не путает. */}
-                  <button type="button" className="bid-dl is-source" aria-label={`Исходный ВОР «${f.file_name}»`}
-                    title="Файл ВОР отдела, как загружен на сайт, — без ваших цен" onClick={() => onDownload(f)}>
-                    <IconFileDown size={15} />
-                    <span>Исходный ВОР</span>
-                  </button>
-                  {!heldBy && (
-                    <button type="button" className="bid-dl is-priced" aria-label={`Расценённый ВОР «${f.file_name}»`}
-                      title={pricedReady ? 'Этот ВОР в оформлении отдела — с вашими ценами, посчитанными итогами и анкетой' : pricedHint}
-                      disabled={anyBusy || !pricedReady} onClick={() => onDownloadPriced(f)}>
-                      <IconFileCheck size={15} />
-                      <span>{oneBusy ? 'Готовим…' : 'Расценённый ВОР'}</span>
+      <div className="bid-vs-scroll">
+        <table className="bid-vs-table">
+          <colgroup>
+            <col className="bid-vs-w-dl" /><col /><col className="bid-vs-w-money" /><col className="bid-vs-w-money" /><col className="bid-vs-w-money" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th className="bid-vs-dl"><span className="bid-sr-only">Скачать</span></th>
+              <th>ВОР</th>
+              <th className="num">Материалы, ₽</th>
+              <th className="num">Работы, ₽</th>
+              <th className="num">{totalLabel}, ₽</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const ch = changes.get(r.id)
+              const heldBy = held.get(r.id)
+              const isSel = selected === r.id
+              const f = fileById.get(r.id)
+              const oneBusy = busy?.kind === 'one' && busy.id === r.id
+              const changed = ch && ch.counts.added + ch.counts.removed + ch.counts.volume + ch.counts.unit > 0
+              return (
+                <tr key={r.id} className={`bid-vs-row${isSel ? ' is-selected' : ''}${heldBy ? ' is-held' : ''}`}>
+                  <td className="bid-vs-dl">
+                    {f && (
+                      <span className="bid-vs-dl-btns">
+                        {/* Имена кнопок не входят одно в другое: поиск по имени (и экранный диктор) их не путает. */}
+                        <button type="button" className="bid-dl is-source is-icon" aria-label={`Исходный ВОР «${f.file_name}»`}
+                          title="Скачать исходный ВОР — файл отдела, как загружен на сайт, без ваших цен" onClick={() => onDownload(f)}>
+                          <IconFileDown size={16} />
+                        </button>
+                        {!heldBy && (
+                          <button type="button" className="bid-dl is-priced is-icon" aria-label={`Расценённый ВОР «${f.file_name}»`}
+                            aria-busy={oneBusy || undefined}
+                            title={pricedReady ? 'Скачать расценённый ВОР — файл отдела с вашими ценами, посчитанными итогами и анкетой' : pricedHint}
+                            disabled={anyBusy || !pricedReady} onClick={() => onDownloadPriced(f)}>
+                            <IconFileCheck size={16} />
+                          </button>
+                        )}
+                      </span>
+                    )}
+                  </td>
+                  <td className="bid-vs-name">
+                    <button type="button" className="bid-vs-pick" aria-pressed={isSel} onClick={() => onSelect(isSel ? '' : r.id)}
+                      title={isSel ? 'Показать позиции всех ведомостей' : 'Показать позиции только этой ведомости'}>
+                      {r.title}
                     </button>
+                    {heldBy && (
+                      <span className="bid-vs-badge is-wait">
+                        Похоже на новую версию «{heldBy}» — ждёт подтверждения отдела, пока не расценивается
+                      </span>
+                    )}
+                    {changed && (
+                      <span className="bid-vs-badge is-changed">
+                        Отдел обновил ВОР{dateOf(ch.at) ? ` ${dateOf(ch.at)}` : ''}:
+                        {ch.counts.added > 0 && ` новых ${ch.counts.added}`}
+                        {ch.counts.removed > 0 && ` · убрано ${ch.counts.removed}`}
+                        {ch.counts.volume + ch.counts.unit > 0 && ` · изменено ${ch.counts.volume + ch.counts.unit}`}
+                      </span>
+                    )}
+                  </td>
+                  {heldBy ? (
+                    <td colSpan={3} className="bid-vs-held-note">не входит в итог</td>
+                  ) : (
+                    <>
+                      <KindCell s={r.material} label="Материалы" />
+                      <KindCell s={r.work} label="Работы" />
+                      <TotalCell s={r} label={totalLabel} />
+                    </>
                   )}
-                </div>
-              )}
-            </li>
-          )
-        })}
-      </ul>
+                </tr>
+              )
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="bid-vs-total">
+              <td className="bid-vs-dl">
+                <span className="bid-vs-dl-btns">
+                  <button type="button" className="bid-dl is-source is-icon" aria-label="Скачать все исходные ВОР"
+                    aria-busy={busy?.kind === 'all' || undefined} disabled={anyBusy || !files.length} onClick={onDownloadAll}
+                    title="Скачать все исходные ВОР — файлы отдела без ваших цен, одним ZIP-архивом (каждая ведомость — своим файлом)">
+                    <IconFileDown size={16} />
+                  </button>
+                  <button type="button" className="bid-dl is-priced is-icon" aria-label="Скачать все расценённые ВОР"
+                    aria-busy={busy?.kind === 'priced' || undefined} disabled={anyBusy || !pricedReady} onClick={onDownloadAllPriced}
+                    title={pricedReady
+                      ? 'Скачать все расценённые ВОР — каждый в оформлении отдела с вашими ценами, итогами и анкетой, одним ZIP-архивом'
+                      : pricedHint}>
+                    <IconFileCheck size={16} />
+                  </button>
+                </span>
+              </td>
+              <td className="bid-vs-total-name">
+                {selected
+                  ? <button type="button" className="bid-vs-pick" onClick={() => onSelect('')} title="Показать позиции всех ведомостей">ИТОГО по всем ВОР</button>
+                  : 'ИТОГО по всем ВОР'}
+              </td>
+              <KindCell s={total.material} label="Материалы" />
+              <KindCell s={total.work} label="Работы" />
+              <TotalCell s={total} label={totalLabel} />
+            </tr>
+            {vat && (
+              <tr className={`bid-vs-vat${vat.missing ? ' is-missing' : ''}`}>
+                <td />
+                <td colSpan={3}>
+                  {vat.missing
+                    ? <button type="button" className="bid-vs-vat-pick" onClick={onPickVat}>Ставка НДС не указана — выбрать в анкете</button>
+                    : `НДС: ${vat.label}`}
+                </td>
+                <td className="num">{vat.missing ? '' : vat.value}</td>
+              </tr>
+            )}
+          </tfoot>
+        </table>
+      </div>
+
+      {anyBusy && (
+        <div className="bid-vs-status" role="status">
+          {busyOne ? `Готовим расценённый ВОР «${busyOne.file_name}»…` : progressText(busy)}
+        </div>
+      )}
+      {/* КП фиксируется письмом на почту отдела (просьба пользователя 25.11.2026) — одной строкой (27.11.2026). */}
+      <p className="bid-vs-mail" role="note">
+        <IconLetter size={16} />
+        <span>
+          <b>КП зафиксируйте письмом:</b> скачайте расценённые ВОР <IconFileCheck size={14} /> и отправьте их на <a href={mailHref}>{TENDER_MAILBOX}</a>
+        </span>
+      </p>
     </section>
   )
 }

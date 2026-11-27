@@ -5,7 +5,10 @@
 // приложения — вложенными карточками (раскрываются так же, как в таблице: общий expandedDocs). Перетаскивания нет —
 // на сенсорном экране его нет и в таблице (HTML5 drag and drop), порядок меняют на компьютере.
 // Файл документа рисует страница (renderFile — тот же DocFileCell, что в таблице), «.md» — ObjectDocMdCell.
+// Вложенность — как в таблице: приложение и приложение к приложению; у второго уровня «+ Приложение» нет
+// (canAddAttachmentAtLevel), карточка второго уровня — со своей полосой и подложкой.
 import ObjectDocMdCell from './ObjectDocMdCell'
+import { canAddAttachmentAtLevel, MAX_ATTACHMENT_LEVEL } from '../utils/objectDocTree'
 import { IconPencil, IconTrash } from './icons/ActionIcons'
 import './ObjectDocCards.css'
 
@@ -15,6 +18,7 @@ function DocCard({
 }) {
   const isAttachment = level > 0
   const isExpanded = expandedDocs.has(doc.id)
+  const canAdd = canEdit && canAddAttachmentAtLevel(level)
   const date = doc.document_date ? formatDate(doc.document_date) : ''
   // В таблице у приложения номер стоит отдельно («Прил. 1»), название — рядом; у договора — номер и дата столбцом.
   const title = doc.name || (isAttachment ? '' : '—')
@@ -31,7 +35,12 @@ function DocCard({
 
   return (
     <div
-      className={['odc-card', isAttachment ? 'odc-card-att' : '', linkedId === doc.id ? 'is-linked' : ''].filter(Boolean).join(' ')}
+      className={[
+        'odc-card',
+        isAttachment ? 'odc-card-att' : '',
+        level >= MAX_ATTACHMENT_LEVEL ? 'odc-card-att2' : '',
+        linkedId === doc.id ? 'is-linked' : '',
+      ].filter(Boolean).join(' ')}
       data-doc-id={doc.id}
     >
       <div className="odc-top">
@@ -72,7 +81,7 @@ function DocCard({
         </div>
       </div>
 
-      {(kids.length > 0 || canEdit) && (
+      {(kids.length > 0 || canAdd) && (
         <div className="odc-foot">
           {kids.length > 0 ? (
             <button
@@ -85,7 +94,7 @@ function DocCard({
               Приложения: {kids.length}
             </button>
           ) : null}
-          {canEdit && (
+          {canAdd && (
             <button type="button" className="odc-add" onClick={addAttachment}
               title={isAttachment ? 'Добавить приложение к этому приложению' : 'Добавить приложение к этому документу'}>
               + Приложение

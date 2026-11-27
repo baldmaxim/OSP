@@ -7,6 +7,9 @@
 // переносом отметок, только просмотр, база без миграции. Книги — вымышленные, в раскладке файлов К14
 // (tests/tender/lib/kpEstimateSample.mjs). Настоящие файлы Примавера К14 проверяются, если лежат в корне репозитория
 // (в git их нет: репозиторий открытый) или в каталоге KP_ESTIMATE_SAMPLES. База — kp-estimate-db.test.mjs.
+// 27.11.2026: раскладки «King & Sons» (лист с ресурсами ПЗ, другие подписи) и «Событие 6.2» (КП с этапами ДГП / ДС, без
+// номера позиции) — образцом sampleStagesWorkbook и настоящими файлами (если лежат рядом); цены администратора (20270308):
+// действующая цена, пересчёт группы пропорционально, сопоставление документа, миграция и шлюз, режим «Цены» на стенде.
 import { describe, it, before, after } from 'node:test'
 import process from 'node:process'
 import { Buffer } from 'node:buffer'
@@ -16,14 +19,23 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
-import { sampleBothSheetsWorkbook, sampleKpWorkbook, samplePzWorkbook, SAMPLE_TOTAL } from './lib/kpEstimateSample.mjs'
-import { buildEstimateRows, detectEstimateWorkbook, fitRowKey, masteringToAllocations, parseKpWorkbook, parsePzWorkbook, ROW_KEY_MAX } from '../../src/utils/kpEstimateImport.js'
+import {
+  sampleBothSheetsWorkbook, sampleKpWorkbook, samplePzWorkbook, sampleStagesWorkbook, sampleTreeWorkbook, SAMPLE_TOTAL, stagesSampleExpect, TREE_COEF,
+  TREE_VAT_ACCRUAL, treeSampleExpect,
+} from './lib/kpEstimateSample.mjs'
+import {
+  buildEstimateRows, detectEstimateWorkbook, ESTIMATE_READ_OPTIONS, fitRowKey, masteringToAllocations, parseKpWorkbook, parsePzWorkbook, ROW_KEY_MAX,
+} from '../../src/utils/kpEstimateImport.js'
 import {
   allocQty, buildTree, collapseToLevel, computeStates, groupStatus, markPayload, originalQty, planTenderAllocation, positionState,
   rowMatchesShow, tenderWinners, visibleRowIds,
 } from '../../src/utils/kpEstimate.js'
 import { describeLogEntry } from '../../src/utils/kpEstimateLog.js'
-import { buildWith, exportRowIds } from '../../src/utils/kpEstimateExport.js'
+import { buildWith, exportRowIds, PRICE_HEAD } from '../../src/utils/kpEstimateExport.js'
+import { effectivePrices, priceOf } from '../../src/utils/kpEstimatePrices.js'
+import {
+  estimateDocLines, estimateTotals, genericDocLines, matchPriceLines, planPriceChanges, priceMatchIndex, pricesAfter,
+} from '../../src/utils/kpEstimatePriceDoc.js'
 
 const require = createRequire(import.meta.url)
 const XLSX = require('xlsx')
@@ -148,6 +160,136 @@ describe('смета КП / ПЗ: разбор файлов', () => {
     assert.equal(byName(built.rows, 'Армирование').pz, null, 'нулевая строка «Учтено» — без плана затрат')
     assert.equal(built.meta.kp_file.inline_pz, true)
   })
+
+  // КП с ресурсами ПЗ одним листом (26.11.2026, раскладка «Алия — КП до перекидок после ДС1–8»). Книга читается так же,
+  // как в окне загрузки (ESTIMATE_READ_OPTIONS: без cellStyles группировки строк не видно).
+  const readTree = (wb, opts = ESTIMATE_READ_OPTIONS) => XLSX.read(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }), { ...opts })
+  it('КП с ресурсами ПЗ: дерево — по группировке строк, ресурсы — в прямые затраты работы, итоги и контрольные расчёты — не строки', () => {
+    const exp = treeSampleExpect()
+    const wb = readTree(sampleTreeWorkbook(XLSX))
+    assert.equal(detectEstimateWorkbook(XLSX, wb), 'both')
+    const kp = parseKpWorkbook(XLSX, wb)
+    assert.equal(kp.error, undefined, kp.message)
+    assert.equal(kp.layout, 'tree')
+    assert.equal(kp.nesting, 'outline')
+    assert.equal(kp.hasInlinePz, true)
+    assert.deepEqual([kp.resources.count, kp.resources.unpriced, kp.resources.orphan], [exp.resources, exp.unpriced, 0])
+    const built = buildEstimateRows({ kp, kpFileName: 'Пример — КП до перекидок после ДС1–2.xlsx' })
+    const rows = built.rows
+    assert.equal(rows.length, exp.kpRows, 'строки — только строки КП')
+    for (const name of ['КП после ДС2, с опционом', 'КП в сопоставимой базе', 'Бетон B30', 'Корректировка РД — добавка ДС2', 'Сваи — марку уточнить',
+      'Сваи для вдавливания — из таблицы ДС', 'ИТОГО', 'КОНТРОЛЬНЫЕ', 'Коэффициенты', 'ЖК Пример']) {
+      assert.ok(!rows.some((r) => r.name.startsWith(name)), `«${name}» — не строка сметы`)
+    }
+    const kind = (part) => byName(rows, part).kind
+    assert.equal(kind('Проектные работы'), 'section')
+    assert.equal(kind('Фундаменты'), 'aggregate', 'подраздел с единицей — укрупнённая позиция, как у К14')
+    assert.equal(kind('Бетонирование'), 'group')
+    assert.equal(kind('Бетонирование фундаментной плиты'), 'position')
+    assert.equal(kind('Учтено в других строках'), 'note')
+    assert.equal(kind('Входящее расхождение'), 'position', 'контроль ДС1 — деньги КП без единицы')
+    assert.equal(kind('Устройство свай вдавливанием'), 'position')
+    assert.equal(byName(rows, 'Бетонирование фундаментной плиты').parent_row_no, byName(rows, 'Бетонирование').row_no)
+    assert.equal(byName(rows, 'Люк потолочный').parent_row_no, byName(rows, 'Корпус 1').row_no, 'вставка без кода — по группировке')
+    assert.equal(byName(rows, 'Люк потолочный').pos_no, '7.1')
+    // Глубже 7 уровней ресурсы стоят на уровне своей работы — относятся к строке КП над ними.
+    const walls = byName(rows, 'Стены')
+    assert.equal(byName(rows, 'Грунтовка стен').parent_row_no, walls.row_no)
+    assert.equal(byName(rows, 'Шпаклёвка стен').parent_row_no, walls.row_no)
+    assert.equal(byName(rows, 'Грунтовка стен').pz.direct, 2200)
+    assert.equal(byName(rows, 'Шпаклёвка стен').pz.direct, 2000)
+    assert.equal(byName(rows, 'Шпаклёвка стен').level, 8)
+
+    const plate = byName(rows, 'Бетонирование фундаментной плиты')
+    assert.equal(plate.kp.qty_gp, 400)
+    assert.equal(plate.kp.total, 4800000)
+    assert.equal(plate.customer_note, 'По РД КЖ')
+    assert.deepEqual([plate.pz.direct, plate.pz.direct_main, plate.pz.direct_aux, plate.pz.direct_works], [3540000, 2900000, 40000, 600000])
+    assert.equal(plate.pz.comm_total, plate.kp.total, 'коммерция — стоимость КП (по ней цена за единицу), не «ПЗ × коэфф.»')
+    assert.ok(Math.abs(plate.pz.coef_total - (600000 * TREE_COEF['раб'] + (2800000 + 40000) * TREE_COEF['мат'] + 100000 * TREE_COEF['суб-мат'])) < 1e-6)
+    assert.deepEqual([plate.pz.resources, plate.pz.unpriced], [5, 1])
+    const rd = byName(rows, 'Разработка рабочей документации')
+    assert.deepEqual([rd.pz.direct, rd.pz.direct_works, rd.pz.resources, rd.pz.unpriced], [2400000, 2400000, 2, 1], '«Работы» — ресурс, не строка')
+    assert.equal(rd.gp_note, 'Финансовый лимит по ДС1')
+    const ds = byName(rows, 'Устройство свай вдавливанием')
+    assert.equal(ds.pz.direct, null, 'ресурс без цены — прямых затрат нет')
+    assert.equal(ds.pz.note, 'Новая договорная позиция ДС1.', 'статус строки — примечанием ПЗ')
+
+    // Сверка: только заголовок подраздела с постоянным 0 (его предки верны); итоги — как строка файла в базе строк.
+    const fc = built.meta.formula_check
+    assert.deepEqual(fc.issues.map((x) => `${x.code}:${x.key}`), ['К1.1.1:materials', 'К1.1.1:works', 'К1.1.1:total'])
+    assert.equal(fc.issues[2].expected, 4800000)
+    assert.equal(fc.issues[2].actual, 0)
+    assert.equal(fc.totals.total, exp.total)
+    assert.equal(fc.totals.direct, exp.direct)
+    assert.equal(built.meta.kp_file.totals.label, 'КП в сопоставимой базе НДС 20%, с опционом')
+    assert.equal(built.meta.kp_file.layout, 'tree')
+    assert.equal(built.meta.title, 'Пример — КП до перекидок после ДС1–2')
+    assert.match(built.meta.vat, /НДС 20% \/ 22%/)
+    const pass = built.meta.passport
+    assert.deepEqual(pass[0], ['ПРИМЕР  /  КП ДО ПЕРЕКИДОК'])
+    const head = pass.find((r) => r[0] === 'КП после ДС2, с опционом')
+    assert.ok(head?.[1].includes((exp.total + TREE_VAT_ACCRUAL).toLocaleString('ru-RU', { minimumFractionDigits: 2 })), 'итог с доначислением НДС — в паспорте')
+    assert.deepEqual(built.meta.coefficients[0], ['Коэффициенты Пример · версия 1'])
+    assert.deepEqual(built.meta.coefficients[1], [null, 'раб', 'мат', 'суб-раб', 'суб-мат', 'Позиций с ростом'])
+    assert.deepEqual(built.meta.coefficients[2].slice(0, 5), ['ЖК Пример', 2.4, 1.6, 1.25, 1.25])
+
+    const tree = buildTree(withIds(rows))
+    const { total, sums } = computeStates(tree, new Map(), new Map())
+    assert.equal(total.total, exp.total)
+    assert.equal(total.direct, exp.direct)
+    assert.deepEqual([total.directMain, total.directAux, total.directWorks], [exp.main, exp.aux, exp.dworks])
+    assert.equal(sums.get(tree.rows.find((r) => r.name === 'Бетонирование').id).total, 4800000, 'группа — суммой строк, а не 0 из файла')
+    assert.equal(new Set(rows.map((r) => r.row_key)).size, rows.length)
+    assert.ok(rows.every((r) => !r.parent_row_no || r.parent_row_no < r.row_no))
+  })
+
+  it('КП с ресурсами ПЗ без группировки строк — отказ с объяснением, а не плоское дерево', () => {
+    const flat = readTree(sampleTreeWorkbook(XLSX), { cellFormula: true }) // без cellStyles SheetJS не читает уровни
+    assert.equal(detectEstimateWorkbook(XLSX, flat), 'both')
+    const kp = parseKpWorkbook(XLSX, flat)
+    assert.equal(kp.error, 'kp_outline')
+    assert.match(kp.message, /группировки строк/)
+    assert.equal(parseKpWorkbook(XLSX, readTree(sampleTreeWorkbook(XLSX, { outline: false }))).error, 'kp_outline')
+  })
+
+  const aliya = path.join(process.env.KP_ESTIMATE_SAMPLES || REPO, 'Алия — КП до перекидок после ДС1–8.xlsx')
+  it('настоящий файл «Алия — КП до перекидок после ДС1–8»: 4933 строки КП, итоги и прямые затраты — как в файле, контрольные расчёты — не строки',
+    { skip: !fs.existsSync(aliya) && 'нет файла «Алия» (в git его нет)' }, () => {
+      const wb = XLSX.readFile(aliya, { ...ESTIMATE_READ_OPTIONS })
+      assert.equal(detectEstimateWorkbook(XLSX, wb), 'both')
+      const kp = parseKpWorkbook(XLSX, wb)
+      assert.equal(kp.error, undefined, kp.message)
+      const built = buildEstimateRows({ kp, kpFileName: path.basename(aliya) })
+      assert.equal(built.rows.length, 4933)
+      assert.equal(kp.resources.orphan, 0)
+      // Суммы не записываем (репозиторий открытый): сверяем с итогами самого файла над деревом.
+      const ft = kp.fileTotals
+      assert.match(ft.label, /сопоставим/)
+      const fc = built.meta.formula_check
+      for (const key of ['materials', 'works', 'total', 'direct']) assert.ok(Math.abs(fc.totals[key] - ft[key]) < 0.05, key)
+      // Расхождения — только у четырёх заголовков подразделов с постоянным 0 над оценённой работой.
+      assert.equal(fc.issue_count, 12)
+      assert.equal(new Set(fc.issues.map((x) => x.row)).size, 4)
+      assert.ok(fc.issues.every((x) => x.row && x.key !== 'direct'))
+      const tree = buildTree(withIds(built.rows))
+      const { total } = computeStates(tree, new Map(), new Map())
+      assert.ok(Math.abs(total.total - ft.total) < 0.05)
+      assert.ok(Math.abs(total.direct - ft.direct) < 0.05)
+      // Контрольные расчёты под деревом — не строки: все строки сметы выше их заголовка.
+      const ws = wb.Sheets[kp.sheetName]
+      let control = 0
+      for (let r = 1; r <= XLSX.utils.decode_range(ws['!ref']).e.r + 1 && !control; r++) if (/^КОНТРОЛЬНЫЕ РАСЧ/i.test(String(ws[`A${r}`]?.v || ''))) control = r
+      assert.ok(control > 0)
+      assert.ok(built.rows.every((r) => r.kp.sheet_row < control))
+      assert.ok(built.meta.coefficients.length >= 3)
+      // Ни у одного ресурса нет цены — прямые затраты пусты, а не 0 (файл: «пустые цены — неизвестные, а не нулевые»).
+      assert.ok(!built.rows.some((r) => r.pz?.direct === 0 && r.pz.resources && r.pz.unpriced === r.pz.resources))
+      // Деньги без «Кол-ва (ГП)» (распределить объёмом нельзя) — только два «Контроль ДС1» и две работы «к-с» с ГП = 0 в файле.
+      assert.equal(built.rows.filter((r) => r.kind === 'position' && r.kp?.total && !r.kp.qty_gp).length, 4)
+      assert.ok(built.rows.every((r) => r.row_key.length <= 1000 && r.level <= 30 && (!r.parent_row_no || r.parent_row_no < r.row_no)))
+      assert.equal(new Set(built.rows.map((r) => r.row_key)).size, built.rows.length)
+    })
 
   const realDir = process.env.KP_ESTIMATE_SAMPLES || REPO
   const realKp = path.join(realDir, 'Примавера К14 - КП до перекидок.xlsx')
@@ -341,6 +483,257 @@ describe('смета КП / ПЗ: миграция, шлюз, права', () =>
     assert.match(read('src/contexts/roleConstants.js'), /kp_estimate: 'Объекты: смета КП\/ПЗ'/)
     assert.match(read('server/osp-api/src/routes/s3Presign.js'), /kp_estimate_kp: \[\['kp_estimate', 'edit'\]\]/)
     assert.match(read('tests/osp-api/lib/upload-sites.mjs'), /src\/services\/kpEstimate\.js/)
+  })
+})
+
+describe('смета КП / ПЗ: раскладки «Событие 6.2» и «King & Sons» (27.11.2026)', () => {
+  const stagesWb = () => XLSX.read(XLSX.write(sampleStagesWorkbook(XLSX), { type: 'buffer', bookType: 'xlsx' }), { ...ESTIMATE_READ_OPTIONS })
+
+  it('КП с этапами договора: без номера позиции, вложенность по SUBTOTAL материалов и работ, объём по кол-ву заказчика, этапы — в паспорт', () => {
+    const wb = stagesWb()
+    assert.equal(detectEstimateWorkbook(XLSX, wb), 'kp')
+    const kp = parseKpWorkbook(XLSX, wb)
+    assert.equal(kp.layout, 'stages')
+    assert.equal(kp.nesting, 'subtotal', 'итог строки — SUM(материалы:работы), SUBTOTAL — у материалов и работ: не по кодам')
+    const built = buildEstimateRows({ kp, kpFileName: 'Событие_пример.xlsx' })
+    const exp = stagesSampleExpect()
+    assert.equal(built.meta.title, 'Событие пример')
+    assert.deepEqual(built.rows.map((r) => [r.kind, r.parent_row_no, r.code]), [
+      ['section', null, '01'], ['position', 1, '01.01.01'], ['position', 1, '01.01.02'], ['position', 1, '01.01.03'],
+      ['section', null, '02'], ['position', 5, '02.01.01'], ['position', 5, '02.01.02'], ['position', null, null],
+    ])
+    assert.equal(built.meta.formula_check.issue_count, 0)
+    assert.equal(Math.round(built.meta.formula_check.totals.total * 100), Math.round(exp.kp * 100))
+    // «Кол-во ГП» пусто, сумма — от кол-ва заказчика: объём позиции тот же; «Учтено в …» без денег — с ГП (0).
+    const rasp = built.rows.find((r) => r.code === '02.01.01')
+    assert.equal(rasp.kp.qty_gp, 44.654)
+    assert.equal(rasp.kp.qty_basis, 'customer')
+    assert.equal(rasp.kp.qty_gp_file, null)
+    assert.equal(built.rows.find((r) => r.code === '01.01.03').kp.qty_gp, 0)
+    assert.equal(kp.qtyByCustomer, exp.customerBasis)
+    // Этапы — в паспорт и meta, в строки сметы не идут; строки под итогом («Новые позиции ПСДЦ») — не строки сметы.
+    assert.deepEqual(kp.stages.map((st) => st.short), ['ДГП', 'ДС №1 01.03.2026'])
+    assert.equal(kp.stages[0].totals.total, exp.dgp + 200000)
+    assert.match(kp.stages[0].note, /подписанное ПСДЦ/)
+    assert.ok(built.meta.kp_file.stages.length === 2)
+    assert.ok(built.meta.passport.some(([k, v]) => k === 'Ниже итога файла (в смету не вошло)' && /Новые позиции ПСДЦ/.test(v)))
+    assert.ok(!built.rows.some((r) => r.code === '06.01.07'))
+    assert.ok(!('stages' in built.rows[1].kp))
+  })
+
+  const samples = process.env.KP_ESTIMATE_SAMPLES || REPO
+  const ks = path.join(samples, 'King_Sons_КП_до_перекидок_единый_ДС1-14.xlsx')
+  it('настоящий файл King & Sons: лист с ресурсами ПЗ другими подписями — 1934 строки, КП и ПЗ = итогу над шапкой, цена договора — в паспорт',
+    { skip: !fs.existsSync(ks) && 'нет файла King & Sons (в git его нет)' }, () => {
+      const kp = parseKpWorkbook(XLSX, XLSX.readFile(ks, { ...ESTIMATE_READ_OPTIONS }))
+      assert.equal(kp.layout, 'tree')
+      const built = buildEstimateRows({ kp, kpFileName: path.basename(ks) })
+      assert.equal(built.rows.length, 1934)
+      assert.equal(built.meta.formula_check.issue_count, 0)
+      assert.equal(kp.fileTotals.label, 'ИТОГО ПО РЕСУРСНОМУ РАСЧЁТУ')
+      assert.ok(Math.abs(built.meta.formula_check.totals.total - kp.fileTotals.total) < 0.05)
+      assert.ok(Math.abs(built.meta.formula_check.totals.direct - kp.fileTotals.direct) < 0.05)
+      assert.ok(built.meta.passport.some(([k]) => /Цена договора/.test(k)))
+      // Раздел с единицей («Планировочная организация земельного участка», компл) — раздел, не укрупнённая позиция.
+      assert.equal(built.rows.filter((r) => r.kind === 'aggregate').length, 0)
+      assert.equal(built.rows.filter((r) => r.kind === 'section').length, 9)
+    })
+
+  const ev = path.join(samples, 'Событие_6_2_КП_до_перекидок,_ДГП,_Допники.xlsx')
+  it('настоящий файл «Событие 6.2»: 1331 строка, итог КП = ИТОГО файла, этапы ДГП и ДС №1–3, объём по кол-ву заказчика у 70 позиций',
+    { skip: !fs.existsSync(ev) && 'нет файла «Событие 6.2» (в git его нет)' }, async () => {
+      const kp = parseKpWorkbook(XLSX, XLSX.readFile(ev, { ...ESTIMATE_READ_OPTIONS }))
+      assert.equal(kp.layout, 'stages')
+      const built = buildEstimateRows({ kp, kpFileName: path.basename(ev) })
+      assert.equal(built.rows.length, 1331)
+      assert.equal(built.meta.formula_check.issue_count, 0)
+      assert.ok(Math.abs(built.meta.formula_check.totals.total - kp.fileTotals.total) < 0.05)
+      assert.deepEqual(kp.stages.map((st) => st.short), ['ДГП', 'ДС №1 01.03.2026', 'ДС №2 03.07.2026', 'ДС №3 23.09.2026'])
+      assert.equal(kp.qtyByCustomer, 70)
+      // Цены этапа ДГП — документом по тому же файлу: все строки по ключу, итог = сумма ДГП позиций сметы (без «новых позиций ПСДЦ»).
+      const tree = buildTree(built.rows.map((r) => ({ ...r, id: `r${r.row_no}` })))
+      const lines = estimateDocLines(kp, 0)
+      const matched = await matchPriceLines(lines, await priceMatchIndex(tree))
+      assert.equal(matched.filter((m) => m.match?.via === 'key').length, lines.length)
+      const plan = planPriceChanges(matched, { tree, effective: new Map() })
+      const after = estimateTotals(tree, new Map(), effectivePrices(tree, pricesAfter(new Map(), plan.items))).after
+      const dgpLeaves = lines.reduce((sum, l) => sum + (l.total || 0), 0)
+      assert.ok(Math.abs(after - dgpLeaves) < 1, `${after} ≈ ${dgpLeaves}`)
+    })
+})
+
+describe('смета КП / ПЗ: цены администратора (20270308)', () => {
+  const stagesTree = () => {
+    const kp = parseKpWorkbook(XLSX, XLSX.read(XLSX.write(sampleStagesWorkbook(XLSX), { type: 'buffer', bookType: 'xlsx' }), { ...ESTIMATE_READ_OPTIONS }))
+    const built = buildEstimateRows({ kp, kpFileName: 'Событие_пример.xlsx' })
+    return { kp, tree: buildTree(built.rows.map((r) => ({ ...r, id: `r${r.row_no}` }))) }
+  }
+  const near = (a, b, eps = 0.01) => assert.ok(Math.abs(a - b) <= eps, `${a} ≈ ${b}`)
+
+  it('без изменений — цены файла; своя цена позиции; сумма группы — состав пропорционально, своя цена внутри закреплена', () => {
+    const { tree } = stagesTree()
+    assert.equal(effectivePrices(tree, new Map()).size, 0)
+    const sec = tree.byId.get('r1')
+    const road = tree.byId.get('r2')
+    const fence = tree.byId.get('r3')
+    const base = (r) => r.kp.total
+    // Своя цена позиции: стоимость = цена × кол-во ГП.
+    let eff = effectivePrices(tree, new Map([['r2', { unit_price: 3000 }]]))
+    near(eff.get('r2').total, 3000 * 765)
+    assert.equal(eff.get('r2').own.unit_price, 3000)
+    near(eff.get('r1').total, 3000 * 765 + base(fence))
+    assert.equal(priceOf(eff, road), 3000)
+    // Сумма раздела: позиции пересчитаны одним множителем, сумма раздела — заданная.
+    const target = 5000000
+    eff = effectivePrices(tree, new Map([['r1', { total: target }]]))
+    const f = target / (base(road) + base(fence))
+    near(eff.get('r2').total, base(road) * f)
+    near(eff.get('r3').total, base(fence) * f)
+    near(eff.get('r2').factor, f, 1e-9)
+    assert.ok(eff.get('r2').scaled && eff.get('r2').changed)
+    near(eff.get('r1').total, target)
+    // Своя цена позиции внутри + сумма раздела: своя — как введена (закреплена), остаток суммы — остальным позициям.
+    eff = effectivePrices(tree, new Map([['r1', { total: target }], ['r2', { unit_price: 3000 }]]))
+    near(eff.get('r2').total, 3000 * 765)
+    assert.equal(eff.get('r2').unit, 3000)
+    assert.equal(eff.get('r2').scaled, false)
+    near(eff.get('r3').total, target - 3000 * 765)
+    near(eff.get('r1').total, target)
+    // Закреплённое больше суммы раздела — сумма не достигнута, остальное — 0.
+    const over = effectivePrices(tree, new Map([['r1', { total: 1000 }], ['r2', { unit_price: 3000 }]]))
+    assert.equal(over.get('r1').unreached, true)
+    near(over.get('r3').total, 0)
+    // Итог сметы и деньги остатка — по действующей цене.
+    const states = computeStates(tree, new Map(), new Map(), eff)
+    near(states.sums.get('r1').current, target, 0.05)
+    assert.equal(states.total.priceChanged, 2)
+    assert.equal(sec.kind, 'section')
+  })
+
+  it('позиция без «Кол-ва (ГП)» — новой суммой; группа с нулевым составом — без множителя', () => {
+    const tree = buildTree([
+      { id: 'a', row_no: 1, parent_row_no: null, level: 1, kind: 'section', name: 'Раздел', kp: { total: 0 } },
+      { id: 'b', row_no: 2, parent_row_no: 1, level: 2, kind: 'position', name: 'Без объёма', unit: 'к-с', kp: { qty_gp: null, total: 100 } },
+      { id: 'c', row_no: 3, parent_row_no: null, level: 1, kind: 'section', name: 'Пустой', kp: { total: 0 } },
+      { id: 'd', row_no: 4, parent_row_no: 3, level: 2, kind: 'note', name: 'Строка', kp: { total: 0 } },
+    ])
+    const eff = effectivePrices(tree, new Map([['b', { unit_price: null, total: 250 }], ['c', { total: 999 }]]))
+    assert.equal(eff.get('b').total, 250)
+    assert.equal(eff.get('a').total, 250)
+    assert.equal(eff.get('c').total, 0, 'распределять не на что — сумма группы = сумма состава')
+    assert.equal(eff.get('d').factor, 1)
+  })
+
+  it('документ в раскладке сметы: этап ДГП по тому же файлу — все строки по ключу, «было → станет», итог; объём — по желанию', async () => {
+    const { kp, tree } = stagesTree()
+    const lines = estimateDocLines(kp, 0)
+    assert.equal(lines.length, 6, 'строки без вложенных: 5 позиций и [ДОП]')
+    const index = await priceMatchIndex(tree)
+    const matched = await matchPriceLines(lines, index)
+    assert.ok(matched.every((m) => m.match?.via === 'key'))
+    const plan = planPriceChanges(matched, { tree, effective: new Map() })
+    const road = plan.lines.find((l) => l.row?.code === '01.01.01')
+    near(road.before, 2900)
+    near(road.after, 1600000 / 765)
+    assert.ok(road.changed && road.pct < 0)
+    assert.equal(plan.items.find((it) => it.row_id === road.row.id).unit_price, Math.round((1600000 / 765) * 1e6) / 1e6)
+    assert.equal(plan.items.find((it) => it.row_id === road.row.id).unit_materials, Math.round((1300000 / 765) * 1e6) / 1e6)
+    const totals = estimateTotals(tree, new Map(), effectivePrices(tree, pricesAfter(new Map(), plan.items)))
+    near(totals.after, stagesSampleExpect().dgp)
+    // Объём документа в «Актуальный» — только по выбору и только где отличается.
+    assert.ok(!plan.items.some((it) => 'actual_qty' in it))
+    const withVol = planPriceChanges(matched, { tree, effective: new Map(), withVolumes: true, states: new Map([[road.row.id, { actual: 700 }]]), docTitle: 'ДГП' })
+    const vol = withVol.items.find((it) => it.row_id === road.row.id)
+    assert.equal(vol.actual_qty, 765)
+    assert.equal(vol.actual_reason, 'По документу «ДГП»')
+    // «Не применять» — строка без позиции и без записи.
+    const skip = planPriceChanges(matched, { tree, effective: new Map(), picks: new Map([[road.i, null]]) })
+    assert.ok(!skip.items.some((it) => it.row_id === road.row.id))
+  })
+
+  it('документ без ключей: наименование — как счёт с ВОР; одинаковые наименования у нескольких позиций — только человеком', async () => {
+    const tree = buildTree([
+      { id: 's', row_no: 1, parent_row_no: null, level: 1, kind: 'section', name: 'Раздел', row_key: 'c:|раздел|section' },
+      { id: 'p1', row_no: 2, parent_row_no: 1, level: 2, kind: 'position', name: 'Демонтаж бытового городка (модуля)', unit: 'шт', row_key: 'p:1', kp: { qty_gp: 16, total: 160 } },
+      { id: 'p2', row_no: 3, parent_row_no: 1, level: 2, kind: 'position', name: 'Демонтаж бытового городка (модуля)', unit: 'шт', row_key: 'p:2', kp: { qty_gp: 1, total: 10 } },
+      { id: 'p3', row_no: 4, parent_row_no: 1, level: 2, kind: 'position', name: 'Устройство временной автодороги из ж/б плит', unit: 'м2', row_key: 'p:3', kp: { qty_gp: 1000, total: 4000 } },
+    ])
+    const lines = genericDocLines([
+      { name: 'Демонтаж бытового городка (модуля)', unit: 'шт', qty: 16, price: 12, priceVat: 'gross' },
+      { name: 'Устройство временной автодороги из железобетонных плит', unit: 'м2', qty: 1000, price: 5, priceVat: 'gross' },
+      { name: 'Доставка', delivery: true, price: 100 },
+    ])
+    assert.equal(lines.length, 2, 'доставка — не строка цены')
+    const matched = await matchPriceLines(lines, await priceMatchIndex(tree))
+    assert.equal(matched[0].match, null, 'то же наименование у двух позиций — не сама')
+    assert.ok(matched[0].cands.length >= 2)
+    assert.equal(matched[1].match?.group.key, 'p3')
+    const plan = planPriceChanges(matched, { tree, effective: new Map(), picks: new Map([[0, matched[0].cands.find((c) => c.group.key === 'p1').group]]) })
+    assert.deepEqual(plan.items.map((it) => [it.row_id, it.unit_price]), [['p1', 12], ['p3', 5]])
+  })
+
+  it('по наименованию сама не ставится другая позиция: другой размер, толщина, сечение — только человеком', async () => {
+    const names = ['Распор D630х7 мм', 'Плита перекрытия монолитная B30 толщ. 200 мм', 'Демонтаж ограждения строительной площадки из проф.листа']
+    const tree = buildTree([{ id: 's', row_no: 1, parent_row_no: null, level: 1, kind: 'section', name: 'Раздел', row_key: 's' },
+      ...names.map((name, i) => ({ id: `p${i}`, row_no: i + 2, parent_row_no: 1, level: 2, kind: 'position', name, unit: 'тн', row_key: `k${i}`, kp: { qty_gp: 10, total: 100 } }))])
+    const lines = genericDocLines(['Распор D630х9 мм', 'Плита перекрытия монолитная B30 толщ. 250 мм', 'Демонтаж ограждения площадки из профлиста']
+      .map((name) => ({ name, unit: 'тн', qty: 10, price: 5, priceVat: 'gross' })))
+    const matched = await matchPriceLines(lines, await priceMatchIndex(tree))
+    assert.equal(matched[0].match, null)
+    assert.equal(matched[1].match, null, 'толщина другая — не сама, хотя похожесть 0,8')
+    assert.ok(matched[1].cands.some((c) => c.group.key === 'p1'), 'но в «Найти» — первой')
+    assert.equal(matched[2].match?.group.key, 'p2')
+  })
+
+  it('история и выгрузка: правки цен словами, столбцы действующей цены только при изменённых ценах', () => {
+    assert.deepEqual(describeLogEntry({ entity: 'price', action: 'update', changes: { unit_price: { old: 1, new: 2 }, _doc: { title: 'ДС №4' } } }),
+      { title: 'Цена по документу «ДС №4»', lines: ['Цена за ед.: 1,00 ₽ → 2,00 ₽'] })
+    assert.equal(describeLogEntry({ entity: 'price', action: 'insert', changes: { total: { old: null, new: 10 } } }).title, 'Цена изменена вручную')
+    assert.equal(describeLogEntry({ entity: 'price', action: 'delete', changes: {} }).title, 'Цена возвращена из файла')
+    assert.equal(describeLogEntry({ entity: 'price', action: 'import', changes: { title: 'ДГП', stage: 'ДГП 12.01.2026' } }).lines[0], 'Этап: ДГП 12.01.2026')
+    const { tree } = stagesTree()
+    const eff = effectivePrices(tree, new Map([['r2', { unit_price: 3000 }]]))
+    const states = computeStates(tree, new Map(), new Map(), eff)
+    const ctx = { tree, marks: new Map(), allocsByRow: new Map(), states: states.states, sums: states.sums, total: states.total, meta: {}, estimate: {}, effective: eff,
+      priceDocs: [{ title: 'ДС №4', stage: null, applied_by_name: 'Тест', applied_at: '2026-11-27T10:00:00Z', summary: { applied: 1 } }] }
+    const wb = XLSX.read(buildWith(XLSXStyle, ctx, { ids: exportRowIds(tree, null) }), { type: 'array' })
+    const head = XLSX.utils.sheet_to_json(wb.Sheets['Смета'], { header: 1 })[0]
+    assert.deepEqual(head.slice(-3), PRICE_HEAD)
+    assert.ok(XLSX.utils.sheet_to_json(wb.Sheets['Паспорт'], { header: 1 }).some((r) => r[0] === 'Документ цен: ДС №4'))
+    const plain = XLSX.read(buildWith(XLSXStyle, { ...ctx, effective: new Map() }, { ids: exportRowIds(tree, null) }), { type: 'array' })
+    assert.ok(!XLSX.utils.sheet_to_json(plain.Sheets['Смета'], { header: 1 })[0].includes(PRICE_HEAD[0]))
+  })
+
+  it('миграция обеих баз: цены пишет только администратор функциями базы, вошедшему — чтение; перенос на новую версию; шлюз', () => {
+    const ya = read('migration/yandex/20270308_kp_estimate_prices.sql')
+    const sb = read('supabase/migrations/20270308_kp_estimate_prices.sql')
+    const body = (text) => text.slice(text.indexOf('-- ── Таблицы'), text.search(/-- ── Права(: читать| под одну учётку)/)).replace(/-- osp:allow[^\n]*\n/g, '')
+    assert.equal(body(sb), body(ya))
+    for (const fn of ['kp_estimate_price_apply', 'kp_estimate_price_reset']) {
+      const def = ya.slice(ya.indexOf(`FUNCTION public.${fn}`))
+      assert.match(def.slice(0, def.indexOf('$$;')), /IF NOT public\.is_admin\(\) THEN/)
+      assert.match(def.slice(0, def.indexOf('$$;')), /psdc_object_in_scope/)
+      assert.match(ya, new RegExp(`-- osp:allow rpc ${fn} authenticated`))
+    }
+    assert.match(ya, /UPDATE public\.kp_estimate_prices p SET row_id = m\.new_id/)
+    assert.match(ya, /CHECK \(entity IN \('estimate', 'mark', 'allocation', 'price'\)\)/)
+    assert.doesNotMatch(ya, /FOR (INSERT|UPDATE|DELETE) TO PUBLIC/)
+    assert.match(ya, /-- osp:allow table kp_estimate_prices authenticated=select\n/)
+    assert.match(sb, /GRANT SELECT ON TABLE public\.%I TO authenticated/)
+    assert.doesNotMatch(sb, /GRANT (INSERT|UPDATE|DELETE|ALL) ON TABLE public\.%I TO authenticated/)
+    assert.match(read('migration/yandex/20270308_kp_estimate_prices.check.sql'), /только администратор/)
+    assert.match(read('migration/backup/checks/20270308.sql'), /to_regclass/)
+    assert.match(read('migration/rollback/20270308_kp_estimate_prices_rollback.sql'), /Данные НЕ удаляются/)
+    assert.match(read('migration/rollback/20270308_kp_estimate_prices_yandex_rollback.sql'), /DROP FUNCTION IF EXISTS public\.kp_estimate_price_apply/)
+    const allow = JSON.parse(read('server/osp-api/src/data/allow.json'))
+    assert.deepEqual(allow.tables.kp_estimate_prices, { authenticated: ['select'] })
+    assert.deepEqual(allow.tables.kp_estimate_price_docs, { authenticated: ['select'] })
+    assert.deepEqual(allow.rpc.kp_estimate_price_apply, ['authenticated'])
+    const map = JSON.parse(read('server/osp-api/src/data/db-sections.json'))
+    assert.equal(map.rpc.kp_estimate_price_apply.call, 'admin')
+    assert.equal(map.rpc.kp_estimate_price_reset.call, 'admin')
+    assert.equal(map.tables.kp_estimate_prices.insert, 'none')
+    assert.equal(map.tables.kp_estimate_price_docs.update, 'none')
   })
 })
 
@@ -596,6 +989,44 @@ describe('смета КП / ПЗ: интерфейс (стенд)', { skip: !lau
     await context.close()
   })
 
+  it('КП с ресурсами ПЗ одним листом (раскладка «Алии»): вложенность по группировке, прямые затраты — из ресурсов', async () => {
+    const { page, errors, context } = await open('&kpe=empty')
+    await page.click('button:has-text("Загрузить смету")')
+    const b64 = await page.evaluate(() => {
+      const X = window.__kpeXLSX
+      const a = X.write(window.__kpeSample.sampleTreeWorkbook(X), { type: 'array', bookType: 'xlsx' })
+      let s = ''
+      new Uint8Array(a).forEach((b) => { s += String.fromCharCode(b) })
+      return btoa(s)
+    })
+    await page.setInputFiles('.kpe-modal input[type=file]', [xlsxFile('Пример — КП до перекидок после ДС1–2.xlsx', b64)])
+    await page.waitForSelector('.kpe-import-summary')
+    const summary = (await page.textContent('.kpe-import-summary')).replace(/[\u00a0\u202f]/g, ' ')
+    assert.match(summary, /вложенность — по группировке строк файла/)
+    assert.match(summary, /как «КП в сопоставимой базе НДС 20%, с опционом» в файле/)
+    assert.match(summary, /ресурсами под строками КП \(15, без цены — 3\)/)
+    assert.match(summary, /расхождений: 3/)
+    await page.click('.kpe-modal-foot button:has-text("Загрузить")')
+    await page.waitForSelector('.kpe-banner--ok')
+    await page.click('.kpe-seg button:has-text("Все")')
+    const rows = await db(page, 'kp_estimate_rows')
+    assert.equal(rows.length, 19)
+    const plate = rows.find((r) => r.name === 'Бетонирование фундаментной плиты B30')
+    assert.equal((await page.locator(`tr[data-id="${plate.id}"] td.kpe-c-direct`).textContent()).replace(/[\u00a0\u202f]/g, ' '), '3 540 000,00')
+    await page.locator(`tr[data-id="${plate.id}"] td.kpe-c-name`).click()
+    await page.waitForSelector('.kpe-row-dialog')
+    const dlg = (await page.textContent('.kpe-row-dialog')).replace(/[\u00a0\u202f]/g, ' ')
+    assert.match(dlg, /осн\. материалы 2 900 000,00 · вспом\. 40 000,00 · работы 600 000,00/)
+    assert.match(dlg, /без цены 1 из 5 ресурсов/)
+    assert.match(dlg, /ПЗ × коэфф\./)
+    assert.match(dlg, /Цена за ед\.12 000,00 ₽ \/ м3/, 'цена — по стоимости КП, не по «ПЗ × коэфф.»')
+    await page.keyboard.press('Escape')
+    const group = rows.find((r) => r.name === 'Бетонирование')
+    assert.equal((await page.locator(`tr[data-id="${group.id}"] td.kpe-c-total`).textContent()).replace(/[\u00a0\u202f]/g, ' '), '4 800 000,00', 'группа — суммой строк, а не 0 из файла')
+    assert.deepEqual(errors, [])
+    await context.close()
+  })
+
   it('выгрузка выделенного: одна таблица КП + ПЗ и распределение', async () => {
     const { page, context } = await open()
     await page.click('.kpe-seg button:has-text("Все")')
@@ -607,6 +1038,94 @@ describe('смета КП / ПЗ: интерфейс (стенд)', { skip: !lau
     assert.equal(XLSX.utils.sheet_to_json(wb.Sheets['Смета'], { header: 1 }).length, 5, 'шапка, раздел, группа, стена, ИТОГО')
     assert.match(download.suggestedFilename(), /^Смета КП-ПЗ — ЖК Пример, корпус 1 — /)
     await context.close()
+  })
+
+  it('режим «Цены» (администратор): цена позиции и сумма укрупнённой — в ячейке, состав пропорционально; деньги — по новой цене; вернуть цену файла', async () => {
+    const { page, errors, context } = await open()
+    await page.waitForSelector('.kpe-table tbody tr[data-id]')
+    await page.click('.kpe-seg button:has-text("Все")')
+    await page.click('.kpe-head-actions button:has-text("Цены")')
+    await page.waitForSelector('.kpe-pricebar')
+    const heads = (await page.locator('.kpe-table thead th').allTextContents()).filter(Boolean)
+    assert.deepEqual(heads, ['Код', 'Наименование', 'Кол-во (ГП)', 'Стоимость КП, ₽', 'Цена КП за ед., ₽', 'Цена за ед., ₽', 'Стоимость, ₽', 'Изм., %', 'Откуда цена'])
+    // Позиция: своя цена за единицу.
+    await row(page, 14).locator('td.kpe-c-new_unit').click()
+    await page.fill('.kpe-inline', '70000')
+    await page.keyboard.press('Enter')
+    await page.waitForFunction(() => window.__fakeDb.kp_estimate_prices.some((x) => x.row_id === 'kr-14' && x.unit_price === 70000))
+    await page.waitForFunction(() => /14\s000\s000,00/.test(document.querySelector('tr[data-id="kr-14"] td.kpe-c-new_total')?.textContent || ''))
+    assert.match(await row(page, 14).locator('td.kpe-c-source').textContent(), /вручную/)
+    // Укрупнённая позиция: новая сумма — подробные позиции пересчитаны одним множителем.
+    await row(page, 7).locator('td.kpe-c-new_total').click()
+    await page.fill('.kpe-inline', '3000000')
+    await page.keyboard.press('Enter')
+    await page.waitForFunction(() => window.__fakeDb.kp_estimate_prices.some((x) => x.row_id === 'kr-7' && x.total === 3000000))
+    await page.waitForFunction(() => /356\s756,76/.test(document.querySelector('tr[data-id="kr-8"] td.kpe-c-new_total')?.textContent || ''))
+    assert.match(await row(page, 8).locator('td.kpe-c-source').textContent(), /группа ×0,85/)
+    const log = (await db(page, 'kp_estimate_log')).filter((e) => e.entity === 'price')
+    assert.equal(log.length, 2)
+    // Обычный вид: «Актуальная стоимость» и деньги распределения — по новой цене (120 м3 × 70 000).
+    await page.click('.kpe-head-actions button:has-text("Цены")')
+    await page.waitForSelector('.kpe-pricebar', { state: 'detached' })
+    assert.ok((await page.locator('.kpe-table thead th').allTextContents()).includes('Актуальная стоимость, ₽'))
+    assert.match(await page.textContent('.kpe-summary'), /Актуальная стоимость/)
+    await openRow(page, 14)
+    const dlg = (await page.textContent('.kpe-row-dialog')).replace(/[  ]/g, ' ')
+    assert.match(dlg, /Действующая за ед\.70 000,00 ₽ \/ м3 \(в файле 68 134,00, \+2,7 %\)/)
+    assert.match(dlg, /8 400 000,00 ₽/)
+    await page.click('.kpe-row-dialog button:has-text("Вернуть цену файла")')
+    await page.waitForFunction(() => !window.__fakeDb.kp_estimate_prices.some((x) => x.row_id === 'kr-14'))
+    await page.waitForFunction(() => /8\s176\s080,00/.test(document.querySelector('.kpe-row-dialog')?.textContent || ''))
+    assert.deepEqual(errors, [])
+    await context.close()
+  })
+
+  it('«Цены по документу»: файл сметы с этапами — этап ДГП, «было → станет», запись одной функцией; не администратору кнопки нет', async () => {
+    const { page, errors, context } = await open('&kpe=noprices')
+    await page.waitForSelector('.kpe-table tbody tr[data-id]')
+    assert.equal(await page.locator('.kpe-head-actions button:has-text("Цены")').isDisabled(), true, 'база без 20270308 — кнопка выключена')
+    await context.close()
+    const econ = await open('&asRole=economist&asUser=econ-1')
+    await econ.page.waitForSelector('.kpe-table tbody tr[data-id]')
+    assert.equal(await econ.page.locator('.kpe-head-actions button:has-text("Цены")').count(), 0)
+    const denied = await econ.page.evaluate(() => window.__fakeRpc.kp_estimate_price_apply({ p_estimate: 'est-1', p_doc: null, p_items: [{ row_id: 'kr-14', unit_price: 1 }] }))
+    assert.match(denied.error.message, /kp_estimate_price_admin/)
+    await econ.context.close()
+    // Документ — книга в раскладке сметы К14 (та же, что загружена): по КП цены не меняются; изменённая цена одной позиции — меняется.
+    const adm = await open()
+    await adm.page.waitForSelector('.kpe-table tbody tr[data-id]')
+    await adm.page.click('.kpe-head-actions button:has-text("Цены")')
+    await adm.page.click('.kpe-pricebar button:has-text("Цены по документу")')
+    await adm.page.waitForSelector('.kpe-pd-dialog')
+    const b64 = await adm.page.evaluate(() => {
+      const X = window.__kpeXLSX
+      const wb = window.__kpeSample.sampleKpWorkbook(X)
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      // Стена (№ 14, 200 м3): материалы 3 883 200 → 4 000 000 и итог строки — суммы, как их сохранил бы Excel (формулы
+      // SheetJS не пересчитывает).
+      for (const ref of Object.keys(ws)) {
+        if (ws[ref]?.v === 3883200) ws[ref] = { t: 'n', v: 4000000 }
+        else if (ws[ref]?.v === 13626800) ws[ref] = { t: 'n', v: 13743600 }
+      }
+      return X.write(wb, { type: 'base64', bookType: 'xlsx' })
+    })
+    await adm.page.setInputFiles('.kpe-pd-dialog input[type=file]', xlsxFile('ДС №4.xlsx', b64))
+    await adm.page.waitForSelector('.kpe-pd-stats')
+    assert.match(await adm.page.textContent('.kpe-pd-stats'), /изменится цен 1/)
+    await adm.page.fill('.kpe-pd-dialog input[aria-label="Название документа"]', 'ДС №4 от 01.12.2026')
+    await adm.page.click('.kpe-pd-dialog button:has-text("Применить: 1")')
+    await adm.page.waitForSelector('.kpe-pd-dialog', { state: 'detached' })
+    const prices = await db(adm.page, 'kp_estimate_prices')
+    assert.equal(prices.length, 1)
+    assert.equal(prices[0].row_id, 'kr-14')
+    assert.equal(prices[0].source, 'document')
+    assert.equal(prices[0].unit_price, 68718)
+    assert.equal(prices[0].unit_materials, 20000)
+    assert.equal((await db(adm.page, 'kp_estimate_price_docs'))[0].title, 'ДС №4 от 01.12.2026')
+    assert.match(await adm.page.textContent('.kpe-notice'), /Цены по документу «ДС №4 от 01\.12\.2026»: изменено строк 1/)
+    assert.deepEqual(adm.errors, [])
+    await adm.context.close()
+    assert.deepEqual(errors, [])
   })
 
   it('без права правки — только просмотр; база без миграции — подсказка', async () => {

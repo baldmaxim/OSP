@@ -110,14 +110,16 @@ export const pairKey = (a) => `${tenderKey(a)}|${counterpartyKey(a)}`
 // Подпись распределения: «№ 501 · ООО «Монолит-Строй»» (без тендера — только подрядчик).
 export const allocationText = (a) => [a?.tender_label, a?.counterparty_name].filter(Boolean).join(' · ') || 'без тендера и подрядчика'
 
-export function positionState(row, mark, allocations) {
+// eff — действующая цена строки (utils/kpEstimatePrices.effectivePrices, миграция 20270308): цена администратора или
+// пересчитанная группой; нет — цена файла. Деньги (распределено, свободно, актуальная стоимость) — по действующей цене.
+export function positionState(row, mark, allocations, eff = null) {
   const original = originalQty(row)
   const actualSet = mark?.actual_qty !== null && mark?.actual_qty !== undefined && mark?.actual_qty !== ''
   const actual = actualSet ? Number(mark.actual_qty) : original
   const diff = round6(actual - original)
   const distributed = round6((allocations || []).reduce((s, a) => s + allocQty(a), 0))
   const free = round6(actual - distributed)
-  const price = unitPrice(row)
+  const price = eff?.unit ?? unitPrice(row)
   let status
   if (!actual && !distributed) status = 'empty'
   else if (free < -eps(actual)) status = 'over'
@@ -131,17 +133,22 @@ export function positionState(row, mark, allocations) {
     distributedMoney: round2(distributed * price),
     freeMoney: round2(free * price),
     actualMoney: round2(actual * price),
+    // Актуальная стоимость: актуальный объём × действующая цена; без объёма — стоимость строки (у позиции с деньгами, но без
+    // «Кол-ва (ГП)», цены за единицу нет).
+    current: original ? round2(actual * price) : (eff ? eff.total : rowTotal(row)),
+    priceChanged: !!eff?.changed,
   }
 }
 
 // Состояние всех позиций и свод по группам (снизу вверх). marks — Map(row_id → отметка), allocs — Map(row_id → [..]).
+// effective — действующие цены (kpEstimatePrices.effectivePrices; пустая или null — цены файла).
 const SUM_KEYS = ['positions', 'total', 'materials', 'works', 'direct', 'directMain', 'directAux', 'directWorks',
-  'distributedMoney', 'freeMoney', 'overMoney', 'changed']
-export function computeStates(tree, marks, allocs) {
+  'distributedMoney', 'freeMoney', 'overMoney', 'changed', 'current', 'priceChanged']
+export function computeStates(tree, marks, allocs, effective = null) {
   const states = new Map()
   for (const r of tree.rows) {
     if (!isPosition(r)) continue
-    states.set(r.id, positionState(r, marks.get(r.id), allocs.get(r.id)))
+    states.set(r.id, positionState(r, marks.get(r.id), allocs.get(r.id), effective?.get(r.id) || null))
   }
   const sums = new Map()
   const empty = () => {
@@ -174,8 +181,10 @@ export function computeStates(tree, marks, allocs) {
       agg.distributedMoney = s.distributedMoney
       agg.freeMoney = Math.max(0, s.freeMoney)
       agg.overMoney = Math.max(0, -s.freeMoney)
+      agg.current = s.current
       agg.counts[s.status]++
       if (s.changed) agg.changed++
+      if (s.priceChanged) agg.priceChanged++
       sums.set(r.id, agg)
       continue
     }
@@ -231,6 +240,7 @@ export const SHOW_OPTIONS = [
   { key: 'full', label: 'Распределено', count: (t) => t.counts.full },
   { key: 'over', label: 'Превышение', count: (t) => t.counts.over },
   { key: 'changed', label: 'Объём изменён', count: (t) => t.changed },
+  { key: 'price', label: 'Цена изменена', count: (t) => t.priceChanged },
   { key: 'note', label: 'С примечанием', count: (t) => t.notes },
   { key: 'fill', label: 'С заливкой', count: (t) => t.fills },
 ]
@@ -243,6 +253,7 @@ export function rowMatchesShow(row, mark, state, show) {
   if (show === 'fill') return !!(mark?.fill || (mark?.cell_fills && Object.keys(mark.cell_fills).length))
   if (!isPosition(row) || !state) return false
   if (show === 'changed') return state.changed
+  if (show === 'price') return state.priceChanged
   return state.status === show
 }
 

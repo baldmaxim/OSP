@@ -452,8 +452,9 @@
 }
 
 /* Табличный вид документов (договоры, ДС, приложения).
-   Столбцы «№ / дата» и «Описание ДС» своей ширины не имеют — им достаётся остаток после остальных (≈ 43,5 rem; «Действия» —
-   7,5 rem под три кнопки приложения, 23.11.2026). Поэтому таблица не уже 53,5 rem, а уже места — прокручивается в своей
+   Столбцы «№ / дата» и «Описание ДС» своей ширины не имеют — им достаётся остаток после остальных (≈ 46 rem; «Действия» —
+   7,5 rem под три кнопки приложения, 23.11.2026; «Наименование» ДС — 11 rem под отступ приложения к приложению,
+   26.11.2026). Поэтому таблица не уже 56,5 rem, а уже места — прокручивается в своей
    рамке (12.11.2026: при узком окне или развёрнутом меню
    этим столбцам оставалось 30–50 px, номер, дата и описание шли по букве в строку). На телефоне (≤ 640 px) таблицы
    нет — документы карточками (ObjectDocCards). Меню «.md» — в <body>, прокрутка рамки его не обрезает. */
@@ -467,7 +468,7 @@
 
 .doc-table {
   width: 100%;
-  min-width: 53.5rem;
+  min-width: 56.5rem;
   border-collapse: collapse;
   font-size: 0.8125rem;
   table-layout: fixed;
@@ -507,19 +508,38 @@
 .doc-row-tr.doc-row-linked td { background: var(--primary-light); }
 .doc-row-tr.doc-row-linked td:first-child { box-shadow: inset 3px 0 0 var(--primary-color); }
 
-.doc-row-tr-attachment td {
-  background: rgba(37, 99, 235, 0.03);
+/* === Уровни строк (26.11.2026: «сделать более видным разграничение между смысловыми блоками») ===
+   0 — договор или ДС: белая строка, название жирным.
+   1 — приложение: голубая подложка, синяя полоса слева, название сдвинуто вправо с уголком; соседние приложения
+       разделены сплошной линией.
+   2 — приложение к приложению: подложка плотнее, полоса светлее, сдвиг вдвое; сверху пунктир — строка в группе
+       своего приложения.
+   Каждая ДС с приложениями — свой <tbody class="doc-block">, между ДС линия толще.
+   Подложки уровней — слабее подсветки строки под курсором и ссылки ?doc= (селекторы с меньшим весом). */
+.doc-row-l0 td { background: var(--bg-secondary); }
+.doc-row-l1 td {
+  background: rgba(37, 99, 235, 0.035);
+  border-top-color: var(--border-color-dark);
+}
+.doc-row-l2 td {
+  background: rgba(37, 99, 235, 0.08);
+  border-top-style: dashed;
+  border-top-color: rgba(37, 99, 235, 0.25);
+}
+:where([data-theme='dark']) .doc-row-l1 td { background: rgba(96, 165, 250, 0.06); }
+:where([data-theme='dark']) .doc-row-l2 td {
+  background: rgba(96, 165, 250, 0.12);
+  border-top-color: rgba(96, 165, 250, 0.3);
 }
 
-[data-theme='dark'] .doc-row-tr-attachment td {
-  background: rgba(96, 165, 250, 0.06);
+.doc-table > tbody.doc-block + tbody.doc-block > tr:first-child > td {
+  border-top: 2px solid #94a3b8;
+}
+[data-theme='dark'] .doc-table > tbody.doc-block + tbody.doc-block > tr:first-child > td {
+  border-top-color: #64748b;
 }
 
-/* Левый цветной маркер у строк-приложений */
-.doc-row-tr-attachment td:first-child {
-  position: relative;
-}
-
+/* Полоса слева у приложений: синяя у приложения, светлее у приложения к приложению. */
 .doc-row-tr-attachment td:first-child::before {
   content: '';
   position: absolute;
@@ -529,27 +549,94 @@
   width: 3px;
   background: #2563eb;
 }
+.doc-row-l2 td:first-child::before { background: #93c5fd; }
+[data-theme='dark'] .doc-row-tr-attachment td:first-child::before { background: #60a5fa; }
+[data-theme='dark'] .doc-row-l2 td:first-child::before { background: rgba(96, 165, 250, 0.5); }
 
-.doc-cell-marker {
+/* Левая ячейка — ручка перетаскивания целиком (только у тех, кого можно двигать). */
+.doc-row-tr td.doc-cell-marker {
+  position: relative;
   width: 28px;
-  color: var(--text-tertiary);
-  text-align: right;
-  font-size: 0.875rem;
+  padding: 0;
 }
 
-/* task 332: для строк-приложений центрируем ↳-стрелку и уменьшаем боковые
-   паддинги — стандартные 0.75rem с двух сторон не помещаются в 28px ячейку.
-   Линия колонки остаётся ровной, стрелка визуально «привязана» к номеру справа. */
-.doc-row-tr-attachment .doc-cell-marker {
-  text-align: center;
-  padding-left: 0.25rem;
-  padding-right: 0.25rem;
-  vertical-align: middle;
+.doc-drag-handle {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 0.5rem;
+  color: var(--text-tertiary);
+  cursor: grab;
+  user-select: none;
+  outline: none;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.doc-drag-handle svg { opacity: 0.75; }
+.doc-row-tr:hover .doc-drag-handle svg,
+.doc-drag-handle:focus-visible svg { opacity: 1; }
+.doc-drag-handle:hover {
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+}
+[data-theme='dark'] .doc-drag-handle:hover {
+  background: rgba(96, 165, 250, 0.14);
+  color: #93c5fd;
+}
+.doc-drag-handle:focus-visible { box-shadow: inset 0 0 0 2px var(--primary-color); }
+.doc-drag-handle:active { cursor: grabbing; }
+
+/* Перетаскиваемый блок (строка с приложениями) — бледнее; линия — куда он встанет. */
+.doc-row-dragging td { opacity: 0.45; }
+.doc-row-drop-before td { box-shadow: inset 0 3px 0 0 var(--primary-color); }
+.doc-row-drop-after td { box-shadow: inset 0 -3px 0 0 var(--primary-color); }
+
+/* Только что добавленный документ — короткая подсветка на своём месте. */
+@keyframes doc-just-added {
+  from { box-shadow: inset 0 0 0 999px rgba(250, 204, 21, 0.35); }
+  to { box-shadow: inset 0 0 0 999px rgba(250, 204, 21, 0); }
+}
+tr.doc-just-added > td,
+.odc-card.doc-just-added { animation: doc-just-added 2.4s ease-out; }
+
+/* Название в дереве: отступ по уровню (--doc-level), уголок, шеврон или место под него — номера соседей ровно. */
+.doc-cell-name {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.doc-tree {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  min-height: 1.25rem;
+  padding-left: max(0px, calc(var(--doc-level, 0) * 1.25rem - 0.5rem));
+}
+
+.doc-tree-elbow {
+  flex: 0 0 auto;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin-top: -0.5rem;
+  border-left: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  border-bottom-left-radius: 3px;
+  color: #2563eb;
+}
+.doc-row-l2 .doc-tree-elbow { color: #60a5fa; }
+[data-theme='dark'] .doc-tree-elbow { color: #60a5fa; }
+[data-theme='dark'] .doc-row-l2 .doc-tree-elbow { color: rgba(96, 165, 250, 0.6); }
+
+.doc-expand-btn,
+.doc-expand-spacer {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
 }
 
 .doc-expand-btn {
-  width: 22px;
-  height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -557,83 +644,15 @@
   border: 0;
   cursor: pointer;
   color: var(--text-secondary);
-  font-size: 0.6875rem;
   border-radius: 4px;
   padding: 0;
   transition: background-color 0.12s ease, color 0.12s ease;
 }
-
+.doc-expand-btn svg { transition: transform 0.15s ease; }
+.doc-expand-btn.is-open svg { transform: rotate(90deg); }
 .doc-expand-btn:hover {
   background: var(--bg-tertiary);
   color: var(--text-primary);
-}
-
-/* task 329 + 332: drag-and-drop порядка дополнительных соглашений.
-   Теперь тянем ТОЛЬКО за handle (⋮⋮), сама строка только принимает drop. */
-.doc-drag-handle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 22px;
-  color: var(--text-tertiary);
-  font-size: 0.875rem;
-  line-height: 1;
-  margin-right: 2px;
-  opacity: 0.4;
-  border-radius: 4px;
-  transition: opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease;
-  cursor: grab;
-  user-select: none;
-}
-.doc-row-tr:hover .doc-drag-handle {
-  opacity: 0.85;
-}
-.doc-drag-handle:hover {
-  opacity: 1;
-  background: var(--bg-tertiary);
-  color: var(--primary-color);
-}
-.doc-drag-handle:active {
-  cursor: grabbing;
-}
-.doc-row-dragging td {
-  opacity: 0.4;
-}
-.doc-row-drop-before td {
-  box-shadow: inset 0 2px 0 0 var(--primary-color);
-}
-.doc-row-drop-after td {
-  box-shadow: inset 0 -2px 0 0 var(--primary-color);
-}
-
-.doc-attachment-marker {
-  display: inline-block;
-  color: #2563eb;
-  font-weight: 700;
-  font-size: 0.9375rem;
-  line-height: 1;
-}
-
-[data-theme='dark'] .doc-attachment-marker {
-  color: #93c5fd;
-}
-
-.doc-cell-name {
-  min-width: 0;
-  overflow: hidden;
-}
-
-.doc-name-line {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  min-width: 0;
-}
-
-.doc-row-tr-attachment .doc-name-text {
-  font-weight: 500;
-  color: var(--text-secondary);
 }
 
 .doc-name-text {
@@ -644,6 +663,12 @@
   text-overflow: ellipsis;
   min-width: 0;
   flex: 1;
+}
+.doc-row-l1 .doc-name-text { font-weight: 500; }
+.doc-row-l2 .doc-name-text {
+  font-weight: 500;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
 }
 
 /* Кнопка «+ Приложение» под каждым родительским документом */
@@ -657,7 +682,8 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3125rem;
-  margin-left: 28px;
+  /* Под приложениями блока: левая ячейка (28px) + отступ первого уровня. */
+  margin-left: 2.5rem;
   padding: 0.25rem 0.625rem 0.25rem 0.5rem;
   font-size: 0.75rem;
   font-weight: 500;
@@ -684,11 +710,7 @@
   border-color: #60a5fa;
 }
 
-.doc-add-attachment-btn > span:first-child {
-  font-size: 0.875rem;
-  font-weight: 700;
-  line-height: 1;
-}
+.doc-add-attachment-btn svg { flex: 0 0 auto; }
 
 .doc-notes-line {
   margin-top: 0.1875rem;
@@ -833,6 +855,12 @@
   background: var(--bg-tertiary);
   color: var(--text-primary);
 }
+
+.doc-action-btn.doc-action-add:hover {
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+}
+[data-theme='dark'] .doc-action-btn.doc-action-add:hover { color: #93c5fd; }
 
 .doc-action-btn.doc-action-delete:hover {
   background: rgba(220, 38, 38, 0.1);
