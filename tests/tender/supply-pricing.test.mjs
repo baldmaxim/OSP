@@ -5,7 +5,7 @@
 // цена пишется всем ВОР строки, сумма делится по объёму), автозагрузка позиций из вкладки «ВОР», когда файлов нет, причина, если файл
 // ВОР не загрузился (и что она запоминается), сохранение без Enter и постоянная галочка, гонки записи на медленном сервере (Tab через
 // «Итого», правка во время записи — без ложного «изменено другим»), окно «изменено другим», только чтение, понятное сообщение без
-// миграции; окно «Счета и КП»: позиция и строка счёта рядом, правильная цена не показывается, свежий документ важнее.
+// миграции; окно «Счета и КП»: позиция и под ней строка счёта, правильная цена не показывается, свежий документ важнее.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -1211,7 +1211,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
     return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
   }
   const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  // Окно «Счета и КП тендера»: файл читается и загружается сразу, позиция ВОР и строка счёта — рядом.
+  // Окно «Счета и КП тендера»: файл читается и загружается сразу, позиция ВОР и под ней строка счёта.
   const tenderDocs = (page) => page.getByRole('dialog', { name: 'Счета и КП тендера' })
   const openTenderDocs = async (page) => {
     await page.getByRole('button', { name: /^Счета и КП/ }).click()
@@ -1241,7 +1241,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
   const pickRow = (docs, text) => docs.locator('.sp-td-table tbody tr', { hasText: text })
   const applyBox = (row) => row.getByRole('checkbox', { name: /^Применить цену/ })
 
-  it('счёт (Excel): позиция ВОР полужирным и строка счёта рядом, единицы совпадают; свежий документ заменяет свою цену; применённое больше не показывается', async () => {
+  it('счёт (Excel): позиция ВОР полужирным, строка счёта под ней, единицы совпадают; свежий документ заменяет свою цену; применённое больше не показывается', async () => {
     const { page, context, errors } = await openPage()
     try {
       const docs = await openTenderDocs(page)
@@ -1254,9 +1254,18 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.equal(await docs.locator('.sp-filter').count(), 0)
       // Позиция — полужирным, строка счёта — обычным; файл — мелко; отличия подсвечены.
       assert.equal((await pipe.locator('b.sp-td-name').innerText()).trim(), TRUBA)
-      assert.equal(await pipe.locator('td.sp-td-line b').count(), 0)
-      assert.match(await pipe.locator('td.sp-td-line .sp-td-diff').allInnerTexts().then((x) => x.join(' ')), /бухта/)
-      assert.match(await pipe.locator('td.sp-td-line .sp-td-file').innerText(), /Счёт 15 ТеплоСнаб\.xlsx/)
+      assert.equal(await pipe.locator('.sp-td-line b').count(), 0)
+      assert.match(await pipe.locator('.sp-td-line .sp-td-diff').allInnerTexts().then((x) => x.join(' ')), /бухта/)
+      assert.match(await pipe.locator('.sp-td-line .sp-td-file').innerText(), /Счёт 15 ТеплоСнаб\.xlsx/)
+      // 27.11.2026: позиция и строка счёта — одной ячейкой, одна над другой, с подписями и с одного края; строка счёта — на подложке.
+      assert.deepEqual(await pipe.locator('.sp-td-side').allInnerTexts(), ['ВОР', 'В счёте'])
+      const posBox = await pipe.locator('.sp-td-pos b.sp-td-name').boundingBox()
+      const lineBox = await pipe.locator('.sp-td-line .sp-td-name').boundingBox()
+      assert.ok(lineBox.y >= posBox.y + posBox.height, 'строка счёта — под позицией')
+      assert.ok(Math.abs(lineBox.x - posBox.x) <= 1, `наименования с одного края: ${posBox.x} и ${lineBox.x}`)
+      assert.notEqual(await pipe.locator('.sp-td-line').evaluate((el) => getComputedStyle(el).backgroundColor),
+        await pipe.locator('td.sp-td-cmp').evaluate((el) => getComputedStyle(el).backgroundColor), 'строка счёта — на своей подложке')
+      assert.deepEqual(await docs.locator('.sp-td-table thead th').allInnerTexts().then((x) => x.slice(1, 3)), ['Позиция ВОР и строка счёта', 'Ед. изм.'])
       assert.match(await pipe.locator('.sp-td-pos .sp-td-meta').getAttribute('title'), /ВК: 200 м/)
       assert.match(plain(await pipe.locator('.sp-td-pos .sp-td-meta').innerText()), /1700м·2ВОР/)
       // Единицы совпадают — статус; цена — с доставкой документа (+0,2 %).
@@ -1583,6 +1592,88 @@ describe('Расценка снабжением: таблица', { skip: !launc
       await page.waitForFunction((id) => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Хомут монтажный' && l.s3_document_id === id), doc.id)
       // Взятая цена — та же, что в документе: больше не предлагается.
       await similarBtn(rowOf(page, 'Хомут монтажный', 'ОВ')).waitFor({ state: 'detached' })
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  // 27.11.2026 (просьба пользователя): в окне строк без позиции подсказок больше трёх (6 и «ещё»), похожесть — цветом, отличия от строки
+  // счёта — жёлтым, как в таблице окна; строка счёта — полужирным, по середине строки. Окно не тормозит: строки — порциями, выбор
+  // отмечается сразу, пересчёт страницы — следом (bigPricing — позиции, bigUnplaced — счёт, строкам которого позиция сама не нашлась).
+  it('строки без позиции: больше трёх подсказок, похожесть цветом, отличия жёлтым; строки порциями; выбор отмечается сразу', async () => {
+    const { page, context, errors } = await openPage('&bigPricing=300&bigUnplaced=60')
+    try {
+      const docs = await openTenderDocs(page)
+      const btn = docs.getByRole('button', { name: /^Строки счетов без позиции ВОР: \d+/ })
+      await btn.waitFor({ timeout: 120000 })
+      const total = Number((await btn.getAttribute('aria-label')).match(/\d+$/)[0])
+      assert.ok(total > 40, `строк без позиции: ${total}`)
+      await btn.click()
+      const unplaced = page.getByRole('dialog', { name: 'Строки счетов без позиции ВОР' })
+      const rows = unplaced.locator('.sp-un-table > tbody > tr:not(.sp-un-more)')
+      await rows.first().waitFor()
+      // Порциями: сначала 40 и «Показать ещё»; прокрутили к концу — дорисовались остальные.
+      assert.equal(await rows.count(), 40)
+      await unplaced.getByRole('button', { name: `Показать ещё ${Math.min(40, total - 40)} из ${total - 40}` }).waitFor()
+      // Отвод (тот же размер и ГОСТ, что у труб ВОР): 6 подсказок сразу, остальные — «ещё».
+      const otvod = rows.filter({ hasText: 'Отвод стальной крутоизогнутый Ø57×3,5 ГОСТ 17375 исп. 1' })
+      const line = otvod.locator('td.sp-un-line')
+      assert.equal(await line.evaluate((el) => getComputedStyle(el).verticalAlign), 'middle')
+      assert.equal(await line.locator('.sp-td-name').evaluate((el) => getComputedStyle(el).fontWeight), '600')
+      const opts = otvod.locator('.sp-un-opt')
+      assert.equal(await opts.count(), 6)
+      const moreOpts = otvod.getByRole('button', { name: /^ещё \d+ похожих$/ })
+      await moreOpts.click()
+      assert.ok(await opts.count() > 6, 'после «ещё» — больше шести')
+      await otvod.getByRole('button', { name: 'свернуть' }).click()
+      assert.equal(await opts.count(), 6)
+      // Похожесть — цветом: от 60 % (сопоставилась бы сама) — зелёный, от 45 % — жёлтый, ниже — красный.
+      for (const chip of await otvod.locator('.sp-un-score').all()) {
+        const pct = Number((await chip.innerText()).match(/(\d+) %/)[1])
+        const tone = pct >= 60 ? 'is-high' : pct >= 45 ? 'is-mid' : 'is-low'
+        assert.match(await chip.getAttribute('class'), new RegExp(tone), `${pct} %`)
+      }
+      // Отличия подсказки от строки счёта — жёлтым (слов позиции нет в строке), общее — без подсветки.
+      const marks = await opts.first().locator('.sp-td-diff').allInnerTexts()
+      assert.ok(marks.some((m) => /Материал|труба|электросварная/.test(m)), marks.join(' | '))
+      assert.ok(!marks.some((m) => /стальн|ГОСТ/.test(m)), `общее не подсвечено: ${marks.join(' | ')}`)
+      // Кабель — кандидатов сопоставления нет: подсказки по словам наименования.
+      const cable = rows.filter({ hasText: 'Кабель КПСнг(А)-FRHF 2x2x0,75 поз. 2' })
+      await cable.locator('.sp-un-score.is-words').first().waitFor()
+
+      // Выбор — отметка сразу; строка остаётся в окне. «Отменить» — строка снова с подсказками (выбранной позиции среди них нет: «не эта»),
+      // счётчик — прежний, в таблицу окна строка не попадает.
+      const status = unplaced.getByRole('status')
+      const wrong = (await opts.first().locator('.sp-td-name').innerText()).trim()
+      await opts.first().click()
+      await otvod.getByText(`Сопоставлено: ${wrong}`).waitFor()
+      await status.getByText(`осталось: ${total - 1} · сопоставлено сейчас: 1`).waitFor()
+      await otvod.getByRole('button', { name: 'отменить' }).click()
+      await opts.first().waitFor()
+      assert.equal(await opts.count(), 6)
+      await status.getByText(`осталось: ${total}`, { exact: true }).waitFor()
+      assert.ok(!(await opts.locator('.sp-td-name').allInnerTexts()).map((x) => x.trim()).includes(wrong), 'отменённая позиция не предлагается')
+      // Другой отвод — выбор остаётся и попадает в таблицу окна после закрытия.
+      const otvod3 = rows.filter({ hasText: 'Отвод стальной крутоизогнутый Ø59×3,5 ГОСТ 17375 исп. 3' })
+      const name = (await otvod3.locator('.sp-un-opt .sp-td-name').first().innerText()).trim()
+      await otvod3.locator('.sp-un-opt').first().click()
+      await otvod3.getByText(`Сопоставлено: ${name}`).waitFor()
+      await status.getByText(`осталось: ${total - 1} · сопоставлено сейчас: 1`).waitFor()
+
+      // Прокрутка к концу — следующая порция.
+      await unplaced.locator('.sp-tf-body').evaluate((el) => { el.scrollTop = el.scrollHeight })
+      await rows.nth(Math.min(total, 80) - 1).waitFor()
+      // Фильтр строк — по словам строки счёта.
+      await unplaced.getByRole('searchbox', { name: 'Найти строку счёта среди строк без позиции' }).fill('кабель 4x2')
+      await page.waitForFunction(() => [...document.querySelectorAll('.sp-un-table > tbody > tr:not(.sp-un-more)')]
+        .every((tr) => /Кабель КПСнг\(А\)-FRHF 4x2/.test(tr.textContent)))
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await unplaced.waitFor({ state: 'detached' })
+      await pickRow(docs, name).waitFor()
+      assert.match(await pickRow(docs, name).innerText(), /Отвод стальной крутоизогнутый Ø59×3,5/)
+      assert.equal(await pickRow(docs, 'Отвод стальной крутоизогнутый Ø57×3,5').count(), 0, 'отменённый выбор в таблицу не попал')
       assert.deepEqual(errors, [])
     } finally {
       await context.close()

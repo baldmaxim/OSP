@@ -1268,7 +1268,6 @@ s.sp-was { display: inline; }
   line-height: var(--ui-hint-lh);
 }
 .ui-work.ui-work .sp-td-table > tbody > tr > td { padding: 0.375rem 0.5rem; font-size: var(--ui-text); line-height: var(--ui-text-lh); vertical-align: top; }
-.ui-work.ui-work .sp-td-table > tbody > tr > td.sp-td-line { border-left: 1px dotted var(--border-color); }
 /* Шапка блока — под шапкой таблицы при прокрутке; слева галочка «все в блоке». */
 .ui-work.ui-work .sp-td-table > tbody > tr.sp-td-group > td {
   position: sticky;
@@ -1296,17 +1295,27 @@ s.sp-was { display: inline; }
 .sp-td-name { display: block; overflow-wrap: anywhere; }
 b.sp-td-name { font-weight: var(--ui-semibold); }
 .ui-work.ui-work .sp-td-table > tbody > tr:not(.sp-td-group) > td { border-bottom: 1px solid var(--border-color); background: var(--bg-secondary); }
+/* Строки окна — отдельными блоками (27.11.2026): между соседними строками просвет цвета фона, у каждой — своя линия сверху и снизу. */
+.ui-work.ui-work .sp-td-table > tbody > tr:not(.sp-td-group) + tr:not(.sp-td-group) > td {
+  border-top: 0.5rem solid var(--bg-primary);
+  box-shadow: inset 0 1px 0 var(--border-color);
+}
+.ui-work.ui-work .sp-td-table > tbody > tr:not(.sp-td-group) > td { padding-top: 0.5rem; padding-bottom: 0.5rem; }
 .ui-work.ui-work .sp-td-table > tbody > tr.is-checked:not(.sp-td-group) > td { background: var(--bg-secondary); }
 .ui-work.ui-work .sp-td-table > tbody > tr:not(.sp-td-group):hover > td { background: var(--hover-bg); }
 .sp-td-diff { padding: 0 0.125rem; border-radius: 3px; background: rgba(245, 158, 11, 0.24); color: inherit; }
-/* Позиция ВОР — к правому краю своей колонки, строка счёта — от левого края своей: наименования стоят вплотную по обе стороны
-   границы, и сравнивать их глазами быстро на любом мониторе (27.11.2026: на широком экране оба были прижаты влево, между ними —
-   полэкрана). */
-.ui-work.ui-work .sp-td-table > tbody > tr > td.sp-td-pos, .ui-work.ui-work .sp-td-table > thead > tr > th.sp-td-pos-h { text-align: right; }
-.sp-td-pos > .sp-td-meta { display: block; margin-top: 0.125rem; font-variant-numeric: tabular-nums; }
-.sp-td-line > .sp-td-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.125rem 0.75rem; margin-top: 0.125rem; }
-.sp-td-line > .sp-td-meta .sp-td-file { color: var(--text-secondary); }
-.sp-td-line > .sp-td-tag { margin: 0.25rem 0.25rem 0 0; }
+/* Позиция ВОР и строка счёта — одна над другой в одной ячейке (27.11.2026, просьба пользователя; до того стояли рядом в двух
+   колонках): у каждой подпись слева («ВОР», «В счёте») в одну ширину — наименования начинаются с одной линии и сравниваются глазами
+   сверху вниз; строка счёта — на своей подложке с рамкой, чтобы блоки не сливались. */
+.sp-td-pos, .sp-td-line { display: flex; align-items: baseline; gap: 0.5rem; }
+.sp-td-pos { padding: 0 calc(0.5rem + 1px); }
+.sp-td-line { margin-top: 0.375rem; padding: 0.375rem 0.5rem; border: 1px solid var(--border-color); border-radius: var(--ui-radius); background: var(--bg-primary); }
+.sp-td-side { flex: none; width: 3.25rem; color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.sp-td-body { flex: 1; min-width: 0; }
+.sp-td-pos .sp-td-body > .sp-td-meta { display: block; margin-top: 0.125rem; font-variant-numeric: tabular-nums; }
+.sp-td-line .sp-td-body > .sp-td-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.125rem 0.75rem; margin-top: 0.125rem; }
+.sp-td-line .sp-td-body > .sp-td-meta .sp-td-file { color: var(--text-secondary); }
+.sp-td-line .sp-td-body > .sp-td-tag { margin: 0.25rem 0.25rem 0 0; }
 .sp-td-unit { display: inline-flex; flex-direction: column; gap: 0.125rem; font-size: var(--ui-th); line-height: var(--ui-th-lh); }
 .sp-td-unit.is-ok { flex-direction: row; align-items: center; gap: 0.25rem; color: #15803d; }
 .sp-td-unit.is-off { color: var(--danger-color); }
@@ -1351,6 +1360,9 @@ b.sp-td-name { font-weight: var(--ui-semibold); }
 .ui-work.ui-work .sp-un-table { width: 100%; min-width: 0; table-layout: fixed; }
 .sp-un-c-line { width: 34rem; }
 .sp-un-c-pos { width: 40rem; }
+/* Строка счёта слева — по середине строки, от левого края, полужирным: её видно рядом с длинным списком подсказок (27.11.2026). */
+.ui-work.ui-work .sp-un-table > tbody > tr > td.sp-un-line { vertical-align: middle; text-align: left; }
+.sp-un-line > .sp-td-name { color: var(--text-primary); font-weight: var(--ui-semibold); }
 .sp-un-line > .sp-td-meta { display: block; margin-top: 0.125rem; }
 .sp-un-line .sp-td-file { color: var(--text-secondary); }
 .sp-un-line > .sp-td-tag { margin-top: 0.25rem; }
@@ -1358,8 +1370,20 @@ b.sp-td-name { font-weight: var(--ui-semibold); }
 .sp-un-suggest { display: grid; gap: 0.25rem; margin: 0 0 0.375rem; padding: 0; list-style: none; }
 .sp-un-opt { border: 1px solid var(--border-color); background: var(--bg-primary); }
 .sp-un-opt:hover { border-color: var(--primary-color); }
+.sp-un-opt-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.125rem 0.5rem; margin-top: 0.125rem; }
+.sp-un-opt-meta > .sp-td-meta.is-warn { color: var(--warning-color); }
+/* Похожесть — цветом (подпись остаётся): от 60 % — зелёный, от 45 % — жёлтый, ниже — красный; по словам — серый (SupplyUnplacedDialog.scoreTone). */
+.sp-un-score { display: inline-flex; align-items: center; padding: 0 0.375rem; border-radius: 999px; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); font-weight: var(--ui-medium); font-variant-numeric: tabular-nums; }
+.sp-un-score.is-high { background: var(--success-light); color: #15803d; }
+.sp-un-score.is-mid { background: var(--warning-light); color: var(--warning-color); }
+.sp-un-score.is-low { background: var(--danger-light); color: #b91c1c; }
+.sp-un-score.is-words { background: var(--hover-bg); color: var(--text-secondary); font-weight: var(--ui-regular, 400); }
+[data-theme='dark'] .sp-un-score.is-high { color: #86efac; }
+[data-theme='dark'] .sp-un-score.is-low { color: var(--danger-color); }
+.sp-un-all { display: block; margin: -0.125rem 0 0.375rem; font-size: var(--ui-hint); }
+.sp-un-wait { display: block; margin-bottom: 0.375rem; }
 .sp-un-found { margin-top: 0.25rem; }
-.sp-un-words { display: block; margin-bottom: 0.375rem; font-size: var(--ui-hint); }
+.ui-work.ui-work .sp-un-table > tbody > tr.sp-un-more > td { padding: 0.5rem; text-align: center; }
 .sp-un-done { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; }
 .sp-un-done > svg { flex: none; align-self: center; color: var(--success-color); }
 .ui-work.ui-work .sp-un-table > tbody > tr.is-done > td { background: var(--success-light); }
@@ -1397,7 +1421,18 @@ b.sp-td-name { font-weight: var(--ui-semibold); }
   .sp-td-table, .sp-td-table tbody { display: block; }
   .ui-work.ui-work .sp-td-table > tbody > tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.25rem 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); }
   .ui-work.ui-work .sp-td-table > tbody > tr > td { padding: 0; border: 0; }
-  .ui-work.ui-work .sp-td-table > tbody > tr > td.sp-td-line { grid-column: 1 / -1; border: 0; }
+  .ui-work.ui-work .sp-td-table > tbody > tr:not(.sp-td-group) > td { padding: 0; border: 0; }
+  .ui-work.ui-work .sp-td-table > tbody > tr:not(.sp-td-group) + tr:not(.sp-td-group) > td { border-top: 0; box-shadow: none; }
+  /* Слева отметка; справа — позиция и строка счёта, под ними ед. изм. и цена, ниже — что сейчас в расценке. */
+  .ui-work.ui-work .sp-td-table > tbody > tr:not(.sp-td-group) > td:nth-child(2) { grid-column: 2 / -1; grid-row: 1; }
+  .ui-work.ui-work .sp-td-table > tbody > tr:not(.sp-td-group) > td:nth-child(3) { grid-column: 2; grid-row: 2; }
+  .ui-work.ui-work .sp-td-table > tbody > tr:not(.sp-td-group) > td:nth-child(4) { grid-column: 3; grid-row: 2; }
+  .ui-work.ui-work .sp-td-table > tbody > tr:not(.sp-td-group) > td:nth-child(5) { grid-column: 2 / -1; grid-row: 3; }
+  .sp-td-pos { padding: 0; }
+  /* Подпись блока — над наименованием: вся ширина телефона — тексту; поиск «другой строки» не шире подложки. */
+  .sp-td-pos, .sp-td-line { display: block; }
+  .sp-td-side { display: block; width: auto; }
+  .ui-work.ui-work .sp-td-picker .sp-td-find { min-width: 0; }
   .ui-work.ui-work .sp-td-table > tbody > tr.sp-td-group { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0; }
   .ui-work.ui-work .sp-td-table > tbody > tr.sp-td-group > td { position: static; padding: 0; border: 0; background: none; }
   .sp-td-block-hint { display: block; margin-left: 0; }
@@ -1406,6 +1441,4 @@ b.sp-td-name { font-weight: var(--ui-semibold); }
   .ui-work.ui-work .sp-un-table > tbody > tr > td.sp-un-pos { border: 0; }
   .ui-work.ui-work .sp-un-filter { flex: 1 1 100%; order: 1; margin-left: 0; }
   .sp-un .sp-tf-head .sp-tf-close { margin-left: auto; }
-  /* Позиция ВОР и строка счёта на телефоне — одна под другой, слева. */
-  .ui-work.ui-work .sp-td-table > tbody > tr > td.sp-td-pos { text-align: left; }
 }

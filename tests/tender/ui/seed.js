@@ -313,6 +313,21 @@ if (BIG_PRICING > 0) {
       notes: JSON.stringify({ kind: 'supply_offer', v: 1, rv: 3, at: '2026-11-20T09:00:00Z', source: null, vat: null, delivery: 1, lines }),
     })
   }
+  // bigUnplaced=N — ещё счёт из N строк, которым позиция сама не находится (окно «Строки счетов без позиции ВОР»): через одну
+  // отдалённо похожие (тот же размер и ГОСТ, другое изделие) и совсем другие (кабель) — подсказки по словам наименования.
+  const BIG_UNPLACED = Number(params.get('bigUnplaced') || 0)
+  if (BIG_UNPLACED > 0) {
+    const lines = Array.from({ length: BIG_UNPLACED }, (_, j) => ({
+      n: j % 2 ? `Кабель КПСнг(А)-FRHF ${1 + (j % 4)}x2x${(0.5 + (j % 5) * 0.25).toFixed(2).replace('.', ',')} поз. ${j + 1}`
+        : `Отвод стальной крутоизогнутый Ø${57 + (j % 40)}×3,5 ГОСТ 17375 исп. ${j + 1}`,
+      p: 300 + j, u: j % 2 ? 'м' : 'шт', q: 10,
+    }))
+    window.__fakeDb.s3_documents.push({
+      id: 'doc-big-unplaced', owner_type: 'tender', owner_id: 'tender-p', doc_category: 'supply_doc', file_name: 'Нерасценённые.xlsx',
+      s3_key: 'tenders/tender-p/big-unplaced.xlsx', created_at: '2026-11-25T09:00:00Z', uploaded_by_name: 'Снабженцев С. С.', size_bytes: 7000,
+      notes: JSON.stringify({ kind: 'supply_offer', v: 1, rv: 3, at: '2026-11-25T09:00:00Z', source: null, vat: null, delivery: 1, lines }),
+    })
+  }
 }
 
 // Тендер без файлов ВОР: позиции берутся из вкладки «ВОР» карточки (tender_estimate_items).

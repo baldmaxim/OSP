@@ -479,9 +479,23 @@ export function positionConfidence(g1, g2) {
 }
 
 // Строка счёта не отличается от позиции по тем же правилам: высокая похожесть без этого — ещё не «та же позиция» (0,3 м и 5 м).
+// Ответ зависит только от наименования строки и группы — помнится у группы (как её признаки, sameFeatures): расценка пересчитывает
+// все строки всех документов после каждого выбора человека, и на тендере № 704 этот разбор был половиной пересчёта (27.11.2026).
+const LINE_SAME = new WeakMap()
 export function lineSameAsGroup(line, g) {
-  const parts = nameParts(expandName(line.name))
-  return !clearDifference(designations(line.name), sameFeatures(g), parts.words, features(g).parts.words).differs
+  let byName = LINE_SAME.get(g)
+  if (!byName) {
+    byName = new Map()
+    LINE_SAME.set(g, byName)
+  }
+  const name = String(line.name ?? '')
+  let same = byName.get(name)
+  if (same === undefined) {
+    const parts = nameParts(expandName(line.name))
+    same = !clearDifference(designations(line.name), sameFeatures(g), parts.words, features(g).parts.words).differs
+    byName.set(name, same)
+  }
+  return same
 }
 
 // Группы позиций → те же, где одна и та же позиция разных ВОР сложена в одну (см. выше). Сложенная группа: первая по порядку,

@@ -5,8 +5,8 @@ import { IconSearch } from '../icons/ToolbarIcons'
 import PaperclipIcon from '../icons/PaperclipIcon'
 import { formatAmount, roundMoney } from '../../utils/money'
 import { PICK_BLOCKS, autoPickRows, groupHideKeys, hideKeysByDoc, isHiddenAt, unplacedLines, windowOffers } from '../../utils/supplyAutoPick'
-import { nameDiff } from '../../utils/supplyNameDiff'
 import { scanProgressText } from '../../utils/supplyOffers'
+import Name from './SupplyNameDiff'
 import SupplyTenderFilesDialog, { filesAttention } from './SupplyTenderFilesDialog'
 import SupplyUnplacedDialog from './SupplyUnplacedDialog'
 
@@ -26,13 +26,6 @@ function totalVolume(group) {
   if (group.units) return null
   const list = group.targets.map((t) => t.position.volume).filter((v) => v != null)
   return list.length ? list.reduce((s, v) => s + Number(v), 0) : null
-}
-
-// Наименование с подсвеченными отличиями от другой стороны.
-function Name({ text, other, strong = false }) {
-  const parts = useMemo(() => nameDiff(text, other), [text, other])
-  const Tag = strong ? 'b' : 'span'
-  return <Tag className="sp-td-name">{parts.map((p, i) => (p.differs ? <mark key={i} className="sp-td-diff">{p.text}</mark> : <span key={i}>{p.text}</span>))}</Tag>
 }
 
 // Единицы: совпадают — галочка; пересчитаны — как; разные и пересчёт неизвестен — указать, сколько в единице счёта.
@@ -142,7 +135,7 @@ function BlockHead({ block, rows, isChecked, busy, onAll }) {
         <input ref={ref} type="checkbox" checked={all} disabled={busy || !checkable.length} onChange={(e) => onAll(checkable, e.target.checked)}
           aria-label={`Отметить все: ${block.title}`} title={all ? 'Снять все в блоке' : 'Отметить все в блоке'} />
       </td>
-      <td colSpan={5}>
+      <td colSpan={4}>
         <span className="sp-td-block-title">{block.title}</span>
         <span className="sp-td-block-count ui-num">{rows.length}</span>
         {on > 0 && <span className="sp-td-block-on">отмечено {on}</span>}
@@ -152,7 +145,9 @@ function BlockHead({ block, rows, isChecked, busy, onAll }) {
   )
 }
 
-// Строка: отметка, позиция ВОР (полужирным) и строка счёта рядом, единицы, цена, что сейчас в расценке.
+// Строка: отметка; позиция ВОР (полужирным) и под ней строка счёта — двумя блоками одной ячейки; единицы, цена, что сейчас в расценке.
+// 27.11.2026 (просьба пользователя): наименования — не рядом в двух колонках, а одно над другим, каждое со своей подписью слева
+// («ВОР», «В счёте»), строка счёта — на своей подложке; строки окна разделены просветом. Подсветка отличий — как была.
 const PickRow = memo(function PickRow({ row, checked, busy, allLines, onCheck, onPick, onReject, onPack, onOpenFile }) {
   const [open, setOpen] = useState(false)
   const { group, shown, sure, spread } = row
@@ -163,27 +158,35 @@ const PickRow = memo(function PickRow({ row, checked, busy, allLines, onCheck, o
         <input type="checkbox" checked={checked} disabled={busy || !shown.unitOk} onChange={(e) => onCheck(group.key, e.target.checked)}
           aria-label={`Применить цену: ${group.name}`} />
       </td>
-      <td className="sp-td-pos">
-        <Name text={group.name} other={shown.line.name} strong />
-        {volume != null && <span className="sp-td-meta ui-num" title={volumesTitle(group)}>{fmtNum(volume)} {group.unit || ''}{group.targets.length > 1 ? ` · ${group.targets.length} ВОР` : ''}</span>}
-      </td>
-      <td className="sp-td-line">
-        <Name text={shown.line.name} other={group.name} />
-        <span className="sp-td-meta">
-          <button type="button" className="sp-td-file" onClick={() => onOpenFile(shown.doc)} title="Открыть файл"><PaperclipIcon size={12} /> {shown.doc.file_name}{shown.date ? ` · ${fmtDay(shown.date)}` : ''}</button>
-          <button type="button" className="sp-link-btn" aria-expanded={open} onClick={() => setOpen(!open)}>другая строка</button>
-        </span>
-        {!sure && <span className="sp-td-tag">похоже на {Math.round(shown.score * 100)} %</span>}
-        {spread && <span className="sp-td-tag is-warn">цены в счетах отличаются в {spread} раз</span>}
-        {shown.line.sumOff && <span className="sp-td-tag is-warn">цена × кол-во ≠ сумма</span>}
-        {shown.line.unsure && !shown.line.sumOff && (shown.ocr
-          ? <span className="sp-td-tag is-warn" title="Строка со скана, а суммы для сверки в ней нет: цифры могли распознаться неверно.">со скана: сверьте с файлом</span>
-          : <span className="sp-td-tag is-warn" title="В ячейке документа несколько позиций одна под другой: наименование могло разделиться неверно.">сверьте с файлом</span>)}
-        {shown.qtyFar && <span className="sp-td-tag is-warn">после пересчёта количество не похоже на объём</span>}
-        {shown.over && <span className="sp-td-tag is-warn" title="Цена строки больше итога всего документа: строка прочитана неверно (например, склеились две цены).">цена больше итога документа</span>}
-        {!shown.over && shown.docOk === false && <span className="sp-td-tag is-warn" title="Сумма прочитанных строк не сошлась с итогом документа: часть строк могла прочитаться неверно. Сами такие цены не отмечаются.">итог документа не сошёлся — сверьте</span>}
-        {shown.twins?.length > 0 && <span className="sp-td-meta" title={shown.twins.map((d) => d.file_name).join('\n')}>та же цена и в {shown.twins.length === 1 ? `«${shown.twins[0].file_name}»` : `${shown.twins.length} документах`}</span>}
-        {open && <LinePicker row={row} allLines={allLines} busy={busy} onPick={(d, l) => onPick(group, d, l, shown)} onReject={(d, l) => onReject(group, d, l)} onClose={() => setOpen(false)} />}
+      <td className="sp-td-cmp">
+        <div className="sp-td-pos">
+          <span className="sp-td-side">ВОР</span>
+          <div className="sp-td-body">
+            <Name text={group.name} other={shown.line.name} strong />
+            {volume != null && <span className="sp-td-meta ui-num" title={volumesTitle(group)}>{fmtNum(volume)} {group.unit || ''}{group.targets.length > 1 ? ` · ${group.targets.length} ВОР` : ''}</span>}
+          </div>
+        </div>
+        <div className="sp-td-line">
+          <span className="sp-td-side">В счёте</span>
+          <div className="sp-td-body">
+            <Name text={shown.line.name} other={group.name} />
+            <span className="sp-td-meta">
+              <button type="button" className="sp-td-file" onClick={() => onOpenFile(shown.doc)} title="Открыть файл"><PaperclipIcon size={12} /> {shown.doc.file_name}{shown.date ? ` · ${fmtDay(shown.date)}` : ''}</button>
+              <button type="button" className="sp-link-btn" aria-expanded={open} onClick={() => setOpen(!open)}>другая строка</button>
+            </span>
+            {!sure && <span className="sp-td-tag">похоже на {Math.round(shown.score * 100)} %</span>}
+            {spread && <span className="sp-td-tag is-warn">цены в счетах отличаются в {spread} раз</span>}
+            {shown.line.sumOff && <span className="sp-td-tag is-warn">цена × кол-во ≠ сумма</span>}
+            {shown.line.unsure && !shown.line.sumOff && (shown.ocr
+              ? <span className="sp-td-tag is-warn" title="Строка со скана, а суммы для сверки в ней нет: цифры могли распознаться неверно.">со скана: сверьте с файлом</span>
+              : <span className="sp-td-tag is-warn" title="В ячейке документа несколько позиций одна под другой: наименование могло разделиться неверно.">сверьте с файлом</span>)}
+            {shown.qtyFar && <span className="sp-td-tag is-warn">после пересчёта количество не похоже на объём</span>}
+            {shown.over && <span className="sp-td-tag is-warn" title="Цена строки больше итога всего документа: строка прочитана неверно (например, склеились две цены).">цена больше итога документа</span>}
+            {!shown.over && shown.docOk === false && <span className="sp-td-tag is-warn" title="Сумма прочитанных строк не сошлась с итогом документа: часть строк могла прочитаться неверно. Сами такие цены не отмечаются.">итог документа не сошёлся — сверьте</span>}
+            {shown.twins?.length > 0 && <span className="sp-td-meta" title={shown.twins.map((d) => d.file_name).join('\n')}>та же цена и в {shown.twins.length === 1 ? `«${shown.twins[0].file_name}»` : `${shown.twins.length} документах`}</span>}
+            {open && <LinePicker row={row} allLines={allLines} busy={busy} onPick={(d, l) => onPick(group, d, l, shown)} onReject={(d, l) => onReject(group, d, l)} onClose={() => setOpen(false)} />}
+          </div>
+        </div>
       </td>
       <td><UnitCell offer={shown} group={group} busy={busy} onPack={(o, n) => onPack(group, o.doc, o.line, n)} /></td>
       <td className="ui-money sp-td-price">{formatAmount(shown.price)}</td>
@@ -551,7 +554,7 @@ export default function SupplyTenderDocsDialog({
             <div className="table-container sp-td-wrap">
               <table className="data-table sp-td-table">
                 <colgroup>
-                  <col className="sp-td-c-sel" /><col /><col /><col className="sp-td-c-unit" /><col className="sp-td-c-price" /><col className="sp-td-c-now" />
+                  <col className="sp-td-c-sel" /><col /><col className="sp-td-c-unit" /><col className="sp-td-c-price" /><col className="sp-td-c-now" />
                 </colgroup>
                 <thead>
                   <tr>
@@ -559,8 +562,7 @@ export default function SupplyTenderDocsDialog({
                       <input ref={headBoxRef} type="checkbox" checked={allOn} disabled={busy || !checkable.length}
                         onChange={(e) => checkAll(e.target.checked)} aria-label="Отметить все строки" title={allOn ? 'Снять все' : 'Отметить все'} />
                     </th>
-                    <th className="sp-td-pos-h">Позиция ВОР</th>
-                    <th>В счёте</th>
+                    <th>Позиция ВОР и строка счёта</th>
                     <th>Ед. изм.</th>
                     <th className="ui-money">Цена, ₽</th>
                     <th>Сейчас в расценке</th>
