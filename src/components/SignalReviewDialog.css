@@ -1,0 +1,238 @@
+/* «Сверка с Signal» (SignalReviewDialog.jsx): окно у значка (.apop.srd-pop) и самостоятельное окно (.srd-overlay) — оба в <body>,
+   поэтому стили свои целиком: страница могла быть открыта по прямой ссылке без стилей других разделов. Подписи 11/15, текст
+   13/18, кнопки 32px (на телефоне 40px). Контраст текста — не ниже 4,5:1 в обеих темах. */
+.apop.srd-pop { width: 41rem; }
+
+.srd-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1350;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.45);
+}
+.srd-modal {
+  box-sizing: border-box;
+  width: min(44rem, 100%);
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.28);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  text-align: left;
+}
+.srd, .srd *, .srd *::before, .srd *::after { box-sizing: border-box; }
+.srd { min-width: 0; }
+
+.srd-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin: 0 0 0.5rem; }
+.srd-title { margin: 0; font-size: 0.875rem; line-height: 1.25rem; font-weight: 600; color: var(--text-primary); }
+.srd-title:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: 2px; }
+.srd-x {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.srd-x:hover:not(:disabled) { background: var(--hover-bg); color: var(--text-primary); }
+.srd-x:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+
+.srd-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.75rem; }
+.srd-col { min-width: 0; }
+.srd-cap {
+  margin: 0 0 0.25rem;
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  line-height: 0.9375rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.srd-card {
+  min-height: 3.5rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--hover-bg) 55%, var(--bg-secondary));
+}
+.srd-main { font-weight: 600; color: var(--text-primary); }
+.srd-line { margin-top: 0.125rem; color: var(--text-primary); overflow-wrap: anywhere; }
+.srd-sub { margin-top: 0.125rem; color: var(--text-secondary); font-size: 0.75rem; line-height: 1rem; }
+.srd-muted { color: var(--text-secondary); font-size: 0.75rem; line-height: 1rem; margin: 0.25rem 0; }
+.srd-path { overflow-wrap: anywhere; }
+.srd-url { color: var(--ui-link, #0e7490); overflow-wrap: anywhere; word-break: break-all; }
+[data-theme='dark'] .srd-url { color: var(--primary-color); }
+.srd-k { color: var(--text-secondary); font-size: 0.75rem; line-height: 1rem; }
+
+.srd-replace { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.5rem 0.625rem; border: 1px solid var(--border-color-dark); border-radius: 6px; }
+.srd-row { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: 0.5rem; }
+.srd-v { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
+
+.srd-cands { margin: 0.5rem 0 0; padding: 0; border: 0; min-width: 0; }
+.srd-cands legend { padding: 0; margin-bottom: 0.125rem; }
+.srd-cand { display: flex; align-items: flex-start; gap: 0.375rem; padding: 0.1875rem 0; cursor: pointer; }
+.srd-cand input { margin: 0.1875rem 0 0; }
+
+/* Причины плашками: совпало — зелёная, нужна проверка — жёлтая, жёсткое расхождение — красная. Текст темнее заливки. */
+.srd-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0.625rem 0 0; padding: 0; list-style: none; }
+.srd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.0625rem 0.4375rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  font-weight: 500;
+}
+.srd-chip svg { flex: 0 0 auto; }
+.srd-chip.is-ok { color: #15803d; background: color-mix(in srgb, #16a34a 9%, var(--bg-secondary)); border-color: color-mix(in srgb, #16a34a 35%, transparent); }
+.srd-chip.is-warn { color: #854d0e; background: color-mix(in srgb, #eab308 16%, var(--bg-secondary)); border-color: color-mix(in srgb, #ca8a04 55%, transparent); }
+.srd-chip.is-bad { color: #b91c1c; background: color-mix(in srgb, #dc2626 7%, var(--bg-secondary)); border-color: color-mix(in srgb, #dc2626 30%, transparent); }
+.srd-chip.is-info { color: var(--text-secondary); background: var(--hover-bg); border-color: var(--border-color-dark); }
+[data-theme='dark'] .srd-chip.is-ok { color: #86efac; border-color: color-mix(in srgb, #86efac 35%, transparent); background: color-mix(in srgb, #22c55e 14%, var(--bg-secondary)); }
+[data-theme='dark'] .srd-chip.is-warn { color: #fde047; border-color: color-mix(in srgb, #fde047 38%, transparent); background: color-mix(in srgb, #eab308 16%, var(--bg-secondary)); }
+[data-theme='dark'] .srd-chip.is-bad { color: #fca5a5; border-color: color-mix(in srgb, #fca5a5 35%, transparent); background: color-mix(in srgb, #ef4444 14%, var(--bg-secondary)); }
+
+.srd-alias { display: flex; flex-direction: column; gap: 0.375rem; margin-top: 0.625rem; }
+.srd-check { display: flex; align-items: flex-start; gap: 0.375rem; cursor: pointer; }
+.srd-check input { margin: 0.1875rem 0 0; }
+
+.srd-field { display: flex; flex-direction: column; gap: 0.1875rem; margin: 0 0 0.375rem; }
+.srd-input {
+  width: 100%;
+  height: 2rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+textarea.srd-input { height: auto; min-height: 3.25rem; padding: 0.375rem 0.5rem; resize: vertical; }
+.srd-input:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 25%, transparent); }
+
+.srd-panel { margin-top: 0.625rem; padding: 0.5rem 0.625rem; border: 1px solid var(--border-color-dark); border-radius: 6px; }
+.srd-panel-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.375rem; }
+.srd-folders { list-style: none; margin: 0.25rem 0 0; padding: 0; max-height: 11rem; overflow: auto; border: 1px solid var(--border-color-dark); border-radius: 6px; }
+.srd-folders li + li { border-top: 1px solid var(--border-color-dark); }
+.srd-folder {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.0625rem;
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.srd-folder:hover { background: var(--hover-bg); }
+.srd-folder:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
+
+.srd-msg { margin: 0 0 0.5rem; padding: 0.375rem 0.625rem; border: 1px solid transparent; border-radius: 6px; font-size: 0.8125rem; }
+.srd-msg .srd-btn { margin-left: 0.5rem; }
+.srd-msg.is-error { color: #b91c1c; background: color-mix(in srgb, #dc2626 7%, var(--bg-secondary)); border-color: color-mix(in srgb, #dc2626 30%, transparent); }
+.srd-msg.is-ok { color: #15803d; background: color-mix(in srgb, #16a34a 9%, var(--bg-secondary)); border-color: color-mix(in srgb, #16a34a 35%, transparent); }
+[data-theme='dark'] .srd-msg.is-error { color: #fca5a5; border-color: color-mix(in srgb, #fca5a5 35%, transparent); background: color-mix(in srgb, #ef4444 14%, var(--bg-secondary)); }
+[data-theme='dark'] .srd-msg.is-ok { color: #86efac; border-color: color-mix(in srgb, #86efac 35%, transparent); background: color-mix(in srgb, #22c55e 14%, var(--bg-secondary)); }
+
+.srd-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
+.srd-spacer { flex: 1 1 0; }
+.srd-btn {
+  height: 2rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.srd-btn:hover:not(:disabled) { background: var(--hover-bg); }
+.srd-btn:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.srd-btn:disabled { opacity: 0.5; cursor: default; }
+.srd-btn.is-primary { border-color: #0e7490; background: #0e7490; color: #fff; }
+.srd-btn.is-primary:hover:not(:disabled) { background: #155e75; }
+.srd-btn.is-danger { border-color: #b91c1c; background: #b91c1c; color: #fff; }
+.srd-btn.is-danger:hover:not(:disabled) { background: #991b1b; }
+.srd-btn.is-quiet { border-color: transparent; background: none; color: var(--text-secondary); }
+.srd-btn.is-quiet:hover:not(:disabled) { background: var(--hover-bg); color: var(--text-primary); }
+[data-theme='dark'] .srd-btn.is-primary { border-color: var(--primary-color); background: var(--primary-color); color: #0f172a; }
+[data-theme='dark'] .srd-btn.is-danger { border-color: #fca5a5; background: #fca5a5; color: #450a0a; }
+.srd-foot { margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.6875rem; line-height: 0.9375rem; }
+
+/* Сообщение после сохранения (Р8) — под панелью фильтров реестра. */
+.srd-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.75rem;
+  margin: 0.375rem 0;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 45%, transparent);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary-color) 8%, var(--bg-secondary));
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+.srd-notice:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.srd-notice.is-warn { border-color: color-mix(in srgb, #ca8a04 55%, transparent); background: color-mix(in srgb, #eab308 12%, var(--bg-secondary)); }
+.srd-notice-text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 18rem; overflow-wrap: anywhere; }
+.srd-notice-text small { color: var(--text-secondary); font-size: 0.75rem; line-height: 1rem; }
+.srd-notice-actions { display: flex; gap: 0.5rem; }
+
+/* Телефон: окно на весь экран, договор и папка один под другим; кнопки — под палец. */
+@media (max-width: 640px) {
+  .srd-overlay { padding: 0; align-items: stretch; }
+  .srd-modal { width: 100%; max-height: none; height: 100%; border: 0; border-radius: 0; padding: 0.75rem 0.75rem 1rem; }
+  .srd-grid { grid-template-columns: minmax(0, 1fr); }
+  .srd-x { width: 2.5rem; height: 2.5rem; }
+  .srd-btn { height: 2.5rem; font-size: 0.875rem; }
+  .srd-input { height: 2.5rem; font-size: 1rem; }
+  textarea.srd-input { height: auto; }
+  .srd-actions .srd-btn:not(.is-quiet), .srd-panel-actions .srd-btn { flex: 1 1 auto; }
+  .srd-spacer { display: none; }
+  .srd-row { grid-template-columns: minmax(0, 1fr); gap: 0.125rem; }
+  .srd-notice-actions .srd-btn { flex: 1 1 auto; }
+}
+
+/* Сообщение уходит из-под шапки телефона (мобильная полоса меню — fixed, 52px), когда страница прокручивается к нему. */
+.srd-notice { scroll-margin-top: 4rem; }
+
+/* Полоса над реестром (В-7): данные Signal обновлялись давно — сверка может быть устаревшей. Жёлтая, как «внимание». */
+.srd-stale {
+  margin: 0.375rem 0;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid color-mix(in srgb, #ca8a04 55%, transparent);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: color-mix(in srgb, #eab308 12%, var(--bg-secondary));
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  overflow-wrap: anywhere;
+}

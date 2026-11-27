@@ -12,6 +12,7 @@ import {
 } from './contractAmendments'
 import { LARIX_LINK_FIELD, LARIX_LINK_LABEL } from './contractLarix'
 import { LAWYER_FIELD, matchLawyerByName } from './contractLawyer.js'
+import { normMatchName } from './matchName'
 
 // --- «История» загруженного документа ---
 // Событие «Создание»: то же начало, что пишет ручная форма (ContractsPage: «Создан договор № …» /
@@ -126,16 +127,8 @@ function normHeader(s) {
   return nfold(s).replace(/[^a-zа-я0-9 ]/gi, ' ').replace(/\s+/g, ' ').trim()
 }
 
-// Нормализация имени контрагента/объекта для сопоставления:
-// убираем кавычки (обычные/типографские), схлопываем пробелы, ё→е, нижний регистр.
-export function normMatchName(s) {
-  return String(s == null ? '' : s)
-    .toLowerCase()
-    .replace(/ё/g, 'е')
-    .replace(/[«»""„"'`]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
+// Нормализация имени для сопоставления — в matchName.js (общий код сайта и службы osp-api); здесь реэкспорт.
+export { normMatchName }
 
 // ИНН: оставляем только цифры (точный ключ).
 export function normInn(s) {

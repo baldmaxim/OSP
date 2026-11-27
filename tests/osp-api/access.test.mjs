@@ -187,6 +187,28 @@ describe('osp-api: права объявлены на маршруте, закр
       'GET /api/admin/counterparties/:id/su10-org': { method: 'GET', url: '/api/admin/counterparties/0f0e0d0c-0b0a-4908-8706-050403020100/su10-org' },
       'POST /api/admin/su10-org-exceptions': { method: 'POST', url: '/api/admin/su10-org-exceptions', payload: { subject: '0f0e0d0c-0b0a-4908-8706-050403020100', reason: 'проверка' } },
       'DELETE /api/admin/su10-org-exceptions/:subject': { method: 'DELETE', url: '/api/admin/su10-org-exceptions/0f0e0d0c-0b0a-4908-8706-050403020100', payload: {} },
+      // Сверка договоров с Signal (src/routes/signal.js): здесь своей базы нет — возможность выключена: status отвечает «выключено»,
+      // остальное — 503 после проверки прав. Работа, права на настоящей базе и охват — tests/osp-api/signal-routes.test.mjs.
+      'GET /api/signal/status': { method: 'GET', url: '/api/signal/status' },
+      'GET /api/signal/marks': { method: 'GET', url: '/api/signal/marks' },
+      'GET /api/signal/contracts/:id': { method: 'GET', url: '/api/signal/contracts/0f0e0d0c-0b0a-4908-8706-050403020100' },
+      'GET /api/signal/folders': { method: 'GET', url: '/api/signal/folders?contractId=0f0e0d0c-0b0a-4908-8706-050403020100' },
+      'POST /api/signal/match': { method: 'POST', url: '/api/signal/match', payload: { contractIds: ['0f0e0d0c-0b0a-4908-8706-050403020100'] } },
+      'POST /api/signal/contracts/:id/confirm': { method: 'POST', url: '/api/signal/contracts/0f0e0d0c-0b0a-4908-8706-050403020100/confirm', payload: { nodeId: '0f0e0d0c-0b0a-4908-8706-050403020101', replace: false, expectedSignalLink: null, expectedStateVersion: 0, idempotencyKey: '0f0e0d0c-0b0a-4908-8706-050403020102' } },
+      'POST /api/signal/contracts/:id/reject': { method: 'POST', url: '/api/signal/contracts/0f0e0d0c-0b0a-4908-8706-050403020100/reject', payload: { nodeId: '0f0e0d0c-0b0a-4908-8706-050403020101', expectedStateVersion: 0, idempotencyKey: '0f0e0d0c-0b0a-4908-8706-050403020102' } },
+      'POST /api/signal/contracts/:id/unlink': { method: 'POST', url: '/api/signal/contracts/0f0e0d0c-0b0a-4908-8706-050403020100/unlink', payload: { expectedSignalLink: 'https://signal.example/x', expectedStateVersion: 0, idempotencyKey: '0f0e0d0c-0b0a-4908-8706-050403020102' } },
+      'GET /api/signal/aliases': { method: 'GET', url: '/api/signal/aliases' },
+      'POST /api/signal/aliases': { method: 'POST', url: '/api/signal/aliases', payload: { objectId: '0f0e0d0c-0b0a-4908-8706-050403020100', text: 'Тест' } },
+      'DELETE /api/signal/aliases/:id': { method: 'DELETE', url: '/api/signal/aliases/1', payload: {} },
+      'POST /api/signal/sources': { method: 'POST', url: '/api/signal/sources', payload: { url: 'https://signal.example/p', objectIds: [] } },
+      'PATCH /api/signal/sources/:id': { method: 'PATCH', url: '/api/signal/sources/1', payload: { enabled: true } },
+      'POST /api/signal/sync': { method: 'POST', url: '/api/signal/sync', payload: {} },
+      'GET /api/signal/runs': { method: 'GET', url: '/api/signal/runs' },
+      'GET /api/signal/unassigned': { method: 'GET', url: '/api/signal/unassigned?sourceId=1' },
+      'POST /api/signal/bindings': { method: 'POST', url: '/api/signal/bindings', payload: { sourceId: 1, nodeId: '0f0e0d0c-0b0a-4908-8706-050403020101', objectId: null } },
+      'GET /api/signal/tree': { method: 'GET', url: '/api/signal/tree?sourceId=1' },
+      'GET /api/signal/bindings': { method: 'GET', url: '/api/signal/bindings?sourceId=1' },
+      'POST /api/signal/bindings/preview': { method: 'POST', url: '/api/signal/bindings/preview', payload: { sourceId: 1, nodeId: '0f0e0d0c-0b0a-4908-8706-050403020101', objectId: '0f0e0d0c-0b0a-4908-8706-050403020100' } },
     }
     const measured = {}
     for (const [title, req] of Object.entries(requests)) {
@@ -248,6 +270,32 @@ describe('osp-api: права объявлены на маршруте, закр
       for (const denied of ['employee', 'unapproved', 'contractor', 'contractor_noorg', 'no_user_roles', 'blocked']) assert.equal(row[denied], 403, `${title}: ${denied}`)
       assert.ok(row.admin !== 401 && row.admin !== 403, `${title}: администратор`)
     }
+    // Сверка с Signal: все 20 маршрутов — только вошедший сотрудник (ни одного открытого), подрядчик и неодобренный — отказ,
+    // администраторские — только администратор.
+    const signalTitles = Object.keys(measured).filter((t) => t.includes(' /api/signal/'))
+    assert.equal(signalTitles.length, 20)
+    assert.equal(app.accessTable.filter((r) => r.url.startsWith('/api/signal/') && r.kind !== 'user').length, 0, 'открытых маршрутов Signal нет')
+    assert.equal(OPEN_ROUTES.filter((r) => r.url.startsWith('/api/signal')).length, 0, 'в списке открытых маршрутов Signal нет')
+    // Список названий (aliases) — сотруднику с правкой: свои, решает база (С-2); прочие маршруты разметки и обхода — только администратору.
+    const signalAdmin = new Set(['POST /api/signal/sources', 'PATCH /api/signal/sources/:id', 'POST /api/signal/sync',
+      'GET /api/signal/runs', 'GET /api/signal/unassigned', 'POST /api/signal/bindings', 'GET /api/signal/tree', 'GET /api/signal/bindings',
+      'POST /api/signal/bindings/preview'])
+    for (const title of signalTitles) {
+      const row = measured[title]
+      assert.equal(row['без токена'], 401, title)
+      assert.equal(row['неверный токен'], 401, title)
+      for (const denied of ['unapproved', 'contractor', 'contractor_noorg', 'no_user_roles', 'blocked']) assert.equal(row[denied], 403, `${title}: ${denied}`)
+      if (signalAdmin.has(title)) assert.equal(row.employee, 403, `${title}: сотрудник`)
+      else assert.ok(row.employee !== 403, `${title}: сотрудник`)
+      assert.ok(row.admin !== 401 && row.admin !== 403, `${title}: администратор`)
+    }
+    // Требование к учётке: сотрудницкие маршруты пускают ещё и суперадминистратора без строки user_roles (решение 24.11.2026),
+    // администраторские — только admin. Здесь режим supabase без своей базы: суперадминистраторов нет, класс «без строки» — отказ
+    // (работа суперадминистратора на настоящей базе — tests/osp-api/signal-superadmin.test.mjs).
+    const requireOf = Object.fromEntries(app.accessTable.filter((r) => r.url.startsWith('/api/signal/')).map((r) => [`${r.method} ${r.url}`, r.require]))
+    for (const title of signalTitles) assert.equal(requireOf[title], signalAdmin.has(title) ? 'admin' : 'employeeOrSuperadmin', `${title}: требование`)
+    assert.equal(measured['GET /api/signal/status'].employee, 200, 'status отвечает «выключено» тому, кто вошёл')
+    assert.equal(measured['POST /api/signal/match'].employee, 503, 'возможность выключена — 503 после проверки прав')
     assert.equal(measured['POST /api/fn/ai-assist clause_suggest'].contractor, 403)
     assert.equal(measured['POST /api/fn/cover-upload'].contractor, 403, 'обложку загружает только сотрудник')
     // Файл ВОР: подрядчик с организацией доходит до проверки тела (и функции базы), остальным — отказ раньше.

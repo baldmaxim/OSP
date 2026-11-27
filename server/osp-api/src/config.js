@@ -1,5 +1,8 @@
 import { LARIX_DEFAULT_URL, LARIX_DEFAULTS, larixBaseUrl } from './lib/larixClient.js'
 import { LARIX_TARGETS } from './lib/larixSync.js'
+import { SIGNAL_DEFAULT_URL, SIGNAL_DEFAULT_SCOPES, signalBaseUrl } from './lib/signalClient.js'
+import { buildSignalUrl, parseSignalUrl, parseUrlFormats, validateUrlTemplate } from './lib/signalMatch.js'
+import { SIGNAL_SYNC_DEFAULTS } from './lib/signalSync.js'
 
 // Настройки osp-api — только из окружения (на VPS — файл EnvironmentFile службы, права 600).
 // Значения секретов никуда не выводятся: /api/health отдаёт лишь «задано / не задано».
@@ -214,6 +217,113 @@ export function parseLarix(env, { dbUrl, supabaseUrl, supabaseServiceKey }) {
   return larix
 }
 
+// Сверка договоров с папками Signal (src/lib/signalSync.js, signalJobs.js, routes/signal.js). Выключена, пока не задано
+// SIGNAL_SYNC=1: на прежнем сервере тот же код, а второй обход одного Signal и очередь в чужой базе не нужны. Включена, но
+// настроена с ошибкой (В-8) — служба ЗАПУСКАЕТСЯ, а сверка выключена с причиной config_invalid: портал не должен падать из-за
+// опечатки в настройке сверки. Имена неверных переменных — в config.signal.configErrors (журнал службы, вкладка «Signal» у
+// администратора, /api/health = 'config_invalid'); значения нигде не выводятся. signal-cli и тесты, которым нужен отказ, просят
+// parseSignal(env, { strict: true }) / loadConfig(env, { strictSignal: true }) — первая же ошибка бросается, как раньше.
+// Подключение к Signal (SIGNAL_CLIENT_ID / SIGNAL_CLIENT_SECRET) необязательно: без него очередь и сверка по готовому снимку
+// работают, обход и добавление корней — нет. Секреты — только здесь, в окружении службы; /api/health отдаёт лишь «настроено / нет».
+const SIGNAL_DAY_MODES = ['full', 'known']
+const SIGNAL_SCOPE_RE = /^[A-Za-z0-9:._-]{1,60}$/
+const SIGNAL_HOST_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/
+// Синтетические идентификаторы для пробной сборки и разбора шаблона адреса (С-49): шаблон, которым портал строит ссылки,
+// обязан разбираться тем же списком SIGNAL_URL_FORMATS, иначе подтверждённая человеком ссылка не распознается сверкой.
+const PROBE_PROJECT = '00000000-0000-4000-8000-0000000000a1'
+const PROBE_NODE = '00000000-0000-4000-8000-0000000000b2'
+
+// Не задано (или негодно при выключенной сверке) — undefined: значение по умолчанию подставляет сам модуль (клиент, обход, очередь).
+function signalInt(raw, min, max, name, strict) {
+  if (raw === undefined || String(raw).trim() === '') return undefined
+  const n = Number(raw)
+  if (Number.isSafeInteger(n) && n >= min && n <= max) return n
+  if (strict) throw new Error(`${name}: целое число от ${min} до ${max}`)
+  return undefined
+}
+
+export function parseSignal(env, { strict = false } = {}) {
+  const str = (v) => String(v ?? '').trim()
+  const words = (v) => str(v).split(/[\s,;]+/).filter(Boolean)
+  const sync = env.SIGNAL_SYNC === '1'
+  const formats = parseUrlFormats(env.SIGNAL_URL_FORMATS)
+  // Ошибки настройки: { name, text } — имя переменной и фиксированный текст без значений.
+  const issues = []
+  const fail = (name, text) => {
+    if (strict) throw new Error(text.startsWith(name) ? text : `${name}: ${text}`)
+    if (!issues.some((i) => i.name === name)) issues.push({ name, text })
+  }
+  const int = (name, min, max) => {
+    try { return signalInt(env[name], min, max, name, sync) } catch (err) { fail(name, err.message); return undefined }
+  }
+  const scopes = words(env.SIGNAL_SCOPES)
+  const signal = {
+    sync,
+    baseUrl: str(env.SIGNAL_BASE_URL) || SIGNAL_DEFAULT_URL,
+    hosts: words(env.SIGNAL_HOSTS).map((h) => h.toLowerCase()),
+    clientId: str(env.SIGNAL_CLIENT_ID),
+    clientSecret: String(env.SIGNAL_CLIENT_SECRET || ''),
+    scopes: scopes.length ? scopes : [...SIGNAL_DEFAULT_SCOPES],
+    urlFormats: formats.formats,
+    uiFolderUrl: str(env.SIGNAL_UI_FOLDER_URL),
+    uiFileUrl: str(env.SIGNAL_UI_FILE_URL),
+    dayMode: str(env.SIGNAL_DAY_MODE) || 'full',
+    tickMs: int('SIGNAL_TICK_MS', 10_000, 3_600_000),
+    jobsTickMs: int('SIGNAL_JOBS_TICK_MS', 1_000, 600_000),
+    timeoutMs: int('SIGNAL_TIMEOUT_MS', 1_000, 300_000),
+    maxBytes: int('SIGNAL_MAX_BYTES', 1024 * 1024, 256 * 1024 * 1024),
+    runBudgetMs: int('SIGNAL_RUN_BUDGET_MS', 60_000, 6 * 3_600_000),
+    // Бюджет одного корня (≤ бюджета прогона) и пределы обхода: передаются клиенту и обходу как есть (TODO(G1) — SIGNAL_PAGE_END).
+    rootBudgetMs: int('SIGNAL_ROOT_BUDGET_MS', 60_000, 6 * 3_600_000),
+    // Страница — последняя только если пустая (empty, по умолчанию) или и если короче запрошенной (short); прочее — empty.
+    pageEnd: str(env.SIGNAL_PAGE_END).toLowerCase() === 'short' ? 'short' : 'empty',
+    retryAfterMinMs: int('SIGNAL_RETRY_AFTER_MIN_MS', 0, 60_000),
+    retryAfterMaxMs: int('SIGNAL_RETRY_AFTER_MAX_MS', 1_000, 600_000),
+    // Запросов удалённых элементов на прогон; 0 — адресный запрос выключен.
+    deletedLookupLimit: int('SIGNAL_DELETED_LOOKUP_LIMIT', 0, 10_000),
+    // «Данные устарели» (В-7): порог в рабочее время (пн–пт 08:00–20:00 по Москве) и вне его, в часах.
+    staleWorkHours: int('SIGNAL_STALE_WORK_HOURS', 1, 720),
+    staleOffHours: int('SIGNAL_STALE_OFF_HOURS', 1, 720),
+    configErrors: [],
+    configIssues: [],
+  }
+  if (!sync) return signal
+  try { signalBaseUrl(signal.baseUrl, { hosts: signal.hosts }) } catch (err) { fail('SIGNAL_BASE_URL', err.message) }
+  if (signal.hosts.some((h) => !SIGNAL_HOST_RE.test(h))) fail('SIGNAL_HOSTS', 'только имена хостов через запятую')
+  if (Boolean(signal.clientId) !== Boolean(signal.clientSecret)) fail('SIGNAL_CLIENT_ID', 'SIGNAL_CLIENT_ID и SIGNAL_CLIENT_SECRET: задайте оба или ни одного')
+  if (signal.clientId && !/^[\x21-\x7e]{1,200}$/.test(signal.clientId)) fail('SIGNAL_CLIENT_ID', 'печатные знаки без пробелов')
+  if (signal.scopes.some((s) => !SIGNAL_SCOPE_RE.test(s))) fail('SIGNAL_SCOPES', 'права через пробел, например project:list')
+  if (formats.errors.length) {
+    const e = formats.errors[0]
+    fail('SIGNAL_URL_FORMATS', `шаблон № ${e.index + 1} не годится (${e.reason}); нужен вид https://хост/путь/{projectId}/…/{folderId}, шаблоны через «;»`)
+  }
+  if (!SIGNAL_DAY_MODES.includes(signal.dayMode)) fail('SIGNAL_DAY_MODE', `допустимы ${SIGNAL_DAY_MODES.join(', ')}`)
+  for (const [name, value, kind] of [['SIGNAL_UI_FOLDER_URL', signal.uiFolderUrl, 'folder'], ['SIGNAL_UI_FILE_URL', signal.uiFileUrl, 'item']]) {
+    if (!value) continue
+    const t = validateUrlTemplate(value)
+    if (!t.ok || t.kind !== kind) {
+      fail(name, `нужен шаблон адреса ${kind === 'folder' ? 'папки' : 'файла'} с {projectId} и ${kind === 'folder' ? '{folderId}' : '{itemId}'} (https, без порта и учётки)`)
+      continue
+    }
+    // С-49: ссылку, собранную по этому шаблону, должен разбирать SIGNAL_URL_FORMATS (тот же узел, тот же вид).
+    const built = buildSignalUrl(value, { projectId: PROBE_PROJECT, nodeId: PROBE_NODE, kind })
+    const back = built ? parseSignalUrl(built, formats.formats) : null
+    if (!back?.ok || back.kind !== kind || back.projectId !== PROBE_PROJECT || back.nodeId !== PROBE_NODE) {
+      fail(name, 'адрес по этому шаблону не разбирается списком SIGNAL_URL_FORMATS — добавьте тот же шаблон в SIGNAL_URL_FORMATS')
+    }
+  }
+  // Предельные ожидания и бюджеты согласованы между собой.
+  const retryMin = signal.retryAfterMinMs ?? 1_000
+  const retryMax = signal.retryAfterMaxMs ?? 120_000
+  if (retryMin > retryMax) fail('SIGNAL_RETRY_AFTER_MIN_MS', 'не больше SIGNAL_RETRY_AFTER_MAX_MS')
+  const runBudget = signal.runBudgetMs ?? SIGNAL_SYNC_DEFAULTS.runBudgetMs
+  if (signal.rootBudgetMs !== undefined && signal.rootBudgetMs > runBudget) fail('SIGNAL_ROOT_BUDGET_MS', 'не больше SIGNAL_RUN_BUDGET_MS')
+  else if (signal.rootBudgetMs === undefined && SIGNAL_SYNC_DEFAULTS.rootBudgetMs > runBudget) signal.rootBudgetMs = runBudget
+  signal.configIssues = issues
+  signal.configErrors = issues.map((i) => i.name)
+  return signal
+}
+
 // Включена, но без базы или хранилища — служба не запускается (выкладка откатится), а не молчит без загрузки.
 // Безопасность доступа (11.11.2026): проверка прав разделов в шлюзе, ключи API, пределы загрузки файлов.
 //   OSP_DB_SECTIONS_WRITE — запись через шлюз: enforce (по умолчанию) | log (аварийно: пропускать и писать в журнал);
@@ -252,7 +362,7 @@ export function parseSupplyImport(env) {
   return true
 }
 
-export function loadConfig(env = process.env) {
+export function loadConfig(env = process.env, { strictSignal = false } = {}) {
   const list = (v) => String(v || '').split(',').map((s) => s.trim()).filter(Boolean)
   return {
     host: env.HOST || '127.0.0.1',
@@ -303,6 +413,8 @@ export function loadConfig(env = process.env) {
     // «Расценка: N из M» в реестре тендеров на материалы — у всех тендеров, без открытия расценки.
     supplyImport: parseSupplyImport(env),
     larix: parseLarix(env, { dbUrl: env.OSP_DB_URL || '', supabaseUrl: env.SUPABASE_URL || '', supabaseServiceKey: env.SUPABASE_SERVICE_ROLE_KEY || '' }),
+    // Сверка договоров с папками Signal: очередь и маршруты /api/signal/* — только при SIGNAL_SYNC=1 и своей базе (OSP_DB_URL).
+    signal: parseSignal(env, { strict: strictSignal }),
     // Вход: supabase — как раньше; both — пилот своего входа; own — только свой вход (src/lib/auth/); keycloak — единый вход СУ-10.
     authMode: parseAuthMode(env.AUTH_MODE),
     oidc: parseOidc(env),
@@ -344,6 +456,8 @@ export function configuredParts(config) {
     token: Boolean(config.supabaseJwtSecret),
     gateway: Boolean(config.dbGateway?.upstream && config.dbGateway?.secret && config.dbGateway?.dbRole),
     larix: Boolean(config.larix?.sync && config.larix.username && config.larix.password),
+    // Подключение к Signal задано; /api/health дополнительно требует включённой сверки со схемой в базе (src/app.js).
+    signal: Boolean(config.signal?.sync && !config.signal.configErrors?.length && config.signal.clientId && config.signal.clientSecret),
     auth: Boolean(config.auth?.keys && config.authMode && config.authMode !== 'supabase'),
     oidc: config.authMode === 'keycloak' && Boolean(config.oidc?.issuer),
     accessSync: config.authMode === 'keycloak' && Boolean(config.oidc?.admin),

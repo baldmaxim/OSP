@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import XLSXStyle from 'xlsx-js-style'
 import PizZip from 'pizzip'
-import { db } from '../api'
+import { db, signal } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import {
   IMPORT_COLUMNS,
@@ -18,6 +18,7 @@ import { useRole } from '../contexts/RoleContext'
 import { DOC_TYPES, buildDocIndex } from '../utils/contractAmendments'
 import { LARIX_LINK_FIELD, LARIX_LINK_LABEL } from '../utils/contractLarix'
 import { isSchemeNumberTaken, parseContractNumber } from '../utils/contractNumbering'
+import { summarizeMatch, summaryLine, summaryTitle } from '../utils/signalReview'
 import './ContractsImportModal.css'
 
 const CHUNK = 200
@@ -109,7 +110,9 @@ function skipReasons(row) {
 }
 
 // employees — справочник учёток (Map user_id → сотрудник): «Ответственный юрист» — только действующий юрист ОСП (utils/contractLawyer.js).
-function ContractsImportModal({ counterparties = [], objects = [], employees = null, refsReady = true, onClose, onImported }) {
+// signalReview — на сервере включена сверка с Signal и у человека есть право её вести (решает страница): после загрузки сервер
+// сверяет созданные документы по снимку, итог — строкой в окне результата. Без него импорт как раньше.
+function ContractsImportModal({ counterparties = [], objects = [], employees = null, refsReady = true, signalReview = false, onClose, onImported }) {
   const { userProfile } = useRole()
   const [step, setStep] = useState('select')     // select | preview | result
   const [fileName, setFileName] = useState('')
@@ -122,6 +125,10 @@ function ContractsImportModal({ counterparties = [], objects = [], employees = n
   const [isProcessing, setIsProcessing] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [resultInfo, setResultInfo] = useState(null) // { created, notLoaded: [...] }
+  // Итог сверки с Signal: null — не сверяли, { loading } — идёт, { summary } — готово (summarizeMatch).
+  const [signalSum, setSignalSum] = useState(null)
+  const alive = useRef(true)
+  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
 
   // Индексы справочников для сопоставления. Контрагенты из «Удалённых» к
   // договору не привязываются — их держим отдельно, только чтобы объяснить ошибку.
@@ -294,6 +301,16 @@ function ContractsImportModal({ counterparties = [], objects = [], employees = n
     )
   }
 
+  // Сверка созданных документов с Signal: порциями по 200, не дольше 5 с на порцию; результат не задерживает окно итога, а сбой
+  // или задержка сервера дают «без папки или ожидают» — итог не выдумывается. Считаются уникальные id успешно созданных документов.
+  async function runSignalMatch(createdIds) {
+    const ids = [...new Set(createdIds)]
+    if (!ids.length) return
+    setSignalSum({ loading: true })
+    const res = await signal.match(ids, { timeoutMs: 5000 })
+    if (alive.current) setSignalSum({ summary: summarizeMatch(ids, res.items) })
+  }
+
   async function handleConfirm() {
     setIsProcessing(true)
     try {
@@ -302,6 +319,7 @@ function ContractsImportModal({ counterparties = [], objects = [], employees = n
         ...warnRows.filter((r) => checked.has(r.excelRow)),
       ]
       let created = 0
+      const createdIds = [] // id успешно созданных документов (обе ветви вставки) — для сверки с Signal
       const junction = []
       const failed = []
       // «История» каждого созданного документа: «Создание» с файлом и строкой (как у формы «Добавить»).
@@ -323,6 +341,7 @@ function ContractsImportModal({ counterparties = [], objects = [], employees = n
         const { data, error } = await db.from('contracts').insert(payloads).select(INSERTED)
         if (!error) {
           created += (data || []).length
+          ;(data || []).forEach((d) => { if (d?.id) createdIds.push(d.id) })
           ;(data || []).forEach((d) => { if (d.counterparty_id) junction.push({ contract_id: d.id, counterparty_id: d.counterparty_id, sort_order: 0 }) })
           pairInserted(chunk, data).forEach(({ rec, row }) => history.push(createdEvent(rec, row)))
         } else {
@@ -338,6 +357,7 @@ function ContractsImportModal({ counterparties = [], objects = [], employees = n
             }
             else {
               created++
+              if (d?.id) createdIds.push(d.id)
               if (d.counterparty_id) junction.push({ contract_id: d.id, counterparty_id: d.counterparty_id, sort_order: 0 })
               history.push(createdEvent(d, x))
             }
@@ -369,6 +389,7 @@ function ContractsImportModal({ counterparties = [], objects = [], employees = n
 
       setResultInfo({ created, notLoaded, historyFailed })
       setStep('result')
+      if (signalReview) runSignalMatch(createdIds)
     } catch (err) {
       console.error('Ошибка импорта:', err)
       setParseError('Ошибка при сохранении: ' + (err.message || err))
@@ -534,6 +555,11 @@ function ContractsImportModal({ counterparties = [], objects = [], employees = n
           {step === 'result' && resultInfo && (
             <div className="cim-result">
               <div className="cim-result-big">Создано договоров: <strong>{resultInfo.created}</strong></div>
+              {signalSum && (
+                <p className="cim-note cim-signal" role="status" title={signalSum.summary ? summaryTitle(signalSum.summary) : undefined}>
+                  {signalSum.summary ? summaryLine(signalSum.summary) : 'Signal: сверяем созданные документы…'}
+                </p>
+              )}
               {resultInfo.historyFailed > 0 && (
                 <p className="cim-note">Документы созданы, но у {resultInfo.historyFailed} из них в «Историю» не записалось событие создания — сообщите администратору.</p>
               )}

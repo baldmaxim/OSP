@@ -595,5 +595,202 @@
     "require": null,
     "reason": "Проверка зависимостей при выкладке: отвечает только запросам с самого сервера, через nginx — 404",
     "body": null
+  },
+  {
+    "method": "GET",
+    "url": "/api/signal/aliases",
+    "kind": "user",
+    "require": "employeeOrSuperadmin",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "POST",
+    "url": "/api/signal/aliases",
+    "kind": "user",
+    "require": "employeeOrSuperadmin",
+    "reason": null,
+    "body": [
+      "objectId",
+      "text"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "url": "/api/signal/aliases/:id",
+    "kind": "user",
+    "require": "employeeOrSuperadmin",
+    "reason": null,
+    "body": []
+  },
+  {
+    "method": "GET",
+    "url": "/api/signal/bindings",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "POST",
+    "url": "/api/signal/bindings",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "nodeId",
+      "objectId",
+      "sourceId"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/signal/bindings/preview",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "nodeId",
+      "objectId",
+      "sourceId"
+    ]
+  },
+  {
+    "method": "GET",
+    "url": "/api/signal/contracts/:id",
+    "kind": "user",
+    "require": "employeeOrSuperadmin",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "POST",
+    "url": "/api/signal/contracts/:id/confirm",
+    "kind": "user",
+    "require": "employeeOrSuperadmin",
+    "reason": null,
+    "body": [
+      "expectedRevision",
+      "expectedSignalLink",
+      "expectedStateVersion",
+      "idempotencyKey",
+      "nodeId",
+      "rememberAlias",
+      "replace"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/signal/contracts/:id/reject",
+    "kind": "user",
+    "require": "employeeOrSuperadmin",
+    "reason": null,
+    "body": [
+      "expectedStateVersion",
+      "idempotencyKey",
+      "nodeId",
+      "note"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/signal/contracts/:id/unlink",
+    "kind": "user",
+    "require": "employeeOrSuperadmin",
+    "reason": null,
+    "body": [
+      "expectedRevision",
+      "expectedSignalLink",
+      "expectedStateVersion",
+      "idempotencyKey"
+    ]
+  },
+  {
+    "method": "GET",
+    "url": "/api/signal/folders",
+    "kind": "user",
+    "require": "employeeOrSuperadmin",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "GET",
+    "url": "/api/signal/marks",
+    "kind": "user",
+    "require": "employeeOrSuperadmin",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "POST",
+    "url": "/api/signal/match",
+    "kind": "user",
+    "require": "employeeOrSuperadmin",
+    "reason": null,
+    "body": [
+      "contractIds"
+    ]
+  },
+  {
+    "method": "GET",
+    "url": "/api/signal/runs",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "POST",
+    "url": "/api/signal/sources",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "objectIds",
+      "url"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "url": "/api/signal/sources/:id",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "enabled",
+      "objectIds"
+    ]
+  },
+  {
+    "method": "GET",
+    "url": "/api/signal/status",
+    "kind": "user",
+    "require": "employeeOrSuperadmin",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "POST",
+    "url": "/api/signal/sync",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": []
+  },
+  {
+    "method": "GET",
+    "url": "/api/signal/tree",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "GET",
+    "url": "/api/signal/unassigned",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": null
   }
 ]

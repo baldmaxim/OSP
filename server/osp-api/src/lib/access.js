@@ -34,6 +34,18 @@ export const REQUIREMENTS = {
   admin: async (row, { auth, isSuperadmin }) =>
     (!!row && row.role === 'admin' && row.is_approved === true && row.is_blocked !== true)
     || (typeof isSuperadmin === 'function' && await isSuperadmin(auth.user.id)),
+  // Сотрудник — или суперадминистратор (запись в superadmins) даже без строки в user_roles. Решение владельца
+  // 24.11.2026, только для маршрутов сверки с Signal (src/routes/signal.js): в базе public.osp_can начинается с
+  // public.is_admin() (учитывает superadmins), охват без строки — «все объекты», так что сервер лишь не отсекает такого
+  // вошедшего раньше базы. Заблокированный и подрядчик (организация или роль contractor) не проходят, даже будучи
+  // суперадминистратором; остальные маршруты требование не меняет. Строка есть, но это не сотрудник (не одобрена) —
+  // суперадминистратору всё равно можно: как is_admin() в базе, одобрение строки он не требует.
+  employeeOrSuperadmin: async (row, { auth, isSuperadmin }) => {
+    if (isEmployeeRole(row)) return true
+    if (typeof isSuperadmin !== 'function') return false
+    if (row && (row.is_blocked === true || row.counterparty_id || row.role === 'contractor')) return false
+    return Boolean(await isSuperadmin(auth.user.id))
+  },
 }
 
 export const access = {

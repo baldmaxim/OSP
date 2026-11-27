@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { db } from '../api'
+import { db, signal } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { formatMoney } from '../utils/estimateImport'
 import {
@@ -24,6 +24,7 @@ import AccessDenied from '../components/AccessDenied'
 import PsdcPanel from '../components/psdc/PsdcPanel'
 import FolderPathCell from '../components/FolderPathCell'
 import SignalLinkCell from '../components/SignalLinkCell'
+import SignalPathRow from '../components/SignalPathRow'
 import LarixLinkCell from '../components/LarixLinkCell'
 import { LARIX_LINK_LABEL, LARIX_NAME, isInLarix, larixLink } from '../utils/contractLarix'
 import { docTender, tenderTitle } from '../utils/contractTender'
@@ -93,6 +94,9 @@ function ContractDetailPage() {
   const [auditLog, setAuditLog] = useState([])
   const [advances, setAdvances] = useState([])
   const [loading, setLoading] = useState(true)
+  // Сверка с Signal (интеграция 23.11.2026): включена на сервере и у человека есть доступ — строка «Путь к Signal» с состоянием,
+  // списком файлов папки и действиями; иначе (и при сбое сервера) — прежняя ссылка SignalLinkCell.
+  const [signalOn, setSignalOn] = useState(false)
   const [notesDraft, setNotesDraft] = useState('')
   const [savingNotes, setSavingNotes] = useState(false)
   // Всё дерево документа: сам договор и его ДС. Нужно и для сумм, и для навигации.
@@ -182,6 +186,21 @@ function ContractDetailPage() {
   }, [rootId])
 
   useEffect(() => { fetchFamily() }, [fetchFamily])
+
+  useEffect(() => {
+    let alive = true
+    signal.status().then((st) => { if (alive) setSignalOn(st.enabled === true && (st.canView === true || st.canEdit === true)) })
+    return () => { alive = false }
+  }, [])
+
+  // Ссылку на папку Signal меняет решение человека в строке «Путь к Signal»: перечитываем только её, остальная карточка
+  // (черновик примечания и т.п.) не трогается.
+  const refreshSignalLink = useCallback(async () => {
+    try {
+      const { data } = await db.from('contracts').select('signal_link').eq('id', contractId).single()
+      if (data) setContract((prev) => (prev ? { ...prev, signal_link: data.signal_link ?? null } : prev))
+    } catch { /* ссылка в карточке обновится при следующей загрузке */ }
+  }, [contractId])
 
   const docIndex = useMemo(() => buildDocIndex(family), [family])
   const rootDoc = rootId ? docIndex.byId.get(rootId) : null
@@ -477,7 +496,20 @@ function ContractDetailPage() {
                   реестре, под номером договора. Значения те же, второго места
                   ввода нет. */}
               <InfoRow label="Путь к папке" value={contract.folder_path ? <FolderPathCell value={contract.folder_path} /> : null} />
-              <InfoRow label="Путь к Signal" value={contract.signal_link ? <SignalLinkCell value={contract.signal_link} /> : null} />
+              <InfoRow
+                label="Путь к Signal"
+                value={signalOn
+                  ? (
+                    <SignalPathRow
+                      contractId={contract.id}
+                      contract={contract}
+                      canEdit={canEditContracts && !isDeleted}
+                      fallback={contract.signal_link ? <SignalLinkCell value={contract.signal_link} /> : null}
+                      onLinkChanged={refreshSignalLink}
+                    />
+                  )
+                  : (contract.signal_link ? <SignalLinkCell value={contract.signal_link} /> : null)}
+              />
               <InfoRow label={LARIX_LINK_LABEL} value={larixLink(contract) ? <LarixLinkCell value={larixLink(contract)} /> : null} />
               <InfoRow label={`Внесён в ${LARIX_NAME}`} value={isInLarix(contract) ? 'Да' : 'Нет'} />
             </div>

@@ -6,6 +6,7 @@
 #   bash deploy.sh status                      # что выложено и отвечает ли
 #   bash deploy.sh covers-copy <копия>.covers.csv  # обложки объектов из Supabase — в cloud.ru, журнал сверки
 #   bash deploy.sh larix probe | sync [--force] [--target db|supabase]  # договорные расценки из Larix.CPM
+#   bash deploy.sh signal probe | sync | accept-held --run <id> --expected-generation <n> --reason <текст>  # сверка договоров с SIGNAL
 #   bash deploy.sh api-restart                 # пересоздать API того же выпуска (перечитать secrets/osp-api.env)
 #   bash deploy.sh postgrest-restart           # пересоздать только PostgREST (перечитать secrets/postgrest.env)
 #   bash deploy.sh auth-config                 # режим входа, который отдаёт API (/api/auth/config)
@@ -314,6 +315,18 @@ case "${1:-}" in
     dc "$cur" run --rm --no-deps -T osp-api node src/larix-cli.js "${@:2}"
     ;;
 
+  signal)
+    # Сверка договоров с папками SIGNAL — ручные команды server/osp-api/src/signal-cli.js в образе выложенного выпуска, с
+    # настройками из secrets/osp-api.env (SIGNAL_*): probe — только чтение (токен, число проектов, найден ли корень и сколько
+    # в нём папок; названий и путей не печатает); sync — внеочередной обход корней с публикацией по правилам службы;
+    # accept-held — принять отложенный защитой прогон (--run <id> --expected-generation <n> --reason <текст>; причина
+    # попадает в журнал прогона). Секрет и токен не печатаются. Выход: 0 — готово, 3 — прогон отложен защитой, 4 — сбой.
+    case "${2:-}" in probe | sync | accept-held) ;; *) die "укажите команду: bash deploy.sh signal probe | sync | accept-held --run <id> --expected-generation <n> --reason <текст>" ;; esac
+    cur="$(release_of current)"
+    [ -n "$cur" ] || die "портал не выложен: сначала bash deploy.sh install <каталог выпуска>"
+    dc "$cur" run --rm --no-deps -T osp-api node src/signal-cli.js "${@:2}"
+    ;;
+
   identity)
     # Связи учёток с СУ-10 — ручные команды server/osp-api/src/identity-cli.js в образе выложенного выпуска (файлы — через
     # stdin и stdout: secrets/ в контейнер не монтируется). Почта и ФИО — только в выводе export-users; удобнее звать через
@@ -325,7 +338,7 @@ case "${1:-}" in
     ;;
 
   *)
-    echo "Использование: bash deploy.sh install <каталог выпуска> | rollback | status | api-restart | postgrest-restart | auth-config | covers-copy <копия>.covers.csv | larix probe|sync | identity …" >&2
+    echo "Использование: bash deploy.sh install <каталог выпуска> | rollback | status | api-restart | postgrest-restart | auth-config | covers-copy <копия>.covers.csv | larix probe|sync | signal probe|sync|accept-held | identity …" >&2
     exit 1
     ;;
 esac

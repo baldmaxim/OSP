@@ -45,6 +45,37 @@
 [data-theme='dark'] .dlm.is-on { color: #86efac; border-color: color-mix(in srgb, #86efac 35%, transparent); background: color-mix(in srgb, #22c55e 14%, var(--bg-secondary)); }
 [data-theme='dark'] .dlm.is-off { color: #fca5a5; border-color: color-mix(in srgb, #fca5a5 35%, transparent); background: color-mix(in srgb, #ef4444 14%, var(--bg-secondary)); }
 
+/* Signal после сверки (23.11.2026). «Предложена папка» — красный значок с синей точкой в углу; «противоречие», «папка не видна»,
+   «файл удалён» — жёлтый с «!». Цвет не единственный носитель смысла: у значка подпись в title и aria-label, у жёлтого — «!»,
+   у красного — точка. Текст «!» #854d0e на подложке (жёлтый 16 % на фоне окна) — не ниже 4,5:1 (проверяет contracts-signal.test.mjs);
+   в тёмной теме — #fde047. */
+.dlm.is-suggest { position: relative; }
+.dlm.is-suggest::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2563eb;
+  box-shadow: 0 0 0 1.5px var(--bg-secondary);
+  pointer-events: none;
+}
+.dlm.is-warn {
+  border-color: color-mix(in srgb, #ca8a04 55%, transparent);
+  background: color-mix(in srgb, #eab308 16%, var(--bg-secondary));
+  color: #854d0e;
+}
+:is(a, button).dlm.is-warn:hover { border-color: #ca8a04; }
+.dlm-bang { font-size: 0.75rem; font-weight: 700; line-height: 1; margin-left: -0.0625rem; }
+[data-theme='dark'] .dlm.is-suggest::after { background: #60a5fa; }
+[data-theme='dark'] .dlm.is-warn {
+  color: #fde047;
+  border-color: color-mix(in srgb, #fde047 38%, transparent);
+  background: color-mix(in srgb, #eab308 16%, var(--bg-secondary));
+}
+
 /* Larix: «Larix» мельче и светлее, код — главное. Длинный хвост ссылки — многоточием, целиком — в подсказке. */
 .dlm-larix { padding: 0 0.25rem; }
 .dlm-larix-name { opacity: 0.8; font-weight: 400; }
@@ -99,3 +130,38 @@
   .dlm-pop-input { height: 2.5rem; font-size: 1rem; }
   .dlm-pop-hint { margin-left: 0; flex-basis: 100%; }
 }
+
+/* Телефон: в карточке договора нет значков путей, поэтому предложение и замечание Signal — отдельной кнопкой (открывает окно
+   сверки на весь экран). Подпись — подсказка сервера; цвет и точка дополняют её, не заменяют. */
+.dlm-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.25rem;
+  margin: 0.375rem 0 0;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.dlm-card:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+.dlm-card.is-suggest {
+  color: #b91c1c;
+  border-color: color-mix(in srgb, #dc2626 30%, transparent);
+  background: color-mix(in srgb, #dc2626 7%, var(--bg-secondary));
+}
+.dlm-card.is-suggest::before { content: ''; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: #2563eb; }
+.dlm-card.is-warn {
+  color: #854d0e;
+  border-color: color-mix(in srgb, #ca8a04 55%, transparent);
+  background: color-mix(in srgb, #eab308 16%, var(--bg-secondary));
+}
+[data-theme='dark'] .dlm-card.is-suggest { color: #fca5a5; border-color: color-mix(in srgb, #fca5a5 35%, transparent); background: color-mix(in srgb, #ef4444 14%, var(--bg-secondary)); }
+[data-theme='dark'] .dlm-card.is-suggest::before { background: #60a5fa; }
+[data-theme='dark'] .dlm-card.is-warn { color: #fde047; border-color: color-mix(in srgb, #fde047 38%, transparent); background: color-mix(in srgb, #eab308 16%, var(--bg-secondary)); }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { db, identityAdmin, su10Orgs } from '../api'
+import { db, identityAdmin, su10Orgs, signal } from '../api'
 import { useRole, SECTIONS } from '../contexts/RoleContext'
 import FilterDropdown from '../components/FilterDropdown'
 import RoleBadge from '../components/admin/RoleBadge'
@@ -13,6 +13,8 @@ import AccessRightsTab from '../components/admin/AccessRightsTab'
 import ContractorSignupsTab from '../components/admin/ContractorSignupsTab'
 import IdentityRequestsTab from '../components/admin/IdentityRequestsTab'
 import Su10OrgsTab from '../components/admin/Su10OrgsTab'
+import SignalTab from '../components/admin/SignalTab'
+import { alertCount, signalTabVisible } from '../utils/signalPathRow'
 import { fetchAllActiveCounterparties } from '../utils/fetchAllRows'
 import './AdminPage.css'
 
@@ -72,6 +74,24 @@ function AdminPage() {
     su10Orgs.list().then(() => { if (alive) setSu10OrgsOn(true) }).catch(() => {})
     return () => { alive = false }
   }, [ownAuth, isAdmin, isSuperAdmin])
+
+  // «Signal» (server/osp-api/src/routes/signal.js): вкладка есть, только если сверка включена на сервере (status → enabled) и
+  // сервер признал вошедшего администратором, либо сверка выключена по причине (В-8: ошибка настройки и т.п. — администратору
+  // сервер отдаёт disabledReason, вкладка покажет её); маршруты вкладки проверяют права сами. Число оповещений сервера
+  // (status.alerts, В-5) — отметкой на ярлыке; вкладка обновляет его после каждого чтения состояния.
+  const [signalOn, setSignalOn] = useState(false)
+  const [signalAlerts, setSignalAlerts] = useState(0)
+  useEffect(() => {
+    if (!(isAdmin || isSuperAdmin)) return
+    let alive = true
+    signal.status().then((st) => {
+      if (!alive) return
+      if (signalTabVisible(st)) setSignalOn(true)
+      setSignalAlerts(alertCount(st))
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [isAdmin, isSuperAdmin])
+  const onSignalStatus = useCallback((st) => setSignalAlerts(alertCount(st)), [])
 
   // --- Users ---
   const [userRoles, setUserRoles] = useState([])
@@ -515,6 +535,14 @@ function AdminPage() {
           {su10OrgsOn && (isAdmin || isSuperAdmin) && (
             <button className={`admin-tab ${activeTab === 'su10orgs' ? 'active' : ''}`} onClick={() => setActiveTab('su10orgs')}>Организации СУ-10</button>
           )}
+          {signalOn && (isAdmin || isSuperAdmin) && (
+            <button
+              className={`admin-tab ${activeTab === 'signal' ? 'active' : ''}`} onClick={() => setActiveTab('signal')}
+              aria-label={signalAlerts > 0 ? `Signal, оповещений: ${signalAlerts}` : undefined}
+            >
+              Signal{signalAlerts > 0 && <span className="admin-tab-count" title={`Оповещений Signal: ${signalAlerts}`}>{signalAlerts}</span>}
+            </button>
+          )}
           {/* Ключи выдаёт только администратор — так же проверяет сервер (server/osp-api/src/routes/apiKeys.js). */}
           {(isAdmin || isSuperAdmin) && (
             <button className={`admin-tab ${activeTab === 'api' ? 'active' : ''}`} onClick={() => setActiveTab('api')}>Доступ к API</button>
@@ -539,6 +567,13 @@ function AdminPage() {
         {activeTab === 'su10orgs' && su10OrgsOn && (isAdmin || isSuperAdmin) && (
           <div className="admin-tabpane">
             <Su10OrgsTab notify={notify} isSuperAdmin={isSuperAdmin} />
+          </div>
+        )}
+
+        {/* ===== Signal ===== */}
+        {activeTab === 'signal' && signalOn && (isAdmin || isSuperAdmin) && (
+          <div className="admin-tabpane">
+            <SignalTab notify={notify} onStatus={onSignalStatus} />
           </div>
         )}
 

@@ -193,10 +193,44 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
   it('health: что настроено — да/нет, без значений секретов', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/health' })
     assert.equal(res.statusCode, 200)
-    assert.deepEqual(res.json(), { ok: true, service: 'osp-api', configured: { supabase: true, supabaseService: true, s3: true, anthropic: true, rates: true, db: false, token: false, gateway: false, larix: false, auth: false, oidc: false, accessSync: false, webGate: false } })
+    assert.deepEqual(res.json(), { ok: true, service: 'osp-api', configured: { supabase: true, supabaseService: true, s3: true, anthropic: true, rates: true, db: false, token: false, gateway: false, larix: false, signal: false, auth: false, oidc: false, accessSync: false, webGate: false } })
     for (const secret of ['anon-test-key', 'service-test-key', 'secret-test', 'anthropic-test-key', 'rk-one']) {
       assert.ok(!res.body.includes(secret), secret)
     }
+  })
+
+  it('сверка Signal (В-8): SIGNAL_SYNC=1 без OSP_DB_URL и неверные SIGNAL_* не роняют службу — health: signal «config_invalid» без имён и значений, в журнале имена переменных, администратору — причина', async () => {
+    const { parseSignal } = await import(path.join(SERVER, 'src', 'config.js'))
+    const secretValue = 'значение-которое-не-должно-попасть-в-ответы-и-журнал'
+    const status = (who) => app.inject({ method: 'GET', url: '/api/signal/status', headers: { authorization: `Bearer ${who.token}` } })
+    // Нет своей базы: сверка работает только на ней.
+    await makeApp({ signal: parseSignal({ SIGNAL_SYNC: '1' }) })
+    let health = await app.inject({ method: 'GET', url: '/api/health' })
+    assert.equal(health.statusCode, 200)
+    assert.equal(health.json().configured.signal, 'config_invalid')
+    assert.equal(health.json().ok, true)
+    let admin = await status(U.admin)
+    assert.equal(admin.statusCode, 200, admin.body)
+    assert.deepEqual(admin.json(), { enabled: false, disabledReason: 'config_invalid', configErrors: ['OSP_DB_URL'] })
+    assert.deepEqual((await status(U.emp)).json(), { enabled: false }, 'сотруднику причина не показывается')
+    assert.equal((await status(U.contractor)).statusCode, 403)
+    assert.equal((await app.inject({ method: 'GET', url: '/api/signal/marks', headers: { authorization: `Bearer ${U.admin.token}` } })).statusCode, 503)
+    // Неверная настройка (и нет базы): названы обе переменные, значения нигде нет.
+    logs.length = 0
+    await makeApp({ signal: parseSignal({ SIGNAL_SYNC: '1', SIGNAL_DAY_MODE: secretValue, SIGNAL_CLIENT_SECRET: secretValue }) })
+    health = await app.inject({ method: 'GET', url: '/api/health' })
+    assert.equal(health.json().configured.signal, 'config_invalid')
+    assert.ok(!health.body.includes(secretValue) && !/SIGNAL_/.test(health.body), 'открытый health не раскрывает ни значений, ни имён')
+    admin = await status(U.admin)
+    assert.deepEqual(admin.json().configErrors.sort(), ['OSP_DB_URL', 'SIGNAL_CLIENT_ID', 'SIGNAL_DAY_MODE'].sort())
+    const errors = logs.map((l) => { try { return JSON.parse(l) } catch { return null } }).filter((l) => l && l.level >= 50)
+    assert.equal(errors.length, 1, 'одна запись ошибки при запуске')
+    assert.deepEqual([...errors[0].vars].sort(), ['OSP_DB_URL', 'SIGNAL_CLIENT_ID', 'SIGNAL_DAY_MODE'].sort())
+    assert.ok(!logs.join('\n').includes(secretValue) && !admin.body.includes(secretValue))
+    // Сверка не включена вовсе: причина not_enabled, ошибок нет; прочий портал работает как раньше.
+    await makeApp({ signal: parseSignal({}) })
+    assert.deepEqual((await status(U.admin)).json(), { enabled: false, disabledReason: 'not_enabled', configErrors: [] })
+    assert.equal((await app.inject({ method: 'GET', url: '/api/health' })).json().configured.signal, false)
   })
 
   describe('s3-presign: доступ и скачивание', () => {
